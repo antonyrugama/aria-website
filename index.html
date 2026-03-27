@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#00E5FF">
+    <meta name="description" content="Aria — AI-powered training companion for sprinters who train alone. Sprint analysis, programming, recovery, nutrition, rehab, and mental readiness in one app.">
+    <title>Aria — AI That Trains With You</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* ══════════ RESET ══════════ */
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased}
+        body{font-family:'Space Grotesk',sans-serif;background:#09090B;color:#D4D4D8;line-height:1.6;overflow-x:hidden}
+        a{color:inherit;text-decoration:none}
+        img{max-width:100%;height:auto;display:block}
+        button{font-family:inherit;cursor:pointer;border:none}
+        ul{list-style:none}
+
+        /* ══════════ PALETTE ══════════
+           Primary:  #00E5FF (cyan — brand)
+           Surface:  #09090B → #111113 → #18181B
+           Text:     #FAFAFA / #A1A1AA / #52525B
+        ══════════════════════════════ */
+        :root{
+            --cyan:#00E5FF;
+            --cyan-10:rgba(0,229,255,.1);
+            --cyan-20:rgba(0,229,255,.2);
+            --cyan-30:rgba(0,229,255,.35);
+            --bg:#09090B;
+            --card:#111113;
+            --card-h:#18181B;
+            --border:rgba(255,255,255,.06);
+            --border-h:rgba(255,255,255,.12);
+            --t1:#FAFAFA;
+            --t2:#A1A1AA;
+            --t3:#52525B;
+            --max:1140px;
+        }
+
+        /* ══════════ UTILITY ══════════ */
+        .wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
+        .label{
+            font-family:'Space Grotesk',sans-serif;
+            font-size:11px;font-weight:700;
+            letter-spacing:.22em;text-transform:uppercase;
+            color:var(--cyan);margin-bottom:14px;
+        }
+
+        /* ══════════ SCROLL REVEAL ══════════ */
+        .sr{opacity:0;transform:translateY(32px);transition:opacity .7s ease,transform .7s ease}
+        .sr.v{opacity:1;transform:translateY(0)}
+        .sr.d1{transition-delay:.1s}.sr.d2{transition-delay:.2s}.sr.d3{transition-delay:.3s}
+
+        /* ══════════ NAV ══════════ */
+        .nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:18px 0;transition:all .35s}
+        .nav.stuck{background:rgba(9,9,11,.88);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid var(--border);padding:12px 0}
+        .nav-in{display:flex;align-items:center;justify-content:space-between;max-width:var(--max);margin:0 auto;padding:0 24px}
+        .nav-logo{display:flex;align-items:center;gap:10px}
+        .nav-logo img{height:34px}
+        .nav-logo b{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;letter-spacing:.08em;color:var(--t1)}
+        .nav-links{display:flex;gap:32px}
+        .nav-links a{font-size:14px;font-weight:500;color:var(--t2);transition:color .3s}
+        .nav-links a:hover{color:var(--t1)}
+        .nav-cta{
+            background:var(--cyan);color:#000;font-weight:700;font-size:14px;
+            padding:10px 26px;border-radius:12px;
+            transition:all .3s;box-shadow:0 0 24px rgba(0,229,255,.22);
+        }
+        .nav-cta:hover{transform:scale(1.05);box-shadow:0 0 36px rgba(0,229,255,.38)}
+        .mob-btn{display:none;background:0;color:var(--t1);font-size:26px;padding:6px}
+
+        /* Mobile menu */
+        .mob-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:150;opacity:0;visibility:hidden;transition:.3s}
+        .mob-overlay.open{opacity:1;visibility:visible}
+        .mob-menu{position:fixed;top:0;right:0;width:280px;height:100vh;background:rgba(9,9,11,.97);backdrop-filter:blur(20px);z-index:200;padding:80px 32px;transform:translateX(100%);transition:.3s;border-left:1px solid var(--border)}
+        .mob-menu.open{transform:translateX(0)}
+        .mob-menu ul{display:flex;flex-direction:column;gap:28px}
+        .mob-menu a{font-size:18px;font-weight:600;color:var(--t2);transition:color .3s}
+        .mob-menu a:hover{color:var(--cyan)}
+        .mob-x{position:absolute;top:24px;right:24px;background:0;color:var(--t1);font-size:30px}
+
+        /* ══════════ VIDEO BACKGROUNDS ══════════ */
+        .vid-bg{position:absolute;inset:0;overflow:hidden;z-index:0}
+        .vid-bg video,.vid-bg img{width:100%;height:100%;object-fit:cover}
+        .vid-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,9,11,.92) 0%,rgba(9,9,11,.78) 40%,rgba(9,9,11,.92) 100%);z-index:1}
+        .vid-bg.hero-bg::after{background:linear-gradient(135deg,rgba(9,9,11,.93) 0%,rgba(9,9,11,.82) 35%,rgba(9,9,11,.65) 60%,rgba(9,9,11,.88) 100%)}
+        .vid-bg.cta-bg::after{background:linear-gradient(180deg,rgba(9,9,11,.94) 0%,rgba(9,9,11,.75) 50%,rgba(9,9,11,.94) 100%)}
+        .vid-bg.pain-bg::after{background:linear-gradient(180deg,rgba(9,9,11,.93) 0%,rgba(9,9,11,.85) 50%,rgba(9,9,11,.93) 100%)}
+
+        /* ══════════ HERO ══════════ */
+        .hero{min-height:100vh;display:flex;align-items:center;padding:130px 0 100px;position:relative;overflow:hidden}
+        .hero::after{content:'';position:absolute;top:-120px;right:-180px;width:560px;height:560px;background:radial-gradient(circle,rgba(0,229,255,.07) 0%,transparent 72%);pointer-events:none;z-index:1}
+        .hero-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:56px;align-items:center;position:relative;z-index:2}
+        .hero-content{animation:fadeUp .85s ease forwards}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+
+        .hero-pill{
+            display:inline-flex;align-items:center;gap:8px;
+            background:var(--cyan-10);border:1px solid var(--cyan-20);
+            padding:5px 16px;border-radius:100px;
+            font-size:12px;font-weight:600;color:var(--cyan);
+            letter-spacing:.04em;margin-bottom:28px;
+        }
+        .hero-pill i{width:6px;height:6px;background:var(--cyan);border-radius:50%;animation:blink 2s infinite}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+        .hero h1{
+            font-family:'Outfit',sans-serif;
+            font-size:clamp(40px,6.2vw,72px);
+            font-weight:900;letter-spacing:-.045em;line-height:1;
+            color:var(--t1);margin-bottom:24px;
+        }
+        .hero h1 em{
+            font-style:normal;
+            background:linear-gradient(135deg,var(--cyan),#00B8D4);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+        }
+        .hero-sub{font-size:17px;color:var(--t2);line-height:1.75;margin-bottom:40px;max-width:500px}
+        .hero-ctas{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:52px}
+
+        .btn-p{
+            display:inline-flex;align-items:center;gap:10px;
+            background:var(--cyan);color:#000;font-weight:700;font-size:15px;
+            padding:16px 30px;border-radius:14px;
+            transition:all .3s;box-shadow:0 0 32px rgba(0,229,255,.22);
+        }
+        .btn-p:hover{transform:translateY(-2px);box-shadow:0 0 44px rgba(0,229,255,.38)}
+        .btn-s{
+            display:inline-flex;align-items:center;gap:10px;
+            background:transparent;color:var(--t1);font-weight:600;font-size:15px;
+            padding:16px 30px;border-radius:14px;border:1px solid var(--border-h);
+            transition:all .3s;
+        }
+        .btn-s:hover{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-10)}
+
+        .hero-stats{display:flex;gap:44px}
+        .hero-stats strong{font-family:'Outfit',sans-serif;display:block;font-size:30px;font-weight:900;color:var(--t1);letter-spacing:-.02em}
+        .hero-stats small{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-top:2px;display:block}
+
+        /* Phone mockup */
+        .hero-vis{display:flex;justify-content:center;opacity:0;animation:fadeUp .9s .25s ease forwards;position:relative}
+        .phone{
+            width:280px;height:580px;background:#111113;
+            border-radius:38px;border:2px solid rgba(255,255,255,.08);
+            overflow:hidden;position:relative;
+            box-shadow:0 40px 80px rgba(0,0,0,.55),0 0 50px rgba(0,229,255,.08);
+            animation:float 7s ease-in-out infinite;
+        }
+        @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+        .phone img{width:100%;height:100%;object-fit:cover}
+        .phone-notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:110px;height:26px;background:#000;border-radius:0 0 16px 16px;z-index:2}
+
+        /* Phone CSS mockup (replaces screenshot) */
+        .phone-ui{width:100%;height:100%;display:flex;flex-direction:column;background:linear-gradient(180deg,#0c1015,#111113);padding:36px 16px 16px;overflow:hidden}
+        .pu-head{text-align:center;margin-bottom:18px}
+        .pu-avatar{width:56px;height:56px;background:white;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center}
+        .pu-avatar svg{width:32px;height:32px}
+        .pu-head h3{font-family:'Outfit',sans-serif;font-size:16px;font-weight:800;color:white}
+        .pu-head p{font-size:10px;color:var(--t3);margin-top:2px}
+        .pu-prompt{background:rgba(255,255,255,.04);border:1px solid var(--cyan-20);border-radius:14px;padding:10px 14px;font-size:11px;color:var(--t2);margin-bottom:7px;transition:all .3s}
+        .pu-prompt:hover{background:var(--cyan-10);border-color:var(--cyan-30)}
+        .pu-prompt span{color:var(--cyan);margin-right:6px;font-weight:600}
+        .pu-input{margin-top:auto;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:20px;padding:12px 16px;font-size:12px;color:var(--t3);display:flex;justify-content:space-between;align-items:center}
+        .pu-input .send{width:28px;height:28px;background:var(--t3);border-radius:50%;display:flex;align-items:center;justify-content:center}
+
+        /* ══════════ PAIN SECTION ══════════ */
+        .pain{padding:120px 0;position:relative;overflow:hidden}
+        .pain::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--border-h),transparent)}
+        .pain-head{max-width:620px;margin-bottom:64px;position:relative;z-index:2}
+        .pain-head h2{font-family:'Outfit',sans-serif;font-size:clamp(28px,4.5vw,46px);font-weight:900;letter-spacing:-.035em;line-height:1.08;color:var(--t1);margin-bottom:18px}
+        .pain-head p{font-size:17px;color:var(--t2);line-height:1.7}
+
+        .pain-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;position:relative;z-index:2}
+        .pain-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px 26px;transition:all .35s}
+        .pain-card:hover{border-color:var(--border-h);transform:translateY(-5px);background:var(--card-h)}
+        .pain-card .ico{width:48px;height:48px;background:var(--cyan-10);border:1px solid var(--cyan-20);border-radius:14px;display:flex;align-items:center;justify-content:center;margin-bottom:20px}
+        .pain-card h3{font-family:'Outfit',sans-serif;font-size:18px;font-weight:800;color:var(--t1);margin-bottom:10px;letter-spacing:-.02em}
+        .pain-card p{font-size:14px;color:var(--t2);line-height:1.7}
+
+        /* ══════════ DUAL AI ══════════ */
+        .dual{padding:120px 0}
+        .dual-head{text-align:center;max-width:680px;margin:0 auto 72px}
+        .dual-head h2{font-family:'Outfit',sans-serif;font-size:clamp(28px,4.5vw,46px);font-weight:900;letter-spacing:-.035em;line-height:1.08;color:var(--t1);margin-bottom:18px}
+        .dual-head p{font-size:17px;color:var(--t2);line-height:1.7}
+        .dual-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+        .ai-col{background:var(--card);border:1px solid var(--border);border-radius:22px;padding:36px 28px;position:relative;overflow:hidden;transition:all .35s}
+        .ai-col:hover{border-color:var(--border-h)}
+        .ai-col::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+        .ai-col.iq::before{background:linear-gradient(90deg,var(--cyan),#00B8D4)}
+        .ai-col.co::before{background:linear-gradient(90deg,#FF6B6B,#E040FB)}
+        .ai-col h3{font-family:'Outfit',sans-serif;font-size:22px;font-weight:900;color:var(--t1);margin-bottom:4px}
+        .ai-col .role{font-size:13px;color:var(--t3);margin-bottom:24px;font-weight:500}
+        .ai-row{display:flex;align-items:flex-start;gap:12px;padding:14px;background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;transition:all .3s}
+        .ai-row:hover{background:rgba(255,255,255,.045);border-color:var(--border-h)}
+        .ai-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
+        .dg{background:#22C55E}.dy{background:#EAB308}.dc{background:var(--cyan)}.dp{background:#A855F7}.do{background:#F97316}.dr{background:#EF4444}
+        .ai-row h4{font-size:13px;font-weight:700;color:var(--t1);margin-bottom:3px}
+        .ai-row p{font-size:12px;color:var(--t3);line-height:1.45}
+
+        /* ══════════ FEATURES (alternating rows) ══════════ */
+        .feat{padding:120px 0}
+        .feat-head{text-align:center;max-width:680px;margin:0 auto 80px}
+        .feat-head h2{font-family:'Outfit',sans-serif;font-size:clamp(28px,4.5vw,46px);font-weight:900;letter-spacing:-.035em;line-height:1.08;color:var(--t1);margin-bottom:18px}
+        .feat-head p{font-size:17px;color:var(--t2);line-height:1.7}
+
+        .f-row{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;margin-bottom:120px}
+        .f-row:last-child{margin-bottom:0}
+        .f-row.rev .f-text{order:2}.f-row.rev .f-vis{order:1}
+        .f-text h3{font-family:'Outfit',sans-serif;font-size:clamp(24px,3.5vw,34px);font-weight:900;color:var(--t1);letter-spacing:-.03em;line-height:1.08;margin-bottom:14px}
+        .f-text p{font-size:15px;color:var(--t2);line-height:1.7;margin-bottom:22px}
+        .f-list{display:flex;flex-direction:column;gap:10px}
+        .f-list li{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--t2)}
+        .f-list li::before{content:'';width:18px;height:18px;border-radius:50%;background:var(--cyan-10);border:1.5px solid var(--cyan);flex-shrink:0;display:flex;align-items:center;justify-content:center}
+
+        .f-vis{display:flex;justify-content:center}
+        .f-phone{width:250px;height:510px;background:#111113;border-radius:34px;border:2px solid rgba(255,255,255,.07);overflow:hidden;box-shadow:0 28px 56px rgba(0,0,0,.45);position:relative}
+        .f-phone img{width:100%;height:100%;object-fit:cover}
+
+        /* Feature phone CSS mockups */
+        .fp-ui{width:100%;height:100%;display:flex;flex-direction:column;padding:40px 14px 14px;overflow:hidden}
+        .fp-card{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px}
+        .fp-card-h{display:flex;justify-content:space-between;align-items:center}
+        .fp-card h4{font-size:12px;font-weight:700;color:var(--t1)}
+        .fp-card small{font-size:10px;color:var(--cyan)}
+        .fp-card .sub{font-size:10px;color:var(--t3);margin-top:2px}
+        .fp-hero-card{background:linear-gradient(135deg,rgba(0,229,255,.12),rgba(0,229,255,.04));border:1px solid var(--cyan-20);border-radius:14px;padding:14px;margin-bottom:14px}
+        .fp-hero-card h4{font-family:'Outfit',sans-serif;font-size:13px;font-weight:900;color:white}
+        .fp-hero-card .big{font-family:'Outfit',sans-serif;font-size:22px;font-weight:900;color:white;margin:4px 0}
+        .fp-hero-card .macros{display:flex;gap:10px;font-size:10px;font-weight:700}
+        .fp-hero-card .macros span:nth-child(1){color:#3B82F6}
+        .fp-hero-card .macros span:nth-child(2){color:#EAB308}
+        .fp-hero-card .macros span:nth-child(3){color:#F97316}
+        .fp-pills{display:flex;gap:5px;margin-bottom:12px}
+        .fp-pill{flex:1;background:rgba(255,255,255,.05);border-radius:8px;padding:7px;text-align:center;font-size:10px;color:var(--t3);font-weight:600}
+        .fp-pill.act{background:var(--cyan);color:#000}
+        .fp-metrics{display:flex;gap:6px;margin-bottom:14px}
+        .fp-metric{flex:1;background:rgba(255,255,255,.03);border-radius:9px;padding:8px;text-align:center}
+        .fp-metric small{font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;display:block}
+        .fp-metric strong{font-family:'Outfit',sans-serif;font-size:18px;font-weight:900;display:block;margin-top:2px}
+
+        /* ══════════ TOOLS ══════════ */
+        .tools{padding:120px 0}
+        .tools-head{text-align:center;max-width:680px;margin:0 auto 56px}
+        .tools-head h2{font-family:'Outfit',sans-serif;font-size:clamp(28px,4.5vw,46px);font-weight:900;letter-spacing:-.035em;line-height:1.08;color:var(--t1);margin-bottom:18px}
+        .tools-head p{font-size:17px;color:var(--t2);line-height:1.7}
+        .t-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+        .t-card{padding:26px 22px;border-radius:18px;transition:all .3s;cursor:default}
+        .t-card:hover{transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.3)}
+        .t-card .ti{margin-bottom:14px;display:block;line-height:0}
+        .t-card h4{font-size:15px;font-weight:700;color:white}
+        .t-card p{font-size:11px;color:rgba(255,255,255,.65);margin-top:4px;line-height:1.4}
+        .tc1{background:linear-gradient(135deg,#8B5CF6,#EC4899)}
+        .tc2{background:linear-gradient(135deg,#EC4899,#06B6D4)}
+        .tc3{background:linear-gradient(135deg,#F97316,#EAB308)}
+        .tc4{background:linear-gradient(135deg,#10B981,#06B6D4)}
+        .tc5{background:linear-gradient(135deg,#7C3AED,#8B5CF6)}
+        .tc6{background:linear-gradient(135deg,#F97316,#EF4444)}
+        .tc7{background:linear-gradient(135deg,#2563EB,#06B6D4)}
+        .tc8{background:linear-gradient(135deg,#059669,#10B981)}
+
+        /* ══════════ HOW IT WORKS ══════════ */
+        .how{padding:120px 0}
+        .how-head{text-align:center;max-width:580px;margin:0 auto 72px}
+        .how-head h2{font-family:'Outfit',sans-serif;font-size:clamp(28px,4.5vw,46px);font-weight:900;letter-spacing:-.035em;line-height:1.08;color:var(--t1);margin-bottom:14px}
+        .how-head p{font-size:17px;color:var(--t2)}
+        .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;position:relative}
+        .steps::before{content:'';position:absolute;top:44px;left:16%;right:16%;height:2px;background:linear-gradient(90deg,var(--cyan),rgba(0,229,255,.15),var(--cyan))}
+        .step{text-align:center;position:relative;z-index:1}
+        .step-n{
+            width:88px;height:88px;background:var(--card);
+            border:2px solid var(--cyan);border-radius:50%;
+            display:flex;align-items:center;justify-content:center;
+            font-family:'Outfit',sans-serif;font-size:32px;font-weight:900;color:var(--cyan);
+            margin:0 auto 22px;box-shadow:0 0 28px rgba(0,229,255,.12);
+        }
+        .step h3{font-family:'Outfit',sans-serif;font-size:19px;font-weight:800;color:var(--t1);margin-bottom:10px}
+        .step p{font-size:14px;color:var(--t2);line-height:1.7;max-width:260px;margin:0 auto}
+
+        /* ══════════ INTEGRATIONS ══════════ */
+        .integ{padding:80px 0}
+        .integ-box{background:var(--card);border:1px solid var(--border);border-radius:22px;padding:56px 36px;text-align:center}
+        .integ-box h2{font-family:'Outfit',sans-serif;font-size:clamp(24px,3.5vw,36px);font-weight:900;color:var(--t1);letter-spacing:-.03em;margin-bottom:12px}
+        .integ-box>p{font-size:16px;color:var(--t2);max-width:520px;margin:0 auto}
+        .integ-logos{display:flex;justify-content:center;gap:48px;margin-top:40px;flex-wrap:wrap}
+        .integ-item{display:flex;flex-direction:column;align-items:center;gap:10px}
+        .integ-ico{width:60px;height:60px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:26px;transition:all .3s}
+        .integ-ico:hover{border-color:var(--cyan);background:var(--cyan-10)}
+        .integ-item span{font-size:12px;font-weight:600;color:var(--t3)}
+
+        /* ══════════ SOCIAL PROOF ══════════ */
+        .proof{padding:120px 0}
+        .proof-head{text-align:center;margin-bottom:56px}
+        .proof-head h2{font-family:'Outfit',sans-serif;font-size:clamp(28px,4.5vw,46px);font-weight:900;letter-spacing:-.035em;line-height:1.08;color:var(--t1);margin-bottom:10px}
+        .t-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+        .t-card3{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:30px 24px;transition:all .3s}
+        .t-card3:hover{border-color:var(--border-h);transform:translateY(-3px)}
+        .t-stars{color:#EAB308;font-size:14px;letter-spacing:2px;margin-bottom:14px}
+        .t-card3 blockquote{font-size:14px;color:var(--t2);line-height:1.7;margin-bottom:18px;font-style:italic}
+        .t-auth{display:flex;align-items:center;gap:10px}
+        .t-av{width:38px;height:38px;background:var(--cyan-10);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--cyan)}
+        .t-auth h4{font-size:13px;font-weight:700;color:var(--t1)}
+        .t-auth p{font-size:11px;color:var(--t3)}
+
+        /* ══════════ FINAL CTA ══════════ */
+        .cta-final{padding:120px 0;position:relative;text-align:center;overflow:hidden}
+        .cta-final::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:550px;height:550px;background:radial-gradient(circle,rgba(0,229,255,.07) 0%,transparent 72%);pointer-events:none}
+        .cta-final h2{font-family:'Outfit',sans-serif;font-size:clamp(34px,5.5vw,58px);font-weight:900;color:var(--t1);letter-spacing:-.04em;line-height:1.05;margin-bottom:18px;position:relative;z-index:1}
+        .cta-final h2 em{font-style:normal;background:linear-gradient(135deg,var(--cyan),#00B8D4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+        .cta-final>p{font-size:17px;color:var(--t2);max-width:520px;margin:0 auto 40px;line-height:1.7;position:relative;z-index:1}
+        .cta-btns{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;position:relative;z-index:1}
+
+        /* ══════════ FOOTER ══════════ */
+        .foot{padding:72px 0 36px;border-top:1px solid var(--border)}
+        .foot-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:44px;margin-bottom:52px}
+        .foot-brand p{font-size:13px;color:var(--t3);line-height:1.7;margin-top:14px;max-width:280px}
+        .foot-col h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--t1);margin-bottom:18px}
+        .foot-col ul{display:flex;flex-direction:column;gap:10px}
+        .foot-col a{font-size:13px;color:var(--t3);transition:color .3s}
+        .foot-col a:hover{color:var(--cyan)}
+        .foot-bot{display:flex;justify-content:space-between;align-items:center;padding-top:28px;border-top:1px solid var(--border)}
+        .foot-bot p{font-size:12px;color:var(--t3)}
+        .foot-soc{display:flex;gap:12px}
+        .foot-soc a{width:34px;height:34px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .3s}
+        .foot-soc a:hover{border-color:var(--cyan);background:var(--cyan-10)}
+
+        /* ══════════ RESPONSIVE ══════════ */
+        @media(max-width:1024px){
+            .hero-grid{grid-template-columns:1fr;text-align:center}
+            .hero-sub{margin:0 auto 40px}
+            .hero-ctas{justify-content:center}
+            .hero-stats{justify-content:center}
+            .hero-vis{margin-top:36px}
+            .pain-grid,.dual-grid,.t-grid3{grid-template-columns:1fr}
+            .pain-grid,.t-grid3{max-width:480px;margin-left:auto;margin-right:auto}
+            .f-row{grid-template-columns:1fr;text-align:center;gap:36px}
+            .f-row.rev .f-text{order:1}.f-row.rev .f-vis{order:2}
+            .f-list{align-items:center}
+            .t-grid{grid-template-columns:repeat(2,1fr)}
+            .steps{grid-template-columns:1fr;max-width:360px;margin:0 auto}
+            .steps::before{display:none}
+            .foot-grid{grid-template-columns:1fr 1fr}
+        }
+        @media(max-width:768px){
+            .nav-links{display:none}
+            .mob-btn{display:block}
+            .hero{padding:100px 0 60px}
+            .phone{width:240px;height:490px}
+            .f-phone{width:220px;height:440px}
+            .t-grid{grid-template-columns:1fr 1fr}
+            .pain,.dual,.feat,.tools,.how,.proof,.cta-final{padding:80px 0}
+            .foot-grid{grid-template-columns:1fr}
+            .foot-bot{flex-direction:column;gap:14px;text-align:center}
+        }
+        @media(max-width:480px){
+            .hero-ctas,.cta-btns{flex-direction:column}
+            .btn-p,.btn-s{width:100%;justify-content:center}
+            .hero-stats{flex-direction:column;gap:14px;align-items:center}
+        }
+
+        /* ══════════ APPLE ICON SVG PATH ══════════ */
+        .apple-svg{display:inline-block;vertical-align:middle;margin-right:2px}
+    </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav" id="nav">
+    <div class="nav-in">
+        <a href="#" class="nav-logo">
+            <img src="powered by Aria white logo white transparent small.png" alt="Aria Logo" onerror="this.style.display='none'">
+            <b>ARIA</b>
+        </a>
+        <ul class="nav-links">
+            <li><a href="#features">Features</a></li>
+            <li><a href="#ai-system">AI System</a></li>
+            <li><a href="#tools">Tools</a></li>
+            <li><a href="#how-it-works">How It Works</a></li>
+        </ul>
+        <a href="#download" class="nav-cta">Download App</a>
+        <button class="mob-btn" onclick="toggleMob()">&#9776;</button>
+    </div>
+</nav>
+<div class="mob-overlay" id="mobO" onclick="toggleMob()"></div>
+<div class="mob-menu" id="mobM">
+    <button class="mob-x" onclick="toggleMob()">&times;</button>
+    <ul>
+        <li><a href="#features" onclick="toggleMob()">Features</a></li>
+        <li><a href="#ai-system" onclick="toggleMob()">AI System</a></li>
+        <li><a href="#tools" onclick="toggleMob()">Tools</a></li>
+        <li><a href="#how-it-works" onclick="toggleMob()">How It Works</a></li>
+        <li><a href="#download" onclick="toggleMob()" style="color:var(--cyan)">Download App</a></li>
+    </ul>
+</div>
+
+<!-- HERO -->
+<section class="hero">
+    <!--
+        BACKGROUND VIDEO: Replace the src below with your MP4 file.
+        Recommended: Short clip (5-15 sec) of athletes sprinting on a track, shot from side or behind.
+        File should be compressed (under 5MB ideally). Dark/dramatic footage works best.
+        Remove the "poster" placeholder and uncomment the <video> when ready.
+    -->
+    <!--
+    <div class="vid-bg hero-bg">
+        <video autoplay muted loop playsinline poster="videos/hero-poster.jpg">
+            <source src="videos/hero-sprint.mp4" type="video/mp4">
+        </video>
+    </div>
+    -->
+    <div class="wrap">
+        <div class="hero-grid">
+            <div class="hero-content">
+                <div class="hero-pill"><i></i> Now on iOS — TestFlight</div>
+                <h1>You train alone.<br>You don't <em>improve alone.</em></h1>
+                <p class="hero-sub">Aria is the AI training companion built for sprinters who train solo. Sprint analysis, adaptive programming, recovery, nutrition, rehab, and mental readiness — one app that learns and evolves with you.</p>
+                <div class="hero-ctas">
+                    <a href="#download" class="btn-p">
+                        <svg class="apple-svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                        Download on iOS
+                    </a>
+                    <a href="lead-magnet.html" class="btn-s">
+                        Take the Solo Sprinter Score
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </a>
+                </div>
+                <div class="hero-stats">
+                    <div><strong>7</strong><small>Sprint Tools</small></div>
+                    <div><strong>2</strong><small>AI Engines</small></div>
+                    <div><strong>24/7</strong><small>AI Coaching</small></div>
+                </div>
+            </div>
+            <div class="hero-vis">
+                <div class="phone">
+                    <div class="phone-notch"></div>
+                    <!--
+                        REPLACE THIS ENTIRE phone-ui div with a single <img> tag:
+                        <img src="screenshots/chat.gif" alt="Aria AI Chat">
+
+                        GIF or PNG both work. GIFs will autoplay and loop, showing the app in action.
+                        Recommended GIF: Screen recording of chatting with Aria, ~5-8 sec loop.
+                        Optimal size: 300x620px or similar portrait ratio.
+                    -->
+                    <div class="phone-ui">
+                        <div class="pu-head">
+                            <div class="pu-avatar">
+                                <svg viewBox="0 0 100 100" fill="none"><path d="M50 10C30 10 15 25 10 45C12 35 20 20 35 15C25 25 18 40 20 55C22 45 30 32 42 28C35 38 30 52 32 65C35 55 42 42 55 38C48 48 44 60 46 72C48 65 54 55 65 50C58 58 55 68 58 78C60 72 65 62 75 58C70 65 68 74 72 82C74 75 78 68 85 62C78 70 75 80 78 90C80 82 85 72 92 65C88 55 80 42 65 35C75 30 82 20 85 12C70 18 58 15 50 10Z" fill="#00E5FF"/></svg>
+                            </div>
+                            <h3>Your AI Sprint Coach</h3>
+                            <p>Ask me anything about training, performance, or race strategy.</p>
+                        </div>
+                        <div class="pu-prompt"><span>></span> Analyze my recent sprint times</div>
+                        <div class="pu-prompt"><span>></span> Build me a 60m training plan</div>
+                        <div class="pu-prompt"><span>></span> What should I eat before a meet?</div>
+                        <div class="pu-prompt"><span>></span> How do I recover after max-effort sprints?</div>
+                        <div class="pu-input">
+                            <span>Message Aria...</span>
+                            <div class="send">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- PAIN POINTS -->
+<section class="pain">
+    <!--
+        BACKGROUND VIDEO: Slow-motion sprint footage or training montage.
+        Dark, moody lighting recommended. 5-10 sec loop.
+    -->
+    <!--
+    <div class="vid-bg pain-bg">
+        <video autoplay muted loop playsinline>
+            <source src="videos/training-montage.mp4" type="video/mp4">
+        </video>
+    </div>
+    -->
+    <div class="wrap">
+        <div class="pain-head sr">
+            <div class="label">The Problem</div>
+            <h2>Training alone shouldn't mean training blind.</h2>
+            <p>Most solo sprinters are guessing. No second set of eyes, no structured feedback loop, no one managing the full picture. The result? Wasted sessions, hidden weaknesses, and preventable injuries.</p>
+        </div>
+        <div class="pain-grid">
+            <div class="pain-card sr d1">
+                <div class="ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </div>
+                <h3>No eyes on your mechanics</h3>
+                <p>You can't watch yourself sprint. Without real-time form feedback, bad habits compound silently — costing you tenths you'll never get back.</p>
+            </div>
+            <div class="pain-card sr d2">
+                <div class="ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                </div>
+                <h3>No plan that adapts to you</h3>
+                <p>Static PDFs and cookie-cutter programs don't know your recovery status, competition schedule, or whether yesterday's session was too much.</p>
+            </div>
+            <div class="pain-card sr d3">
+                <div class="ico">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>
+                </div>
+                <h3>No one managing the full picture</h3>
+                <p>Training, nutrition, recovery, rehab, mental readiness — solo athletes juggle all of it alone. Drop one ball and performance suffers. Or worse, you get injured.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- DUAL AI SYSTEM -->
+<section class="dual" id="ai-system">
+    <div class="wrap">
+        <div class="dual-head sr">
+            <div class="label">Two AI Engines. One System.</div>
+            <h2>Aria doesn't just analyze. It thinks in two layers.</h2>
+            <p>Aria IQ reads your body. AI Coach tells you what to do about it. Together, they replace the coaching team you don't have.</p>
+        </div>
+        <div class="dual-grid">
+            <div class="ai-col iq sr d1">
+                <h3>Aria IQ</h3>
+                <p class="role">The Sensing Layer — What is my body doing today?</p>
+                <div class="ai-row"><div class="ai-dot dg"></div><div><h4>Recovery is excellent</h4><p>Readiness 100/100 — Resting HR trending down 3%</p></div></div>
+                <div class="ai-row"><div class="ai-dot dy"></div><div><h4>Rapid weight loss flag</h4><p>1.3 kg dropped in 7 days during comp prep — monitor energy</p></div></div>
+                <div class="ai-row"><div class="ai-dot dc"></div><div><h4>55 Days to Iberoamericano</h4><p>Competition countdown active — goal: 10.00s in the 100m</p></div></div>
+                <div class="ai-row"><div class="ai-dot dg"></div><div><h4>Protein intake solid</h4><p>180g at 92.3 kg = ~1.95 g/kg — meeting sprint needs</p></div></div>
+            </div>
+            <div class="ai-col co sr d2">
+                <h3>AI Coach Insights</h3>
+                <p class="role">The Action Layer — What should I do about it?</p>
+                <div class="ai-row"><div class="ai-dot dp"></div><div><h4>Schedule quality speed work</h4><p>Add 3x30m block starts at 95-100% plus 3x60m at 95%</p></div></div>
+                <div class="ai-row"><div class="ai-dot do"></div><div><h4>Adjust calories for cut</h4><p>200-300 kcal deficit on non-intense days — protect recovery</p></div></div>
+                <div class="ai-row"><div class="ai-dot dr"></div><div><h4>Race prep timeline</h4><p>Max-speed test in 3-4 weeks, then 10-14 day taper</p></div></div>
+                <div class="ai-row"><div class="ai-dot dp"></div><div><h4>Convert strength to power</h4><p>Contrast training: heavy squat @85% → 3x15m sled pushes</p></div></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FEATURES -->
+<section class="feat" id="features">
+    <div class="wrap">
+        <div class="feat-head sr">
+            <div class="label">Everything You Need</div>
+            <h2>One app. Every dimension of sprint performance.</h2>
+            <p>Training, nutrition, recovery, rehab, analytics, and coaching — unified and intelligent. No hardware required.</p>
+        </div>
+
+        <!-- AI Chat -->
+        <div class="f-row sr">
+            <div class="f-text">
+                <div class="label">AI Chat Coach</div>
+                <h3>Ask Aria anything. Get answers that know you.</h3>
+                <p>Not a generic chatbot. Aria references your recovery data, recent sessions, body composition, and competition timeline for specific, contextual guidance.</p>
+                <ul class="f-list">
+                    <li>Uses your real-time biometrics and training data</li>
+                    <li>4 coaching styles: Motivational, Technical, Balanced, Minimal</li>
+                    <li>Voice input and attachment support</li>
+                </ul>
+            </div>
+            <div class="f-vis">
+                <div class="f-phone">
+                    <!-- REPLACE with GIF or PNG: <img src="screenshots/chat-response.gif" alt="Aria AI Chat Response"> -->
+                    <div class="fp-ui" style="background:linear-gradient(180deg,#0a0f1a,#111113)">
+                        <div style="background:var(--cyan-10);border:1px solid var(--cyan-20);border-radius:12px;padding:10px 12px;margin-bottom:10px">
+                            <div style="font-size:10px;color:var(--cyan);font-weight:700;margin-bottom:3px">YOU</div>
+                            <div style="font-size:11px;color:var(--t2)">What should I do for cooling and recovery after training?</div>
+                        </div>
+                        <div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:10px 12px">
+                            <div style="font-size:10px;color:var(--cyan);font-weight:700;margin-bottom:3px">ARIA</div>
+                            <div style="font-size:10px;color:var(--t2);line-height:1.6">Your readiness is 86/100 with resting HR 50 bpm and 7.0h sleep. Do a purposeful cooldown plus 12-18 min post-session recovery:<br><br><strong style="color:var(--t1)">1) Active cooldown (6-8 min)</strong><br>3-4 min easy jog, 3-4 min progressive mobility drills<br><br><strong style="color:var(--t1)">2) Targeted mobility (4-6 min)</strong><br>2 sets of 8-10 slow glute bridges, focus on full hip extension</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Programs -->
+        <div class="f-row rev sr">
+            <div class="f-text">
+                <div class="label">Training Programs</div>
+                <h3>Periodized blocks. Built by you or by Aria AI.</h3>
+                <p>Create programs three ways: build day-by-day, let Aria AI generate a complete block, or paste your existing plan. Import from CSV or start from templates.</p>
+                <ul class="f-list">
+                    <li>AI-generated programs tailored to your level and goals</li>
+                    <li>Themed sessions: Acceleration, Max Velocity, Strength, Recovery</li>
+                    <li>Beginner to Elite difficulty levels</li>
+                </ul>
+            </div>
+            <div class="f-vis">
+                <div class="f-phone">
+                    <!-- REPLACE with GIF or PNG: <img src="screenshots/programs.gif" alt="Aria Training Programs"> -->
+                    <div class="fp-ui" style="background:linear-gradient(180deg,#0a1210,#111113)">
+                        <div class="fp-hero-card">
+                            <div style="display:flex;justify-content:space-between;align-items:center">
+                                <h4>Elite Sprint Training Plan</h4>
+                                <span style="font-size:9px;background:var(--cyan-20);color:var(--cyan);padding:2px 7px;border-radius:5px;font-weight:700">ACTIVE</span>
+                            </div>
+                            <div style="font-size:10px;color:var(--t3);margin-top:3px">Sprint &middot; Elite &middot; 4 weeks &middot; 28 sessions</div>
+                        </div>
+                        <div class="fp-pills">
+                            <div class="fp-pill act">Week 1</div>
+                            <div class="fp-pill">Week 2</div>
+                            <div class="fp-pill">Week 3</div>
+                        </div>
+                        <div class="fp-card"><div style="font-size:9px;color:#22C55E;font-weight:700">Wednesday</div><h4>Acceleration and Reaction</h4></div>
+                        <div class="fp-card"><div style="font-size:9px;color:#EAB308;font-weight:700">Thursday</div><h4>Max Velocity & Speed Endurance</h4></div>
+                        <div class="fp-card"><div style="font-size:9px;color:#F97316;font-weight:700">Friday</div><h4>Strength Training</h4></div>
+                        <div class="fp-card"><div style="font-size:9px;color:#06B6D4;font-weight:700">Saturday</div><h4>Recovery and Light Training</h4></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nutrition -->
+        <div class="f-row sr">
+            <div class="f-text">
+                <div class="label">Sprint Nutrition</div>
+                <h3>Phase-aware meal plans. Built for how sprinters eat.</h3>
+                <p>Multiple nutrition plans for every training phase. Timed meals with macros, region-aware food suggestions, and AI feedback on every logged meal.</p>
+                <ul class="f-list">
+                    <li>Region-aware foods (East African, Latin American, Mediterranean)</li>
+                    <li>Dietary restriction support (Vegan, Gluten Free, etc.)</li>
+                    <li>Per-meal "Get AI Feedback" on every logged meal</li>
+                    <li>In-Season, Off-Season, Competition Day plans</li>
+                </ul>
+            </div>
+            <div class="f-vis">
+                <div class="f-phone">
+                    <!-- REPLACE with GIF or PNG: <img src="screenshots/nutrition.gif" alt="Aria Sprint Nutrition"> -->
+                    <div class="fp-ui" style="background:linear-gradient(180deg,#0a1210,#111113)">
+                        <div class="fp-hero-card">
+                            <h4>Sprint Performance Fuel</h4>
+                            <div class="big">2,800 <span style="font-size:12px;color:var(--t3)">kcal / day</span></div>
+                            <div class="macros"><span>P: 180g</span><span>C: 350g</span><span>F: 80g</span></div>
+                        </div>
+                        <div style="font-size:11px;font-weight:700;color:var(--t1);margin-bottom:8px">Meal Plan</div>
+                        <div class="fp-card"><div class="fp-card-h"><h4>Pre-Workout Snack</h4><small>500 kcal</small></div><div class="sub">5:30 AM</div></div>
+                        <div class="fp-card"><div class="fp-card-h"><h4>Post-Workout Breakfast</h4><small>600 kcal</small></div><div class="sub">9:30 AM</div></div>
+                        <div class="fp-card"><div class="fp-card-h"><h4>Lunch</h4><small>600 kcal</small></div><div class="sub">3:00 PM</div></div>
+                        <div class="fp-card"><div class="fp-card-h"><h4>Dinner</h4><small>500 kcal</small></div><div class="sub">8:00 PM</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recovery & Rehab -->
+        <div class="f-row rev sr">
+            <div class="f-text">
+                <div class="label">Recovery & Rehabilitation</div>
+                <h3>Stay healthy. Come back stronger.</h3>
+                <p>Aria tracks recovery metrics, flags injury risks before they become problems, and provides rehabilitation protocols. Integrated with Apple Health, Samsung Health, Strava, and Garmin.</p>
+                <ul class="f-list">
+                    <li>Recovery readiness score from HRV, RHR, and Sleep</li>
+                    <li>Injury status tracking: Healthy, Minor, Recovering, Injured</li>
+                    <li>Dedicated rehabilitation section with guided protocols</li>
+                    <li>Health Trends with directional arrows over time</li>
+                    <li>Cycle tracking for female athletes</li>
+                </ul>
+            </div>
+            <div class="f-vis">
+                <div class="f-phone">
+                    <!-- REPLACE with GIF or PNG: <img src="screenshots/recovery.gif" alt="Aria Recovery & Analytics"> -->
+                    <div class="fp-ui" style="background:linear-gradient(180deg,#0a1210,#111113)">
+                        <div style="font-family:'Outfit',sans-serif;font-size:18px;font-weight:900;color:white;margin-bottom:2px">Progress</div>
+                        <div style="font-size:11px;color:var(--cyan);margin-bottom:16px">Analytics Dashboard</div>
+                        <div class="fp-metrics">
+                            <div class="fp-metric"><small>Recovery</small><strong style="color:var(--cyan)">100</strong></div>
+                            <div class="fp-metric"><small>RHR</small><strong style="color:#EF4444">50</strong></div>
+                            <div class="fp-metric"><small>Sleep</small><strong style="color:#3B82F6">7h</strong></div>
+                        </div>
+                        <div class="fp-card"><div class="fp-card-h"><h4>Training Load</h4><span style="font-size:11px;font-weight:700;color:var(--t1)">36%</span></div><div style="font-size:9px;color:#EF4444;margin-top:2px">Low</div></div>
+                        <div class="fp-card"><div class="fp-card-h"><h4>Resting HR</h4><span style="font-size:11px;color:#22C55E">50 bpm &#8593;</span></div></div>
+                        <div class="fp-card"><div class="fp-card-h"><h4>Weight</h4><span style="font-size:11px;color:#F97316">92.3 kg &#8595;</span></div></div>
+                        <div class="fp-card"><div class="fp-card-h"><h4>Workout Frequency</h4><span style="font-size:11px;font-weight:700;color:var(--t1)">4 this week</span></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- SPRINT TOOLS -->
+<section class="tools" id="tools">
+    <div class="wrap">
+        <div class="tools-head sr">
+            <div class="label">Sprint Tools</div>
+            <h2>Every tool a solo sprinter needs. In your pocket.</h2>
+            <p>Seven purpose-built sprint tools plus rehabilitation — from video analysis to sprint prediction. No external hardware. Just your phone and the track.</p>
+        </div>
+        <div class="t-grid">
+            <div class="t-card tc1 sr d1">
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></span>
+                <h4>Video Analysis</h4><p>AI sprint form breakdown</p>
+            </div>
+            <div class="t-card tc2 sr d2">
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
+                <h4>Photo Finish</h4><p>Capture race moments</p>
+            </div>
+            <div class="t-card tc3 sr d1">
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
+                <h4>Start Gun</h4><p>Solo block practice cue</p>
+            </div>
+            <div class="t-card tc4 sr d2">
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+                <h4>Stopwatch</h4><p>Precise split tracking</p>
+            </div>
+            <div class="t-card tc5 sr d1">
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
+                <h4>Sprint Predictor</h4><p>AI-predicted race times</p>
+            </div>
+            <div class="t-card tc6 sr d2">
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3L2 6"/><path d="M22 6l-3-3"/><path d="M12 5V3"/></svg></span>
+                <h4>Timer</h4><p>Rest interval timers</p>
+            </div>
+            <div class="t-card tc7 sr d1">
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M5.5 5.5L2 22l16.5-3.5"/><path d="M14 14l8-8"/><path d="M18 6l-2-2"/><path d="M8 16l-2-2"/></svg></span>
+                <h4>Measure</h4><p>Track distance tool</p>
+            </div>
+            <div class="t-card tc8 sr d2">
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+                <h4>Rehabilitation</h4><p>Guided recovery protocols</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- INTEGRATIONS -->
+<section class="integ">
+    <div class="wrap">
+        <div class="integ-box sr">
+            <div class="label">Integrations</div>
+            <h2>Connects to your devices.</h2>
+            <p>Syncs with Apple Health, Samsung Health, Strava, and Garmin to pull sleep, heart rate, HRV, workouts, and steps — so the AI always has your latest data.</p>
+            <div class="integ-logos">
+                <div class="integ-item">
+                    <div class="integ-ico">
+                        <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><path d="M16 28S3 20.5 3 12a6.5 6.5 0 0 1 13-1.5A6.5 6.5 0 0 1 29 12c0 8.5-13 16-13 16z" fill="#FF2D55"/></svg>
+                    </div>
+                    <span>Apple Health</span>
+                </div>
+                <div class="integ-item">
+                    <div class="integ-ico">
+                        <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><path d="M16 28S3 20.5 3 12a6.5 6.5 0 0 1 13-1.5A6.5 6.5 0 0 1 29 12c0 8.5-13 16-13 16z" fill="none" stroke="#1428A0" stroke-width="2"/><polyline points="6,16 11,16 13,11 15,20 17,14 19,16 26,16" stroke="#1428A0" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <span>Samsung Health</span>
+                </div>
+                <div class="integ-item">
+                    <div class="integ-ico">
+                        <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><polyline points="7,27 13,15 19,27" stroke="#FC4C02" stroke-width="2.5" fill="none" stroke-linejoin="round" opacity="0.4"/><polyline points="13,27 19,15 25,27" stroke="#FC4C02" stroke-width="2.5" fill="none" stroke-linejoin="round"/></svg>
+                    </div>
+                    <span>Strava</span>
+                </div>
+                <div class="integ-item">
+                    <div class="integ-ico">
+                        <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><path d="M8 3C7 3 6.5 4 7 5l9 11-9 11c-.5 1 0 2 1 2h3l11-13L11 3H8z" fill="#007CC3"/></svg>
+                    </div>
+                    <span>Garmin</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how" id="how-it-works">
+    <div class="wrap">
+        <div class="how-head sr">
+            <div class="label">How It Works</div>
+            <h2>From download to your next PR.</h2>
+            <p>Three steps. No hardware. No coach required.</p>
+        </div>
+        <div class="steps">
+            <div class="step sr d1"><div class="step-n">1</div><h3>Set up your profile</h3><p>Enter your events, goals, competition schedule, body metrics, training focus, and injury status.</p></div>
+            <div class="step sr d2"><div class="step-n">2</div><h3>Let Aria build your system</h3><p>AI generates your training program, nutrition plan, and recovery protocols — personalized to your level and season.</p></div>
+            <div class="step sr d3"><div class="step-n">3</div><h3>Train. Log. Improve.</h3><p>Every session, Aria learns more. Insights sharpen. Plans adapt. Your training partner gets better with you.</p></div>
+        </div>
+    </div>
+</section>
+
+<!-- SOCIAL PROOF -->
+<section class="proof">
+    <div class="wrap">
+        <div class="proof-head sr">
+            <div class="label">Athletes Trust Aria</div>
+            <h2>Built by sprinters. For sprinters.</h2>
+        </div>
+        <div class="t-grid3">
+            <div class="t-card3 sr d1">
+                <div class="t-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+                <blockquote>"I used to show up to the track and guess what to do. Now Aria tells me exactly what today's session should be based on how my body is recovering."</blockquote>
+                <div class="t-auth"><div class="t-av">JR</div><div><h4>Athlete Name</h4><p>100m / 200m &middot; Country</p></div></div>
+            </div>
+            <div class="t-card3 sr d2">
+                <div class="t-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+                <blockquote>"The nutrition plans are incredible. I said I eat Costa Rican food and it built a full meal plan with local ingredients timed to my training. No other app does that."</blockquote>
+                <div class="t-auth"><div class="t-av">MC</div><div><h4>Athlete Name</h4><p>60m / 100m &middot; Country</p></div></div>
+            </div>
+            <div class="t-card3 sr d3">
+                <div class="t-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+                <blockquote>"55 days out, Aria told me to start shifting from strength to race-specific speed. That's what a real coach would say. Except Aria is there every session."</blockquote>
+                <div class="t-auth"><div class="t-av">KL</div><div><h4>Athlete Name</h4><p>100m / 400m &middot; Country</p></div></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta-final" id="download">
+    <!--
+        BACKGROUND VIDEO: Dramatic finish line, block start, or celebration footage.
+        This is the last impression — make it aspirational. 5-10 sec loop.
+    -->
+    <!--
+    <div class="vid-bg cta-bg">
+        <video autoplay muted loop playsinline>
+            <source src="videos/finish-line.mp4" type="video/mp4">
+        </video>
+    </div>
+    -->
+    <div class="wrap" style="position:relative;z-index:2">
+        <div class="label sr">Start Training Smarter</div>
+        <h2 class="sr">Your next PR starts <em>here.</em></h2>
+        <p class="sr">Solo training. Never solo again. Download Aria and get an AI training companion that understands your body, your goals, and the reality of training alone.</p>
+        <div class="cta-btns sr">
+            <a href="#" class="btn-p">
+                <svg class="apple-svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                Download on iOS
+            </a>
+            <a href="lead-magnet.html" class="btn-s">
+                Take the Solo Sprinter Score
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="foot">
+    <div class="wrap">
+        <div class="foot-grid">
+            <div class="foot-brand">
+                <a href="#" class="nav-logo" style="margin-bottom:4px">
+                    <img src="powered by Aria white logo white transparent small.png" alt="Aria" style="height:28px" onerror="this.style.display='none'">
+                    <b style="font-family:'Outfit',sans-serif;font-size:18px;font-weight:800;letter-spacing:.08em;color:var(--t1)">ARIA</b>
+                </a>
+                <p>AI That Trains With You. The training companion built for athletes who train alone.</p>
+            </div>
+            <div class="foot-col"><h4>Product</h4><ul><li><a href="#features">Features</a></li><li><a href="#ai-system">AI System</a></li><li><a href="#tools">Sprint Tools</a></li><li><a href="#download">Download</a></li></ul></div>
+            <div class="foot-col"><h4>Resources</h4><ul><li><a href="lead-magnet.html">Solo Sprinter Score</a></li><li><a href="#">Blog</a></li><li><a href="#">Help & FAQ</a></li><li><a href="#">Contact</a></li></ul></div>
+            <div class="foot-col"><h4>Legal</h4><ul><li><a href="#">Privacy Policy</a></li><li><a href="#">Terms of Service</a></li></ul></div>
+        </div>
+        <div class="foot-bot">
+            <p>&copy; 2026 Aria. All rights reserved.</p>
+            <div class="foot-soc">
+                <a href="#" aria-label="Instagram">&#128247;</a>
+                <a href="#" aria-label="Twitter">&#120143;</a>
+                <a href="#" aria-label="TikTok">&#127925;</a>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<script>
+// Nav scroll
+const nav=document.getElementById('nav');
+window.addEventListener('scroll',()=>nav.classList.toggle('stuck',scrollY>50));
+
+// Mobile menu
+function toggleMob(){document.getElementById('mobM').classList.toggle('open');document.getElementById('mobO').classList.toggle('open')}
+
+// Scroll reveal
+const obs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting){x.target.classList.add('v');obs.unobserve(x.target)}}),{rootMargin:'0px 0px -50px 0px',threshold:.1});
+document.querySelectorAll('.sr').forEach(el=>obs.observe(el));
+
+// Smooth scroll
+document.querySelectorAll('a[href^="#"]').forEach(a=>a.addEventListener('click',function(e){e.preventDefault();const t=document.querySelector(this.getAttribute('href'));if(t)t.scrollIntoView({behavior:'smooth',block:'start'})}));
+</script>
+</body>
+</html>
