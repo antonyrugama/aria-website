@@ -241,6 +241,13 @@
         .fp-metric small{font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;display:block}
         .fp-metric strong{font-family:'Outfit',sans-serif;font-size:18px;font-weight:900;display:block;margin-top:2px}
 
+        /* ══════════ CYCLE TRACKING ══════════ */
+        :root{--pink:#FF6B9D;--pink-10:rgba(255,107,157,.1);--pink-20:rgba(255,107,157,.2)}
+        .cycle{padding:120px 0;background:var(--bg)}
+        .cycle .label{color:var(--pink)}
+        .cycle .f-list li::before{background:var(--pink-10);border-color:var(--pink)}
+        .cycle .f-phone{border-color:rgba(255,107,157,.15)}
+
         /* ══════════ TOOLS ══════════ */
         .tools{padding:120px 0}
         .tools-head{text-align:center;max-width:680px;margin:0 auto 56px}
@@ -622,6 +629,34 @@
 </section>
 
 <!-- SPRINT TOOLS -->
+<!-- CYCLE TRACKING -->
+<section class="feat cycle" id="cycle">
+    <div class="wrap">
+        <div class="f-row sr">
+            <div class="f-text">
+                <div class="label">Cycle Tracking</div>
+                <h3>Train smarter through every phase.</h3>
+                <p>Aria is one of the only sprint training apps that integrates menstrual cycle tracking directly into training and nutrition recommendations. Because female athletes deserve programming that adapts to their biology — not ignores it.</p>
+                <ul class="f-list">
+                    <li>Phase-aware training adjustments (Menstrual, Follicular, Ovulation, Luteal)</li>
+                    <li>AI recommendations adapt intensity, volume, and recovery to each phase</li>
+                    <li>Nutrition guidance shifts with your cycle — macros, hydration, and micronutrients</li>
+                    <li>Daily logging: energy, pain, mood, bloating, flow, and cramps</li>
+                    <li>Cycle ring visualization with phase indicators and day tracking</li>
+                </ul>
+            </div>
+            <div class="f-vis">
+                <div class="f-phone">
+                    <img src="screenshots/cycle-dashboard.jpeg" alt="Aria Cycle Tracking Dashboard">
+                </div>
+                <div class="f-phone">
+                    <img src="screenshots/cycle-settings.jpeg" alt="Aria Cycle Settings">
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
 <section class="tools" id="tools">
     <div class="wrap">
         <div class="tools-head sr">
