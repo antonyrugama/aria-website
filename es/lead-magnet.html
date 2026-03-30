@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/x-icon" href="../favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
+<title>Solo Sprinter Score — Aria</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cyan: #00E5FF;
+    --cyan-dim: rgba(0, 229, 255, 0.15);
+    --cyan-glow: rgba(0, 229, 255, 0.3);
+    --bg: #0A0A0A;
+    --bg-card: #111111;
+    --bg-card-hover: #161616;
+    --border: #1E1E1E;
+    --text: #F0F0F0;
+    --text-dim: #888888;
+    --text-mid: #BBBBBB;
+    --green: #00C853;
+    --yellow: #FFD600;
+    --orange: #FF6D00;
+    --red: #FF1744;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* --- LANDING SECTION --- */
+  .landing {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .landing::before {
+    content: '';
+    position: absolute;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(0,229,255,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .logo-mark {
+    display: flex;
+    align-items: center;
+    margin-bottom: 48px;
+    opacity: 0.9;
+  }
+
+  .logo-mark img {
+    height: 55px;
+  }
+
+  .landing h1 {
+    font-size: clamp(32px, 6vw, 52px);
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 20px;
+    max-width: 700px;
+    letter-spacing: -0.5px;
+  }
+
+  .landing h1 span {
+    color: var(--cyan);
+  }
+
+  .landing .subtitle {
+    font-size: clamp(16px, 2.5vw, 19px);
+    color: var(--text-mid);
+    line-height: 1.6;
+    max-width: 560px;
+    margin-bottom: 40px;
+  }
+
+  .value-points {
+    list-style: none;
+    text-align: left;
+    max-width: 500px;
+    margin-bottom: 40px;
+  }
+
+  .value-points li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 16px;
+    font-size: 15px;
+    color: var(--text-mid);
+    line-height: 1.5;
+  }
+
+  .value-points li .check {
+    color: var(--cyan);
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .value-points li strong {
+    color: var(--text);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--cyan);
+    color: #000;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 16px 40px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 30px rgba(0, 229, 255, 0.3);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+
+  .landing .micro {
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .social-proof {
+    margin-top: 48px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+    max-width: 420px;
+  }
+
+  .social-proof .quote {
+    font-size: 14px;
+    font-style: italic;
+    color: var(--text-mid);
+    line-height: 1.6;
+    margin-bottom: 8px;
+  }
+
+  .social-proof .attribution {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .social-proof .count {
+    margin-top: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--cyan);
+    letter-spacing: 0.5px;
+  }
+
+  /* --- ASSESSMENT SECTION --- */
+  .assessment {
+    display: none;
+    min-height: 100vh;
+    padding: 40px 24px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-bottom: 48px;
+    overflow: hidden;
+    position: sticky;
+    top: 20px;
+    z-index: 10;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--cyan);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  .step-counter {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .question-section {
+    display: none;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .question-section.active {
+    display: block;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .question-section h2 {
+    font-size: clamp(22px, 4vw, 28px);
+    font-weight: 700;
+    margin-bottom: 8px;
+    line-height: 1.2;
+  }
+
+  .question-section .context {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-bottom: 28px;
+    line-height: 1.5;
+  }
+
+  .dimension-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cyan);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    background: var(--cyan-dim);
+    padding: 4px 12px;
+    border-radius: 4px;
+  }
+
+  .options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .option {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 15px;
+    color: var(--text-mid);
+    line-height: 1.4;
+  }
+
+  .option:hover {
+    background: var(--bg-card-hover);
+    border-color: #333;
+  }
+
+  .option.selected {
+    border-color: var(--cyan);
+    background: var(--cyan-dim);
+    color: var(--text);
+  }
+
+  .option .radio {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid #333;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .option.selected .radio {
+    border-color: var(--cyan);
+  }
+
+  .option.selected .radio::after {
+    content: '';
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--cyan);
+  }
+
+  .nav-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 36px;
+    gap: 12px;
+  }
+
+  .btn-back {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-back:hover {
+    border-color: #444;
+    color: var(--text);
+  }
+
+  .btn-next {
+    background: var(--cyan);
+    color: #000;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 12px 32px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: auto;
+  }
+
+  .btn-next:hover {
+    box-shadow: 0 4px 20px rgba(0, 229, 255, 0.25);
+  }
+
+  .btn-next:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  /* --- RESULTS SECTION --- */
+  .results {
+    display: none;
+    min-height: 100vh;
+    padding: 40px 24px 80px;
+    max-width: 640px;
+    margin: 0 auto;
+    animation: fadeIn 0.5s ease;
+  }
+
+  .score-header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .score-header .label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .score-ring {
+    position: relative;
+    width: 180px;
+    height: 180px;
+    margin: 0 auto 24px;
+  }
+
+  .score-ring svg {
+    transform: rotate(-90deg);
+  }
+
+  .score-ring .score-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+
+  .score-ring .score-value .number {
+    font-size: 48px;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .score-ring .score-value .out-of {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  .score-verdict {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .score-summary {
+    font-size: 15px;
+    color: var(--text-mid);
+    line-height: 1.6;
+    max-width: 460px;
+    margin: 0 auto;
+  }
+
+  .dimension-results {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 48px;
+  }
+
+  .dimension-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .dimension-card .dim-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .dimension-card .dim-name {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dimension-card .dim-icon {
+    font-size: 16px;
+  }
+
+  .dimension-card .dim-score {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .dim-bar {
+    width: 100%;
+    height: 6px;
+    background: #1A1A1A;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  .dim-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s ease;
+  }
+
+  .dimension-card .dim-insight {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .dimension-card .dim-insight strong {
+    color: var(--text-mid);
+  }
+
+  .gaps-section {
+    background: linear-gradient(135deg, rgba(255, 23, 68, 0.08), rgba(255, 109, 0, 0.08));
+    border: 1px solid rgba(255, 109, 0, 0.2);
+    border-radius: 12px;
+    padding: 28px 24px;
+    margin-bottom: 48px;
+  }
+
+  .gaps-section h3 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--orange);
+  }
+
+  .gaps-section .gaps-sub {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+  }
+
+  .gap-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 14px;
+    font-size: 14px;
+    color: var(--text-mid);
+    line-height: 1.5;
+  }
+
+  .gap-item .gap-icon {
+    color: var(--orange);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* CTA Section */
+  .cta-section {
+    background: linear-gradient(135deg, rgba(0, 229, 255, 0.06), rgba(0, 229, 255, 0.02));
+    border: 1px solid rgba(0, 229, 255, 0.15);
+    border-radius: 16px;
+    padding: 40px 28px;
+    text-align: center;
+  }
+
+  .cta-section .aria-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cyan);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .cta-section h3 {
+    font-size: clamp(22px, 4vw, 28px);
+    font-weight: 700;
+    margin-bottom: 12px;
+    line-height: 1.2;
+  }
+
+  .cta-section p {
+    font-size: 15px;
+    color: var(--text-mid);
+    line-height: 1.6;
+    max-width: 440px;
+    margin: 0 auto 28px;
+  }
+
+  .cta-features {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 380px;
+    margin: 0 auto 28px;
+    text-align: left;
+  }
+
+  .cta-features .feature {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--text-mid);
+  }
+
+  .cta-features .feature .feat-icon {
+    color: var(--cyan);
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .email-capture {
+    display: flex;
+    gap: 10px;
+    max-width: 420px;
+    margin: 0 auto 12px;
+  }
+
+  .email-capture input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .email-capture input::placeholder {
+    color: var(--text-dim);
+  }
+
+  .email-capture input:focus {
+    border-color: var(--cyan);
+  }
+
+  .email-capture .btn-cta {
+    background: var(--cyan);
+    color: #000;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 14px 24px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+
+  .email-capture .btn-cta:hover {
+    box-shadow: 0 4px 20px rgba(0, 229, 255, 0.25);
+  }
+
+  .cta-section .privacy {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .skeptic-block {
+    margin-top: 48px;
+    text-align: center;
+    padding: 0 20px;
+  }
+
+  .skeptic-block h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-mid);
+  }
+
+  .skeptic-block p {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  /* Responsive */
+  @media (max-width: 480px) {
+    .email-capture {
+      flex-direction: column;
+    }
+    .email-capture .btn-cta {
+      width: 100%;
+      text-align: center;
+    }
+    .nav-buttons {
+      flex-direction: row;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== LANDING SECTION ==================== -->
+<section class="landing" id="landing">
+  <div class="logo-mark">
+    <a href="../es/index.html"><img src="../logo_con_tagline.png" alt="Aria — IA Que Entrena Contigo"></a>
+  </div>
+
+  <h1>Entrenas duro.<br>Pero, &iquest;entrenas <span>completo</span>?</h1>
+
+  <p class="subtitle">
+    Haz el Solo Sprinter Score en 2 minutos y descubre exactamente qu&eacute; partes de tu sistema de entrenamiento te est&aacute;n costando tiempo.
+  </p>
+
+  <ul class="value-points">
+    <li>
+      <span class="check">&#10003;</span>
+      <span><strong>Tu puntaje en 7 dimensiones de rendimiento</strong> &mdash; mec&aacute;nica, recuperaci&oacute;n, nutrici&oacute;n, dise&ntilde;o de programa, prevenci&oacute;n de lesiones y rehabilitaci&oacute;n, juego mental y retroalimentaci&oacute;n de datos.</span>
+    </li>
+    <li>
+      <span class="check">&#10003;</span>
+      <span><strong>An&aacute;lisis personalizado de brechas</strong> &mdash; no consejos gen&eacute;ricos. Insights espec&iacute;ficos basados en c&oacute;mo realmente entrenas, te recuperas y te preparas.</span>
+    </li>
+    <li>
+      <span class="check">&#10003;</span>
+      <span><strong>Una imagen clara de lo que falta</strong> &mdash; la mayor&iacute;a de los atletas que entrenan solos tienen 2&ndash;3 puntos ciegos que desconocen. Esto los encuentra en 2 minutos.</span>
+    </li>
+  </ul>
+
+  <button class="btn-primary" onclick="startAssessment()">
+    Obtener Mi Puntaje &mdash; Gratis
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3L11 8L6 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+
+  <p class="micro">Sin cuenta necesaria. 7 preguntas. Resultados inmediatos.</p>
+
+  <div class="social-proof">
+    <p class="quote">&ldquo;Pensaba que mi entrenamiento era s&oacute;lido hasta que vi mis puntajes de recuperaci&oacute;n y rehabilitaci&oacute;n. Dos cambios despu&eacute;s, corr&iacute; un PR.&rdquo;</p>
+    <p class="attribution">&mdash; Velocista competitivo, Centroam&eacute;rica</p>
+    <p class="count">M&aacute;s de 500 atletas han tomado el Solo Sprinter Score</p>
+  </div>
+</section>
+
+<!-- ==================== ASSESSMENT SECTION ==================== -->
+<section class="assessment" id="assessment">
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+
+  <!-- Q1: Program Structure -->
+  <div class="question-section active" data-step="1">
+    <div class="dimension-label">&#9889; Estructura de Programa</div>
+    <div class="step-counter">Pregunta 1 de 7</div>
+    <h2>&iquest;C&oacute;mo est&aacute; estructurado tu entrenamiento ahora mismo?</h2>
+    <p class="context">Esto mide si tus sesiones siguen una sobrecarga progresiva con bloques periodizados &mdash; o si decides en la pista qu&eacute; hacer hoy.</p>
+    <div class="options">
+      <div class="option" data-value="4" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Sigo un programa periodizado con bloques estructurados, intensidades planificadas y semanas de descarga.</span>
+      </div>
+      <div class="option" data-value="3" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Tengo un plan semanal con sesiones espec&iacute;ficas, pero sin periodizaci&oacute;n a largo plazo.</span>
+      </div>
+      <div class="option" data-value="2" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>S&eacute; m&aacute;s o menos lo que quiero hacer cada d&iacute;a, pero nada est&aacute; escrito.</span>
+      </div>
+      <div class="option" data-value="1" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Llego y decido seg&uacute;n c&oacute;mo me siento. Sin plan, sin estructura.</span>
+      </div>
+    </div>
+    <div class="nav-buttons">
+      <div></div>
+      <button class="btn-next" disabled onclick="nextStep()">Siguiente</button>
+    </div>
+  </div>
+
+  <!-- Q2: Sprint Mechanics -->
+  <div class="question-section" data-step="2">
+    <div class="dimension-label">&#127939; Mec&aacute;nica de Sprint</div>
+    <div class="step-counter">Pregunta 2 de 7</div>
+    <h2>&iquest;C&oacute;mo monitoreas y mejoras tu t&eacute;cnica de sprint?</h2>
+    <p class="context">Sin un entrenador observando cada repetici&oacute;n, la t&eacute;cnica se deteriora sin que lo notes. Esto mide tu ciclo de retroalimentaci&oacute;n mec&aacute;nica.</p>
+    <div class="options">
+      <div class="option" data-value="4" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Filmo sprints regularmente, analizo la mec&aacute;nica (&aacute;ngulos articulares, contacto con el suelo, postura) y aplico ejercicios correctivos.</span>
+      </div>
+      <div class="option" data-value="3" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Filmo ocasionalmente pero no hago an&aacute;lisis sistem&aacute;tico ni secuencias de ejercicios correctivos.</span>
+      </div>
+      <div class="option" data-value="2" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Me baso en c&oacute;mo se siente. A veces un compa&ntilde;ero de entrenamiento me da retroalimentaci&oacute;n.</span>
+      </div>
+      <div class="option" data-value="1" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>No analizo mi t&eacute;cnica en absoluto. Solo corro.</span>
+      </div>
+    </div>
+    <div class="nav-buttons">
+      <button class="btn-back" onclick="prevStep()">Atr&aacute;s</button>
+      <button class="btn-next" disabled onclick="nextStep()">Siguiente</button>
+    </div>
+  </div>
+
+  <!-- Q3: Recovery & Readiness -->
+  <div class="question-section" data-step="3">
+    <div class="dimension-label">&#128154; Recuperaci&oacute;n y Disposici&oacute;n</div>
+    <div class="step-counter">Pregunta 3 de 7</div>
+    <h2>&iquest;C&oacute;mo manejas la recuperaci&oacute;n entre sesiones?</h2>
+    <p class="context">La recuperaci&oacute;n es donde ocurre la adaptaci&oacute;n. Esto mide si rastreas se&ntilde;ales de disposici&oacute;n y respondes &mdash; o esperas lo mejor.</p>
+    <div class="options">
+      <div class="option" data-value="4" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Monitoreo HRV, calidad del sue&ntilde;o y frecuencia card&iacute;aca en reposo &mdash; y ajusto la intensidad del entrenamiento seg&uacute;n datos de disposici&oacute;n.</span>
+      </div>
+      <div class="option" data-value="3" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Presto atenci&oacute;n al sue&ntilde;o y al dolor muscular, y hago d&iacute;as m&aacute;s suaves cuando no me siento bien.</span>
+      </div>
+      <div class="option" data-value="2" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Tomo d&iacute;as de descanso pero no rastreo m&eacute;tricas de recuperaci&oacute;n activamente. Me gu&iacute;o por sensaci&oacute;n.</span>
+      </div>
+      <div class="option" data-value="1" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Entreno a trav&eacute;s de todo. Los d&iacute;as de descanso se sienten como d&iacute;as perdidos.</span>
+      </div>
+    </div>
+    <div class="nav-buttons">
+      <button class="btn-back" onclick="prevStep()">Atr&aacute;s</button>
+      <button class="btn-next" disabled onclick="nextStep()">Siguiente</button>
+    </div>
+  </div>
+
+  <!-- Q4: Sprint Nutrition -->
+  <div class="question-section" data-step="4">
+    <div class="dimension-label">&#127860; Nutrici&oacute;n para Sprint</div>
+    <div class="step-counter">Pregunta 4 de 7</div>
+    <h2>&iquest;C&oacute;mo alimentas tu entrenamiento de velocidad?</h2>
+    <p class="context">El rendimiento en sprint depende de la nutrici&oacute;n temporizada &mdash; combustible pre-entrenamiento, recuperaci&oacute;n post-entrenamiento y macros alineados con tu fase de entrenamiento actual.</p>
+    <div class="options">
+      <div class="option" data-value="4" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Sigo un plan estructurado con calor&iacute;as, macros (P/C/G) y horarios de comida alineados con mi programa de entrenamiento y fase de competencia.</span>
+      </div>
+      <div class="option" data-value="3" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Como limpio y cumplo mis metas de prote&iacute;na, pero no ajusto seg&uacute;n la fase de entrenamiento o preparaci&oacute;n para competencia.</span>
+      </div>
+      <div class="option" data-value="2" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Intento comer bien pero no rastreo macros ni planifico comidas para el rendimiento en sprint.</span>
+      </div>
+      <div class="option" data-value="1" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>La nutrici&oacute;n es algo secundario. Como lo que est&eacute; disponible.</span>
+      </div>
+    </div>
+    <div class="nav-buttons">
+      <button class="btn-back" onclick="prevStep()">Atr&aacute;s</button>
+      <button class="btn-next" disabled onclick="nextStep()">Siguiente</button>
+    </div>
+  </div>
+
+  <!-- Q5: Injury Prevention & Rehabilitation -->
+  <div class="question-section" data-step="5">
+    <div class="dimension-label">&#129657; Prevenci&oacute;n de Lesiones y Rehabilitaci&oacute;n</div>
+    <div class="step-counter">Pregunta 5 de 7</div>
+    <h2>&iquest;C&oacute;mo manejas la prevenci&oacute;n de lesiones y la rehabilitaci&oacute;n?</h2>
+    <p class="context">El sprint genera fuerzas de 4&ndash;5x el peso corporal. Desgarros de isquiotibiales, problemas de flexores de cadera, inestabilidad de tobillo &mdash; la prevenci&oacute;n es parte del rendimiento, no algo separado.</p>
+    <div class="options">
+      <div class="option" data-value="4" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Sigo una rutina de prehab (movilidad, activaci&oacute;n, trabajo exc&eacute;ntrico), y cuando me lesiono, sigo un protocolo estructurado de retorno al entrenamiento.</span>
+      </div>
+      <div class="option" data-value="3" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Hago movilidad y ejercicios de calentamiento, pero no tengo un plan de rehabilitaci&oacute;n estructurado si algo se inflama.</span>
+      </div>
+      <div class="option" data-value="2" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Estiro a veces. Si me lastimo, descanso hasta que pase el dolor y vuelvo de lleno.</span>
+      </div>
+      <div class="option" data-value="1" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Sin prehab, sin rehabilitaci&oacute;n. Lidio con las lesiones cuando ocurren.</span>
+      </div>
+    </div>
+    <div class="nav-buttons">
+      <button class="btn-back" onclick="prevStep()">Atr&aacute;s</button>
+      <button class="btn-next" disabled onclick="nextStep()">Siguiente</button>
+    </div>
+  </div>
+
+  <!-- Q6: Mental Performance -->
+  <div class="question-section" data-step="6">
+    <div class="dimension-label">&#129504; Rendimiento Mental</div>
+    <div class="step-counter">Pregunta 6 de 7</div>
+    <h2>&iquest;C&oacute;mo entrenas tu mente para la competencia?</h2>
+    <p class="context">La brecha entre tu tiempo en pr&aacute;ctica y tu tiempo en carrera a menudo vive aqu&iacute; &mdash; confianza, enfoque, nervios pre-carrera y motivaci&oacute;n durante las mesetas.</p>
+    <div class="options">
+      <div class="option" data-value="4" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Uso visualizaci&oacute;n, rutinas de respiraci&oacute;n y preparaci&oacute;n mental estructurada antes de competencias. Construyo confianza activamente para el d&iacute;a de la carrera.</span>
+      </div>
+      <div class="option" data-value="3" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Intento mantenerme positivo y enfocado, pero no tengo rutinas espec&iacute;ficas de entrenamiento mental.</span>
+      </div>
+      <div class="option" data-value="2" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Me pongo nervioso antes de las carreras y pierdo motivaci&oacute;n durante las mesetas, pero no lo abordo directamente.</span>
+      </div>
+      <div class="option" data-value="1" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>&iquest;Juego mental? Solo intento presentarme. La ansiedad y la duda son constantes.</span>
+      </div>
+    </div>
+    <div class="nav-buttons">
+      <button class="btn-back" onclick="prevStep()">Atr&aacute;s</button>
+      <button class="btn-next" disabled onclick="nextStep()">Siguiente</button>
+    </div>
+  </div>
+
+  <!-- Q7: Data & Coaching Feedback -->
+  <div class="question-section" data-step="7">
+    <div class="dimension-label">&#128202; Datos y Retroalimentaci&oacute;n de Coaching</div>
+    <div class="step-counter">Pregunta 7 de 7</div>
+    <h2>&iquest;Cu&aacute;nta retroalimentaci&oacute;n de coaching y datos de rendimiento tienes disponibles?</h2>
+    <p class="context">Sin retroalimentaci&oacute;n externa, no puedes ver lo que no puedes sentir. Esto mide tu ciclo de datos &mdash; desde tiempos de sprint hasta m&eacute;tricas de wearables y retroalimentaci&oacute;n de coaching.</p>
+    <div class="options">
+      <div class="option" data-value="4" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Registro tiempos de sprint, anoto entrenamientos con RPE, uso datos de wearables (HRV, FC) y recibo retroalimentaci&oacute;n regular de coaching o insights impulsados por IA.</span>
+      </div>
+      <div class="option" data-value="3" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Registro tiempos y anoto entrenamientos, pero no uso wearables ni recibo retroalimentaci&oacute;n de coaching consistentemente.</span>
+      </div>
+      <div class="option" data-value="2" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>Conozco mis tiempos recientes pero no anoto entrenamientos ni rastreo tendencias a lo largo del tiempo.</span>
+      </div>
+      <div class="option" data-value="1" onclick="selectOption(this)">
+        <div class="radio"></div>
+        <span>No registro nada. Entreno y compito sin datos.</span>
+      </div>
+    </div>
+    <div class="nav-buttons">
+      <button class="btn-back" onclick="prevStep()">Atr&aacute;s</button>
+      <button class="btn-next" disabled onclick="showResults()">Ver Mi Puntaje</button>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== RESULTS SECTION ==================== -->
+<section class="results" id="results">
+  <div class="score-header">
+    <div class="label">Tu Solo Sprinter Score</div>
+    <div class="score-ring">
+      <svg width="180" height="180" viewBox="0 0 180 180">
+        <circle cx="90" cy="90" r="78" fill="none" stroke="#1A1A1A" stroke-width="8"/>
+        <circle cx="90" cy="90" r="78" fill="none" stroke-width="8" stroke-linecap="round"
+          id="scoreCircle"
+          stroke-dasharray="490"
+          stroke-dashoffset="490"
+          style="transition: stroke-dashoffset 1.2s ease, stroke 0.3s"/>
+      </svg>
+      <div class="score-value">
+        <div class="number" id="scoreNumber">0</div>
+        <div class="out-of">de 28</div>
+      </div>
+    </div>
+    <div class="score-verdict" id="scoreVerdict"></div>
+    <p class="score-summary" id="scoreSummary"></p>
+  </div>
+
+  <div class="dimension-results" id="dimensionResults"></div>
+
+  <div class="gaps-section" id="gapsSection">
+    <h3>Tus Mayores Brechas de Entrenamiento</h3>
+    <p class="gaps-sub">Estas son las dimensiones que m&aacute;s tiempo te est&aacute;n costando ahora mismo.</p>
+    <div id="gapsList"></div>
+  </div>
+
+  <!-- CTA -->
+  <div class="cta-section">
+    <div class="aria-badge">&#9889; Aria &mdash; IA Que Entrena Contigo</div>
+    <h3>Tus brechas no se arreglan solas.<br>Aria las arregla contigo.</h3>
+    <p>Aria es el compa&ntilde;ero de entrenamiento con IA que cubre cada dimensi&oacute;n que acabas de evaluar &mdash; dise&ntilde;o de programa, an&aacute;lisis de t&eacute;cnica de sprint, recuperaci&oacute;n, nutrici&oacute;n, rehabilitaci&oacute;n y prehab, juego mental y retroalimentaci&oacute;n de coaching. Todo en una app. Todo adapt&aacute;ndose a ti.</p>
+
+    <div class="cta-features">
+      <div class="feature">
+        <span class="feat-icon">&#10003;</span>
+        <span><strong>Aria IQ</strong> &mdash; conoce tu disposici&oacute;n, carga y estado de recuperaci&oacute;n diariamente</span>
+      </div>
+      <div class="feature">
+        <span class="feat-icon">&#10003;</span>
+        <span><strong>AI Coach Insights</strong> &mdash; te dice exactamente qu&eacute; hacer despu&eacute;s</span>
+      </div>
+      <div class="feature">
+        <span class="feat-icon">&#10003;</span>
+        <span><strong>Sprint Tools</strong> &mdash; an&aacute;lisis de video, predictor de sprint, pistola de salida, foto finish</span>
+      </div>
+      <div class="feature">
+        <span class="feat-icon">&#10003;</span>
+        <span><strong>Rehabilitaci&oacute;n y Prehab</strong> &mdash; prevenci&oacute;n de lesiones y protocolos de retorno al entrenamiento integrados</span>
+      </div>
+      <div class="feature">
+        <span class="feat-icon">&#10003;</span>
+        <span><strong>Nutrici&oacute;n por Fase</strong> &mdash; planes de comida para competencia, temporada y fuera de temporada con macros</span>
+      </div>
+      <div class="feature">
+        <span class="feat-icon">&#10003;</span>
+        <span><strong>Programas Periodizados</strong> &mdash; bloques estructurados con series, repeticiones, descanso y porcentajes de intensidad</span>
+      </div>
+    </div>
+
+    <div class="email-capture">
+      <input type="email" id="emailInput" placeholder="Tu mejor email" />
+      <button class="btn-cta" onclick="captureEmail()">Obtener Acceso Anticipado</button>
+    </div>
+    <p class="privacy">Sin spam. Tu reporte personalizado + acceso anticipado a Aria.</p>
+  </div>
+
+  <div class="skeptic-block">
+    <h4>Hecho para atletas que entrenan solos. No otro quiz gen&eacute;rico.</h4>
+    <p>Esta evaluaci&oacute;n mide las mismas 7 dimensiones que separan el entrenamiento estructurado con entrenador de la forma en que la mayor&iacute;a de los atletas solitarios realmente operan &mdash; incluyendo prevenci&oacute;n de lesiones y disposici&oacute;n para la rehabilitaci&oacute;n, una dimensi&oacute;n que la mayor&iacute;a de las apps de sprint ignoran por completo. Fue dise&ntilde;ada por velocistas que han entrenado solos y saben exactamente d&oacute;nde se esconden las brechas.</p>
+  </div>
+</section>
+
+<script>
+  // ==================== STATE ====================
+  let currentStep = 1;
+  const totalSteps = 7;
+  const answers = {};
+
+  const dimensions = [
+    { key: 'program', name: 'Estructura de Programa', icon: '\u26A1' },
+    { key: 'mechanics', name: 'Mec\u00e1nica de Sprint', icon: '\uD83C\uDFC3' },
+    { key: 'recovery', name: 'Recuperaci\u00f3n y Disposici\u00f3n', icon: '\uD83D\uDC9A' },
+    { key: 'nutrition', name: 'Nutrici\u00f3n para Sprint', icon: '\uD83C\uDF74' },
+    { key: 'rehab', name: 'Prevenci\u00f3n de Lesiones y Rehab', icon: '\uD83E\uDE79' },
+    { key: 'mental', name: 'Rendimiento Mental', icon: '\uD83E\uDDE0' },
+    { key: 'data', name: 'Datos y Retroalimentaci\u00f3n de Coaching', icon: '\uD83D\uDCCA' }
+  ];
+
+  const insights = {
+    program: {
+      4: "Tu programaci\u00f3n es de nivel \u00e9lite. Bloques periodizados con intensidad planificada te dan una ventaja estructural que la mayor\u00eda de los atletas solitarios nunca construyen.",
+      3: "Buena planificaci\u00f3n semana a semana. Agregar periodizaci\u00f3n de varias semanas y ciclos de descarga evitar\u00eda mesetas y alinear\u00eda tu entrenamiento con fechas de competencia.",
+      2: "Est\u00e1s improvisando de sesi\u00f3n en sesi\u00f3n. Sin estructura progresiva, probablemente est\u00e1s repitiendo esfuerzos sin construir sobre ellos. Un plan periodizado cambiar\u00eda tu trayectoria.",
+      1: "Sin estructura significa sin progresi\u00f3n. Cada sesi\u00f3n sin plan es una sesi\u00f3n que podr\u00eda no hacerte avanzar. Este es tu mayor desbloqueo."
+    },
+    mechanics: {
+      4: "Fuerte ciclo de retroalimentaci\u00f3n mec\u00e1nica. Est\u00e1s haciendo lo que hacen la mayor\u00eda de los entrenadores \u2014 filmando, analizando y corrigiendo. Sigue refinando los detalles.",
+      3: "Filmas pero no corriges sistem\u00e1ticamente. La brecha entre ver un problema y arreglarlo es donde ocurre el verdadero desarrollo. Secuencias progresivas de ejercicios cierran esa brecha.",
+      2: "Correr por sensaci\u00f3n no es confiable. No puedes sentir la desviaci\u00f3n del \u00e1ngulo de cadera o los cambios en el contacto con el suelo. Sin retroalimentaci\u00f3n visual, los errores de t\u00e9cnica se acumulan durante meses.",
+      1: "Sin an\u00e1lisis de t\u00e9cnica significa regresi\u00f3n invisible. Correr sin retroalimentaci\u00f3n mec\u00e1nica es como cantar sin nunca grabarte \u2014 no puedes mejorar lo que no puedes observar."
+    },
+    recovery: {
+      4: "La recuperaci\u00f3n basada en datos es una ventaja competitiva. Ajustar la intensidad seg\u00fan se\u00f1ales de disposici\u00f3n significa que entrenas de manera \u00f3ptima, no solo duro.",
+      3: "Buena conciencia, pero te falta la capa de datos. La sensaci\u00f3n subjetiva detecta problemas grandes; los datos de HRV y sue\u00f1o detectan los sutiles que separan lo bueno de lo excelente.",
+      2: "Guiarte por sensaci\u00f3n significa que frecuentemente te equivocas. Las investigaciones muestran que los atletas sobreestiman consistentemente su disposici\u00f3n. Incluso un rastreo b\u00e1sico prevenir\u00eda ciclos de sobreentrenamiento.",
+      1: "Entrenar a trav\u00e9s de todo no es dureza \u2014 es adivinar. Sin gesti\u00f3n de recuperaci\u00f3n, est\u00e1s acumulando deuda de fatiga que te costar\u00e1 en competencia o lesi\u00f3n."
+    },
+    nutrition: {
+      4: "La nutrici\u00f3n adaptada por fase es rara entre atletas solitarios. Ajustar macros para preparaci\u00f3n de competencia, temporada y fuera de temporada te da una ventaja que pocos competidores de tu nivel tienen.",
+      3: "Comer limpio con metas de prote\u00edna es una buena base. Pero el rendimiento en sprint cambia con la fase de entrenamiento \u2014 la alimentaci\u00f3n del d\u00eda de competencia es diferente a la nutrici\u00f3n de recuperaci\u00f3n fuera de temporada.",
+      2: "La nutrici\u00f3n sin estructura deja rendimiento sobre la mesa. La potencia del sprint est\u00e1 directamente ligada al timing de gluc\u00f3geno, s\u00edntesis de prote\u00ednas y alineaci\u00f3n cal\u00f3rica con la carga de entrenamiento.",
+      1: "La nutrici\u00f3n como algo secundario significa que tu cuerpo est\u00e1 sub-alimentado para la adaptaci\u00f3n. Est\u00e1s haciendo el trabajo duro en la pista y no le est\u00e1s dando a tu cuerpo lo que necesita para convertir esfuerzo en velocidad."
+    },
+    rehab: {
+      4: "Excelente. Las rutinas de prehab y los protocolos estructurados de retorno al entrenamiento mantienen a los velocistas de \u00e9lite en la pista en vez de en la banca. Est\u00e1s por delante del 90% de los atletas solitarios aqu\u00ed.",
+      3: "Los ejercicios de calentamiento ayudan, pero sin un protocolo de rehabilitaci\u00f3n estructurado, un problema menor puede escalar r\u00e1pido. Tener un plan de retorno al entrenamiento antes de que ocurra la lesi\u00f3n es la diferencia entre 2 semanas fuera y 2 meses fuera.",
+      2: "Descansar hasta que pase el dolor no es rehabilitaci\u00f3n \u2014 es esperar lo mejor. Sin protocolos progresivos de retorno al entrenamiento, probablemente vuelves demasiado r\u00e1pido o demasiado lento, y la misma lesi\u00f3n regresa.",
+      1: "Sin prehab significa que est\u00e1s a un desgarro de isquiotibiales de perder una temporada. El sprint genera fuerzas de 4\u20135x el peso corporal. Sin trabajo preventivo, la lesi\u00f3n no es un riesgo \u2014 es una l\u00ednea de tiempo."
+    },
+    mental: {
+      4: "El entrenamiento mental es la dimensi\u00f3n m\u00e1s descuidada en el rendimiento de sprint. El hecho de que inviertas aqu\u00ed te pone por delante de la gran mayor\u00eda de atletas de cualquier nivel.",
+      3: "Una mentalidad positiva ayuda, pero no es un sistema. Rutinas espec\u00edficas \u2014 visualizaci\u00f3n, respiraci\u00f3n, ensayo de competencia \u2014 crean confianza consistente el d\u00eda de la carrera en vez de esperar estar listo.",
+      2: "Reconocer los nervios y las mesetas es el paso uno. Abordarlos es el paso dos. Sin herramientas mentales, estos momentos erosionan la confianza con el tiempo en vez de construir resiliencia.",
+      1: "La ansiedad y la duda no son defectos de car\u00e1cter \u2014 son habilidades no entrenadas. Los 0.1 segundos que pierdes en competencia podr\u00edan no estar en tus piernas. El entrenamiento mental es la palanca m\u00e1s subutilizada en el sprint solitario."
+    },
+    data: {
+      4: "Ciclo de datos completo con retroalimentaci\u00f3n de coaching. Est\u00e1s construyendo el tipo de base de evidencia que te permite tomar decisiones informadas en vez de adivinar. As\u00ed es como los PRs ocurren consistentemente.",
+      3: "Registrar tiempos y entrenamientos es una base s\u00f3lida. Agregar datos de wearables e insights impulsados por IA te permitir\u00eda detectar tendencias \u2014 ciclos de fatiga, mesetas, patrones de disposici\u00f3n \u2014 antes de que se conviertan en problemas.",
+      2: "Conocer tus tiempos pero no rastrear tendencias significa que ves instant\u00e1neas, no trayectorias. Un diario de entrenamiento con RPE y m\u00e9tricas b\u00e1sicas convierte puntos de datos aleatorios en patrones accionables.",
+      1: "Sin datos significa sin ciclo de retroalimentaci\u00f3n. Est\u00e1s entrenando a oscuras. Sin rastreo, no puedes identificar qu\u00e9 funciona, qu\u00e9 se est\u00e1 deteriorando y qu\u00e9 cambiar."
+    }
+  };
+
+  // ==================== FUNCTIONS ====================
+  function startAssessment() {
+    document.getElementById('landing').style.display = 'none';
+    document.getElementById('assessment').style.display = 'block';
+    updateProgress();
+    window.scrollTo(0, 0);
+  }
+
+  function selectOption(el) {
+    const section = el.closest('.question-section');
+    section.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    answers[currentStep] = parseInt(el.dataset.value);
+    section.querySelector('.btn-next').disabled = false;
+  }
+
+  function nextStep() {
+    if (currentStep >= totalSteps) return;
+    document.querySelector('.question-section[data-step="' + currentStep + '"]').classList.remove('active');
+    currentStep++;
+    document.querySelector('.question-section[data-step="' + currentStep + '"]').classList.add('active');
+    updateProgress();
+    window.scrollTo(0, 0);
+  }
+
+  function prevStep() {
+    if (currentStep <= 1) return;
+    document.querySelector('.question-section[data-step="' + currentStep + '"]').classList.remove('active');
+    currentStep--;
+    document.querySelector('.question-section[data-step="' + currentStep + '"]').classList.add('active');
+    updateProgress();
+    window.scrollTo(0, 0);
+  }
+
+  function updateProgress() {
+    var pct = ((currentStep) / totalSteps) * 100;
+    document.getElementById('progressFill').style.width = pct + '%';
+  }
+
+  function getScoreColor(score) {
+    if (score >= 4) return 'var(--green)';
+    if (score >= 3) return 'var(--cyan)';
+    if (score >= 2) return 'var(--yellow)';
+    return 'var(--red)';
+  }
+
+  function showResults() {
+    document.getElementById('assessment').style.display = 'none';
+    document.getElementById('results').style.display = 'block';
+    window.scrollTo(0, 0);
+
+    var totalScore = Object.values(answers).reduce(function(a, b) { return a + b; }, 0);
+    var maxScore = totalSteps * 4;
+
+    // Animate score ring
+    var circle = document.getElementById('scoreCircle');
+    var circumference = 490;
+    var offset = circumference - (totalScore / maxScore) * circumference;
+    var ringColor = 'var(--red)';
+    if (totalScore >= 22) ringColor = 'var(--green)';
+    else if (totalScore >= 16) ringColor = 'var(--cyan)';
+    else if (totalScore >= 10) ringColor = 'var(--yellow)';
+    else ringColor = 'var(--orange)';
+
+    setTimeout(function() {
+      circle.style.strokeDashoffset = offset;
+      circle.style.stroke = ringColor;
+    }, 100);
+
+    // Animate number count-up
+    var counter = 0;
+    var numEl = document.getElementById('scoreNumber');
+    var countInterval = setInterval(function() {
+      counter++;
+      numEl.textContent = counter;
+      numEl.style.color = ringColor;
+      if (counter >= totalScore) clearInterval(countInterval);
+    }, 60);
+
+    // Verdict
+    var verdictEl = document.getElementById('scoreVerdict');
+    var summaryEl = document.getElementById('scoreSummary');
+
+    if (totalScore >= 24) {
+      verdictEl.textContent = 'Sistema de Entrenamiento de Nivel \u00c9lite';
+      verdictEl.style.color = 'var(--green)';
+      summaryEl.textContent = "Est\u00e1s operando a un alto nivel en la mayor\u00eda de las dimensiones. Tus mayores ganancias ahora vienen de afinar las 1\u20132 \u00e1reas donde puntuaste m\u00e1s bajo \u2014 y de tener un sistema de IA que rastree todo para que nada se escape.";
+    } else if (totalScore >= 18) {
+      verdictEl.textContent = 'Base S\u00f3lida, Brechas Claras';
+      verdictEl.style.color = 'var(--cyan)';
+      summaryEl.textContent = "Tienes sistemas s\u00f3lidos en algunas \u00e1reas pero puntos ciegos significativos en otras. Las dimensiones donde puntuaste 1 o 2 probablemente te est\u00e1n costando tiempo en competencia \u2014 y son corregibles.";
+    } else if (totalScore >= 12) {
+      verdictEl.textContent = 'Potencial Bloqueado por Brechas';
+      verdictEl.style.color = 'var(--yellow)';
+      summaryEl.textContent = "Est\u00e1s poniendo el esfuerzo, pero tu sistema de entrenamiento tiene huecos estructurales. Probablemente entrenas m\u00e1s duro de lo necesario y te recuperas menos de lo que deber\u00edas. Un sistema completo desbloquear\u00eda velocidad de la que ya eres f\u00edsicamente capaz.";
+    } else {
+      verdictEl.textContent = 'Entrenando a Ciegas \u2014 Es Hora de Construir Tu Sistema';
+      verdictEl.style.color = 'var(--orange)';
+      summaryEl.textContent = "Est\u00e1s entrenando sin un sistema. Eso requiere agallas \u2014 pero tambi\u00e9n significa que hay rendimiento significativo quedando sobre la mesa. Cada dimensi\u00f3n evaluada aqu\u00ed es abordable, y las ganancias de construir estructura son inmediatas.";
+    }
+
+    // Dimension cards — sorted worst to best
+    var resultsContainer = document.getElementById('dimensionResults');
+    resultsContainer.innerHTML = '';
+
+    var sortedDimensions = dimensions.map(function(dim, i) {
+      return {
+        key: dim.key,
+        name: dim.name,
+        icon: dim.icon,
+        score: answers[i + 1] || 1,
+        index: i
+      };
+    }).sort(function(a, b) { return a.score - b.score; });
+
+    sortedDimensions.forEach(function(dim) {
+      var score = dim.score;
+      var pct = (score / 4) * 100;
+      var color = getScoreColor(score);
+      var insight = insights[dim.key][score];
+
+      var card = document.createElement('div');
+      card.className = 'dimension-card';
+      card.innerHTML =
+        '<div class="dim-header">' +
+          '<div class="dim-name"><span class="dim-icon">' + dim.icon + '</span> ' + dim.name + '</div>' +
+          '<div class="dim-score" style="color: ' + color + '">' + score + '/4</div>' +
+        '</div>' +
+        '<div class="dim-bar">' +
+          '<div class="dim-bar-fill" style="width: ' + pct + '%; background: ' + color + '"></div>' +
+        '</div>' +
+        '<div class="dim-insight">' + insight + '</div>';
+      resultsContainer.appendChild(card);
+    });
+
+    // Gaps section — dimensions scoring 1 or 2
+    var gaps = sortedDimensions.filter(function(d) { return d.score <= 2; });
+    var gapsList = document.getElementById('gapsList');
+    gapsList.innerHTML = '';
+
+    if (gaps.length === 0) {
+      document.getElementById('gapsSection').style.display = 'none';
+    } else {
+      gaps.forEach(function(gap) {
+        var gapEl = document.createElement('div');
+        gapEl.className = 'gap-item';
+        var msg = gap.score === 1
+          ? 'Este es un punto ciego cr\u00edtico que necesita atenci\u00f3n inmediata.'
+          : 'Hay espacio significativo para mejorar aqu\u00ed con el sistema adecuado.';
+        gapEl.innerHTML =
+          '<span class="gap-icon">\u26A0</span>' +
+          '<span><strong>' + gap.name + '</strong> \u2014 puntaje ' + gap.score + '/4. ' + msg + '</span>';
+        gapsList.appendChild(gapEl);
+      });
+    }
+  }
+
+  function captureEmail() {
+    var email = document.getElementById('emailInput').value;
+    if (!email || email.indexOf('@') === -1) {
+      document.getElementById('emailInput').style.borderColor = 'var(--red)';
+      return;
+    }
+
+    // Replace with your email service (ConvertKit, Mailchimp, etc.)
+    var btn = document.querySelector('.btn-cta');
+    btn.textContent = "\u00a1Est\u00e1s Dentro! \u2713";
+    btn.style.background = 'var(--green)';
+    btn.disabled = true;
+    document.getElementById('emailInput').disabled = true;
+    document.getElementById('emailInput').style.borderColor = 'var(--green)';
+
+    // Log for now — wire to your ESP
+    console.log('Email captured:', email);
+    console.log('Total score:', Object.values(answers).reduce(function(a, b) { return a + b; }, 0));
+    console.log('Answers by dimension:', answers);
+  }
+</script>
+
+</body>
+</html>
