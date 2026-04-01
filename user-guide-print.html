@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aria – User Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+  :root {
+    --cyan: #00C4D9;
+    --pink: #E05580;
+    --dark: #1a1a2e;
+    --surface: #f5f7fa;
+    --border: #e2e8f0;
+    --text: #1a202c;
+    --t2: #4a5568;
+    --t3: #718096;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Space Grotesk', Arial, sans-serif;
+    font-size: 11pt;
+    color: var(--text);
+    background: white;
+    line-height: 1.65;
+  }
+
+  a { color: var(--cyan); text-decoration: none; }
+
+  /* ── COVER PAGE ── */
+  .cover {
+    page-break-after: always;
+    min-height: 100vh;
+    background: var(--dark);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 40px;
+    position: relative;
+  }
+
+  .cover-logo { height: 70px; margin: 0 auto 32px; }
+
+  .cover-eyebrow {
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 16px;
+  }
+
+  .cover h1 {
+    font-family: 'Outfit', Arial, sans-serif;
+    font-size: 56pt;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 0.95;
+    color: white;
+    margin-bottom: 8px;
+  }
+
+  .cover-tagline {
+    font-size: 11pt;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 32px;
+  }
+
+  .cover-desc {
+    max-width: 400px;
+    font-size: 13pt;
+    color: rgba(255,255,255,0.65);
+    line-height: 1.65;
+    margin: 0 auto 48px;
+  }
+
+  .cover-url {
+    font-size: 10pt;
+    color: var(--cyan);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .cover-bar {
+    width: 60px;
+    height: 3px;
+    background: var(--cyan);
+    margin: 0 auto 32px;
+    border-radius: 2px;
+  }
+
+  .cover-footer {
+    position: absolute;
+    bottom: 32px;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 9pt;
+    color: rgba(255,255,255,0.3);
+  }
+
+  /* ── TOC PAGE ── */
+  .toc-page {
+    page-break-after: always;
+    padding: 56px 48px;
+  }
+
+  .toc-title {
+    font-family: 'Outfit', Arial, sans-serif;
+    font-size: 22pt;
+    font-weight: 900;
+    color: var(--text);
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+
+  .toc-subtitle {
+    font-size: 10pt;
+    color: var(--t3);
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 36px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+
+  .toc-list { list-style: none; }
+
+  .toc-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .toc-num {
+    font-family: 'Outfit', Arial, sans-serif;
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--cyan);
+    width: 32px;
+    flex-shrink: 0;
+  }
+
+  .toc-name {
+    font-size: 11pt;
+    font-weight: 500;
+    color: var(--text);
+    flex: 1;
+  }
+
+  .toc-dots {
+    flex: 1;
+    border-bottom: 1px dotted var(--border);
+    margin: 0 8px;
+    position: relative;
+    top: -4px;
+  }
+
+  /* ── CONTENT PAGES ── */
+  .section {
+    page-break-before: always;
+    padding: 48px 48px 40px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 28px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid var(--border);
+  }
+
+  .section-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: rgba(0,196,217,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(0,196,217,0.25);
+  }
+
+  .section-icon svg { width: 20px; height: 20px; }
+  .section-icon.pink { background: rgba(224,85,128,0.1); border-color: rgba(224,85,128,0.25); }
+
+  .section-number {
+    font-family: 'Outfit', Arial, sans-serif;
+    font-size: 10pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--cyan);
+    display: block;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+  }
+
+  .section h2 {
+    font-family: 'Outfit', Arial, sans-serif;
+    font-size: 22pt;
+    font-weight: 900;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .section p {
+    font-size: 10.5pt;
+    color: var(--t2);
+    margin-bottom: 16px;
+    line-height: 1.7;
+  }
+
+  /* ── SCREENSHOTS ── */
+  .screenshot-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin: 24px 0;
+  }
+
+  .screenshot-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .phone-frame {
+    width: 160px;
+    height: 330px;
+    border-radius: 24px;
+    border: 2px solid #e2e8f0;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  }
+
+  .phone-frame.pink { border-color: rgba(224,85,128,0.3); }
+
+  .phone-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .screenshot-caption {
+    font-size: 8.5pt;
+    color: var(--t3);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-align: center;
+  }
+
+  /* ── FEATURE CARDS ── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 16px 0 20px;
+  }
+
+  .feature-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .feature-card h4 {
+    font-family: 'Outfit', Arial, sans-serif;
+    font-size: 11pt;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .feature-card p {
+    font-size: 9.5pt;
+    color: var(--t2);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ── STEPS ── */
+  .steps { list-style: none; }
+
+  .step {
+    display: flex;
+    gap: 16px;
+    position: relative;
+    padding-bottom: 20px;
+  }
+
+  .step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 14px;
+    top: 30px;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+
+  .step-num {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(0,196,217,0.1);
+    border: 1.5px solid var(--cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11pt;
+    font-weight: 700;
+    color: var(--cyan);
+    flex-shrink: 0;
+    font-family: 'Outfit', Arial, sans-serif;
+  }
+
+  .step-body h4 {
+    font-family: 'Outfit', Arial, sans-serif;
+    font-size: 11pt;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 3px;
+    padding-top: 4px;
+  }
+
+  .step-body p {
+    font-size: 10pt;
+    color: var(--t2);
+    margin: 0;
+    line-height: 1.6;
+  }
+
+  /* ── TIP BOX ── */
+  .tip {
+    background: rgba(0,196,217,0.07);
+    border: 1px solid rgba(0,196,217,0.25);
+    border-left: 3px solid var(--cyan);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 10pt;
+    color: var(--t2);
+    margin: 16px 0;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .tip.pink {
+    background: rgba(224,85,128,0.07);
+    border-color: rgba(224,85,128,0.25);
+    border-left-color: var(--pink);
+  }
+
+  .tip.warn {
+    background: rgba(202,138,4,0.07);
+    border-color: rgba(202,138,4,0.25);
+    border-left-color: #B45309;
+  }
+
+  .tip-marker { font-weight: 700; color: var(--cyan); flex-shrink: 0; }
+  .tip.pink .tip-marker { color: var(--pink); }
+  .tip.warn .tip-marker { color: #B45309; }
+
+  /* ── TABLE ── */
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; margin: 14px 0; }
+  th {
+    text-align: left;
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--t3);
+    padding: 8px 12px;
+    border-bottom: 1.5px solid var(--border);
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--t2);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: var(--surface); }
+  td strong { color: var(--text); font-weight: 600; }
+
+  /* ── CODE ── */
+  code {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 9.5pt;
+    font-family: 'Courier New', monospace;
+    color: var(--cyan);
+  }
+
+  /* ── BULLET LIST ── */
+  ul.bullet-list { list-style: none; padding: 0; margin: 10px 0 16px; }
+  ul.bullet-list li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 10.5pt;
+    color: var(--t2);
+    margin-bottom: 6px;
+  }
+  ul.bullet-list li::before {
+    content: '▸';
+    color: var(--cyan);
+    font-size: 9pt;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* ── PHASE PILLS ── */
+  .phase-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+  .phase-pill {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 9pt;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .pill-mens { background: rgba(255,77,143,0.12); color: #C0185A; border: 1px solid rgba(255,77,143,0.3); }
+  .pill-folic { background: rgba(100,130,255,0.12); color: #3A5CC7; border: 1px solid rgba(100,130,255,0.3); }
+  .pill-ovul { background: rgba(180,120,0,0.12); color: #92600A; border: 1px solid rgba(180,120,0,0.3); }
+  .pill-luteal { background: rgba(100,50,200,0.12); color: #6B3DAF; border: 1px solid rgba(100,50,200,0.3); }
+
+  /* ── METRIC CARDS ── */
+  .metric-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    min-width: 110px;
+  }
+  .metric-label { font-size: 8pt; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--t3); margin-bottom: 4px; }
+  .metric-value { font-family: 'Outfit', Arial, sans-serif; font-size: 22pt; font-weight: 900; color: var(--cyan); letter-spacing: -0.02em; }
+  .metric-unit { font-size: 9pt; color: var(--t3); margin-top: 2px; }
+
+  /* ── QUICK REF PAGE ── */
+  .quick-ref { page-break-before: always; padding: 48px; }
+
+  /* ── BACK COVER ── */
+  .back-cover {
+    page-break-before: always;
+    min-height: 100vh;
+    background: var(--dark);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 40px;
+  }
+
+  .back-cover img { height: 60px; margin: 0 auto 28px; }
+  .back-cover h2 {
+    font-family: 'Outfit', Arial, sans-serif;
+    font-size: 28pt;
+    font-weight: 900;
+    color: white;
+    margin-bottom: 16px;
+    letter-spacing: -0.02em;
+  }
+  .back-cover p { font-size: 12pt; color: rgba(255,255,255,0.55); max-width: 380px; margin: 0 auto 32px; }
+  .back-cta {
+    display: inline-block;
+    background: var(--cyan);
+    color: #000;
+    font-weight: 700;
+    font-size: 12pt;
+    padding: 14px 36px;
+    border-radius: 10px;
+    margin-bottom: 24px;
+  }
+  .back-url { font-size: 10pt; color: rgba(255,255,255,0.35); }
+
+  /* ── PAGE NUMBERS / HEADERS ── */
+  @page {
+    margin: 0;
+    size: A4;
+  }
+
+  @page :left { margin-left: 0; }
+  @page :right { margin-right: 0; }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <img src="logo_con_tagline.png" alt="Aria" class="cover-logo">
+  <p class="cover-eyebrow">Official User Guide</p>
+  <div class="cover-bar"></div>
+  <h1>Aria</h1>
+  <p class="cover-tagline">AI That Trains With You</p>
+  <p class="cover-desc">Your complete guide to training smarter, recovering better, and performing at your peak — powered by AI and your personal data.</p>
+  <p class="cover-url">runwitharia.com</p>
+  <div class="cover-footer">Version 1.0 · 2026 · Aria — All rights reserved</div>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="toc-page">
+  <h1 class="toc-title">Contents</h1>
+  <p class="toc-subtitle">User Guide — 14 Sections</p>
+  <ul class="toc-list">
+    <li class="toc-item"><span class="toc-num">01</span><span class="toc-name">Getting Started</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">02</span><span class="toc-name">Home Screen</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">03</span><span class="toc-name">Aria IQ</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">04</span><span class="toc-name">Chat with Aria</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">05</span><span class="toc-name">Programs</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">06</span><span class="toc-name">Nutrition</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">07</span><span class="toc-name">Sprint Tools</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">08</span><span class="toc-name">Progress & Analytics</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">09</span><span class="toc-name">Sprint Times</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">10</span><span class="toc-name">Upcoming Events</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">11</span><span class="toc-name">Cycle Tracking</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">12</span><span class="toc-name">Rehabilitation</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">13</span><span class="toc-name">Settings & Profile</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">14</span><span class="toc-name">Health Integrations</span><span class="toc-dots"></span></li>
+    <li class="toc-item"><span class="toc-num">—</span><span class="toc-name">Quick Reference</span><span class="toc-dots"></span></li>
+  </ul>
+</div>
+
+<!-- 01 GETTING STARTED -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+    </div>
+    <div>
+      <span class="section-number">01</span>
+      <h2>Getting Started</h2>
+    </div>
+  </div>
+
+  <p>Welcome to Aria — the AI coaching companion built specifically for sprint athletes. Aria learns from your wearable data, training history, and goals to give you personalized coaching that actually matches your body's readiness on any given day.</p>
+
+  <ol class="steps">
+    <li class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>Create your account</h4>
+        <p>Download the Aria app and sign up. Your username (e.g. <code>antonyrugama</code>) becomes your athlete identity inside the platform.</p>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h4>Complete your Athlete Profile</h4>
+        <p>Head to <strong>More → Athlete Profile</strong> and fill in your height, weight, body fat %, sleep hours, injury status, training days per week, and training focus (Speed, Strength, Power, Endurance). This powers Aria's recommendations from day one.</p>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h4>Connect your health data</h4>
+        <p>Go to <strong>More → Health Integrations</strong> and connect Apple Health, Samsung Health, Strava, or Garmin. This gives Aria access to your heart rate, HRV, sleep, and step data — the foundation of your daily readiness score.</p>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h4>Set your upcoming events</h4>
+        <p>In <strong>More → Upcoming Events</strong>, add your next competition or race. Aria uses your event date and goal time to calibrate training urgency and taper timing.</p>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <h4>Choose your coaching style</h4>
+        <p>Visit <strong>More → AI Coaching Style</strong> and pick how you want Aria to communicate: Motivational, Technical, Balanced, or Minimal.</p>
+      </div>
+    </li>
+  </ol>
+</div>
+
+<!-- 02 HOME SCREEN -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    </div>
+    <div>
+      <span class="section-number">02</span>
+      <h2>Home Screen</h2>
+    </div>
+  </div>
+
+  <p>The Home screen is your daily dashboard. Each morning it greets you with a time-aware message and a snapshot of your body and training status.</p>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h4>Recovery Score</h4>
+      <p>Your overall readiness from 0–100, calculated from wearable data. 80+ means you're primed for high-intensity work.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Resting HR</h4>
+      <p>Your resting heart rate trend. A declining RHR over days is a strong recovery signal.</p>
+    </div>
+    <div class="feature-card">
+      <h4>HRV</h4>
+      <p>Heart Rate Variability in milliseconds. Higher and rising HRV indicates CNS recovery and readiness.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Sleep</h4>
+      <p>Hours of sleep synced from your connected device. Used to weight your readiness score for the day.</p>
+    </div>
+  </div>
+
+  <p>Below the metrics you'll see your <strong>active training program</strong> with a <em>Start Session</em> button, any completed meals from your nutrition plan, and the beginning of your <strong>AI Coach Insights</strong> cards — scroll down to see all of them.</p>
+
+  <div class="tip">
+    <span class="tip-marker">i</span>
+    <span>The streak counter (e.g. <strong>55 DAYS</strong>) in the top-right tracks how long you've been consistently using Aria. Keeping it alive helps Aria build a more accurate picture of your baseline.</span>
+  </div>
+</div>
+
+<!-- 03 ARIA IQ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/></svg>
+    </div>
+    <div>
+      <span class="section-number">03</span>
+      <h2>Aria IQ</h2>
+    </div>
+  </div>
+
+  <p>Aria IQ is the intelligence engine behind your coaching. Every day it analyzes your wearable data, training history, nutrition, and upcoming events to generate a set of personalized insight cards — visible by scrolling down from the Home screen.</p>
+
+  <div class="screenshot-row">
+    <div class="screenshot-wrap">
+      <div class="phone-frame">
+        <img src="screenshots/aria IQ.jpeg" alt="Aria IQ insight cards">
+      </div>
+      <p class="screenshot-caption">Aria IQ insight cards</p>
+    </div>
+  </div>
+
+  <p>Each card has a color-coded left border and icon that signals its category:</p>
+
+  <table>
+    <thead><tr><th>Card Type</th><th>What it tells you</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Recovery</strong></td><td>Today's readiness summary with specific wearable data</td><td>"READINESS 100/100 — CNS signals very favorable for speed work"</td></tr>
+      <tr><td><strong>Flag</strong></td><td>Alerts you to health patterns that need attention</td><td>"Rapid weight loss flag — dropped 1.3 kg over 7 days"</td></tr>
+      <tr><td><strong>Training</strong></td><td>Specific session recommendations for this week</td><td>"Add 3×30m block starts at 95–100% plus 3×60m at 95%"</td></tr>
+      <tr><td><strong>Nutrition</strong></td><td>Protein, calorie, or macro feedback</td><td>"180g protein at 1.95g/kg — meeting sprint muscle retention needs"</td></tr>
+      <tr><td><strong>Race Prep</strong></td><td>Competition countdown with tactical guidance</td><td>"55 days to Iberoamerican — plan a max-speed test in 3–4 weeks"</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">
+    <span class="tip-marker">⚡</span>
+    <span>Aria IQ gets smarter over time. The more training sessions, nutrition logs, and wearable data you add, the more specific and accurate your daily insights become.</span>
+  </div>
+</div>
+
+<!-- 04 CHAT -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    <div>
+      <span class="section-number">04</span>
+      <h2>Chat with Aria</h2>
+    </div>
+  </div>
+
+  <p>The Chat tab is your direct line to your AI coach. Aria has full context of your profile, wearable data, training history, and upcoming events — so every answer is personalized to you, not generic advice.</p>
+
+  <div class="screenshot-row">
+    <div class="screenshot-wrap">
+      <div class="phone-frame">
+        <img src="screenshots/chat.jpeg" alt="Aria Chat">
+      </div>
+      <p class="screenshot-caption">Chat with Aria</p>
+    </div>
+  </div>
+
+  <p><strong>Quick prompts</strong> on the chat home screen get you started instantly:</p>
+  <ul class="bullet-list">
+    <li>Analyze my recent sprint times</li>
+    <li>Build me a 60m training plan</li>
+    <li>What should I eat before a meet?</li>
+    <li>How do I recover after max-effort sprints?</li>
+  </ul>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h4>Chat History</h4>
+      <p>Swipe from the left edge to see all past conversations. Tap any to continue it.</p>
+    </div>
+    <div class="feature-card">
+      <h4>New Chat</h4>
+      <p>Tap the pencil icon (top-right) to start a fresh conversation.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Bilingual</h4>
+      <p>Aria understands and responds in both English and Spanish. Switch freely mid-conversation.</p>
+    </div>
+    <div class="feature-card">
+      <h4>File Attachments</h4>
+      <p>Attach training plans or race results for Aria to analyze and reference.</p>
+    </div>
+  </div>
+
+  <div class="tip">
+    <span class="tip-marker">i</span>
+    <span>The more specific your question, the better the answer. Instead of "how do I train?" try "I have a 60m race in 6 days and my readiness is 85 — what should today's session look like?"</span>
+  </div>
+</div>
+
+<!-- 05 PROGRAMS -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    </div>
+    <div>
+      <span class="section-number">05</span>
+      <h2>Programs</h2>
+    </div>
+  </div>
+
+  <p>The Programs tab is where your structured training plans live. Aria generates multi-week programs tailored to your event, fitness level, and training phase — or you can build your own custom sessions.</p>
+
+  <div class="screenshot-row">
+    <div class="screenshot-wrap">
+      <div class="phone-frame">
+        <img src="screenshots/programs2b.jpg" alt="Training program">
+      </div>
+      <p class="screenshot-caption">Periodized training blocks</p>
+    </div>
+    <div class="screenshot-wrap">
+      <div class="phone-frame">
+        <img src="screenshots/programs2a.jpeg" alt="AI-generated program">
+      </div>
+      <p class="screenshot-caption">AI-generated program</p>
+    </div>
+  </div>
+
+  <ol class="steps">
+    <li class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>Browse your active program</h4>
+        <p>Your current week is shown with each day's session listed. Tap any day to see the full workout detail — exercises, distances, intensities (% effort), rest periods, and RPE targets.</p>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h4>Start a session</h4>
+        <p>Tap <em>Start Session</em> on the Home screen or within the program. Aria guides you through each exercise in sequence and records your completion and RPE.</p>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h4>Log your effort</h4>
+        <p>After finishing, rate your RPE (1–10) and leave a note about how the session felt. This data feeds directly into tomorrow's Aria IQ readiness assessment.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="tip">
+    <span class="tip-marker">i</span>
+    <span>Ask Aria in the Chat tab to <em>"Create a training plan for the next 4 weeks leading to my 100m competition"</em> and it will generate a program automatically saved to your Programs tab.</span>
+  </div>
+</div>
+
+<!-- 06 NUTRITION -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+    </div>
+    <div>
+      <span class="section-number">06</span>
+      <h2>Nutrition</h2>
+    </div>
+  </div>
+
+  <p>The Nutrition tab manages your meal plans. You can have multiple plans saved — one active at a time — and switch between them as your training phase changes.</p>
+
+  <p><strong>Plans have three states:</strong></p>
+  <ul class="bullet-list">
+    <li><strong>Active</strong> — the plan currently guiding your daily meals, shown with a green badge</li>
+    <li><strong>Saved</strong> — ready to activate with the <em>Set Active</em> button</li>
+    <li><strong>Archived</strong> — previous plans kept for reference</li>
+  </ul>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h4>Activity Level</h4>
+      <p>Sedentary / Light / Moderate / Active. Affects your total calorie calculation.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Training Season</h4>
+      <p>Off Season / Pre Season / In Season / Post Season. Tunes carb and calorie targets.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Dietary Restrictions</h4>
+      <p>Vegan, Vegetarian, Gluten Free, or Dairy Free options applied to all meal suggestions.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Food Locality</h4>
+      <p>Enter your region (e.g. <em>Costa Rica</em>) so Aria uses locally available ingredients.</p>
+    </div>
+  </div>
+
+  <p>Inside an active plan you'll see the <strong>calorie ring</strong> with your daily total, a <strong>Macro Breakdown</strong> bar (Protein / Carbs / Fat), and a full <strong>Meal Plan</strong> with specific foods and calorie counts per meal.</p>
+
+  <p><strong>Logging a meal:</strong> Go to <strong>Tools → Nutrition Log</strong>. Tap the meal, confirm it as completed, and the calorie ring updates accordingly. Each logged meal also lets you <em>Get AI Feedback</em> for a personalized assessment.</p>
+</div>
+
+<!-- 07 SPRINT TOOLS -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    </div>
+    <div>
+      <span class="section-number">07</span>
+      <h2>Sprint Tools</h2>
+    </div>
+  </div>
+
+  <p>The Tools tab organizes every performance utility into two sections: <strong>Sprint Tools</strong> (track-side tools for active sessions) and <strong>Training</strong> (logs and analytics).</p>
+
+  <table>
+    <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Video Analysis</strong></td><td>Record or upload a sprint video for AI-assisted form analysis. Aria identifies biomechanical cues and gives actionable technique feedback.</td></tr>
+      <tr><td><strong>Photo Finish</strong></td><td>Use your camera to capture finish-line moments and manually record times for unofficial sessions.</td></tr>
+      <tr><td><strong>Start Gun</strong></td><td>Plays an authentic start-gun sound for reaction time drills. Tap to fire.</td></tr>
+      <tr><td><strong>Stopwatch</strong></td><td>Precision stopwatch with lap function — ideal for hand-timing training runs.</td></tr>
+      <tr><td><strong>Sprint Predictor</strong></td><td>Enter a known time and distance; Aria predicts your equivalent performance over other distances.</td></tr>
+      <tr><td><strong>Timer</strong></td><td>Countdown timer with audio alert. Useful for rest intervals and warm-up blocks.</td></tr>
+      <tr><td><strong>Measure</strong></td><td>AR-assisted distance measurement tool for marking out sprint distances on a track or field.</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Training section links:</strong></p>
+  <ul class="bullet-list">
+    <li><strong>Training Log</strong> — full history of every completed session</li>
+    <li><strong>Rehabilitation</strong> — structured recovery programs by injury type</li>
+    <li><strong>Progress & Analytics</strong> — weekly charts, health trends, and workout frequency</li>
+    <li><strong>Nutrition Log</strong> — chronological record of every logged meal</li>
+  </ul>
+</div>
+
+<!-- 08 PROGRESS & ANALYTICS -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+    </div>
+    <div>
+      <span class="section-number">08</span>
+      <h2>Progress & Analytics</h2>
+    </div>
+  </div>
+
+  <p>Found under <strong>Tools → Progress & Analytics</strong>, this dashboard gives you a bird's-eye view of your training week and health trends.</p>
+
+  <div class="screenshot-row">
+    <div class="screenshot-wrap">
+      <div class="phone-frame">
+        <img src="screenshots/progress.jpeg" alt="Progress dashboard">
+      </div>
+      <p class="screenshot-caption">Progress & Analytics dashboard</p>
+    </div>
+  </div>
+
+  <div class="metric-row">
+    <div class="metric-card">
+      <div class="metric-label">Distance</div>
+      <div class="metric-value">0.0</div>
+      <div class="metric-unit">miles this week</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Duration</div>
+      <div class="metric-value">1h49</div>
+      <div class="metric-unit">total training time</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Workouts</div>
+      <div class="metric-value">4</div>
+      <div class="metric-unit">sessions this week</div>
+    </div>
+  </div>
+
+  <ul class="bullet-list">
+    <li><strong>Training Load</strong> — percentage-based load indicator with Low / Moderate / High status badge</li>
+    <li><strong>Heart Rate</strong> — populated once wearable HR data syncs</li>
+    <li><strong>Workout Frequency</strong> — rolling graph of sessions per week over time</li>
+  </ul>
+
+  <div class="tip">
+    <span class="tip-marker">i</span>
+    <span>The <strong>Ready to train</strong> banner at the top reflects your current Aria IQ readiness. Tap it to see the full readiness breakdown.</span>
+  </div>
+</div>
+
+<!-- 09 SPRINT TIMES -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+    </div>
+    <div>
+      <span class="section-number">09</span>
+      <h2>Sprint Times</h2>
+    </div>
+  </div>
+
+  <p>Found under <strong>More → Sprint Times</strong>, this is your personal records dashboard. Track official and training times across all sprint distances.</p>
+
+  <p><strong>Distances tracked:</strong> 30m · 60m · 100m · 200m · 400m. Switch between them using the pill selectors at the top.</p>
+
+  <ul class="bullet-list">
+    <li>A highlighted <strong>Personal Record card</strong> with your PR time, date, and a PR badge</li>
+    <li>A <strong>Recent Times</strong> list showing every logged run in reverse chronological order</li>
+  </ul>
+
+  <p><strong>Logging a time:</strong> Tap <code>+ LOG</code> in the top-right. Enter the distance, time, date, wind speed (if applicable), and any notes. Aria automatically applies wind correction if wind data is entered.</p>
+
+  <div class="tip">
+    <span class="tip-marker">⚡</span>
+    <span>Aria uses the Linthorne (1994) and Ward-Smith (1999) formulas to wind-correct your sprint times. Times run with illegal wind assistance (&gt;2.0 m/s) are flagged and not counted as official PRs.</span>
+  </div>
+</div>
+
+<!-- 10 UPCOMING EVENTS -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+    </div>
+    <div>
+      <span class="section-number">10</span>
+      <h2>Upcoming Events</h2>
+    </div>
+  </div>
+
+  <p>Found under <strong>More → Upcoming Events</strong>. This is where you tell Aria what you're training toward — a critical input for intelligent periodization.</p>
+
+  <ul class="bullet-list">
+    <li>Event name, type (Race / Competition), and priority level (Low / Medium / High)</li>
+    <li>Date, location, and primary distance</li>
+    <li>Goal time</li>
+    <li>Sub-events (e.g. 100m Semifinal, 200m Final) with individual goal times</li>
+  </ul>
+
+  <p>The countdown label updates automatically (<em>in 1 month</em>, <em>3 days ago</em>, etc.). Aria references your nearest high-priority event in every coaching insight.</p>
+
+  <div class="tip">
+    <span class="tip-marker">i</span>
+    <span>Add your A-priority competition as <strong>High</strong> priority, and local tune-up races as <strong>Medium</strong>. This tells Aria which event to taper and peak for.</span>
+  </div>
+</div>
+
+<!-- 11 CYCLE TRACKING -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon pink">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--pink)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    </div>
+    <div>
+      <span class="section-number" style="color:var(--pink)">11</span>
+      <h2>Cycle Tracking</h2>
+    </div>
+  </div>
+
+  <p>Aria's Cycle Tracking feature is built for female athletes who want their training and nutrition recommendations adapted to their hormonal cycle. Found under <strong>More → Cycle Tracking</strong>.</p>
+
+  <div class="screenshot-row">
+    <div class="screenshot-wrap">
+      <div class="phone-frame pink">
+        <img src="screenshots/cycle-dashboard.jpeg" alt="Cycle dashboard">
+      </div>
+      <p class="screenshot-caption">Cycle phase dashboard</p>
+    </div>
+    <div class="screenshot-wrap">
+      <div class="phone-frame pink">
+        <img src="screenshots/cycle-settings.jpeg" alt="Cycle settings">
+      </div>
+      <p class="screenshot-caption">Cycle settings</p>
+    </div>
+  </div>
+
+  <p><strong>The four cycle phases Aria tracks:</strong></p>
+  <div class="phase-row">
+    <span class="phase-pill pill-mens">Menstrual D1–4</span>
+    <span class="phase-pill pill-folic">Follicular D5–14</span>
+    <span class="phase-pill pill-ovul">Ovulatory D15–16</span>
+    <span class="phase-pill pill-luteal">Luteal D17–28</span>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h4>Energy</h4>
+      <p>Rate your energy level on a 5-point scale for today.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Pain</h4>
+      <p>Track any pain or discomfort level (cramps, muscle soreness).</p>
+    </div>
+    <div class="feature-card">
+      <h4>Mood</h4>
+      <p>Log your mood so Aria can factor emotional state into coaching tone.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Bloating</h4>
+      <p>Track bloating and fluid retention — common during the luteal phase.</p>
+    </div>
+  </div>
+
+  <div class="tip pink">
+    <span class="tip-marker" style="color:var(--pink)">♀</span>
+    <span>Cycle data is private and only visible to you. It is never shared. Enabling this feature allows Aria to recommend higher intensity training during the follicular and ovulatory phases when hormones support power output.</span>
+  </div>
+</div>
+
+<!-- 12 REHABILITATION -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+    </div>
+    <div>
+      <span class="section-number">12</span>
+      <h2>Rehabilitation</h2>
+    </div>
+  </div>
+
+  <p>Found under <strong>Tools → Rehabilitation</strong>. When you're managing an injury, Aria provides structured evidence-based recovery programs organized by injury type.</p>
+
+  <p>At the top, <strong>Ask Aria about your injury</strong> opens a dedicated chat thread where you can describe your injury and get immediate AI guidance on exercises, timelines, and load management.</p>
+
+  <ul class="bullet-list">
+    <li><strong>Acute Muscle Injuries</strong> — Hamstring, Quadriceps, Calf, and Groin strain protocols (4–10 weeks, 4 phases each)</li>
+    <li><strong>Chronic Injuries</strong> — 6 programs for persistent or recurring conditions</li>
+    <li><strong>Back Injuries</strong> — 3 lumbar and thoracic programs</li>
+    <li><strong>Bone Fractures</strong> — 5 return-to-sport protocols for stress fractures and acute breaks</li>
+  </ul>
+
+  <p>Each program is broken into phases (Protection → Strengthening → Functional → Return to Sport) with clearly defined duration ranges and weekly progressions.</p>
+
+  <div class="tip warn">
+    <span class="tip-marker" style="color:#B45309">⚠</span>
+    <span>Aria's rehabilitation programs are designed as general guidance tools. Always consult with a qualified physiotherapist or sports medicine doctor before beginning any rehabilitation program, especially for acute injuries.</span>
+  </div>
+</div>
+
+<!-- 13 SETTINGS & PROFILE -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+    <div>
+      <span class="section-number">13</span>
+      <h2>Settings & Profile</h2>
+    </div>
+  </div>
+
+  <p>Access the full settings menu from the <strong>More</strong> tab. Your profile card at the top shows your username, sport, and level.</p>
+
+  <table>
+    <thead><tr><th>Setting</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Appearance</strong></td><td>Switch between Dark and Light theme. Dark is recommended for track-side use.</td></tr>
+      <tr><td><strong>Edit Profile</strong></td><td>Update your display name, photo, and public-facing info.</td></tr>
+      <tr><td><strong>Notifications</strong></td><td>Configure daily readiness alerts, session reminders, and nutrition nudges.</td></tr>
+      <tr><td><strong>Language</strong></td><td>Switch the app interface between English and Spanish.</td></tr>
+      <tr><td><strong>Units of Measure</strong></td><td>Toggle between metric (kg, km) and imperial (lb, miles).</td></tr>
+      <tr><td><strong>AI Coaching Style</strong></td><td>Choose Motivational, Technical, Balanced, or Minimal coaching tone.</td></tr>
+      <tr><td><strong>Voice Feedback</strong></td><td>Enable spoken coaching feedback during sessions.</td></tr>
+      <tr><td><strong>Athlete Profile</strong></td><td>Update physical stats, sleep habits, injury status, and training focus.</td></tr>
+      <tr><td><strong>Privacy</strong></td><td>Control what data Aria stores and how it is used.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 14 HEALTH INTEGRATIONS -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    </div>
+    <div>
+      <span class="section-number">14</span>
+      <h2>Health Integrations</h2>
+    </div>
+  </div>
+
+  <p>Found under <strong>More → Health Integrations</strong>. Connecting your devices is the single most impactful thing you can do to improve the quality of Aria's coaching — it replaces guesswork with real physiological data.</p>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h4>Apple Health</h4>
+      <p>Syncs sleep, resting heart rate, HRV, workouts, and step count. Primary data source for your daily readiness score.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Samsung Health</h4>
+      <p>Syncs health metrics from Samsung Galaxy devices including heart rate, sleep, and activity data.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Strava</h4>
+      <p>Imports workout activities and routes. Useful if you log aerobic recovery sessions or warm-up runs in Strava.</p>
+    </div>
+    <div class="feature-card">
+      <h4>Garmin</h4>
+      <p>Syncs via Apple Health if your Garmin watch is connected to Apple Health. Ensure Garmin Connect is writing to Apple Health.</p>
+    </div>
+  </div>
+
+  <div class="tip">
+    <span class="tip-marker">i</span>
+    <span>For the most accurate readiness scores, ensure Apple Health has permissions for <strong>Heart Rate, HRV, Sleep Analysis, Steps, and Workouts</strong>. Go to iPhone Settings → Health → Data Access & Devices → Aria to review permissions.</span>
+  </div>
+</div>
+
+<!-- QUICK REFERENCE -->
+<div class="quick-ref">
+  <div class="section-header">
+    <div class="section-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    </div>
+    <div>
+      <span class="section-number">—</span>
+      <h2>Quick Reference</h2>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>I want to...</th><th>Where to go</th></tr></thead>
+    <tbody>
+      <tr><td>See today's readiness and insights</td><td>Home → scroll down to AI Coach Insights</td></tr>
+      <tr><td>Ask Aria a coaching question</td><td>Chat tab</td></tr>
+      <tr><td>Start today's training session</td><td>Home → Start Session button</td></tr>
+      <tr><td>Log a sprint time</td><td>More → Sprint Times → + LOG</td></tr>
+      <tr><td>Add a race to my calendar</td><td>More → Upcoming Events → +</td></tr>
+      <tr><td>View my nutrition plan</td><td>Nutrition tab</td></tr>
+      <tr><td>Log a meal</td><td>Tools → Nutrition Log</td></tr>
+      <tr><td>See my training history</td><td>Tools → Training Log</td></tr>
+      <tr><td>Track cycle phase</td><td>More → Cycle Tracking</td></tr>
+      <tr><td>Find a rehab program</td><td>Tools → Rehabilitation</td></tr>
+      <tr><td>Connect Apple Health</td><td>More → Health Integrations</td></tr>
+      <tr><td>Connect Samsung Health</td><td>More → Health Integrations</td></tr>
+      <tr><td>Change coaching style</td><td>More → AI Coaching Style</td></tr>
+      <tr><td>Update physical stats</td><td>More → Athlete Profile</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- BACK COVER -->
+<div class="back-cover">
+  <img src="logo_con_tagline.png" alt="Aria">
+  <h2>Ready to train smarter?</h2>
+  <p>Join athletes already training with AI coaching built specifically for sprinters.</p>
+  <a class="back-cta" href="https://testflight.apple.com/join/5nTvek6A">Download on TestFlight</a>
+  <p class="back-url">runwitharia.com · hello@runwitharia.com</p>
+</div>
+
+</body>
+</html>
