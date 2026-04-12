@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<title>Reset your Aria password</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #0A0A0A;
+    color: #E5E5E5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 440px;
+    background: #1C1C1E;
+    border-radius: 16px;
+    padding: 32px;
+  }
+  h1 { margin: 0 0 8px; font-size: 24px; font-weight: 600; color: #fff; }
+  p  { margin: 0 0 16px; font-size: 15px; line-height: 1.5; color: #E5E5E5; }
+  .muted { color: #8E8E93; font-size: 13px; }
+  label { display: block; margin: 16px 0 6px; font-size: 13px; color: #8E8E93; }
+  input[type="password"] {
+    width: 100%;
+    background: #2C2C2E;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: #fff;
+    font-size: 16px;
+    outline: none;
+  }
+  input[type="password"]:focus { border-color: #34C759; }
+  button {
+    width: 100%;
+    background: #34C759;
+    color: #0A0A0A;
+    border: none;
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 20px;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error { color: #FF3B30; font-size: 13px; margin-top: 8px; }
+  .success { color: #34C759; font-size: 15px; margin-top: 16px; }
+  .rule { font-size: 12px; color: #8E8E93; margin-top: 6px; }
+  .rule.valid { color: #34C759; }
+  .hidden { display: none; }
+  a { color: #34C759; text-decoration: none; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Reset your Aria password</h1>
+
+    <div id="form-view">
+      <p class="muted">Choose a new password for your Aria account. Make it at least 8 characters.</p>
+
+      <form id="reset-form">
+        <label for="pw1">New password</label>
+        <input type="password" id="pw1" autocomplete="new-password" required minlength="8">
+        <div id="pw-rule" class="rule">At least 8 characters</div>
+
+        <label for="pw2">Confirm new password</label>
+        <input type="password" id="pw2" autocomplete="new-password" required minlength="8">
+
+        <div id="error" class="error hidden"></div>
+
+        <button type="submit" id="submit-btn">Update password</button>
+      </form>
+    </div>
+
+    <div id="success-view" class="hidden">
+      <p class="success">Password updated.</p>
+      <p>You've been signed out of Aria on all other devices for security. Open Aria on your phone to sign in with your new password.</p>
+    </div>
+
+    <div id="invalid-view" class="hidden">
+      <p>This reset link is invalid or has expired. Reset links expire after 30 minutes and can only be used once.</p>
+      <p><a href="/">Back to runwitharia.com</a></p>
+    </div>
+  </main>
+
+<script>
+(function () {
+  // SECURITY: never log or send the reset token to analytics.
+  var params = new URLSearchParams(window.location.search);
+  var token = params.get('token');
+
+  var formView = document.getElementById('form-view');
+  var successView = document.getElementById('success-view');
+  var invalidView = document.getElementById('invalid-view');
+  var form = document.getElementById('reset-form');
+  var pw1 = document.getElementById('pw1');
+  var pw2 = document.getElementById('pw2');
+  var pwRule = document.getElementById('pw-rule');
+  var errorEl = document.getElementById('error');
+  var submitBtn = document.getElementById('submit-btn');
+
+  if (!token) {
+    formView.classList.add('hidden');
+    invalidView.classList.remove('hidden');
+    return;
+  }
+
+  pw1.addEventListener('input', function () {
+    if (pw1.value.length >= 8) pwRule.classList.add('valid');
+    else pwRule.classList.remove('valid');
+  });
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.remove('hidden');
+  }
+  function clearError() {
+    errorEl.textContent = '';
+    errorEl.classList.add('hidden');
+  }
+
+  form.addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    clearError();
+    if (pw1.value.length < 8) { showError('Password must be at least 8 characters.'); return; }
+    if (pw1.value !== pw2.value) { showError("Passwords don't match."); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Updating...';
+
+    try {
+      var res = await fetch('https://ca-aria-mobile-prod.calmcliff-31ba567d.westus.azurecontainerapps.io/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token, newPassword: pw1.value }),
+      });
+
+      if (res.ok) {
+        formView.classList.add('hidden');
+        successView.classList.remove('hidden');
+        return;
+      }
+
+      if (res.status === 400) {
+        formView.classList.add('hidden');
+        invalidView.classList.remove('hidden');
+        return;
+      }
+
+      showError('Something went wrong. Please try again.');
+    } catch (err) {
+      showError('Network error. Please check your connection and try again.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Update password';
+    }
+  });
+})();
+</script>
+</body>
+</html>

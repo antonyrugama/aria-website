@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.aria.mobile",
+      "sha256_cert_fingerprints": [
+        "4C:E6:1C:C1:9D:D0:45:F2:8A:FC:CA:AD:3D:85:4D:5A:B4:CE:38:D3:E6:2B:B6:7C:01:00:8F:9E:8A:EE:76:70"
+      ]
+    }
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "2V636U3DWT.com.aria.mobile",
+        "paths": [
+          "/auth/reset-password",
+          "/auth/reset-password/*",
+          "/auth/reset-password?*"
+        ]
+      }
+    ]
+  }
+}
