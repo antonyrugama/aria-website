@@ -449,19 +449,11 @@
 
 <!-- HERO -->
 <section class="hero">
-    <!--
-        BACKGROUND VIDEO: Replace the src below with your MP4 file.
-        Recommended: Short clip (5-15 sec) of athletes sprinting on a track, shot from side or behind.
-        File should be compressed (under 5MB ideally). Dark/dramatic footage works best.
-        Remove the "poster" placeholder and uncomment the <video> when ready.
-    -->
-    <!--
     <div class="vid-bg hero-bg">
-        <video autoplay muted loop playsinline poster="videos/hero-poster.jpg">
+        <video autoplay muted loop playsinline>
             <source src="videos/hero-sprint.mp4" type="video/mp4">
         </video>
     </div>
-    -->
     <div class="wrap">
         <div class="hero-grid">
             <div class="hero-content">
@@ -479,7 +471,7 @@
                     </a>
                 </div>
                 <div class="hero-stats">
-                    <div><strong>7</strong><small>Sprint Tools</small></div>
+                    <div><strong>8</strong><small>Sprint Lab Tools</small></div>
                     <div><strong>2</strong><small>AI Engines</small></div>
                     <div><strong>24/7</strong><small>AI Coaching</small></div>
                 </div>
@@ -487,7 +479,7 @@
             <div class="hero-vis">
                 <div class="phone">
                     <video autoplay muted loop playsinline style="width:100%;height:100%;object-fit:cover">
-                        <source src="screenshots/Aria welcome.mp4" type="video/mp4">
+                        <source src="videos/recording of application .mp4" type="video/mp4">
                     </video>
                 </div>
             </div>
@@ -497,17 +489,11 @@
 
 <!-- PAIN POINTS -->
 <section class="pain">
-    <!--
-        BACKGROUND VIDEO: Slow-motion sprint footage or training montage.
-        Dark, moody lighting recommended. 5-10 sec loop.
-    -->
-    <!--
     <div class="vid-bg pain-bg">
         <video autoplay muted loop playsinline>
             <source src="videos/training-montage.mp4" type="video/mp4">
         </video>
     </div>
-    -->
     <div class="wrap">
         <div class="pain-head sr">
             <div class="label">The Problem</div>
@@ -644,19 +630,18 @@
             <div class="f-text">
                 <div class="label">Recovery & Rehabilitation</div>
                 <h3>Stay healthy. Come back stronger.</h3>
-                <p>Aria tracks recovery metrics, flags injury risks before they become problems, and provides rehabilitation protocols. Integrated with Apple Health, Samsung Health, Strava, and Garmin.</p>
+                <p>Aria's Wellness hub gives you a dedicated rehabilitation centre organized by injury type — with AI guidance built in. Ask Aria about your injury and get evidence-based protocols, timelines, and exercises tailored to you.</p>
                 <ul class="f-list">
-                    <li>Recovery readiness score from HRV, RHR, and Sleep</li>
-                    <li>Injury status tracking: Healthy, Minor, Recovering, Injured</li>
-                    <li>Dedicated rehabilitation section with guided protocols</li>
-                    <li>Health Trends with directional arrows over time</li>
-                    <li>Cycle tracking for female athletes</li>
+                    <li>Recovery readiness score from HRV, RHR, and sleep data</li>
+                    <li>Programs by area: Acute Muscle, Chronic, Back Injuries, Bone Fractures</li>
+                    <li>Ask Aria about your injury for personalized rehab guidance</li>
+                    <li>Health Trends tracking: sleep, resting HR, and weight over time</li>
+                    <li>30-day habit grid for workouts, sleep goal, and food logging</li>
                 </ul>
             </div>
             <div class="f-vis">
                 <div class="f-phone">
-                    <img src="screenshots/progress.jpeg" alt="Aria Progress & Analytics Dashboard" style="width:100%;height:100%;object-fit:cover">
-                    <!-- Replace with a GIF for animated effect: <img src="screenshots/progress.gif" alt="Aria Progress & Analytics"> -->
+                    <img src="screenshots/wellness-rehab.jpeg" alt="Aria Rehabilitation Programs" style="width:100%;height:100%;object-fit:cover">
                 </div>
             </div>
         </div>
@@ -692,21 +677,46 @@
     </div>
 </section>
 
+<!-- MENTAL WELLNESS -->
+<section class="feat" id="mind">
+    <div class="wrap">
+        <div class="f-row rev sr">
+            <div class="f-text">
+                <div class="label">Mental Wellness — Mind Tab</div>
+                <h3>Train your mind. Race your best.</h3>
+                <p>Sprint performance is as much mental as physical. Aria's Mind section gives you a dedicated space to work on the psychological side of training — with your AI coaching partner ready to listen and guide.</p>
+                <ul class="f-list">
+                    <li>Talk to Aria about stress, mindset, and mental readiness</li>
+                    <li>Stress Management: techniques for training and competition pressure</li>
+                    <li>Sleep & Recovery: optimise sleep for peak athletic performance</li>
+                    <li>Pre-Race Anxiety: strategies to manage nerves before a race</li>
+                    <li>Motivation & Mindset: build resilience and stay on track</li>
+                </ul>
+            </div>
+            <div class="f-vis">
+                <div class="f-phone">
+                    <img src="screenshots/wellness-mind.jpeg" alt="Aria Mental Wellness — Mind Tab" style="width:100%;height:100%;object-fit:cover">
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
 <section class="tools" id="tools">
     <div class="wrap">
         <div class="tools-head sr">
-            <div class="label">Sprint Tools</div>
+            <div class="label">Sprint Lab</div>
             <h2>Every tool a solo sprinter needs. In your pocket.</h2>
-            <p>Seven purpose-built sprint tools plus rehabilitation — from video analysis to sprint prediction. No external hardware. Just your phone and the track.</p>
+            <p>Eight purpose-built tools in Sprint Lab — from AI biomechanical video analysis to competition planning. No external hardware. Just your phone and the track.</p>
         </div>
         <div class="t-grid">
             <div class="t-card tc1 sr d1">
                 <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></span>
-                <h4>Video Analysis</h4><p>AI sprint form breakdown</p>
+                <h4>Video Analysis</h4><p>Biomechanical AI form scoring</p>
             </div>
             <div class="t-card tc2 sr d2">
                 <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
-                <h4>Photo Finish</h4><p>Capture race moments</p>
+                <h4>Photo Finish</h4><p>Frame-by-frame race capture</p>
             </div>
             <div class="t-card tc3 sr d1">
                 <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
@@ -714,23 +724,23 @@
             </div>
             <div class="t-card tc4 sr d2">
                 <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
-                <h4>Stopwatch</h4><p>Precise split tracking</p>
+                <h4>Stopwatch &amp; Timer</h4><p>Splits, laps, rest intervals</p>
             </div>
             <div class="t-card tc5 sr d1">
                 <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
                 <h4>Sprint Predictor</h4><p>AI-predicted race times</p>
             </div>
             <div class="t-card tc6 sr d2">
-                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3L2 6"/><path d="M22 6l-3-3"/><path d="M12 5V3"/></svg></span>
-                <h4>Timer</h4><p>Rest interval timers</p>
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/><path d="M2 12h2M20 12h2M12 2v2M12 20v2"/></svg></span>
+                <h4>Your Times</h4><p>Personal records by distance</p>
             </div>
             <div class="t-card tc7 sr d1">
                 <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M5.5 5.5L2 22l16.5-3.5"/><path d="M14 14l8-8"/><path d="M18 6l-2-2"/><path d="M8 16l-2-2"/></svg></span>
                 <h4>Measure</h4><p>Track distance tool</p>
             </div>
             <div class="t-card tc8 sr d2">
-                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
-                <h4>Rehabilitation</h4><p>Guided recovery protocols</p>
+                <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg></span>
+                <h4>Competition Tracker</h4><p>Plan races, set goals, log results</p>
             </div>
         </div>
     </div>
@@ -818,17 +828,11 @@
 
 <!-- FINAL CTA -->
 <section class="cta-final" id="download">
-    <!--
-        BACKGROUND VIDEO: Dramatic finish line, block start, or celebration footage.
-        This is the last impression — make it aspirational. 5-10 sec loop.
-    -->
-    <!--
     <div class="vid-bg cta-bg">
         <video autoplay muted loop playsinline>
             <source src="videos/finish-line.mp4" type="video/mp4">
         </video>
     </div>
-    -->
     <div class="wrap" style="position:relative;z-index:2">
         <div class="label sr">Start Training Smarter</div>
         <h2 class="sr">Your next PR starts <em>here.</em></h2>
@@ -891,8 +895,8 @@
                 </a>
                 <p>AI That Trains With You. The training companion built for athletes who train alone.</p>
             </div>
-            <div class="foot-col"><h4>Product</h4><ul><li><a href="#features">Features</a></li><li><a href="#ai-system">AI System</a></li><li><a href="#tools">Sprint Tools</a></li><li><a href="https://testflight.apple.com/join/5nTvek6A" target="_blank">Download</a></li></ul></div>
-            <div class="foot-col"><h4>Resources</h4><ul><li><a href="lead-magnet.html">Solo Sprinter Score</a></li><li><a href="#">Blog</a></li><li><a href="#">Help & FAQ</a></li><li><a href="#">Contact</a></li></ul></div>
+            <div class="foot-col"><h4>Product</h4><ul><li><a href="#features">Features</a></li><li><a href="#ai-system">AI System</a></li><li><a href="#tools">Sprint Lab</a></li><li><a href="https://testflight.apple.com/join/5nTvek6A" target="_blank">Download</a></li></ul></div>
+            <div class="foot-col"><h4>Resources</h4><ul><li><a href="lead-magnet.html">Solo Sprinter Score</a></li><li><a href="#">Blog</a></li><li><a href="#">Help & FAQ</a></li><li><a href="mailto:hello@runwitharia.com">Contact</a></li></ul></div>
             <div class="foot-col"><h4>Legal</h4><ul><li><a href="privacy.html">Privacy Policy</a></li><li><a href="#">Terms of Service</a></li></ul></div>
         </div>
         <div class="foot-bot">

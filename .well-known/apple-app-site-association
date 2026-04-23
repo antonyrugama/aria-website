@@ -7,7 +7,9 @@
         "paths": [
           "/auth/reset-password",
           "/auth/reset-password/*",
-          "/auth/reset-password?*"
+          "/auth/reset-password?*",
+          "/invites/*",
+          "/i/*"
         ]
       }
     ]
