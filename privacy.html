@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#00E5FF">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <meta name="description" content="Aria Privacy Policy — how we collect, use, and protect your personal data as an AI-powered training companion for sprinters.">
+    <meta name="robots" content="index,follow">
+    <link rel="canonical" href="https://runwitharia.com/privacy.html">
+    <!-- Open Graph -->
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://runwitharia.com/privacy.html">
+    <meta property="og:title" content="Aria — Privacy Policy">
+    <meta property="og:description" content="How Aria collects, uses, and protects your personal data as an AI-powered training companion for sprinters.">
+    <meta property="og:image" content="https://runwitharia.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Aria — Privacy Policy">
+    <meta name="twitter:description" content="How Aria collects, uses, and protects your personal data as an AI-powered training companion for sprinters.">
+    <meta name="twitter:image" content="https://runwitharia.com/og-image.png">
+    <title>Privacy Policy — Aria</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* ══════════ RESET ══════════ */
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased}
+        body{font-family:'Space Grotesk',sans-serif;background:#09090B;color:#D4D4D8;line-height:1.6;overflow-x:hidden}
+        a{color:inherit;text-decoration:none}
+        img{max-width:100%;height:auto;display:block}
+        button{font-family:inherit;cursor:pointer;border:none}
+        ul{list-style:none}
+
+        /* ══════════ PALETTE ══════════ */
+        :root{
+            --cyan:#00E5FF;
+            --cyan-10:rgba(0,229,255,.1);
+            --cyan-20:rgba(0,229,255,.2);
+            --cyan-30:rgba(0,229,255,.35);
+            --bg:#09090B;
+            --card:#111113;
+            --card-h:#18181B;
+            --border:rgba(255,255,255,.06);
+            --border-h:rgba(255,255,255,.12);
+            --t1:#FAFAFA;
+            --t2:#A1A1AA;
+            --t3:#52525B;
+            --max:1140px;
+            --prose:760px;
+        }
+
+        .wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
+
+        /* ══════════ NAV ══════════ */
+        .nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:18px 0;transition:all .35s}
+        .nav.stuck{background:rgba(9,9,11,.88);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid var(--border);padding:12px 0}
+        .nav-in{display:flex;align-items:center;justify-content:space-between;max-width:var(--max);margin:0 auto;padding:0 24px}
+        .nav-logo{display:flex;align-items:center;gap:10px}
+        .nav-logo img{height:55px}
+        .nav-logo b{display:none}
+        .nav-links{display:flex;gap:32px}
+        .nav-links a{font-size:14px;font-weight:500;color:var(--t2);transition:color .3s}
+        .nav-links a:hover{color:var(--t1)}
+        .nav-cta{
+            background:var(--cyan);color:#000;font-weight:700;font-size:14px;
+            padding:10px 26px;border-radius:12px;
+            transition:all .3s;box-shadow:0 0 24px rgba(0,229,255,.22);
+        }
+        .nav-cta:hover{transform:scale(1.05);box-shadow:0 0 36px rgba(0,229,255,.38)}
+        .mob-btn{display:none;background:0;color:var(--t1);font-size:26px;padding:6px}
+
+        .mob-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:150;opacity:0;visibility:hidden;transition:.3s}
+        .mob-overlay.open{opacity:1;visibility:visible}
+        .mob-menu{position:fixed;top:0;right:0;width:280px;height:100vh;background:rgba(9,9,11,.97);backdrop-filter:blur(20px);z-index:200;padding:80px 32px;transform:translateX(100%);transition:.3s;border-left:1px solid var(--border)}
+        .mob-menu.open{transform:translateX(0)}
+        .mob-menu ul{display:flex;flex-direction:column;gap:28px}
+        .mob-menu a{font-size:18px;font-weight:600;color:var(--t2);transition:color .3s}
+        .mob-menu a:hover{color:var(--cyan)}
+        .mob-x{position:absolute;top:24px;right:24px;background:0;color:var(--t1);font-size:30px}
+
+        /* ══════════ PRIVACY PAGE ══════════ */
+        .p-hero{
+            padding:160px 0 56px;
+            border-bottom:1px solid var(--border);
+            position:relative;
+            overflow:hidden;
+        }
+        .p-hero::after{
+            content:'';position:absolute;top:-120px;right:-180px;
+            width:520px;height:520px;
+            background:radial-gradient(circle,rgba(0,229,255,.07) 0%,transparent 72%);
+            pointer-events:none;z-index:0;
+        }
+        .p-hero-in{max-width:var(--prose);margin:0 auto;padding:0 24px;position:relative;z-index:1}
+        .p-label{
+            font-family:'Space Grotesk',sans-serif;
+            font-size:11px;font-weight:700;
+            letter-spacing:.22em;text-transform:uppercase;
+            color:var(--cyan);margin-bottom:14px;
+        }
+        .p-hero h1{
+            font-family:'Outfit',sans-serif;
+            font-size:clamp(36px,5.2vw,56px);
+            font-weight:900;letter-spacing:-.04em;line-height:1.04;
+            color:var(--t1);margin-bottom:20px;
+        }
+        .p-hero p{
+            font-size:17px;color:var(--t2);line-height:1.75;max-width:640px;
+        }
+        .version-stamp{
+            display:inline-flex;align-items:center;gap:10px;
+            margin-top:28px;
+            background:var(--cyan-10);
+            border:1px solid var(--cyan-20);
+            border-radius:12px;
+            padding:12px 18px;
+            font-family:'Space Grotesk',sans-serif;
+            font-size:14px;font-weight:600;
+            color:var(--cyan);
+            letter-spacing:.02em;
+        }
+        .version-stamp i{
+            width:8px;height:8px;background:var(--cyan);border-radius:50%;
+            box-shadow:0 0 10px var(--cyan-30);
+        }
+
+        /* ══════════ PROSE ══════════ */
+        .prose{
+            max-width:var(--prose);
+            margin:0 auto;
+            padding:72px 24px 120px;
+        }
+        .prose h2{
+            font-family:'Outfit',sans-serif;
+            font-size:clamp(24px,3.2vw,30px);
+            font-weight:800;letter-spacing:-.03em;line-height:1.15;
+            color:var(--t1);
+            margin:64px 0 18px;
+            scroll-margin-top:100px;
+        }
+        .prose h2:first-child{margin-top:0}
+        .prose h3{
+            font-family:'Outfit',sans-serif;
+            font-size:19px;
+            font-weight:700;letter-spacing:-.01em;
+            color:var(--t1);
+            margin:32px 0 10px;
+        }
+        .prose h4{
+            font-family:'Space Grotesk',sans-serif;
+            font-size:14px;font-weight:700;
+            letter-spacing:.08em;text-transform:uppercase;
+            color:var(--cyan);
+            margin:28px 0 10px;
+        }
+        .prose p{
+            font-size:16px;color:var(--t2);
+            line-height:1.8;
+            margin-bottom:16px;
+        }
+        .prose strong{color:var(--t1);font-weight:600}
+        .prose em{color:var(--t1);font-style:italic}
+        .prose a{color:var(--cyan);border-bottom:1px solid var(--cyan-20);transition:border-color .2s}
+        .prose a:hover{border-bottom-color:var(--cyan)}
+        .prose ul{
+            list-style:disc;
+            padding-left:22px;
+            margin:0 0 20px;
+            color:var(--t2);
+        }
+        .prose ul li{
+            font-size:16px;line-height:1.75;
+            margin-bottom:8px;
+            padding-left:6px;
+        }
+        .prose ul li::marker{color:var(--cyan)}
+        .prose ul ul{margin-top:8px;margin-bottom:8px}
+        .prose hr{
+            border:0;height:1px;
+            background:linear-gradient(90deg,transparent,var(--border-h),transparent);
+            margin:56px 0;
+        }
+        .callout{
+            background:var(--card);
+            border:1px solid var(--border);
+            border-left:3px solid var(--cyan);
+            border-radius:12px;
+            padding:20px 24px;
+            margin:28px 0;
+        }
+        .callout p{margin-bottom:0;font-size:15px;color:var(--t2)}
+        .callout p + p{margin-top:10px}
+
+        .toc{
+            background:var(--card);
+            border:1px solid var(--border);
+            border-radius:16px;
+            padding:24px 28px;
+            margin-bottom:56px;
+        }
+        .toc h4{
+            margin:0 0 14px;
+            font-family:'Space Grotesk',sans-serif;
+            font-size:11px;font-weight:700;
+            letter-spacing:.2em;text-transform:uppercase;
+            color:var(--cyan);
+        }
+        .toc ul{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}
+        .toc ul li{margin:0;padding:0;font-size:14px}
+        .toc ul li::marker{content:''}
+        .toc a{color:var(--t2);border:none;transition:color .2s}
+        .toc a:hover{color:var(--cyan)}
+
+        /* ══════════ FOOTER ══════════ */
+        .foot{padding:72px 0 36px;border-top:1px solid var(--border)}
+        .foot-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:44px;margin-bottom:52px}
+        .foot-brand p{font-size:13px;color:var(--t3);line-height:1.7;margin-top:14px;max-width:280px}
+        .foot-col h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--t1);margin-bottom:18px}
+        .foot-col ul{display:flex;flex-direction:column;gap:10px}
+        .foot-col a{font-size:13px;color:var(--t3);transition:color .3s}
+        .foot-col a:hover{color:var(--cyan)}
+        .foot-bot{display:flex;justify-content:space-between;align-items:center;padding-top:28px;border-top:1px solid var(--border)}
+        .foot-bot p{font-size:12px;color:var(--t3)}
+        .foot-soc{display:flex;gap:12px}
+        .foot-soc a{width:34px;height:34px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .3s}
+        .foot-soc a:hover{border-color:var(--cyan);background:var(--cyan-10)}
+
+        @media(max-width:900px){
+            .foot-grid{grid-template-columns:1fr 1fr}
+            .toc ul{grid-template-columns:1fr}
+        }
+        @media(max-width:768px){
+            .nav-links{display:none}
+            .mob-btn{display:block}
+            .p-hero{padding:130px 0 44px}
+            .prose{padding:56px 24px 96px}
+            .foot-grid{grid-template-columns:1fr}
+            .foot-bot{flex-direction:column;gap:14px;text-align:center}
+        }
+    </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav" id="nav">
+    <div class="nav-in">
+        <a href="index.html" class="nav-logo">
+            <img src="logo_con_tagline.png" alt="Aria — AI That Trains With You">
+        </a>
+        <ul class="nav-links">
+            <li><a href="index.html#features">Features</a></li>
+            <li><a href="index.html#ai-system">AI System</a></li>
+            <li><a href="index.html#tools">Tools</a></li>
+            <li><a href="index.html#how-it-works">How It Works</a></li>
+            <li><a href="user-guide.html">Guide</a></li>
+            <li><a href="es/index.html" style="color:var(--cyan);font-weight:700">ES</a></li>
+        </ul>
+        <a href="https://testflight.apple.com/join/5nTvek6A" target="_blank" class="nav-cta">Download App</a>
+        <button class="mob-btn" onclick="toggleMob()" aria-label="Open menu">&#9776;</button>
+    </div>
+</nav>
+<div class="mob-overlay" id="mobO" onclick="toggleMob()"></div>
+<div class="mob-menu" id="mobM">
+    <button class="mob-x" onclick="toggleMob()" aria-label="Close menu">&times;</button>
+    <ul>
+        <li><a href="index.html#features" onclick="toggleMob()">Features</a></li>
+        <li><a href="index.html#ai-system" onclick="toggleMob()">AI System</a></li>
+        <li><a href="index.html#tools" onclick="toggleMob()">Tools</a></li>
+        <li><a href="index.html#how-it-works" onclick="toggleMob()">How It Works</a></li>
+        <li><a href="user-guide.html" onclick="toggleMob()">Guide</a></li>
+        <li><a href="es/index.html" onclick="toggleMob()" style="color:var(--cyan);font-weight:700">ES</a></li>
+        <li><a href="https://testflight.apple.com/join/5nTvek6A" target="_blank" onclick="toggleMob()" style="color:var(--cyan)">Download App</a></li>
+    </ul>
+</div>
+
+<!-- HERO -->
+<section class="p-hero">
+    <div class="p-hero-in">
+        <div class="p-label">Legal</div>
+        <h1>Privacy Policy</h1>
+        <p>This Policy explains what personal data Aria collects, why we collect it, how we use it, who we share it with, and the rights you have over it. We've tried to write it the way we'd want to read it — clearly, and without the legal fog.</p>
+        <!--
+            VERSION STAMP — load-bearing.
+            The mobile app reads the "Version N" token and the "Effective <Month Day, Year>" date
+            to determine whether users must re-accept the policy. Keep this exact format.
+        -->
+        <div class="version-stamp" id="policy-version" data-version="1" data-effective="2026-04-22">
+            <i></i>
+            <span>Version 1 &mdash; Effective April 22, 2026</span>
+        </div>
+    </div>
+</section>
+
+<!-- PROSE -->
+<main class="prose">
+
+    <nav class="toc" aria-label="Table of contents">
+        <h4>In this policy</h4>
+        <ul>
+            <li><a href="#about">About Aria & this Policy</a></li>
+            <li><a href="#purposes">Why we process your data</a></li>
+            <li><a href="#legal-basis">Legal basis</a></li>
+            <li><a href="#data">What data we process</a></li>
+            <li><a href="#health-data">Health data (HealthKit & Health Connect)</a></li>
+            <li><a href="#processors">Third-party processors</a></li>
+            <li><a href="#coach-mode">Coach Mode sharing</a></li>
+            <li><a href="#retention">Retention</a></li>
+            <li><a href="#rights">Your rights</a></li>
+            <li><a href="#ccpa">California (CCPA) rights</a></li>
+            <li><a href="#transfers">International transfers</a></li>
+            <li><a href="#children">Children's data</a></li>
+            <li><a href="#security">Security</a></li>
+            <li><a href="#changes">Changes to this policy</a></li>
+            <li><a href="#contact">Contact</a></li>
+        </ul>
+    </nav>
+
+    <h2 id="about">About Aria & this Policy</h2>
+    <p>Aria is an AI-powered training companion for sprint athletes — the 100m, 200m, and 400m crowd. We build mobile apps for iOS and Android, plus a companion web app called <strong>Stadiora</strong> that athletes and coaches use on the web.</p>
+    <!-- TODO(Ian): confirm legal entity name for the line below. Using "Aria (operated by Rugamitas)" as a placeholder. -->
+    <p>Aria is operated by <strong>Aria (Rugamitas)</strong>. Throughout this Policy, "Aria", "we", "us", and "our" refer to the entity operating these Services; "you" and "your" refer to the person whose data we process.</p>
+    <p>This Policy applies whenever you use the Aria mobile app, the Stadiora web app, or any of the APIs and services behind them (collectively, the <strong>"Services"</strong>). Your data is processed on infrastructure we run on Microsoft Azure in the United States (West US region).</p>
+
+    <h2 id="purposes">Why we process your personal data</h2>
+    <p>We collect and process personal data only for specific, defined purposes. Here's the full list.</p>
+
+    <h3>To provide AI coaching Services</h3>
+    <p>This is the core of what Aria does. We process the profile, training, nutrition, chat, and video data you give us so we can generate personalized training plans, nutrition plans, sprint analytics, answers from your AI coach, and feedback on video of your sprint technique. Without this processing there is no product.</p>
+
+    <h3>To operate Coach Mode</h3>
+    <p>Coach Mode lets you accept an invitation from a coach and, once you accept, makes a defined subset of your data visible to that coach in the Stadiora web app. We process your account identifiers, the invitation itself, and the data you've agreed to share in order to deliver this feature. See <a href="#coach-mode">Coach Mode sharing</a> below for the full mechanics.</p>
+
+    <h3>To provide customer support</h3>
+    <p>When you email us or file a support request, we use the information you send (and, where relevant, information already in your account) to answer your question and resolve the issue.</p>
+
+    <h3>To protect your privacy and our Services</h3>
+    <p>We process data to detect abuse, prevent fraud, enforce rate limits, and keep accounts secure. Where we can, we work with aggregated or pseudonymised data rather than identifiable records.</p>
+
+    <h3>To improve our Services</h3>
+    <p>We look at how the app and web app are used — which features are used, where errors happen, how plans perform — so we can make the product better. Where feasible we do this using data that has been aggregated or stripped of direct identifiers.</p>
+
+    <h3>To perform analysis</h3>
+    <p>We run analysis to improve the insights and recommendations Aria generates. Some of this analysis uses third-party AI services (see <a href="#processors">Third-party processors</a>). We do not use your data to train Aria's own models, and the AI providers we use contractually do not train their foundation models on your prompts or outputs either.</p>
+
+    <h3>To market our Services</h3>
+    <p>If you opt in, we may send you email marketing or in-app messages about new features and offers. You can opt out at any time from the unsubscribe link in the email or from Settings in the app. Transactional messages (password resets, receipts, security alerts) are not marketing and can't be opted out of while you have an account.</p>
+
+    <h3>To enable third-party integrations</h3>
+    <p>If you choose to connect Apple HealthKit, Google Health Connect, Apple Sign In, Google Sign In, or similar, we process the data needed to make that integration work. We only process data from those integrations after you grant the relevant permission, and only for the purposes described in this Policy.</p>
+
+    <h3>To comply with legal obligations</h3>
+    <p>Sometimes the law requires us to keep or disclose certain data — for tax, accounting, legal-claim, or safety reasons. We will oppose any request to provide authorities with user data for surveillance or prosecution where we can, and we will notify you of such a request whenever we are legally permitted to.</p>
+
+    <h2 id="legal-basis">Legal basis for processing</h2>
+    <p>If you live in the European Economic Area, the United Kingdom, or another jurisdiction that requires a specific legal basis to process personal data, here are the bases we rely on:</p>
+
+    <h3>Contract</h3>
+    <p>Most of what we do — delivering training plans, running your AI coach, providing the app — is necessary to perform the contract you enter into when you create an account and accept this Policy and our Terms of Service.</p>
+
+    <h3>Consent</h3>
+    <p>We rely on your consent for anything that needs it: health data from HealthKit or Health Connect, direct marketing emails, Coach Mode sharing, and any processing of sensitive data. You can withdraw consent at any time — withdrawing it doesn't affect processing we already did lawfully, but it does stop processing going forward.</p>
+
+    <h3>Legitimate interest</h3>
+    <p>For things like product improvement, aggregated analytics, customer support, and keeping Aria secure, we rely on our legitimate interest in running and improving the Services. We balance that interest against your privacy rights, and we don't rely on legitimate interest where your rights override ours.</p>
+
+    <h3>Legal obligation</h3>
+    <p>Some processing (for tax, consumer-protection, or similar legal requirements) is mandatory under applicable law.</p>
+
+    <h2 id="data">What data we process</h2>
+    <p>These are the categories of personal data we process when you use Aria. Most of it comes directly from you.</p>
+
+    <ul>
+        <li><strong>Contact information</strong> — your email address, and (if you provide it) a display name.</li>
+        <li><strong>Profile information you provide</strong> — name, gender, date of birth, height, weight, sport and event (e.g. 100m, 200m, 400m), training goals, training history, and anything else you add to your athlete profile.</li>
+        <li><strong>Device information</strong> — IP address, approximate location derived from your IP, device model, operating system version, app version, and push notification token.</li>
+        <li><strong>Content you create</strong> — chat messages with your AI coach, workout notes, meal photos, video uploads for sprint analysis, and any tags or annotations you add.</li>
+        <li><strong>Health and fitness data (with your consent)</strong> — data from Apple HealthKit or Google Health Connect such as workouts, heart rate, steps, sleep, and body metrics. See <a href="#health-data">Health data</a> below for the details.</li>
+        <li><strong>Generated data</strong> — training plans, nutrition plans, analytics, benchmarks, and AI-generated insights derived from the inputs above.</li>
+        <li><strong>Guardian consent data</strong> — if you are a minor, we collect your guardian's email address and the timestamp of their consent. See <a href="#children">Children's data</a>.</li>
+    </ul>
+
+    <h2 id="health-data">Health data (Apple HealthKit & Google Health Connect)</h2>
+    <p>Health data is sensitive personal data, and we treat it that way.</p>
+    <ul>
+        <li>We only access HealthKit or Health Connect data after you explicitly grant permission in iOS or Android.</li>
+        <li>You can revoke that permission at any time in your device settings; Aria will stop receiving new data immediately.</li>
+        <li><strong>HealthKit data is never used for advertising, is never sold to anyone, and is never shared with any third party for their own purposes.</strong> The only third party that processes HealthKit data on our behalf is Microsoft Azure (our hosting provider) and Azure OpenAI (for generating coaching insights), both under processor agreements and both bound by Apple's HealthKit requirements.</li>
+        <li>We comply with Apple's HealthKit guidelines and with the Google Health Connect Permissions policy and Google's Limited Use requirements.</li>
+    </ul>
+
+    <h2 id="processors">Third-party processors and integrations</h2>
+    <p>We work with a small set of trusted processors to run Aria. We require each of them, by contract, to process your data only on our instructions and to protect it to at least the standard we use ourselves. Here's the full list.</p>
+
+    <h3>Microsoft Azure (hosting)</h3>
+    <p>All Aria data is stored and processed on Microsoft Azure — specifically Azure Container Apps, Azure Database for PostgreSQL, Azure Cache for Redis, and Azure Blob Storage — in the <strong>West US</strong> region of the United States. Azure is our infrastructure provider and processes data solely on our instructions.</p>
+
+    <h3>Azure OpenAI (AI coaching)</h3>
+    <p>Aria's AI coach chat, plan generation, and analytics are powered by Azure OpenAI (the GPT-5 and GPT-5-mini family of models). This is important:</p>
+    <div class="callout">
+        <p><em>Prompts and completions sent to Azure OpenAI are not used by Microsoft to train or improve any foundation models. Microsoft processes this data solely to return the response and does not retain it for training purposes.</em></p>
+    </div>
+    <p>In other words: what you type to your AI coach, and what it says back, is used to deliver the answer you asked for — and nothing else. Aria itself also does not use your data to train any of its own models.</p>
+
+    <h3>Apple HealthKit</h3>
+    <p>Used only if you grant permission. See <a href="#health-data">Health data</a>. Aria does not share HealthKit data with any third party other than Azure (for processing on your behalf), does not use it for advertising, and does not sell it.</p>
+
+    <h3>Google Health Connect</h3>
+    <p>Same model as HealthKit, for Android. Aria complies with the Google Health Connect Permissions policy and Google's Limited Use requirements — your Health Connect data is only used to deliver the features you've enabled, and is not sold or used for advertising.</p>
+
+    <h3>Apple Sign In and Google Sign In</h3>
+    <p>Used for authentication only. Apple and Google give us a stable identifier and (if you allow it) your email address so we can create and sign you into your account. We don't receive your password.</p>
+
+    <h3>Expo and EAS (mobile app infrastructure)</h3>
+    <p>Expo and Expo Application Services (EAS) are how we build and distribute the mobile app. They receive anonymous diagnostic and crash data to help us fix bugs. They do not receive your account data, training data, chats, or health data.</p>
+
+    <h2 id="coach-mode">Coach Mode sharing</h2>
+    <p>Coach Mode is Aria's athlete-to-coach data-sharing feature. Here's exactly how it works.</p>
+    <ul>
+        <li><strong>Sharing is always athlete-initiated consent.</strong> A coach sends you an invite; nothing is shared until you accept it. There is no default sharing, and Aria will never enrol you in Coach Mode without your action.</li>
+        <li><strong>The invite tells you what will be shared</strong> — the data categories the coach is requesting access to, and the scope of that access. You can decline, or accept only on your terms.</li>
+        <li><strong>Once you accept, the coach becomes a co-controller</strong> of the data you've shared. They can view it in the Stadiora web app and use it for their own coaching and programming purposes. Their handling of your data is governed by <em>their own</em> privacy practices — review them before you accept.</li>
+        <li><strong>You can revoke sharing at any time</strong> from Settings → Coaches in the Aria app, or from the equivalent screen in Stadiora. Revocation stops any future data from flowing to the coach.</li>
+        <li><strong>Revocation is not retroactive.</strong> Data that the coach has already seen, downloaded, or acted on remains in their possession after you revoke; they are responsible for deleting it under their own privacy practices and applicable law.</li>
+    </ul>
+    <p>Aria is not responsible for a coach's use of data after it has been shared with them under Coach Mode, but we will help you exercise your rights with them where we can.</p>
+
+    <h2 id="retention">How long we keep your data</h2>
+    <ul>
+        <li><strong>Account data</strong> is retained for the lifetime of your account, plus a <strong>90-day</strong> grace period after you delete the account (in case you change your mind and want to restore). After 90 days, it is permanently deleted.</li>
+        <li><strong>Backups</strong> are kept on a <strong>30-day</strong> rolling window. When you delete data, it clears from live systems immediately and from backups within 30 days.</li>
+        <li><strong>Chat logs with your AI coach</strong> are retained for up to <strong>2 years</strong> for abuse prevention and quality analysis. Chats older than <strong>12 months</strong> are anonymised — stripped of direct identifiers — before we use them for any analysis.</li>
+        <li><strong>AI training data</strong> — we don't use your data to train Aria's own models, and the third-party AI services we use (Azure OpenAI) contractually do not use your prompts or completions to train their foundation models either.</li>
+        <li><strong>Legally-required records</strong> (tax, accounting, legal-claim-related) are kept for the period required by applicable law, which varies by country.</li>
+    </ul>
+
+    <h2 id="rights">Your rights</h2>
+    <p>You have the following rights over the personal data we hold about you. Most of them are available directly in the app under <strong>Settings → Privacy</strong>, but you can also email us and we'll handle the request manually.</p>
+    <ul>
+        <li><strong>Access</strong> — ask what data we hold about you.</li>
+        <li><strong>Rectification</strong> — correct inaccurate data. Most profile fields you can edit yourself in the app.</li>
+        <li><strong>Erasure ("delete my account")</strong> — Settings → Delete Account in the app. We delete your account and all associated personal data within 30 days; backup copies are purged within the following 30 days.</li>
+        <li><strong>Data portability</strong> — export your data as a JSON archive.</li>
+        <li><strong>Restriction</strong> — ask us to stop processing your data while we investigate a concern.</li>
+        <li><strong>Objection</strong> — object to processing we do on the basis of legitimate interest.</li>
+        <li><strong>Withdraw consent</strong> — for anything we do on the basis of consent (health data, marketing, Coach Mode).</li>
+        <li><strong>Lodge a complaint</strong> — if you are in the EEA or UK, you can complain to your local data protection authority. We'd appreciate the chance to resolve it with you first.</li>
+    </ul>
+    <!-- TODO(Ian): confirm we want privacy@runwitharia.com as the contact address; otherwise swap the email below and in #contact. -->
+    <p>To exercise any of these rights, email <a href="mailto:privacy@runwitharia.com">privacy@runwitharia.com</a> from the address on your Aria account, or use the in-app tools in Settings → Privacy. We'll respond within 30 days (or within whatever shorter period your local law requires).</p>
+
+    <h2 id="ccpa">California residents (CCPA)</h2>
+    <p>If you are a California resident, you have specific rights under the California Consumer Privacy Act.</p>
+    <ul>
+        <li><strong>Right to know</strong> what personal information we've collected, used, disclosed, and for what purposes, over the last 12 months.</li>
+        <li><strong>Right to delete</strong> personal information we hold about you, subject to narrow legal exceptions.</li>
+        <li><strong>Right to correct</strong> inaccurate personal information.</li>
+        <li><strong>Right to opt out of sale or sharing</strong> — <strong>Aria does not sell personal information, and does not share it for cross-context behavioural advertising.</strong> There is nothing to opt out of, because the thing is not happening.</li>
+        <li><strong>Right to non-discrimination</strong> — we will not charge you more, give you worse service, or deny you the app for exercising any of these rights.</li>
+    </ul>
+    <p>To exercise a CCPA right, use the same channels as in the <a href="#rights">Your rights</a> section above. We may need to verify your identity (usually just by confirming you control the email on the account) before we act on the request.</p>
+
+    <h2 id="transfers">International data transfers</h2>
+    <p>Aria stores and processes personal data on Microsoft Azure in the <strong>United States</strong> (West US region). If you are located in the European Economic Area, the United Kingdom, Switzerland, or another jurisdiction with data-export restrictions, your data is transferred to the United States when you use the Services.</p>
+    <p>We rely on the European Commission's <strong>Standard Contractual Clauses</strong> (and the UK International Data Transfer Addendum, where applicable) as the legal mechanism for those transfers. Microsoft is bound by those same clauses when processing your data for us.</p>
+
+    <h2 id="children">Children's data</h2>
+    <p>Aria is intended for users aged <strong>13 and over</strong> (or 16 and over in jurisdictions that require it — e.g. parts of the EU). We do not knowingly collect personal data from children below that threshold; if we learn we have, we will delete it.</p>
+    <p>For users who are minors (under 18 in most jurisdictions), Aria requires <strong>guardian consent</strong> before processing personal data. Our signup flow asks minors for their guardian's email, sends the guardian a consent request, and records the consent (or lack of it) against the account. A minor's account is not fully activated until guardian consent is given.</p>
+    <p>Parents or guardians of minor users can review, correct, or delete their minor's data by emailing <a href="mailto:privacy@runwitharia.com">privacy@runwitharia.com</a> from the guardian email address on file, or by logging into the minor's account and using the in-app controls in Settings → Privacy.</p>
+
+    <h2 id="security">How we protect your data</h2>
+    <ul>
+        <li><strong>Encryption in transit</strong> — all connections between your device and Aria are encrypted with TLS 1.2 or higher.</li>
+        <li><strong>Encryption at rest</strong> — data in Azure Postgres, Redis, and Blob Storage is encrypted at rest using Azure-managed keys.</li>
+        <li><strong>Authentication</strong> — JWT-based sessions with short-lived access tokens (20 minutes) and longer refresh tokens. Passwords are hashed with bcrypt; we never store them in plain text.</li>
+        <li><strong>Server-to-AI authentication</strong> — our servers authenticate to Azure OpenAI using Microsoft <strong>managed identity</strong>, not shared API keys. There is no single API key that, if leaked, gives broad access.</li>
+        <li><strong>Access control</strong> — only a small number of Aria staff have access to production systems, and that access is logged.</li>
+        <li><strong>Security reviews</strong> — we perform regular security reviews of the code, infrastructure, and third-party dependencies, and we patch on a defined cadence.</li>
+    </ul>
+    <p>No system is perfectly secure. If you believe your account has been compromised, email <a href="mailto:privacy@runwitharia.com">privacy@runwitharia.com</a> immediately.</p>
+
+    <h2 id="changes">Changes to this policy</h2>
+    <p>We'll update this Policy from time to time. The version number and effective date at the top of the page always tell you which version you're looking at.</p>
+    <ul>
+        <li><strong>Material changes</strong> (new categories of data, new processors, new sharing, expanded purposes, or anything that changes what we do with your data in a meaningful way) trigger an in-app re-acceptance screen. You'll be asked to read and accept the new Policy before continuing to use the app.</li>
+        <li><strong>Non-material changes</strong> (clarifications, typo fixes, reorganisation) are announced by a version-number bump on this page, with no forced re-acceptance.</li>
+    </ul>
+    <p>Continued use of the Services after an update takes effect means you accept the updated Policy.</p>
+
+    <h2 id="contact">Contact</h2>
+    <!-- TODO(Ian): confirm privacy@runwitharia.com is the intended contact address (or swap for a real one). -->
+    <p>For any question about this Policy, to exercise a privacy right, or to report something that looks wrong, email us at <a href="mailto:privacy@runwitharia.com">privacy@runwitharia.com</a>. We read every message and reply within 30 days — usually much sooner.</p>
+
+    <hr>
+    <p style="font-size:13px;color:var(--t3)">Version 1 &mdash; Effective April 22, 2026. This is the first published version of the Aria Privacy Policy.</p>
+</main>
+
+<!-- FOOTER -->
+<footer class="foot">
+    <div class="wrap">
+        <div class="foot-grid">
+            <div class="foot-brand">
+                <a href="index.html" class="nav-logo" style="margin-bottom:4px">
+                    <img src="logo_con_tagline.png" alt="Aria" style="height:34px">
+                </a>
+                <p>AI That Trains With You. The training companion built for athletes who train alone.</p>
+            </div>
+            <div class="foot-col"><h4>Product</h4><ul><li><a href="index.html#features">Features</a></li><li><a href="index.html#ai-system">AI System</a></li><li><a href="index.html#tools">Sprint Tools</a></li><li><a href="https://testflight.apple.com/join/5nTvek6A" target="_blank">Download</a></li></ul></div>
+            <div class="foot-col"><h4>Resources</h4><ul><li><a href="lead-magnet.html">Solo Sprinter Score</a></li><li><a href="user-guide.html">User Guide</a></li><li><a href="mailto:hello@runwitharia.com">Contact</a></li></ul></div>
+            <div class="foot-col"><h4>Legal</h4><ul><li><a href="privacy.html">Privacy Policy</a></li><li><a href="#">Terms of Service</a></li></ul></div>
+        </div>
+        <div class="foot-bot">
+            <p>&copy; 2026 Aria. All rights reserved.</p>
+            <div class="foot-soc">
+                <a href="https://instagram.com/runwitharia" target="_blank" aria-label="Instagram"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor" stroke="none"/></svg></a>
+                <a href="https://tiktok.com/@runwitharia" target="_blank" aria-label="TikTok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg></a>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<script>
+// Nav scroll state
+const nav=document.getElementById('nav');
+window.addEventListener('scroll',()=>nav.classList.toggle('stuck',scrollY>50));
+
+// Mobile menu
+function toggleMob(){document.getElementById('mobM').classList.toggle('open');document.getElementById('mobO').classList.toggle('open')}
+
+// Smooth scroll for in-page TOC links
+document.querySelectorAll('a[href^="#"]').forEach(a=>a.addEventListener('click',function(e){const h=this.getAttribute('href');if(h.length<2)return;const t=document.querySelector(h);if(t){e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'start'})}}));
+</script>
+</body>
+</html>
