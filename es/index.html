@@ -257,6 +257,25 @@
         .fp-metric small{font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;display:block}
         .fp-metric strong{font-family:'Outfit',sans-serif;font-size:18px;font-weight:900;display:block;margin-top:2px}
 
+        /* ══════════ WEATHER WIDGET ══════════ */
+        .wx-widget{background:var(--card);border:1px solid var(--border);border-radius:22px;padding:28px 24px;max-width:300px;width:100%}
+        .wx-ring-wrap{position:relative;width:120px;height:120px;margin:0 auto 16px}
+        .wx-ring-svg{transform:rotate(-90deg)}
+        .wx-ring-track{fill:none;stroke:rgba(255,255,255,.06);stroke-width:10}
+        .wx-ring-fill{fill:none;stroke:var(--cyan);stroke-width:10;stroke-linecap:round;stroke-dasharray:339.3;stroke-dashoffset:61.1;transition:stroke-dashoffset .8s ease}
+        .wx-score-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+        .wx-score-center strong{font-family:'Outfit',sans-serif;font-size:30px;font-weight:900;color:var(--cyan);line-height:1}
+        .wx-score-center small{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-top:1px}
+        .wx-title{text-align:center;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.16em;margin-bottom:18px}
+        .wx-badges{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px;justify-content:center}
+        .wx-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;font-size:11px;font-weight:600}
+        .wx-badge.wg{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.22);color:#22C55E}
+        .wx-badge.wc{background:var(--cyan-10);border:1px solid var(--cyan-20);color:var(--cyan)}
+        .wx-badge.wa{background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.22);color:#EAB308}
+        .wx-rec{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+        .wx-rec p{font-size:12.5px;color:var(--t2);line-height:1.6}
+        .wx-rec strong{color:var(--t1);font-weight:700}
+
         /* ══════════ CYCLE TRACKING ══════════ */
         :root{--pink:#FF6B9D;--pink-10:rgba(255,107,157,.1);--pink-20:rgba(255,107,157,.2)}
         .cycle{padding:120px 0;background:var(--bg)}
@@ -625,18 +644,58 @@
             </div>
         </div>
 
-        <!-- Recovery & Rehab -->
+        <!-- Weather Performance Engine -->
+        <div class="f-row sr">
+            <div class="f-text">
+                <div class="label">Motor de Rendimiento Climático</div>
+                <h3>Sabe antes de ir. ¿Deberías entrenar fuerte hoy?</h3>
+                <p>Aria convierte las condiciones climáticas locales en un <strong>Sprint Score (0–100)</strong> y te dice exactamente qué tipo de sesión realizar. No solo temperatura — dirección del viento relativa a tu calle, riesgo de carga térmica, índice UV y una recomendación de sesión completa con IA.</p>
+                <ul class="f-list">
+                    <li>Sprint Score 0–100: qué tan bueno es hoy para el rendimiento</li>
+                    <li>Inteligencia de viento: detección de viento a favor, en contra y cruzado</li>
+                    <li>Riesgo de Carga Térmica: Bajo / Moderado / Alto / Extremo</li>
+                    <li>Mejores tipos de sesión para las condiciones exactas de hoy</li>
+                    <li>Alerta en Apple Watch: "Condiciones excelentes — empuja fuerte hoy"</li>
+                </ul>
+            </div>
+            <div class="f-vis">
+                <div class="wx-widget sr d1">
+                    <div class="wx-ring-wrap">
+                        <svg class="wx-ring-svg" width="120" height="120" viewBox="0 0 120 120">
+                            <circle class="wx-ring-track" cx="60" cy="60" r="54"/>
+                            <circle class="wx-ring-fill" cx="60" cy="60" r="54"/>
+                        </svg>
+                        <div class="wx-score-center">
+                            <strong>82</strong>
+                            <small>/ 100</small>
+                        </div>
+                    </div>
+                    <div class="wx-title">Sprint Score &middot; Hoy</div>
+                    <div class="wx-badges">
+                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Carga Térmica: Baja</span>
+                        <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Viento a Favor</span>
+                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg> Cielos Despejados</span>
+                        <span class="wx-badge wa"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Humedad: 68%</span>
+                    </div>
+                    <div class="wx-rec">
+                        <p><strong>Excelente para Velocidad Máxima.</strong> El viento a favor asiste la velocidad punta. Programa aceleración + vuelos de 30m hoy — evita el UV máximo entre 12–2 pm.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recovery, Rehab & Injury Risk -->
         <div class="f-row rev sr">
             <div class="f-text">
-                <div class="label">Recuperación y Rehabilitación</div>
-                <h3>Mantente saludable. Regresa más fuerte.</h3>
-                <p>El módulo Wellness de Aria incluye un centro de rehabilitación organizado por tipo de lesión — con guía de IA integrada. Pregúntale a Aria sobre tu lesión y obtén protocolos basados en evidencia, tiempos de recuperación y ejercicios personalizados.</p>
+                <div class="label">Recuperación, Rehabilitación y Prevención de Lesiones</div>
+                <h3>Ve el riesgo de lesión llegar. Antes de que aparezca.</h3>
+                <p>Aria monitorea tu carga de entrenamiento, patrones de movimiento y señales de recuperación para detectar riesgo elevado de lesión antes de que aparezcan síntomas. Combinado con un centro de rehabilitación organizado por tipo de lesión — tienes un sistema que te mantiene sano y entrenando.</p>
                 <ul class="f-list">
-                    <li>Puntaje de preparación de recuperación basado en VFC, FCR y sueño</li>
-                    <li>Programas por área: Muscular aguda, Crónica, Lesiones de espalda, Fracturas óseas</li>
-                    <li>Pregúntale a Aria sobre tu lesión para orientación de rehabilitación personalizada</li>
-                    <li>Seguimiento de tendencias de salud: sueño, FC en reposo y peso</li>
-                    <li>Cuadrícula de hábitos de 30 días para entrenamientos, sueño y alimentación</li>
+                    <li>Detección proactiva de riesgo de lesión basada en carga y recuperación</li>
+                    <li>Monitoreo de carga de entrenamiento: alertas de rango seguro vs sobrecarga</li>
+                    <li>Programas de rehabilitación por área: Muscular aguda, Crónica, Espalda, Fracturas</li>
+                    <li>Pregúntale a Aria sobre tu lesión para orientación de protocolo personalizada</li>
+                    <li>Tendencias de salud: sueño, FC en reposo y peso a lo largo del tiempo</li>
                 </ul>
             </div>
             <div class="f-vis">
