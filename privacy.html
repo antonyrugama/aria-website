@@ -294,7 +294,7 @@
             <i></i>
             <span>Version 2 &mdash; Effective June 2, 2026</span>
         </div>
-        <p style="margin-top:16px;font-size:14px;color:var(--t2)">Last Updated: June 2, 2026</p>
+        <p style="margin-top:16px;font-size:14px;color:var(--t2)">Last Updated: June 20, 2026</p>
     </div>
 </section>
 
@@ -354,6 +354,16 @@
         <li>Apple, Google, App Store, and Google Play services used for sign-in, subscriptions, purchase validation, or app distribution.</li>
     </ul>
     <p>You can change device-level health permissions in the operating system settings for Apple Health or Health Connect. You can disconnect app integrations where the app provides a connection setting.</p>
+
+    <h3>Crash And Diagnostic Data</h3>
+    <p>To keep the app stable and reliable, Aria collects a limited set of crash and diagnostic data when the app encounters a problem. This is a first-party reliability pipeline, separate from any product or usage analytics, and it is used only for app stability, crash diagnostics, and reliability &mdash; never for advertising or cross-app tracking.</p>
+    <ul>
+        <li>Crash reports and error stacks, unhandled errors, and unhandled promise rejections, with message content and stack traces redacted before they leave your device.</li>
+        <li>API failure and malformed-response diagnostics, such as the failure kind, HTTP status, sanitized route or endpoint templates (for example <code>/programs/[id]</code>, never concrete identifiers or query strings), and the affected app flow or parser.</li>
+        <li>Coarse device model, operating-system version, app or build version, platform, and a random per-launch session identifier that rotates on each app launch and is not a user identifier.</li>
+    </ul>
+    <p>This diagnostic data is sent to a first-party Aria backend, which forwards it to Microsoft Azure Application Insights acting as a processor on our behalf. It does <strong>not</strong> include emails, names, messages or other free text, health, fitness, or cycle data, photos or videos, location, or authentication tokens. The app never sends a raw user identifier with diagnostics; when you are signed in, the backend attaches only a salted, pseudonymous hash derived server-side so that related reports can be grouped without exposing your identity.</p>
+    <p>Crash and error reporting is <strong>on by default</strong> but optional. You can turn it off at any time in Settings (crash and error reporting). Product and usage analytics, where offered, is a separate, opt-in feature.</p>
 
     <h2 id="use">2. How We Use Information</h2>
     <p>We use information to:</p>
@@ -421,7 +431,7 @@
     <p><strong>Email:</strong> <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a></p>
 
     <hr>
-    <p style="font-size:13px;color:var(--t3)">Version 2 &mdash; Effective June 2, 2026. Last Updated: June 2, 2026.</p>
+    <p style="font-size:13px;color:var(--t3)">Version 2 &mdash; Effective June 2, 2026. Last Updated: June 20, 2026.</p>
 </main>
 
 <!-- FOOTER -->
