@@ -294,7 +294,7 @@
             <i></i>
             <span>Version 2 &mdash; Effective June 2, 2026</span>
         </div>
-        <p style="margin-top:16px;font-size:14px;color:var(--t2)">Last Updated: June 27, 2026</p>
+        <p style="margin-top:16px;font-size:14px;color:var(--t2)">Last Updated: July 3, 2026</p>
     </div>
 </section>
 
@@ -308,6 +308,7 @@
             <li><a href="#use">How we use information</a></li>
             <li><a href="#ai">AI processing and generated content</a></li>
             <li><a href="#sharing">How we share information</a></li>
+            <li><a href="#social">Community and social features</a></li>
             <li><a href="#retention">Storage, security, and retention</a></li>
             <li><a href="#controls">Account deletion, export, and controls</a></li>
             <li><a href="#children">Children's privacy</a></li>
@@ -327,6 +328,7 @@
         <li>Password hashes for password-based accounts; OAuth identifiers for Apple or Google sign-in accounts.</li>
         <li>Sport, experience level, goals, training phase, race targets, preferences, date of birth, sex or gender fields when provided, height, weight, dietary preferences, and injury-history fields you choose to provide.</li>
         <li>Subscription, entitlement, interaction-usage, support, and audit records needed to operate paid or limited app features.</li>
+        <li>If you choose to use Aria's community features, the public handle, optional short bio, and social profile photo you create, and the date of birth used to confirm you are old enough to join. Creating a social profile is optional; until you create one you are not visible in any feed.</li>
     </ul>
 
     <h3>Training, Fitness, And Health Information</h3>
@@ -344,6 +346,7 @@
         <li>Device identifiers, app version, feature usage, logs, diagnostics, error reports, push-notification tokens, and security events.</li>
         <li>Photos and camera captures, videos including sprint videos and sprint analysis videos, microphone audio, documents, uploaded program files, meal photos, chat attachments, extracted attachment text, thumbnails, and profile images when you upload or record them in the app.</li>
         <li>Chat messages, voice prompts, AI-generated responses, AI-generated plans, structured review outputs, AI artifact metadata, generated-content reports, moderation queue records, user comments on reports, and operator resolution notes.</li>
+        <li>Community content you create, such as workout posts and captions, post photos, comments, reactions, follow relationships, blocks, and the reports and moderation records generated when content is reviewed.</li>
     </ul>
 
     <h3>Connected Services</h3>
@@ -375,6 +378,7 @@
         <li>Personalize coaching context based on your training history, health and fitness signals, goals, preferences, and user-provided content.</li>
         <li>Generate, review, and improve AI coaching outputs and safety filters.</li>
         <li>Process user reports of AI-generated content and operate internal moderation workflows.</li>
+        <li>Operate community and social features, including feeds, posts, comments, reactions, follow requests, reporting, blocking, and content moderation.</li>
         <li>Sync data across devices and connected services.</li>
         <li>Send service messages, push notifications, reminders, support responses, and security notices.</li>
         <li>Operate subscriptions, entitlements, billing-related access, fraud prevention, abuse prevention, and audit logs.</li>
@@ -393,7 +397,7 @@
     <p>We do not sell personal information. We share information only as needed to operate Aria, provide user-requested integrations, satisfy legal obligations, or protect users and the service.</p>
     <p>Service providers and processors may include:</p>
     <ul>
-        <li>Microsoft Azure infrastructure, Azure Blob Storage, Azure Application Insights, Azure Communication Services, and Azure OpenAI.</li>
+        <li>Microsoft Azure infrastructure, Azure Blob Storage, Azure Application Insights, Azure Communication Services, Azure AI Content Safety for automated content screening, and Azure OpenAI.</li>
         <li>OpenAI-compatible AI processing routes where configured.</li>
         <li>WeatherAPI.com or other weather services for local training conditions when location-based weather is enabled.</li>
         <li>Expo push notification services, email, authentication, support, analytics, security, and monitoring providers.</li>
@@ -409,7 +413,32 @@
     </ul>
     <p>We may disclose information if required by law, to enforce our terms, to prevent fraud or abuse, to protect the safety of users or others, or as part of a business transfer such as a merger, acquisition, or sale of assets.</p>
 
-    <h2 id="retention">5. Storage, Security, And Retention</h2>
+    <h2 id="social">5. Community And Social Features</h2>
+    <p>Aria's community features are optional and off until you create a social profile. Creating a social profile is the action that opts you in; until then you are not visible in any feed and cannot post, comment, react, or be followed. The community layer uses handles, not real names.</p>
+
+    <h3>Creating A Social Profile</h3>
+    <p>A social profile consists of a unique handle, an optional short bio, and a profile photo. Creating one requires a date of birth so we can confirm your age. <strong>The community features are not available to anyone under 13</strong>; declining to create a profile leaves the rest of the app unaffected. Handles are screened automatically, and handle changes are limited to once every 30 days. Coaches continue to see your real name in coaching surfaces; the community layer does not.</p>
+
+    <h3>What You Share In The Feed</h3>
+    <p>Every post is anchored to a training activity you completed &mdash; a session, a logged time, or a race result &mdash; with an optional caption and up to three photos. You choose, per post, whether to reveal results and times, exercise details, and a personal-record badge. Comments are short text, and reactions are emoji. <strong>The feed carries only the training details you choose to reveal. It never includes bodyweight, readiness, heart rate, sleep, or other wellness or physiological data</strong>, and it is never a channel for the health information you share privately with a coach.</p>
+
+    <h3>Photos In The Feed</h3>
+    <p>Location and other embedded metadata (EXIF, including GPS) are stripped from every photo at upload. Photos pass an automated content screen before they appear: clear violations are blocked with a neutral message, and borderline images may go live while flagged for human review. Feed photos are stored in Azure Blob Storage and served through short-lived, access-checked links rather than permanent public URLs.</p>
+
+    <h3>Who Can See Your Posts</h3>
+    <p>Follows require your acceptance; there are no public accounts. Your Team feed shows posts from members of your coach-owned training groups, and your Following feed shows posts from accounts you follow plus the official Aria account. Feeds reflect your current relationships: leaving a training group removes your posts from that team's feed, and removing a follower revokes their access to your posts, including past posts. A coach can view, react, and comment within their own team's feed using their staff identity. There are no direct messages, no tagging of other athletes, and no third-party cross-posting in this version.</p>
+
+    <h3>Reporting, Blocking, And Moderation</h3>
+    <p>You can report any post, comment, or profile (inappropriate content, bullying or harassment, safety concern, or spam or impersonation). Safety-concern reports are prioritized, and we aim to acknowledge reports within 24 hours. Our moderation team can remove content and suspend access to the community features. Blocking makes you and the blocked person mutually invisible across the community layer. We keep reports, moderation decisions, and reviewer notes to operate and improve safety.</p>
+
+    <h3>Deleting Community Content</h3>
+    <p>You can delete individual posts and comments, and deleting your social profile removes your community presence. Deleting your Aria account cascades through all of your community content &mdash; posts, comments, reactions, follows, and profile &mdash; as described in Account Deletion, Export, And Controls below.</p>
+
+    <div class="callout">
+        <p>The feed is a training feed. It never carries bodyweight, readiness, heart rate, sleep, or other wellness or physiological data under any setting, and it is never a side channel around the health data you choose to share with a coach.</p>
+    </div>
+
+    <h2 id="retention">6. Storage, Security, And Retention</h2>
     <ul>
         <li>Aria stores app data on Microsoft Azure cloud infrastructure and related managed services.</li>
         <li>Data is encrypted in transit using HTTPS/TLS and protected at rest using database, storage, and cloud-provider controls.</li>
@@ -418,7 +447,7 @@
         <li>Some generated artifacts, retry objects, logs, and diagnostic records may have shorter retention periods or be removed after processing. Some legal, security, tax, accounting, subscription, fraud-prevention, moderation, or anonymized analytics records may be retained after account deletion when required or permitted.</li>
     </ul>
 
-    <h2 id="controls">6. Account Deletion, Export, And Controls</h2>
+    <h2 id="controls">7. Account Deletion, Export, And Controls</h2>
     <p>You can request export or deletion from inside the app under Settings &rarr; Privacy, or by emailing <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a> from the email address associated with your Aria account so we can verify ownership. If you cannot email from that address, include enough information for us to verify the account safely.</p>
     <p>After we verify ownership, we aim to acknowledge deletion requests within 7 business days and complete deletion within 30 days unless a legal, security, fraud-prevention, subscription, tax/accounting, moderation, or similar retention exception applies. Deletion can affect your shared Aria account, Aria XII soccer data, app access, subscription-linked entitlements, and stored coaching history.</p>
     <p>You can also:</p>
@@ -429,18 +458,18 @@
         <li>Request access or export of account data where available and legally permitted.</li>
     </ul>
 
-    <h2 id="children">7. Children's Privacy</h2>
-    <p>Aria is not intended for children under 13. We do not knowingly collect personal information from children under 13. If you believe a child under 13 has provided personal information to Aria, contact <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a>.</p>
+    <h2 id="children">8. Children's Privacy</h2>
+    <p>Aria is not intended for children under 13. We do not knowingly collect personal information from children under 13. Aria's community features additionally require a date of birth and are not available to anyone under 13. If you believe a child under 13 has provided personal information to Aria, contact <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a>.</p>
 
-    <h2 id="changes">8. Changes To This Policy</h2>
+    <h2 id="changes">9. Changes To This Policy</h2>
     <p>We may update this Privacy Policy from time to time. When changes are material, we may notify you in the app, by email, or by requiring acceptance of the updated policy before continued use.</p>
 
-    <h2 id="contact">9. Contact Us</h2>
+    <h2 id="contact">10. Contact Us</h2>
     <p>For privacy questions, access requests, export requests, or deletion requests, contact:</p>
     <p><strong>Email:</strong> <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a></p>
 
     <hr>
-    <p style="font-size:13px;color:var(--t3)">Version 2 &mdash; Effective June 2, 2026. Last Updated: June 20, 2026.</p>
+    <p style="font-size:13px;color:var(--t3)">Version 2 &mdash; Effective June 2, 2026. Last Updated: July 3, 2026.</p>
 </main>
 
 <!-- FOOTER -->
