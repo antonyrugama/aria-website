@@ -394,6 +394,10 @@
     <h2 id="ai">3. AI Processing And Generated Content</h2>
     <p>Aria uses AI systems to generate coaching text, plans, summaries, insights, and other performance-support outputs. To provide those features, Aria may send relevant account, training, health, media-derived, and conversation context to AI processing services such as Azure OpenAI or OpenAI-compatible model routes.</p>
     <p>AI outputs can be inaccurate or incomplete. Aria applies safety filters and allows generated-content reports so unsafe, inaccurate, offensive, or out-of-scope AI output can be reviewed. Reported excerpts, report reasons, user comments, moderation status, reviewer notes, and safety decision metadata may be stored for moderation, safety improvement, audit, and support.</p>
+    <h3>Coach Notes In Aria For Coaches</h3>
+    <p>Aria for Coaches includes a private notebook. Notes you write there are visible only to you. They are not visible to your athletes, to other staff in your organization, or to organization administrators, and they are never included in an athlete's AI coaching context.</p>
+    <p>The notebook offers an optional feature that reports recurring themes across your own notes. It runs only when you request it. When you do, the text of your recent notes is sent to an AI processing service such as Azure OpenAI in order to generate that summary. Only your own note text is sent for this feature: no athlete records, training data, or roster information are included. The resulting summary is stored so that repeating the request on the same day does not regenerate it, and it is deleted with your account.</p>
+
     <div class="callout">
         <p>AI systems should not be used for medical advice, diagnosis, treatment, emergency guidance, therapy, medication instructions, supplement dosing, or return-to-play clearance.</p>
     </div>
@@ -421,6 +425,7 @@
         <li>When you connect, your coach can see profile and training information such as your name, age, goals, injury history, training programs, sessions, and workouts (including heart-rate data recorded with a workout).</li>
         <li>Additional health and readiness sharing is off by default and controlled by you on a per-category basis. When you turn on a category, your coach can see summarized signals &mdash; for example readiness and sleep summaries, heart-rate-variability trends, and nutrition-plan and logging summaries &mdash; generally as bands or trends rather than raw values.</li>
         <li>You can turn any sharing category on or off at any time, and we keep an audit record of coach access. Some information is never shared with coaches, including your Ask Aria chat messages, raw connected-device data, manually entered metabolic or glucose values, and account settings.</li>
+        <li>Coaches also have a private notebook of their own in Aria for Coaches. Those notes belong to the coach who wrote them and are not shared with you, and nothing a coach writes there is added to your AI coaching context.</li>
     </ul>
     <p>We may disclose information if required by law, to enforce our terms, to prevent fraud or abuse, to protect the safety of users or others, or as part of a business transfer such as a merger, acquisition, or sale of assets.</p>
 
