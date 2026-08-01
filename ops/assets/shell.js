@@ -102,6 +102,31 @@
 
   var GROUPS = ['Right now', 'How we are doing', 'Apps and people'];
 
+  /* Pane contents, supplied by the pane's own module.
+
+     A pane page loads this file and then its own module, which calls
+     definePane() as it executes. A pane with no registration renders the
+     not-built state, which is what every pane a later wave builds still does.
+
+     The shell must not read this until the parser has run every script on the
+     page, and "the session call is slower than parsing" is not a substitute
+     for waiting. A classic script blocks the parser, but while the browser is
+     *downloading* the next one the event loop is free, so the response to the
+     session call can land, and its handler run, in the gap between this file
+     executing and the pane's module executing. Against a fast server that race
+     is lost more often than won, and it renders the pane as not built while
+     its module is sitting one request behind. init() therefore waits for the
+     document to finish parsing before it asks what a pane's contents are. */
+  var paneContent = {};
+  function definePane(id, render) { paneContent[id] = render; }
+
+  function whenParsed() {
+    if (document.readyState !== 'loading') return Promise.resolve();
+    return new Promise(function (resolve) {
+      document.addEventListener('DOMContentLoaded', function () { resolve(); }, { once: true });
+    });
+  }
+
   var SCOPES = [
     { v: 'all', l: 'All' },
     { v: 'mobile', l: 'Mobile' },
@@ -469,10 +494,13 @@
     block.appendChild(chip);
     card.appendChild(block);
 
+    /* Deliberately names no release. Panes ship in waves, so a sentence naming
+       the current one is wrong the day the next one lands, and it would be
+       rewritten by every wave in turn. What stays true is which parts exist. */
     var foot = h('div', { className: 'card-foot' }, [
       h('span', {
-        text: 'This release, W1, builds the sign in, the session, the navigation, ' +
-              'and the design system every pane is drawn with.'
+        text: 'The sign in, the session, the navigation, and the design system ' +
+              'every pane is drawn with are built and working.'
       })
     ]);
     card.appendChild(foot);
@@ -789,7 +817,7 @@
     document.title = pane.label + ' | Aria Operations';
     setGate('booting');
 
-    session.boot().then(function () {
+    session.boot().then(whenParsed).then(function () {
       readFilters(pane);
 
       var app = document.getElementById('app');
@@ -804,6 +832,7 @@
       var content = h('main', { className: 'content', id: 'content', tabindex: '-1' });
       if (pane.roles && !session.hasRole(pane.roles)) content.appendChild(renderDenied(pane));
       else if (pane.deferred) content.appendChild(renderDeferred(pane));
+      else if (paneContent[pageId]) paneContent[pageId](content, pane);
       else content.appendChild(renderNotBuilt(pane));
       main.appendChild(content);
 
@@ -837,6 +866,7 @@
 
   global.OpsShell = {
     init: init,
+    definePane: definePane,
     panes: PANES,
     filters: function () { return shallow(filters); },
     h: h,

@@ -188,18 +188,37 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     shell.js            pane registry, rail, top bar, filter bar, boot gate
     login.js            the sign-in page controller
+    operate.css         pane styling for the operate panes
+    operate.js          shared pane furniture: charts, drawer, confirm, states
+    alerts-model.js     the problems API in plain words, shared by two panes
+    pane-overview.js    Overview
+    pane-alerts.js      Problems
+    pane-awaiting-data.js  Happening now and What happened
 ```
 
-The ten pane pages are byte-identical apart from `data-page` and `<title>`. Everything a pane is
-lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages.
+A pane page carries the shell, and where the pane has been built, its own module. Everything a
+pane *is* lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages;
+everything a pane *shows* is registered by that module through `OpsShell.definePane`, and a pane
+with no module renders the not-built state. The shell waits for the document to finish parsing
+before it asks for a pane's contents, so which script finishes first cannot change what renders.
 
 ## What this release does and does not do
 
-This release builds the shell, the sign in, and the design system. Every pane routes to a real
-page that says plainly that it is not built yet and which delivery wave builds it: W2 for
-Overview, Happening now, What happened and Problems; W3 for People and usage and Cloud costs;
-W4 for App releases and Look up a user; W5 for Settings. Aria quality is deferred to its own
-project.
+The shell, the sign in, and the design system are built. Of the panes, **Problems** is complete:
+it reads the live problems and alert rules, takes a problem on, closes it with a reason, tunes a
+rule where the role allows it, and states whether the alerting is armed and where what it finds
+is sent. **Overview** is built for the part that has a source, which is the urgency question:
+the status ribbon and the needs-attention queue are real, and every entry opens the pane that
+owns the work.
+
+The rest of Overview, and the whole of **Happening now** and **What happened**, are not drawn.
+Their figures are being collected but nothing serves them to a page yet, so those pages say so in
+words instead of showing a zero. A tile reading zero and a tile with no pipeline behind it look
+identical, and that is the one thing an operations screen must never be.
+
+The remaining panes route to a page that says plainly it is not built yet: W3 for People and
+usage and Cloud costs; W4 for App releases and Look up a user; W5 for Settings. Aria quality is
+deferred to its own project.
 
 The shared filter bar ships now and round trips through the querystring, so later waves read a
 selection rather than inventing one. A pane listens on `window` for two events, both dispatched
@@ -262,22 +281,29 @@ renders passes in both themes**, text at 4.5:1 or better and control boundaries 
 better. That includes the two pieces of status furniture W1 does draw: the plain `.badge` that
 carries the scope note on Cloud costs, and the `.callout-ai` on Aria quality.
 
-The debt below is in the shipped design system and is drawn by nothing in this release, because
-no status badge, tag, or warning callout is on screen yet. In the light theme these pairings sit
-between 3.79:1 and 4.49:1 against the 4.5:1 they need; the same pairings pass in dark. Every one
-is byte-identical to the approved mock. They are recorded here so that the first pane to draw one
-does not ship it unnoticed:
+Part of that debt has now come due, because the operate panes are the first to draw a status
+badge. Measured in a browser against the composited background rather than against the token,
+`.badge-crit`, `.badge-warn` and `.badge-ok` came out at 4.15:1, 4.22:1 and 4.27:1 in the light
+theme, short of the 4.5:1 they need as text. `operate.css` darkens the three inks to 4.55:1 or
+better on every surface those panes put them on, scoped to `[data-theme="light"]` and to the
+badge's ink alone.
+
+That is a patch and not the fix. The base status tokens are also the dots, the chart series, the
+meters and the callout borders, all of which pass where they are used and all of which are shared
+with the panes other waves are building; darkening the tokens themselves is a decision about the
+approved palette and belongs to whoever owns it. When it happens, the three rules at the end of
+`operate.css` become redundant and should be deleted.
+
+What is left, still drawn by nothing that ships today:
 
 | Pair | Light ratio |
 |---|---|
-| `.badge-crit`, `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
+| `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
 | `.btn-danger:hover` | 3.79 |
 | `.tag-backend` on its tint | 4.46 |
-| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background rather than a card | 4.04 / 4.21 / 4.17 |
 | `callout-warn` / `callout-crit` ink over the page background | 4.41 / 4.26 |
 
-Closing these means darkening the light theme's status hues, which is a design decision about
-approved tokens rather than a shell concern, so it is left to whoever owns the palette.
+Dark mode passes throughout and is untouched.
 
 ## Working on it locally
 
