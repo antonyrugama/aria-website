@@ -188,27 +188,74 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     shell.js            pane registry, rail, top bar, filter bar, boot gate
     login.js            the sign-in page controller
+    pane-releases.js    App releases
+    pane-users.js       Look up a user
 ```
 
-The ten pane pages are byte-identical apart from `data-page` and `<title>`. Everything a pane is
-lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages.
+The ten pane pages are byte-identical apart from `data-page`, `<title>`, and the one pane script
+a built pane loads. Everything else a pane is lives in the `PANES` registry in `shell.js`, so the
+rail cannot drift from the pages.
 
 ## What this release does and does not do
 
-This release builds the shell, the sign in, and the design system. Every pane routes to a real
-page that says plainly that it is not built yet and which delivery wave builds it: W2 for
-Overview, Happening now, What happened and Problems; W3 for People and usage and Cloud costs;
-W4 for App releases and Look up a user; W5 for Settings. Aria quality is deferred to its own
-project.
+The shell, the sign in, and the design system shipped first. A pane that has not been built yet
+routes to a real page that says plainly which delivery wave builds it. Aria quality is deferred
+to its own project.
 
-The shared filter bar ships now and round trips through the querystring, so later waves read a
-selection rather than inventing one. A pane listens on `window` for two events, both dispatched
-once the session is confirmed and the shell is in the document, so a listener added while
-`shell.js` is still booting cannot miss them:
+**App releases** and **Look up a user** are built. Everything either of them shows comes from the
+operations API; neither holds any data of its own, and where the API answers with nothing the
+pane says which kind of nothing it is.
+
+App releases draws each platform's tracks as a ladder in promotion order. Two rules from the
+approved design are worth knowing before reading the page:
+
+- **Store truth and field truth are never merged.** The store reports what a track is set to,
+  usage data reports what people actually have, and both appear as their own figure.
+- **A stale source keeps its rows and shows its last successful poll time.** Hiding figures
+  because a poll failed would turn a source outage into a data outage.
+
+Its two stores are in different states and the page says so rather than smoothing it over.
+Google Play is polled. App Store Connect has no API key yet, so the iOS ladder renders as **not
+connected**, which is deliberately not the same state as a poll that ran and was refused.
+Starting, pausing, or resuming a rollout is not on this page at all: the operations API holds
+read-only access to both stores, so a control that implied otherwise would be a lie.
+
+Look up a user is the only surface that touches a real person's record, and it is built as a
+set of constraints:
+
+- **Exact match only.** No browse, no listing, no near-match fallback, so a wrong guess tells
+  you nothing about who has an account.
+- **Every lookup is recorded**, with the reason the form makes you type, and the record is
+  built so it would be safe to show the athlete. It is on the page, per account, under
+  **Who looked**.
+- **Masked by default.** Masking happens in the operations API, not here. This directory never
+  derives a mask from a real value, because that would mean the real value had been sent to the
+  browser.
+- **A reveal is one field, with its own written reason, and it un-reveals itself** when the
+  server's window expires, when the record closes, and when a new search starts.
+- **Health data carries no reveal control at all**, not a disabled one and not a role-gated one.
+- **Destructive account actions are absent, not permission-gated.** There is no control for
+  deleting an account or wiping its data anywhere on the page. That runs through the account
+  deletion workflow, which needs the athlete's own confirmation.
+
+The shared filter bar round trips through the querystring, so a pane reads a selection rather
+than inventing one. A pane listens on `window` for two events, both dispatched once the session
+is confirmed and the shell is in the document:
 
 - `ops:ready`, carrying `{ pane, filters }`, which is the signal that `#content` exists.
 - `ops:filters`, carrying the selection, fired for the starting selection as well as for every
   change to it. `OpsShell.filters()` returns the same thing on demand.
+
+**A pane must not assume it heard `ops:ready`.** Both events are dispatched from a promise
+callback, and while the parser is waiting for a pane's own script file to arrive it is free to
+run that callback, so the event can be over before the listener exists. `OpsShell.ready()`
+returns the same `{ pane, filters }` once the shell is up, and a pane starts from whichever of
+the two reaches it first. An earlier version of this file claimed the event could not be missed;
+it can, and this is how.
+
+A pane that draws its own contents is marked `built` in the registry, which is what stops the
+not-built-yet card being drawn under it. `OpsShell.filterBar()` returns the rendered filter bar
+so a pane can put its own controls beside the shared ones instead of growing a second bar.
 
 Per-pane filters arrive with the pane that needs them.
 
@@ -254,30 +301,59 @@ client renders a fact, it does not decide one.
 8. **Real semantics** where the mock used inert markup: headings are `h1` to `h4` in order and
    take their size from a class, tabs are a `role="tablist"` with arrow-key support, and both
    overlays trap focus, close on Escape, restore focus, and make the background inert.
+9. **The light theme's `--ok`, `--warn`, `--crit`, `--s1` and `--s2` are darkened** by between
+   4 and 11 percent. Each is drawn as text on a tint mixed from itself, and at the mock's values
+   that pairing measured between 3.92:1 and 4.34:1. See the contrast note below. Dark mode is
+   untouched, because it already passed.
+10. **`.btn-primary:hover` restates its own background.** Without it `.btn:hover` wins on
+   specificity and repaints a primary button with the plain hover fill while `.btn-primary`
+   keeps the inverse text colour: white on pale grey, 1.2:1, so the label vanished under the
+   pointer that was about to click it.
 
-### Known contrast debt, inherited and not yet fixed
+Two things the panes do that the design rules here would otherwise seem to forbid, both
+deliberate:
 
-Measured across both themes against composited backgrounds. **Every pairing this release
-renders passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or
-better. That includes the two pieces of status furniture W1 does draw: the plain `.badge` that
-carries the scope note on Cloud costs, and the `.callout-ai` on Aria quality.
+- **A width that is data is set as a CSS custom property through the CSSOM**, and the stylesheet
+  turns it into a width. The no-inline-style rule exists because the CSP forbids a `style`
+  attribute in markup; a property set through the CSSOM is explicitly outside what `style-src`
+  governs, and is the only way to draw a rollout meter at the fraction the store reports.
+- **Nothing else moved.** The panes still build every node with `textContent`, so no value from
+  the API can become markup.
 
-The debt below is in the shipped design system and is drawn by nothing in this release, because
-no status badge, tag, or warning callout is on screen yet. In the light theme these pairings sit
-between 3.79:1 and 4.49:1 against the 4.5:1 they need; the same pairings pass in dark. Every one
-is byte-identical to the approved mock. They are recorded here so that the first pane to draw one
-does not ship it unnoticed:
+### Contrast, and the debt that is left
+
+Measured across both themes against composited backgrounds. **Every pairing these pages render
+passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or better.
+
+W1 recorded a set of inherited failures in the light theme and left them to the first pane that
+would draw one. App releases and Look up a user draw most of them, so those are closed here by
+darkening the hues themselves. Light-theme, status text on a tint mixed from itself, worst of
+the four surfaces the stylesheet composites it over:
+
+| Pair | Was | Now |
+|---|---|---|
+| `.badge-ok`, `.flagchip.is-ok`, `.verdict-better` | 4.10 | 4.64 |
+| `.badge-warn`, `.flagchip.is-warn`, `.reveal-note` | 4.07 | 4.63 |
+| `.badge-crit`, `.flagchip.is-crit`, `.nav-count.is-crit` | 3.92 | 4.62 |
+| `.tag-mobile` | 4.12 | 4.64 |
+| `.tag-coaches` | 4.34 | 4.67 |
+| `callout-warn` / `callout-crit` ink over the page background | 4.41 / 4.26 | 4.98 / 5.01 |
+
+What is left, drawn by nothing in this release and so still byte-identical to the mock:
 
 | Pair | Light ratio |
 |---|---|
-| `.badge-crit`, `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
-| `.btn-danger:hover` | 3.79 |
-| `.tag-backend` on its tint | 4.46 |
-| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background rather than a card | 4.04 / 4.21 / 4.17 |
-| `callout-warn` / `callout-crit` ink over the page background | 4.41 / 4.26 |
+| `.btn-danger` on its tint over a card | 4.62 after the `--crit` change, `:hover` 3.90 |
+| `.tag-backend` (`--s3`) on its tint | 3.98 |
+| `.tag-watch` (`--s4`) on its tint | 4.32 |
 
-Closing these means darkening the light theme's status hues, which is a design decision about
-approved tokens rather than a shell concern, so it is left to whoever owns the palette.
+`--s3` to `--s6` are left alone on purpose: the chart series they otherwise carry are graphical
+rather than text, so the pane that first draws one of them as text owns the same decision this
+one did.
+
+One thing colour still carries alone: the dot on a timeline entry in Look up a user, which
+repeats a severity the entry's own words already state. It is decoration over a label, not the
+label.
 
 ## Working on it locally
 
@@ -299,3 +375,7 @@ network. A local stub therefore has to be served from the same origin and port a
 files: one small server that serves `/ops/` and answers `/api/ops/*`, with the override set to
 that same origin. `python3 -m http.server` on its own serves the files but answers no API, so the
 sign-in form is as far as it goes.
+
+A stub therefore has to answer at least `/api/ops/auth/login`, `/api/ops/auth/session` and
+`/api/ops/auth/refresh` before any pane will render, because the shell holds every pane behind a
+confirmed session.

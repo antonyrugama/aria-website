@@ -20,6 +20,8 @@
   /* ------------------------------------------------------- pane registry */
 
   /* wave      which delivery slice builds the pane's contents
+     built     that wave has shipped, so a pane script fills #content and the
+               not-built-yet card is not drawn
      scope     the All / Mobile / Coaches Web control applies
      scopeNote shown in the filter bar where the absence needs explaining
      range     false, or the list of ranges this pane offers
@@ -86,12 +88,12 @@
     releases: {
       file: 'releases.html', icon: 'release', label: 'App releases', group: 'Apps and people',
       question: 'Which app version is where, and is the newest one healthy?',
-      wave: 'W4', scope: false, range: ['7d', '30d', '90d'], env: false
+      wave: 'W4', built: true, scope: false, range: ['7d', '30d', '90d'], env: false
     },
     users: {
       file: 'users.html', icon: 'users', label: 'Look up a user', group: 'Apps and people',
       question: 'What is going on with this one account?',
-      wave: 'W4', scope: true, range: false, env: false
+      wave: 'W4', built: true, scope: true, range: false, env: false
     },
     settings: {
       file: 'settings.html', icon: 'settings', label: 'Settings', group: 'Apps and people',
@@ -372,6 +374,17 @@
     });
     return seg;
   }
+
+  /* Set the moment the shell is in the document and the pane may draw, and
+     never cleared. Read by a pane script that loaded too late to hear the
+     ops:ready event it would otherwise have waited for. */
+  var readyDetail = null;
+
+  /* The rendered filter bar, or null on a pane that has no shared filter at
+     all. Exposed so a pane can put its own controls beside the shared ones
+     rather than growing a second bar underneath the first. A pane appends to
+     it and owns what it appended; nothing here reads it back. */
+  var filterBarEl = null;
 
   function renderFilters(pane) {
     if (!pane.scope && !pane.range && !pane.env && !pane.scopeNote) return null;
@@ -798,13 +811,16 @@
 
       var main = h('div', { className: 'main' });
       main.appendChild(renderTopbar(pane));
-      var bar = renderFilters(pane);
-      if (bar) main.appendChild(bar);
+      filterBarEl = renderFilters(pane);
+      if (filterBarEl) main.appendChild(filterBarEl);
 
       var content = h('main', { className: 'content', id: 'content', tabindex: '-1' });
       if (pane.roles && !session.hasRole(pane.roles)) content.appendChild(renderDenied(pane));
       else if (pane.deferred) content.appendChild(renderDeferred(pane));
-      else content.appendChild(renderNotBuilt(pane));
+      /* A built pane's own script fills #content off ops:ready. Nothing is put
+         here in the meantime, because the pane draws its own loading state and
+         two placeholders would flash one after the other. */
+      else if (!pane.built) content.appendChild(renderNotBuilt(pane));
       main.appendChild(content);
 
       app.appendChild(main);
@@ -815,12 +831,17 @@
       wireTabs(app);
 
       /* Both events fire after the session is confirmed and the shell is in
-         the document, so a pane script that adds its listeners while this file
-         is still booting cannot miss them. ops:ready is the signal that
-         #content exists; ops:filters then carries the starting selection. */
-      global.dispatchEvent(new CustomEvent('ops:ready', {
-        detail: { pane: pageId, filters: shallow(filters) }
-      }));
+         the document. ops:ready is the signal that #content exists;
+         ops:filters then carries the starting selection.
+
+         The listener a pane adds is not guaranteed to be in place by the time
+         these fire, and the earlier claim that it was is simply wrong: these
+         are dispatched from a promise callback, and the parser is free to run
+         that callback while it waits for the pane's own script file to
+         arrive. So the fact is recorded as well as announced, and a pane
+         reads OpsShell.ready() rather than assuming it heard the event. */
+      readyDetail = { pane: pageId, filters: shallow(filters) };
+      global.dispatchEvent(new CustomEvent('ops:ready', { detail: readyDetail }));
       emitFilters();
     }).catch(function (err) {
       /* A terminal failure has already navigated to the sign-in screen and
@@ -839,6 +860,8 @@
     init: init,
     panes: PANES,
     filters: function () { return shallow(filters); },
+    ready: function () { return readyDetail; },
+    filterBar: function () { return filterBarEl; },
     h: h,
     icon: icon,
     toast: toast,
