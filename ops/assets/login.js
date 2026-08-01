@@ -243,6 +243,14 @@
         setAlert('Something went wrong signing in. Try again.', '', true);
         return;
       }
+      if (err.code === 'ops_identity_changed') {
+        /* Structurally unreachable from here, because signIn wipes the slate
+           before it adopts anything, so nothing is committed to clash with.
+           Handled anyway: the session layer throws rather than returning a
+           flag precisely so that no call site depends on that reasoning
+           staying true. Navigation is already under way, so say nothing. */
+        return;
+      }
       if (err.code === 'ops_login_rate_limited') {
         rateLimited(signinSubmit, 'Sign in', err.retryAfter);
         return;

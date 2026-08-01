@@ -36,23 +36,35 @@ credential for every page that origin will ever serve. Every request sends
 `credentials: 'omit'` and no CSRF token, the latter because the API route family never reads a
 cookie in the first place.
 
-### What the client promises
+### What the client promises, and what it depends on
 
 **Ordinary races converge. Stale replays sign this device out locally. The server adjudicates.**
 
 That is deliberately weaker than the absolute "at most once, ever" an earlier draft of this
 directory claimed, and the weaker promise is the honest one.
 
-The backend rotates the refresh token on every use and keeps one generation of history. It also
-serves a **grace window**: the immediately-previous generation, presented within a few seconds of
-its rotation, returns the current pair without rotating again. Two tabs refreshing at the same
-moment therefore converge on the same credential instead of one of them destroying the session.
-Reuse detection, which revokes the session on every device and writes a compromise event into an
-append-only audit log, is reserved for what it was always meant to catch: a generation older than
-the last, or one presented long after its rotation.
+> **This directory depends on a backend change that is not yet deployed.** The client here is
+> written against a **grace window** on the refresh endpoint, described below. Until that change
+> is live in production, a genuine two-tab race still ends in a revoked session and a compromise
+> event in the audit log. The ordering is a release-time requirement: the backend change merges
+> and deploys first, and only then does this directory go live. Nothing mechanical enforces
+> that, which is precisely why it is written down here.
 
-Because the server makes ordinary races safe, the client does not have to, and what remains here
-is sized to that:
+The backend rotates the refresh token on every use and keeps one generation of history. The
+grace window it is to serve: the immediately-previous generation, presented within a few seconds
+of its rotation, is answered with a **fresh access token and `refreshTokenRotated: false`**, and
+no refresh token, because the server holds only hashes and could not return the current one. The
+client's side of that contract is to leave its refresh slot untouched on a grace response:
+whichever tab won the rotation has already written the truth to shared storage, and writing
+anything else would clobber it. Two tabs refreshing at the same moment therefore converge instead
+of one of them destroying the session.
+
+Reuse detection, which revokes the session on every device and writes a compromise event into an
+append-only audit log, is then reserved for what it was always meant to catch: a generation older
+than the last, or one presented long after its rotation.
+
+Given that grace window, the client does not have to be the thing that makes races safe, and
+what remains here is sized to that:
 
 1. **The access token is cached per tab**, in `sessionStorage`, so ordinary navigation around
    this multi-page shell performs no refresh at all. This is the piece that still earns its
@@ -62,12 +74,19 @@ is sized to that:
    the token re-read *after* the lock is held. This is now an efficiency measure rather than a
    correctness one, so its absence is fine and the fallback is a per-document queue.
 3. **A ledger of already-presented token hashes** in `localStorage`, consulted before an
-   exchange. Its one remaining job is the case the grace window cannot cover: a refresh whose
-   response was lost, replayed long afterwards, for instance when a tab is restored days later.
-   Catching it turns a session revoked on every device into a sign-in on this one. It is best
-   effort throughout: if storage is full, if SubtleCrypto is missing, if an entry has been
-   evicted, the exchange simply proceeds and the server decides. Failing open is correct here
-   precisely because the promise above is not absolute.
+   exchange. This is a local courtesy, not a guarantee, and the difference is worth being exact
+   about. It targets the case the grace window cannot cover: a refresh whose response was lost,
+   presented again after the window has passed. When it hits, the operator gets a clean sign-in
+   on this device instead of a session revoked on every device. **When it misses, and it will,**
+   the request reaches the server and the server's revocation path handles it, which is the
+   correct security outcome arrived at by a worse route.
+
+   It misses whenever storage is full, SubtleCrypto is absent, or the entry has been evicted.
+   Eviction is the honest limit: the list is capped at 1000 hashes, roughly ten days of one-tab
+   use and proportionally less with more tabs open, so the further into the past a lost response
+   was, the less likely its hash is still here. Sizing it to cover the whole 30-day session
+   ceiling would mean unbounded storage to buy a nicer sign-out message. Nothing here is load
+   bearing, which is exactly why every path fails open.
 
 The client never silently changes administrator. Stored credentials carry the subject they
 belong to, so a tab that has already rendered for one administrator will not adopt another's
@@ -80,11 +99,12 @@ and returns to the sign-in screen with an explanation.
 |---|---|---|
 | Access token | 15 minutes | `sessionStorage`, with the administrator it belongs to |
 | Refresh token | up to 30 days | `localStorage` when "Remember this device" is on, `sessionStorage` when off, with the administrator it belongs to |
-| Spent-token ledger | last 200 exchanges | `localStorage`, SHA-256 hashes only, never tokens |
+| Spent-token ledger | last 1000 exchanges | `localStorage`, SHA-256 hashes only, never tokens |
 
 The identity design record originally specified the access token as **memory only**. Caching it
-in `sessionStorage` is an accepted amendment to that record, made by its owner alongside the
-grace-window change described above, rather than a unilateral departure:
+in `sessionStorage` is an amendment to that record, accepted by its owner and shipping in the
+same backend change as the grace window described above. Like the grace window, it is agreed but
+not yet live, so the record and this directory are aligned only once that change deploys.
 memory-only forces a refresh on every page load of a multi-page shell, which makes rotation as
 frequent as navigation and was the direct cause of the replay hazard the grace window now
 absorbs. `sessionStorage` preserves the property the record was protecting, that a browser

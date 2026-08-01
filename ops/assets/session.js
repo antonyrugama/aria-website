@@ -10,17 +10,25 @@
      The server adjudicates; the client does not pretend to.
 
    That is deliberately weaker than the absolute "at most once, ever" an
-   earlier draft claimed, and the weaker promise is the honest one. The server
-   now serves a grace window: the immediately-previous token generation,
-   presented within a few seconds of its rotation, returns the current pair
-   without rotating again, so two tabs refreshing at the same moment converge
-   instead of one of them destroying the session. Reuse detection, which
-   revokes the session everywhere and writes a compromise event into an
-   append-only audit log, is reserved for what it was always meant for: a
-   generation older than the last, or one presented long after its rotation.
+   earlier draft claimed, and the weaker promise is the honest one.
 
-   The client therefore no longer has to be the thing that makes races safe,
-   and the machinery here is sized accordingly:
+   IT ALSO DEPENDS ON A BACKEND CHANGE THAT MUST BE DEPLOYED FIRST. The server
+   is to serve a grace window: the immediately-previous token generation,
+   presented within a few seconds of its rotation, is answered with a fresh
+   access token and refreshTokenRotated: false, rather than being treated as
+   theft. Two tabs refreshing at the same moment then converge instead of one
+   of them destroying the session. Reuse detection, which revokes the session
+   everywhere and writes a compromise event into an append-only audit log, is
+   reserved for what it was always meant for: a generation older than the
+   last, or one presented long after its rotation.
+
+   Until that backend change is live, a genuine two-tab race still ends in a
+   revoked session. Nothing in this file can prevent that on its own, which is
+   why the ordering is a release-time requirement and not a code concern. See
+   ops/README.md.
+
+   Given the grace window, the client does not have to be the thing that makes
+   races safe, and the machinery here is sized accordingly:
 
      1. The access token is cached per tab, so ordinary navigation performs no
         refresh at all. This is the one that still earns its keep: it turns
@@ -30,14 +38,21 @@
         API exists. This is now an efficiency measure, not a correctness one,
         so its absence is fine and the fallback is a per-document queue.
      3. A ledger of already-presented token hashes, consulted before an
-        exchange. Its only remaining job is the case the grace window cannot
-        cover: a refresh whose response was lost, replayed long afterwards,
-        for instance when a tab is restored days later. Catching it turns a
-        session revoked on every device into a sign-in on this one. It is
-        best effort throughout: if storage is full, if SubtleCrypto is
-        missing, if an entry has been evicted, the exchange proceeds and the
-        server decides. Failing open is correct here precisely because the
-        promise above is not absolute.
+        exchange. This is a local courtesy, not a guarantee, and it is worth
+        being exact about which. It targets the case the grace window cannot
+        cover: a refresh whose response was lost, presented again after the
+        window has passed. When it hits, the operator gets a clean sign-in on
+        this device instead of a session revoked on every device. When it
+        misses, and it will, the request goes to the server and the server's
+        revocation path handles it, which is the correct security outcome
+        reached by a worse route.
+
+        It misses whenever storage is full, SubtleCrypto is absent, or the
+        entry has been evicted, and eviction is the honest limit: the list is
+        capped, so the further into the past a lost response was, the less
+        likely its hash is still here. Sizing it to cover every case would
+        mean unbounded storage for a UX nicety. Nothing here is load bearing,
+        which is exactly why every path fails open.
 
    Storage:
      - The refresh token is opaque, lasts up to 30 days, and must survive a
@@ -65,12 +80,20 @@
   var ACCESS_KEY = 'ops-access';
   var SPENT_KEY = 'ops-spent';
   var LOCK_NAME = 'ops-refresh';
-  /* A plain capped list. The timestamps and age pruning an earlier draft
-     carried existed to guarantee no live hash was ever evicted, which mattered
-     when eviction meant a revoked session. Under the grace window an eviction
-     costs at most one avoidable sign-in, so the clock handling that came with
-     it defended nothing and is gone. */
-  var SPENT_KEEP = 200;
+  /* Raised when the credential under this tab has become a different
+     administrator's. Carried as an error code so no call site can adopt a
+     credential without dealing with it. */
+  var IDENTITY_CHANGED = 'ops_identity_changed';
+  /* A plain capped list, oldest evicted first. Roughly ten days of one-tab
+     use at one exchange per fifteen minutes, proportionally less with more
+     tabs open, which is a deliberate compromise rather than a size chosen to
+     cover the whole 30 day session ceiling: covering that would mean unbounded
+     storage to buy a nicer sign-out message. The timestamps and age pruning an
+     earlier draft carried existed to guarantee no live hash was ever evicted,
+     which mattered only while eviction meant a revoked session; under the
+     grace window an eviction costs at most one avoidable sign-in, so the clock
+     handling that came with them defended nothing and is gone. */
+  var SPENT_KEEP = 1000;
   var ROOT = 'login.html';
 
   /* Failures that mean the session itself is finished. Refreshing will not
@@ -271,15 +294,20 @@
     return (state.admin && state.admin.id) || cachedSubject() || null;
   }
 
-  /* Returns false when the credential belongs to a different administrator
-     than the one this tab is already showing. The caller must stop: navigation
-     to the sign-in screen is already under way. */
+  /* Throws, rather than returning a flag, when the credential belongs to a
+     different administrator than the one this tab is already showing. A
+     boolean can be ignored by omission, and two of the three call sites cannot
+     currently reach the mismatch, so a returned flag would have been safety
+     resting on incidental ordering. Throwing makes every present and future
+     caller deal with it. Navigation to the sign-in screen is already under way
+     by the time this throws. */
   function adoptCredential(data, remember) {
     var incoming = (data.admin && data.admin.id) || null;
     var committed = committedSubject();
     if (incoming && committed && incoming !== committed) {
       identityChanged();
-      return false;
+      throw new api.OpsApiError(401, IDENTITY_CHANGED,
+        'A different administrator signed in on this browser.');
     }
     var subject = incoming || committed;
 
@@ -288,14 +316,25 @@
        will have expired by the time it arrives. */
     accessExpiresAt = Date.now() + Math.max(0, (data.expiresIn || 900) - 30) * 1000;
     writeAccessCache(accessToken, accessExpiresAt, subject);
-    if (data.refreshToken) writeRefreshToken(data.refreshToken, remember, subject);
+
+    /* A grace response says refreshTokenRotated: false and carries no refresh
+       token, because the server holds only hashes and could not return the
+       current one even if that were desirable. The contract is to leave the
+       refresh slot alone: whichever tab won the rotation has already written
+       the truth to shared storage, and writing anything here would clobber it.
+       An explicit flag rather than the absence of a field, so that a future
+       response shape cannot quietly turn this into an overwrite. */
+    if (data.refreshTokenRotated !== false && data.refreshToken) {
+      writeRefreshToken(data.refreshToken, remember, subject);
+    }
+
     if (data.admin) state.admin = data.admin;
     if (data.session) state.session = data.session;
     if (typeof data.authTime === 'number') state.authTime = data.authTime;
     if (typeof data.reauthWindowSeconds === 'number') {
       state.reauthWindowSeconds = data.reauthWindowSeconds;
     }
-    return true;
+    return data;
   }
 
   /* ------------------------------------------------------------- refresh */
@@ -364,11 +403,7 @@
         body: { refreshToken: token }
       });
     }).then(function (payload) {
-      if (!adoptCredential(payload.data, remember)) {
-        /* identityChanged() is navigating. Never settle, so nothing downstream
-           renders with the wrong administrator's data in hand. */
-        return new Promise(function () {});
-      }
+      adoptCredential(payload.data, remember);
       return payload.data;
     });
   }
@@ -455,6 +490,12 @@
       }).catch(function (err) {
         if (!(err instanceof api.OpsApiError)) throw err;
 
+        if (err.code === IDENTITY_CHANGED) {
+          /* identityChanged() has already cleared state and is navigating.
+             Never settle, so nothing downstream renders with the wrong
+             administrator's data in hand. */
+          return new Promise(function () {});
+        }
         if (TERMINAL[err.code]) {
           endSession(TERMINAL[err.code]);
           throw err;
@@ -550,7 +591,8 @@
       var committed = committedSubject();
       if (incoming && committed && incoming !== committed) {
         identityChanged();
-        return new Promise(function () {});
+        throw new api.OpsApiError(401, IDENTITY_CHANGED,
+          'A different administrator signed in on this browser.');
       }
       state.admin = payload.data.admin;
       state.session = payload.data.session;
@@ -589,6 +631,9 @@
         return new Promise(function () {});  /* endSession already redirected */
       }
       if (err instanceof api.OpsApiError && err.code === 'ops_password_change_required') {
+        return new Promise(function () {});
+      }
+      if (err instanceof api.OpsApiError && err.code === IDENTITY_CHANGED) {
         return new Promise(function () {});
       }
       throw err;
