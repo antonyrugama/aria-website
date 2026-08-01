@@ -24,7 +24,8 @@
     revoked: { tone: '', text: 'That session was revoked. Sign in again, and if you did not expect this, tell the other administrator.' },
     ended: { tone: 'is-warn', text: 'Your session has ended. Sign in again.' },
     inactive: { tone: '', text: 'This administrator account is not active. An owner has to re-enable it.' },
-    signedout: { tone: 'is-ok', text: 'You are signed out.' }
+    signedout: { tone: 'is-ok', text: 'You are signed out.' },
+    switched: { tone: '', text: 'A different administrator signed in on this browser, so this tab was signed out rather than quietly switched over to them. Sign in again to carry on as yourself.' }
   };
 
   var query = new URLSearchParams(global.location.search);

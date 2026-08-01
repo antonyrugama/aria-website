@@ -4,47 +4,58 @@
    aged out, and when a failure means "sign in again" rather than "try again"
    lives here. api.js is the transport underneath it and knows none of this.
 
-   THE INVARIANT THIS FILE EXISTS TO HOLD:
+   WHAT THIS FILE PROMISES, stated exactly:
 
-     A refresh token is presented to the server at most once, ever, from this
-     browser profile.
+     Ordinary races converge. Stale replays sign this device out locally.
+     The server adjudicates; the client does not pretend to.
 
-   That is not a nicety. The backend rotates the refresh token on every use and
-   keeps one generation of history, so re-presenting a token it has already
-   rotated is read as theft: it revokes the entire session on every device and
-   writes an admin.refresh_reuse_detected event into an append-only audit log
-   with no delete path. An operator who middle-clicked a nav link would be
-   told a security incident had occurred. Three mechanisms hold the invariant,
-   and each closes a case the others cannot:
+   That is deliberately weaker than the absolute "at most once, ever" an
+   earlier draft claimed, and the weaker promise is the honest one. The server
+   now serves a grace window: the immediately-previous token generation,
+   presented within a few seconds of its rotation, returns the current pair
+   without rotating again, so two tabs refreshing at the same moment converge
+   instead of one of them destroying the session. Reuse detection, which
+   revokes the session everywhere and writes a compromise event into an
+   append-only audit log, is reserved for what it was always meant for: a
+   generation older than the last, or one presented long after its rotation.
+
+   The client therefore no longer has to be the thing that makes races safe,
+   and the machinery here is sized accordingly:
 
      1. The access token is cached per tab, so ordinary navigation performs no
-        refresh at all. This is what makes the other two rarely needed.
-     2. Web Locks serialise the read/POST/write across every same-origin
-        context, and the token is re-read after the lock is held rather than
-        before waiting for it, so two tabs cannot both present the same value.
-     3. A ledger of already-presented tokens, keyed by hash, is consulted
-        before every POST. A token this profile has already spent is never
-        sent again: the client signs itself out locally instead, which costs
-        one sign-in and produces no false compromise event.
+        refresh at all. This is the one that still earns its keep: it turns
+        rotation from once per page view into roughly once per fifteen minutes
+        per tab, which is the difference between constant races and rare ones.
+     2. Web Locks serialise the exchange across same-origin contexts where the
+        API exists. This is now an efficiency measure, not a correctness one,
+        so its absence is fine and the fallback is a per-document queue.
+     3. A ledger of already-presented token hashes, consulted before an
+        exchange. Its only remaining job is the case the grace window cannot
+        cover: a refresh whose response was lost, replayed long afterwards,
+        for instance when a tab is restored days later. Catching it turns a
+        session revoked on every device into a sign-in on this one. It is
+        best effort throughout: if storage is full, if SubtleCrypto is
+        missing, if an entry has been evicted, the exchange proceeds and the
+        server decides. Failing open is correct here precisely because the
+        promise above is not absolute.
 
-   Storage, and why it is split:
+   Storage:
      - The refresh token is opaque, lasts up to 30 days, and must survive a
        reload for a durable session to mean anything. It goes to localStorage
        when the operator asked to be remembered on the device, and to
        sessionStorage otherwise, which is what makes "remember this device" a
-       real control rather than a decorative one.
-     - The access token is a 15 minute JWT cached in sessionStorage. The
-       identity design record describes it as memory only, and this is a
-       deliberate, documented departure from that line, because memory only
-       forces a refresh on every page load of a multi-page shell and therefore
-       makes rotation as frequent as navigation. sessionStorage keeps the
-       property the contract was protecting, that a browser restart cannot
-       resume a session without the refresh exchange, and a 15 minute token is
-       a strictly smaller prize than the 30 day refresh token already sitting
-       in the same origin's storage by the contract's own accepted trade. The
-       backend's identity design record should be updated to match.
-     - The spent-token ledger stores SHA-256 hashes, never tokens, so it
-       reveals nothing to anything that reads it. */
+       real control rather than a decorative one. It is stored with the
+       administrator it belongs to, so a tab can tell when the credential
+       under it has become somebody else's.
+     - The access token is a 15 minute JWT cached in sessionStorage. This was
+       a departure from the identity design record's "memory only" line and is
+       now an accepted amendment to it: memory only forces a refresh on every
+       page load of a multi-page shell, which is what made rotation as
+       frequent as navigation. sessionStorage keeps the property the record
+       was protecting, that a browser restart cannot resume a session without
+       the refresh exchange.
+     - The ledger stores SHA-256 hashes, never tokens, so it reveals nothing
+       to anything that reads it. */
 (function (global) {
   'use strict';
 
@@ -54,11 +65,12 @@
   var ACCESS_KEY = 'ops-access';
   var SPENT_KEY = 'ops-spent';
   var LOCK_NAME = 'ops-refresh';
-  /* 30 days is the server's hard ceiling on a session, so a hash older than
-     that cannot protect anything. 500 entries is roughly five days of
-     continuous use at one rotation per fifteen minutes per tab. */
-  var SPENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-  var SPENT_KEEP = 500;
+  /* A plain capped list. The timestamps and age pruning an earlier draft
+     carried existed to guarantee no live hash was ever evicted, which mattered
+     when eviction meant a revoked session. Under the grace window an eviction
+     costs at most one avoidable sign-in, so the clock handling that came with
+     it defended nothing and is gone. */
+  var SPENT_KEEP = 200;
   var ROOT = 'login.html';
 
   /* Failures that mean the session itself is finished. Refreshing will not
@@ -105,21 +117,41 @@
     try { store.removeItem(key); } catch (e) {}
   }
 
+  /* The refresh credential is stored with the administrator it belongs to.
+     One profile has one refresh slot, so a second sign-in replaces it, and
+     without the subject beside it a tab already rendered for one administrator
+     has no way to notice the credential underneath it is now someone else's. */
+  function readRefreshRecord() {
+    var raw = safeGet(global.sessionStorage, REFRESH_KEY) ||
+              safeGet(global.localStorage, REFRESH_KEY);
+    if (!raw) return null;
+    var v;
+    try { v = JSON.parse(raw); } catch (e) { return null; }
+    if (!v || typeof v.t !== 'string' || !v.t) return null;
+    return { token: v.t, subject: typeof v.s === 'string' ? v.s : null };
+  }
+
   function readRefreshToken() {
-    return safeGet(global.sessionStorage, REFRESH_KEY) ||
-           safeGet(global.localStorage, REFRESH_KEY);
+    var rec = readRefreshRecord();
+    return rec ? rec.token : null;
+  }
+
+  function storedSubject() {
+    var rec = readRefreshRecord();
+    return rec ? rec.subject : null;
   }
 
   /* remember=true survives a browser restart; remember=false lives only as
      long as the tab. Writing one always clears the other so the two stores
      can never disagree about which token is current. */
-  function writeRefreshToken(token, remember) {
+  function writeRefreshToken(token, remember, subject) {
+    var payload = JSON.stringify({ t: token, s: subject || null });
     if (remember) {
       safeRemove(global.sessionStorage, REFRESH_KEY);
-      safeSet(global.localStorage, REFRESH_KEY, token);
+      safeSet(global.localStorage, REFRESH_KEY, payload);
     } else {
       safeRemove(global.localStorage, REFRESH_KEY);
-      safeSet(global.sessionStorage, REFRESH_KEY, token);
+      safeSet(global.sessionStorage, REFRESH_KEY, payload);
     }
   }
 
@@ -130,7 +162,12 @@
   /* The access token is cached for this tab only. A tab opened from a link
      inherits a copy of sessionStorage, which is exactly what we want here: the
      new tab starts with a usable access token and therefore does not refresh,
-     which is the collision the copy would otherwise cause. */
+     which is the collision the copy would otherwise cause.
+
+     The cache carries its subject too. If another tab has since signed in as a
+     different administrator, this tab's cached bearer belongs to the previous
+     one, and handing it back as though it were current is how a tab silently
+     starts acting as somebody else. */
   function readAccessCache() {
     var raw = safeGet(global.sessionStorage, ACCESS_KEY);
     if (!raw) return null;
@@ -138,12 +175,24 @@
     try { v = JSON.parse(raw); } catch (e) { return null; }
     if (!v || typeof v.token !== 'string' || typeof v.expiresAt !== 'number') return null;
     if (Date.now() >= v.expiresAt) return null;
+
+    var current = storedSubject();
+    if (v.s && current && v.s !== current) return null;
     return v;
   }
 
-  function writeAccessCache(token, expiresAt) {
+  function cachedSubject() {
+    var raw = safeGet(global.sessionStorage, ACCESS_KEY);
+    if (!raw) return null;
+    try {
+      var v = JSON.parse(raw);
+      return v && typeof v.s === 'string' ? v.s : null;
+    } catch (e) { return null; }
+  }
+
+  function writeAccessCache(token, expiresAt, subject) {
     safeSet(global.sessionStorage, ACCESS_KEY,
-      JSON.stringify({ token: token, expiresAt: expiresAt }));
+      JSON.stringify({ token: token, expiresAt: expiresAt, s: subject || null }));
   }
 
   /* Throws away the access token everywhere it is held, memory and cache
@@ -161,40 +210,32 @@
      ones that inherited a copied sessionStorage, which is the only way a tab
      holding a duplicated token can find out the token is spent.
 
-     Entries are pruned by age, not by count. A hash stops mattering when the
-     session that owned it can no longer exist, and the server's ceiling on
-     that is 30 days. Evicting on a small count instead would let a tab that
-     had been dormant across enough rotations wake up holding a token whose
-     hash had scrolled off the end, which is the one way this ledger could
-     have failed open. The count cap is only a backstop against unbounded
-     growth, and is far above any realistic rotation rate. */
+     Every operation here is best effort and every failure path returns the
+     answer that lets the exchange proceed. The server, not this list, decides
+     whether a token is acceptable. */
   function readSpent() {
     var raw = safeGet(global.localStorage, SPENT_KEY);
     if (!raw) return [];
     var v;
     try { v = JSON.parse(raw); } catch (e) { return []; }
     if (!Array.isArray(v)) return [];
-    var floor = Date.now() - SPENT_MAX_AGE_MS;
-    return v.filter(function (e) {
-      return e && typeof e.h === 'string' && typeof e.t === 'number' && e.t > floor;
-    });
+    return v.filter(function (h) { return typeof h === 'string'; });
   }
 
   function markSpent(hash) {
     var list = readSpent();
-    if (!list.some(function (e) { return e.h === hash; })) {
-      list.push({ h: hash, t: Date.now() });
-    }
+    if (list.indexOf(hash) === -1) list.push(hash);
     safeSet(global.localStorage, SPENT_KEY, JSON.stringify(list.slice(-SPENT_KEEP)));
   }
 
   function isSpent(hash) {
-    return readSpent().some(function (e) { return e.h === hash; });
+    return readSpent().indexOf(hash) !== -1;
   }
 
   /* Resolves to a hex digest, or null where SubtleCrypto is unavailable (an
-     insecure origin). Null degrades to the pre-ledger behaviour rather than
-     blocking sign in, and production is https so it does not arise there. */
+     insecure origin). Null skips the guard rather than blocking sign in, which
+     is the correct trade now that the guard is a courtesy rather than a
+     correctness requirement. Production is https, so it does not arise there. */
   function hashToken(token) {
     var subtle = global.crypto && global.crypto.subtle;
     if (!subtle || !global.TextEncoder) return Promise.resolve(null);
@@ -222,19 +263,39 @@
 
   /* -------------------------------------------------------- token intake */
 
+  /* The identity this tab has already committed to, if any: what it rendered,
+     or failing that what its cached bearer belongs to. Null means the tab has
+     not shown anybody anything yet, and adopting whichever credential is on
+     the device is simply correct rather than a switch. */
+  function committedSubject() {
+    return (state.admin && state.admin.id) || cachedSubject() || null;
+  }
+
+  /* Returns false when the credential belongs to a different administrator
+     than the one this tab is already showing. The caller must stop: navigation
+     to the sign-in screen is already under way. */
   function adoptCredential(data, remember) {
+    var incoming = (data.admin && data.admin.id) || null;
+    var committed = committedSubject();
+    if (incoming && committed && incoming !== committed) {
+      identityChanged();
+      return false;
+    }
+    var subject = incoming || committed;
+
     accessToken = data.accessToken;
     /* Renew thirty seconds early so a call never starts with a token that
        will have expired by the time it arrives. */
     accessExpiresAt = Date.now() + Math.max(0, (data.expiresIn || 900) - 30) * 1000;
-    writeAccessCache(accessToken, accessExpiresAt);
-    if (data.refreshToken) writeRefreshToken(data.refreshToken, remember);
+    writeAccessCache(accessToken, accessExpiresAt, subject);
+    if (data.refreshToken) writeRefreshToken(data.refreshToken, remember, subject);
     if (data.admin) state.admin = data.admin;
     if (data.session) state.session = data.session;
     if (typeof data.authTime === 'number') state.authTime = data.authTime;
     if (typeof data.reauthWindowSeconds === 'number') {
       state.reauthWindowSeconds = data.reauthWindowSeconds;
     }
+    return true;
   }
 
   /* ------------------------------------------------------------- refresh */
@@ -257,6 +318,14 @@
   function spentError() {
     return new api.OpsApiError(401, 'ops_refresh_spent',
       'Your session was continued somewhere else. Sign in again on this device.');
+  }
+
+  /* Raised when the credential under this tab has become a different
+     administrator's. Never adopted silently: the tab is signed out locally and
+     sent to the sign-in screen with an explanation. */
+  function identityChanged() {
+    clearTokens();
+    toLogin('switched');
   }
 
   /* Runs with the lock held. Everything it reads must be read here, not
@@ -284,9 +353,10 @@
 
       /* Marked before the request, not after. If this document is destroyed
          mid-flight, or the response is lost, the server may still have rotated
-         the token, and a client that cannot tell must assume it did. The cost
-         is one extra sign-in; the alternative is a replay that revokes the
-         session everywhere and files a false compromise event. */
+         the token and this client cannot tell. Recording it first means a much
+         later replay is caught here and costs one sign-in, instead of reaching
+         the server outside its grace window and revoking the session
+         everywhere. Within the window the server absorbs it either way. */
       if (hash) markSpent(hash);
 
       return api.request('/api/ops/auth/refresh', {
@@ -294,7 +364,11 @@
         body: { refreshToken: token }
       });
     }).then(function (payload) {
-      adoptCredential(payload.data, remember);
+      if (!adoptCredential(payload.data, remember)) {
+        /* identityChanged() is navigating. Never settle, so nothing downstream
+           renders with the wrong administrator's data in hand. */
+        return new Promise(function () {});
+      }
       return payload.data;
     });
   }
@@ -417,6 +491,9 @@
       method: 'POST',
       body: { email: email, password: password }
     }).then(function (payload) {
+      /* Signing in as somebody else is a deliberate switch, not a silent one,
+         so the slate is wiped first and nothing is committed to compare
+         against. */
       clearTokens();
       adoptCredential(payload.data, !!remember);
       return payload.data;
@@ -469,6 +546,12 @@
 
   function loadSession() {
     return call('/api/ops/auth/session').then(function (payload) {
+      var incoming = payload.data.admin && payload.data.admin.id;
+      var committed = committedSubject();
+      if (incoming && committed && incoming !== committed) {
+        identityChanged();
+        return new Promise(function () {});
+      }
       state.admin = payload.data.admin;
       state.session = payload.data.session;
       state.authTime = payload.data.authTime;

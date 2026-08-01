@@ -36,58 +36,64 @@ credential for every page that origin will ever serve. Every request sends
 `credentials: 'omit'` and no CSRF token, the latter because the API route family never reads a
 cookie in the first place.
 
-### The one invariant
+### What the client promises
 
-**A refresh token is presented to the server at most once, ever, from a given browser profile.**
+**Ordinary races converge. Stale replays sign this device out locally. The server adjudicates.**
 
-The backend rotates the refresh token on every use and keeps one generation of history, so
-re-presenting a token it has already rotated is read as theft: it revokes the session on every
-device and writes a compromise event into an append-only audit log. An operator who
-middle-clicked a nav link must never be able to cause that. Three mechanisms hold the invariant,
-each closing a case the others cannot:
+That is deliberately weaker than the absolute "at most once, ever" an earlier draft of this
+directory claimed, and the weaker promise is the honest one.
+
+The backend rotates the refresh token on every use and keeps one generation of history. It also
+serves a **grace window**: the immediately-previous generation, presented within a few seconds of
+its rotation, returns the current pair without rotating again. Two tabs refreshing at the same
+moment therefore converge on the same credential instead of one of them destroying the session.
+Reuse detection, which revokes the session on every device and writes a compromise event into an
+append-only audit log, is reserved for what it was always meant to catch: a generation older than
+the last, or one presented long after its rotation.
+
+Because the server makes ordinary races safe, the client does not have to, and what remains here
+is sized to that:
 
 1. **The access token is cached per tab**, in `sessionStorage`, so ordinary navigation around
-   this multi-page shell performs no refresh at all. This is what makes the other two rarely
-   needed: rotation happens roughly once per fifteen minutes per tab rather than once per page
-   view.
-2. **Web Locks** (`navigator.locks`) serialise the whole read/POST/write across every
-   same-origin context, and the token is re-read *after* the lock is held rather than captured
-   before waiting for it, so two tabs cannot both present the same value. Where Web Locks is
-   unavailable this degrades to a per-document queue.
-3. **A ledger of already-presented tokens**, stored as SHA-256 hashes in `localStorage` and
-   consulted before every exchange. A token this profile has already spent is never sent again:
-   the client signs itself out locally instead. That costs one sign-in and produces no false
-   compromise event. The hash is written *before* the request, not after, because a page
-   destroyed mid-flight cannot know whether the server rotated the token, and a client that
-   cannot know must assume it did. Entries are pruned by age rather than by count, because a
-   hash stops mattering only when the session that owned it can no longer exist, and the
-   server's ceiling on that is 30 days. Evicting on a small count instead would let a tab
-   dormant across enough rotations wake holding a token whose hash had scrolled off the end,
-   which is the one way this ledger could fail open.
+   this multi-page shell performs no refresh at all. This is the piece that still earns its
+   keep: rotation happens roughly once per fifteen minutes per tab rather than once per page
+   view, which is the difference between constant races and rare ones.
+2. **Web Locks** (`navigator.locks`) serialise the exchange across same-origin contexts, with
+   the token re-read *after* the lock is held. This is now an efficiency measure rather than a
+   correctness one, so its absence is fine and the fallback is a per-document queue.
+3. **A ledger of already-presented token hashes** in `localStorage`, consulted before an
+   exchange. Its one remaining job is the case the grace window cannot cover: a refresh whose
+   response was lost, replayed long afterwards, for instance when a tab is restored days later.
+   Catching it turns a session revoked on every device into a sign-in on this one. It is best
+   effort throughout: if storage is full, if SubtleCrypto is missing, if an entry has been
+   evicted, the exchange simply proceeds and the server decides. Failing open is correct here
+   precisely because the promise above is not absolute.
 
-Residual risk, stated plainly: if a tab is duplicated with "Remember this device" off, so the
-copy inherits a private `sessionStorage`, and the original is closed before the copy's access
-token expires, the copy still holds a token the original spent. The ledger catches it and signs
-that tab out locally rather than replaying it, so reuse detection is still never reached, but
-the operator does have to sign in again. Fully removing even that would need a short server-side
-idempotency window on the refresh endpoint, which is not a change this repository can make.
+The client never silently changes administrator. Stored credentials carry the subject they
+belong to, so a tab that has already rendered for one administrator will not adopt another's
+session if a second sign-in replaces the profile's single refresh slot; it clears its own state
+and returns to the sign-in screen with an explanation.
 
 ### Storage, and the one departure from the identity contract
 
 | Token | Lifetime | Where |
 |---|---|---|
-| Access token | 15 minutes | `sessionStorage` |
-| Refresh token | up to 30 days | `localStorage` when "Remember this device" is on, `sessionStorage` when off |
-| Spent-token ledger | 30 days | `localStorage`, SHA-256 hashes only, never tokens |
+| Access token | 15 minutes | `sessionStorage`, with the administrator it belongs to |
+| Refresh token | up to 30 days | `localStorage` when "Remember this device" is on, `sessionStorage` when off, with the administrator it belongs to |
+| Spent-token ledger | last 200 exchanges | `localStorage`, SHA-256 hashes only, never tokens |
 
-The identity design record specifies the access token as **memory only**. Caching it in
-`sessionStorage` is a deliberate departure, and it is recorded here because it needs to be
-agreed rather than discovered. Memory-only forces a refresh on every page load of a multi-page
-shell, which makes rotation as frequent as navigation and is the direct cause of the replay
-hazard above. `sessionStorage` preserves the property the contract was protecting, that a
-browser restart cannot resume a session without the refresh exchange, and a 15-minute token is
-a strictly smaller prize than the 30-day refresh token already sitting in the same origin's
-storage under the contract's own accepted trade.
+The identity design record originally specified the access token as **memory only**. Caching it
+in `sessionStorage` is an accepted amendment to that record, made by its owner alongside the
+grace-window change described above, rather than a unilateral departure:
+memory-only forces a refresh on every page load of a multi-page shell, which makes rotation as
+frequent as navigation and was the direct cause of the replay hazard the grace window now
+absorbs. `sessionStorage` preserves the property the record was protecting, that a browser
+restart cannot resume a session without the refresh exchange.
+
+The trade is worth stating rather than glossing: an access token in storage is an immediately
+usable bearer, so script running on this origin can act for the remainder of its lifetime
+without consuming the refresh token and without producing a rotation signal. That is a real
+cost, accepted knowingly, and it is why the next section matters as much as this one.
 
 ### A security control that lives outside this directory
 
