@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.runwitharia.com; base-uri 'none'; form-action 'none'">
+<title>Cloud costs | Aria Operations</title>
+<script src="assets/theme.js"></script>
+<link rel="stylesheet" href="assets/ops.css">
+</head>
+<body data-page="spend" class="is-booting">
+
+<a class="skip-link" href="#content">Skip to content</a>
+
+<!-- Nothing below is rendered until the operations API has confirmed a
+     session. The three gates are mutually exclusive, so there is no state in
+     which a half-built shell is on screen: it is the boot placeholder, the
+     failure card, or the real dashboard. -->
+
+<div class="gate gate-boot gate-center">
+  <div>
+    <div class="boot-mark" aria-hidden="true">A</div>
+    <p class="muted small" role="status">Checking your session</p>
+    <div class="skel skel-boot mt-sm" aria-hidden="true"></div>
+  </div>
+</div>
+
+<div class="gate gate-failed gate-center" id="gateFailed"></div>
+
+<div class="gate gate-app">
+  <div class="app" id="app"></div>
+</div>
+
+<noscript>
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <p>The operations dashboard needs JavaScript. It reads everything from an
+        authenticated API rather than from a server that renders pages, so with
+        scripting switched off there is nothing here.</p>
+    </div>
+  </div>
+</noscript>
+
+<script src="assets/icons.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/session.js"></script>
+<script src="assets/shell.js"></script>
+</body>
+</html>

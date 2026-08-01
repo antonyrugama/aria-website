@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.runwitharia.com; base-uri 'none'; form-action 'none'">
+<title>Sign in | Aria Operations</title>
+<script src="assets/theme.js"></script>
+<link rel="stylesheet" href="assets/ops.css">
+</head>
+<body data-page="login">
+
+<a class="skip-link" href="#authMain">Skip to content</a>
+
+<div class="auth-wrap">
+  <main class="auth" id="authMain">
+
+    <div class="auth-brand">
+      <div class="auth-mark" aria-hidden="true">A</div>
+      <div>
+        <h1 class="auth-title" id="authTitle">Sign in to Aria Operations</h1>
+        <p class="auth-sub" id="authSub">Private, admin only</p>
+      </div>
+      <span class="spacer"></span>
+      <button class="icon-btn" type="button" id="themeToggle" aria-label="Switch colour theme" title="Switch colour theme">
+        <span class="theme-dark-only" id="themeSun"></span>
+        <span class="theme-light-only" id="themeMoon"></span>
+      </button>
+    </div>
+
+    <div class="card auth-card">
+
+      <div class="form-alert" id="authAlert" role="alert" tabindex="-1"></div>
+
+      <!-- Phase one: credentials. method="post" plus the page's
+           form-action 'none' policy means that if this script ever fails to
+           load, the browser cannot fall back to navigating and putting a
+           password in the address bar. -->
+      <form id="signinForm" method="post" novalidate>
+        <div class="field">
+          <label class="field-label" for="email">Email</label>
+          <input class="field-input" id="email" name="email" type="email"
+                 autocomplete="username" inputmode="email" autocapitalize="none"
+                 spellcheck="false" required>
+          <p class="field-error" id="emailError"></p>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="password">Password</label>
+          <div class="field-pw">
+            <input class="field-input" id="password" name="password" type="password"
+                   autocomplete="current-password" required>
+            <button class="pw-toggle" type="button" data-pw-for="password"
+                    aria-pressed="false">Show</button>
+          </div>
+          <p class="field-error" id="passwordError"></p>
+        </div>
+
+        <div class="switch-row">
+          <button class="switch" type="button" id="remember" role="switch"
+                  aria-checked="false" aria-labelledby="rememberLabel"
+                  aria-describedby="rememberHint"></button>
+          <div class="switch-copy">
+            <span id="rememberLabel">Remember this device</span>
+            <p class="field-hint" id="rememberHint">Stays signed in on this browser for up to
+              30 days. Left off, the session ends when you close the tab, which is what you
+              want on a shared computer.</p>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-lg" type="submit" id="signinSubmit">Sign in</button>
+      </form>
+
+      <!-- Phase two: a provisioned account choosing its own password. The
+           server refuses every other route until this is done, so this is not
+           a suggestion the client is free to skip. -->
+      <form id="passwordForm" method="post" novalidate hidden>
+        <div class="field">
+          <label class="field-label" for="currentPassword">Current password</label>
+          <div class="field-pw">
+            <input class="field-input" id="currentPassword" name="currentPassword" type="password"
+                   autocomplete="current-password" required>
+            <button class="pw-toggle" type="button" data-pw-for="currentPassword"
+                    aria-pressed="false">Show</button>
+          </div>
+          <p class="field-hint">The password you were given when the account was set up.</p>
+          <p class="field-error" id="currentPasswordError"></p>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="newPassword">New password</label>
+          <div class="field-pw">
+            <input class="field-input" id="newPassword" name="newPassword" type="password"
+                   autocomplete="new-password" required minlength="12">
+            <button class="pw-toggle" type="button" data-pw-for="newPassword"
+                    aria-pressed="false">Show</button>
+          </div>
+          <p class="field-hint" id="newPasswordHint">At least 12 characters. Use something no
+            other service has.</p>
+          <p class="field-error" id="newPasswordError"></p>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="confirmPassword">Repeat new password</label>
+          <input class="field-input" id="confirmPassword" name="confirmPassword" type="password"
+                 autocomplete="new-password" required>
+          <p class="field-error" id="confirmPasswordError"></p>
+        </div>
+
+        <button class="btn btn-primary btn-lg" type="submit" id="passwordSubmit">Save password
+          and continue</button>
+        <p class="field-hint">Saving signs out every other device using this account.</p>
+      </form>
+
+    </div>
+
+    <p class="auth-foot">This page is public, and everything it can show is not. The dashboard
+      holds no key of its own: it renders what the operations API returns to a signed in
+      administrator and nothing else.</p>
+
+  </main>
+</div>
+
+<noscript>
+  <div class="auth-wrap">
+    <div class="auth">
+      <div class="card auth-card">
+        <p>The operations dashboard needs JavaScript. It signs in against an API rather than
+          rendering anything on a server, so with scripting switched off there is nothing here.</p>
+      </div>
+    </div>
+  </div>
+</noscript>
+
+<script src="assets/icons.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/session.js"></script>
+<script src="assets/login.js"></script>
+</body>
+</html>
