@@ -33,15 +33,15 @@
      2. Web Locks serialise the exchange across same-origin contexts where the
         API exists. This is now an efficiency measure, not a correctness one,
         so its absence is fine and the fallback is a per-document queue.
-     3. A ledger of already-presented token hashes and the moment each was
-        presented, consulted before an exchange. This is a local courtesy, not
-        a guarantee, and it is worth being exact about which. It targets the
-        one case the grace window cannot cover: a refresh whose response was
-        lost, presented again long after the window has passed. When it hits,
-        the operator gets a clean sign-in on this device instead of a refusal
-        that ends the session everywhere. When it misses, and it will, the
-        request goes to the server and the server decides, which is the
-        correct outcome reached by a worse route.
+     3. A ledger of already-presented token hashes, the moment each was
+        presented and which context presented it, consulted before an exchange.
+        This is a local courtesy, not a guarantee, and it is worth being exact
+        about which. It targets the one case the grace window cannot cover: a
+        refresh whose response was lost, presented again long after the window
+        has passed. When it hits, the operator gets a clean sign-in on this
+        device instead of a refusal that ends the session everywhere. When it
+        misses, and it will, the request goes to the server and the server
+        decides, which is the correct outcome reached by a worse route.
 
         The timestamp is the whole point of the entry, not bookkeeping around
         it. A hash on its own cannot tell a replay from the other tab in an
@@ -82,6 +82,7 @@
 
   var REFRESH_KEY = 'ops-refresh';
   var ACCESS_KEY = 'ops-access';
+  var SUPERSEDED_KEY = 'ops-superseded';
   var SPENT_KEY = 'ops-spent';
   var LOCK_NAME = 'ops-refresh';
   /* Raised when the credential under this tab has become a different
@@ -114,6 +115,19 @@
      that can actually resolve one. Over it, this device signs itself out
      instead. */
   var SPENT_GRACE_MS = 5000;
+  /* Tells this document's ledger entries apart from every other same-origin
+     context's. Per document rather than per tab, which is the right grain: a
+     mark is only ever taken back by the exchange that wrote it, and that
+     exchange cannot outlive the page it is running on. Uniqueness is all that
+     is asked of the value, so a refused or absent crypto API is not a failure
+     here. */
+  var CONTEXT_ID = (function () {
+    var c = global.crypto;
+    if (c && typeof c.randomUUID === 'function') {
+      try { return c.randomUUID(); } catch (e) {}
+    }
+    return String(Date.now()) + '-' + String(Math.random()).slice(2);
+  })();
   var ROOT = 'login.html';
 
   /* Failures that mean the session itself is finished. Refreshing will not
@@ -141,12 +155,6 @@
   var accessToken = null;
   var accessExpiresAt = 0;
   var refreshInFlight = null;
-  /* Set when the server has told this tab, in so many words, that the token it
-     presented is the previous generation and the successor was written where
-     this tab cannot read it. It is the difference between "your session has
-     ended" and "your session carried on in another tab", and only this tab
-     knows which of those happened. */
-  var credentialSuperseded = false;
 
   var state = {
     admin: null,
@@ -315,6 +323,30 @@
       JSON.stringify({ token: token, expiresAt: expiresAt, s: subject || null }));
   }
 
+  /* Set when the server has told this tab, in so many words, that the token it
+     presented is the previous generation and the successor was written where
+     this tab cannot read it. It is the difference between "your session has
+     ended" and "your session carried on in another tab", and only this tab
+     knows which of those happened.
+
+     In sessionStorage rather than a module variable, because this is a
+     multi-page shell and a module variable is forgotten by the next pane the
+     operator opens. The tab that retired its copy keeps a working access token
+     for up to fifteen minutes, so the flag has to survive every navigation
+     inside that window or the ending it explains arrives wearing the wrong
+     sentence: "your session expired", on a session that is still live in the
+     tab that won the rotation. It sits beside the record it describes, in the
+     store the retirement already wrote to, and is private to this tab for the
+     same reason that record is. */
+  function markSuperseded(on) {
+    if (on) safeSet(global.sessionStorage, SUPERSEDED_KEY, '1');
+    else safeRemove(global.sessionStorage, SUPERSEDED_KEY);
+  }
+
+  function credentialSuperseded() {
+    return safeGet(global.sessionStorage, SUPERSEDED_KEY) === '1';
+  }
+
   /* Throws away the access token everywhere it is held, memory and cache
      together. Clearing only the memory copy leaves the cache to hand the same
      rejected token straight back on the next read, which turns the
@@ -326,10 +358,13 @@
   }
 
   /* Hashes of refresh tokens this browser has already presented, each with the
-     moment it was presented. localStorage rather than sessionStorage on
-     purpose: it is shared by every tab including ones that inherited a copied
-     sessionStorage, which is the only way a tab holding a duplicated token can
-     find out the token has been presented at all.
+     moment it was presented and the context that presented it. localStorage
+     rather than sessionStorage on purpose: it is shared by every tab including
+     ones that inherited a copied sessionStorage, which is the only way a tab
+     holding a duplicated token can find out the token has been presented at
+     all. That sharing is also why an entry has to say whose presentation it
+     records: two tabs can present the same token, and only one of them may
+     take its own mark back.
 
      Every operation here is best effort and every failure path returns the
      answer that lets the exchange proceed. The server, not this list, decides
@@ -350,19 +385,41 @@
       JSON.stringify(list.slice(-SPENT_KEEP)));
   }
 
-  /* Returns whether the entry was actually recorded. A refused write means the
-     next presentation of this token cannot be recognised here and goes to the
-     server instead, which is the documented way this list fails. */
+  /* Records that this context has presented the token, and returns the entry
+     it wrote so that a later release can take back that one and nothing else.
+     Null when the write was refused: the next presentation of this token
+     cannot be recognised here and goes to the server instead, which is the
+     documented way this list fails.
+
+     Another context's entry for the same token is left where it is. Only this
+     context's own earlier mark for this same token is replaced, so a retry
+     does not accumulate entries. */
   function markSpent(hash) {
-    var list = readSpent().filter(function (e) { return e.h !== hash; });
-    list.push({ h: hash, at: Date.now() });
-    return writeSpent(list);
+    var list = readSpent().filter(function (e) {
+      return e.h !== hash || e.o !== CONTEXT_ID;
+    });
+    var entry = { h: hash, at: Date.now(), o: CONTEXT_ID };
+    list.push(entry);
+    return writeSpent(list) ? entry : null;
   }
 
-  /* Takes an entry back out, for the one case where the token demonstrably was
-     not consumed: the request never reached a server that could rotate it. */
-  function unmarkSpent(hash) {
-    writeSpent(readSpent().filter(function (e) { return e.h !== hash; }));
+  /* Takes one entry back out, for the one case where the token demonstrably
+     was not consumed by THIS presentation: the request never reached a server
+     that could rotate it. Only the exact entry this context wrote is removed.
+
+     Whose entry it is, is the whole of this. Two tabs holding the same
+     Remember-off copy legitimately present the same token, and a release that
+     matched on the hash alone would erase the entry recording the sibling's
+     successful presentation. The token would then be invisible to the ledger,
+     and this tab's next attempt would present an already rotated token long
+     after its rotation, which the server reads as theft and answers by ending
+     the session everywhere. */
+  function releaseSpent(mark) {
+    var list = readSpent();
+    var kept = list.filter(function (e) {
+      return !(e.h === mark.h && e.o === mark.o && e.at === mark.at);
+    });
+    if (kept.length !== list.length) writeSpent(kept);
   }
 
   /* When this browser presented the token, or 0 if it never did. A clock that
@@ -404,7 +461,7 @@
     var mine = readRefreshRecord();
     var subject = committedSubject() || (mine && mine.subject) || null;
     refreshInFlight = null;
-    credentialSuperseded = false;
+    markSuperseded(false);
     discardAccess();
     forgetRefreshRecords(subject);
     /* The spent ledger deliberately survives. Its whole job is to remember
@@ -449,15 +506,24 @@
     writeAccessCache(accessToken, accessExpiresAt, subject);
 
     /* A grace response says refreshTokenRotated: false and carries no refresh
-       token, because the server holds only hashes and could not return the
-       current one even if that were desirable. An explicit flag rather than
-       the absence of a field, so that a future response shape cannot quietly
-       turn this into an overwrite. */
+       token. An explicit flag rather than the absence of a field, so that a
+       future response shape cannot quietly turn this into an overwrite. */
     if (data.refreshTokenRotated === false) {
       retireSupersededToken(presented);
     } else if (data.refreshToken) {
-      credentialSuperseded = false;
+      markSuperseded(false);
       if (!writeRefreshToken(data.refreshToken, remember, subject)) {
+        /* The bearer assigned a few lines up goes with it. A refresh token
+           that was not stored is a session that cannot outlive this access
+           token, and leaving the access token behind is what turns the failure
+           card's Try again into a reload that opens the dashboard on a
+           fifteen minute fuse: boot() proceeds on the cache alone. What the
+           card says at that moment, that nothing has been signed out and the
+           session is still live on the server, stays true either way. This is
+           the same cleanup signIn() already does with this code, and it
+           removes only what is private to this tab: the stored records were
+           dealt with, by administrator, inside writeRefreshToken(). */
+        discardAccess();
         throw new api.OpsApiError(0, STORAGE_UNAVAILABLE,
           'This browser would not let the dashboard store your session. Free some ' +
           'space or allow storage for this site, then sign in again.');
@@ -513,10 +579,10 @@
     var rec = readRefreshRecord();
     if (presented && rec && rec.token === presented) {
       safeRemove(storeNamed(rec.store), REFRESH_KEY);
-      credentialSuperseded = true;
+      markSuperseded(true);
       return;
     }
-    credentialSuperseded = false;
+    markSuperseded(false);
   }
 
   /* Raised when the credential under this tab has become a different
@@ -564,7 +630,7 @@
          A tab whose superseded copy was retired knows the session carried on
          without it; a tab with nothing stored knows only that there is nothing
          to exchange. */
-      return Promise.reject(credentialSuperseded ? spentError()
+      return Promise.reject(credentialSuperseded() ? spentError()
         : new api.OpsApiError(401, 'ops_refresh_rejected',
             'Your session has ended. Sign in again.'));
     }
@@ -604,7 +670,7 @@
          the token and this client cannot tell. Recording it first means a much
          later replay is caught here and costs one sign-in, instead of reaching
          the server long after its rotation. */
-      var marked = hash ? markSpent(hash) : false;
+      var mark = hash ? markSpent(hash) : null;
 
       return api.request('/api/ops/auth/refresh', {
         method: 'POST',
@@ -615,18 +681,23 @@
            Keeping the token marked would turn a gateway blip or a dropped
            connection into a forced sign-in on the next attempt, and the retry
            button this dashboard offers would be the thing that signed the
-           operator out, without a single request leaving the browser. So the
-           mark comes off and the credential survives the fault.
+           operator out, without a single request leaving the browser. So this
+           context's own mark comes off and the credential survives the fault.
+           Its own, and no other: a sibling tab holding the same copy may have
+           presented the same token and been answered, and erasing the record
+           of that is how a fault in one tab ends the session in all of them.
 
-           What that gives up, stated rather than glossed: a response lost
-           after the server had already rotated looks identical from here, and
-           releasing the mark lets that token be presented once more. The
-           server refuses it, which is the outcome the ledger was only ever a
-           politer route to. Losing a session to a revision roll is the more
-           common failure and the less defensible one. */
-        if (marked && err instanceof api.OpsApiError &&
+           What that gives up, stated rather than glossed: this context's own
+           response, lost after the server had already rotated, looks identical
+           from here, and releasing the mark lets that token be presented once
+           more. The server reads it as the previous generation returning long
+           after its rotation and ends the session everywhere, which is the
+           outcome the ledger was only ever a politer route to. Losing a
+           session to a passing outage is the more common failure and the less
+           defensible one. */
+        if (mark && err instanceof api.OpsApiError &&
             (err.status === 0 || err.status >= 500)) {
-          unmarkSpent(hash);
+          releaseSpent(mark);
         }
         throw err;
       });

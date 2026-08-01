@@ -68,12 +68,20 @@ remains here is sized to that:
    the token re-read *after* the lock is held. This is now an efficiency measure rather than a
    correctness one, so its absence is fine and the fallback is a per-document queue.
 3. **A ledger of already-presented token hashes** in `localStorage`, each with the moment it was
-   presented, consulted before an exchange. This is a local courtesy, not a guarantee, and the
-   difference is worth being exact about. It targets the one case the grace cannot cover: a
-   refresh whose response was lost, presented again long afterwards. When it hits, the operator
-   gets a clean sign-in on this device instead of a refusal that ends the session everywhere.
+   presented and which page presented it, consulted before an exchange. This is a local courtesy,
+   not a guarantee, and the difference is worth being exact about. It targets the one case the
+   grace cannot cover: a refresh whose response was lost, presented again long afterwards. When it
+   hits, the operator gets a clean sign-in on this device instead of a refusal that ends the
+   session everywhere.
    **When it misses, and it will,** the request reaches the server and the server decides, which
    is the correct outcome arrived at by a worse route.
+
+   Which page presented it matters for the same reason the timestamp does. A request that never
+   reached the server releases its own entry, so that a passing outage does not turn the retry
+   button into the thing that signs an operator out. It releases only its own: two tabs sharing
+   one credential legitimately present the same token, and a release that went by the hash alone
+   would erase the record of the other tab's *successful* presentation, leaving that tab's next
+   attempt to replay a token the server has already rotated.
 
    The timestamp is the point of the entry rather than bookkeeping around it. A hash on its own
    cannot tell a replay from the other tab in an ordinary race, and refusing that race locally is
@@ -118,7 +126,7 @@ as evidence of a previous one.
 |---|---|---|
 | Access token | 15 minutes | `sessionStorage`, with the administrator it belongs to |
 | Refresh token | up to 30 days | `localStorage` when "Remember this device" is on, `sessionStorage` when off, with the administrator it belongs to |
-| Presented-token ledger | last 1000 exchanges | `localStorage`, SHA-256 hashes and timestamps only, never tokens |
+| Presented-token ledger | last 1000 exchanges | `localStorage`, SHA-256 hashes, timestamps and the page that presented each, never tokens |
 
 The access token is cached rather than held in memory only. Memory only forces an exchange on
 every page load of a multi-page shell, which makes rotation as frequent as navigation and is what
