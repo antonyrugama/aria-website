@@ -300,8 +300,10 @@ that it meant in the data:
   unreadable row silently counted as zero, and rather than reporting a gap that is really a
   parse failure.
 - **A timestamp is an ISO string in one of three shapes, and anything else is absent.**
-  `YYYY-MM-DD`, `YYYY-MM-DD[T ]HH:MM[:SS[.sss]]` (read as the UTC the pipeline meant), and
-  either of those carrying `Z` or a `+/-HH:MM` offset. A `Date` instance is accepted too.
+  `YYYY-MM-DD`, `YYYY-MM-DD[T ]HH:MM[:SS[.digits]]` (read as the UTC the pipeline meant, with
+  fractional seconds of any length), and the date-time shape carrying `Z` or a `+/-HH:MM` or
+  `+/-HHMM` offset; the designator belongs to the date-time shape only. A `Date` instance is
+  accepted too.
   Everything else, including `null`, `0` and strings the language would happily parse such as
   `Jul 31 2026 06:00` or `12/25/2026`, renders the "the time of this reading was not reported"
   sentence. The shape is checked before `new Date` sees the string, not after: `new Date(null)`

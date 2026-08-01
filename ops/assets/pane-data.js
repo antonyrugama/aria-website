@@ -273,16 +273,20 @@
      rendered a different stamp for every operator and, west or east of the
      line, a different day. Only three shapes are read:
 
-       YYYY-MM-DD                              already UTC by specification
-       YYYY-MM-DD[T ]HH:MM[:SS[.sss]]          the pipeline's UTC, stamped Z
-       either of the above carrying Z or +/-HH:MM   already says what it is
+       YYYY-MM-DD                                   already UTC by specification
+       YYYY-MM-DD[T ]HH:MM[:SS[.digits]]            the pipeline's UTC, stamped Z
+       the date-time shape carrying Z, +/-HH:MM or +/-HHMM   already says what it is
+
+     Fractional seconds are any number of digits (Python emits six). The
+     designator belongs to the date-time shape only; a date with a designator
+     (2026-07-31Z) is not a shape anything here produces and is absent.
 
      Everything else is absent, which renders the "not reported" sentence.
      Approximating a stamp nobody can pin to a zone is the one thing a pane
      that labels its own output " UTC" must not do. */
   var ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
   var ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
-  var ISO_ZONED = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
+  var ISO_ZONED = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/;
 
   function parseUtc(value) {
     if (value instanceof Date) {
@@ -290,8 +294,14 @@
     }
     if (typeof value !== 'string') return null;
     /* One space between the date and the time is the one separator accepted
-       in place of T. Any later space leaves a shape none of the three match. */
-    var text = value.trim().replace(' ', 'T');
+       in place of T. Any later space leaves a shape none of the three match.
+       Lowercase t and z are folded up before matching, because the shapes the
+       engine is guaranteed to read as UTC are the uppercase ones; matching
+       lowercase and passing it through would hand those strings back to
+       engine-decided parsing. */
+    var text = value.trim().replace(' ', 'T')
+      .replace(/^(\d{4}-\d{2}-\d{2})t/, '$1T')
+      .replace(/z$/, 'Z');
     var d;
     if (ISO_DAY.test(text) || ISO_ZONED.test(text)) d = new Date(text);
     else if (ISO_TIME.test(text)) d = new Date(text + 'Z');

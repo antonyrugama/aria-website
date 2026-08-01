@@ -226,12 +226,15 @@
 
     var foot = h('div', { className: 'row row-wrap budget-note' });
     if (data.period) {
+      /* utcDay answers null for a stamp it cannot read, and null is not a
+         date an operator should ever be shown. The sentence exists only when
+         the day does. */
+      var billedThrough = data.period.actualThrough
+        ? d.utcDay(data.period.actualThrough) : null;
       foot.appendChild(h('span', {
         className: 'tiny muted',
         text: 'Day ' + data.period.dayOfPeriod + ' of ' + data.period.daysInPeriod +
-          (data.period.actualThrough
-            ? '. Billed usage through ' + d.utcDay(data.period.actualThrough) + '.'
-            : '.')
+          (billedThrough ? '. Billed usage through ' + billedThrough + '.' : '.')
       }));
     }
     if (data.forecast && data.forecast.basis) {
@@ -476,6 +479,10 @@
     if (total === null) return null;
 
     var rows = view.rows || [];
+    /* No rows means there is nothing to add up, and "0 rows add up to the
+       bill exactly" is a vacuous green on the pane's central claim. Say
+       nothing rather than verify nothing. */
+    if (!rows.length) return null;
     var sum = 0;
     var unreadable = 0;
     rows.forEach(function (row) {
@@ -508,12 +515,17 @@
           'over and nothing is counted twice.'
       ]);
     } else {
+      /* Money renders at two decimals, so a sub-cent gap would print three
+         figures that all agree while the callout calls them a mismatch. Name
+         the size of the gap honestly instead of printing $0.00. */
+      var gap = Math.abs(sum - total);
+      var gapText = d.money(gap, data.currency);
+      if (gapText === d.money(0, data.currency)) gapText = 'less than one cent';
       box = d.callout('crit', 'warn', [
         d.strong('These rows do not add up to the bill.'),
         ' They come to ' + d.money(sum, data.currency) + ' against a billed ' +
-          d.money(total, data.currency) + ', a difference of ' +
-          d.money(Math.abs(sum - total), data.currency) + '. Read the rows as ' +
-          'incomplete until that is explained.'
+          d.money(total, data.currency) + ', a difference of ' + gapText +
+          '. Read the rows as incomplete until that is explained.'
       ]);
     }
     box.classList.add('mt');
