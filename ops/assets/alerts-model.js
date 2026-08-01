@@ -171,8 +171,15 @@
       .reduce(function (a, b) { return b < a ? b : a; }, Infinity);
   }
 
+  /* Takes the millisecond number latest() and oldest() return, including the
+     infinities they use for "there was nothing to compare". The type is
+     checked rather than assumed, because isFinite() coerces: isFinite(null) is
+     true and would turn a missing value into 1970 rather than into nothing,
+     and isFinite('') is true for a string Date cannot use at all. This is
+     exported beside latest and oldest, so it has to reject a missing value the
+     way it reads as though it does. */
   function iso(ms) {
-    return isFinite(ms) ? new Date(ms).toISOString() : null;
+    return typeof ms === 'number' && isFinite(ms) ? new Date(ms).toISOString() : null;
   }
 
   /* Whether the alerting can be believed, which is a different question from

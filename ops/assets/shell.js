@@ -415,6 +415,28 @@
     return seg;
   }
 
+  /* The range control this bar drew, and the pane it was drawn for. A pane
+     owns its own filters but not this one, and a pane that offers to clear
+     every filter has to be able to reach the one the shell holds. Without
+     this, "clear the filters" clears the pane's own two and silently leaves
+     the window in place, which is a button that does not keep the promise
+     printed beside it. */
+  var rangeControl = null;
+  var rangePane = null;
+
+  /* Puts the range back to the window the pane starts on. Answers whether it
+     changed anything, so a caller can tell a reload it must do itself from one
+     the filter event is already about to cause. */
+  function resetRange() {
+    if (!rangePane || !rangePane.range || !rangeControl) return false;
+    var startsOn = rangePane.rangeDefault || rangePane.range[0];
+    if (filters.range === startsOn) return false;
+    filters.range = startsOn;
+    rangeControl.value = startsOn;
+    writeFilters(rangePane);
+    return true;
+  }
+
   function renderFilters(pane) {
     if (!pane.scope && !pane.range && !pane.env && !pane.scopeNote && !pane.filterNote) {
       return null;
@@ -444,6 +466,8 @@
         filters.range = range.value;
         writeFilters(pane);
       });
+      rangeControl = range;
+      rangePane = pane;
       bar.appendChild(h('div', { className: 'filter-item' }, [
         h('label', { className: 'filter-label', for: 'fRange', text: 'Range' }),
         range
@@ -889,6 +913,7 @@
     definePane: definePane,
     panes: PANES,
     filters: function () { return shallow(filters); },
+    resetRange: resetRange,
     h: h,
     icon: icon,
     toast: toast,

@@ -269,12 +269,32 @@
          drawer's own inert page. Cancelling the confirmation therefore handed
          the background back to a virtual cursor while a modal drawer was still
          open. Each overlay now records what every element was before it
-         touched it and restores only what it changed. */
+         touched it and restores only what it changed.
+
+       - Closing order. Those snapshots only compose while the stack comes down
+         in the order it went up. An action started in the drawer settles on
+         its own schedule, and the operator can have opened the confirmation in
+         the meantime, so a close request can arrive for an overlay that is no
+         longer the top one. Honouring it there would hand the background back
+         while a dialog is still on screen, and the dialog would then restore
+         the snapshot it took while the drawer was up, leaving every element
+         inert with no overlay to explain it. A request from underneath is
+         therefore remembered and honoured when that overlay is the top again:
+         an action closes its own layer, in order, rather than whichever layer
+         happens to be on screen when it finishes. */
 
   var stack = [];
 
   function isTop(api) {
     return stack.length > 0 && stack[stack.length - 1] === api;
+  }
+
+  /* Closes whatever is now on top if it asked to be closed while it was not.
+     Called after every close, so a chain of deferred requests unwinds in stack
+     order rather than all at once. */
+  function drainStack() {
+    var top = stack[stack.length - 1];
+    if (top && top.wantsClose) top.close();
   }
 
   function focusable(root) {
@@ -296,7 +316,9 @@
     var opener = document.activeElement;
     var inerted = [];
     var closed = false;
-    var api = { close: close, node: opts.node };
+    /* wantsClose is a close this overlay was asked for while it was not the
+       top of the stack, still owed once the overlays above it have gone. */
+    var api = { close: close, node: opts.node, wantsClose: false };
 
     var scrim = h('div', { className: 'scrim is-open' });
     document.body.appendChild(scrim);
@@ -317,8 +339,14 @@
 
     function close() {
       if (closed) return;
-      closed = true;
       var at = stack.indexOf(api);
+      /* Not the top: the request is owed, not refused. drainStack() pays it
+         the moment the overlays above this one have come down. */
+      if (at !== -1 && at !== stack.length - 1) {
+        api.wantsClose = true;
+        return;
+      }
+      closed = true;
       if (at !== -1) stack.splice(at, 1);
       document.removeEventListener('keydown', onKey, true);
       inerted.forEach(function (was) {
@@ -342,6 +370,19 @@
       }
 
       if (opts.onClose) opts.onClose();
+      drainStack();
+    }
+
+    /* Escape and the scrim, which are the operator asking to be let out rather
+       than the overlay deciding it is finished. An overlay in the middle of an
+       action it cannot abandon refuses both, because dismissing it there would
+       strand whatever it was opened over: its buttons are already disabled for
+       exactly that window, and a key that walks past a disabled button is the
+       same bug wearing a different input. Everything else about the overlay,
+       including a close that its own action asks for, is unaffected. */
+    function dismiss() {
+      if (opts.canDismiss && !opts.canDismiss()) return;
+      close();
     }
 
     function onKey(e) {
@@ -350,7 +391,7 @@
       if (!isTop(api)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (opts.onEscape) opts.onEscape(close); else close();
+        dismiss();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -361,7 +402,7 @@
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
 
-    scrim.addEventListener('click', function () { if (isTop(api)) close(); });
+    scrim.addEventListener('click', function () { if (isTop(api)) dismiss(); });
     document.addEventListener('keydown', onKey, true);
     stack.push(api);
 
@@ -430,7 +471,11 @@
      onConfirm receives { choice, reason } and returns a promise. The dialog
      stays open, disabled, until it settles, so a failure is visible where the
      decision was made rather than as a toast over a screen that has already
-     moved on. */
+     moved on. Disabled means disabled: Escape and the scrim are refused for
+     that window too, because the caller's action is what closes the dialog on
+     success, and a dialog dismissed out from under a call in flight leaves
+     nothing behind to close what it was opened over. A failure re-arms all
+     three together. */
   function confirmAction(opts) {
     var titleId = 'confirmTitle' + Math.random().toString(36).slice(2, 8);
     var card = h('div', { className: 'card modal-card confirm-card' });
@@ -490,6 +535,13 @@
       body.appendChild(reason);
     }
 
+    /* Says the dialog is busy while it is. Everything on it is refused for
+       that window, Escape and the scrim included, and a control that ignores
+       an operator without saying why is indistinguishable from one that has
+       broken. */
+    var sending = h('p', { className: 'small muted confirm-sending', role: 'status' });
+    body.appendChild(sending);
+
     var error = h('p', { className: 'field-error', role: 'alert' });
     body.appendChild(error);
     card.appendChild(body);
@@ -523,24 +575,36 @@
     if (reason) reason.addEventListener('input', sync);
     sync();
 
+    /* True from the moment the action is sent until it settles. */
+    var settling = false;
+
     var handle = overlay({
       node: node,
       onClose: opts.onClose,
-      initialFocus: function () { return typed || choice || cancel; }
+      initialFocus: function () { return typed || choice || cancel; },
+      canDismiss: function () { return !settling; }
     });
 
-    cancel.addEventListener('click', function () { handle.close(); });
+    cancel.addEventListener('click', function () { if (!settling) handle.close(); });
     go.addEventListener('click', function () {
-      if (!ready()) return;
+      if (!ready() || settling) return;
+      settling = true;
       go.disabled = true;
       cancel.disabled = true;
       error.textContent = '';
+      sending.textContent = 'Sending. This stays open until the operations API answers.';
       Promise.resolve(opts.onConfirm({
         choice: choice ? choice.value : null,
         reason: reason ? reason.value.trim() : null
       }))
-        .then(function () { handle.close(); })
+        .then(function () {
+          settling = false;
+          sending.textContent = '';
+          handle.close();
+        })
         .catch(function (err) {
+          settling = false;
+          sending.textContent = '';
           cancel.disabled = false;
           sync();
           error.textContent = (err && err.message) ||

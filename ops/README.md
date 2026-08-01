@@ -293,7 +293,13 @@ client renders a fact, it does not decide one.
    became a real `<input type="checkbox" role="switch">` so that its `<label>` is clickable.
 8. **Real semantics** where the mock used inert markup: headings are `h1` to `h4` in order and
    take their size from a class, tabs are a `role="tablist"` with arrow-key support, and both
-   overlays trap focus, close on Escape, restore focus, and make the background inert.
+   overlays trap focus, close on Escape, restore focus, and make the background inert. Overlays
+   stack, and the stack has two rules that matter to a keyboard user. Only the top overlay acts
+   on a key, so one Escape closes the confirmation and leaves the drawer under it. And an overlay
+   asked to close while something is open above it comes down when it is the top again, rather
+   than restoring the background from underneath an open dialog. A confirmation whose action is
+   in flight refuses Escape and the scrim for that window, the same window in which its buttons
+   are disabled, and re-arms all three together if the action fails.
 
 ### Known contrast debt, inherited and not yet fixed
 
@@ -344,7 +350,10 @@ What is left, still drawn by nothing that ships today:
 | `.tag-backend` on its tint | 4.46 |
 | `callout-warn` / `callout-crit` ink over the page background | 4.41 / 4.26 |
 
-Dark mode passes throughout and is untouched.
+Dark mode passes throughout and is untouched. The override is scoped to `[data-theme="light"]`, so
+the dark inks are the ones W1 shipped: over the same three surfaces and the same 14% tint, the
+lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200, and `.badge-info` is the next
+at 5.457. Every other pairing is 5.657 or better.
 
 ## Working on it locally
 

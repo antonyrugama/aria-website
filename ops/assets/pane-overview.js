@@ -206,7 +206,11 @@
     /* One problem is named. More than one is counted, and the count says
        whether anybody is on them, because "3 problems need a person" over
        three problems that all have somebody on them is the same lie in
-       smaller type. */
+       smaller type.
+
+       The counted branch is reached with a count of one as well, whenever the
+       single unassigned problem has acknowledged problems beside it, so the
+       verb is chosen from the count rather than assumed plural. */
     function ribbonTitle(active, needing, capped) {
       if (!needing.length) {
         return active.length === 1
@@ -214,7 +218,8 @@
           : model.atLeast(fmt.plural(active.length, 'problem'), capped) + ' still open';
       }
       if (needing.length === 1 && active.length === 1) return needing[0].title;
-      return model.atLeast(fmt.plural(needing.length, 'problem'), capped) + ' need a person';
+      return model.atLeast(fmt.plural(needing.length, 'problem'), capped) +
+        (needing.length === 1 ? ' needs a person' : ' need a person');
     }
 
     function activeSentence(active, needing, capped) {
@@ -227,7 +232,8 @@
           ', and ' + (active.length === 1 ? 'it is' : 'they are') + ' still open.');
       }
       if (needing.length && taken > 0) {
-        bits.push(fmt.plural(taken, 'other problem') + ' already has somebody on it.');
+        bits.push(fmt.plural(taken, 'other problem') +
+          (taken === 1 ? ' already has somebody on it.' : ' already have somebody on them.'));
       }
       if (capped) bits.push(cappedSentence());
       return bits.join(' ');
@@ -238,7 +244,7 @@
        hit. */
     function cappedSentence() {
       return 'Only ' + fmt.int(model.PAGE) + ' problems can be read at a time and that many ' +
-        'came back, so these counts are the least it could be.';
+        'came back, so these counts are the lowest they could be.';
     }
 
     /* Why nothing can be believed, in the reading that is actually true.
@@ -348,10 +354,17 @@
       var needing = model.needingAction(problems);
       var taken = model.takenOn(problems);
 
+      /* A bare zero over a truncated read is the one figure on this card that
+         cannot be qualified by the footer alone: a full page keeps the oldest
+         of each severity and drops the newest, and a newer problem with nobody
+         on it is exactly what it drops. */
       card.appendChild(op.cardHead('Needs attention',
         needing.length
           ? model.atLeast(fmt.plural(needing.length, 'problem'), capped) + ' with nobody on it'
-          : 'Nobody is being asked to do anything',
+          : (capped
+              ? 'Nobody is being asked to do anything in the ' + fmt.int(model.PAGE) +
+                ' problems that could be read'
+              : 'Nobody is being asked to do anything'),
         [op.link('alerts.html', 'All problems')]));
 
       var body = h('div', { className: 'card-body' });

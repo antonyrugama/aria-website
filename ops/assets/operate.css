@@ -67,6 +67,9 @@
 .confirm-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; }
 .confirm-body .input, .confirm-body .select { width: 100%; }
 .confirm-body p { margin: 0; }
+/* The busy line only exists while the action is in flight. Left in the flow
+   when empty it would spend a flex gap saying nothing. */
+.confirm-sending:empty { display: none; }
 .confirm-label { font-size: 11.5px; color: var(--text-2); }
 .confirm-label .mono { color: var(--text); }
 

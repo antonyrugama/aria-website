@@ -206,17 +206,36 @@
 
     /* -------------------------------------------------------------- tiles */
 
+    /* The severity filter is applied by the operations API, so every figure on
+       this pane is computed over a severity-scoped read. A tile labelled as a
+       total while it counts one severity is the same untruth the empty state
+       was fixed for: with Critical selected, "Nobody has taken a problem on"
+       is printed over a warning problem somebody is on. The scope therefore
+       goes into the label of every tile that carries a problem count, and into
+       the sentences that would otherwise read as claims about everything. */
+    function severityScope() {
+      return picked.severity === 'all'
+        ? null
+        : (SEVERITY_LABEL[picked.severity] || picked.severity).toLowerCase();
+    }
+
+    function scopedLabel(label) {
+      var scope = severityScope();
+      return scope ? label + ' (' + scope + ' only)' : label;
+    }
+
     function tiles(data, armed) {
       var grid = h('div', { className: 'grid g4' });
 
       var needing = model.needingAction(data.open.problems);
       var takenOn = model.takenOn(data.open.problems);
       var openCapped = model.capped(data.open.problems);
+      var scope = severityScope();
 
       /* A floor of zero is not a floor, so the "at least" only goes on a count
          that has something in it. The note carries the bound either way. */
       grid.appendChild(tile(
-        'Open, needs action',
+        scopedLabel('Open, needs action'),
         model.atLeast(fmt.int(needing.length), openCapped && needing.length > 0),
         needing.length ? 'crit' : 'ok',
         openCapped
@@ -225,12 +244,14 @@
       ));
 
       grid.appendChild(tile(
-        'Someone is on it',
+        scopedLabel('Someone is on it'),
         model.atLeast(fmt.int(takenOn.length), openCapped && takenOn.length > 0),
         null,
         openCapped
           ? 'Counted over the ' + PAGE + ' problems that could be read'
-          : (takenOn.length ? owners(takenOn) : 'Nobody has taken a problem on')
+          : (takenOn.length
+              ? owners(takenOn)
+              : 'Nobody has taken ' + (scope ? 'a ' + scope + ' problem' : 'a problem') + ' on')
       ));
 
       grid.appendChild(tile(
@@ -256,7 +277,12 @@
     }
 
     function oldestNote(needing) {
-      if (!needing.length) return 'Nothing is waiting for a person';
+      if (!needing.length) {
+        var scope = severityScope();
+        return scope
+          ? 'No ' + scope + ' problem is waiting for a person'
+          : 'Nothing is waiting for a person';
+      }
       var oldest = model.iso(model.oldest(needing.map(function (p) { return p.firedAt; })));
       if (!oldest) return fmt.plural(needing.length, 'problem') + ' waiting';
       return 'Oldest ' + fmt.since(oldest);
@@ -275,6 +301,14 @@
     function rulesNote(armed) {
       if (!armed.enabled) return 'None are enabled, so nothing is checking';
       if (armed.neverRun === armed.enabled) return 'None have run yet';
+      /* Both are said when both are true. A ladder that reports only the worst
+         reason leaves the rules that cannot judge unmentioned anywhere on the
+         tile, and "1 failed their own check" beside "5 of 5" reads as though
+         the other four are fine. */
+      if (armed.errored && armed.insufficientData) {
+        return fmt.int(armed.errored) + ' failed their own check, ' +
+          fmt.int(armed.insufficientData) + ' cannot judge yet';
+      }
       if (armed.errored) {
         return fmt.int(armed.errored) + ' failed their own check';
       }
@@ -296,8 +330,11 @@
        to be measuring, and a wrong rate is worse here than no rate: this
        figure is the one that decides whether a rule gets turned off. */
     function falseAlarmTile(data) {
+      var scope = severityScope();
+      var label = scopedLabel('False alarms, 30 days');
+
       if (model.capped(data.closed.problems)) {
-        return tile('False alarms, 30 days', fmt.none, null,
+        return tile(label, fmt.none, null,
           'More problems have been closed than this page can read, and the oldest are ' +
           'read first, so the last 30 days cannot be worked out from them');
       }
@@ -312,15 +349,17 @@
       });
 
       if (!recent.length) {
-        return tile('False alarms, 30 days', 'None yet', null,
-          'Nothing has been closed in the last 30 days');
+        return tile(label, 'None yet', null,
+          scope
+            ? 'No ' + scope + ' problem has been closed in the last 30 days'
+            : 'Nothing has been closed in the last 30 days');
       }
       if (recent.length < 5) {
-        return tile('False alarms, 30 days',
+        return tile(label,
           fmt.int(nothingToDo.length) + ' of ' + fmt.int(recent.length), null,
           'Too few closures to give a rate');
       }
-      return tile('False alarms, 30 days',
+      return tile(label,
         fmt.pct((nothingToDo.length / recent.length) * 100, 0), null,
         'Closed as nothing to do');
     }
@@ -443,6 +482,11 @@
       var parts = [];
 
       parts.push('Showing ' + fmt.plural(list.length, 'problem') + '.');
+      var scope = severityScope();
+      if (scope) {
+        parts.push('The severity filter is applied by the operations API, so the problem ' +
+          'counts above were read over ' + scope + ' problems only.');
+      }
       if (picked.category !== 'all') {
         parts.push('The category filter is applied to what was read rather than to the whole ' +
           'record, so this is a count of the problems on screen.');
@@ -451,11 +495,22 @@
          some did. A read comes back worst first and then oldest and stops at
          PAGE, so a full page keeps the oldest of each severity and drops the
          most recent. Saying "older problems are not counted" would be the
-         opposite of what happened. */
-      if (model.capped(data.open.problems) || model.capped(data.closed.problems)) {
-        parts.push('Only ' + PAGE + ' problems can be read at a time, worst first and then ' +
+         opposite of what happened.
+
+         Open and closed are two reads and are disclosed separately. Warning
+         that both are short when only one of them is tells the operator a
+         complete figure is incomplete, and a disclosure that cries wolf is
+         ignored on the day it is the one that matters. The closed read is
+         named here only when the window puts closed problems in this list; the
+         false-alarm tile states its own truncation where it happens. */
+      if (model.capped(data.open.problems)) {
+        parts.push('Only ' + PAGE + ' open problems can be read at a time, worst first and then ' +
           'oldest, and that many came back, so the most recent ones are missing from this ' +
           'count and from the figures above.');
+      }
+      if (model.capped(data.closed.problems) && RANGE_DAYS[filters.range]) {
+        parts.push('The closed problems were read the same way and also came back full, so the ' +
+          'most recent closures are missing from this count too.');
       }
       line.textContent = parts.join(' ');
       return line;
@@ -481,7 +536,13 @@
           picked.severity = 'all';
           picked.category = 'all';
           resetFilterControls();
-          load();
+          /* The window is a filter like the other two and is counted as one by
+             narrowed() and named by filterSentence(), so a button that offers
+             to clear the filters has to clear it as well. It belongs to the
+             shell, which puts it back and announces the change; the pane hears
+             that announcement and re-reads, so this only reloads itself when
+             the window was already the one the pane starts on. */
+          if (!shell.resetRange()) load();
         });
         actions.push(clear);
       }
@@ -501,7 +562,16 @@
           'This says nothing about the problems these filters exclude. Clear them to see ' +
             'everything that is open.'
         ];
-        if (model.capped(data.open.problems) || model.capped(data.closed.problems)) {
+        /* A filtered miss replaces the whole pane, headline included, so the
+           one thing that is true whatever the filters say has to be said in
+           this state as well. Otherwise selecting a severity over stopped
+           alerting reports only that nothing matched. */
+        if (!armed.trustworthy) {
+          missLines.push(notArmedSentence(armed) +
+            ' That is the case whatever these filters are set to.');
+        }
+        if (model.capped(data.open.problems) ||
+            (model.capped(data.closed.problems) && RANGE_DAYS[filters.range])) {
           missLines.push('Only ' + PAGE + ' problems could be read, worst first and then ' +
             'oldest, so the most recent ones were not looked at either.');
         }
@@ -1114,10 +1184,13 @@
 
       var close = h('button', { className: 'btn', type: 'button', text: 'Close this problem' });
       close.addEventListener('click', function () {
-        /* The drawer is closed from the dialog's own close, not from inside
-           the action, so the two overlays come down in the order they went up
-           and focus is handed back down the stack rather than across it. */
-        var didClose = false;
+        /* The drawer is closed by the action that closed the problem, and the
+           overlay stack holds that request until the dialog above it has come
+           down, so the two still come down in the order they went up and focus
+           is still handed back down the stack rather than across it. Asking
+           here rather than from the dialog's own close is what makes the
+           drawer's fate depend on the call settling rather than on the dialog
+           having been dismissed in a particular way. */
         op.confirmAction({
           title: 'Close ' + problem.reference + '?',
           lines: [
@@ -1137,9 +1210,8 @@
           cancelLabel: 'Leave it open',
           onConfirm: function (result) {
             return closeProblem(problem, result.choice, result.reason)
-              .then(function () { didClose = true; });
-          },
-          onClose: function () { if (didClose) d.close(); }
+              .then(function () { d.close(); });
+          }
         });
       });
       d.foot.appendChild(close);
