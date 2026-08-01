@@ -465,8 +465,9 @@ body.is-ready   .gate-app { display: block; }
    leave the control with no focus indicator. */
 .search input { background: none; border: 0; outline: 0; padding: 6px 0; width: 100%; font-size: 12.5px; }
 
-/* A real switch: a button carrying role="switch", so it is focusable,
-   operable with Space and Enter, and announced with its on/off state. */
+/* A real switch: a checkbox carrying role="switch", so it is focusable, driven
+   by the control its <label> already points at, and announced with its on/off
+   state. */
 .switch {
   --on: var(--brand);
   width: 40px; height: 24px; border-radius: 20px;
@@ -754,7 +755,10 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
 
 /* Section heading inside content.
    Hierarchy relies on size contrast and space, not on many distinct sizes.
-   The whole dashboard uses four text sizes: 17 section, 13.5 card, 13 body, 11.5 meta. */
+   Four steps carry the content itself: 17 section, 13.5 card, 13 body,
+   11.5 meta. Chrome around it, the rail, the filter bar, the sign-in form and
+   the band headings that separate whole regions, sits outside that scale on
+   purpose, and each of those sizes is set beside the reason for it. */
 .sec-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }
 .sec-title { font-size: 17px; font-weight: 600; letter-spacing: -.02em; line-height: 1.25; }
 .sec-hint { font-size: 12.5px; color: var(--text-3); }
@@ -880,11 +884,23 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
 @media (max-width: 860px) {
   :root { --rail-w: 0px; }
   .app { grid-template-columns: 1fr; }
+  /* Hidden, not merely moved off screen. A rail that is only translated keeps
+     its ten pane links and its sign-out button in the tab order and in the
+     accessibility tree, and because it comes before the main column in the
+     document a keyboard user at this width walks the whole invisible drawer,
+     with no visible focus anywhere, before reaching the page. visibility takes
+     it out of both. The change to hidden is deferred until the slide has
+     finished so the drawer does not disappear halfway out; the change to
+     visible is immediate, so it is there to be focused the moment it opens. */
   .rail {
     position: fixed; left: 0; top: 0; bottom: 0; width: 232px; z-index: 100;
-    transform: translateX(-100%); transition: transform 220ms cubic-bezier(.32,.72,0,1);
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform 220ms cubic-bezier(.32,.72,0,1), visibility 0s linear 220ms;
   }
-  .rail.is-open { transform: translateX(0); }
+  .rail.is-open {
+    transform: translateX(0); visibility: visible;
+    transition: transform 220ms cubic-bezier(.32,.72,0,1), visibility 0s;
+  }
   .g2, .g3, .g4, .g-main, .g-main-b { grid-template-columns: minmax(0,1fr); }
   .page-question { display: none; }
   .content { padding: 14px; }
@@ -913,5 +929,10 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
     animation-duration: .001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
+    /* Delays go too, not only durations. The drawer defers its change of
+       visibility until the slide it is no longer performing would have
+       finished, which without this would leave the closed rail on screen, and
+       focusable, for a fifth of a second. */
+    transition-delay: 0s !important;
   }
 }

@@ -167,6 +167,14 @@
     global.history.replaceState(null, '',
       global.location.pathname + (qs ? '?' + qs : ''));
     refreshNavHrefs();
+    emitFilters();
+  }
+
+  /* Fired for the selection the pane starts with as well as for every change
+     to it. A pane that only hears about changes has to duplicate the reading
+     of the querystring to know what it is showing before the operator touches
+     anything, which is the sort of duplication this bar exists to remove. */
+  function emitFilters() {
     global.dispatchEvent(new CustomEvent('ops:filters', { detail: shallow(filters) }));
   }
 
@@ -527,6 +535,15 @@
     var scrim = null;
     var inerted = [];
 
+    /* An element whose whole job is to announce. The live region and the toast
+       host are appended to the body, so they are siblings of the app wrapper
+       and would otherwise be inerted along with it, and a live region carrying
+       aria-hidden announces nothing. Neither holds focusable content, so
+       leaving them out costs the drawer's modality nothing. */
+    function isLiveRegion(el) {
+      return el.hasAttribute('aria-live') || el.classList.contains('toast-host');
+    }
+
     /* The scrim stops a pointer reaching the shell behind the drawer, but a
        virtual cursor walks straight past a scrim. Everything that is not the
        rail goes inert as well, so the drawer is genuinely modal for a screen
@@ -549,7 +566,7 @@
         var parent = node.parentElement;
         var self = node;
         Array.prototype.forEach.call(parent.children, function (sib) {
-          if (sib !== self && sib !== scrim) inerted.push(sib);
+          if (sib !== self && sib !== scrim && !isLiveRegion(sib)) inerted.push(sib);
         });
         node = parent;
       }
@@ -709,7 +726,16 @@
     ops_reauth_rate_limited: 'Too many attempts',
     ops_login_rate_limited: 'Too many attempts',
     ops_route_missing: 'That page is not there',
-    ops_bad_response: 'The operations API answered with something unreadable'
+    ops_bad_response: 'The operations API answered with something unreadable',
+    ops_storage_unavailable: 'This browser would not store your session'
+  };
+
+  /* The second line of the card, which is a promise about what just happened
+     and has to be true of the failure in hand. */
+  var FAILURE_NOTES = {
+    ops_storage_unavailable:
+      'Nothing has been signed out, and the session is still live on the server. ' +
+      'It is this browser that cannot keep hold of it.'
   };
 
   function renderFailure(err) {
@@ -722,7 +748,7 @@
     var block = stateBlock('warn', FAILURE_TITLES[code] || 'Could not check your session', [
       err && err.message ? err.message :
         'The operations API did not answer. Your session has not been ended.',
-      'Nothing has been signed out. Try again in a moment.'
+      FAILURE_NOTES[code] || 'Nothing has been signed out. Try again in a moment.'
     ], 1);
 
     var row = h('div', { className: 'row mt' });
@@ -730,8 +756,13 @@
     retry.addEventListener('click', function () { global.location.reload(); });
     var out = h('button', { className: 'btn', type: 'button', text: 'Sign out' });
     out.addEventListener('click', function () {
-      session.clearTokens();
-      session.toLogin('signedout');
+      /* The whole sign-out, not the local half of one. Dropping the stored
+         credential here and calling it done left the session alive on the
+         server for every other copy of it, which is the opposite of what the
+         button says. signOut() revokes first and clears afterwards, and it
+         resolves whether or not the call got through. */
+      out.disabled = true;
+      session.signOut();
     });
     row.appendChild(retry);
     row.appendChild(out);
@@ -782,6 +813,15 @@
 
       wireRail();
       wireTabs(app);
+
+      /* Both events fire after the session is confirmed and the shell is in
+         the document, so a pane script that adds its listeners while this file
+         is still booting cannot miss them. ops:ready is the signal that
+         #content exists; ops:filters then carries the starting selection. */
+      global.dispatchEvent(new CustomEvent('ops:ready', {
+        detail: { pane: pageId, filters: shallow(filters) }
+      }));
+      emitFilters();
     }).catch(function (err) {
       /* A terminal failure has already navigated to the sign-in screen and
          its promise never settles, so anything arriving here is a fault the
