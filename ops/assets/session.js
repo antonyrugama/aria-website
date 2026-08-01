@@ -84,15 +84,21 @@
      administrator's. Carried as an error code so no call site can adopt a
      credential without dealing with it. */
   var IDENTITY_CHANGED = 'ops_identity_changed';
-  /* A plain capped list, oldest evicted first. Roughly ten days of one-tab
-     use at one exchange per fifteen minutes, proportionally less with more
-     tabs open, which is a deliberate compromise rather than a size chosen to
-     cover the whole 30 day session ceiling: covering that would mean unbounded
-     storage to buy a nicer sign-out message. The timestamps and age pruning an
-     earlier draft carried existed to guarantee no live hash was ever evicted,
-     which mattered only while eviction meant a revoked session; under the
-     grace window an eviction costs at most one avoidable sign-in, so the clock
-     handling that came with them defended nothing and is gone. */
+  /* A plain capped list, oldest evicted first. Roughly ten days of one-tab use
+     at one exchange per fifteen minutes, proportionally less with more tabs
+     open, which is a deliberate compromise rather than a size chosen to cover
+     the whole 30 day session ceiling: covering that would mean unbounded
+     storage to buy a nicer sign-out message.
+
+     Be clear about which way the cost runs. An eviction is this guard missing,
+     and a miss is the expensive direction: the stale token reaches the server
+     and the revocation path signs the session out everywhere with a compromise
+     event, rather than this device signing itself out quietly. That is the
+     correct security outcome by a worse route, and accepting it is the whole
+     reason the timestamps and age pruning an earlier draft carried are gone.
+     They existed to guarantee no live hash was ever evicted, which was worth
+     the clock handling only while the client was the thing keeping races
+     safe. */
   var SPENT_KEEP = 1000;
   var ROOT = 'login.html';
 
@@ -191,26 +197,32 @@
      different administrator, this tab's cached bearer belongs to the previous
      one, and handing it back as though it were current is how a tab silently
      starts acting as somebody else. */
-  function readAccessCache() {
+  /* Parses and validates the cache entry, expiry included. Everything that
+     reads the cache goes through here, because an entry that has expired is
+     not merely an unusable token: it is also not evidence of who this tab is.
+     Treating a stale entry as an identity is how an idle tab talks itself into
+     believing a switch has happened. */
+  function readAccessEntry() {
     var raw = safeGet(global.sessionStorage, ACCESS_KEY);
     if (!raw) return null;
     var v;
     try { v = JSON.parse(raw); } catch (e) { return null; }
     if (!v || typeof v.token !== 'string' || typeof v.expiresAt !== 'number') return null;
     if (Date.now() >= v.expiresAt) return null;
+    return v;
+  }
 
+  function readAccessCache() {
+    var v = readAccessEntry();
+    if (!v) return null;
     var current = storedSubject();
     if (v.s && current && v.s !== current) return null;
     return v;
   }
 
   function cachedSubject() {
-    var raw = safeGet(global.sessionStorage, ACCESS_KEY);
-    if (!raw) return null;
-    try {
-      var v = JSON.parse(raw);
-      return v && typeof v.s === 'string' ? v.s : null;
-    } catch (e) { return null; }
+    var v = readAccessEntry();
+    return v && typeof v.s === 'string' ? v.s : null;
   }
 
   function writeAccessCache(token, expiresAt, subject) {
@@ -363,8 +375,26 @@
      administrator's. Never adopted silently: the tab is signed out locally and
      sent to the sign-in screen with an explanation. */
   function identityChanged() {
-    clearTokens();
+    clearLocalIdentity();
     toLogin('switched');
+  }
+
+  /* Drops what this tab believes about itself and nothing else.
+
+     Deliberately NOT clearTokens(). The credential that triggered the mismatch
+     is the shared one, and it belongs to the administrator who is currently
+     signed in on this browser, not to the stale tab that just noticed. Wiping
+     it would let an idle tab sign the current administrator out of every other
+     tab on the machine, which is a worse outcome than the silent switch this
+     guard exists to prevent. The tab forgets who it was; the session on the
+     device is left alone. */
+  function clearLocalIdentity() {
+    refreshInFlight = null;
+    discardAccess();
+    state.admin = null;
+    state.session = null;
+    state.authTime = 0;
+    state.freshAuth = false;
   }
 
   /* Runs with the lock held. Everything it reads must be read here, not

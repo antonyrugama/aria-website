@@ -93,6 +93,13 @@ belong to, so a tab that has already rendered for one administrator will not ado
 session if a second sign-in replaces the profile's single refresh slot; it clears its own state
 and returns to the sign-in screen with an explanation.
 
+**It clears only its own state.** The credential that triggered the mismatch belongs to whoever
+is currently signed in on this browser, not to the tab that just noticed, so the shared record is
+left alone. A tab that has been idle long enough to go stale must never be able to sign the
+current administrator out of every other tab on the machine, which would be a worse outcome than
+the silent switch this guard exists to prevent. For the same reason an expired cache entry counts
+as no identity at all rather than as evidence of a previous one.
+
 ### Storage, and the one departure from the identity contract
 
 | Token | Lifetime | Where |

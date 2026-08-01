@@ -1,8 +1,8 @@
 /* Transport for the operations API.
 
-   Deliberately dumb. This file knows how to reach app-backend, how to attach a
-   bearer token it is handed, and how to turn every possible response into one
-   predictable shape. It knows nothing about sessions, refreshing, roles, or
+   Deliberately dumb. This file knows how to reach the operations API, how to
+   attach a bearer token it is handed, and how to turn every possible response
+   into one predictable shape. It knows nothing about sessions, refreshing, roles, or
    what to do when a call fails. That policy lives in session.js, which is the
    only caller. Keeping the seam here means the retry and sign-out rules are
    readable in one place instead of tangled through fetch options.
