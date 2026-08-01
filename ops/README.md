@@ -154,7 +154,12 @@ What follows from wanting it this strict:
 - **No inline script.** The theme must be applied before first paint or navigating between panes
   flashes the wrong colours, so `assets/theme.js` is a blocking classic script in `<head>`
   rather than an inline snippet. No hash to keep in sync across eleven files.
-- **No inline style attributes.** Everything is a class.
+- **No inline `style` attributes.** Everything that can be a class is a class. The handful of
+  lengths and colours that are genuinely data-driven, a bar segment's width, a skeleton block's
+  height, a legend swatch, are set through CSSOM on the element's `style` property by the pane's
+  own script. That is a declaration made from script rather than a `style` attribute in markup,
+  so `style-src 'self'` allows it without `'unsafe-inline'`, and every value set that way is a
+  number this code computed or a fixed internal token, never a string from the API.
 - **No `innerHTML` anywhere.** The shell is built as DOM with `textContent`, so nothing from the
   API, the querystring, or storage can become markup.
 - `connect-src 'self'` is present because this origin serves static files only; it allows no

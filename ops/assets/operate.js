@@ -15,7 +15,13 @@
        become markup is to have no path by which it could.
      - No inline style attributes. The pages carry style-src 'self' with no
        'unsafe-inline', so anything that cannot be a class is set through
-       CSSOM, which is not markup and is not covered by the policy.
+       CSSOM, on the element's style property from script rather than as a
+       style attribute in markup. That still creates an inline declaration, and
+       it is worth being exact about why it is allowed: the policy governs
+       style that arrives as markup, and every value set this way is a number
+       this file computed or a fixed internal token, never a string from the
+       operations API. A bar segment's width, a skeleton block's height and a
+       legend swatch's colour are the whole list.
 
    Every renderer here takes plain values and returns an element. None of them
    fetch, and none of them know what a pane is. */

@@ -13,10 +13,13 @@
      1. The mocks styled a preview-state switcher and design commentary. Both
         are gone, because the states are now driven by what the operations API
         answered rather than by a control on the page.
-     2. Nothing here is an inline style attribute. The pages carry
+     2. Nothing here arrives as a style attribute in markup. The pages carry
         style-src 'self' with no 'unsafe-inline', so every rule is a class and
-        the handful of genuinely data-driven lengths, a bar segment's width,
-        are set through CSSOM by the pane's own script.
+        the handful of genuinely data-driven values, a bar segment's width, a
+        skeleton block's height, a legend swatch's colour, are set through
+        CSSOM from the pane's own script. That is still an inline declaration;
+        what it is not is markup, and every value set that way is a number the
+        script computed or a fixed internal token.
    ========================================================================== */
 
 /* ============================ Shared ==================================== */
