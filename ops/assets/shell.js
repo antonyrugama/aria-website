@@ -19,12 +19,21 @@
 
   /* ------------------------------------------------------- pane registry */
 
-  /* wave      which delivery slice builds the pane's contents
-     scope     the All / Mobile / Coaches Web control applies
-     scopeNote shown in the filter bar where the absence needs explaining
-     range     false, or the list of ranges this pane offers
-     env       the production / staging control applies
-     roles     roles allowed to open the pane at all, omitted means everyone */
+  /* wave       which delivery slice builds the pane's contents
+     scope      the All / Mobile / Coaches Web control applies
+     scopeNote  shown in the filter bar where the absence needs explaining
+     range      false, or the list of ranges this pane offers
+     env        the production / staging control applies
+     filterNote shown in the filter bar for a control a built pane cannot yet
+                honour, so the absence is stated rather than faked
+     roles      roles allowed to open the pane at all, omitted means everyone
+
+     A pane that has been built declares only the filters its own reads can act
+     on. A control that changes nothing is worse than no control: picking
+     Staging and being left looking at production, with the selection sitting
+     in the bar as though it had been applied, is the failure mode that matters
+     here. Where a filter is in the approved design but nothing can carry it
+     yet, filterNote says so where the control would have been. */
   var WAVES = {
     W2: 'Operate panes',
     W3: 'Understand panes',
@@ -50,7 +59,11 @@
     overview: {
       file: 'index.html', icon: 'overview', label: 'Overview', group: 'Right now',
       question: 'Are people using it, is it working, is anything urgent?',
-      wave: 'W2', scope: true, range: ['24h', '7d', '30d'], env: true
+      /* Everything Overview draws today is the state of things right now,
+         across every app, in production. None of the three controls can be
+         carried into the read that answers it. */
+      wave: 'W2', scope: false, range: false, env: false,
+      filterNote: 'App, range and environment filters do not apply here yet'
     },
     jobs: {
       file: 'jobs-live.html', icon: 'live', label: 'Happening now', group: 'Right now',
@@ -65,7 +78,11 @@
     alerts: {
       file: 'alerts.html', icon: 'alerts', label: 'Problems', group: 'Right now',
       question: 'What needs a person right now, and who is on it?',
-      wave: 'W2', scope: false, range: ['open', '7d', '30d'], env: true
+      /* The window is real: it is applied to the problems that were read, and
+         the count line under the list says so. The environment is not, because
+         a problem carries no environment to filter on. */
+      wave: 'W2', scope: false, range: ['open', '7d', '30d'], env: false,
+      filterNote: 'Problems are production only, so there is no environment filter'
     },
     analytics: {
       file: 'analytics.html', icon: 'analytics', label: 'People and usage', group: 'How we are doing',
@@ -101,6 +118,31 @@
   };
 
   var GROUPS = ['Right now', 'How we are doing', 'Apps and people'];
+
+  /* Pane contents, supplied by the pane's own module.
+
+     A pane page loads this file and then its own module, which calls
+     definePane() as it executes. A pane with no registration renders the
+     not-built state, which is what every pane a later wave builds still does.
+
+     The shell must not read this until the parser has run every script on the
+     page, and "the session call is slower than parsing" is not a substitute
+     for waiting. A classic script blocks the parser, but while the browser is
+     *downloading* the next one the event loop is free, so the response to the
+     session call can land, and its handler run, in the gap between this file
+     executing and the pane's module executing. Against a fast server that race
+     is lost more often than won, and it renders the pane as not built while
+     its module is sitting one request behind. init() therefore waits for the
+     document to finish parsing before it asks what a pane's contents are. */
+  var paneContent = {};
+  function definePane(id, render) { paneContent[id] = render; }
+
+  function whenParsed() {
+    if (document.readyState !== 'loading') return Promise.resolve();
+    return new Promise(function (resolve) {
+      document.addEventListener('DOMContentLoaded', function () { resolve(); }, { once: true });
+    });
+  }
 
   var SCOPES = [
     { v: 'all', l: 'All' },
@@ -373,8 +415,32 @@
     return seg;
   }
 
+  /* The range control this bar drew, and the pane it was drawn for. A pane
+     owns its own filters but not this one, and a pane that offers to clear
+     every filter has to be able to reach the one the shell holds. Without
+     this, "clear the filters" clears the pane's own two and silently leaves
+     the window in place, which is a button that does not keep the promise
+     printed beside it. */
+  var rangeControl = null;
+  var rangePane = null;
+
+  /* Puts the range back to the window the pane starts on. Answers whether it
+     changed anything, so a caller can tell a reload it must do itself from one
+     the filter event is already about to cause. */
+  function resetRange() {
+    if (!rangePane || !rangePane.range || !rangeControl) return false;
+    var startsOn = rangePane.rangeDefault || rangePane.range[0];
+    if (filters.range === startsOn) return false;
+    filters.range = startsOn;
+    rangeControl.value = startsOn;
+    writeFilters(rangePane);
+    return true;
+  }
+
   function renderFilters(pane) {
-    if (!pane.scope && !pane.range && !pane.env && !pane.scopeNote) return null;
+    if (!pane.scope && !pane.range && !pane.env && !pane.scopeNote && !pane.filterNote) {
+      return null;
+    }
 
     var bar = h('div', { className: 'filterbar' });
 
@@ -400,6 +466,8 @@
         filters.range = range.value;
         writeFilters(pane);
       });
+      rangeControl = range;
+      rangePane = pane;
       bar.appendChild(h('div', { className: 'filter-item' }, [
         h('label', { className: 'filter-label', for: 'fRange', text: 'Range' }),
         range
@@ -426,10 +494,11 @@
     /* The explicit not-applicable pattern. Cloud spend is billed per piece of
        infrastructure, not per app, so splitting a shared bill by client would
        be an invented number. Saying so beats leaving a gap where a control
-       used to be. */
-    if (pane.scopeNote) {
-      bar.appendChild(h('span', { className: 'badge filter-gap', text: pane.scopeNote }));
-    }
+       used to be, and it beats by a much wider margin a control that moves and
+       changes nothing. */
+    [pane.scopeNote, pane.filterNote].forEach(function (note) {
+      if (note) bar.appendChild(h('span', { className: 'badge filter-gap', text: note }));
+    });
 
     return bar;
   }
@@ -469,10 +538,13 @@
     block.appendChild(chip);
     card.appendChild(block);
 
+    /* Deliberately names no release. Panes ship in waves, so a sentence naming
+       the current one is wrong the day the next one lands, and it would be
+       rewritten by every wave in turn. What stays true is which parts exist. */
     var foot = h('div', { className: 'card-foot' }, [
       h('span', {
-        text: 'This release, W1, builds the sign in, the session, the navigation, ' +
-              'and the design system every pane is drawn with.'
+        text: 'The sign in, the session, the navigation, and the design system ' +
+              'every pane is drawn with are built and working.'
       })
     ]);
     card.appendChild(foot);
@@ -789,7 +861,7 @@
     document.title = pane.label + ' | Aria Operations';
     setGate('booting');
 
-    session.boot().then(function () {
+    session.boot().then(whenParsed).then(function () {
       readFilters(pane);
 
       var app = document.getElementById('app');
@@ -804,6 +876,7 @@
       var content = h('main', { className: 'content', id: 'content', tabindex: '-1' });
       if (pane.roles && !session.hasRole(pane.roles)) content.appendChild(renderDenied(pane));
       else if (pane.deferred) content.appendChild(renderDeferred(pane));
+      else if (paneContent[pageId]) paneContent[pageId](content, pane);
       else content.appendChild(renderNotBuilt(pane));
       main.appendChild(content);
 
@@ -837,8 +910,10 @@
 
   global.OpsShell = {
     init: init,
+    definePane: definePane,
     panes: PANES,
     filters: function () { return shallow(filters); },
+    resetRange: resetRange,
     h: h,
     icon: icon,
     toast: toast,
