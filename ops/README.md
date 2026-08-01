@@ -281,10 +281,24 @@ that it meant in the data:
   theme it was not picked against: brand cyan at full brightness measures about 1.3:1 on the
   light theme's white card. Anything outside that closed set falls back to the default series
   token, so the answer for both themes stays in the stylesheet, where it was measured.
-- **A link is a relative path.** Any `href` in the response that carries a scheme, or is
-  protocol-relative, is dropped rather than rendered. The pages' content policy would already
-  stop a `javascript:` URL from running; this keeps the guarantee next to the code that builds
-  the link rather than in a meta tag somebody may loosen later.
+- **A link is a relative path on this origin.** An `href` in the response is refused if it
+  carries a scheme, if it is protocol-relative, if it holds a control character or whitespace
+  anywhere, or if resolving it against the current page lands on another origin. The last two
+  are what make the first two hold: the URL parser strips tabs and newlines before it reads a
+  scheme, so `java<TAB>script:` reaches the browser as `javascript:`, and it treats a backslash
+  as a path separator, so `/\evil.example/x` resolves cross-origin while looking relative. A
+  refused link renders its label as plain text, so the sentence it belonged to is intact and
+  only the navigation is withheld. The pages' content policy would already stop a `javascript:`
+  URL from running; this keeps the guarantee next to the code that builds the link rather than
+  in a meta tag somebody may loosen later.
+- **A money figure is an object carrying integer `micros`, and nothing else counts as one.**
+  A scalar `total: 0`, an array, or a string is read as no figure rather than as zero. On a
+  pane about money a zero is a claim, and it is the one claim a missing field must not be
+  turned into.
+- **A timestamp is a string, and anything else is absent.** `null`, `0` and unreadable strings
+  all render the "the time of this reading was not reported" sentence rather than a stamp,
+  because `new Date(null)` is the epoch rather than an invalid date and would otherwise print
+  1 Jan 1970 with an age of half a million hours computed from a field nobody sent.
 
 ### Two rules the panes enforce rather than assume
 

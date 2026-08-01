@@ -346,17 +346,8 @@
         d.strong(funnel.note.title), ' ' + funnel.note.detail
       ]);
       note.classList.add('mt');
-      var href = funnel.note.link && d.safeHref(funnel.note.link.href);
-      if (href) {
-        var row = h('div', { className: 'row mt-sm' }, [
-          h('a', {
-            className: 'btn btn-sm',
-            href: href,
-            text: funnel.note.link.label
-          })
-        ]);
-        note.lastChild.appendChild(row);
-      }
+      var link = d.payloadLink(funnel.note.link);
+      if (link) note.lastChild.appendChild(h('div', { className: 'row mt-sm' }, [link]));
       body.appendChild(note);
     }
 
@@ -561,7 +552,10 @@
     grid.appendChild(right);
     root.appendChild(grid);
 
-    var stamp = data.asOf && d.utcStamp(data.asOf);
+    /* No guard in front of the call: utcStamp answers null for a time it was
+       not given, `null` and `0` included, so one test covers absent, empty and
+       unreadable rather than three spellings of the same fact. */
+    var stamp = d.utcStamp(data.asOf);
     root.appendChild(h('p', {
       className: 'axis-note',
       text: stamp
@@ -614,11 +608,17 @@
     /* Every state the pane lands in is announced, not only the skeleton. The
        pane replaces its whole subtree on each filter change, so without this a
        screen reader hears "Loading figures" and then silence, including when
-       what replaced it was the failure card. */
+       what replaced it was the failure card.
+
+       Focus is carried across the replacement when it was inside the pane, so
+       a reader who activated "Try again" from the keyboard lands on what
+       answered them rather than at the top of the document. */
     function paint(node, announcement) {
+      var held = host.contains(document.activeElement);
       host.textContent = '';
       host.appendChild(node);
       shell.wireTabs(host);
+      if (held) d.refocus(host);
       if (announcement) shell.announce(announcement);
     }
 

@@ -48,8 +48,9 @@
     detail: 'The cost reporting answered, but the response held no total for ' +
       'this period, so there is nothing to show it against and nothing for ' +
       'the groupings below to be checked against.',
-    closing: 'This is not a period that cost nothing. A missing total and a ' +
-      'zero total look identical on a bar, so this pane draws neither.'
+    closing: 'A missing total and a zero total look identical on a bar, so ' +
+      'this pane draws neither. What this period cost is not something this ' +
+      'answer says, in either direction.'
   };
 
   /* A number from the payload, or null. Never a substituted zero: on a pane
@@ -59,8 +60,23 @@
     return (typeof value === 'number' && isFinite(value)) ? value : null;
   }
 
+  /* A money figure from the payload, or null.
+
+     Shape-strict, and that is the whole point of it existing separately from
+     numeric. A money field on this pane is an object carrying micros; reading
+     it as `box && box.micros` instead means a scalar `total: 0` short-circuits
+     the chain to the number 0, which is finite, which numeric accepts, which
+     puts "$0.00" under "Month to date" for a payload that reported no total at
+     all. The rule two comments up has to hold for every shape a sender can
+     send, not only for the absent one. Anything that is not an object with a
+     finite numeric micros, arrays and scalars included, is no figure. */
+  function moneyMicros(box) {
+    if (!box || typeof box !== 'object') return null;
+    return numeric(box.micros);
+  }
+
   function totalMicros(data) {
-    return numeric(data && data.total && data.total.micros);
+    return moneyMicros(data && data.total);
   }
 
   /* ------------------------------------------------------- as of and stale */
@@ -96,6 +112,12 @@
       badge.appendChild(h('span', { text: stale.badge }));
       wrap.appendChild(badge);
       wrap.appendChild(h('span', { className: 'ink-warn', text: stale.detail }));
+      if (stale.also) {
+        wrap.appendChild(h('span', {
+          className: 'ink-warn',
+          text: 'The reporting also reported a failure of its own. ' + stale.also
+        }));
+      }
     }
     return wrap;
   }
@@ -109,22 +131,30 @@
      timestamp may be ahead of now, which is not a fresh reading at all but two
      clocks disagreeing. The third used to be invisible because the age was
      clamped at zero, which made the one case nobody would guess at look like
-     the healthiest reading on the pane. */
+     the healthiest reading on the pane.
+
+     A disagreeing clock takes the badge, because it undermines any claim about
+     age, including the reporting's own. It does not take the other fact with
+     it: a declared export failure is independent of what the stamp says, and
+     is carried alongside as `also` rather than dropped, because it is the half
+     somebody can go and act on. */
   function isStale(data) {
+    var declared = (data.staleness && data.staleness.state && data.staleness.state !== 'ok')
+      ? (data.staleness.detail || 'The last attempt to read costs did not land.')
+      : null;
+
     var age = d.hoursSince(data.asOf);
     if (age !== null && age < 0) {
       return {
         badge: 'Clocks disagree',
         detail: 'This reading is stamped ' + d.hours(-age) + ' ahead of now, ' +
           'so the reporting and this page do not agree on the time. Treat the ' +
-          'figures as unverified until that is explained.'
+          'figures as unverified until that is explained.',
+        also: declared
       };
     }
-    if (data.staleness && data.staleness.state && data.staleness.state !== 'ok') {
-      return {
-        badge: 'Stale',
-        detail: data.staleness.detail || 'The last attempt to read costs did not land.'
-      };
+    if (declared) {
+      return { badge: 'Stale', detail: declared };
     }
     var lag = data.publishLagHours || 8;
     if (age !== null && age > lag * 2) {
@@ -145,8 +175,8 @@
     var body = d.cardBody('stack-sm');
 
     var total = totalMicros(data);
-    var forecast = numeric(data.forecast && data.forecast.micros);
-    var budget = numeric(data.budget && data.budget.micros);
+    var forecast = moneyMicros(data.forecast);
+    var budget = moneyMicros(data.budget);
 
     /* The headline pair: what has been billed, and what that is on course to
        become. Kept side by side because either one alone invites the wrong
@@ -229,9 +259,9 @@
     var currency = data.currency;
     var total = totalMicros(data);
     if (total === null) return null;
-    var forecast = numeric(data.forecast && data.forecast.micros);
+    var forecast = moneyMicros(data.forecast);
     if (forecast === null) forecast = total;
-    var budget = numeric(data.budget && data.budget.micros);
+    var budget = moneyMicros(data.budget);
 
     var scale = Math.max(budget || 0, forecast, total) || 1;
     var wrap = h('div', { className: 'budget' });
@@ -286,12 +316,8 @@
     var wrap = h('div', { className: 'stack-sm' });
     found.forEach(function (item) {
       var box = d.callout('warn', 'warn', [d.strong(item.title), ' ' + item.detail]);
-      var href = item.link && d.safeHref(item.link.href);
-      if (href) {
-        box.lastChild.appendChild(h('div', { className: 'row mt-sm' }, [
-          h('a', { className: 'btn btn-sm', href: href, text: item.link.label })
-        ]));
-      }
+      var link = d.payloadLink(item.link);
+      if (link) box.lastChild.appendChild(h('div', { className: 'row mt-sm' }, [link]));
       wrap.appendChild(box);
     });
     return wrap;
@@ -433,8 +459,8 @@
      reproduce an invoice total, and a near miss would be indistinguishable
      from a real gap. */
   function reconciliation(view, data) {
-    var total = data.total && data.total.micros;
-    if (typeof total !== 'number') return null;
+    var total = totalMicros(data);
+    if (total === null) return null;
 
     var sum = 0;
     (view.rows || []).forEach(function (row) {
@@ -470,9 +496,12 @@
 
     var legend = h('div', { className: 'legend' });
     daily.series.forEach(function (s) {
+      /* Through the same fallback the line takes, not through the allowlist
+         raw. A key that goes unpainted when a colour is unrecognised, beside a
+         line that falls back and is drawn anyway, is a legend that disagrees
+         with its own chart. */
       var swatch = h('i', { 'aria-hidden': 'true' });
-      var tone = d.seriesColor(s.color);
-      if (tone) swatch.style.setProperty('background', tone);
+      swatch.style.setProperty('background', d.seriesStroke(s.color));
       legend.appendChild(h('span', {}, [swatch, h('span', { text: s.label })]));
     });
 
@@ -624,9 +653,12 @@
         'known, not nothing spent.'
     ], actions);
 
-    /* Unconditional, because a state that shows no total still has to say
-       when it last looked: asOfLine says so itself when the time is missing.
-       A div rather than a p, because the line it returns is a flex row. */
+    /* Unconditional, because a state that shows no total still has to say when
+       it last looked. That rests on asOfLine printing its own fallback
+       sentence for a time it was not given, which in turn rests on parseUtc
+       treating every non-string, `null` and `0` included, as absent rather
+       than as the epoch. A div rather than a p, because the line it returns is
+       a flex row. */
     node.appendChild(h('div', { className: 'axis-note' }, [asOfLine(data)]));
     return node;
   }
@@ -642,11 +674,20 @@
     /* Every state the pane lands in is announced, not only the skeleton. The
        pane replaces its whole subtree on each filter change, so without this a
        screen reader hears "Loading figures" and then silence, including when
-       what replaced it was the failure card. */
+       what replaced it was the failure card.
+
+       Focus is carried across the replacement when it was inside the pane.
+       "Check again" and "Try again" both repaint, which removes the button
+       under the reader's own cursor, and a keyboard reader is then standing at
+       the top of the document with no idea the pane answered them. Reading it
+       before the subtree goes means the skeleton keeps the claim too, so it
+       survives the loading paint and lands on whatever the load resolved to. */
     function paint(node, announcement) {
+      var held = host.contains(document.activeElement);
       host.textContent = '';
       host.appendChild(node);
       shell.wireTabs(host);
+      if (held) d.refocus(host);
       if (announcement) shell.announce(announcement);
     }
 

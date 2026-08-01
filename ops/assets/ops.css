@@ -619,7 +619,10 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
 
 .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11.5px; color: var(--text-2); }
 .legend button { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; cursor: pointer; color: inherit; font-size: inherit; padding: 2px; }
-.legend i { width: 9px; height: 9px; border-radius: 2px; display: block; }
+/* The default matters: a key with no colour of its own is invisible, and the
+   line it names is drawn in the default series token regardless. Same reason
+   .cat-swatch and .rank-track i carry one. */
+.legend i { width: 9px; height: 9px; border-radius: 2px; display: block; background: var(--s1); }
 .legend .off { opacity: .4; text-decoration: line-through; }
 
 .axis-note { font-size: 11px; color: var(--text-3); }

@@ -47,17 +47,52 @@
   /* Whether a value from the payload may be used as a link target.
 
      Every href on these panes comes from the response, so the pane decides
-     what a link may be rather than trusting the sender. Relative paths only:
-     anything carrying a scheme, and anything protocol-relative, is dropped.
-     The pages' content policy would already stop a javascript: URL from
-     running, but the guarantee belongs next to the code that builds the link
-     rather than in a meta tag somebody may loosen later. */
+     what a link may be rather than trusting the sender. Relative paths on this
+     origin only: anything carrying a scheme, anything protocol-relative, and
+     anything that resolves off this origin is refused. The pages' content
+     policy would already stop a javascript: URL from running, but the
+     guarantee belongs next to the code that builds the link rather than in a
+     meta tag somebody may loosen later.
+
+     Four checks rather than two, because the first version tested the text and
+     the browser navigates the *resolved* URL, and the two are not the same
+     string:
+
+       1. No control characters or whitespace anywhere inside the value. The
+          URL parser strips tabs and newlines before it looks for a scheme, so
+          "java\tscript:alert(1)" reaches the browser as "javascript:" while
+          sailing past a scheme test that only knows [a-z0-9+.-]. Refused
+          rather than stripped: a target that had to be edited to be safe is
+          not a target this pane was handed.
+       2. No scheme.
+       3. No authority. A backslash is a path separator to the URL parser, so
+          "/\evil.example/x" is protocol-relative in every way that matters and
+          resolves cross-origin; the leading pair is normalised before it is
+          compared, which covers //, /\, \\ and \/.
+       4. The resolved URL is on this origin. This is the check that actually
+          holds the guarantee, because it is made against the same value the
+          browser would navigate rather than against the text it started as.
+
+     Returns the original relative text, so a link that passes stays relative
+     and keeps working under whatever origin the page is served from. */
+  var UNSAFE_CHARS = /[\u0000-\u0020\u007f]/;
+
   function safeHref(href) {
     if (typeof href !== 'string' || !href) return null;
     var text = href.trim();
     if (!text) return null;
+    if (UNSAFE_CHARS.test(text)) return null;
     if (/^[a-z][a-z0-9+.-]*:/i.test(text)) return null;
-    if (text.charAt(0) === '/' && text.charAt(1) === '/') return null;
+    if (text.slice(0, 2).replace(/\\/g, '/') === '//') return null;
+
+    var resolved;
+    try {
+      resolved = new global.URL(text, global.location.href);
+    } catch (e) {
+      return null;
+    }
+    if (resolved.origin !== global.location.origin) return null;
+    if (resolved.protocol !== global.location.protocol) return null;
     return text;
   }
 
@@ -82,6 +117,34 @@
     return (typeof name === 'string' &&
       Object.prototype.hasOwnProperty.call(SERIES_TOKENS, name))
       ? SERIES_TOKENS[name] : null;
+  }
+
+  /* The colour a series is actually drawn in, which is the fallback above
+     applied rather than described.
+
+     Everything that draws a series reads it from here: the line, and the
+     legend key beside it. Two call sites doing `seriesColor(x) || default`
+     independently is how the legend ended up with transparent swatches beside
+     lines that had taken the fallback, which is worse than an unrecognised
+     colour, because the key and the picture then disagree about which line is
+     which. */
+  function seriesStroke(name) {
+    return seriesColor(name) || SERIES_TOKENS.s1;
+  }
+
+  /* A link the response asked for, or its label as plain text.
+
+     A target safeHref refuses still leaves a label the payload wrote into a
+     sentence, so the words stay and only the navigation is withheld. Dropping
+     the whole element instead leaves a sentence pointing at a button that is
+     not there. */
+  function payloadLink(link, className) {
+    if (!link || typeof link !== 'object') return null;
+    var label = typeof link.label === 'string' ? link.label : '';
+    if (!label) return null;
+    var href = safeHref(link.href);
+    if (!href) return h('span', { className: 'small muted', text: label });
+    return h('a', { className: className || 'btn btn-sm', href: href, text: label });
   }
 
   /* A link to another pane, or to this one under a different window, with the
@@ -179,14 +242,22 @@
      produces a stamp that is wrong by the operator's own offset and wrong by a
      different amount for the next operator. Anything without a designator is
      read as the UTC the pipeline meant; anything carrying Z or an offset is
-     left alone, because it already says what it is. */
+     left alone, because it already says what it is.
+
+     Anything that is not a string, and any string this cannot read, is absent
+     rather than approximate. That is a rule about `null` specifically: `null`
+     is the ordinary way a JSON API says "not known", and `new Date(null)` is
+     the epoch rather than an invalid date, so a timestamp nobody reported used
+     to render "1 Jan 1970 00:00 UTC" and an age of half a million hours, both
+     computed from a field that was never sent. `0` does the same. A Date is
+     accepted because a caller may already hold one; nothing else is coerced. */
   var HAS_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 
   function parseUtc(value) {
-    if (typeof value !== 'string') {
-      var direct = new Date(value);
-      return isNaN(direct.getTime()) ? null : direct;
+    if (value instanceof Date) {
+      return isNaN(value.getTime()) ? null : value;
     }
+    if (typeof value !== 'string') return null;
     var text = value.trim().replace(' ', 'T');
     /* Date-only strings are already UTC by specification, so only the
        date-time forms are stamped. */
@@ -216,8 +287,16 @@
      The sign is the point. A reading from the future is not a fresh reading;
      it is a clock that disagrees with this page, and clamping it to zero hides
      exactly the case the staleness check exists to catch. Truncating rather
-     than flooring also keeps a stamp a few minutes ahead, which is ordinary
-     clock drift between two machines, from being reported as an hour. */
+     than flooring also keeps a stamp slightly ahead, which is ordinary clock
+     drift between two machines, from being reported as an hour.
+
+     State the tolerance rather than imply it: truncation makes it sub-hour,
+     not "a few minutes", so a stamp up to 59 minutes ahead comes back as
+     negative zero and reads as fresh. That is deliberate. The two realistic
+     causes of a stamp ahead of a browser clock are a timezone or DST error,
+     which is a whole hour or more and is caught, and NTP drift, which is
+     seconds; a 59-minute skew is neither, and the stamp itself is on screen
+     for a reader who wants to check it. */
   function hoursSince(iso) {
     var d = parseUtc(iso);
     if (!d) return null;
@@ -415,6 +494,30 @@
     return wrap;
   }
 
+  /* Where keyboard focus goes when a pane replaces the subtree that held it.
+
+     "Try again" and "Check again" both repaint synchronously, which removes
+     the button the reader just activated while it holds focus, and the browser
+     answers that by dropping focus to the document body. The announcement says
+     what happened; this says where the reader now is. Focus moves to the first
+     control the replacement offers, or to the replacement itself when it
+     offers none, which is why the container takes a programmatic tabindex
+     rather than a real one: it is a landing place, not a tab stop. */
+  var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), ' +
+    'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  function refocus(host) {
+    var target = host.querySelector(FOCUSABLE);
+    if (!target) {
+      /* Only the fallback takes the attribute. Putting tabindex="-1" on a
+         control that is already focusable would take it out of the tab order,
+         which is the opposite of the repair. */
+      target = host.firstElementChild || host;
+      if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    }
+    try { target.focus(); } catch (e) { /* a detached node is not worth a throw */ }
+  }
+
   /* A pane-sized state block inside a card, with optional actions under it. */
   function stateCard(iconName, title, lines, actions) {
     var wrap = h('div', { className: 'stack' });
@@ -558,7 +661,7 @@
     var line = svgEl('path', {
       d: seriesPath(values, bounds, stepFor((values || []).length, width, 4), height, 4),
       fill: 'none',
-      stroke: seriesColor(opts.color) || 'var(--s1)',
+      stroke: seriesStroke(opts.color),
       'stroke-width': 1.8,
       'stroke-linecap': 'round',
       'stroke-linejoin': 'round',
@@ -600,7 +703,7 @@
       svg.appendChild(svgEl('path', {
         d: seriesPath(values, bounds, step, height, pad),
         fill: 'none',
-        stroke: seriesColor(s.color) || 'var(--s1)',
+        stroke: seriesStroke(s.color),
         'stroke-width': s.dashed ? 1.4 : 2,
         'stroke-dasharray': s.dashed ? '5 4' : '',
         'stroke-linecap': 'round',
@@ -736,7 +839,10 @@
     isLoopback: isLoopback,
     safeHref: safeHref,
     seriesColor: seriesColor,
+    seriesStroke: seriesStroke,
+    payloadLink: payloadLink,
     paneUrl: paneUrl,
+    refocus: refocus,
 
     utcStamp: utcStamp,
     utcDay: utcDay,
