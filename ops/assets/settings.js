@@ -700,10 +700,11 @@
         'This table describes the rules the server enforces. It is not a control, and ' +
         'editing this page would not change what a role can do.',
         'A row marked as having no endpoint yet names the rule its endpoint will be written ' +
-        'against. Where a row says No, the server refuses it today. A row that is Yes for ' +
-        'every role needs no refusal, and pane visibility is decided by the shell and then ' +
-        'enforced by this pane\'s own owner-only endpoints, the only ones a role can be ' +
-        'turned away from.'
+        'against. For every other row, a No is enforced by the server today, either by ' +
+        'refusing the request or by narrowing what it returns, and a row that is Yes for ' +
+        'every role needs no enforcement. Pane visibility is decided by the shell, and ' +
+        'Settings is the only pane a role can be turned away from; on the server, the ' +
+        'administrator list and the access record behind it refuse anyone but an owner.'
       ])
     ]);
   }
@@ -1105,10 +1106,12 @@
       auditState.busy = false;
       renderAudit();
       if (!fresh.length && rows.length) {
-        /* A full page of rows already on screen: say so, or the click looks
-           like it did nothing. The offset advanced, so the next click asks
-           for the page after it. */
-        shell.announce('That page held no new entries. Load more to continue.');
+        /* A page of rows already on screen: say so visibly, or the click looks
+           like it did nothing. The offset advanced, so when more remains the
+           next click asks for the page after it. */
+        shell.toast('warn', auditState.more
+          ? 'That page held no new entries. Load more to continue.'
+          : 'That page held no new entries, and it was the end of the record.');
       }
       drainPendingAudit();
     }, function (err) {
