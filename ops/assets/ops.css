@@ -182,6 +182,12 @@
 
 * { box-sizing: border-box; }
 
+/* The user agent's rule for [hidden] is display:none at the lowest specificity
+   there is, so any class that sets a display of its own beats it. Every control
+   in this file sets one, which quietly turns hiding an element into a no-op on
+   exactly the elements a pane needs to hide. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -503,6 +509,11 @@ body.is-ready   .gate-app { display: block; }
   display: flex; align-items: center; gap: 10px;
   font-size: 12px; color: var(--text-3);
 }
+/* An icon in a footnote is decorative furniture beside the sentence it marks.
+   Without a size it inherits the flex row's height, which on a two line note
+   draws it the size of the note. Every other place an icon appears already
+   pins one; this is the one that was missing. */
+.card-foot svg { width: 14px; height: 14px; flex: none; opacity: .85; }
 
 .grid { display: grid; gap: 14px; }
 .g2 { grid-template-columns: repeat(2, minmax(0,1fr)); }

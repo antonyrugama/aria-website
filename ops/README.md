@@ -188,27 +188,38 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     shell.js            pane registry, rail, top bar, filter bar, boot gate
     login.js            the sign-in page controller
+    settings.css        layout for the Settings pane
+    settings.js         the Settings pane controller
 ```
 
-The ten pane pages are byte-identical apart from `data-page` and `<title>`. Everything a pane is
-lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages.
+A pane page is `data-page`, a `<title>`, and, once the pane has been built, the stylesheet and
+script that fill it. Everything else a pane is lives in the `PANES` registry in `shell.js`, so the
+rail cannot drift from the pages. A pane marked `built` there is handed an empty content area and
+fills it itself; every other pane still gets the not-built-yet card from the shell.
+
+A pane script asks the shell for the moment it can draw, with `OpsShell.onReady(fn)`, rather than
+listening for the `ops:ready` event on its own. Both exist for the same reason and only one of
+them is safe: a pane script is its own network request, so on a fast connection the session call
+can resolve while the parser is still waiting for the file, and a listener added afterwards would
+wait for an event that has already been dispatched. `onReady` runs immediately when that has
+happened. `ops:filters` is still an event, because a filter selection changes many times.
 
 ## What this release does and does not do
 
-This release builds the shell, the sign in, and the design system. Every pane routes to a real
-page that says plainly that it is not built yet and which delivery wave builds it: W2 for
-Overview, Happening now, What happened and Problems; W3 for People and usage and Cloud costs;
-W4 for App releases and Look up a user; W5 for Settings. Aria quality is deferred to its own
-project.
+The first release built the shell, the sign in, and the design system. Settings is built.
+Every other pane routes to a real page that says plainly that it is not built yet and which
+delivery wave builds it: W2 for Overview, Happening now, What happened and Problems; W3 for
+People and usage and Cloud costs; W4 for App releases and Look up a user. Aria quality is
+deferred to its own project.
 
 The shared filter bar ships now and round trips through the querystring, so later waves read a
-selection rather than inventing one. A pane listens on `window` for two events, both dispatched
-once the session is confirmed and the shell is in the document, so a listener added while
-`shell.js` is still booting cannot miss them:
+selection rather than inventing one. A pane has two ways to hear from the shell, both available
+once the session is confirmed and the shell is in the document:
 
-- `ops:ready`, carrying `{ pane, filters }`, which is the signal that `#content` exists.
-- `ops:filters`, carrying the selection, fired for the starting selection as well as for every
-  change to it. `OpsShell.filters()` returns the same thing on demand.
+- `OpsShell.onReady(fn)`, carrying `{ pane, filters }`, which is the signal that `#content`
+  exists. It runs immediately if the shell arrived before the pane script did.
+- `ops:filters`, an event on `window` carrying the selection, fired for the starting selection as
+  well as for every change to it. `OpsShell.filters()` returns the same thing on demand.
 
 Per-pane filters arrive with the pane that needs them.
 
@@ -221,6 +232,36 @@ Role differences surface in navigation affordances only at this stage. Settings 
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
 rather than a destination that silently vanishes. The server enforces this independently; the
 client renders a fact, it does not decide one.
+
+## The Settings pane
+
+Settings is owner only and is the one pane that can change something, so it is worth being exact
+about what it does and does not do.
+
+**What is real.** The administrator list, each account's role, status, last sign in and current
+session expiry, the ability to revoke another administrator's access, and the access record all
+come from the API. Revoking asks first, requires a written reason, sends that reason, and reports
+what the server answered rather than what was asked for. The record of the change is reloaded
+beside the change, so the audit entry is on screen next to the thing it describes.
+
+**What is not, and says so.** Retention windows, the cost category mapping, integration
+connection state, and the session and elevated-access windows are settings in the approved mock
+that no API can yet read or write. Each of those renders a state saying which of "not built" and
+"not reported" applies, rather than a select or a switch that would silently write nothing. A
+control that appears to work and does not is worse than no control, and on this pane it would be
+worse than the whole pane being missing.
+
+**Nothing here is a permission check.** The pane draws what the role in hand can do, and the
+server re-reads the account row on every request and refuses independently. A control drawn for
+somebody who may not use it is a cosmetic bug; the server's answer is the one that counts, and it
+is the one shown.
+
+**The export covers what is loaded**, which is what the button says. There is no server-side
+export, and a button labelled "export the record" that quietly sent one page of it would be a lie
+about the record people are meant to be able to check. Cells that begin with a character a
+spreadsheet reads as a formula are prefixed so that opening the file cannot run anything: two
+columns of that export carry text somebody else wrote, including the address submitted on a
+failed sign in.
 
 ## Departures from the approved mocks
 
@@ -254,19 +295,28 @@ client renders a fact, it does not decide one.
 8. **Real semantics** where the mock used inert markup: headings are `h1` to `h4` in order and
    take their size from a class, tabs are a `role="tablist"` with arrow-key support, and both
    overlays trap focus, close on Escape, restore focus, and make the background inert.
+9. **`.card-foot svg` is sized.** Every other place an icon appears pins a size; the card footnote
+   did not, so an icon there inherited the flex row's height and drew at the size of the note.
+10. **`[hidden]` is enforced.** The user agent's rule for it is `display: none` at the lowest
+    specificity there is, so any class that sets a display of its own beats it. Every control in
+    the stylesheet sets one, which turned hiding a control into a no-op.
 
 ### Known contrast debt, inherited and not yet fixed
 
-Measured across both themes against composited backgrounds. **Every pairing this release
-renders passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or
-better. That includes the two pieces of status furniture W1 does draw: the plain `.badge` that
-carries the scope note on Cloud costs, and the `.callout-ai` on Aria quality.
+Measured across both themes against composited backgrounds. **Every pairing rendered so far
+passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or better. Every
+text pairing the Settings pane draws was measured against its own composited background in both
+themes: 27 distinct pairings in light, lowest 5.42:1, and 26 in dark, lowest 5.99:1. That
+includes `.badge-ok`, `.badge-warn`, `.badge-brand`, `.tag` and a `callout-warn`, all of which
+sit **on a card** rather than on the page background, which is where the debt below lives.
 
-The debt below is in the shipped design system and is drawn by nothing in this release, because
-no status badge, tag, or warning callout is on screen yet. In the light theme these pairings sit
-between 3.79:1 and 4.49:1 against the 4.5:1 they need; the same pairings pass in dark. Every one
-is byte-identical to the approved mock. They are recorded here so that the first pane to draw one
-does not ship it unnoticed:
+The debt below is in the shipped design system and is still drawn by nothing, because the two
+things that would draw it are avoided on purpose: Settings uses no `.badge-crit` and no
+`.btn-danger`, including on the control that revokes another administrator's access, and it keeps
+every badge inside a card. In the light theme these pairings sit between 3.79:1 and 4.49:1
+against the 4.5:1 they need; the same pairings pass in dark. Every one is byte-identical to the
+approved mock. They are recorded here so that the first pane to draw one does not ship it
+unnoticed:
 
 | Pair | Light ratio |
 |---|---|

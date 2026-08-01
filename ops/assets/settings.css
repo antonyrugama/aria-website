@@ -1,0 +1,121 @@
+/* Settings pane layout.
+
+   Kept out of ops.css because nothing else draws these shapes: a section rail
+   beside a column of setting rows, and the fact/value pairs those rows carry.
+   The design system stays the thing every pane shares.
+
+   No inline style attribute anywhere on this pane, because the page carries
+   style-src 'self' and an attribute would be blocked before it drew anything. */
+
+.settings {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+/* The section rail. Real links to real ids, so the browser's own find-in-page,
+   back button, and deep links all work, and a section can be pointed at. */
+.set-nav-body { padding: 8px; }
+.set-nav ul { list-style: none; margin: 0; padding: 0; }
+.set-nav a {
+  display: block;
+  padding: 7px 11px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.set-nav a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.set-nav a[aria-current] {
+  background: var(--brand-dim);
+  color: var(--brand-bright);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+/* Anchored sections sit under a sticky top bar and a card head, so an
+   unadjusted jump lands with the heading hidden behind the chrome. */
+.set-section { scroll-margin-top: calc(var(--topbar-h) + 16px); }
+
+.set-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+.set-row:first-child { padding-top: 0; }
+.set-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.set-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.set-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin: 3px 0 0;
+  max-width: 62ch;
+  line-height: 1.55;
+}
+
+/* The right hand side of a setting row. A value this pane can read but not
+   yet change, so it is text rather than a control that would do nothing. */
+.set-value {
+  font-size: 12.5px;
+  color: var(--text);
+  text-align: right;
+  white-space: nowrap;
+}
+.set-value .tiny { display: block; color: var(--text-3); white-space: nowrap; }
+
+/* Paragraphs inside the primitives this pane fills. The design system sizes
+   its own copy but leaves paragraph margins to the browser, which is a 1em gap
+   wherever a card foot or a state block carries more than one sentence. */
+.card-foot-note { align-items: flex-start; }
+.card-foot-note svg { margin-top: 2px; }
+.card-foot p, .state-block p { margin: 0; }
+.card-foot p + p, .state-block p + p { margin-top: 7px; }
+.modal-card p.field-hint { margin: 6px 0 0; }
+
+.set-rules {
+  margin: 14px 0 0;
+  padding: 0 0 0 18px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.7;
+  text-align: left;
+}
+
+/* Cells that hold a control plus its explanation, in a table row. */
+.set-cell-note {
+  display: block;
+  color: var(--text-3);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.set-actor { display: block; color: var(--text); }
+
+/* A table cell allowed to wrap, for the one column that holds a sentence. */
+.set-wrap { white-space: normal; min-width: 20ch; max-width: 44ch; }
+
+/* The reason field in the confirm dialog. Wider than the login inputs it
+   borrows from, because a reason is a sentence rather than a password. */
+.set-reason { min-height: 40px; font-size: 14px; }
+
+@media (max-width: 980px) {
+  .settings { grid-template-columns: minmax(0, 1fr); }
+  .set-nav-body { padding: 6px; }
+  .set-nav ul { display: flex; flex-wrap: wrap; gap: 2px; }
+}
+
+@media (max-width: 860px) {
+  /* A card head is one row of controls on a wide screen and a stack on a
+     phone. Without this the two buttons on the access record push the page
+     into a horizontal scroll, which is the one thing a narrow layout must
+     never do. */
+  .card-head, .card-head .row, .card-foot { flex-wrap: wrap; }
+  .set-row { grid-template-columns: minmax(0, 1fr); }
+  .set-value { text-align: left; white-space: normal; }
+  .set-value .tiny { white-space: normal; }
+  .set-nav a { min-height: 38px; display: flex; align-items: center; }
+}

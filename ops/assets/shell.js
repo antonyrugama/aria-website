@@ -20,6 +20,9 @@
   /* ------------------------------------------------------- pane registry */
 
   /* wave      which delivery slice builds the pane's contents
+     built     the pane has its own script and fills #content itself, so the
+               shell leaves the content area empty for it rather than drawing
+               the not-built-yet card
      scope     the All / Mobile / Coaches Web control applies
      scopeNote shown in the filter bar where the absence needs explaining
      range     false, or the list of ranges this pane offers
@@ -96,7 +99,7 @@
     settings: {
       file: 'settings.html', icon: 'settings', label: 'Settings', group: 'Apps and people',
       question: 'Who can get in, what do we keep, and for how long?',
-      wave: 'W5', scope: false, range: false, env: false, roles: ['owner']
+      wave: 'W5', built: true, scope: false, range: false, env: false, roles: ['owner']
     }
   };
 
@@ -674,6 +677,23 @@
     });
   }
 
+  /* Whether the shell is in the document, and what it said when it got there.
+
+     A pane script is its own network request, so it can be parsed after the
+     session call has already resolved: the parser is blocked waiting for the
+     file while the event loop is free to run the fetch's continuation. A pane
+     that only added a listener would then wait for an event that has already
+     been dispatched and never render at all, on exactly the fast connections
+     where nothing looks wrong. This is the seam that closes that, and it has
+     to live here because only this file knows when the shell arrived. */
+  var shellReady = false;
+  var readyDetail = null;
+
+  function onReady(fn) {
+    if (shellReady) fn(readyDetail);
+    else global.addEventListener('ops:ready', function (e) { fn(e.detail); });
+  }
+
   var liveRegion = null;
 
   /* Polite announcements for changes a sighted operator sees but a screen
@@ -802,9 +822,13 @@
       if (bar) main.appendChild(bar);
 
       var content = h('main', { className: 'content', id: 'content', tabindex: '-1' });
+      /* A built pane is left an empty #content and fills it from its own
+         script on ops:ready. The denied branch stays ahead of that, so a role
+         that may not open the pane gets the state that names the role it
+         needs rather than an empty column waiting to be filled. */
       if (pane.roles && !session.hasRole(pane.roles)) content.appendChild(renderDenied(pane));
       else if (pane.deferred) content.appendChild(renderDeferred(pane));
-      else content.appendChild(renderNotBuilt(pane));
+      else if (!pane.built) content.appendChild(renderNotBuilt(pane));
       main.appendChild(content);
 
       app.appendChild(main);
@@ -818,9 +842,9 @@
          the document, so a pane script that adds its listeners while this file
          is still booting cannot miss them. ops:ready is the signal that
          #content exists; ops:filters then carries the starting selection. */
-      global.dispatchEvent(new CustomEvent('ops:ready', {
-        detail: { pane: pageId, filters: shallow(filters) }
-      }));
+      readyDetail = { pane: pageId, filters: shallow(filters) };
+      shellReady = true;
+      global.dispatchEvent(new CustomEvent('ops:ready', { detail: readyDetail }));
       emitFilters();
     }).catch(function (err) {
       /* A terminal failure has already navigated to the sign-in screen and
@@ -837,6 +861,7 @@
 
   global.OpsShell = {
     init: init,
+    onReady: onReady,
     panes: PANES,
     filters: function () { return shallow(filters); },
     h: h,
