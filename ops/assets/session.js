@@ -6,29 +6,25 @@
 
    WHAT THIS FILE PROMISES, stated exactly:
 
-     Ordinary races converge. Stale replays sign this device out locally.
-     The server adjudicates; the client does not pretend to.
+     Ordinary races converge. A copy of a credential that has been superseded
+     signs that tab out locally. The server adjudicates; the client does not
+     pretend to.
 
    That is deliberately weaker than the absolute "at most once, ever" an
    earlier draft claimed, and the weaker promise is the honest one.
 
-   IT ALSO DEPENDS ON A BACKEND CHANGE THAT MUST BE DEPLOYED FIRST. The server
-   is to serve a grace window: the immediately-previous token generation,
-   presented within a few seconds of its rotation, is answered with a fresh
-   access token and refreshTokenRotated: false, rather than being treated as
-   theft. Two tabs refreshing at the same moment then converge instead of one
-   of them destroying the session. Reuse detection, which revokes the session
-   everywhere and writes a compromise event into an append-only audit log, is
-   reserved for what it was always meant for: a generation older than the
-   last, or one presented long after its rotation.
+   The exchange it is written against: the refresh token rotates on every use,
+   and the immediately-previous generation presented within a few seconds of
+   its rotation is answered with a fresh access token, refreshTokenRotated:
+   false, and no refresh token, rather than being treated as theft. Two tabs
+   refreshing at the same moment therefore converge. The same generation
+   presented long after its rotation is theft as far as the server is
+   concerned and ends the session everywhere; anything older than that is
+   simply refused. This file does not try to make either of those calls
+   itself.
 
-   Until that backend change is live, a genuine two-tab race still ends in a
-   revoked session. Nothing in this file can prevent that on its own, which is
-   why the ordering is a release-time requirement and not a code concern. See
-   ops/README.md.
-
-   Given the grace window, the client does not have to be the thing that makes
-   races safe, and the machinery here is sized accordingly:
+   Given that, the client does not have to be the thing that makes races safe,
+   and the machinery here is sized accordingly:
 
      1. The access token is cached per tab, so ordinary navigation performs no
         refresh at all. This is the one that still earns its keep: it turns
@@ -37,15 +33,22 @@
      2. Web Locks serialise the exchange across same-origin contexts where the
         API exists. This is now an efficiency measure, not a correctness one,
         so its absence is fine and the fallback is a per-document queue.
-     3. A ledger of already-presented token hashes, consulted before an
-        exchange. This is a local courtesy, not a guarantee, and it is worth
-        being exact about which. It targets the case the grace window cannot
-        cover: a refresh whose response was lost, presented again after the
-        window has passed. When it hits, the operator gets a clean sign-in on
-        this device instead of a session revoked on every device. When it
-        misses, and it will, the request goes to the server and the server's
-        revocation path handles it, which is the correct security outcome
-        reached by a worse route.
+     3. A ledger of already-presented token hashes and the moment each was
+        presented, consulted before an exchange. This is a local courtesy, not
+        a guarantee, and it is worth being exact about which. It targets the
+        one case the grace window cannot cover: a refresh whose response was
+        lost, presented again long after the window has passed. When it hits,
+        the operator gets a clean sign-in on this device instead of a refusal
+        that ends the session everywhere. When it misses, and it will, the
+        request goes to the server and the server decides, which is the
+        correct outcome reached by a worse route.
+
+        The timestamp is the whole point of the entry, not bookkeeping around
+        it. A hash on its own cannot tell a replay from the other tab in an
+        ordinary race, and refusing the race locally is how a client talks
+        itself out of the very grace window that exists to absorb it. So an
+        entry younger than the window is presented anyway and the server
+        answers it; only an older one is refused here.
 
         It misses whenever storage is full, SubtleCrypto is absent, or the
         entry has been evicted, and eviction is the honest limit: the list is
@@ -60,15 +63,16 @@
        when the operator asked to be remembered on the device, and to
        sessionStorage otherwise, which is what makes "remember this device" a
        real control rather than a decorative one. It is stored with the
-       administrator it belongs to, so a tab can tell when the credential
-       under it has become somebody else's.
-     - The access token is a 15 minute JWT cached in sessionStorage. This was
-       a departure from the identity design record's "memory only" line and is
-       now an accepted amendment to it: memory only forces a refresh on every
-       page load of a multi-page shell, which is what made rotation as
-       frequent as navigation. sessionStorage keeps the property the record
-       was protecting, that a browser restart cannot resume a session without
-       the refresh exchange.
+       administrator it belongs to and read back with the store it came from,
+       so a tab can tell both when the credential under it has become somebody
+       else's and whether what it is holding is private to this tab or shared
+       with every tab on the browser. Nothing here ever writes over or deletes
+       a stored credential belonging to another administrator.
+     - The access token is a 15 minute JWT cached in sessionStorage. Memory
+       only forces a refresh on every page load of a multi-page shell, which
+       is what made rotation as frequent as navigation. sessionStorage keeps
+       the property that matters, that a browser restart cannot resume a
+       session without the refresh exchange.
      - The ledger stores SHA-256 hashes, never tokens, so it reveals nothing
        to anything that reads it. */
 (function (global) {
@@ -84,6 +88,11 @@
      administrator's. Carried as an error code so no call site can adopt a
      credential without dealing with it. */
   var IDENTITY_CHANGED = 'ops_identity_changed';
+  /* Raised when the browser refused to store the credential. Never silent: a
+     refresh token that was not written is a session that ends without warning
+     when the access token does, which is the one failure an operator must not
+     discover halfway through an incident. */
+  var STORAGE_UNAVAILABLE = 'ops_storage_unavailable';
   /* A plain capped list, oldest evicted first. Roughly ten days of one-tab use
      at one exchange per fifteen minutes, proportionally less with more tabs
      open, which is a deliberate compromise rather than a size chosen to cover
@@ -92,14 +101,19 @@
 
      Be clear about which way the cost runs. An eviction is this guard missing,
      and a miss is the expensive direction: the stale token reaches the server
-     and the revocation path signs the session out everywhere with a compromise
-     event, rather than this device signing itself out quietly. That is the
-     correct security outcome by a worse route, and accepting it is the whole
-     reason the timestamps and age pruning an earlier draft carried are gone.
-     They existed to guarantee no live hash was ever evicted, which was worth
-     the clock handling only while the client was the thing keeping races
-     safe. */
+     and the server ends the session rather than this device signing itself out
+     quietly. That is the correct security outcome by a worse route, and
+     accepting it is why the list is capped by count rather than sized to the
+     whole session ceiling. */
   var SPENT_KEEP = 1000;
+  /* How recently a token can have been presented and still be worth
+     presenting again. Deliberately well inside the window the server absorbs,
+     so that clock skew and a slow request cannot carry a presentation this
+     side judged safe past the point where the other side stops being gentle
+     about it. Under it, the race goes to the server, which is the only thing
+     that can actually resolve one. Over it, this device signs itself out
+     instead. */
+  var SPENT_GRACE_MS = 5000;
   var ROOT = 'login.html';
 
   /* Failures that mean the session itself is finished. Refreshing will not
@@ -114,8 +128,10 @@
        replays the same unparseable value forever, so this is a finished
        session by any reasonable reading. */
     ops_refresh_invalid: 'ended',
-    /* Locally raised: this profile has already presented this token once. */
-    ops_refresh_spent: 'ended'
+    /* Locally raised: this tab's copy of the credential has been superseded by
+       a rotation it cannot see. Terminal for this tab, and only for this tab,
+       which is why call() gives it its own ending. */
+    ops_refresh_spent: 'continued'
   };
 
   /* Failures that mean the access token aged out but the session may be fine.
@@ -125,6 +141,12 @@
   var accessToken = null;
   var accessExpiresAt = 0;
   var refreshInFlight = null;
+  /* Set when the server has told this tab, in so many words, that the token it
+     presented is the previous generation and the successor was written where
+     this tab cannot read it. It is the difference between "your session has
+     ended" and "your session carried on in another tab", and only this tab
+     knows which of those happened. */
+  var credentialSuperseded = false;
 
   var state = {
     admin: null,
@@ -146,18 +168,36 @@
     try { store.removeItem(key); } catch (e) {}
   }
 
-  /* The refresh credential is stored with the administrator it belongs to.
-     One profile has one refresh slot, so a second sign-in replaces it, and
-     without the subject beside it a tab already rendered for one administrator
-     has no way to notice the credential underneath it is now someone else's. */
-  function readRefreshRecord() {
-    var raw = safeGet(global.sessionStorage, REFRESH_KEY) ||
-              safeGet(global.localStorage, REFRESH_KEY);
+  function storeNamed(name) {
+    return name === 'local' ? global.localStorage : global.sessionStorage;
+  }
+
+  /* The refresh credential is stored with the administrator it belongs to, and
+     read back with the store it came from. Both halves are load bearing.
+
+     The subject, because one administrator has one refresh slot, so a second
+     sign-in replaces it, and without the subject beside it a tab already
+     rendered for one administrator has no way to notice the credential
+     underneath it is now someone else's.
+
+     The store, because localStorage is shared by every tab on the browser and
+     sessionStorage is private to one. Two administrators can be signed in at
+     once, one remembered and one not, and a tab that cannot tell which store
+     its own credential came from will happily write over the other one. */
+  function readRecordFrom(name) {
+    var raw = safeGet(storeNamed(name), REFRESH_KEY);
     if (!raw) return null;
     var v;
     try { v = JSON.parse(raw); } catch (e) { return null; }
     if (!v || typeof v.t !== 'string' || !v.t) return null;
-    return { token: v.t, subject: typeof v.s === 'string' ? v.s : null };
+    return { token: v.t, subject: typeof v.s === 'string' ? v.s : null, store: name };
+  }
+
+  /* sessionStorage first. A tab with its own private credential is using that
+     one, and somebody else's remembered credential can be sitting in
+     localStorage beside it. */
+  function readRefreshRecord() {
+    return readRecordFrom('session') || readRecordFrom('local');
   }
 
   function readRefreshToken() {
@@ -170,22 +210,61 @@
     return rec ? rec.subject : null;
   }
 
-  /* remember=true survives a browser restart; remember=false lives only as
-     long as the tab. Writing one always clears the other so the two stores
-     can never disagree about which token is current. */
-  function writeRefreshToken(token, remember, subject) {
-    var payload = JSON.stringify({ t: token, s: subject || null });
-    if (remember) {
-      safeRemove(global.sessionStorage, REFRESH_KEY);
-      safeSet(global.localStorage, REFRESH_KEY, payload);
-    } else {
+  /* Removes the refresh records this tab is entitled to remove: its own
+     private one, and the shared one only when that names the same
+     administrator, or nobody. A shared record naming somebody else is their
+     live credential, and a tab reaching the end of its own session has no
+     business ending theirs. */
+  function forgetRefreshRecords(subject) {
+    safeRemove(global.sessionStorage, REFRESH_KEY);
+    var shared = readRecordFrom('local');
+    if (shared && (shared.subject === null || shared.subject === subject)) {
       safeRemove(global.localStorage, REFRESH_KEY);
-      safeSet(global.sessionStorage, REFRESH_KEY, payload);
     }
   }
 
+  /* remember=true survives a browser restart; remember=false lives only as
+     long as the tab.
+
+     Returns false when the browser refused the write, and the caller must not
+     treat that as a stored session. On failure the record this administrator
+     still has is removed rather than left behind, because the token in it has
+     just been superseded server side and replaying it later is the one outcome
+     worse than holding no token at all. */
+  function writeRefreshToken(token, remember, subject) {
+    var payload = JSON.stringify({ t: token, s: subject || null });
+    var target = remember ? 'local' : 'session';
+    var other = remember ? 'session' : 'local';
+
+    if (!safeSet(storeNamed(target), REFRESH_KEY, payload)) {
+      forgetRefreshRecords(subject);
+      return false;
+    }
+
+    /* The other store is cleared only when what it holds belongs to this
+       administrator, or to nobody. Clearing it unconditionally is how a tab
+       signing in without "remember this device" deletes the remembered
+       credential of whoever else is signed in on this browser. */
+    var stale = readRecordFrom(other);
+    if (stale && (stale.subject === null || stale.subject === subject)) {
+      safeRemove(storeNamed(other), REFRESH_KEY);
+    }
+    return true;
+  }
+
+  /* Whether this browser holds a remembered credential at all. A hint for the
+     sign-in form's "remember this device" box and nothing more: it says
+     somebody chose to be remembered here, not that it was this tab, and it is
+     deliberately not what decides where a rotated token is written. */
   function rememberedOnDevice() {
-    return safeGet(global.localStorage, REFRESH_KEY) !== null;
+    return readRecordFrom('local') !== null;
+  }
+
+  /* Whether the credential this tab is using is the remembered one. This, not
+     rememberedOnDevice(), is what decides where a rotated token is written. */
+  function storedRemember() {
+    var rec = readRefreshRecord();
+    return !!rec && rec.store === 'local';
   }
 
   /* The access token is cached for this tab only. A tab opened from a link
@@ -225,8 +304,14 @@
     return v && typeof v.s === 'string' ? v.s : null;
   }
 
+  /* Best effort, and unlike the refresh record that is the whole of it: the
+     token is held in memory as well, so a refused write costs this document
+     nothing. What it costs is the next page load in this tab, which has to
+     exchange the refresh token rather than read the cache. More exchanges mean
+     more races, which is a slower dashboard rather than a broken session, so
+     the return value is deliberately not acted on. */
   function writeAccessCache(token, expiresAt, subject) {
-    safeSet(global.sessionStorage, ACCESS_KEY,
+    return safeSet(global.sessionStorage, ACCESS_KEY,
       JSON.stringify({ token: token, expiresAt: expiresAt, s: subject || null }));
   }
 
@@ -240,10 +325,11 @@
     safeRemove(global.sessionStorage, ACCESS_KEY);
   }
 
-  /* Hashes of refresh tokens this profile has already presented. localStorage
-     rather than sessionStorage on purpose: it is shared by every tab including
-     ones that inherited a copied sessionStorage, which is the only way a tab
-     holding a duplicated token can find out the token is spent.
+  /* Hashes of refresh tokens this browser has already presented, each with the
+     moment it was presented. localStorage rather than sessionStorage on
+     purpose: it is shared by every tab including ones that inherited a copied
+     sessionStorage, which is the only way a tab holding a duplicated token can
+     find out the token has been presented at all.
 
      Every operation here is best effort and every failure path returns the
      answer that lets the exchange proceed. The server, not this list, decides
@@ -254,17 +340,41 @@
     var v;
     try { v = JSON.parse(raw); } catch (e) { return []; }
     if (!Array.isArray(v)) return [];
-    return v.filter(function (h) { return typeof h === 'string'; });
+    return v.filter(function (e) {
+      return e && typeof e.h === 'string' && typeof e.at === 'number';
+    });
   }
 
+  function writeSpent(list) {
+    return safeSet(global.localStorage, SPENT_KEY,
+      JSON.stringify(list.slice(-SPENT_KEEP)));
+  }
+
+  /* Returns whether the entry was actually recorded. A refused write means the
+     next presentation of this token cannot be recognised here and goes to the
+     server instead, which is the documented way this list fails. */
   function markSpent(hash) {
-    var list = readSpent();
-    if (list.indexOf(hash) === -1) list.push(hash);
-    safeSet(global.localStorage, SPENT_KEY, JSON.stringify(list.slice(-SPENT_KEEP)));
+    var list = readSpent().filter(function (e) { return e.h !== hash; });
+    list.push({ h: hash, at: Date.now() });
+    return writeSpent(list);
   }
 
-  function isSpent(hash) {
-    return readSpent().indexOf(hash) !== -1;
+  /* Takes an entry back out, for the one case where the token demonstrably was
+     not consumed: the request never reached a server that could rotate it. */
+  function unmarkSpent(hash) {
+    writeSpent(readSpent().filter(function (e) { return e.h !== hash; }));
+  }
+
+  /* When this browser presented the token, or 0 if it never did. A clock that
+     has moved backwards yields a negative age, which reads as recent and sends
+     the exchange to the server: the fail-open direction, as everywhere else
+     here. */
+  function spentAt(hash) {
+    var list = readSpent();
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (list[i].h === hash) return list[i].at;
+    }
+    return 0;
   }
 
   /* Resolves to a hex digest, or null where SubtleCrypto is unavailable (an
@@ -283,11 +393,20 @@
     }, function () { return null; });
   }
 
+  /* Ends the session this tab is holding: memory, cache, and the stored
+     credential it is entitled to remove.
+
+     "Entitled to" is the whole of the difference from an earlier draft. Who
+     this tab is, is what it has rendered, or failing that whoever the record
+     it is actually using belongs to. Anything else in shared storage names a
+     different administrator and stays exactly where it is. */
   function clearTokens() {
+    var mine = readRefreshRecord();
+    var subject = committedSubject() || (mine && mine.subject) || null;
     refreshInFlight = null;
+    credentialSuperseded = false;
     discardAccess();
-    safeRemove(global.sessionStorage, REFRESH_KEY);
-    safeRemove(global.localStorage, REFRESH_KEY);
+    forgetRefreshRecords(subject);
     /* The spent ledger deliberately survives. Its whole job is to remember
        tokens across sign-outs and page loads, and it holds only hashes. */
     state.admin = null;
@@ -313,7 +432,7 @@
      resting on incidental ordering. Throwing makes every present and future
      caller deal with it. Navigation to the sign-in screen is already under way
      by the time this throws. */
-  function adoptCredential(data, remember) {
+  function adoptCredential(data, remember, presented) {
     var incoming = (data.admin && data.admin.id) || null;
     var committed = committedSubject();
     if (incoming && committed && incoming !== committed) {
@@ -331,13 +450,18 @@
 
     /* A grace response says refreshTokenRotated: false and carries no refresh
        token, because the server holds only hashes and could not return the
-       current one even if that were desirable. The contract is to leave the
-       refresh slot alone: whichever tab won the rotation has already written
-       the truth to shared storage, and writing anything here would clobber it.
-       An explicit flag rather than the absence of a field, so that a future
-       response shape cannot quietly turn this into an overwrite. */
-    if (data.refreshTokenRotated !== false && data.refreshToken) {
-      writeRefreshToken(data.refreshToken, remember, subject);
+       current one even if that were desirable. An explicit flag rather than
+       the absence of a field, so that a future response shape cannot quietly
+       turn this into an overwrite. */
+    if (data.refreshTokenRotated === false) {
+      retireSupersededToken(presented);
+    } else if (data.refreshToken) {
+      credentialSuperseded = false;
+      if (!writeRefreshToken(data.refreshToken, remember, subject)) {
+        throw new api.OpsApiError(0, STORAGE_UNAVAILABLE,
+          'This browser would not let the dashboard store your session. Free some ' +
+          'space or allow storage for this site, then sign in again.');
+      }
     }
 
     if (data.admin) state.admin = data.admin;
@@ -368,7 +492,31 @@
 
   function spentError() {
     return new api.OpsApiError(401, 'ops_refresh_spent',
-      'Your session was continued somewhere else. Sign in again on this device.');
+      'Your session carried on in another tab. Sign in again in this one.');
+  }
+
+  /* Called on a grace response, which is the server saying plainly that the
+     token this tab presented is the previous generation. Whoever won the
+     rotation wrote the successor into their own store.
+
+     If that store is one this tab can read, it already holds the successor and
+     the next exchange picks it up with nothing to do here: that is the
+     "remember this device" case, where both tabs share one localStorage slot.
+
+     If the slot still holds exactly what we presented, this tab's copy is
+     private, the successor is in another tab's sessionStorage, and the token
+     in hand is provably dead. It goes, because the alternative is presenting
+     it again later, when the server no longer has a reason to be gentle about
+     it. Nothing belonging to anybody else is touched: the only record removed
+     is the one whose token this tab just proved to be superseded. */
+  function retireSupersededToken(presented) {
+    var rec = readRefreshRecord();
+    if (presented && rec && rec.token === presented) {
+      safeRemove(storeNamed(rec.store), REFRESH_KEY);
+      credentialSuperseded = true;
+      return;
+    }
+    credentialSuperseded = false;
   }
 
   /* Raised when the credential under this tab has become a different
@@ -410,30 +558,80 @@
       return Promise.resolve({ reused: true });
     }
 
-    var token = readRefreshToken();
-    if (!token) {
-      return Promise.reject(new api.OpsApiError(401, 'ops_refresh_rejected',
-        'Your session has ended. Sign in again.'));
+    var rec = readRefreshRecord();
+    if (!rec) {
+      /* Two different endings share this branch and must not share a sentence.
+         A tab whose superseded copy was retired knows the session carried on
+         without it; a tab with nothing stored knows only that there is nothing
+         to exchange. */
+      return Promise.reject(credentialSuperseded ? spentError()
+        : new api.OpsApiError(401, 'ops_refresh_rejected',
+            'Your session has ended. Sign in again.'));
     }
-    var remember = rememberedOnDevice();
+
+    /* Refused before it is presented, not after it has been adopted. The
+       record names the administrator it belongs to, so a tab displaying one
+       administrator can tell that the credential underneath it is now somebody
+       else's without spending it. Checking after the exchange is far too late:
+       by then this tab has rotated a credential it has no business rotating,
+       and its owner is left holding a token the server has already retired. */
+    var committed = committedSubject();
+    if (rec.subject && committed && rec.subject !== committed) {
+      identityChanged();
+      return Promise.reject(new api.OpsApiError(401, IDENTITY_CHANGED,
+        'A different administrator signed in on this browser.'));
+    }
+
+    var token = rec.token;
+    /* Where the rotated token goes is decided by where this one came from, not
+       by whether the browser happens to hold a remembered credential for
+       somebody. Reading the device instead of the record is how a tab that
+       chose not to be remembered moves its own token into localStorage and
+       deletes another administrator's on the way. */
+    var remember = rec.store === 'local';
 
     return hashToken(token).then(function (hash) {
-      if (hash && isSpent(hash)) throw spentError();
+      var presentedAt = hash ? spentAt(hash) : 0;
+      /* Only an old presentation is refused here. A recent one is the other
+         tab in an ordinary race, and the server absorbs those; refusing it
+         locally would sign an operator out without a single request leaving
+         the browser, on the strength of a guess this side is not equipped to
+         make. */
+      if (presentedAt && Date.now() - presentedAt > SPENT_GRACE_MS) throw spentError();
 
       /* Marked before the request, not after. If this document is destroyed
          mid-flight, or the response is lost, the server may still have rotated
          the token and this client cannot tell. Recording it first means a much
          later replay is caught here and costs one sign-in, instead of reaching
-         the server outside its grace window and revoking the session
-         everywhere. Within the window the server absorbs it either way. */
-      if (hash) markSpent(hash);
+         the server long after its rotation. */
+      var marked = hash ? markSpent(hash) : false;
 
       return api.request('/api/ops/auth/refresh', {
         method: 'POST',
         body: { refreshToken: token }
+      }).catch(function (err) {
+        /* A fault below HTTP, or a 5xx from in front of the application, is
+           overwhelmingly a request that never reached the thing that rotates.
+           Keeping the token marked would turn a gateway blip or a dropped
+           connection into a forced sign-in on the next attempt, and the retry
+           button this dashboard offers would be the thing that signed the
+           operator out, without a single request leaving the browser. So the
+           mark comes off and the credential survives the fault.
+
+           What that gives up, stated rather than glossed: a response lost
+           after the server had already rotated looks identical from here, and
+           releasing the mark lets that token be presented once more. The
+           server refuses it, which is the outcome the ledger was only ever a
+           politer route to. Losing a session to a revision roll is the more
+           common failure and the less defensible one. */
+        if (marked && err instanceof api.OpsApiError &&
+            (err.status === 0 || err.status >= 500)) {
+          unmarkSpent(hash);
+        }
+        throw err;
       });
     }).then(function (payload) {
-      adoptCredential(payload.data, remember);
+      adoptCredential(payload.data, remember, token);
       return payload.data;
     });
   }
@@ -488,6 +686,18 @@
     toLogin(reason || 'ended');
   }
 
+  /* The ending for a tab whose copy of the credential has been superseded by a
+     rotation it could not see. Only this tab signs out, and only what is
+     private to this tab is removed: the shared slot may well hold the live
+     successor, and a tab that has fallen behind must never be able to sign the
+     current administrator out of every other tab on the machine. A dead token
+     left in shared storage can do nothing worse than earn a 401. */
+  function endSupersededCopy() {
+    clearLocalIdentity();
+    safeRemove(global.sessionStorage, REFRESH_KEY);
+    toLogin('continued');
+  }
+
   /* The password step is a detour, not a destination. Carry where the operator
      was actually heading so they land there once they have chosen one. */
   function toPasswordChange() {
@@ -527,7 +737,11 @@
           return new Promise(function () {});
         }
         if (TERMINAL[err.code]) {
-          endSession(TERMINAL[err.code]);
+          /* Terminal for this tab is not the same as terminal for the session.
+             Everything the server calls finished ends the session; a
+             superseded copy ends only the tab holding it. */
+          if (err.code === 'ops_refresh_spent') endSupersededCopy();
+          else endSession(TERMINAL[err.code]);
           throw err;
         }
         if (RETRYABLE[err.code] && !attempted.refreshed) {
@@ -564,9 +778,19 @@
     }).then(function (payload) {
       /* Signing in as somebody else is a deliberate switch, not a silent one,
          so the slate is wiped first and nothing is committed to compare
-         against. */
+         against. This is the one place a stored credential is replaced on
+         purpose: everywhere else, a record belonging to another administrator
+         is left where it is. */
       clearTokens();
-      adoptCredential(payload.data, !!remember);
+      try {
+        adoptCredential(payload.data, !!remember);
+      } catch (e) {
+        /* A session the browser would not store is not a session. Leave
+           nothing half adopted behind, and let the sign-in screen say so
+           rather than navigating into a dashboard that is about to end. */
+        if (e && e.code === STORAGE_UNAVAILABLE) clearTokens();
+        throw e;
+      }
       return payload.data;
     });
   }
@@ -609,7 +833,11 @@
       body: { password: password },
       noReauthPrompt: true
     }).then(function (payload) {
-      adoptCredential(payload.data, rememberedOnDevice());
+      /* Re-authentication mints an access token and nothing else, so there is
+         no refresh token to place. The flag is read from the record this tab
+         is actually using anyway, so that a future response shape carrying one
+         cannot land it in the wrong store. */
+      adoptCredential(payload.data, storedRemember());
       state.freshAuth = true;
       return payload.data;
     });
@@ -671,6 +899,14 @@
   }
 
   /* ------------------------------------------------------- reauth prompt */
+
+  /* An element whose whole job is to announce. shell.js appends both of these
+     to the body, so any overlay that inerts the body's children will find
+     them. The same test lives there, because neither file may depend on the
+     other having loaded. */
+  function isLiveRegion(el) {
+    return el.hasAttribute('aria-live') || el.classList.contains('toast-host');
+  }
 
   var reauthOpen = null;
   /* Every dialog gets a number. A network call started by one dialog can only
@@ -758,9 +994,15 @@
       document.body.appendChild(modal);
 
       /* Everything that is not the dialog goes inert while it is open, so the
-         background is neither clickable nor reachable by a virtual cursor. */
+         background is neither clickable nor reachable by a virtual cursor.
+
+         Live regions are the exception, and the exception matters: a live
+         region carrying aria-hidden announces nothing, so inerting one would
+         silence exactly the messages a dialog is most likely to produce. They
+         hold no focusable content, so leaving them out of the backdrop costs
+         the modality nothing. */
       var backdrop = Array.prototype.filter.call(document.body.children, function (el) {
-        return el !== modal && el !== scrim;
+        return el !== modal && el !== scrim && !isLiveRegion(el);
       });
       backdrop.forEach(function (el) {
         if ('inert' in el) el.inert = true;
@@ -887,7 +1129,9 @@
     changePassword: changePassword,
     reauth: reauth,
     promptReauth: promptReauth,
-    clearTokens: clearTokens,
+    /* clearTokens is deliberately not exported. It drops the credential
+       without telling the server, which is a sign-out that leaves the session
+       alive everywhere else; signOut() is the one a page should reach for. */
     readRefreshToken: readRefreshToken,
     rememberedOnDevice: rememberedOnDevice,
     daysLeft: daysLeft,

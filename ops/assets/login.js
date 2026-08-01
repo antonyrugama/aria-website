@@ -25,6 +25,11 @@
     ended: { tone: 'is-warn', text: 'Your session has ended. Sign in again.' },
     inactive: { tone: '', text: 'This administrator account is not active. An owner has to re-enable it.' },
     signedout: { tone: 'is-ok', text: 'You are signed out.' },
+    /* Not the same thing as an ended session, and saying so matters: the
+       operator is still signed in in the tab that carried on, and telling them
+       their session ended would send them looking for a fault that is not
+       there. */
+    continued: { tone: 'is-warn', text: 'This tab was signed out because your session carried on in another tab. Sign in again here to use both.' },
     switched: { tone: '', text: 'A different administrator signed in on this browser, so this tab was signed out rather than quietly switched over to them. Sign in again to carry on as yourself.' }
   };
 
