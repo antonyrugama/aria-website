@@ -713,8 +713,14 @@
        sentence for a time it was not given, which in turn rests on parseUtc
        treating every non-string, `null` and `0` included, as absent rather
        than as the epoch. A div rather than a p, because the line it returns is
-       a flex row. */
-    node.appendChild(h('div', { className: 'axis-note' }, [asOfLine(data)]));
+       a flex row.
+
+       Appended INSIDE the card (stateCard returns the outer stack; its first
+       child is the card), because the line can carry the Stale badge and a
+       badge on the bare page background is the exact contrast pairing this
+       page's stylesheet has not fixed. Badges live inside cards here, and
+       this is the one state that was violating that. */
+    node.firstChild.appendChild(h('div', { className: 'axis-note' }, [asOfLine(data)]));
     return node;
   }
 
