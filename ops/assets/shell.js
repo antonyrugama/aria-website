@@ -81,7 +81,7 @@
     evals: {
       file: 'evaluations.html', icon: 'eval', label: 'Aria quality', group: 'How we are doing',
       question: 'Is Aria giving better or worse answers than before?',
-      tag: 'soon', deferred: true, scope: false, range: false, env: false
+      tag: 'soon', deferred: true, wave: null, scope: false, range: false, env: false
     },
     releases: {
       file: 'releases.html', icon: 'release', label: 'App releases', group: 'Apps and people',
@@ -247,25 +247,18 @@
 
         var allowed = !pane.roles || session.hasRole(pane.roles);
         var item = h('li');
-        var link;
 
-        if (allowed) {
-          link = h('a', {
-            className: 'nav-item' + (id === activeId ? ' is-active' : ''),
-            href: paneHref(pane)
-          });
-          if (id === activeId) link.setAttribute('aria-current', 'page');
-          navLinks.push({ el: link, pane: pane });
-        } else {
-          /* Rendered, not removed. A destination that vanishes is
-             indistinguishable from one that never existed, and an operator
-             who cannot see Settings should know it is there and why. */
-          link = h('span', {
-            className: 'nav-item is-locked',
-            'aria-disabled': 'true',
-            title: 'Owner access only'
-          });
-        }
+        /* Always a real link, even where the role cannot use the pane. The
+           destination renders a denied state that names the role it needs,
+           which is a better answer than a dead span: aria-disabled means
+           nothing on a bare element, and a title is mouse-only. */
+        var link = h('a', {
+          className: 'nav-item' + (id === activeId ? ' is-active' : '') +
+                     (allowed ? '' : ' is-locked'),
+          href: paneHref(pane)
+        });
+        if (id === activeId) link.setAttribute('aria-current', 'page');
+        navLinks.push({ el: link, pane: pane });
 
         link.appendChild(icon(pane.icon));
         link.appendChild(h('span', { text: pane.label }));
@@ -422,9 +415,10 @@
       ]));
     }
 
-    /* The explicit not-applicable pattern. Cloud costs bills infrastructure,
-       not apps, so splitting a shared Postgres bill by client would be an
-       invented number. Saying so beats leaving a gap where a control was. */
+    /* The explicit not-applicable pattern. Cloud spend is billed per piece of
+       infrastructure, not per app, so splitting a shared bill by client would
+       be an invented number. Saying so beats leaving a gap where a control
+       used to be. */
     if (pane.scopeNote) {
       bar.appendChild(h('span', { className: 'badge filter-gap', text: pane.scopeNote }));
     }
@@ -530,15 +524,12 @@
     var toggle = document.getElementById('railToggle');
     if (!rail || !toggle) return;
 
-    function isOverlay() {
-      return global.matchMedia('(max-width: 860px)').matches;
-    }
-
     var scrim = null;
 
     function open() {
       rail.classList.add('is-open');
       toggle.setAttribute('aria-expanded', 'true');
+      toggle.setAttribute('aria-label', 'Close navigation');
       /* A scrim, so the pane behind cannot be tapped by accident and it is
          obvious the rail is the thing being interacted with. */
       scrim = h('div', { className: 'scrim is-open' });
@@ -553,6 +544,7 @@
     function close(restore) {
       rail.classList.remove('is-open');
       toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open navigation');
       if (scrim) { scrim.remove(); scrim = null; }
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('focusin', onFocusIn, true);
@@ -584,11 +576,12 @@
 
     /* Growing past the breakpoint turns the overlay back into a permanent
        column, at which point trapping focus inside it would be a bug. */
-    global.matchMedia('(max-width: 860px)').addEventListener('change', function (e) {
+    var mq = global.matchMedia('(max-width: 860px)');
+    var onBreakpoint = function (e) {
       if (!e.matches && rail.classList.contains('is-open')) close(false);
-    });
-
-    if (!isOverlay()) toggle.setAttribute('aria-expanded', 'false');
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onBreakpoint);
+    else if (mq.addListener) mq.addListener(onBreakpoint);  /* Safari below 14 */
   }
 
   /* ---------------------------------------------------- shared behaviours */
@@ -658,13 +651,38 @@
     document.body.className = 'is-' + name;
   }
 
+  /* Each gate carries its own h1 and its own <main>, so that the heading and
+     landmark structure is correct while that gate is the only thing on screen.
+     Once the outcome is known the losing gates come out of the document
+     entirely: display:none would keep them out of the accessibility tree, but
+     removing them leaves exactly one h1 and exactly one <main> rather than one
+     of each that counts and others that do not. */
+  function dropGates(selectors) {
+    selectors.forEach(function (sel) {
+      var el = document.querySelector(sel);
+      if (el) el.remove();
+    });
+  }
+
+  /* "Could not check your session" is the right sentence for a database wobble
+     behind the auth guard and the wrong one for "your role does not allow
+     this". The code decides the heading. */
+  var FAILURE_TITLES = {
+    ops_role_insufficient: 'Your role does not allow this',
+    ops_reauth_rate_limited: 'Too many attempts',
+    ops_login_rate_limited: 'Too many attempts',
+    ops_route_missing: 'That page is not there',
+    ops_bad_response: 'The operations API answered with something unreadable'
+  };
+
   function renderFailure(err) {
     var host = document.getElementById('gateFailed');
     if (!host) return;
     host.textContent = '';
 
+    var code = err && err.code;
     var card = h('div', { className: 'card' });
-    var block = stateBlock('warn', 'Could not check your session', [
+    var block = stateBlock('warn', FAILURE_TITLES[code] || 'Could not check your session', [
       err && err.message ? err.message :
         'The operations API did not answer. Your session has not been ended.',
       'Nothing has been signed out. Try again in a moment.'
@@ -685,6 +703,10 @@
     card.appendChild(block);
     host.appendChild(card);
     setGate('failed');
+    dropGates(['.gate-boot', '.gate-app']);
+    /* The boot placeholder said "Checking your session" and then silently
+       became something else. Move focus so a screen reader is told. */
+    host.focus();
   }
 
   /* Boots a pane page. The app markup stays hidden behind the gate until the
@@ -719,6 +741,7 @@
 
       app.appendChild(main);
       setGate('ready');
+      dropGates(['.gate-boot', '.gate-failed']);
 
       wireRail();
       wireTabs(app);

@@ -31,7 +31,7 @@
 
     <div class="card auth-card">
 
-      <div class="form-alert" id="authAlert" role="alert" tabindex="-1"></div>
+      <div id="authAlert" role="alert" tabindex="-1"></div>
 
       <!-- Phase one: credentials. method="post" plus the page's
            form-action 'none' policy means that if this script ever fails to
@@ -52,17 +52,16 @@
             <input class="field-input" id="password" name="password" type="password"
                    autocomplete="current-password" required>
             <button class="pw-toggle" type="button" data-pw-for="password"
-                    aria-pressed="false">Show</button>
+                    data-pw-label="password" aria-label="Show password">Show</button>
           </div>
           <p class="field-error" id="passwordError"></p>
         </div>
 
         <div class="switch-row">
-          <button class="switch" type="button" id="remember" role="switch"
-                  aria-checked="false" aria-labelledby="rememberLabel"
-                  aria-describedby="rememberHint"></button>
+          <input class="switch" type="checkbox" role="switch" id="remember"
+                 aria-describedby="rememberHint">
           <div class="switch-copy">
-            <span id="rememberLabel">Remember this device</span>
+            <label for="remember">Remember this device</label>
             <p class="field-hint" id="rememberHint">Stays signed in on this browser for up to
               30 days. Left off, the session ends when you close the tab, which is what you
               want on a shared computer.</p>
@@ -70,6 +69,7 @@
         </div>
 
         <button class="btn btn-primary btn-lg" type="submit" id="signinSubmit">Sign in</button>
+        <p class="field-hint" id="authCountdown" aria-live="off"></p>
       </form>
 
       <!-- Phase two: a provisioned account choosing its own password. The
@@ -82,7 +82,7 @@
             <input class="field-input" id="currentPassword" name="currentPassword" type="password"
                    autocomplete="current-password" required>
             <button class="pw-toggle" type="button" data-pw-for="currentPassword"
-                    aria-pressed="false">Show</button>
+                    data-pw-label="current password" aria-label="Show current password">Show</button>
           </div>
           <p class="field-hint">The password you were given when the account was set up.</p>
           <p class="field-error" id="currentPasswordError"></p>
@@ -94,7 +94,7 @@
             <input class="field-input" id="newPassword" name="newPassword" type="password"
                    autocomplete="new-password" required minlength="12">
             <button class="pw-toggle" type="button" data-pw-for="newPassword"
-                    aria-pressed="false">Show</button>
+                    data-pw-label="new password" aria-label="Show new password">Show</button>
           </div>
           <p class="field-hint" id="newPasswordHint">At least 12 characters. Use something no
             other service has.</p>

@@ -4,26 +4,57 @@
    aged out, and when a failure means "sign in again" rather than "try again"
    lives here. api.js is the transport underneath it and knows none of this.
 
+   THE INVARIANT THIS FILE EXISTS TO HOLD:
+
+     A refresh token is presented to the server at most once, ever, from this
+     browser profile.
+
+   That is not a nicety. The backend rotates the refresh token on every use and
+   keeps one generation of history, so re-presenting a token it has already
+   rotated is read as theft: it revokes the entire session on every device and
+   writes an admin.refresh_reuse_detected event into an append-only audit log
+   with no delete path. An operator who middle-clicked a nav link would be
+   told a security incident had occurred. Three mechanisms hold the invariant,
+   and each closes a case the others cannot:
+
+     1. The access token is cached per tab, so ordinary navigation performs no
+        refresh at all. This is what makes the other two rarely needed.
+     2. Web Locks serialise the read/POST/write across every same-origin
+        context, and the token is re-read after the lock is held rather than
+        before waiting for it, so two tabs cannot both present the same value.
+     3. A ledger of already-presented tokens, keyed by hash, is consulted
+        before every POST. A token this profile has already spent is never
+        sent again: the client signs itself out locally instead, which costs
+        one sign-in and produces no false compromise event.
+
    Storage, and why it is split:
-     - The access token is a 15 minute JWT and is held in a closure variable.
-       It is never written to localStorage or sessionStorage, so a browser
-       restart cannot resume a session without the refresh exchange below.
      - The refresh token is opaque, lasts up to 30 days, and must survive a
        reload for a durable session to mean anything. It goes to localStorage
        when the operator asked to be remembered on the device, and to
        sessionStorage otherwise, which is what makes "remember this device" a
        real control rather than a decorative one.
-
-   The refresh token rotates on every use and the backend treats a replayed
-   token as a compromise signal: it revokes the whole session. Two refreshes
-   racing each other would therefore sign the operator out of their own
-   session, so refresh here is strictly single flight. */
+     - The access token is a 15 minute JWT cached in sessionStorage. The
+       identity design record describes it as memory only, and this is a
+       deliberate, documented departure from that line, because memory only
+       forces a refresh on every page load of a multi-page shell and therefore
+       makes rotation as frequent as navigation. sessionStorage keeps the
+       property the contract was protecting, that a browser restart cannot
+       resume a session without the refresh exchange, and a 15 minute token is
+       a strictly smaller prize than the 30 day refresh token already sitting
+       in the same origin's storage by the contract's own accepted trade. The
+       backend's identity design record should be updated to match.
+     - The spent-token ledger stores SHA-256 hashes, never tokens, so it
+       reveals nothing to anything that reads it. */
 (function (global) {
   'use strict';
 
   var api = global.OpsApi;
 
   var REFRESH_KEY = 'ops-refresh';
+  var ACCESS_KEY = 'ops-access';
+  var SPENT_KEY = 'ops-spent';
+  var LOCK_NAME = 'ops-refresh';
+  var SPENT_KEEP = 20;
   var ROOT = 'login.html';
 
   /* Failures that mean the session itself is finished. Refreshing will not
@@ -33,7 +64,13 @@
     ops_session_expired: 'expired',
     ops_session_unknown: 'ended',
     ops_account_inactive: 'inactive',
-    ops_refresh_rejected: 'expired'
+    ops_refresh_rejected: 'expired',
+    /* The server could not parse the stored refresh token at all. Retrying
+       replays the same unparseable value forever, so this is a finished
+       session by any reasonable reading. */
+    ops_refresh_invalid: 'ended',
+    /* Locally raised: this profile has already presented this token once. */
+    ops_refresh_spent: 'ended'
   };
 
   /* Failures that mean the access token aged out but the session may be fine.
@@ -86,12 +123,73 @@
     return safeGet(global.localStorage, REFRESH_KEY) !== null;
   }
 
+  /* The access token is cached for this tab only. A tab opened from a link
+     inherits a copy of sessionStorage, which is exactly what we want here: the
+     new tab starts with a usable access token and therefore does not refresh,
+     which is the collision the copy would otherwise cause. */
+  function readAccessCache() {
+    var raw = safeGet(global.sessionStorage, ACCESS_KEY);
+    if (!raw) return null;
+    var v;
+    try { v = JSON.parse(raw); } catch (e) { return null; }
+    if (!v || typeof v.token !== 'string' || typeof v.expiresAt !== 'number') return null;
+    if (Date.now() >= v.expiresAt) return null;
+    return v;
+  }
+
+  function writeAccessCache(token, expiresAt) {
+    safeSet(global.sessionStorage, ACCESS_KEY,
+      JSON.stringify({ token: token, expiresAt: expiresAt }));
+  }
+
+  /* Hashes of refresh tokens this profile has already presented. localStorage
+     rather than sessionStorage on purpose: it is shared by every tab including
+     ones that inherited a copied sessionStorage, which is the only way a tab
+     holding a duplicated token can find out the token is spent. */
+  function readSpent() {
+    var raw = safeGet(global.localStorage, SPENT_KEY);
+    if (!raw) return [];
+    try {
+      var v = JSON.parse(raw);
+      return Array.isArray(v) ? v.filter(function (x) { return typeof x === 'string'; }) : [];
+    } catch (e) { return []; }
+  }
+
+  function markSpent(hash) {
+    var list = readSpent();
+    if (list.indexOf(hash) === -1) list.push(hash);
+    safeSet(global.localStorage, SPENT_KEY,
+      JSON.stringify(list.slice(-SPENT_KEEP)));
+  }
+
+  function isSpent(hash) {
+    return readSpent().indexOf(hash) !== -1;
+  }
+
+  /* Resolves to a hex digest, or null where SubtleCrypto is unavailable (an
+     insecure origin). Null degrades to the pre-ledger behaviour rather than
+     blocking sign in, and production is https so it does not arise there. */
+  function hashToken(token) {
+    var subtle = global.crypto && global.crypto.subtle;
+    if (!subtle || !global.TextEncoder) return Promise.resolve(null);
+    return subtle.digest('SHA-256', new TextEncoder().encode(token)).then(function (buf) {
+      var out = '';
+      new Uint8Array(buf).forEach(function (b) {
+        out += b.toString(16).padStart(2, '0');
+      });
+      return out;
+    }, function () { return null; });
+  }
+
   function clearTokens() {
     accessToken = null;
     accessExpiresAt = 0;
     refreshInFlight = null;
     safeRemove(global.sessionStorage, REFRESH_KEY);
     safeRemove(global.localStorage, REFRESH_KEY);
+    safeRemove(global.sessionStorage, ACCESS_KEY);
+    /* The spent ledger deliberately survives. Its whole job is to remember
+       tokens across sign-outs and page loads, and it holds only hashes. */
     state.admin = null;
     state.session = null;
     state.authTime = 0;
@@ -105,6 +203,7 @@
     /* Renew thirty seconds early so a call never starts with a token that
        will have expired by the time it arrives. */
     accessExpiresAt = Date.now() + Math.max(0, (data.expiresIn || 900) - 30) * 1000;
+    writeAccessCache(accessToken, accessExpiresAt);
     if (data.refreshToken) writeRefreshToken(data.refreshToken, remember);
     if (data.admin) state.admin = data.admin;
     if (data.session) state.session = data.session;
@@ -116,8 +215,38 @@
 
   /* ------------------------------------------------------------- refresh */
 
-  function refresh() {
-    if (refreshInFlight) return refreshInFlight;
+  /* Serialises the whole read/POST/write across every same-origin context.
+     Web Locks is the only primitive that reaches other tabs; where it is
+     missing we fall back to a per-document queue, which is what this file did
+     before and is no worse than it was. */
+  var localQueue = Promise.resolve();
+  function withRefreshLock(fn) {
+    var locks = global.navigator && global.navigator.locks;
+    if (locks && typeof locks.request === 'function') {
+      return locks.request(LOCK_NAME, fn);
+    }
+    var run = localQueue.then(fn, fn);
+    localQueue = run.then(function () {}, function () {});
+    return run;
+  }
+
+  function spentError() {
+    return new api.OpsApiError(401, 'ops_refresh_spent',
+      'Your session was continued somewhere else. Sign in again on this device.');
+  }
+
+  /* Runs with the lock held. Everything it reads must be read here, not
+     captured before the wait, because another context may have rotated the
+     token while this one was queued. */
+  function exchangeRefreshToken() {
+    /* A sibling context in this same tab may have finished a refresh while we
+       waited, in which case there is nothing left to do. */
+    var cached = readAccessCache();
+    if (cached) {
+      accessToken = cached.token;
+      accessExpiresAt = cached.expiresAt;
+      return Promise.resolve({ reused: true });
+    }
 
     var token = readRefreshToken();
     if (!token) {
@@ -126,13 +255,32 @@
     }
     var remember = rememberedOnDevice();
 
-    refreshInFlight = api.request('/api/ops/auth/refresh', {
-      method: 'POST',
-      body: { refreshToken: token }
+    return hashToken(token).then(function (hash) {
+      if (hash && isSpent(hash)) throw spentError();
+
+      /* Marked before the request, not after. If this document is destroyed
+         mid-flight, or the response is lost, the server may still have rotated
+         the token, and a client that cannot tell must assume it did. The cost
+         is one extra sign-in; the alternative is a replay that revokes the
+         session everywhere and files a false compromise event. */
+      if (hash) markSpent(hash);
+
+      return api.request('/api/ops/auth/refresh', {
+        method: 'POST',
+        body: { refreshToken: token }
+      });
     }).then(function (payload) {
       adoptCredential(payload.data, remember);
-      refreshInFlight = null;
       return payload.data;
+    });
+  }
+
+  function refresh() {
+    if (refreshInFlight) return refreshInFlight;
+
+    refreshInFlight = withRefreshLock(exchangeRefreshToken).then(function (r) {
+      refreshInFlight = null;
+      return r;
     }, function (err) {
       refreshInFlight = null;
       throw err;
@@ -143,6 +291,14 @@
 
   function accessTokenReady() {
     if (accessToken && Date.now() < accessExpiresAt) return Promise.resolve(accessToken);
+    /* The cache is what stops ordinary navigation from refreshing. Without it
+       every page load of this multi-page shell would rotate the token. */
+    var cached = readAccessCache();
+    if (cached) {
+      accessToken = cached.token;
+      accessExpiresAt = cached.expiresAt;
+      return Promise.resolve(accessToken);
+    }
     return refresh().then(function () { return accessToken; });
   }
 
@@ -167,6 +323,15 @@
   function endSession(reason) {
     clearTokens();
     toLogin(reason || 'ended');
+  }
+
+  /* The password step is a detour, not a destination. Carry where the operator
+     was actually heading so they land there once they have chosen one. */
+  function toPasswordChange() {
+    var params = new URLSearchParams();
+    params.set('phase', 'password');
+    if (!/\/login\.html$/.test(global.location.pathname)) params.set('next', currentPath());
+    global.location.replace(ROOT + '?' + params.toString());
   }
 
   /* ------------------------------------------------- authenticated calls */
@@ -203,7 +368,7 @@
           return attempt();
         }
         if (err.code === 'ops_password_change_required') {
-          global.location.replace(ROOT + '?phase=password');
+          toPasswordChange();
           throw err;
         }
         if (err.code === 'ops_reauth_required' && !attempted.reauthed && !opts.noReauthPrompt) {
@@ -293,13 +458,13 @@
      is a retry button", which are the two cases that otherwise look identical
      and produce the classic half-built shell. */
   function boot() {
-    if (!readRefreshToken()) {
+    if (!readRefreshToken() && !readAccessCache()) {
       toLogin('required');
       return new Promise(function () {});  /* navigation is in flight */
     }
     return loadSession().then(function (s) {
       if (s.admin && s.admin.mustChangePassword) {
-        global.location.replace(ROOT + '?phase=password');
+        toPasswordChange();
         return new Promise(function () {});
       }
       return s;
@@ -393,13 +558,38 @@
       document.body.appendChild(scrim);
       document.body.appendChild(modal);
 
+      /* Everything that is not the dialog goes inert while it is open, so the
+         background is neither clickable nor reachable by a virtual cursor. */
+      var backdrop = Array.prototype.filter.call(document.body.children, function (el) {
+        return el !== modal && el !== scrim;
+      });
+      backdrop.forEach(function (el) {
+        if ('inert' in el) el.inert = true;
+        el.setAttribute('aria-hidden', 'true');
+      });
+
       function close(result) {
         document.removeEventListener('keydown', onKey, true);
+        document.removeEventListener('focusin', onFocusIn, true);
+        backdrop.forEach(function (el) {
+          if ('inert' in el) el.inert = false;
+          el.removeAttribute('aria-hidden');
+        });
         modal.remove();
         scrim.remove();
         reauthOpen = null;
         if (previous && previous.focus) previous.focus();
         resolve(result);
+      }
+
+      /* The Tab wrap below only fires when focus is on the first or last
+         control. Focus reset to <body>, or returning from browser chrome,
+         matches neither branch and would walk straight out of the dialog. */
+      function onFocusIn(e) {
+        if (!modal.contains(e.target)) {
+          var items = focusables();
+          if (items.length) items[0].focus();
+        }
       }
 
       function focusables() {
@@ -424,6 +614,7 @@
       }
 
       document.addEventListener('keydown', onKey, true);
+      document.addEventListener('focusin', onFocusIn, true);
       cancel.addEventListener('click', function () { close(false); });
       scrim.addEventListener('click', function () { close(false); });
 

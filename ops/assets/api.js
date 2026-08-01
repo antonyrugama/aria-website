@@ -7,8 +7,8 @@
    only caller. Keeping the seam here means the retry and sign-out rules are
    readable in one place instead of tangled through fetch options.
 
-   Two things about the boundary are load bearing and are documented in
-   Stadiora/Aria docs/ops-dashboard-admin-identity.md:
+   Two things about the boundary are load bearing and are settled by the
+   backend's identity design record rather than by preference here:
 
      - The session is a bearer token in the Authorization header, never a
        cookie. Every request therefore sends credentials: 'omit' so that no

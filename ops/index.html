@@ -11,6 +11,8 @@
 </head>
 <body data-page="overview" class="is-booting">
 
+<!-- Hidden until the shell exists, because there is nothing to skip past in
+     the boot and failure states: each is a single card. -->
 <a class="skip-link" href="#content">Skip to content</a>
 
 <!-- Nothing below is rendered until the operations API has confirmed a
@@ -18,15 +20,16 @@
      which a half-built shell is on screen: it is the boot placeholder, the
      failure card, or the real dashboard. -->
 
-<div class="gate gate-boot gate-center">
+<main class="gate gate-boot gate-center">
   <div>
+    <h1 class="sr-only">Aria Operations</h1>
     <div class="boot-mark" aria-hidden="true">A</div>
     <p class="muted small" role="status">Checking your session</p>
     <div class="skel skel-boot mt-sm" aria-hidden="true"></div>
   </div>
-</div>
+</main>
 
-<div class="gate gate-failed gate-center" id="gateFailed"></div>
+<main class="gate gate-failed gate-center" id="gateFailed" tabindex="-1"></main>
 
 <div class="gate gate-app">
   <div class="app" id="app"></div>

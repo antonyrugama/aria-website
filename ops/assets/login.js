@@ -38,6 +38,7 @@
     /* '//' would start a protocol-relative URL, and '..' can climb back out of
        the dashboard directory after the prefix check has passed. */
     if (next.indexOf('..') !== -1) return 'index.html';
+    if (/(^|\/)login\.html(\?|$)/.test(next)) return 'index.html';
     if (next.indexOf('//') !== -1 || next.charAt(0) !== '/') {
       /* Relative and same-directory only. */
       if (/^[A-Za-z0-9_-]+\.html(\?[^#]*)?$/.test(next)) return next;
@@ -55,7 +56,11 @@
 
   function clearAlert() {
     if (countdownTimer) { global.clearInterval(countdownTimer); countdownTimer = null; }
-    alertBox.className = 'form-alert';
+    var counter = el('authCountdown');
+    if (counter) counter.textContent = '';
+    /* Dropping the class rather than the element. A live region that leaves
+       the tree via display:none is one that misses its next announcement. */
+    alertBox.className = '';
     alertBox.textContent = '';
   }
 
@@ -107,11 +112,15 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-pw-for]'), function (btn) {
       var input = el(btn.getAttribute('data-pw-for'));
       if (!input) return;
+      var what = btn.getAttribute('data-pw-label') || 'password';
       btn.addEventListener('click', function () {
         var showing = input.type === 'text';
         input.type = showing ? 'password' : 'text';
+        /* The visible word stays short so it fits beside the field. The
+           accessible name says which field it acts on and still contains the
+           visible word, so the two do not disagree. */
         btn.textContent = showing ? 'Show' : 'Hide';
-        btn.setAttribute('aria-pressed', String(!showing));
+        btn.setAttribute('aria-label', (showing ? 'Show ' : 'Hide ') + what);
         input.focus();
       });
     });
@@ -120,16 +129,13 @@
   var rememberBtn = el('remember');
 
   function remembered() {
-    return rememberBtn.getAttribute('aria-checked') === 'true';
+    return rememberBtn.checked;
   }
 
   function wireRemember() {
-    rememberBtn.addEventListener('click', function () {
-      rememberBtn.setAttribute('aria-checked', String(!remembered()));
-    });
     /* Somebody who already chose to be remembered on this browser almost
        certainly means to again. */
-    if (session.rememberedOnDevice()) rememberBtn.setAttribute('aria-checked', 'true');
+    if (session.rememberedOnDevice()) rememberBtn.checked = true;
   }
 
   function busy(button, on, busyText, idleText) {
@@ -143,20 +149,27 @@
      an operator guessing when to try again. */
   function rateLimited(button, idleText, seconds) {
     var left = Math.max(1, Math.round(seconds || 60));
+    var counter = el('authCountdown');
+
+    /* The alert fires once. Rewriting a role="alert" every second would
+       interrupt a screen reader sixty times in a row, each announcement
+       cutting off the last, leaving the operator unable to hear anything else
+       until the cooldown ended. The ticking number lives in a silent element
+       beside it, for the eyes only. */
+    setAlert('Too many attempts. Try again in ' + left + ' second' +
+      (left === 1 ? '' : 's') + '.', 'is-warn', true);
 
     function tick() {
-      alertBox.className = 'form-alert is-warn';
-      alertBox.textContent = '';
-      alertBox.appendChild(icons.icon('clock'));
-      alertBox.appendChild(document.createTextNode(
-        'Too many attempts. Try again in ' + left + ' second' + (left === 1 ? '' : 's') + '.'
-      ));
       if (left <= 0) {
         global.clearInterval(countdownTimer);
         countdownTimer = null;
+        if (counter) counter.textContent = '';
         button.disabled = false;
         setAlert('You can try again now.', 'is-warn', false);
         return;
+      }
+      if (counter) {
+        counter.textContent = left + ' second' + (left === 1 ? '' : 's') + ' left.';
       }
       left -= 1;
     }
@@ -166,7 +179,6 @@
     if (countdownTimer) global.clearInterval(countdownTimer);
     tick();
     countdownTimer = global.setInterval(tick, 1000);
-    alertBox.focus();
   }
 
   /* ------------------------------------------------------------- phase one */
@@ -330,11 +342,17 @@
   if (wanted === 'password') {
     setAlert('Choose your own password before the dashboard will open.', 'is-warn', false);
   } else {
-    var reason = REASONS[query.get('reason')];
-    if (reason) setAlert(reason.text, reason.tone, false);
-    /* A stale credential in storage is worse than none: it produces a sign-in
-       screen that silently fails on the next call. Landing here always means
-       the session is over, so drop it. */
-    if (query.get('reason')) session.clearTokens();
+    /* hasOwnProperty, not a bare index: ?reason=constructor would otherwise
+       return Object, which is truthy, and paint "undefined" into the alert. */
+    var key = query.get('reason');
+    var known = key && Object.prototype.hasOwnProperty.call(REASONS, key);
+    if (known) {
+      setAlert(REASONS[key].text, REASONS[key].tone, false);
+      /* A stale credential in storage is worse than none: it produces a
+         sign-in screen that silently fails on the next call. Only a reason we
+         issued ourselves means the session is over, so an unrecognised value
+         on this public URL must not wipe anybody's session. */
+      session.clearTokens();
+    }
   }
 })(window);
