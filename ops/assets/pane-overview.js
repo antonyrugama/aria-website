@@ -72,14 +72,15 @@
 
   shell.definePane('overview', function (content) {
     var region = op.region(content);
-    var filters = shell.filters();
     var loadToken = 0;
 
-    global.addEventListener('ops:filters', function (e) {
-      if (e.detail.range === filters.range && e.detail.env === filters.env) return;
-      filters = e.detail;
-      load();
-    });
+    /* This pane listens for no filter change, because it offers none. The
+       scope, range and environment controls were on the bar while nothing
+       could act on them: a request carrying none of the three answered the
+       same way whichever was picked, so selecting Staging left production
+       figures on screen looking like staging ones. The shell now states in the
+       bar that they do not apply here rather than offering a control that
+       cannot do what it says. */
 
     function load() {
       var token = ++loadToken;
@@ -105,12 +106,16 @@
     function render(data) {
       var armed = model.armedState(data.rules);
       var problems = data.open.problems.slice().sort(model.byWorstThenOldest);
+      /* A full read is a floor, not a total: problems come back worst first
+         and then oldest and stop at model.PAGE, so every count on this pane is
+         "at least" when the page came back full. */
+      var capped = model.capped(data.open.problems);
 
       var wrap = h('div', { className: 'stack' });
-      wrap.appendChild(ribbon(problems, armed));
+      wrap.appendChild(ribbon(problems, armed, capped));
       wrap.appendChild(op.bandHead('What needs a person',
         'Everything here opens the pane that owns the work'));
-      wrap.appendChild(queueCard(problems, armed));
+      wrap.appendChild(queueCard(problems, armed, capped));
       wrap.appendChild(op.bandHead('Not on this page yet',
         'Four figures the design puts here, and where each will land'));
       wrap.appendChild(awaitingCard());
@@ -127,10 +132,19 @@
          we do not know, because the checks are not running
 
        The third is the one an operations dashboard usually gets wrong by
-       drawing it as the first. */
-    function ribbon(problems, armed) {
+       drawing it as the first.
+
+       Which problems count as "something is wrong" is the other thing this is
+       easy to get wrong. It is every problem that is still open, whether or
+       not somebody has taken it on. Taking a problem on answers who owns it,
+       not whether it is fixed, so reading only the unassigned ones lets a
+       critical incident turn this ribbon green the moment an engineer puts
+       their name against it. The queue below still separates the two, because
+       what needs a person and what is being worked on are different lists. */
+    function ribbon(problems, armed, capped) {
+      var active = model.active(problems);
       var needing = model.needingAction(problems);
-      var worst = model.worstSeverity(needing);
+      var worst = model.worstSeverity(active);
 
       var card = h('div', { className: 'card ribbon' });
       var grid = h('div', { className: 'ribbon-grid' });
@@ -146,15 +160,15 @@
         words.appendChild(h('p', {
           className: 'ribbon-sub is-warn', text: unarmedSentence(armed)
         }));
-      } else if (!needing.length) {
+      } else if (!active.length) {
         state.appendChild(h('span', { className: 'dot dot-live', 'aria-hidden': 'true' }));
         words.appendChild(h('p', { className: 'ribbon-title', text: 'Everything is working' }));
         words.appendChild(h('p', {
           className: 'ribbon-sub',
-          text: fmt.int(armed.summary.enabled) + ' of ' + fmt.int(armed.summary.total) +
+          text: fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) +
                 ' rules are checking' +
-                (armed.summary.lastEvaluatedAt
-                  ? ', last ' + fmt.ago(armed.summary.lastEvaluatedAt)
+                (armed.lastEvaluatedAt
+                  ? ', last ' + fmt.ago(armed.lastEvaluatedAt)
                   : '') + '.'
         }));
       } else {
@@ -169,18 +183,16 @@
         }));
         words.appendChild(h('p', {
           className: 'ribbon-title is-' + tone,
-          text: needing.length === 1
-            ? needing[0].title
-            : fmt.plural(needing.length, 'problem') + ' need a person'
+          text: ribbonTitle(active, needing, capped)
         }));
         words.appendChild(h('p', {
-          className: 'ribbon-sub is-' + tone, text: oldestSentence(needing)
+          className: 'ribbon-sub is-' + tone, text: activeSentence(active, needing, capped)
         }));
       }
 
       state.appendChild(words);
       grid.appendChild(state);
-      grid.appendChild(ribbonBadges(problems, armed));
+      grid.appendChild(ribbonBadges(problems, armed, capped));
 
       var open = op.link('alerts.html', 'Open problems', 'btn');
       open.appendChild(icon('external'));
@@ -191,49 +203,104 @@
       return card;
     }
 
+    /* One problem is named. More than one is counted, and the count says
+       whether anybody is on them, because "3 problems need a person" over
+       three problems that all have somebody on them is the same lie in
+       smaller type. */
+    function ribbonTitle(active, needing, capped) {
+      if (!needing.length) {
+        return active.length === 1
+          ? active[0].title
+          : model.atLeast(fmt.plural(active.length, 'problem'), capped) + ' still open';
+      }
+      if (needing.length === 1 && active.length === 1) return needing[0].title;
+      return model.atLeast(fmt.plural(needing.length, 'problem'), capped) + ' need a person';
+    }
+
+    function activeSentence(active, needing, capped) {
+      var taken = active.length - needing.length;
+      var bits = [];
+
+      if (needing.length) bits.push(oldestSentence(needing));
+      else {
+        bits.push('Somebody is on ' + (active.length === 1 ? 'it' : 'each of them') +
+          ', and ' + (active.length === 1 ? 'it is' : 'they are') + ' still open.');
+      }
+      if (needing.length && taken > 0) {
+        bits.push(fmt.plural(taken, 'other problem') + ' already has somebody on it.');
+      }
+      if (capped) bits.push(cappedSentence());
+      return bits.join(' ');
+    }
+
+    /* Said in full wherever a count from a full read is printed, because "at
+       least" on its own reads as a rounding rather than as a ceiling that was
+       hit. */
+    function cappedSentence() {
+      return 'Only ' + fmt.int(model.PAGE) + ' problems can be read at a time and that many ' +
+        'came back, so these counts are the least it could be.';
+    }
+
+    /* Why nothing can be believed, in the reading that is actually true.
+       Every count here is over the enabled rules, so they can be read against
+       each other. */
     function unarmedSentence(armed) {
-      if (!armed.summary.total) return 'There are no alert rules at all.';
-      if (!armed.summary.enabled) {
-        return 'None of the ' + fmt.int(armed.summary.total) +
+      if (!armed.total) return 'There are no alert rules at all.';
+      if (!armed.enabled) {
+        return 'None of the ' + fmt.int(armed.total) +
           ' rules are enabled, so nothing would be noticed.';
       }
-      if (armed.summary.lastEvaluatedAt === null) {
+      if (armed.neverRun === armed.enabled) {
         return 'The rules are enabled but none has run yet, so nothing has been judged.';
+      }
+      if (armed.errored === armed.enabled) {
+        return 'Every enabled rule failed its own check the last time it ran. ' +
+          'Treat this as unmonitored.';
+      }
+      if (armed.errored) {
+        return 'No enabled rule reached a verdict the last time it ran, and ' +
+          fmt.int(armed.errored) + ' of them failed the check itself. ' +
+          'Treat this as unmonitored.';
       }
       return 'Every enabled rule is short of the data it needs to judge. ' +
         'Treat this as unmonitored.';
     }
 
     function oldestSentence(needing) {
-      var oldest = needing.map(function (p) { return model.time(p.firedAt); })
-        .filter(function (t) { return t !== null; }).sort()[0];
+      var oldest = model.iso(model.oldest(needing.map(function (p) { return p.firedAt; })));
       var taken = needing.length === 1 ? 'Nobody is on it' : 'Nobody is on them';
       if (!oldest) return taken + '.';
-      return 'Oldest started ' + fmt.stamp(new Date(oldest).toISOString()) + ', ' +
-        fmt.since(new Date(oldest).toISOString()) + ' ago. ' + taken + '.';
+      return 'Oldest started ' + fmt.stamp(oldest) + ', ' +
+        fmt.since(oldest) + ' ago. ' + taken + '.';
     }
 
     /* The counts, as badges, each carrying a glyph so none of them relies on
        its colour to be read. */
-    function ribbonBadges(problems, armed) {
+    function ribbonBadges(problems, armed, capped) {
       var row = h('div', { className: 'ribbon-badges' });
       var counts = { critical: 0, warning: 0, info: 0 };
-      model.needingAction(problems).forEach(function (p) {
+      /* Counted over everything still open, taken on or not, for the same
+         reason the ribbon reads it that way: a problem with somebody's name on
+         it is still a problem. */
+      model.active(problems).forEach(function (p) {
         if (counts[p.severity] !== undefined) counts[p.severity]++;
       });
 
-      if (counts.critical) row.appendChild(op.statusBadge('crit', fmt.int(counts.critical) + ' critical'));
-      if (counts.warning) row.appendChild(op.statusBadge('warn', fmt.int(counts.warning) + ' warning'));
-      if (counts.info) row.appendChild(op.statusBadge('info', fmt.int(counts.info) + ' info'));
+      ['critical', 'warning', 'info'].forEach(function (severity) {
+        if (!counts[severity]) return;
+        row.appendChild(op.statusBadge(model.SEVERITY_TONE[severity],
+          model.atLeast(fmt.int(counts[severity]), capped) + ' ' + severity));
+      });
 
       var taken = model.takenOn(problems);
       if (taken.length) {
-        row.appendChild(op.statusBadge('info', fmt.plural(taken.length, 'problem') + ' taken on'));
+        row.appendChild(op.statusBadge('info',
+          model.atLeast(fmt.plural(taken.length, 'problem'), capped) + ' taken on'));
       }
 
       row.appendChild(op.statusBadge(
         armed.trustworthy ? 'ok' : 'warn',
-        fmt.int(armed.summary.enabled) + ' of ' + fmt.int(armed.summary.total) + ' rules on'
+        fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking'
       ));
 
       /* A channel that was never connected is where a problem goes to be
@@ -247,19 +314,21 @@
       return row;
     }
 
-    /* The bar under the ribbon. Full width and healthy when nothing needs a
-       person, split by severity when something does. */
+    /* The bar under the ribbon. Full width and healthy only when nothing is
+       open at all, split by severity when something is. It reads the same list
+       the ribbon's words do: a green bar over a critical problem somebody has
+       taken on would contradict the pane it is drawn on. */
     function severityBar(problems, armed) {
-      var needing = model.needingAction(problems);
+      var active = model.active(problems);
       var segments = [];
 
       if (!armed.trustworthy) {
         segments = [{ value: 1, color: 'var(--warn)', label: 'Nothing is being checked' }];
-      } else if (!needing.length) {
+      } else if (!active.length) {
         segments = [{ value: 1, color: 'var(--ok)', label: 'Nothing needs attention' }];
       } else {
         ['critical', 'warning', 'info'].forEach(function (severity) {
-          var n = needing.filter(function (p) { return p.severity === severity; }).length;
+          var n = active.filter(function (p) { return p.severity === severity; }).length;
           if (!n) return;
           segments.push({
             value: n,
@@ -274,14 +343,14 @@
 
     /* -------------------------------------------------------------- queue */
 
-    function queueCard(problems, armed) {
+    function queueCard(problems, armed, capped) {
       var card = h('div', { className: 'card' });
       var needing = model.needingAction(problems);
       var taken = model.takenOn(problems);
 
       card.appendChild(op.cardHead('Needs attention',
         needing.length
-          ? fmt.plural(needing.length, 'problem') + ' with nobody on it'
+          ? model.atLeast(fmt.plural(needing.length, 'problem'), capped) + ' with nobody on it'
           : 'Nobody is being asked to do anything',
         [op.link('alerts.html', 'All problems')]));
 
@@ -303,11 +372,15 @@
       body.appendChild(queue);
       card.appendChild(body);
 
-      if (problems.length > shown.length) {
+      var rest = problems.length - shown.length;
+      if (rest > 0 || capped) {
         card.appendChild(h('div', { className: 'card-foot' }, [
           h('span', {
-            text: fmt.plural(problems.length - shown.length, 'more problem') +
-                  ' open. Overview shows the worst few and hands the rest to Problems.'
+            text: (rest > 0
+              ? model.atLeast(fmt.plural(rest, 'more problem'), capped) + ' open. '
+              : '') +
+              'Overview shows the worst few and hands the rest to Problems.' +
+              (capped ? ' ' + cappedSentence() : '')
           })
         ]));
       }
@@ -322,12 +395,12 @@
       var body = h('div');
       body.appendChild(h('strong', { text: 'Nothing needs attention.' }));
       body.appendChild(document.createTextNode(
-        ' ' + fmt.int(armed.summary.enabled) + ' of ' + fmt.int(armed.summary.total) +
-        ' rules are enabled and checking' +
-        (armed.summary.lastEvaluatedAt ? ', last ' + fmt.ago(armed.summary.lastEvaluatedAt) : '') +
+        ' ' + fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) +
+        ' rules are enabled and reached a verdict the last time they ran' +
+        (armed.lastEvaluatedAt ? ', last ' + fmt.ago(armed.lastEvaluatedAt) : '') +
         '. ' +
-        (armed.summary.lastFiredAt
-          ? 'The last problem fired ' + fmt.ago(armed.summary.lastFiredAt) + '.'
+        (armed.lastFiredAt
+          ? 'The last problem fired ' + fmt.ago(armed.lastFiredAt) + '.'
           : 'No problem has ever fired.')
       ));
       block.appendChild(body);
@@ -371,9 +444,9 @@
 
       var body = h('div', { className: 'card-body stack-sm' });
       body.appendChild(op.notConfigured('Nothing is being hidden from you.',
-        'Usage, reliability, cost and release figures are being collected, but no part of ' +
-        'the operations API serves them to a page yet. They are left out rather than drawn ' +
-        'as zeroes, because a zero and a disconnected pipeline look identical in a tile.'));
+        'Usage, reliability, cost and release figures are being collected, but they cannot ' +
+        'be read onto a page yet. They are left out rather than shown as zeroes, because a ' +
+        'real zero and a figure with nothing behind it would look the same here.'));
 
       var list = h('div', { className: 'queue' });
       AWAITING.forEach(function (entry) {

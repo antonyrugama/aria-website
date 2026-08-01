@@ -109,11 +109,31 @@
     { value: 'info', label: 'Info' }
   ];
 
-  /* The API caps a read at 100 problems and offers no second page. That is a
-     generous ceiling for a pane whose whole argument is that alert volume
+  /* A read answers with at most 100 problems and offers no second page. That is
+     a generous ceiling for a pane whose whole argument is that alert volume
      should stay low, but a page that silently showed the first hundred of two
-     hundred would be lying, so every count line says when it was reached. */
+     hundred would be lying.
+
+     Which hundred matters more than the number does. They come back worst
+     first and then oldest, so a full page keeps the oldest problem in each
+     severity and drops the most recent ones. Anything worked out over a window
+     that ends today, a rate over the last thirty days or a chart of the last
+     thirty days, is therefore reading a sample that is missing exactly the
+     part it needs. A full page makes those figures unavailable rather than
+     approximate, and makes every count a floor. */
   var PAGE = 100;
+
+  /* Whether a read came back full, which is the only signal there is that more
+     exist. It cannot say how many more. */
+  function capped(problems) {
+    return (problems || []).length >= PAGE;
+  }
+
+  /* A count that came out of a full page is a floor rather than a total, and
+     it has to read as one wherever it is printed. */
+  function atLeast(text, isCapped) {
+    return isCapped ? 'At least ' + text : text;
+  }
 
   /* Worst first, then oldest. Newest is not the same as most important, and a
      queue sorted by arrival buries the thing that has been burning longest. */
@@ -132,24 +152,78 @@
     return (time(a.firedAt) || 0) - (time(b.firedAt) || 0);
   }
 
+  /* The verdicts that mean a rule looked at the data and reached a conclusion.
+     Everything else, including a check that itself failed, is a rule that is
+     not currently judging anything. */
+  var JUDGING = { ok: true, firing: true };
+
+  /* The most recent of a list of timestamps, compared as numbers. Sorting
+     these as strings happens to agree with numeric order for every 13-digit
+     millisecond value, which makes it a trap rather than a bug, so it is done
+     properly in the one place both panes call. */
+  function latest(list) {
+    return list.map(time).filter(function (t) { return t !== null; })
+      .reduce(function (a, b) { return b > a ? b : a; }, -Infinity);
+  }
+
+  function oldest(list) {
+    return list.map(time).filter(function (t) { return t !== null; })
+      .reduce(function (a, b) { return b < a ? b : a; }, Infinity);
+  }
+
+  function iso(ms) {
+    return isFinite(ms) ? new Date(ms).toISOString() : null;
+  }
+
   /* Whether the alerting can be believed, which is a different question from
      whether anything is wrong.
 
-     Three things have to hold: some rules are enabled, they have actually run,
-     and at least one of them was able to reach a verdict when it did. A rule
-     that is enabled but cannot judge is not a rule that is checking, so it is
-     subtracted rather than counted. Both panes lean on this, because "nothing
-     is wrong" is only worth printing when something was in a position to
+     This is worked out rule by rule rather than from the summary counts,
+     because those counts answer different questions from each other: the
+     enabled count is over the enabled rules, the insufficient-data count is
+     over every rule including the disabled ones, and the last-evaluated stamp
+     is the newest across all of them. Subtracting one from another produces a
+     number that is not a quantity of anything, and it is wrong in both
+     directions: a disabled rule short of data can make an enabled healthy rule
+     look unmonitored, and an enabled rule whose own check failed counts as
+     checking because a failure is not insufficient data.
+
+     What is actually being asked is whether any enabled rule reached a verdict
+     the last time it ran. Both panes lean on the answer, because "nothing is
+     wrong" is only worth printing when something was in a position to
      notice. */
   function armedState(rules) {
-    var summary = rules.summary;
-    var checking = Math.max(0, summary.enabled - summary.insufficientData);
+    var list = rules.rules || [];
+    var enabled = list.filter(function (r) { return r.enabled; });
+    var checking = enabled.filter(function (r) {
+      return time(r.lastEvaluatedAt) !== null && JUDGING[r.lastEvaluationStatus] === true;
+    });
+    var lastEvaluated = latest(enabled.map(function (r) { return r.lastEvaluatedAt; }));
+
     return {
-      summary: summary,
-      rules: rules.rules || [],
+      rules: list,
       channels: rules.channels || [],
-      checking: checking,
-      trustworthy: summary.enabled > 0 && summary.lastEvaluatedAt !== null && checking > 0
+      total: list.length,
+      enabled: enabled.length,
+      /* Enabled, ran, and reached a verdict. This is the only count either
+         pane is allowed to call "checking". */
+      checking: checking.length,
+      insufficientData: enabled.filter(function (r) {
+        return r.lastEvaluationStatus === 'insufficient_data';
+      }).length,
+      /* An enabled rule whose own check failed. Different from short of data,
+         and a different thing to go and fix. */
+      errored: enabled.filter(function (r) {
+        return r.lastEvaluationStatus === 'error';
+      }).length,
+      neverRun: enabled.filter(function (r) {
+        return time(r.lastEvaluatedAt) === null;
+      }).length,
+      /* Over the enabled rules only. A disabled rule's last run says nothing
+         about whether anything is being checked now. */
+      lastEvaluatedAt: iso(lastEvaluated),
+      lastFiredAt: iso(latest(list.map(function (r) { return r.lastFiredAt; }))),
+      trustworthy: checking.length > 0
     };
   }
 
@@ -161,6 +235,17 @@
 
   function takenOn(problems) {
     return problems.filter(function (p) { return p.status === 'acknowledged'; });
+  }
+
+  /* Everything still wrong, whether or not somebody has taken it on. Who owns
+     an incident and whether the system is healthy are different questions, and
+     a health claim that reads the first one says "everything is working" over
+     an unresolved critical problem the moment somebody puts their name to
+     it. */
+  function active(problems) {
+    return problems.filter(function (p) {
+      return p.status === 'open' || p.status === 'acknowledged';
+    });
   }
 
   function worstSeverity(problems) {
@@ -187,12 +272,18 @@
     CATEGORIES: CATEGORIES,
     SEVERITIES: SEVERITIES,
     PAGE: PAGE,
+    capped: capped,
+    atLeast: atLeast,
     severityRank: severityRank,
     time: time,
+    latest: latest,
+    oldest: oldest,
+    iso: iso,
     byWorstThenOldest: byWorstThenOldest,
     armedState: armedState,
     needingAction: needingAction,
     takenOn: takenOn,
+    active: active,
     worstSeverity: worstSeverity
   };
 })(window);

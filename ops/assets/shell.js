@@ -19,12 +19,21 @@
 
   /* ------------------------------------------------------- pane registry */
 
-  /* wave      which delivery slice builds the pane's contents
-     scope     the All / Mobile / Coaches Web control applies
-     scopeNote shown in the filter bar where the absence needs explaining
-     range     false, or the list of ranges this pane offers
-     env       the production / staging control applies
-     roles     roles allowed to open the pane at all, omitted means everyone */
+  /* wave       which delivery slice builds the pane's contents
+     scope      the All / Mobile / Coaches Web control applies
+     scopeNote  shown in the filter bar where the absence needs explaining
+     range      false, or the list of ranges this pane offers
+     env        the production / staging control applies
+     filterNote shown in the filter bar for a control a built pane cannot yet
+                honour, so the absence is stated rather than faked
+     roles      roles allowed to open the pane at all, omitted means everyone
+
+     A pane that has been built declares only the filters its own reads can act
+     on. A control that changes nothing is worse than no control: picking
+     Staging and being left looking at production, with the selection sitting
+     in the bar as though it had been applied, is the failure mode that matters
+     here. Where a filter is in the approved design but nothing can carry it
+     yet, filterNote says so where the control would have been. */
   var WAVES = {
     W2: 'Operate panes',
     W3: 'Understand panes',
@@ -50,7 +59,11 @@
     overview: {
       file: 'index.html', icon: 'overview', label: 'Overview', group: 'Right now',
       question: 'Are people using it, is it working, is anything urgent?',
-      wave: 'W2', scope: true, range: ['24h', '7d', '30d'], env: true
+      /* Everything Overview draws today is the state of things right now,
+         across every app, in production. None of the three controls can be
+         carried into the read that answers it. */
+      wave: 'W2', scope: false, range: false, env: false,
+      filterNote: 'App, range and environment filters do not apply here yet'
     },
     jobs: {
       file: 'jobs-live.html', icon: 'live', label: 'Happening now', group: 'Right now',
@@ -65,7 +78,11 @@
     alerts: {
       file: 'alerts.html', icon: 'alerts', label: 'Problems', group: 'Right now',
       question: 'What needs a person right now, and who is on it?',
-      wave: 'W2', scope: false, range: ['open', '7d', '30d'], env: true
+      /* The window is real: it is applied to the problems that were read, and
+         the count line under the list says so. The environment is not, because
+         a problem carries no environment to filter on. */
+      wave: 'W2', scope: false, range: ['open', '7d', '30d'], env: false,
+      filterNote: 'Problems are production only, so there is no environment filter'
     },
     analytics: {
       file: 'analytics.html', icon: 'analytics', label: 'People and usage', group: 'How we are doing',
@@ -399,7 +416,9 @@
   }
 
   function renderFilters(pane) {
-    if (!pane.scope && !pane.range && !pane.env && !pane.scopeNote) return null;
+    if (!pane.scope && !pane.range && !pane.env && !pane.scopeNote && !pane.filterNote) {
+      return null;
+    }
 
     var bar = h('div', { className: 'filterbar' });
 
@@ -451,10 +470,11 @@
     /* The explicit not-applicable pattern. Cloud spend is billed per piece of
        infrastructure, not per app, so splitting a shared bill by client would
        be an invented number. Saying so beats leaving a gap where a control
-       used to be. */
-    if (pane.scopeNote) {
-      bar.appendChild(h('span', { className: 'badge filter-gap', text: pane.scopeNote }));
-    }
+       used to be, and it beats by a much wider margin a control that moves and
+       changes nothing. */
+    [pane.scopeNote, pane.filterNote].forEach(function (note) {
+      if (note) bar.appendChild(h('span', { className: 'badge filter-gap', text: note }));
+    });
 
     return bar;
   }

@@ -137,7 +137,9 @@
         { type: 'block', height: 62 }
       ]);
 
-      Promise.all([
+      /* Returned so a caller that changed something can wait for the pane it
+         changed to be back on screen before it moves focus. */
+      return Promise.all([
         query('open'),
         /* Closed problems are read for three things that would otherwise be
            guesses: the ranges that look back over a window, the false-alarm
@@ -172,6 +174,15 @@
       return all.filter(inRange).filter(matchesCategory).sort(model.byWorstThenOldest);
     }
 
+    /* Whether any control is narrowing what came back. The window is one of
+       them: the pane's own default, "Open now", narrows nothing, but a 7 or 30
+       day window does, and an empty result under one says nothing about the
+       problems outside it. */
+    function narrowed() {
+      return picked.severity !== 'all' || picked.category !== 'all' ||
+        Boolean(RANGE_DAYS[filters.range]);
+    }
+
     function render(data) {
       var list = visibleProblems(data);
       var armed = model.armedState(data.rules);
@@ -200,26 +211,31 @@
 
       var needing = model.needingAction(data.open.problems);
       var takenOn = model.takenOn(data.open.problems);
+      var openCapped = model.capped(data.open.problems);
 
+      /* A floor of zero is not a floor, so the "at least" only goes on a count
+         that has something in it. The note carries the bound either way. */
       grid.appendChild(tile(
         'Open, needs action',
-        fmt.int(needing.length),
+        model.atLeast(fmt.int(needing.length), openCapped && needing.length > 0),
         needing.length ? 'crit' : 'ok',
-        oldestNote(needing)
+        openCapped
+          ? 'More are open than this page can read at once'
+          : oldestNote(needing)
       ));
 
       grid.appendChild(tile(
         'Someone is on it',
-        fmt.int(takenOn.length),
+        model.atLeast(fmt.int(takenOn.length), openCapped && takenOn.length > 0),
         null,
-        takenOn.length
-          ? owners(takenOn)
-          : 'Nobody has taken a problem on'
+        openCapped
+          ? 'Counted over the ' + PAGE + ' problems that could be read'
+          : (takenOn.length ? owners(takenOn) : 'Nobody has taken a problem on')
       ));
 
       grid.appendChild(tile(
         'Rules running',
-        fmt.int(armed.summary.enabled) + ' of ' + fmt.int(armed.summary.total),
+        fmt.int(armed.enabled) + ' of ' + fmt.int(armed.total),
         armed.trustworthy ? null : 'warn',
         rulesNote(armed)
       ));
@@ -241,10 +257,9 @@
 
     function oldestNote(needing) {
       if (!needing.length) return 'Nothing is waiting for a person';
-      var oldest = needing.map(function (p) { return time(p.firedAt); })
-        .filter(function (t) { return t !== null; }).sort()[0];
+      var oldest = model.iso(model.oldest(needing.map(function (p) { return p.firedAt; })));
       if (!oldest) return fmt.plural(needing.length, 'problem') + ' waiting';
-      return 'Oldest ' + fmt.since(new Date(oldest).toISOString());
+      return 'Oldest ' + fmt.since(oldest);
     }
 
     function owners(takenOn) {
@@ -255,18 +270,38 @@
       return 'Owned by ' + names.length + ' people';
     }
 
+    /* Every one of these is a count of enabled rules, so they can be read
+       against each other and against the number beside them. */
     function rulesNote(armed) {
-      if (!armed.summary.enabled) return 'None are enabled, so nothing is checking';
-      if (armed.summary.lastEvaluatedAt === null) return 'None have run yet';
-      if (armed.summary.insufficientData) {
-        return fmt.int(armed.summary.insufficientData) + ' cannot judge yet';
+      if (!armed.enabled) return 'None are enabled, so nothing is checking';
+      if (armed.neverRun === armed.enabled) return 'None have run yet';
+      if (armed.errored) {
+        return fmt.int(armed.errored) + ' failed their own check';
       }
-      return 'All checking normally, last ' + fmt.ago(armed.summary.lastEvaluatedAt);
+      if (armed.insufficientData) {
+        return fmt.int(armed.insufficientData) + ' cannot judge yet';
+      }
+      if (armed.checking < armed.enabled) {
+        return fmt.int(armed.checking) + ' of them reached a verdict last time';
+      }
+      return 'All checking normally, last ' + fmt.ago(armed.lastEvaluatedAt);
     }
 
     /* A rate over too few closures says nothing, so below five it reports the
-       counts instead of a percentage that would move ten points per problem. */
+       counts instead of a percentage that would move ten points per problem.
+
+       A full page of closures makes the rate unavailable rather than
+       approximate. The read keeps the oldest closures and drops the newest, so
+       a window that ends today is missing precisely the closures it is meant
+       to be measuring, and a wrong rate is worse here than no rate: this
+       figure is the one that decides whether a rule gets turned off. */
     function falseAlarmTile(data) {
+      if (model.capped(data.closed.problems)) {
+        return tile('False alarms, 30 days', fmt.none, null,
+          'More problems have been closed than this page can read, and the oldest are ' +
+          'read first, so the last 30 days cannot be worked out from them');
+      }
+
       var cutoff = Date.now() - 30 * 86400000;
       var recent = data.closed.problems.filter(function (p) {
         var closed = time(p.closedAt);
@@ -409,12 +444,18 @@
 
       parts.push('Showing ' + fmt.plural(list.length, 'problem') + '.');
       if (picked.category !== 'all') {
-        parts.push('The category filter is applied to what was read rather than by the API, ' +
-          'so this is a count of the problems on screen.');
+        parts.push('The category filter is applied to what was read rather than to the whole ' +
+          'record, so this is a count of the problems on screen.');
       }
-      if (data.open.problems.length >= PAGE || data.closed.problems.length >= PAGE) {
-        parts.push('The API returns at most ' + PAGE + ' at a time and that limit was reached, ' +
-          'so older problems are not counted here.');
+      /* The disclosure has to name which problems went missing, not only that
+         some did. A read comes back worst first and then oldest and stops at
+         PAGE, so a full page keeps the oldest of each severity and drops the
+         most recent. Saying "older problems are not counted" would be the
+         opposite of what happened. */
+      if (model.capped(data.open.problems) || model.capped(data.closed.problems)) {
+        parts.push('Only ' + PAGE + ' problems can be read at a time, worst first and then ' +
+          'oldest, and that many came back, so the most recent ones are missing from this ' +
+          'count and from the figures above.');
       }
       line.textContent = parts.join(' ');
       return line;
@@ -422,14 +463,17 @@
 
     /* --------------------------------------------------------- empty state */
 
-    /* Nothing to show is two different facts, and the difference is the whole
-       point of this state. Either the rules are checking and found nothing, or
-       the rules are not in a position to find anything. */
+    /* Nothing to show is three different facts, and telling them apart is the
+       whole point of this state. Either a filter matched nothing, or the rules
+       are checking and found nothing, or the rules are not in a position to
+       find anything. Only the second of those is a statement about the health
+       of the system, and it is the only one allowed to make it. */
     function emptyState(data, armed) {
       var wrap = h('div', { className: 'stack' });
       var actions = [];
+      var filtered = narrowed();
 
-      if (RANGE_DAYS[filters.range] || picked.severity !== 'all' || picked.category !== 'all') {
+      if (filtered) {
         var clear = h('button', {
           className: 'btn', type: 'button', text: 'Clear the filters'
         });
@@ -442,11 +486,31 @@
         actions.push(clear);
       }
 
-      if (armed.trustworthy) {
+      if (filtered) {
+        /* A filter that matched nothing says nothing about anything outside
+           it. A critical problem can be open one control away from this
+           sentence, so this branch never claims the system is well and never
+           reads the rules for a verdict on it.
+
+           It is also the one empty state a full read can reach, when the
+           hundred problems that came back are all outside the window or the
+           category, so it carries the same disclosure the count line would
+           have. */
+        var missLines = [
+          'No problem matches ' + filterSentence() + '.',
+          'This says nothing about the problems these filters exclude. Clear them to see ' +
+            'everything that is open.'
+        ];
+        if (model.capped(data.open.problems) || model.capped(data.closed.problems)) {
+          missLines.push('Only ' + PAGE + ' problems could be read, worst first and then ' +
+            'oldest, so the most recent ones were not looked at either.');
+        }
+        wrap.appendChild(op.paneState('empty', 'Nothing matches these filters', missLines, actions));
+      } else if (armed.trustworthy) {
         wrap.appendChild(op.paneState('check', 'Nothing needs attention', [
           'Nothing is wrong that any rule can see. ' +
-            fmt.int(armed.summary.enabled) + ' of ' + fmt.int(armed.summary.total) +
-            ' rules are enabled and checking.',
+            fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) +
+            ' rules are enabled and reached a verdict the last time they ran.',
           lastActivitySentence(armed)
         ], actions));
       } else {
@@ -461,29 +525,60 @@
       return wrap;
     }
 
+    /* The filters in the words the controls use, so the sentence names what to
+       undo rather than saying "your filters" and leaving the operator to find
+       them. */
+    function filterSentence() {
+      var bits = [];
+      if (picked.severity !== 'all') {
+        bits.push('severity ' + (SEVERITY_LABEL[picked.severity] || picked.severity).toLowerCase());
+      }
+      if (picked.category !== 'all') {
+        var category = CATEGORIES.filter(function (c) { return c.value === picked.category; })[0];
+        bits.push('category ' + (category ? category.label.toLowerCase() : picked.category));
+      }
+      if (RANGE_DAYS[filters.range]) {
+        bits.push('the last ' + RANGE_DAYS[filters.range] + ' days');
+      }
+      if (!bits.length) return 'the current filters';
+      if (bits.length === 1) return bits[0];
+      return bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1];
+    }
+
     function lastActivitySentence(armed) {
       var bits = [];
-      if (armed.summary.lastEvaluatedAt) {
-        bits.push('Last checked ' + fmt.ago(armed.summary.lastEvaluatedAt) + '.');
+      if (armed.lastEvaluatedAt) {
+        bits.push('Last checked ' + fmt.ago(armed.lastEvaluatedAt) + '.');
       }
-      bits.push(armed.summary.lastFiredAt
-        ? 'The last problem fired ' + fmt.ago(armed.summary.lastFiredAt) + '.'
+      bits.push(armed.lastFiredAt
+        ? 'The last problem fired ' + fmt.ago(armed.lastFiredAt) + '.'
         : 'No problem has ever fired.');
       return bits.join(' ');
     }
 
+    /* Why nothing is being judged, each reading of it separately, because they
+       need different things done about them. */
     function notArmedSentence(armed) {
-      if (!armed.summary.total) return 'There are no alert rules at all.';
-      if (!armed.summary.enabled) {
-        return 'None of the ' + fmt.int(armed.summary.total) + ' rules are enabled, ' +
+      if (!armed.total) return 'There are no alert rules at all.';
+      if (!armed.enabled) {
+        return 'None of the ' + fmt.int(armed.total) + ' rules are enabled, ' +
           'so nothing is being checked.';
       }
-      if (armed.summary.lastEvaluatedAt === null) {
-        return fmt.int(armed.summary.enabled) + ' rules are enabled but none of them has ' +
+      if (armed.neverRun === armed.enabled) {
+        return fmt.plural(armed.enabled, 'rule') + ' enabled but none of them has ' +
           'run yet, so nothing has been checked.';
       }
+      if (armed.errored === armed.enabled) {
+        return 'Every enabled rule failed its own check the last time it ran, ' +
+          'so nothing is being judged. Last tried ' + fmt.ago(armed.lastEvaluatedAt) + '.';
+      }
+      if (armed.errored) {
+        return 'No enabled rule reached a verdict the last time it ran, and ' +
+          fmt.int(armed.errored) + ' of them failed the check itself. Last tried ' +
+          fmt.ago(armed.lastEvaluatedAt) + '.';
+      }
       return 'Every enabled rule is unable to reach a verdict, ' +
-        'so nothing is being judged. Last checked ' + fmt.ago(armed.summary.lastEvaluatedAt) + '.';
+        'so nothing is being judged. Last checked ' + fmt.ago(armed.lastEvaluatedAt) + '.';
     }
 
     /* -------------------------------------------------- rules and routing */
@@ -512,7 +607,8 @@
     function rulesCard(armed) {
       var card = h('div', { className: 'card' });
       card.appendChild(op.cardHead('Alert rules',
-        fmt.int(armed.summary.enabled) + ' of ' + fmt.int(armed.summary.total) + ' enabled'));
+        fmt.int(armed.enabled) + ' of ' + fmt.int(armed.total) + ' enabled, ' +
+        fmt.int(armed.checking) + ' reaching a verdict'));
 
       var body = h('div', { className: 'card-body' });
 
@@ -633,6 +729,21 @@
       card.appendChild(op.cardHead('Problem volume', 'Last 30 days by severity', [legend]));
 
       var body = h('div', { className: 'card-body' });
+
+      /* A full read cannot be bucketed into a window that ends today. The
+         problems that came back are the oldest of each severity, so the last
+         bucket would be short by an unknown amount and the chart would read as
+         volume falling away exactly when it was rising. There is no honest
+         chart to draw from this, so none is drawn. */
+      if (model.capped(data.open.problems) || model.capped(data.closed.problems)) {
+        body.appendChild(op.partFailure('Volume cannot be counted right now',
+          'More problems exist than the ' + PAGE + ' this page can read at a time, and the ' +
+          'oldest are read first, so the last 30 days would be counted short. The list above ' +
+          'is still every problem that was read.'));
+        card.appendChild(body);
+        return card;
+      }
+
       var buckets = 6, days = 5;
       var start = Date.now() - buckets * days * 86400000;
       var labels = [];
@@ -753,12 +864,21 @@
        just used and with it whatever had focus. The content region is the one
        element that survives a re-render, so focus goes there and the change is
        announced, rather than being dropped on the body where a keyboard user
-       would have to tab back in from the top of the page. */
+       would have to tab back in from the top of the page.
+
+       It waits for the re-read to land first. Moving focus while the overlays
+       are still up and the background is inert does nothing, and moving it to
+       a control that the re-render is about to remove drops it on the body a
+       moment later, which is the thing this is here to prevent. If the
+       operator has already put focus somewhere themselves by then, it is left
+       where they put it. */
     function afterChange(message) {
       shell.announce(message);
-      load();
-      var host = document.getElementById('content');
-      if (host) host.focus();
+      return load().then(function () {
+        var host = document.getElementById('content');
+        var live = document.activeElement;
+        if (host && (!live || live === document.body)) host.focus();
+      });
     }
 
     function acknowledge(problem) {
@@ -791,6 +911,20 @@
           (CLOSE_REASON_LABEL[choice] || choice).toLowerCase() + '.';
         shell.toast('check', words);
         afterChange(words);
+      }).catch(function (err) {
+        /* Somebody else closed it while this dialog was open, exactly as they
+           can while the take-on button is on screen. The problem is in the
+           state the operator wanted it in, so this is not a failure to show
+           them: the pane re-reads and the dialog settles as it would have on
+           success, rather than leaving them staring at an error over a screen
+           that is already stale. */
+        if (err && err.code === 'ops_problem_moved') {
+          shell.toast('info', 'Somebody else changed ' + problem.reference + ' first.');
+          afterChange('Somebody else changed ' + problem.reference +
+            ' first. The page has been re-read.');
+          return;
+        }
+        throw err;
       });
     }
 

@@ -181,20 +181,52 @@
 /* ==================== Light-theme status badge ink ======================
 
    W1 shipped the design system with a recorded, deliberate piece of contrast
-   debt: in the light theme the status badge inks measure between 4.04:1 and
-   4.49:1 against the tint they sit on, short of the 4.5:1 they need as text.
-   It shipped unfixed because W1 drew no status badge, and its README asks that
-   the first pane to draw one does not ship it unnoticed. These panes are the
-   first to draw one.
+   debt: in the light theme the status badge inks fall short of the 4.5:1 they
+   need as text. It shipped unfixed because W1 drew no status badge, and its
+   README asks that the first pane to draw one does not ship it unnoticed.
+   These panes are the first to draw one.
 
-   Measured in the browser against the composited background rather than
-   against the token, which is what made the debt easy to miss: the badge tint
-   is semi-transparent, so the real background is the tint over the card.
+   The badge tint is semi-transparent, so the background that matters is the
+   tint composited over whatever the badge is sitting on, not the token. That
+   is what made the debt easy to miss, and it is why the same ink measures
+   differently on a card and on the page behind it.
 
-     badge     was          now          on a card    on the page
-     crit      #C8322B      #AE2C25      5.15:1       4.59:1
-     warn      #9A5B06      #885005      5.13:1       4.57:1
-     ok        #047857      #046B4D      5.10:1       4.55:1
+   Every ratio below is computed, not eyeballed, and is reproducible from the
+   shipped tokens:
+
+     composited background = 0.11 x status token + 0.89 x parent surface,
+     in sRGB, because --tint is 11% in the light theme
+
+     ratio = (L1 + 0.05) / (L2 + 0.05) on WCAG 2 relative luminance
+
+   The parent surfaces these panes put a badge on are --surface-1 #FFFFFF (a
+   card, the alert list, the drawer), --surface-2 #F6F8FB (an alert row on
+   hover, the runbook card) and --bg #EEF2F7 (the filter bar, and anything
+   sitting directly on the page). The page is the darkest of the three and is
+   therefore the one that decides.
+
+     badge  ink was  ink now  composited bg        was    now
+     crit   #C8322B  #AE2C25  #F9E8E8 on a card    4.505  5.580
+                              #F1E2E4 on a hover   4.247  5.260
+                              #EADDE1 on the page  4.030  4.991
+     warn   #9A5B06  #885005  #F4EDE4 on a card    4.665  5.652
+                              #ECE7E0 on a hover   4.399  5.331
+                              #E5E1DC on the page  4.176  5.060
+     ok     #047857  #046B4D  #E3F0ED on a card    4.695  5.591
+                              #DBEAE9 on a hover   4.429  5.275
+                              #D4E5E5 on the page  4.205  5.008
+
+   So all three clear 4.5:1 on every surface W2 draws them on, where before
+   only the card cleared it and only just. The two badge variants these panes
+   draw but this block does not touch already pass: .badge-info is 5.649 on a
+   card and 5.058 on the page, and the plain .badge is 6.82 on a card.
+
+   The earlier version of this table recorded 4.15 / 4.22 / 4.27 before and
+   5.15 / 5.13 / 5.10 after. Neither reproduces from the tokens, and the before
+   figures also disagreed with W1's own README, which recorded 4.04 / 4.21 /
+   4.17 for crit / ok / warn over the page background and matches the numbers
+   above to the rounding. The palette owner acts on this table, so it is worth
+   being able to recompute it.
 
    Scoped to the badge's ink, and to the light theme, on purpose. The base
    status tokens are also the dots, the chart series, the meters and the

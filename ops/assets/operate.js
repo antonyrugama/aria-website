@@ -247,7 +247,29 @@
      second copy of this is a second place for it to be subtly wrong. It does
      what the shell's rail drawer does: traps Tab, closes on Escape, makes
      everything else inert so a virtual cursor cannot walk behind it, and hands
-     focus back to whatever opened it. */
+     focus back to whatever opened it.
+
+     Overlays stack. Closing a problem opens a confirmation over the drawer the
+     operator opened it from, and two overlays that each believe they are the
+     only one get both halves of modality wrong:
+
+       - Escape. Each overlay listens on the document, so the drawer's listener
+         runs first and takes an Escape aimed at the confirmation sitting on
+         top of it. One key press closed both. Only the topmost overlay may act
+         on a key, so every listener checks the stack before it does anything.
+
+       - Background modality. The confirmation makes the page inert on the way
+         up, and on the way down it put back what it found, which included the
+         drawer's own inert page. Cancelling the confirmation therefore handed
+         the background back to a virtual cursor while a modal drawer was still
+         open. Each overlay now records what every element was before it
+         touched it and restores only what it changed. */
+
+  var stack = [];
+
+  function isTop(api) {
+    return stack.length > 0 && stack[stack.length - 1] === api;
+  }
 
   function focusable(root) {
     return Array.prototype.slice.call(root.querySelectorAll(
@@ -268,25 +290,35 @@
     var opener = document.activeElement;
     var inerted = [];
     var closed = false;
+    var api = { close: close, node: opts.node };
 
     var scrim = h('div', { className: 'scrim is-open' });
     document.body.appendChild(scrim);
     document.body.appendChild(opts.node);
 
+    /* What each element was before this overlay touched it, so the overlay
+       under this one keeps the modality it set. */
     Array.prototype.forEach.call(document.body.children, function (el) {
       if (el === opts.node || el === scrim || isLiveRegion(el)) return;
+      inerted.push({
+        el: el,
+        inert: 'inert' in el ? el.inert : false,
+        hidden: el.getAttribute('aria-hidden')
+      });
       if ('inert' in el) el.inert = true;
       el.setAttribute('aria-hidden', 'true');
-      inerted.push(el);
     });
 
     function close() {
       if (closed) return;
       closed = true;
+      var at = stack.indexOf(api);
+      if (at !== -1) stack.splice(at, 1);
       document.removeEventListener('keydown', onKey, true);
-      inerted.forEach(function (el) {
-        if ('inert' in el) el.inert = false;
-        el.removeAttribute('aria-hidden');
+      inerted.forEach(function (was) {
+        if ('inert' in was.el) was.el.inert = was.inert;
+        if (was.hidden === null) was.el.removeAttribute('aria-hidden');
+        else was.el.setAttribute('aria-hidden', was.hidden);
       });
       scrim.remove();
       opts.node.remove();
@@ -307,6 +339,9 @@
     }
 
     function onKey(e) {
+      /* The overlay under this one is still listening. It does not get to act
+         on a key aimed at the dialog sitting on top of it. */
+      if (!isTop(api)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         if (opts.onEscape) opts.onEscape(close); else close();
@@ -320,14 +355,15 @@
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
 
-    scrim.addEventListener('click', function () { close(); });
+    scrim.addEventListener('click', function () { if (isTop(api)) close(); });
     document.addEventListener('keydown', onKey, true);
+    stack.push(api);
 
     var target = opts.initialFocus && opts.initialFocus() ;
     if (!target) target = focusable(opts.node)[0] || opts.node;
     target.focus();
 
-    return { close: close, node: opts.node };
+    return api;
   }
 
   /* A detail drawer. head/body are filled by the caller through the returned

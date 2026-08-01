@@ -220,6 +220,13 @@ The remaining panes route to a page that says plainly it is not built yet: W3 fo
 usage and Cloud costs; W4 for App releases and Look up a user; W5 for Settings. Aria quality is
 deferred to its own project.
 
+A read answers with at most 100 problems, worst first and then oldest, and there is no second
+page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
+which is the opposite of what a window ending today needs. When a page comes back full, both
+panes say so, every count reads as "at least", and the two figures that cannot be salvaged, the
+30 day false-alarm rate and the 30 day volume chart, say they cannot be worked out instead of
+showing a number that is quietly short.
+
 The shared filter bar ships now and round trips through the querystring, so later waves read a
 selection rather than inventing one. A pane listens on `window` for two events, both dispatched
 once the session is confirmed and the shell is in the document, so a listener added while
@@ -235,6 +242,15 @@ The scope control follows the rule the mocks encode: All, Mobile and Coaches Web
 where a per-app split is real. Cloud costs says so inline, because cloud spend is billed per
 piece of infrastructure rather than per app and splitting a shared bill by client would be an
 invented number.
+
+That rule now binds a built pane to what its own reads can carry, through the registry's
+`filterNote`. Overview declares no scope, range or environment control, because everything it
+draws is the state of things right now, across every app, in production; Problems keeps its
+window, which is applied to the problems that were read and disclosed in the count line under
+the list, and drops the environment control, because a problem carries no environment to filter
+on. A control that moves and changes nothing is worse than no control: it leaves Staging showing
+in the bar over production figures. Both say so where the control would have been, and both get
+their controls back when something can carry them.
 
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
@@ -282,11 +298,31 @@ better. That includes the two pieces of status furniture W1 does draw: the plain
 carries the scope note on Cloud costs, and the `.callout-ai` on Aria quality.
 
 Part of that debt has now come due, because the operate panes are the first to draw a status
-badge. Measured in a browser against the composited background rather than against the token,
-`.badge-crit`, `.badge-warn` and `.badge-ok` came out at 4.15:1, 4.22:1 and 4.27:1 in the light
-theme, short of the 4.5:1 they need as text. `operate.css` darkens the three inks to 4.55:1 or
-better on every surface those panes put them on, scoped to `[data-theme="light"]` and to the
-badge's ink alone.
+badge. `operate.css` darkens the three light-theme inks, scoped to `[data-theme="light"]` and to
+the badge's ink alone.
+
+The ratios are computed rather than eyeballed, and are reproducible from the shipped tokens. The
+badge tint is semi-transparent, so the background that decides is the tint composited over
+whatever the badge sits on: `composited = 0.11 x status token + 0.89 x parent surface` in sRGB,
+because `--tint` is 11% in the light theme, then the WCAG 2 relative-luminance ratio. These panes
+put a badge on `--surface-1` `#FFFFFF` (a card, the alert list, the drawer), on `--surface-2`
+`#F6F8FB` (an alert row on hover, the runbook card) and on `--bg` `#EEF2F7` (the filter bar). The
+page is the darkest of the three, so it is the one that has to clear 4.5:1.
+
+| Badge | Ink was | Ink now | On a card | On a hovered row | On the page |
+|---|---|---|---|---|---|
+| `.badge-crit` | `#C8322B` | `#AE2C25` | 4.505 to 5.580 | 4.247 to 5.260 | 4.030 to 4.991 |
+| `.badge-warn` | `#9A5B06` | `#885005` | 4.665 to 5.652 | 4.399 to 5.331 | 4.176 to 5.060 |
+| `.badge-ok` | `#047857` | `#046B4D` | 4.695 to 5.591 | 4.429 to 5.275 | 4.205 to 5.008 |
+
+All three now clear 4.5:1 on every surface W2 draws them on. Before, only the card cleared it and
+only just. The two variants these panes draw but the fix does not touch already pass: `.badge-info`
+is 5.649 on a card and 5.058 on the page, and the plain `.badge` is 6.82 on a card.
+
+An earlier version of this section recorded 4.15 / 4.22 / 4.27 before and 4.55 or better after.
+Neither figure reproduces from the tokens, and the before figures also disagreed with W1's own
+record of 4.04 / 4.21 / 4.17 for crit / ok / warn over the page background, which does match the
+table above. The palette owner acts on these numbers, so they need to be recomputable.
 
 That is a patch and not the fix. The base status tokens are also the dots, the chart series, the
 meters and the callout borders, all of which pass where they are used and all of which are shared
