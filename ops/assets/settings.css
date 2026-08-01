@@ -102,6 +102,14 @@
    borrows from, because a reason is a sentence rather than a password. */
 .set-reason { min-height: 40px; font-size: 14px; }
 
+/* The confirm dialog names the account in its heading, and an email address is
+   one unbreakable word. The card is a centred grid item, whose automatic
+   minimum size is its min-content width, so a long address overrides the card's
+   own width and pushes the confirm button past the right edge of a phone, where
+   nothing scrolls far enough to reach it. Breaking the address inside the word
+   is the readable half of the trade. */
+#setConfirmTitle { overflow-wrap: anywhere; }
+
 @media (max-width: 980px) {
   .settings { grid-template-columns: minmax(0, 1fr); }
   .set-nav-body { padding: 6px; }

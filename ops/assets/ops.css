@@ -580,7 +580,14 @@ body.is-ready   .gate-app { display: block; }
 .delta-up { color: var(--ok); } .delta-down { color: var(--crit); } .delta-flat { color: var(--text-3); }
 
 /* Tables */
-.table-wrap { overflow-x: auto; }
+/* position, not decoration. overflow-x only clips a descendant whose containing
+   block is this element, and an absolutely positioned one, .sr-only above being
+   the common case, resolves its containing block to the nearest positioned
+   ancestor. Static here means the page itself, so a screen-reader-only span
+   sitting at its static position inside a table wider than the phone escapes the
+   wrapper's clip and extends the document's scroll width: the table scrolls
+   inside its card and the whole page scrolls sideways with it. */
+.table-wrap { overflow-x: auto; position: relative; }
 table.data { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 table.data th {
   text-align: left; font-weight: 600; font-size: 10.5px;

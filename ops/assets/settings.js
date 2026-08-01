@@ -345,6 +345,16 @@
     var controller = {
       close: close,
       fail: function (message) {
+        /* The dialog can be dismissed while the request it fired is still in
+           flight, and a refusal that lands afterwards has nowhere to go in a
+           detached dialog. It goes where the success message goes instead. An
+           operator who pressed Escape still fired the action, and being told
+           nothing is the one outcome a refusal must never produce. */
+        if (closed) {
+          shell.toast('warn', message);
+          shell.announce(message);
+          return;
+        }
         alertBox.classList.remove('hidden');
         alertBox.textContent = '';
         alertBox.appendChild(icon('warn'));
@@ -419,15 +429,45 @@
         });
       });
     }, Promise.resolve()).then(function () {
-      if (failure) throw failure;
+      if (failure) {
+        /* The refusal carries what ran before it. A run that revoked two of
+           three sessions and then stopped has changed the world, and a caller
+           that only learns "refused" leaves a stale table on screen and tells
+           the operator nothing has been revoked, which by then is false. */
+        failure.revoked = revoked;
+        throw failure;
+      }
       return revoked;
     });
+  }
+
+  /* What signing out actually does to your own row. The session list marks the
+     one this tab is holding, so the others can be counted exactly; where that
+     mark is missing, every live session but one is still the honest floor. */
+  function otherSessionNote(live) {
+    var marked = live.some(function (s) { return s.current; });
+    var others = marked
+      ? live.filter(function (s) { return !s.current; }).length
+      : Math.max(0, live.length - 1);
+    if (!others) return 'sign out to end this session';
+    return 'sign out ends this one, not your other ' + plural(others, 'session');
+  }
+
+  /* The line beside a card's heading says what the card is currently showing,
+     so every path that changes what the card is showing has to set it. It
+     starts on "Loading", and a card that only rewrote it on the populated path
+     would leave the word Loading over a rendered empty state or a rendered
+     failure, which reads as a card still waiting for an answer it already got. */
+  function setHint(host, text) {
+    var hint = host.querySelector('.card-hint');
+    if (hint) hint.textContent = text;
   }
 
   function renderAdmins(host, admins, sessions) {
     var mine = (session.state.admin && session.state.admin.id) || null;
 
     if (!admins.length) {
+      setHint(host, 'no accounts returned');
       swapBody(host, unavailableBody('No administrator accounts', [
         'The API returned an empty account list. That is not a state a signed in ' +
         'administrator should be able to see, so treat it as the API being wrong ' +
@@ -463,18 +503,29 @@
       var actions = h('td');
       if (admin.id === mine) {
         /* Your own access is ended by signing out, which revokes the session
-           you are holding. Doing it from this table would sign you out
-           mid-action with no way to see the result. */
+           you are holding and only that one. Doing it from this table would
+           sign you out mid-action with no way to see the result.
+
+           Which is why the count is said out loud when there is more than one.
+           Signing out of the tab in your hand leaves your other live sessions
+           running, and a row that says otherwise is the sentence somebody reads
+           on the day a laptop goes missing. */
         actions.appendChild(h('span', {
-          className: 'set-cell-note', text: 'sign out to end yours'
+          className: 'set-cell-note', text: otherSessionNote(live)
         }));
       } else if (!live.length) {
         actions.appendChild(h('span', { className: 'set-cell-note', text: 'nothing to revoke' }));
       } else {
-        var button = h('button', { className: 'btn btn-sm', type: 'button', text: 'Revoke' });
-        button.appendChild(h('span', {
-          className: 'sr-only', text: ' access for ' + admin.email
-        }));
+        /* The name carries the account, because a table of identical Revoke
+           buttons is a list of unlabelled buttons to anybody reading it out of
+           context. An aria-label rather than a visually hidden span: the span
+           is absolutely positioned, and one inside a table that scrolls inside
+           its card lands at its static position out past the right edge of a
+           phone and takes the whole page's scroll width with it. */
+        var button = h('button', {
+          className: 'btn btn-sm', type: 'button', text: 'Revoke',
+          'aria-label': 'Revoke access for ' + admin.email
+        });
         button.addEventListener('click', function () {
           promptRevoke(host, admin, live);
         });
@@ -488,10 +539,7 @@
     wrap.appendChild(table);
     swapBody(host, wrap);
 
-    var hint = host.querySelector('.card-hint');
-    if (hint) {
-      hint.textContent = plural(admins.length, 'account') + ', no shared credentials';
-    }
+    setHint(host, plural(admins.length, 'account') + ', no shared credentials');
   }
 
   function promptRevoke(host, admin, live) {
@@ -521,14 +569,26 @@
             : plural(count, 'session') + ' revoked for ' + admin.email);
           shell.announce(plural(count, 'session') + ' revoked.');
         }, function (err) {
-          dialog.fail((err && err.message) ||
-            'The operations API refused that. Nothing has been revoked.');
+          var done = (err && err.revoked) || 0;
+          var refusal = (err && err.message) || 'The operations API refused that.';
+          if (done) {
+            /* Part of this ran, so the table and the record on screen are both
+               out of date. Redrawing them is what makes the sentence below
+               checkable rather than something the operator has to believe. */
+            loadAdmins(host);
+            reloadAudit();
+          }
+          dialog.fail(done
+            ? refusal + ' ' + plural(done, 'session') + ' had already been revoked before ' +
+              'it stopped, and the table has been reloaded.'
+            : refusal + ' Nothing has been revoked.');
         });
       }
     });
   }
 
   function loadAdmins(host) {
+    setHint(host, 'Loading');
     swapBody(host, skeletonRows(4));
     Promise.all([
       session.call('/api/ops/admins'),
@@ -539,6 +599,7 @@
       renderAdmins(host, Array.isArray(admins) ? admins : [],
         Array.isArray(sessions) ? sessions : []);
     }, function (err) {
+      setHint(host, 'could not load');
       swapBody(host, errorBody(err, function () { loadAdmins(host); }));
     });
   }
@@ -572,15 +633,33 @@
 
   /* ------------------------------------------------------------------ roles */
 
+  /* Every row here is a claim about the server, so every row is written from
+     the server rather than from the design.
+
+     "except Settings" is not a footnote to the first row, it is the row. This
+     pane is the only one in the shell's registry that carries a role at all,
+     and the two endpoints behind it, the administrator list and the access
+     record, are the two that carry requireOpsRole('owner'). A matrix that told
+     an operator they can view every pane would be wrong about the very page it
+     is printed on, and would be read as an entitlement by the person least able
+     to check it.
+
+     The fifth entry says the endpoint does not exist yet, so the row is the
+     rule that endpoint will be written against rather than one anything refuses
+     today. Marked on the row rather than counted in the footnote, because a
+     count is a second place to be wrong the moment somebody reorders this. */
   var ROLE_MATRIX = [
-    ['View every pane', true, true, true],
-    ['Cancel or requeue jobs', true, true, false],
+    ['View every pane except Settings', true, true, true],
+    ['Open Settings, including this page', true, false, false],
     ['Take on and close problems', true, true, false],
-    ['Run quality checks', true, true, false],
-    ['Override a ship check', true, false, false],
-    ['Show a hidden personal detail', true, false, false],
-    ['See what was asked and answered', true, false, false],
-    ['Change settings', true, false, false]
+    ['Change an alert rule', true, false, false],
+    ['Revoke another administrator', true, false, false],
+    ['Revoke a session of your own', true, true, true],
+    ['Cancel or requeue jobs', true, true, false, true],
+    ['Run quality checks', true, true, false, true],
+    ['Override a ship check', true, false, false, true],
+    ['Show a hidden personal detail', true, false, false, true],
+    ['See what was asked and answered', true, false, false, true]
   ];
 
   function rolesCard() {
@@ -595,7 +674,13 @@
     var body = h('tbody');
     ROLE_MATRIX.forEach(function (entry) {
       var row = h('tr');
-      row.appendChild(h('td', { className: 'cell-strong', text: entry[0] }));
+      var name = h('td', { className: 'cell-strong', text: entry[0] });
+      if (entry[4]) {
+        name.appendChild(h('span', {
+          className: 'set-cell-note', text: 'no endpoint yet, so nothing refuses it'
+        }));
+      }
+      row.appendChild(name);
       for (var i = 1; i <= 3; i++) {
         row.appendChild(h('td', { text: entry[i] ? 'Yes' : 'No' }));
       }
@@ -611,7 +696,10 @@
         'There is no custom role builder. Three roles everyone understands beat twenty ' +
         'nobody checks.',
         'This table describes the rules the server enforces. It is not a control, and ' +
-        'editing this page would not change what a role can do.'
+        'editing this page would not change what a role can do.',
+        'A row marked as having no endpoint yet names the rule its endpoint will be written ' +
+        'against. Every other row is refused by an endpoint today, and Settings is the only ' +
+        'pane in the dashboard that a role can be turned away from.'
       ])
     ]);
   }
@@ -668,8 +756,9 @@
       settingRow(
         'Ask me to sign in again for sensitive things',
         'Showing a personal detail, seeing what was asked and answered, and overriding a ' +
-        'ship check ask for your password again, however recently you signed in. This is ' +
-        'not a switch, and there is no way to turn it off from here.',
+        'ship check ask for your password again, unless you signed in or last confirmed it ' +
+        'inside the window below. This is not a switch, and there is no way to turn it off ' +
+        'from here.',
         'Always on'
       ),
       settingRow(
@@ -799,7 +888,9 @@
 
   /* --------------------------------------------------------------- the record */
 
-  var auditState = { host: null, rows: [], offset: 0, more: false, busy: false };
+  var auditState = {
+    host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: {}
+  };
 
   function actionCell(event) {
     var cell = h('td');
@@ -958,12 +1049,22 @@
 
   function loadAudit(reset) {
     var host = auditState.host;
-    if (!host || auditState.busy) return;
+    if (!host) return;
+    /* A reload asked for while a page is in flight is held, not dropped. The
+       one caller that asks for it is the revocation that just succeeded, and
+       an audit request already running when it fires would otherwise leave the
+       record on screen missing the very event the toast says was written. */
+    if (auditState.busy) {
+      if (reset) auditState.pending = true;
+      return;
+    }
     auditState.busy = true;
+    auditState.pending = false;
 
     if (reset) {
       auditState.offset = 0;
       auditState.rows = [];
+      auditState.seen = {};
       /* The skeleton, not the empty state. An empty record and a record that
          has not arrived yet are different answers to the same question, and
          showing the first one while waiting for the second is how a pane says
@@ -976,13 +1077,30 @@
       query: { limit: AUDIT_PAGE, offset: auditState.offset }
     }).then(function (payload) {
       var rows = Array.isArray(payload.data) ? payload.data : [];
-      auditState.rows = auditState.rows.concat(rows);
+      /* Paging by offset over a newest-first log that is still being written
+         means an event recorded between two pages shifts the window and the
+         next page repeats a row already on screen. A cursor is the server's
+         answer and belongs in its own issue; until then a row is not shown
+         twice in a record people are told they can check. Rows without an id
+         are kept as they come, because dropping them would be worse. */
+      var fresh = rows.filter(function (event) {
+        var id = event && event.id;
+        if (!id) return true;
+        if (auditState.seen[id]) return false;
+        auditState.seen[id] = true;
+        return true;
+      });
+      auditState.rows = auditState.rows.concat(fresh);
+      /* The offset advances by what the server sent, not by what survived the
+         filter, or a repeated row would make the next page ask for one it has
+         already been given. */
       auditState.offset += rows.length;
       /* A short page is the end of the record. Asking for another one would
          return the same nothing. */
       auditState.more = rows.length === AUDIT_PAGE;
       auditState.busy = false;
       renderAudit();
+      drainPendingAudit();
     }, function (err) {
       auditState.busy = false;
       if (auditState.rows.length) {
@@ -990,11 +1108,20 @@
            being read. */
         shell.toast('warn', (err && err.message) || 'Could not load more of the record.');
         syncAuditControls();
+        drainPendingAudit();
         return;
       }
       swapBody(host, errorBody(err, function () { loadAudit(true); }));
       syncAuditControls();
+      drainPendingAudit();
     });
+  }
+
+  /* Runs the reload that arrived while a request was in flight. Once: the flag
+     is cleared as the held reload starts, so a request answering during it can
+     hold another one and no chain of them can run away. */
+  function drainPendingAudit() {
+    if (auditState.pending) loadAudit(true);
   }
 
   function reloadAudit() { loadAudit(true); }

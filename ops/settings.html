@@ -50,9 +50,13 @@
 <script src="assets/api.js"></script>
 <script src="assets/session.js"></script>
 <script src="assets/shell.js"></script>
-<!-- The pane itself. Loaded after the shell, which is safe because the shell
-     only reaches the content area once the session call has resolved, and this
-     file's listener is registered while that call is still in flight. -->
+<!-- The pane itself. Loaded after the shell, and safe because it registers
+     through OpsShell.onReady rather than through a plain ops:ready listener.
+     Registration is NOT guaranteed to win the race: this file is its own
+     network request, so the session call can resolve and ops:ready can be
+     dispatched while the parser is still waiting for it, on exactly the fast
+     connections where nothing looks wrong. onReady replays what the shell said
+     to a callback that arrives late, which is what closes that. -->
 <script src="assets/settings.js"></script>
 </body>
 </html>
