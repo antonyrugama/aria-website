@@ -8,9 +8,10 @@ This directory is self-contained. Nothing outside `ops/` is read, written, or re
 anything in here, and nothing in here is referenced by any other page on the site.
 
 > This file is served publicly along with everything else in this directory, so it stays at the
-> level of what a reader could work out from the JavaScript beside it. The contributor-facing
-> detail, delivery tracking, and the reasoning behind the identity boundary live in the backend
-> repository and in the pull request that added this directory.
+> level of what a reader could work out from the JavaScript beside it: what these pages do, and
+> why they are built the way they are. Release sequencing, infrastructure, the server's internals,
+> and the reasoning behind the identity boundary live in the backend repository and in the pull
+> request that added this directory, none of which is served from here.
 
 ## What is public and what is not
 
@@ -36,35 +37,28 @@ credential for every page that origin will ever serve. Every request sends
 `credentials: 'omit'` and no CSRF token, the latter because the API route family never reads a
 cookie in the first place.
 
-### What the client promises, and what it depends on
+### What the client promises
 
-**Ordinary races converge. Stale replays sign this device out locally. The server adjudicates.**
+**Ordinary races converge. A superseded copy of a credential signs that tab out locally. The
+server adjudicates.**
 
 That is deliberately weaker than the absolute "at most once, ever" an earlier draft of this
 directory claimed, and the weaker promise is the honest one.
 
-> **This directory depends on a backend change that is not yet deployed.** The client here is
-> written against a **grace window** on the refresh endpoint, described below. Until that change
-> is live in production, a genuine two-tab race still ends in a revoked session and a compromise
-> event in the audit log. The ordering is a release-time requirement: the backend change merges
-> and deploys first, and only then does this directory go live. Nothing mechanical enforces
-> that, which is precisely why it is written down here.
+The refresh token rotates on every use. When two tabs reach the endpoint at the same moment, one
+of them presents a token that was current when it read it and is not current by the time it
+arrives; presented within a few seconds of its rotation, that is answered with a **fresh access
+token and `refreshTokenRotated: false`**, and no refresh token. The client's side of that
+contract is to leave the current credential alone: whichever tab won the rotation has already
+written it, and writing anything else would clobber it. Two tabs refreshing at the same moment
+therefore converge instead of one of them destroying the session.
 
-The backend rotates the refresh token on every use and keeps one generation of history. The
-grace window it is to serve: the immediately-previous generation, presented within a few seconds
-of its rotation, is answered with a **fresh access token and `refreshTokenRotated: false`**, and
-no refresh token, because the server holds only hashes and could not return the current one. The
-client's side of that contract is to leave its refresh slot untouched on a grace response:
-whichever tab won the rotation has already written the truth to shared storage, and writing
-anything else would clobber it. Two tabs refreshing at the same moment therefore converge instead
-of one of them destroying the session.
+The same generation presented long after its rotation is treated as theft and ends the session
+everywhere. A generation older than that is refused, quietly and without consequence, because
+there is nothing left for it to match. Neither call is one this client makes or second-guesses.
 
-Reuse detection, which revokes the session on every device and writes a compromise event into an
-append-only audit log, is then reserved for what it was always meant to catch: a generation older
-than the last, or one presented long after its rotation.
-
-Given that grace window, the client does not have to be the thing that makes races safe, and
-what remains here is sized to that:
+Given that grace, the client does not have to be the thing that makes races safe, and what
+remains here is sized to that:
 
 1. **The access token is cached per tab**, in `sessionStorage`, so ordinary navigation around
    this multi-page shell performs no refresh at all. This is the piece that still earns its
@@ -73,65 +67,69 @@ what remains here is sized to that:
 2. **Web Locks** (`navigator.locks`) serialise the exchange across same-origin contexts, with
    the token re-read *after* the lock is held. This is now an efficiency measure rather than a
    correctness one, so its absence is fine and the fallback is a per-document queue.
-3. **A ledger of already-presented token hashes** in `localStorage`, consulted before an
-   exchange. This is a local courtesy, not a guarantee, and the difference is worth being exact
-   about. It targets the case the grace window cannot cover: a refresh whose response was lost,
-   presented again after the window has passed. When it hits, the operator gets a clean sign-in
-   on this device instead of a session revoked on every device. **When it misses, and it will,**
-   the request reaches the server and the server's revocation path handles it, which is the
-   correct security outcome arrived at by a worse route.
+3. **A ledger of already-presented token hashes** in `localStorage`, each with the moment it was
+   presented, consulted before an exchange. This is a local courtesy, not a guarantee, and the
+   difference is worth being exact about. It targets the one case the grace cannot cover: a
+   refresh whose response was lost, presented again long afterwards. When it hits, the operator
+   gets a clean sign-in on this device instead of a refusal that ends the session everywhere.
+   **When it misses, and it will,** the request reaches the server and the server decides, which
+   is the correct outcome arrived at by a worse route.
+
+   The timestamp is the point of the entry rather than bookkeeping around it. A hash on its own
+   cannot tell a replay from the other tab in an ordinary race, and refusing that race locally is
+   how a client talks itself out of the very grace that exists to absorb it, signing an operator
+   out without a single request leaving the browser. So a recent entry is presented anyway and
+   the server answers it; only an old one is refused here.
 
    It misses whenever storage is full, SubtleCrypto is absent, or the entry has been evicted.
-   Eviction is the honest limit: the list is capped at 1000 hashes, roughly ten days of one-tab
+   Eviction is the honest limit: the list is capped at 1000 entries, roughly ten days of one-tab
    use and proportionally less with more tabs open, so the further into the past a lost response
-   was, the less likely its hash is still here. Sizing it to cover the whole 30-day session
-   ceiling would mean unbounded storage to buy a nicer sign-out message. Nothing here is load
-   bearing, which is exactly why every path fails open.
+   was, the less likely it is still here. Sizing it to cover the whole 30-day session ceiling
+   would mean unbounded storage to buy a nicer sign-out message. Nothing here is load bearing,
+   which is exactly why every path fails open.
 
-The client never silently changes administrator. Stored credentials carry the subject they
-belong to, so a tab that has already rendered for one administrator will not adopt another's
-session if a second sign-in replaces the profile's single refresh slot; it clears its own state
-and returns to the sign-in screen with an explanation.
+With **Remember this device** off the credential lives in `sessionStorage`, which a tab opened
+from a link inherits a copy of. Both copies work, and the first rotation makes one of them the
+current one. The tab left holding the other is told so by the API, drops it there and then rather
+than replaying it later, and asks for a fresh sign-in when its own access token runs out. It says
+so plainly when it does, because "your session carried on in another tab" and "your session
+ended" are different facts. That is the cost of a credential deliberately confined to one tab,
+and it is still the setting worth choosing on a shared computer.
 
-**It clears only its own state.** The credential that triggered the mismatch belongs to whoever
-is currently signed in on this browser, not to the tab that just noticed, so the shared record is
-left alone. A tab that has been idle long enough to go stale must never be able to sign the
-current administrator out of every other tab on the machine, which would be a worse outcome than
-the silent switch this guard exists to prevent. For the same reason an expired cache entry counts
-as no identity at all rather than as evidence of a previous one.
+The client never silently changes administrator. Stored credentials carry the subject they belong
+to, and a credential belonging to somebody else is refused **before** it is presented rather than
+after it has been adopted: presenting it would rotate a credential this tab has no business
+rotating and leave its owner holding a token the server has already retired. The tab clears its
+own state and returns to the sign-in screen with an explanation.
 
-### Storage, and the one departure from the identity contract
+**It clears only its own state, and it never writes over or deletes anybody else's.** Two
+administrators can be signed in on one browser, one remembered and one not, and neither tab's
+rotation, sign-out, or terminal error can end the other's session: writes go to the store the
+credential in hand came from, and a stored record naming a different administrator is left
+exactly where it is. A tab that has been idle long enough to go stale must never be able to sign
+the current administrator out of every other tab on the machine. Signing in is the one deliberate
+exception, because replacing the session on this browser is precisely what it is for. For the
+same reason as the rest of this, an expired cache entry counts as no identity at all rather than
+as evidence of a previous one.
+
+### Storage
 
 | Token | Lifetime | Where |
 |---|---|---|
 | Access token | 15 minutes | `sessionStorage`, with the administrator it belongs to |
 | Refresh token | up to 30 days | `localStorage` when "Remember this device" is on, `sessionStorage` when off, with the administrator it belongs to |
-| Spent-token ledger | last 1000 exchanges | `localStorage`, SHA-256 hashes only, never tokens |
+| Presented-token ledger | last 1000 exchanges | `localStorage`, SHA-256 hashes and timestamps only, never tokens |
 
-The identity design record originally specified the access token as **memory only**. Caching it
-in `sessionStorage` is an amendment to that record, accepted by its owner and shipping in the
-same backend change as the grace window described above. Like the grace window, it is agreed but
-not yet live, so the record and this directory are aligned only once that change deploys.
-memory-only forces a refresh on every page load of a multi-page shell, which makes rotation as
-frequent as navigation and was the direct cause of the replay hazard the grace window now
-absorbs. `sessionStorage` preserves the property the record was protecting, that a browser
-restart cannot resume a session without the refresh exchange.
+The access token is cached rather than held in memory only. Memory only forces an exchange on
+every page load of a multi-page shell, which makes rotation as frequent as navigation and is what
+turned an ordinary race into a common one. `sessionStorage` keeps the property that matters, that
+a browser restart cannot resume a session without the refresh exchange. The trade is worth
+stating rather than glossing: a cached access token is an immediately usable bearer for as long
+as it lives.
 
-The trade is worth stating rather than glossing: an access token in storage is an immediately
-usable bearer, so script running on this origin can act for the remainder of its lifetime
-without consuming the refresh token and without producing a rotation signal. That is a real
-cost, accepted knowingly, and it is why the next section matters as much as this one.
-
-### A security control that lives outside this directory
-
-`localStorage` is scoped to the **origin**, not the path. The Content-Security-Policy below
-protects `/ops/*` and does nothing for the other pages this origin serves, which carry no CSP.
-Any third-party script added to any page on this origin, an analytics pixel, a chat widget, a
-support snippet, can read the refresh token and walk away with an administrator session, and
-nothing inside `ops/` would have changed. **"No third-party script on this origin" is therefore
-a load-bearing security control**, and it is not enforced by anything in this directory. It
-belongs in the architecture record, and moving the dashboard to its own origin, so that storage
-partitioning does the work instead of a convention, is the durable fix.
+None of the three writes is assumed to succeed. A browser that refuses to store the refresh token
+is a browser that cannot hold a session, so the sign-in fails and says so, rather than opening a
+dashboard that ends without warning fifteen minutes later.
 
 ## Content-Security-Policy
 
@@ -196,7 +194,14 @@ W4 for App releases and Look up a user; W5 for Settings. Aria quality is deferre
 project.
 
 The shared filter bar ships now and round trips through the querystring, so later waves read a
-selection rather than inventing one. Panes listen for the `ops:filters` event on `window`.
+selection rather than inventing one. A pane listens on `window` for two events, both dispatched
+once the session is confirmed and the shell is in the document, so a listener added while
+`shell.js` is still booting cannot miss them:
+
+- `ops:ready`, carrying `{ pane, filters }`, which is the signal that `#content` exists.
+- `ops:filters`, carrying the selection, fired for the starting selection as well as for every
+  change to it. `OpsShell.filters()` returns the same thing on demand.
+
 Per-pane filters arrive with the pane that needs them.
 
 The scope control follows the rule the mocks encode: All, Mobile and Coaches Web appear only
@@ -246,12 +251,14 @@ client renders a fact, it does not decide one.
 
 Measured across both themes against composited backgrounds. **Every pairing this release
 renders passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or
-better. The remaining debt below is in the shipped design system but is drawn by nothing in
-this release. In the light theme these pairings sit between 3.79:1 and 4.49:1 against the
-4.5:1 they need; the same pairings pass in dark.
-None of them renders in this release, because no badge, tag, or status callout is on screen yet,
-and every one is byte-identical to the approved mock. They are recorded here so that the first
-pane to draw one does not ship them unnoticed:
+better. That includes the two pieces of status furniture W1 does draw: the plain `.badge` that
+carries the scope note on Cloud costs, and the `.callout-ai` on Aria quality.
+
+The debt below is in the shipped design system and is drawn by nothing in this release, because
+no status badge, tag, or warning callout is on screen yet. In the light theme these pairings sit
+between 3.79:1 and 4.49:1 against the 4.5:1 they need; the same pairings pass in dark. Every one
+is byte-identical to the approved mock. They are recorded here so that the first pane to draw one
+does not ship it unnoticed:
 
 | Pair | Light ratio |
 |---|---|
@@ -274,6 +281,13 @@ python3 -m http.server 8000
 
 `assets/api.js` points at the production API and can only be redirected when the page itself is
 served from a loopback address, by setting `localStorage['ops-api-base']`. A deployment on the
-real origin always talks to production. Note that production CORS does not allow `localhost`, so
-a browser on a loopback origin cannot call the real API directly; put a proxy in front of it
-that sets the `Origin` header, or point the override at a local stub.
+real origin always talks to production.
+
+Two things constrain what that override can point at. Production CORS does not allow `localhost`,
+so a loopback browser cannot call the real API at all. And the pages carry
+`connect-src 'self' https://api.runwitharia.com`, where `'self'` is the loopback origin **including
+its port**, so an override naming any other port is blocked by the policy before it reaches the
+network. A local stub therefore has to be served from the same origin and port as the static
+files: one small server that serves `/ops/` and answers `/api/ops/*`, with the override set to
+that same origin. `python3 -m http.server` on its own serves the files but answers no API, so the
+sign-in form is as far as it goes.

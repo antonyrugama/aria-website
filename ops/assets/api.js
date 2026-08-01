@@ -7,8 +7,8 @@
    only caller. Keeping the seam here means the retry and sign-out rules are
    readable in one place instead of tangled through fetch options.
 
-   Two things about the boundary are load bearing and are settled by the
-   backend's identity design record rather than by preference here:
+   Two things about the boundary are load bearing and are settled by the shape
+   of the API rather than by preference here:
 
      - The session is a bearer token in the Authorization header, never a
        cookie. Every request therefore sends credentials: 'omit' so that no
@@ -80,7 +80,13 @@
        token    bearer access token, omitted when absent
        query    plain object of querystring values
        signal   AbortSignal
-     Resolves with the parsed `data` field. Rejects with OpsApiError. */
+
+     Resolves with the parsed response envelope, which the API always shapes as
+     { data: ... }, so callers read payload.data. Deliberately the envelope and
+     not the field inside it: unwrapping here would make this function decide
+     what part of a response is worth having, and a top-level field added later
+     would be silently unreachable to every caller. Rejects with OpsApiError,
+     which is where the error envelope goes, so no caller ever inspects one. */
   function request(path, opts) {
     opts = opts || {};
 
