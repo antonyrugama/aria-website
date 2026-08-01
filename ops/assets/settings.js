@@ -580,7 +580,7 @@
           }
           dialog.fail(done
             ? refusal + ' ' + plural(done, 'session') + ' had already been revoked before ' +
-              'it stopped, and the table has been reloaded.'
+              'it stopped, and the table is reloading.'
             : refusal + ' Nothing has been revoked.');
         });
       }
@@ -644,15 +644,17 @@
      is printed on, and would be read as an entitlement by the person least able
      to check it.
 
-     The fifth entry says the endpoint does not exist yet, so the row is the
-     rule that endpoint will be written against rather than one anything refuses
-     today. Marked on the row rather than counted in the footnote, because a
-     count is a second place to be wrong the moment somebody reorders this. */
+     A row carrying the trailing marker says its endpoint does not exist yet,
+     so the row is the rule that endpoint will be written against rather than
+     one anything refuses today. Marked on the row rather than counted in the
+     footnote, because a count is a second place to be wrong the moment
+     somebody reorders this. */
   var ROLE_MATRIX = [
     ['View every pane except Settings', true, true, true],
     ['Open Settings, including this page', true, false, false],
     ['Take on and close problems', true, true, false],
     ['Change an alert rule', true, false, false],
+    ['See every administrator\'s sessions', true, false, false],
     ['Revoke another administrator', true, false, false],
     ['Revoke a session of your own', true, true, true],
     ['Cancel or requeue jobs', true, true, false, true],
@@ -698,8 +700,10 @@
         'This table describes the rules the server enforces. It is not a control, and ' +
         'editing this page would not change what a role can do.',
         'A row marked as having no endpoint yet names the rule its endpoint will be written ' +
-        'against. Every other row is refused by an endpoint today, and Settings is the only ' +
-        'pane in the dashboard that a role can be turned away from.'
+        'against. Where a row says No, the server refuses it today. A row that is Yes for ' +
+        'every role needs no refusal, and pane visibility is decided by the shell and then ' +
+        'enforced by this pane\'s own owner-only endpoints, the only ones a role can be ' +
+        'turned away from.'
       ])
     ]);
   }
@@ -1100,6 +1104,12 @@
       auditState.more = rows.length === AUDIT_PAGE;
       auditState.busy = false;
       renderAudit();
+      if (!fresh.length && rows.length) {
+        /* A full page of rows already on screen: say so, or the click looks
+           like it did nothing. The offset advanced, so the next click asks
+           for the page after it. */
+        shell.announce('That page held no new entries. Load more to continue.');
+      }
       drainPendingAudit();
     }, function (err) {
       auditState.busy = false;

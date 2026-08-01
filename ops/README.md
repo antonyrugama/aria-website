@@ -251,10 +251,11 @@ that no API can yet read or write. Each of those renders a state saying which of
 control that appears to work and does not is worse than no control, and on this pane it would be
 worse than the whole pane being missing.
 
-**The role table is written from the server, not from the design.** Every row is either a
-`requireOpsRole` call in `opsAdminRouter.ts` or `opsAlertsRouter.ts`, or the pane registry in
-`assets/shell.js`. A row whose endpoint does not exist yet says so on the row, so the table never
-implies that something refuses a capability nothing can yet be asked for. Settings is the only
+**The role table is written from the server, not from the design.** Every enforced row traces
+to server code: a `requireOpsRole` call or an ownership branch in the operations routers, or,
+for pane visibility, the shell's registry backed by this pane's owner-only endpoints. A row
+whose endpoint does not exist yet says so on the row, so the table never implies that something
+refuses a capability nothing can yet be asked for. Settings is the only
 pane carrying a role, so "view every pane" is stated with that exception rather than without it:
 a matrix that misreports the permission governing the page it is printed on is worse than no
 matrix, because the person least able to check it is the one reading it.
