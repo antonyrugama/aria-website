@@ -444,7 +444,15 @@ body.is-ready   .gate-app { display: block; }
   background: linear-gradient(140deg, var(--brand-bright), var(--cta-end));
   border-color: transparent; color: var(--text-inverse); font-weight: 600;
 }
-.btn-primary:hover { filter: brightness(1.08); color: var(--text-inverse); }
+/* The background has to be restated. Without it .btn:hover wins on
+   specificity and repaints a primary button with the plain hover fill while
+   .btn-primary keeps the inverse text colour, which is white on a pale grey:
+   1.2:1, and the label disappears the moment a pointer rests on it. */
+.btn-primary:hover {
+  background: linear-gradient(140deg, var(--brand-bright), var(--cta-end));
+  border-color: transparent;
+  filter: brightness(1.08); color: var(--text-inverse);
+}
 .btn-danger { color: var(--crit); border-color: var(--crit-line); background: var(--crit-dim); }
 .btn-danger:hover { background: color-mix(in srgb, var(--crit) 22%, transparent); color: var(--crit); border-color: var(--crit); }
 .btn[disabled] { opacity: .42; cursor: not-allowed; pointer-events: none; }
@@ -880,6 +888,150 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
   margin: 0; padding: 0 0 0 18px; line-height: 1.7;
 }
 
+/* ================= W4, App releases: the track ladder ==================== */
+
+/* The ladder is the App releases pane. Each platform's tracks stack in
+   promotion order, so "which version is where" is answered by the shape of
+   the thing rather than by reading a number out of a table. */
+.ladder { display: grid; grid-template-columns: 132px minmax(0, 1fr); }
+.ladder-row { display: contents; }
+.ladder-track {
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text-2);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.ladder-track b { color: var(--text); font-weight: 500; font-size: 12.5px; }
+.ladder-cell {
+  padding: 10px 14px; min-width: 0;
+  border-bottom: 1px solid var(--border); border-left: 1px solid var(--border);
+}
+.ladder-row:last-child .ladder-track,
+.ladder-row:last-child .ladder-cell { border-bottom: 0; }
+
+/* One build sitting on one track. The state modifier tints the chip, and the
+   badge inside it carries the same state as words, because a colour on its
+   own is not a status. */
+.build {
+  display: inline-flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 7px 11px; font-size: 12.5px;
+}
+.build.is-live { border-color: var(--ok-line); background: var(--ok-dim); }
+.build.is-rolling { border-color: var(--info-line); background: var(--info-dim); }
+.build.is-blocked { border-color: var(--crit-line); background: var(--crit-dim); }
+.build.is-none { border-style: dashed; color: var(--text-3); }
+.build .v { font-family: var(--mono); font-weight: 600; color: var(--text); }
+
+.rollout {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 8px; font-size: 11.5px; color: var(--text-2);
+}
+.rollout .meter { flex: 1 1 120px; max-width: 220px; }
+
+/* Widths come from script. The value arrives as a custom property written
+   through the CSSOM, style.setProperty, and the width is computed here. That
+   write does end up serialized as a style attribute in the DOM; what makes it
+   legal under the CSP on every page in this directory is that style-src
+   governs styles arriving as markup rather than programmatic CSSOM writes.
+   Rewriting it as setAttribute('style', ...) would be blocked. Same trick for
+   the stacked adoption bar. */
+.meter-fill.is-set { width: calc(var(--fill, 0) * 1%); }
+.stackbar span.is-set { width: calc(var(--seg, 0) * 1%); }
+.stackbar span.seg-ok { background: var(--ok); }
+.stackbar span.seg-info { background: var(--info); }
+.stackbar span.seg-idle { background: var(--text-3); }
+
+/* One data source and how fresh it is. Two columns rather than three, with
+   the freshness badge and the poll interval in one cell, so the row never has
+   to reflow into a shape where the badge and the interval it belongs to sit
+   on different lines. */
+.sync-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 12.5px;
+}
+.sync-row:last-child { border-bottom: 0; }
+.sync-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* A row header inside the body is a cell that happens to name its row, so it
+   is un-styled back to one. Without this it inherits the sticky, uppercased
+   column-header treatment and a five-row comparison grows five sticky
+   headers down its left edge. */
+table.data tbody th {
+  text-align: left; font-size: 12.5px; font-weight: 500; letter-spacing: 0;
+  text-transform: none; color: var(--text); background: none; position: static;
+  padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+table.data th.right { text-align: right; }
+
+.tile-meta svg { width: 12px; height: 12px; flex: none; }
+/* A card foot is a flex row with no intrinsic sizing for an icon, so an svg
+   dropped into one stretches to the row it is meant to annotate. */
+.card-foot svg { width: 14px; height: 14px; flex: none; }
+.card-foot > span { min-width: 0; }
+.privacy-bar strong, .callout strong { font-weight: 600; }
+
+.verdict-better { color: var(--ok); }
+.verdict-worse { color: var(--crit); }
+.verdict-slightly-worse { color: var(--warn); }
+
+/* ============= W4, Look up a user: privacy furniture ==================== */
+
+/* States the recording rule before the search box, not after the result.
+   Sits above the pane because it is a condition of using it. */
+.privacy-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--brand-dim);
+  border: 1px solid var(--brand-line); border-radius: var(--radius);
+  padding: 10px 13px; font-size: 12.5px; color: var(--text-2);
+}
+.privacy-bar > svg { width: 15px; height: 15px; color: var(--brand-bright); flex: none; }
+.privacy-bar strong { color: var(--text); font-weight: 600; }
+
+.lookup-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.lookup-field { flex: 1 1 220px; min-width: 0; }
+.lookup-field .field-label { margin-bottom: 4px; }
+/* The dense 12.5px control scale reads badly for something that is typed
+   rather than picked, and anything under 16px makes iOS zoom the page. */
+.lookup-input {
+  width: 100%; min-height: 40px; padding: 8px 11px;
+  background: var(--surface-2); border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 16px;
+}
+.lookup-input:hover { border-color: var(--control-border-hover); }
+.lookup-input[aria-invalid="true"] { border-color: var(--crit); }
+.lookup-input::placeholder { color: var(--text-3); }
+
+.flagchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; padding: 2px 7px; border-radius: 5px;
+  border: 1px solid transparent;
+}
+.flagchip svg { width: 11px; height: 11px; }
+.flagchip.is-crit { background: var(--crit-dim); color: var(--crit); border-color: var(--crit-line); }
+.flagchip.is-warn { background: var(--warn-dim); color: var(--warn); border-color: var(--warn-line); }
+.flagchip.is-info { background: var(--info-dim); color: var(--info); border-color: var(--info-line); }
+
+/* A masked field and whatever control it is allowed to carry. Health data
+   carries none at all, which is why the control is a separate element rather
+   than a property of the row. */
+.reveal-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.reveal-value { font-family: var(--mono); font-size: 12px; color: var(--text); }
+/* .reveal-note is not repeated here: the design system already ships it. */
+.reveal-never {
+  font-size: 11px; color: var(--text-3);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.reveal-never svg { width: 11px; height: 11px; }
+
+.drawer-title { flex: 1; min-width: 0; }
+
+.match-row-btn {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; padding: 0; margin: 0;
+  color: inherit; font: inherit; cursor: pointer;
+}
+
 /* Utility */
 .muted { color: var(--text-3); }
 .small { font-size: 11.5px; }
@@ -1113,6 +1265,17 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
   .g-main, .g-main-b { grid-template-columns: minmax(0,1fr); }
 }
 
+/* The ladder's track column stops earning its width before the rail folds
+   away, so it collapses on its own breakpoint rather than the shell's. */
+@media (max-width: 900px) {
+  .ladder { grid-template-columns: minmax(0, 1fr); }
+  .ladder-track {
+    padding-bottom: 0; border-bottom: 0;
+    flex-direction: row; gap: 8px; align-items: baseline; justify-content: flex-start;
+  }
+  .ladder-cell { border-left: 0; }
+}
+
 @media (max-width: 860px) {
   :root { --rail-w: 0px; }
   .app { grid-template-columns: 1fr; }
@@ -1168,3 +1331,97 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
     transition-delay: 0s !important;
   }
 }
+
+/* ========= Light-theme status ink, App releases and Look up a user ========
+
+   W1 shipped the design system with a recorded piece of contrast debt: in the
+   light theme the status tokens fall short of the 4.5:1 they need when they
+   are drawn as text on a tint mixed from themselves. W1 drew no such pairing,
+   and asked that the first pane to draw one did not ship it unnoticed. W2
+   closed it for the four operate panes, in operate.css, scoped to the badge's
+   ink and to the light theme. These two panes are the next to draw one, and
+   they load no stylesheet of their own, so the same fix is made here and
+   scoped by the page instead of by the file. Nothing outside these two pages
+   is restyled by it.
+
+   The badge inks are byte-identical to the three in operate.css on purpose. A
+   second set of values would mean a critical badge was one red on Problems and
+   a different red on Look up a user, which is worse than the debt.
+
+   Every ratio below is computed rather than eyeballed and reproduces from the
+   shipped tokens:
+
+     composited background = alpha x status token + (1 - alpha) x parent
+     surface, in sRGB, with alpha the tint the component uses: --tint 11% for a
+     badge and a flag chip, --tint-soft 9% for a platform tag, and none at all
+     where the ink is drawn straight onto a card
+
+     ratio = (L1 + 0.05) / (L2 + 0.05) on WCAG 2 relative luminance
+
+   These two panes put a tinted status on three surfaces, and all three are
+   inside a card or the drawer: neither pane ever puts one loose on the page
+   background, which is the surface W3 recorded as the one that fails. The
+   three are --surface-1 #FFFFFF (a card, the drawer), --surface-2 #F6F8FB (a
+   hovered table row, and the .build chip a state badge sits in) and #E3F3F6,
+   which is --brand-dim over a card and is the selected match row. The selected
+   row is the darkest and is therefore the one that decides.
+
+   One pairing composites twice: a state badge inside a .build chip tints its
+   own hue over a chip that is already a tint of the same hue. That is the
+   worst pairing on either pane, and it is the reason these inks are measured
+   against 4.771 rather than against the badge's usual figure.
+
+     pairing                              surface        was     now
+     .badge-ok               #046B4D      card           4.688   5.583
+                                          hovered row    4.428   5.274
+                                          selected row   4.139   4.930
+                                          .build.is-live 4.059   4.834
+     .badge-warn             #885005      card           4.668   5.656
+                                          hovered row    4.408   5.341
+                                          selected row   4.111   4.982
+     .badge-crit             #AE2C25      card           4.494   5.566
+                                          hovered row    4.241   5.253
+                                          selected row   3.976   4.925
+                                          .build.is-blocked 3.852 4.771
+     .flagchip.is-crit       #AE2C25      as .badge-crit
+     .flagchip.is-warn       #885005      as .badge-warn
+     .tag-mobile             #0D6880      card           4.716   5.586
+                                          hovered row    4.457   5.280
+                                          selected row   4.196   4.971
+     .tag-coaches            #7434DF      card           4.978   5.560
+                                          hovered row    4.706   5.257
+                                          selected row   4.390   4.903
+     .verdict-worse          #AE2C25      card           5.321   6.590
+     .verdict-slightly-worse,
+       .reveal-note          #885005      card           5.422   6.570
+     .verdict-better         #046B4D      card           5.484   6.531
+
+   The last three already passed. They are moved anyway, because .verdict-worse
+   and .badge-crit are drawn in adjacent cells of the same health row, and two
+   reds a shade apart in one row read as a mistake rather than as a palette.
+
+   What is deliberately not touched, with its worst figure on these two panes:
+   .badge-info and .flagchip.is-info at 4.837 on a .build chip and 4.998 on a
+   selected row, .badge-brand at 4.825 on a selected row, the plain .badge at
+   6.821 on its own opaque fill, .masked at 4.706, and .field-error at 5.321.
+   .field-error is left alone for a second reason as well: the sign-in page
+   draws it too, and darkening it here would give one component two inks across
+   pages for no contrast gain.
+
+   Dark mode is untouched, because it already passes.
+
+   Like the three rules at the end of operate.css, this block is a patch and
+   not the fix. Darkening the base tokens is a decision about the approved
+   palette and belongs to whoever owns it; doing it here would silently restyle
+   every other pane. When that lands, this whole block and those three rules go
+   together. */
+[data-theme="light"] body:is([data-page="releases"], [data-page="users"])
+  :is(.badge-crit, .flagchip.is-crit, .verdict-worse) { color: #AE2C25; }
+[data-theme="light"] body:is([data-page="releases"], [data-page="users"])
+  :is(.badge-warn, .flagchip.is-warn, .verdict-slightly-worse, .reveal-note) { color: #885005; }
+[data-theme="light"] body:is([data-page="releases"], [data-page="users"])
+  :is(.badge-ok, .verdict-better) { color: #046B4D; }
+[data-theme="light"] body:is([data-page="releases"], [data-page="users"])
+  .tag-mobile { color: #0D6880; }
+[data-theme="light"] body:is([data-page="releases"], [data-page="users"])
+  .tag-coaches { color: #7434DF; }

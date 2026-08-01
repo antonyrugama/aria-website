@@ -156,10 +156,13 @@ What follows from wanting it this strict:
   rather than an inline snippet. No hash to keep in sync across eleven files.
 - **No inline `style` attributes.** Everything that can be a class is a class. The handful of
   lengths and colours that are genuinely data-driven, a bar segment's width, a skeleton block's
-  height, a legend swatch, are set through CSSOM on the element's `style` property by the pane's
-  own script. That is a declaration made from script rather than a `style` attribute in markup,
-  so `style-src 'self'` allows it without `'unsafe-inline'`, and every value set that way is a
-  number this code computed or a fixed internal token, never a string from the API.
+  height, a legend swatch, App releases' rollout meter and its adoption bar, are set through
+  CSSOM on the element's `style` property by the pane's own script. That is a declaration made
+  from script rather than a `style` attribute in markup, so `style-src 'self'` allows it without
+  `'unsafe-inline'`, and every value set that way is a number this code computed or a fixed
+  internal token, never a string from the API. It is worth stating precisely so nobody
+  "simplifies" it into a break: the write does serialize into a `style` attribute in the DOM, and
+  `setAttribute('style', ...)` for the same value would be blocked.
 - **No `innerHTML` anywhere.** The shell is built as DOM with `textContent`, so nothing from the
   API, the querystring, or storage can become markup.
 - `connect-src 'self'` is present because this origin serves static files only; it allows no
@@ -203,6 +206,8 @@ ops/
                         formatting, states, charts
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
+    pane-releases.js    App releases
+    pane-users.js       Look up a user
 ```
 
 A pane page carries the shell, and where the pane has been built, its own module. Everything a
@@ -241,8 +246,51 @@ whole of the copy. Neither has a read API published yet, so on the live site bot
 honest "not reporting yet" state for the same reason Happening now and What happened do, and the
 section below says exactly what changes on the day their endpoints exist.
 
-The remaining panes route to a page that says plainly it is not built yet: W4 for App releases
-and Look up a user; W5 for Settings. Aria quality is deferred to its own project.
+**Settings** routes to a page that says plainly it is not built yet, in W5. Aria quality is
+deferred to its own project.
+
+**App releases** and **Look up a user** are built. Everything either of them shows comes from the
+operations API; neither holds any data of its own, and where the API answers with nothing the
+pane says which kind of nothing it is.
+
+App releases draws each platform's tracks as a ladder in promotion order. Two rules from the
+approved design are worth knowing before reading the page:
+
+- **Store truth and field truth are never merged.** The store reports what a track is set to,
+  usage data reports what people actually have, and both appear as their own figure.
+- **A stale source keeps its rows and shows its last successful poll time.** Hiding figures
+  because a poll failed would turn a source outage into a data outage.
+
+Its two stores are in different states and the page says so rather than smoothing it over.
+Google Play is polled. App Store Connect has no API key yet, so the iOS ladder renders as **not
+connected**, which is deliberately not the same state as a poll that ran and was refused.
+Starting, pausing, or resuming a rollout is not on this page at all: the operations API holds
+read-only access to both stores, so a control that implied otherwise would be a lie.
+
+Look up a user is the only surface that touches a real person's record, and it is built as a
+set of constraints:
+
+- **Exact match only.** No browse, no listing, no near-match fallback, so a wrong guess tells
+  you nothing about who has an account.
+- **Every lookup is recorded**, with the reason the form makes you type, and the record is
+  built so it would be safe to show the athlete. It is on the page, per account, under
+  **Who looked**. A response that does not confirm a record says so on screen rather than
+  looking identical to one that does, because a promise nobody can falsify is not a promise.
+- **Masked by default, and a missing flag is masked.** Masking happens in the operations API,
+  not here, and this directory never derives a mask from a real value. Only an explicit
+  `masked: false` renders a field in the clear; absent, null, or a field carrying both a real
+  value and a mask is read as masked.
+- **A reveal is one field, with its own written reason, and it un-reveals itself** when the
+  server's window expires, when the record closes, and when a new search starts. A response
+  that carries no expiry does not buy an indefinite reveal: the client applies its own short
+  ceiling and says on screen that it did.
+- **Health data carries no reveal control at all**, not a disabled one and not a role-gated one.
+  The API is expected to send those fields as never-revealable, and the client keeps its own
+  list of health field keys as a floor under that, so a server that got it wrong could not make
+  this page the place it went wrong.
+- **Destructive account actions are absent, not permission-gated.** There is no control for
+  deleting an account or wiping its data anywhere on the page. That runs through the account
+  deletion workflow, which needs the athlete's own confirmation.
 
 The shared filter bar round trips through the querystring, so a pane reads a selection rather
 than inventing one. A pane listens on `window` for two events, both dispatched once the session
@@ -253,7 +301,13 @@ booting cannot miss them:
 - `ops:filters`, carrying the selection, fired for the starting selection as well as for every
   change to it. `OpsShell.filters()` returns the same thing on demand.
 
-Per-pane filters arrive with the pane that needs them.
+Per-pane filters arrive with the pane that needs them. App releases adds a Platform switch beside
+the shared controls rather than growing a second bar underneath the first: its module appends to
+the rendered `.filterbar`, deferring to `ops:ready` when the bar is not in the document yet,
+which is the same small move `OpsOperate.paneFilters` makes for the operate panes. It is written
+out locally rather than reached for across `operate.js`, because App releases loads none of the
+rest of that file and a whole shared module pulled in for six lines is a dependency the pages do
+not need.
 
 The scope control follows the rule the mocks encode: All, Mobile and Coaches Web appear only
 where a per-app split is real. Cloud costs says so inline, because cloud spend is billed per
@@ -480,6 +534,14 @@ nothing on its own.
     two of the contrast debts recorded below; see the note under that table.
 12. **A card head wraps below 860px**, dropping its view switcher onto its own line instead of
     squeezing the title into a column a word wide.
+13. **`.btn-primary:hover` restates its own background.** Without it `.btn:hover` wins on
+    specificity and repaints a primary button with the plain hover fill while `.btn-primary`
+    keeps the inverse text colour: white on pale grey, 1.2:1, so the label vanished under the
+    pointer that was about to click it. This is not a pane-scoped fix and it is not a token
+    change; the sign-in button is the one it was found on.
+14. **The two ship and support panes darken the light-theme status ink**, scoped to those two
+    pages. Same debt as item 11's neighbours and the same shape of fix as `operate.css`; see the
+    second half of the note below.
 
 ### Known contrast debt, inherited
 
@@ -488,10 +550,10 @@ panes built so far passes in both themes**, text at 4.5:1 or better and control 
 3:1 or better. That was verified again for the two understand panes across all four of their
 states, 68 pairings in total, worst case 4.67:1 in light and 5.99:1 in dark.
 
-Part of that debt has now come due, and two separate fixes have landed against it, in two
-different stylesheets. Which pages get which follows from which stylesheet they load, so it is
-worth being explicit: `ops.css` is on every page, and `operate.css` is on the four operate pages
-only.
+Part of that debt has now come due, and three separate fixes have landed against it. Which pages
+get which follows from where each one lives, so it is worth being explicit: `ops.css` is on every
+page, `operate.css` is on the four operate pages only, and the third fix is in `ops.css` but
+scoped by a selector to the two ship and support pages.
 
 **The callout fix is in `ops.css`, so it reaches every page.** The warning and critical callout
 inks measured 4.41:1 and 4.26:1 in the light theme *only when the callout sat directly on the
@@ -534,6 +596,54 @@ with the panes other waves are building; darkening the tokens themselves is a de
 approved palette and belongs to whoever owns it. When it happens, the three rules at the end of
 `operate.css` become redundant and should be deleted.
 
+**The third fix is the same shape, for App releases and Look up a user.** Those two pages load no
+stylesheet of their own, so it sits at the end of `ops.css` and is scoped by the page rather than
+by the file: `[data-theme="light"] body:is([data-page="releases"], [data-page="users"])`. Nothing
+outside those two pages is restyled by it. The three badge inks are byte-identical to the three
+in `operate.css` on purpose; a second set of values would mean a critical badge was one red on
+Problems and a different red on Look up a user, which is worse than the debt.
+
+These two panes never put a tinted status loose on the page background, so the surface that
+decides is a different one: the selected match row, which is `--brand-dim` over a card and
+composites to `#E3F3F6`. They also draw one pairing that composites twice, a state badge inside a
+`.build` chip already tinted with the same hue, and that is the worst pairing on either pane.
+Same formula as above, with `--tint-soft` 9% for a platform tag and no tint at all where the ink
+goes straight onto a card.
+
+| Pair | Ink was | Ink now | On a card | On a hovered row | On a selected row |
+|---|---|---|---|---|---|
+| `.badge-crit`, `.flagchip.is-crit` | `#C8322B` | `#AE2C25` | 4.494 to 5.566 | 4.241 to 5.253 | 3.976 to 4.925 |
+| `.badge-warn`, `.flagchip.is-warn` | `#9A5B06` | `#885005` | 4.668 to 5.656 | 4.408 to 5.341 | 4.111 to 4.982 |
+| `.badge-ok` | `#047857` | `#046B4D` | 4.688 to 5.583 | 4.428 to 5.274 | 4.139 to 4.930 |
+| `.tag-mobile` | `#0E7490` | `#0D6880` | 4.716 to 5.586 | 4.457 to 5.280 | 4.196 to 4.971 |
+| `.tag-coaches` | `#7C3AED` | `#7434DF` | 4.978 to 5.560 | 4.706 to 5.257 | 4.390 to 4.903 |
+
+And the double-tinted pairing, on a card: `.badge-crit` inside `.build.is-blocked` 3.852 to
+4.771, `.badge-ok` inside `.build.is-live` 4.059 to 4.834. 4.771 is the worst figure either pane
+produces after the fix, and 3.852 was the worst before it. Of the 36 pairings the two panes draw
+with a status token as text, 17 were below 4.5:1 and none is now.
+
+Every figure above is the arithmetic, so it recomputes from the tokens. The same pairings were
+also measured against what the browser actually composites, by walking each element's ancestor
+background chain: those agree to within 0.03 (the engine mixes at a precision the hex round trip
+here does not keep), and the worst rendered pairing on either pane is 4.778. Deleting the five
+rules at run time and re-measuring brings back exactly five failures, worst 3.970, which is what
+makes them load bearing rather than decorative. The lowest rendered figure on App releases is not
+in the table at all: it is `--text-3` on the tinted `.build` chip at 4.586, which passes untouched
+and is recorded so the next person to darken a chip knows how little room is left.
+
+Three of those rows already passed and are moved anyway: `.verdict-worse` 5.321 to 6.590,
+`.verdict-slightly-worse` and `.reveal-note` 5.422 to 6.570, `.verdict-better` 5.484 to 6.531.
+`.verdict-worse` and `.badge-crit` are drawn in adjacent cells of the same release-health row, and
+two reds a shade apart in one row read as a mistake rather than as a palette.
+
+Deliberately untouched on these two pages, with the worst figure each reaches on them:
+`.badge-info` and `.flagchip.is-info` 4.837 inside a `.build` chip and 4.998 on a selected row,
+`.badge-brand` 4.825, the plain `.badge` 6.821 on its own opaque fill, `.masked` 4.706,
+`--text-3` on a selected row 4.771, and `.field-error` 5.321. `.field-error` has a second reason:
+the sign-in page draws it too, and darkening it under a page scope would give one component two
+inks across pages for no contrast gain.
+
 What is left. The first three rows are drawn by nothing built so far, and are recorded so that
 the first pane to draw one does not ship it unnoticed. The fourth is a boundary rather than an
 untouched debt:
@@ -543,16 +653,17 @@ untouched debt:
 | `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
 | `.btn-danger:hover` | 3.79 |
 | `.tag-backend` on its tint | 4.46 |
-| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, on a page without `operate.css` | 4.04 / 4.21 / 4.17 |
+| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, on a page carrying neither scoped fix | 4.04 / 4.21 / 4.17 |
 
 The last row is the badge fix's own boundary and is recorded rather than dropped, because the
-darkened inks live in `operate.css` and the understand panes do not load it. Those two panes
-avoid the row rather than inherit it: a status badge on them goes inside a card, never loose on
-the page background, where it measures 4.67:1 or better. The row closes for everyone on the day
-the tokens themselves are darkened, which is the same day the three rules at the end of
-`operate.css` are deleted.
+darkened inks live in `operate.css` and in a rule scoped to two pages, so People and usage, Cloud
+costs and Settings carry neither. Those panes avoid the row rather than inherit it: a status badge
+on them goes inside a card, never loose on the page background, where it measures 4.67:1 or
+better. The row closes for everyone on the day the tokens themselves are darkened, which is the
+same day the three rules at the end of `operate.css` and the block at the end of `ops.css` are
+deleted together.
 
-Dark mode passes throughout and is untouched. The badge override is scoped to
+Dark mode passes throughout and is untouched. Both badge overrides are scoped to
 `[data-theme="light"]`, so the dark inks are the ones W1 shipped: over the same three surfaces
 and the same 14% tint, the lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200,
 and `.badge-info` is the next at 5.457. Every other pairing is 5.657 or better.
@@ -577,6 +688,10 @@ network. A local stub therefore has to be served from the same origin and port a
 files: one small server that serves `/ops/` and answers `/api/ops/*`, with the override set to
 that same origin. `python3 -m http.server` on its own serves the files but answers no API, so the
 sign-in form is as far as it goes.
+
+A stub therefore has to answer at least `/api/ops/auth/login`, `/api/ops/auth/session` and
+`/api/ops/auth/refresh` before any pane will render, because the shell holds every pane behind a
+confirmed session.
 
 The same stub is what makes the pane fixtures usable: it has to serve the fixture document too,
 because a cross-origin fetch for it would be refused by `connect-src` for the same reason a
