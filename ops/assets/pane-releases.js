@@ -161,9 +161,15 @@
     return (decimals ? value.toFixed(decimals) : String(Math.round(value))) + '%';
   }
 
+  /* Total by construction: every caller here renders "not reported" from null,
+     so a payload that sends a time as an object, an array, or anything else
+     the Date constructor would coerce through its own toString has to leave by
+     that door rather than by throwing. */
   function parseTime(iso) {
-    if (!iso) return null;
-    var t = new Date(iso).getTime();
+    if (typeof iso !== 'string' && typeof iso !== 'number') return null;
+    if (iso === '') return null;
+    var t;
+    try { t = new Date(iso).getTime(); } catch (e) { return null; }
     return isFinite(t) ? t : null;
   }
 
@@ -960,6 +966,7 @@
   var platformFilter = 'both';
   var lastData = null;
   var requestSeq = 0;
+  var currentRange = null;
   /* The range the newest request was issued for, set when the request goes out
      rather than when it comes back. lastData cannot stand in for this: it is
      still null while the first request is in flight, which is exactly the
@@ -1000,7 +1007,25 @@
       });
   }
 
-  var currentRange = null;
+  /* This pane's own control goes beside the shell's rather than into a second
+     bar underneath the first. The shell builds the filter bar before it asks a
+     pane for its contents, but it does not put the shell in the document until
+     afterwards, so the bar is not reachable while this runs and the append
+     waits for ops:ready.
+
+     That is the same small move OpsOperate.paneFilters makes for the operate
+     panes. It is written out here rather than reached for across operate.js,
+     because this page loads none of the rest of that file and a shared module
+     pulled in for six lines is a dependency it does not need. */
+  function paneFilters(nodes) {
+    function install() {
+      var bar = document.querySelector('.filterbar');
+      if (!bar) return;
+      nodes.forEach(function (n) { if (n) bar.appendChild(n); });
+    }
+    if (document.querySelector('.filterbar')) install();
+    else global.addEventListener('ops:ready', install, { once: true });
+  }
 
   /* The platform switch is a view of what has already been fetched, so it
      repaints rather than reloading. Both platforms are always requested,
@@ -1041,32 +1066,24 @@
     return b;
   }
 
-  var started = false;
-
-  function begin() {
-    if (started) return;
-    started = true;
-    content = document.getElementById('content');
-    if (!content) return;
-
-    var bar = shell.filterBar();
-    if (bar) {
-      bar.appendChild(platformControl());
-      bar.appendChild(h('div', { className: 'spacer', 'aria-hidden': 'true' }));
-      bar.appendChild(refreshControl());
-    }
+  /* The shell calls this once, with the pane's content region, after the
+     session is confirmed and the document has finished parsing. A pane with no
+     registration renders the not-built state, so there is no flag anywhere
+     claiming this pane is built: the fact is this file being on the page. */
+  shell.definePane('releases', function (host) {
+    content = host;
+    paneFilters([
+      platformControl(),
+      h('div', { className: 'spacer', 'aria-hidden': 'true' }),
+      refreshControl()
+    ]);
 
     currentRange = shell.filters().range;
     load(currentRange);
-  }
-
-  global.addEventListener('ops:ready', function (e) {
-    if (!e.detail || e.detail.pane !== 'releases') return;
-    begin();
   });
 
   global.addEventListener('ops:filters', function (e) {
-    if (!started) return;
+    if (!content) return;
     var range = e.detail && e.detail.range;
     /* Asked already, for this exact range, so nothing to do. The old test was
        "same range and we have data", which could not short circuit the very
@@ -1078,11 +1095,4 @@
     currentRange = range;
     load(currentRange);
   });
-
-  /* The shell dispatches ops:ready from a promise callback, and the parser is
-     free to run that callback while it is still fetching this file, so the
-     event can be gone before the listener above exists. OpsShell.ready() is
-     the same fact recorded rather than announced. begin() is idempotent, so
-     hearing it both ways is harmless. */
-  if (shell.ready()) begin();
 })(window);

@@ -154,13 +154,15 @@ What follows from wanting it this strict:
 - **No inline script.** The theme must be applied before first paint or navigating between panes
   flashes the wrong colours, so `assets/theme.js` is a blocking classic script in `<head>`
   rather than an inline snippet. No hash to keep in sync across eleven files.
-- **No inline style attributes written as markup.** Everything is a class. The two data-driven
-  widths, the rollout meter and the adoption bar, are the exception and are worth stating
-  precisely so nobody "simplifies" them into a break: script writes a custom property through
-  the CSSOM with `style.setProperty`, which does serialize into a `style` attribute in the DOM,
-  and the stylesheet turns the property into a width. That is legal because `style-src` governs
-  styles arriving as markup rather than programmatic CSSOM writes. `setAttribute('style', ...)`
-  would be blocked.
+- **No inline `style` attributes.** Everything that can be a class is a class. The handful of
+  lengths and colours that are genuinely data-driven, a bar segment's width, a skeleton block's
+  height, a legend swatch, App releases' rollout meter and its adoption bar, are set through
+  CSSOM on the element's `style` property by the pane's own script. That is a declaration made
+  from script rather than a `style` attribute in markup, so `style-src 'self'` allows it without
+  `'unsafe-inline'`, and every value set that way is a number this code computed or a fixed
+  internal token, never a string from the API. It is worth stating precisely so nobody
+  "simplifies" it into a break: the write does serialize into a `style` attribute in the DOM, and
+  `setAttribute('style', ...)` for the same value would be blocked.
 - **No `innerHTML` anywhere.** The shell is built as DOM with `textContent`, so nothing from the
   API, the querystring, or storage can become markup.
 - `connect-src 'self'` is present because this origin serves static files only; it allows no
@@ -194,19 +196,58 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     shell.js            pane registry, rail, top bar, filter bar, boot gate
     login.js            the sign-in page controller
+    operate.css         pane styling for the operate panes
+    operate.js          shared pane furniture: charts, drawer, confirm, states
+    alerts-model.js     the problems API in plain words, shared by two panes
+    pane-overview.js    Overview
+    pane-alerts.js      Problems
+    pane-awaiting-data.js  Happening now and What happened
+    pane-data.js        shared plumbing for the understand panes: source,
+                        formatting, states, charts
+    pane-analytics.js   People and usage
+    pane-spend.js       Cloud costs
     pane-releases.js    App releases
     pane-users.js       Look up a user
 ```
 
-The ten pane pages are byte-identical apart from `data-page`, `<title>`, and the one pane script
-a built pane loads. Everything else a pane is lives in the `PANES` registry in `shell.js`, so the
-rail cannot drift from the pages.
+A pane page carries the shell, and where the pane has been built, its own module. Everything a
+pane *is* lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages;
+everything a pane *shows* is registered by that module through `OpsShell.definePane`, and a pane
+with no module renders the not-built state. The shell waits for the document to finish parsing
+before it asks for a pane's contents, so which script finishes first cannot change what renders.
+
+Registration rather than a flag in the registry, because the thing that knows whether a pane is
+built is the pane's own module being on the page; a boolean in the registry could claim "built"
+on a page that loads nothing to build it.
 
 ## What this release does and does not do
 
-The shell, the sign in, and the design system shipped first. A pane that has not been built yet
-routes to a real page that says plainly which delivery wave builds it. Aria quality is deferred
-to its own project.
+The shell, the sign in, and the design system are built. Of the panes, **Problems** is complete:
+it reads the live problems and alert rules, takes a problem on, closes it with a reason, tunes a
+rule where the role allows it, and states whether the alerting is armed and where what it finds
+is sent. **Overview** is built for the part that has a source, which is the urgency question:
+the status ribbon and the needs-attention queue are real, and every entry opens the pane that
+owns the work.
+
+The rest of Overview, and the whole of **Happening now** and **What happened**, are not drawn.
+Their figures are being collected but nothing serves them to a page yet, so those pages say so in
+words instead of showing a zero. A tile reading zero and a tile with no pipeline behind it look
+identical, and that is the one thing an operations screen must never be.
+
+A read answers with at most 100 problems, worst first and then oldest, and there is no second
+page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
+which is the opposite of what a window ending today needs. When a page comes back full, both
+Overview and Problems say so, every count reads as "at least", and the two figures that cannot
+be salvaged, the 30 day false-alarm rate and the 30 day volume chart, say they cannot be worked
+out instead of showing a number that is quietly short.
+
+**People and usage** and **Cloud costs** are drawn in full: every state, every card, and the
+whole of the copy. Neither has a read API published yet, so on the live site both land on an
+honest "not reporting yet" state for the same reason Happening now and What happened do, and the
+section below says exactly what changes on the day their endpoints exist.
+
+**Settings** routes to a page that says plainly it is not built yet, in W5. Aria quality is
+deferred to its own project.
 
 **App releases** and **Look up a user** are built. Everything either of them shows comes from the
 operations API; neither holds any data of its own, and where the API answers with nothing the
@@ -253,34 +294,188 @@ set of constraints:
 
 The shared filter bar round trips through the querystring, so a pane reads a selection rather
 than inventing one. A pane listens on `window` for two events, both dispatched once the session
-is confirmed and the shell is in the document:
+is confirmed and the shell is in the document, so a listener added while `shell.js` is still
+booting cannot miss them:
 
 - `ops:ready`, carrying `{ pane, filters }`, which is the signal that `#content` exists.
 - `ops:filters`, carrying the selection, fired for the starting selection as well as for every
   change to it. `OpsShell.filters()` returns the same thing on demand.
 
-**A pane must not assume it heard `ops:ready`.** Both events are dispatched from a promise
-callback, and while the parser is waiting for a pane's own script file to arrive it is free to
-run that callback, so the event can be over before the listener exists. `OpsShell.ready()`
-returns the same `{ pane, filters }` once the shell is up, and a pane starts from whichever of
-the two reaches it first. An earlier version of this file claimed the event could not be missed;
-it can, and this is how.
-
-A pane that draws its own contents is marked `built` in the registry, which is what stops the
-not-built-yet card being drawn under it. `OpsShell.filterBar()` returns the rendered filter bar
-so a pane can put its own controls beside the shared ones instead of growing a second bar.
-
-Per-pane filters arrive with the pane that needs them.
+Per-pane filters arrive with the pane that needs them. App releases adds a Platform switch beside
+the shared controls rather than growing a second bar underneath the first: its module appends to
+the rendered `.filterbar`, deferring to `ops:ready` when the bar is not in the document yet,
+which is the same small move `OpsOperate.paneFilters` makes for the operate panes. It is written
+out locally rather than reached for across `operate.js`, because App releases loads none of the
+rest of that file and a whole shared module pulled in for six lines is a dependency the pages do
+not need.
 
 The scope control follows the rule the mocks encode: All, Mobile and Coaches Web appear only
 where a per-app split is real. Cloud costs says so inline, because cloud spend is billed per
 piece of infrastructure rather than per app and splitting a shared bill by client would be an
 invented number.
 
+That rule now binds a built pane to what its own reads can carry, through the registry's
+`filterNote`. Overview declares no scope, range or environment control, because everything it
+draws is the state of things right now, across every app, in production; Problems keeps its
+window, which is applied to the problems that were read and disclosed in the count line under
+the list, and drops the environment control, because a problem carries no environment to filter
+on. A control that moves and changes nothing is worse than no control: it leaves Staging showing
+in the bar over production figures. Both say so where the control would have been, and both get
+their controls back when something can carry them.
+
+People and usage and Cloud costs keep the controls the registry gives them, and that is the same
+rule rather than an exception to it. With no read API published they draw no figure at all, so
+there is no figure a selection can sit over and be silently wrong about; what a control does
+today is repaint the same "not reporting yet" state, which is honest in every position. The
+selection is what the query will carry on the day an endpoint lands, and if one ships able to
+answer only some of them, the ones it cannot carry become a `filterNote` in the same commit that
+turns the endpoint on.
+
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
 rather than a destination that silently vanishes. The server enforces this independently; the
 client renders a fact, it does not decide one.
+
+## The two understand panes
+
+### Where their figures come from, and what happens while nothing serves them
+
+Neither pane's read API is published yet. The pane's data source therefore carries a **null**
+endpoint rather than a guessed path, and a null endpoint means no request is made and the pane
+says so. That is a deliberate choice with a visible consequence: today both panes render an
+honest "not reporting yet" state on the live site, and the day the endpoint exists it is one
+line here and nothing else on the pane changes.
+
+Guessing a path instead would have been worse in a specific way. A pane that calls a route
+nobody has written gets a 404, and a 404 renders as a fault. The dashboard would then be
+reporting that the platform is broken when the truth is that a piece of it has not been built,
+and those are the two things every state on this dashboard exists to keep apart.
+
+The panes hold no figures of their own. Every label that names a service, a version, a group,
+or a resource arrives in the response; nothing operational is a literal in these files. What is
+static is the layout, the state copy, and the glossary, because a definition is not a
+measurement.
+
+### The response the panes read
+
+Both read the transport's envelope, so the pane sees `payload.data`.
+
+**Cloud costs** expects `asOf`, `publishLagHours`, `staleness`, `currency`, `period`, `total`,
+`forecast`, `budget`, a `views` object holding any of `category`, `resourceGroup` and `service`
+as `{ label, hint, rows }`, `daily`, `unitCosts`, `reconciliation`, and `anomalies`.
+`availability.state` is `ready`, `not_published`, or anything else, which reads as "no source
+is configured".
+
+**People and usage** expects `asOf`, `coverage`, `apps`, `cohorts`, `funnel`, and `features`.
+`availability.state` is `ready` or `insufficient`.
+
+Two conventions run through both, and both exist so a figure means the same thing on the pane
+that it meant in the data:
+
+- **Money is integer micro-units of the billing currency.** The pane divides once, at the
+  moment of display. This is what lets Cloud costs *add up* its rows and compare the sum with
+  the billed total exactly; a float sum over a few hundred daily rows does not reproduce an
+  invoice, and a near miss is indistinguishable from a real gap. The comparison is therefore
+  finer than the display: a gap smaller than one whole unit of the last decimal place shown is
+  named in words rather than printed, because printing it would put three figures on screen that
+  do not visibly differ by the amount the sentence beside them claims. The wording names no
+  currency unit, since the billing currency is whatever the response says it is.
+- **A rate is basis points, and it arrives with the denominator it was computed over.** No
+  ratio is precomputed as a percentage, because a stored percentage is only correct for the
+  exact window it was computed for.
+- **A colour is a token name (`s1` to `s6`, or `muted` for a comparison line), never a colour
+  value.** A raw colour from the response is the one way a figure can end up unreadable on a
+  theme it was not picked against: brand cyan at full brightness measures about 1.3:1 on the
+  light theme's white card. Anything outside that closed set falls back to the default series
+  token, so the answer for both themes stays in the stylesheet, where it was measured.
+- **A link is a relative path on this origin.** An `href` in the response is refused if it
+  carries a scheme, if it is protocol-relative, if it holds a control character or whitespace
+  anywhere, or if resolving it against the current page lands on another origin. The last two
+  are what make the first two hold: the URL parser strips tabs and newlines before it reads a
+  scheme, so `java<TAB>script:` reaches the browser as `javascript:`, and it treats a backslash
+  as a path separator, so `/\evil.example/x` resolves cross-origin while looking relative. A
+  refused link renders its label as plain text, so the sentence it belonged to is intact and
+  only the navigation is withheld. The pages' content policy would already stop a `javascript:`
+  URL from running; this keeps the guarantee next to the code that builds the link rather than
+  in a meta tag somebody may loosen later.
+- **A money figure is an object carrying integer `micros`, and nothing else counts as one.**
+  A scalar `total: 0`, an array, or a string is read as no figure rather than as zero. On a
+  pane about money a zero is a claim, and it is the one claim a missing field must not be
+  turned into. Grouping rows read through the same rule, so a row whose `micros` is a string,
+  `null`, `NaN` or `Infinity` makes the reconciliation *unavailable*: the pane says the rows
+  cannot be checked against the bill rather than claiming they add up exactly with the
+  unreadable row silently counted as zero, and rather than reporting a gap that is really a
+  parse failure.
+- **A timestamp is an ISO string in one of three shapes, and anything else is absent.**
+  `YYYY-MM-DD`, `YYYY-MM-DD[T ]HH:MM[:SS[.digits]]` (read as the UTC the pipeline meant, with
+  fractional seconds of any length), and the date-time shape carrying `Z` or a `+/-HH:MM` or
+  `+/-HHMM` offset; the designator belongs to the date-time shape only. A `Date` instance is
+  accepted too.
+  Two normalisations run before the shape is matched, and both are narrow on purpose. A single
+  space between the date and the time stands in for `T`; any later space leaves a shape none of
+  the three match. And a lowercase `t` in that separator position, or a lowercase trailing `z`,
+  is folded to uppercase, because the shapes the engine is required to read as UTC are the
+  uppercase ones, so matching a lowercase designator and then passing it through unchanged would
+  hand exactly the strings this guard exists for back to engine-decided parsing. The fold is
+  anchored to those two positions only: it does not touch a lowercase letter anywhere else, so
+  `2026-07-31Tz06:00` and the like still fail the shape and are absent.
+  Everything else, including `null`, `0` and strings the language would happily parse such as
+  `Jul 31 2026 06:00` or `12/25/2026`, renders the "the time of this reading was not reported"
+  sentence. The shape is checked before `new Date` sees the string, not after: `new Date(null)`
+  is the epoch rather than an invalid date and would print 1 Jan 1970 with an age of half a
+  million hours, and a non-ISO string is parsed as *local* time, which formatted back out with
+  `getUTC*` and labelled UTC gives every operator a different stamp for the same payload and,
+  either side of the date line, a different day.
+
+### Two rules the panes enforce rather than assume
+
+**A rate whose denominator is under 50 is not drawn.** The floor is applied on the surface, to
+every rate the panes draw *over a group of people*, whether it arrives as a numerator and a
+denominator or already computed, and whether the payload labels it a rate or a decimal: what
+makes a figure subject to it is the denominator travelling with it, not the label. A rate that
+arrives with no denominator at all is not drawn either, because a base nobody reported cannot
+be known to clear the floor. With a group smaller than 50, one person moves the figure by
+several points and the reader has no way to tell that from a change. Every suppressed figure
+says the size of the group it was refused for, or says plainly that the size is unknown, and
+offers the raw counts, which are always safe to show.
+
+Two figures are deliberately outside the floor, because neither is a rate over people: coverage,
+which is the share of an app version's own sessions that report an event, and unit cost, which
+is money. Both are labelled for what they are, and coverage that was never measured says so
+rather than drawing a percentage.
+
+**Every cost figure carries the moment it was true.** Cost data is never live; billing publishes
+on a cycle. The "as of" stamp is on every state that shows a figure, including the ones that
+show no total, and a reading that is behind is labelled as behind, with the reason, rather than
+quietly replaced by nothing. Losing the number is worse than knowing it is a few hours old.
+
+Two details that are easy to get wrong and are therefore fixed in code. A timestamp with no
+timezone designator is read as the UTC the pipeline meant, not as the operator's local time,
+because parsing it locally and then formatting it back out as UTC produces a stamp that is
+wrong by the reader's own offset. And a reading stamped *ahead* of now is reported as two
+clocks disagreeing rather than clamped to fresh, since a future reading is the one kind of
+staleness nobody thinks to look for.
+
+**People who have not turned on usage analytics appear in no figure here.** That is not a filter
+this client applies. Their activity is never recorded in the first place, so there is nothing on
+this side to leave out, and nothing to get wrong.
+
+### Looking at the states before the data exists
+
+Because neither read API is published, the ready, insufficient, and stale renderings would
+otherwise be unreviewable until it is, which is the wrong way round: the rendering is what is
+being reviewed now. So a pane can be pointed at a same-origin JSON document holding one response
+envelope, by setting `ops-pane-fixture-analytics` or `ops-pane-fixture-spend` in `localStorage`
+to its path. Honoured only when the page itself is served from a loopback address, exactly like
+the API base-url override, so a deployment on the real origin can never read one, and only when
+the stored value is a relative path, so same-origin is enforced by the code that reads it rather
+than only by the page's `connect-src`.
+
+The pane that has no data yet says so, and says it without a promise it cannot keep: the state
+tells you the reporting behind it is unbuilt and that the release which builds it points the
+pane at it. It does not claim figures will appear "without another release", because both
+`endpoint` values are `null` in these files and a backend publishing a route would change
+nothing on its own.
 
 ## Departures from the approved mocks
 
@@ -313,60 +508,165 @@ client renders a fact, it does not decide one.
    became a real `<input type="checkbox" role="switch">` so that its `<label>` is clickable.
 8. **Real semantics** where the mock used inert markup: headings are `h1` to `h4` in order and
    take their size from a class, tabs are a `role="tablist"` with arrow-key support, and both
-   overlays trap focus, close on Escape, restore focus, and make the background inert.
-9. **The light theme's `--ok`, `--warn`, `--crit`, `--s1` and `--s2` are darkened** by between
-   4 and 11 percent. Each is drawn as text on a tint mixed from itself, and at the mock's values
-   that pairing measured between 3.92:1 and 4.34:1. See the contrast note below. Dark mode is
-   untouched, because it already passed.
-10. **`.btn-primary:hover` restates its own background.** Without it `.btn:hover` wins on
-   specificity and repaints a primary button with the plain hover fill while `.btn-primary`
-   keeps the inverse text colour: white on pale grey, 1.2:1, so the label vanished under the
-   pointer that was about to click it.
+   overlays trap focus, close on Escape, restore focus, and make the background inert. Overlays
+   stack, and the stack has two rules that matter to a keyboard user. Only the top overlay acts
+   on a key, so one Escape closes the confirmation and leaves the drawer under it. And an overlay
+   asked to close while something is open above it comes down when it is the top again, rather
+   than restoring the background from underneath an open dialog. A confirmation whose action is
+   in flight refuses Escape and the scrim for that window, the same window in which its buttons
+   are disabled, and re-arms all three together if the action fails.
+9. **The per-page `<style>` blocks the mock gave the understand panes became classes**, because the
+   pages allow no inline style. Two consequences worth naming:
+   - Lengths that come from data (a bar's width, a cell's tint, a swatch's colour) are set
+     through the CSSOM, never as a style attribute. That is not a workaround, it is the only
+     path the policy leaves open: `style-src 'self'` refuses `setAttribute('style', ...)` and
+     always has, while a CSSOM property assignment is not an inline style declaration at all.
+     Anything passed through the shell's `h()` helper as a `style` key would be silently
+     dropped, which is worth knowing before writing the next pane.
+   - The mock's `.seg` view switchers became real tablists. A control that swaps the panel
+     beneath it is a tab pattern rather than a toggle, so it is driven by `aria-selected` and
+     inherits the shell's arrow, Home and End keys.
+10. **A `[hidden] { display: none !important }` rule.** The user-agent rule for `hidden` is a
+    bare attribute selector, so any class carrying `display` outranks it and the hidden thing
+    stays on screen. Every collapsible block and every tab panel on these panes is switched
+    with the attribute, so the rule is load bearing rather than defensive.
+11. **Callout fills are mixed into `--surface-1` rather than into transparency.** This closes
+    two of the contrast debts recorded below; see the note under that table.
+12. **A card head wraps below 860px**, dropping its view switcher onto its own line instead of
+    squeezing the title into a column a word wide.
+13. **`.btn-primary:hover` restates its own background.** Without it `.btn:hover` wins on
+    specificity and repaints a primary button with the plain hover fill while `.btn-primary`
+    keeps the inverse text colour: white on pale grey, 1.2:1, so the label vanished under the
+    pointer that was about to click it. This is not a pane-scoped fix and it is not a token
+    change; the sign-in button is the one it was found on.
+14. **The two ship and support panes darken the light-theme status ink**, scoped to those two
+    pages. Same debt as item 11's neighbours and the same shape of fix as `operate.css`; see the
+    second half of the note below.
 
-Two things the panes do that the design rules here would otherwise seem to forbid, both
-deliberate:
+### Known contrast debt, inherited
 
-- **A width that is data is set as a CSS custom property through the CSSOM**, and the stylesheet
-  turns it into a width. The no-inline-style rule exists because the CSP forbids a `style`
-  attribute in markup; a property set through the CSSOM is explicitly outside what `style-src`
-  governs, and is the only way to draw a rollout meter at the fraction the store reports.
-- **Nothing else moved.** The panes still build every node with `textContent`, so no value from
-  the API can become markup.
+Measured across both themes against composited backgrounds. **Every pairing rendered by the
+panes built so far passes in both themes**, text at 4.5:1 or better and control boundaries at
+3:1 or better. That was verified again for the two understand panes across all four of their
+states, 68 pairings in total, worst case 4.67:1 in light and 5.99:1 in dark.
 
-### Contrast, and the debt that is left
+Part of that debt has now come due, and three separate fixes have landed against it. Which pages
+get which follows from where each one lives, so it is worth being explicit: `ops.css` is on every
+page, `operate.css` is on the four operate pages only, and the third fix is in `ops.css` but
+scoped by a selector to the two ship and support pages.
 
-Measured across both themes against composited backgrounds. **Every pairing these pages render
-passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or better.
+**The callout fix is in `ops.css`, so it reaches every page.** The warning and critical callout
+inks measured 4.41:1 and 4.26:1 in the light theme *only when the callout sat directly on the
+page background*, which is darker than a card; on a card they passed. A translucent tint takes
+its final colour from whatever is behind it, so the same component had two different ratios
+depending on where it was put. The fix mixes the tint into `--surface-1` instead of into
+transparency, which makes the fill, and therefore the ratio, independent of the surface
+underneath. They now measure 4.94:1 and 4.74:1. No approved hue changed, and dark is unaffected.
 
-W1 recorded a set of inherited failures in the light theme and left them to the first pane that
-would draw one. App releases and Look up a user draw most of them, so those are closed here by
-darkening the hues themselves. Light-theme, status text on a tint mixed from itself, worst of
-the four surfaces the stylesheet composites it over:
+**The badge fix is in `operate.css`, so it reaches the operate panes only.** They are the first
+to draw a status badge loose on the page background, and `operate.css` darkens the three
+light-theme inks, scoped to `[data-theme="light"]` and to the badge's ink alone.
 
-| Pair | Was | Now |
-|---|---|---|
-| `.badge-ok`, `.flagchip.is-ok`, `.verdict-better` | 4.10 | 4.64 |
-| `.badge-warn`, `.flagchip.is-warn`, `.reveal-note` | 4.07 | 4.63 |
-| `.badge-crit`, `.flagchip.is-crit`, `.nav-count.is-crit` | 3.92 | 4.62 |
-| `.tag-mobile` | 4.12 | 4.64 |
-| `.tag-coaches` | 4.34 | 4.67 |
-| `callout-warn` / `callout-crit` ink over the page background | 4.41 / 4.26 | 4.98 / 5.01 |
+The ratios are computed rather than eyeballed, and are reproducible from the shipped tokens. The
+badge tint is semi-transparent, so the background that decides is the tint composited over
+whatever the badge sits on: `composited = 0.11 x status token + 0.89 x parent surface` in sRGB,
+because `--tint` is 11% in the light theme, then the WCAG 2 relative-luminance ratio. These panes
+put a badge on `--surface-1` `#FFFFFF` (a card, the alert list, the drawer), on `--surface-2`
+`#F6F8FB` (an alert row on hover, the runbook card) and on `--bg` `#EEF2F7` (the filter bar). The
+page is the darkest of the three, so it is the one that has to clear 4.5:1.
 
-What is left, drawn by nothing in this release and so still byte-identical to the mock:
+| Badge | Ink was | Ink now | On a card | On a hovered row | On the page |
+|---|---|---|---|---|---|
+| `.badge-crit` | `#C8322B` | `#AE2C25` | 4.505 to 5.580 | 4.247 to 5.260 | 4.030 to 4.991 |
+| `.badge-warn` | `#9A5B06` | `#885005` | 4.665 to 5.652 | 4.399 to 5.331 | 4.176 to 5.060 |
+| `.badge-ok` | `#047857` | `#046B4D` | 4.695 to 5.591 | 4.429 to 5.275 | 4.205 to 5.008 |
+
+All three now clear 4.5:1 on every surface W2 draws them on. Before, only the card cleared it and
+only just. The two variants these panes draw but the fix does not touch already pass: `.badge-info`
+is 5.649 on a card and 5.058 on the page, and the plain `.badge` is 6.82 on a card.
+
+An earlier version of this section recorded 4.15 / 4.22 / 4.27 before and 4.55 or better after.
+Neither figure reproduces from the tokens, and the before figures also disagreed with W1's own
+record of 4.04 / 4.21 / 4.17 for crit / ok / warn over the page background, which does match the
+table above. The palette owner acts on these numbers, so they need to be recomputable.
+
+That is a patch and not the fix. The base status tokens are also the dots, the chart series, the
+meters and the callout borders, all of which pass where they are used and all of which are shared
+with the panes other waves are building; darkening the tokens themselves is a decision about the
+approved palette and belongs to whoever owns it. When it happens, the three rules at the end of
+`operate.css` become redundant and should be deleted.
+
+**The third fix is the same shape, for App releases and Look up a user.** Those two pages load no
+stylesheet of their own, so it sits at the end of `ops.css` and is scoped by the page rather than
+by the file: `[data-theme="light"] body:is([data-page="releases"], [data-page="users"])`. Nothing
+outside those two pages is restyled by it. The three badge inks are byte-identical to the three
+in `operate.css` on purpose; a second set of values would mean a critical badge was one red on
+Problems and a different red on Look up a user, which is worse than the debt.
+
+These two panes never put a tinted status loose on the page background, so the surface that
+decides is a different one: the selected match row, which is `--brand-dim` over a card and
+composites to `#E3F3F6`. They also draw one pairing that composites twice, a state badge inside a
+`.build` chip already tinted with the same hue, and that is the worst pairing on either pane.
+Same formula as above, with `--tint-soft` 9% for a platform tag and no tint at all where the ink
+goes straight onto a card.
+
+| Pair | Ink was | Ink now | On a card | On a hovered row | On a selected row |
+|---|---|---|---|---|---|
+| `.badge-crit`, `.flagchip.is-crit` | `#C8322B` | `#AE2C25` | 4.494 to 5.566 | 4.241 to 5.253 | 3.976 to 4.925 |
+| `.badge-warn`, `.flagchip.is-warn` | `#9A5B06` | `#885005` | 4.668 to 5.656 | 4.408 to 5.341 | 4.111 to 4.982 |
+| `.badge-ok` | `#047857` | `#046B4D` | 4.688 to 5.583 | 4.428 to 5.274 | 4.139 to 4.930 |
+| `.tag-mobile` | `#0E7490` | `#0D6880` | 4.716 to 5.586 | 4.457 to 5.280 | 4.196 to 4.971 |
+| `.tag-coaches` | `#7C3AED` | `#7434DF` | 4.978 to 5.560 | 4.706 to 5.257 | 4.390 to 4.903 |
+
+And the double-tinted pairing, on a card: `.badge-crit` inside `.build.is-blocked` 3.852 to
+4.771, `.badge-ok` inside `.build.is-live` 4.059 to 4.834. 4.771 is the worst figure either pane
+produces after the fix, and 3.852 was the worst before it. Of the 36 pairings the two panes draw
+with a status token as text, 17 were below 4.5:1 and none is now.
+
+Every figure above is the arithmetic, so it recomputes from the tokens. The same pairings were
+also measured against what the browser actually composites, by walking each element's ancestor
+background chain: those agree to within 0.03 (the engine mixes at a precision the hex round trip
+here does not keep), and the worst rendered pairing on either pane is 4.778. Deleting the five
+rules at run time and re-measuring brings back exactly five failures, worst 3.970, which is what
+makes them load bearing rather than decorative. The lowest rendered figure on App releases is not
+in the table at all: it is `--text-3` on the tinted `.build` chip at 4.586, which passes untouched
+and is recorded so the next person to darken a chip knows how little room is left.
+
+Three of those rows already passed and are moved anyway: `.verdict-worse` 5.321 to 6.590,
+`.verdict-slightly-worse` and `.reveal-note` 5.422 to 6.570, `.verdict-better` 5.484 to 6.531.
+`.verdict-worse` and `.badge-crit` are drawn in adjacent cells of the same release-health row, and
+two reds a shade apart in one row read as a mistake rather than as a palette.
+
+Deliberately untouched on these two pages, with the worst figure each reaches on them:
+`.badge-info` and `.flagchip.is-info` 4.837 inside a `.build` chip and 4.998 on a selected row,
+`.badge-brand` 4.825, the plain `.badge` 6.821 on its own opaque fill, `.masked` 4.706,
+`--text-3` on a selected row 4.771, and `.field-error` 5.321. `.field-error` has a second reason:
+the sign-in page draws it too, and darkening it under a page scope would give one component two
+inks across pages for no contrast gain.
+
+What is left. The first three rows are drawn by nothing built so far, and are recorded so that
+the first pane to draw one does not ship it unnoticed. The fourth is a boundary rather than an
+untouched debt:
 
 | Pair | Light ratio |
 |---|---|
-| `.btn-danger` on its tint over a card | 4.62 after the `--crit` change, `:hover` 3.90 |
-| `.tag-backend` (`--s3`) on its tint | 3.98 |
-| `.tag-watch` (`--s4`) on its tint | 4.32 |
+| `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
+| `.btn-danger:hover` | 3.79 |
+| `.tag-backend` on its tint | 4.46 |
+| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, on a page carrying neither scoped fix | 4.04 / 4.21 / 4.17 |
 
-`--s3` to `--s6` are left alone on purpose: the chart series they otherwise carry are graphical
-rather than text, so the pane that first draws one of them as text owns the same decision this
-one did.
+The last row is the badge fix's own boundary and is recorded rather than dropped, because the
+darkened inks live in `operate.css` and in a rule scoped to two pages, so People and usage, Cloud
+costs and Settings carry neither. Those panes avoid the row rather than inherit it: a status badge
+on them goes inside a card, never loose on the page background, where it measures 4.67:1 or
+better. The row closes for everyone on the day the tokens themselves are darkened, which is the
+same day the three rules at the end of `operate.css` and the block at the end of `ops.css` are
+deleted together.
 
-One thing colour still carries alone: the dot on a timeline entry in Look up a user, which
-repeats a severity the entry's own words already state. It is decoration over a label, not the
-label.
+Dark mode passes throughout and is untouched. Both badge overrides are scoped to
+`[data-theme="light"]`, so the dark inks are the ones W1 shipped: over the same three surfaces
+and the same 14% tint, the lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200,
+and `.badge-info` is the next at 5.457. Every other pairing is 5.657 or better.
 
 ## Working on it locally
 
@@ -392,3 +692,7 @@ sign-in form is as far as it goes.
 A stub therefore has to answer at least `/api/ops/auth/login`, `/api/ops/auth/session` and
 `/api/ops/auth/refresh` before any pane will render, because the shell holds every pane behind a
 confirmed session.
+
+The same stub is what makes the pane fixtures usable: it has to serve the fixture document too,
+because a cross-origin fetch for it would be refused by `connect-src` for the same reason a
+cross-origin API call would be.

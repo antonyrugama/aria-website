@@ -126,10 +126,18 @@
   var TONE_ICON = { ok: 'check', warn: 'warn', crit: 'warn', info: 'info' };
 
   /* Field keys that are health data. Rule 4 puts these out of reach at every
-     role, and the API is supposed to send them with reveal 'never'. This list
-     is the client half of that: a key on it gets no control and is never
-     printed in the clear, whatever the payload says. It is a floor under the
-     server's decision rather than a replacement for it. */
+     role, and the operations API is what decides which fields those are: it is
+     supposed to send every one of them with reveal 'never'.
+
+     This list is a floor under that decision and not a second authority, and
+     the difference is worth being exact about because the copy on the page has
+     to be true of the weaker of the two claims. It is deliberately not
+     exhaustive and cannot be: a health field whose key is not on it is refused
+     by the API's own 'never', which is the mechanism that actually holds. What
+     the list adds is that a key on it gets no control and is never printed in
+     the clear whatever the payload says, so a server that got rule 4 wrong for
+     one of these could not make this page the place it went wrong. Nothing on
+     screen claims more than that. */
   var HEALTH_KEYS = {
     weight: 1, height: 1, bodyFat: 1, body_fat: 1,
     injury: 1, injuries: 1, injuryHistory: 1, injury_history: 1,
@@ -169,9 +177,19 @@
     } catch (e) { return null; }
   }
 
+  /* Total by construction. Every caller renders "not reported" from null, and
+     one of them is the reveal expiry, where a throw would be a privacy bug
+     rather than a formatting one: it would land after the value was already on
+     screen and before the timer was armed and the entry was pushed onto the
+     re-mask registry, leaving a revealed field that nothing would ever hide.
+     So a time that arrives as an object, an array, or anything else the Date
+     constructor would coerce through its own toString leaves by the null door.
+     A string or a number is the only shape the three routes document. */
   function parseTime(iso) {
-    if (!iso) return null;
-    var t = new Date(iso).getTime();
+    if (typeof iso !== 'string' && typeof iso !== 'number') return null;
+    if (iso === '') return null;
+    var t;
+    try { t = new Date(iso).getTime(); } catch (e) { return null; }
     return isFinite(t) ? t : null;
   }
 
@@ -278,13 +296,20 @@
      Looking identical either way would make the promise unfalsifiable, so this
      returns a warning rather than nothing. */
   function recordingNotice(recorded, what) {
+    /* what names the thing that was recorded, and both sentences are built
+       from it. The confirmed branch used to be the word "lookup" hard coded,
+       so opening an account, which is its own access record, was reported as
+       "This lookup is on the record" on the column beside the matches. */
+    var subject = what || 'this request';
+    var Subject = subject.charAt(0).toUpperCase() + subject.slice(1);
+
     if (!recorded) {
       var warn = h('div', { className: 'callout callout-warn' });
       warn.appendChild(icon('warn'));
       var wbody = h('div');
       wbody.appendChild(h('strong', { text: 'No record was confirmed.' }));
       wbody.appendChild(document.createTextNode(
-        ' The operations API answered ' + (what || 'this request') + ' without confirming that it ' +
+        ' The operations API handled ' + subject + ' without confirming that it ' +
         'wrote an access record. It may still have written one. Treat this as unrecorded until ' +
         'the access record shows otherwise.'
       ));
@@ -295,7 +320,7 @@
     var box = h('div', { className: 'callout callout-info' });
     box.appendChild(icon('lock'));
     var body = h('div');
-    body.appendChild(h('strong', { text: 'This lookup is on the record.' }));
+    body.appendChild(h('strong', { text: Subject + ' is on the record.' }));
     var parts = [];
     if (recorded.at) parts.push('at ' + (dateTime(recorded.at) || recorded.at));
     if (recorded.actor) parts.push('by ' + recorded.actor);
@@ -598,8 +623,17 @@
        the owner gate below. Only an explicit false unmasks a field now, and
        an entry that carries a mask as well is contradictory rather than
        unmasked, so it is read as masked too. A health key is never unmasked
-       here whatever the payload says. */
-    var unmaskedByDesign = field.masked === false && !field.maskedValue && !health;
+       here whatever the payload says.
+
+       The mask half of that is a test of presence, not of truthiness. What
+       makes an entry contradictory is carrying a maskedValue at all beside
+       masked: false, and an empty string is carrying one: it is a mask the API
+       built and got wrong, which is a reason to trust the entry less rather
+       than a reason to print the real value. A falsy test read `maskedValue:
+       ""` as no mask and unmasked the field. */
+    var carriesMask = Object.prototype.hasOwnProperty.call(field, 'maskedValue') &&
+      field.maskedValue !== null && field.maskedValue !== undefined;
+    var unmaskedByDesign = field.masked === false && !carriesMask && !health;
 
     var masked = h('span', {
       className: 'masked',
@@ -748,28 +782,46 @@
         var out = (payload && payload.data) || {};
         closeForm(false);
 
-        shown.textContent = out.value === null || out.value === undefined ? 'not reported' : String(out.value);
-        shown.classList.remove('hidden');
-        masked.classList.add('hidden');
-        hideBtn.classList.remove('hidden');
-        revealBtn.classList.add('hidden');
-
         /* The window is the server's to choose and this file's to enforce. A
            response that carries no expiresAt, or one that cannot be read, does
            not buy an indefinite reveal: the ceiling applies and the note says
            that the page picked it. A window longer than the cap is trimmed to
            the cap for the same reason, because a value still on screen an hour
-           later has not un-revealed itself in any sense that matters. */
+           later has not un-revealed itself in any sense that matters.
+
+           Worked out before anything is put on screen, and deliberately so.
+           Every step between the value appearing and the timer being armed is
+           a step in which a throw would leave a revealed field with no expiry
+           and outside the re-mask registry, which is the one failure on this
+           pane that cannot be recovered from by closing the drawer. parseTime
+           is total, so this is belt as well as braces. */
         var expiresAt = parseTime(out.expiresAt);
         var serverSaid = expiresAt !== null;
         var ms = serverSaid
           ? Math.max(0, Math.min(expiresAt - Date.now(), REVEAL_MAX_MS))
           : REVEAL_CEILING_MS;
 
-        note.textContent = serverSaid
+        /* The reveal writes its own access record, and the response says
+           whether it did. Claiming otherwise in the announcement while the
+           drawer behind it warns that nothing was confirmed is the same
+           contradiction the lookup callout exists to avoid, so the sentence on
+           screen and the one a screen reader hears are both built from it. */
+        var onRecord = !!out.recorded;
+        var noteText = serverSaid
           ? 'Hides itself in ' + countdownLabel(ms)
           : 'Hides itself in ' + countdownLabel(ms) + ', a limit this page set because the ' +
-            'response did not give one. Recorded by field name.';
+            'response did not give one.';
+        noteText += onRecord
+          ? ' Recorded by field name.'
+          : ' The operations API did not confirm a record for it. Treat it as unrecorded.';
+
+        shown.textContent = out.value === null || out.value === undefined ? 'not reported' : String(out.value);
+        shown.classList.remove('hidden');
+        masked.classList.add('hidden');
+        hideBtn.classList.remove('hidden');
+        revealBtn.classList.add('hidden');
+
+        note.textContent = noteText;
         note.classList.remove('hidden');
         timer = global.setTimeout(function () {
           hide();
@@ -779,7 +831,9 @@
         entry = { hide: hide };
         revealed.push(entry);
         hideBtn.focus();
-        shell.announce(field.label + ' revealed and recorded');
+        shell.announce(onRecord
+          ? field.label + ' revealed and recorded'
+          : field.label + ' revealed, with no record confirmed');
       }).catch(function (err) {
         dropPending(token);
         if (token.cancelled) return;
@@ -827,9 +881,15 @@
 
     var foot = h('div', { className: 'card-foot' });
     foot.appendChild(icon('lock'));
+    /* Says what the weaker of the two guarantees says. Which fields count as
+       health data is the operations API's call, and the client's key list is a
+       floor under it rather than the authority, so the sentence names the API
+       rather than implying this page holds the definitive list. */
     foot.appendChild(h('span', {
-      text: 'Weight, injuries, journal entries, and messages are never shown here at all. ' +
-        'There is no button on this page that would reveal them.'
+      text: 'Weight, injuries, journal entries, and messages are never shown here at all, and ' +
+        'there is no button on this page that would reveal them. Which fields count as health ' +
+        'data is decided by the operations API; this page keeps its own list of health keys ' +
+        'underneath that decision and refuses those whatever a payload says.'
     }));
     card.appendChild(foot);
     return card;
@@ -1441,11 +1501,17 @@
          the lookup gets is reported here. detail.recorded was declared in the
          contract and never read, which meant a response that confirmed nothing
          looked exactly like one that did. */
-      col.appendChild(recordingNotice(detail.recorded, 'this account'));
+      col.appendChild(recordingNotice(detail.recorded, 'opening this account'));
       col.appendChild(summaryCard(detail, function () { openDrawer(detail); }));
       col.appendChild(activityCard(detail));
       col.appendChild(supportCard(detail));
-      shell.announce('Account ' + detail.reference + ' opened and recorded');
+      /* The same fact the callout directly above this reports. Announcing
+         "opened and recorded" over a warning that says no record was confirmed
+         would leave a screen reader with the one version of events the page
+         has just said it cannot vouch for. */
+      shell.announce(detail.recorded
+        ? 'Account ' + detail.reference + ' opened and recorded'
+        : 'Account ' + detail.reference + ' opened, with no record confirmed');
     }).catch(function (err) {
       if (mine !== seq) return;
       var col = document.getElementById('accountColumn');
@@ -1465,16 +1531,14 @@
     });
   }
 
-  var started = false;
-
-  function begin() {
-    if (started) return;
-    started = true;
-    content = document.getElementById('content');
-    if (!content) return;
-
+  /* The shell calls this once, with the pane's content region, after the
+     session is confirmed and the document has finished parsing. A pane with no
+     registration renders the not-built state, so there is no flag anywhere
+     claiming this pane is built: the fact is this file being on the page. */
+  shell.definePane('users', function (host) {
+    content = host;
     scope = shell.filters().scope || 'all';
-    content.textContent = '';
+
     var stack = h('div', { className: 'stack' });
     stack.appendChild(privacyBar());
     stack.appendChild(searchCard(runLookup));
@@ -1483,15 +1547,10 @@
     resultRegion.appendChild(idleState());
     stack.appendChild(resultRegion);
     content.appendChild(stack);
-  }
-
-  global.addEventListener('ops:ready', function (e) {
-    if (!e.detail || e.detail.pane !== 'users') return;
-    begin();
   });
 
   global.addEventListener('ops:filters', function (e) {
-    if (!started || !e.detail) return;
+    if (!content || !e.detail) return;
     var next = e.detail.scope || 'all';
     if (next === scope) return;
     scope = next;
@@ -1524,10 +1583,4 @@
       closeDrawer();
     }
   });
-
-  /* The shell dispatches ops:ready from a promise callback, which the parser
-     can run while it is still fetching this file, so the event can be gone
-     before the listener above exists. OpsShell.ready() is the same fact
-     recorded rather than announced, and begin() is idempotent. */
-  if (shell.ready()) begin();
 })(window);
