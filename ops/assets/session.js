@@ -54,7 +54,11 @@
   var ACCESS_KEY = 'ops-access';
   var SPENT_KEY = 'ops-spent';
   var LOCK_NAME = 'ops-refresh';
-  var SPENT_KEEP = 20;
+  /* 30 days is the server's hard ceiling on a session, so a hash older than
+     that cannot protect anything. 500 entries is roughly five days of
+     continuous use at one rotation per fifteen minutes per tab. */
+  var SPENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+  var SPENT_KEEP = 500;
   var ROOT = 'login.html';
 
   /* Failures that mean the session itself is finished. Refreshing will not
@@ -145,25 +149,37 @@
   /* Hashes of refresh tokens this profile has already presented. localStorage
      rather than sessionStorage on purpose: it is shared by every tab including
      ones that inherited a copied sessionStorage, which is the only way a tab
-     holding a duplicated token can find out the token is spent. */
+     holding a duplicated token can find out the token is spent.
+
+     Entries are pruned by age, not by count. A hash stops mattering when the
+     session that owned it can no longer exist, and the server's ceiling on
+     that is 30 days. Evicting on a small count instead would let a tab that
+     had been dormant across enough rotations wake up holding a token whose
+     hash had scrolled off the end, which is the one way this ledger could
+     have failed open. The count cap is only a backstop against unbounded
+     growth, and is far above any realistic rotation rate. */
   function readSpent() {
     var raw = safeGet(global.localStorage, SPENT_KEY);
     if (!raw) return [];
-    try {
-      var v = JSON.parse(raw);
-      return Array.isArray(v) ? v.filter(function (x) { return typeof x === 'string'; }) : [];
-    } catch (e) { return []; }
+    var v;
+    try { v = JSON.parse(raw); } catch (e) { return []; }
+    if (!Array.isArray(v)) return [];
+    var floor = Date.now() - SPENT_MAX_AGE_MS;
+    return v.filter(function (e) {
+      return e && typeof e.h === 'string' && typeof e.t === 'number' && e.t > floor;
+    });
   }
 
   function markSpent(hash) {
     var list = readSpent();
-    if (list.indexOf(hash) === -1) list.push(hash);
-    safeSet(global.localStorage, SPENT_KEY,
-      JSON.stringify(list.slice(-SPENT_KEEP)));
+    if (!list.some(function (e) { return e.h === hash; })) {
+      list.push({ h: hash, t: Date.now() });
+    }
+    safeSet(global.localStorage, SPENT_KEY, JSON.stringify(list.slice(-SPENT_KEEP)));
   }
 
   function isSpent(hash) {
-    return readSpent().indexOf(hash) !== -1;
+    return readSpent().some(function (e) { return e.h === hash; });
   }
 
   /* Resolves to a hex digest, or null where SubtleCrypto is unavailable (an

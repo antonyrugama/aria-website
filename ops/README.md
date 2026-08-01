@@ -59,7 +59,11 @@ each closing a case the others cannot:
    the client signs itself out locally instead. That costs one sign-in and produces no false
    compromise event. The hash is written *before* the request, not after, because a page
    destroyed mid-flight cannot know whether the server rotated the token, and a client that
-   cannot know must assume it did.
+   cannot know must assume it did. Entries are pruned by age rather than by count, because a
+   hash stops mattering only when the session that owned it can no longer exist, and the
+   server's ceiling on that is 30 days. Evicting on a small count instead would let a tab
+   dormant across enough rotations wake holding a token whose hash had scrolled off the end,
+   which is the one way this ledger could fail open.
 
 Residual risk, stated plainly: if a tab is duplicated with "Remember this device" off, so the
 copy inherits a private `sessionStorage`, and the original is closed before the copy's access
@@ -74,7 +78,7 @@ idempotency window on the refresh endpoint, which is not a change this repositor
 |---|---|---|
 | Access token | 15 minutes | `sessionStorage` |
 | Refresh token | up to 30 days | `localStorage` when "Remember this device" is on, `sessionStorage` when off |
-| Spent-token ledger | last 20 exchanges | `localStorage`, SHA-256 hashes only, never tokens |
+| Spent-token ledger | 30 days | `localStorage`, SHA-256 hashes only, never tokens |
 
 The identity design record specifies the access token as **memory only**. Caching it in
 `sessionStorage` is a deliberate departure, and it is recorded here because it needs to be
