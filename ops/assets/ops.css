@@ -213,6 +213,12 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-size: inherit; font-weight: inherit; }
 
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
+/* The `hidden` attribute has to beat a class that sets display, because it is
+   what the tab panels and every collapsible block on the panes are switched
+   with. The user-agent rule for it is a bare attribute selector, so any class
+   carrying `display` silently wins and the "hidden" thing stays on screen. */
+[hidden] { display: none !important; }
+
 /* Skip link, first tab stop on every page. */
 .skip-link {
   position: absolute; left: 8px; top: -60px; z-index: 200;
@@ -625,10 +631,21 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2);
 }
 .callout svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
-.callout-warn { background: var(--warn-dim); border-color: var(--warn-line); color: var(--warn-ink); }
-.callout-crit { background: var(--crit-dim); border-color: var(--crit-line); color: var(--crit-ink); }
-.callout-info { background: var(--info-dim); border-color: var(--info-line); color: var(--info-ink); }
-.callout-ai   { background: var(--ai-dim);   border-color: var(--ai-line); color: var(--ai-ink); }
+/* Callout fills are mixed into the card surface rather than into transparency,
+   so a callout composites the same way wherever it is put.
+
+   This is a contrast fix, recorded as inherited debt when the design system
+   shipped and closed here by the first release that draws one. A translucent
+   tint takes its final colour from whatever is behind it, and these callouts
+   sit directly on the page background as often as they sit on a card. In the
+   light theme the page background is darker than a card, which pushed the
+   warning and critical inks to 4.41:1 and 4.26:1 against the 4.5:1 they need.
+   Compositing against --surface-1 makes the fill, and therefore the ratio,
+   independent of the surface underneath. No approved hue changes. */
+.callout-warn { background: color-mix(in srgb, var(--warn) var(--tint), var(--surface-1)); border-color: var(--warn-line); color: var(--warn-ink); }
+.callout-crit { background: color-mix(in srgb, var(--crit) var(--tint), var(--surface-1)); border-color: var(--crit-line); color: var(--crit-ink); }
+.callout-info { background: color-mix(in srgb, var(--info) var(--tint), var(--surface-1)); border-color: var(--info-line); color: var(--info-ink); }
+.callout-ai   { background: color-mix(in srgb, var(--ai)   var(--tint), var(--surface-1)); border-color: var(--ai-line);   color: var(--ai-ink); }
 .callout strong { color: inherit; }
 
 /* Empty / loading / error blocks */
@@ -870,6 +887,216 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
 .mt-sm { margin-top: 8px; }
 .mt { margin-top: 14px; }
 .mb { margin-bottom: 14px; }
+
+/* ====================== Understand panes (W3) ===========================
+   People and usage, and Cloud costs. Ported from the approved mocks, which
+   carried these rules in a per-page <style> block. They are classes here for
+   the same reason everything else is: the pages allow no inline style.
+
+   Lengths that come from data (a bar's width, a cell's tint) are set through
+   the CSSOM by the pane scripts, never as a style attribute, so they stay
+   inside style-src.
+   ====================================================================== */
+
+.pane { display: block; }
+
+/* ---- Shared: ranked bars ----------------------------------------------- */
+
+/* Every bar is decorative and marked aria-hidden. The value beside it is the
+   same fact in text, so the list reads correctly with no colour and no
+   graphics at all. */
+.rank { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.rank-row {
+  display: grid; grid-template-columns: minmax(90px, 38%) 1fr auto;
+  gap: 10px; align-items: center; font-size: 12.5px;
+}
+.rank-label { color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+.rank-track { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.rank-track i { display: block; height: 100%; border-radius: 4px; background: var(--brand); }
+.rank-value { text-align: right; color: var(--text); font-weight: 500; }
+.rank-note { grid-column: 1 / -1; margin-top: -7px; }
+
+/* ---- Shared: labelled meters ------------------------------------------- */
+
+.meter-row { display: block; }
+.meter-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; font-size: 12px; margin-bottom: 4px;
+}
+
+/* ---- Shared: segmented control used as a tablist ------------------------ */
+
+/* Same control the shell already ships, driven by aria-selected instead of
+   aria-pressed because switching the panel underneath is a tab pattern, not a
+   toggle. The shell owns the keyboard behaviour. */
+.seg-tabs [role="tab"][aria-selected="true"] {
+  background: var(--brand-dim); color: var(--brand-bright); font-weight: 500;
+}
+.tabbed-panels > [role="tabpanel"] { padding-top: 2px; }
+
+/* ---- Shared: small utilities the panes need ---------------------------- */
+
+.ink-ok { color: var(--ok); }
+.ink-warn { color: var(--warn); }
+.ink-crit { color: var(--crit); }
+.mt-xs { margin-top: 4px; }
+.rule { height: 1px; background: var(--border); margin: 4px 0; }
+.suppressed { color: var(--text-3); font-style: normal; }
+.dl-narrow { grid-template-columns: 112px 1fr; }
+
+/* Raw counts offered in place of a rate that cannot be reported. A count is
+   not a rate, so nothing here can be read as a trend one person moved. */
+.raw-counts {
+  display: grid; grid-template-columns: auto auto; gap: 2px 10px;
+  justify-content: start; margin: 8px 0 0; font-size: 11.5px;
+}
+.raw-counts dt { color: var(--text-3); }
+.raw-counts dd { margin: 0; color: var(--text); }
+
+/* ---- People and usage: the two columns --------------------------------- */
+
+/* Two independent columns, deliberately not one blended chart. There is no
+   row here that adds them, because a coach session and an athlete session
+   measure different work. */
+.vs {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+}
+.vs-col { background: var(--surface-1); padding: 14px; min-width: 0; }
+.vs-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.vs-metric {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12.5px;
+}
+.vs-metric:last-child { border-bottom: 0; }
+.vs-metric b { font-size: 15px; font-weight: 600; }
+.vs-trend { margin-top: 12px; }
+
+/* ---- People and usage: signup groups ----------------------------------- */
+
+.cohort { border-collapse: separate; border-spacing: 2px; font-size: 11.5px; width: 100%; }
+.cohort th {
+  font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-3); font-weight: 600; padding: 4px; text-align: center;
+}
+.cohort th.cohort-lbl { text-align: left; }
+.cohort td { text-align: center; padding: 7px 4px; border-radius: 4px; color: var(--text); }
+/* The wash repeats the number it sits behind, so it is never the only carrier
+   of the value. --cell-tint is set per cell by the pane and is capped there
+   well short of opaque, so the ink on top holds its ratio at the strongest
+   tint either theme produces. */
+.cohort td.is-tinted { background: color-mix(in srgb, var(--s1) var(--cell-tint, 0%), transparent); }
+.cohort tbody th.cohort-lbl {
+  text-align: left; color: var(--text-2); font-weight: 400;
+  font-size: 11.5px; text-transform: none; letter-spacing: 0; padding: 7px 4px;
+}
+.cohort td.na { background: var(--surface-2); color: var(--text-3); }
+.cohort td.cohort-suppressed { text-align: left; padding: 9px 10px; }
+
+/* ---- People and usage: the funnel -------------------------------------- */
+
+.funnel { list-style: none; margin: 0; padding: 0; }
+.funnel-step {
+  display: grid; grid-template-columns: minmax(96px, 168px) 1fr 86px;
+  gap: 12px; align-items: center; padding: 6px 0;
+}
+.funnel-bar {
+  height: 26px; border-radius: 5px; background: var(--brand-dim);
+  overflow: hidden;
+}
+.funnel-bar i {
+  display: block; height: 100%; border-radius: 5px;
+  background: linear-gradient(90deg, var(--brand), var(--brand-bright));
+}
+.funnel-bar.is-crit i { background: linear-gradient(90deg, var(--crit), var(--warn)); }
+
+/* ---- Cloud costs: the budget bar --------------------------------------- */
+
+.budget-head { align-items: flex-end; gap: 14px; }
+.budget-figure { gap: 12px; align-items: baseline; }
+.budget-figure .tile-value { margin: 4px 0 0; }
+.budget-forecast-value { font-size: 19px; color: var(--warn); }
+
+.budget-wrap { margin-top: 6px; }
+.budget {
+  position: relative; height: 30px; border-radius: 8px;
+  background: var(--surface-3); overflow: hidden;
+}
+.budget i { position: absolute; top: 0; bottom: 0; }
+.budget .spent { left: 0; background: linear-gradient(90deg, var(--brand), var(--brand-bright)); }
+.budget .fcast {
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--warn) 55%, transparent) 0 6px,
+    color-mix(in srgb, var(--warn) 20%, transparent) 6px 12px);
+}
+.budget-marker { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--crit); }
+.budget-legend {
+  display: flex; flex-wrap: wrap; gap: 6px 16px;
+  margin-top: 6px; font-size: 11.5px; color: var(--text-2);
+}
+.budget-note { justify-content: space-between; gap: 10px; }
+.asof { gap: 8px; }
+.asof svg { width: 14px; height: 14px; flex: none; }
+
+/* ---- Cloud costs: one row of the bill ---------------------------------- */
+
+.cat {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  gap: 11px; align-items: center;
+  padding: 11px 0; border-bottom: 1px solid var(--border);
+}
+.cat:last-child { border-bottom: 0; }
+.cat-swatch { width: 10px; height: 34px; border-radius: 3px; background: var(--text-3); }
+.cat-main { min-width: 0; }
+.cat-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.cat-sub { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.cat-flag { margin-top: 5px; }
+.cat-amt { font-size: 15px; text-align: right; min-width: 80px; color: var(--text); }
+.cat-pct {
+  font-size: 11.5px; color: var(--text-3); text-align: right; min-width: 92px;
+  display: flex; gap: 6px; justify-content: flex-end;
+}
+
+.unit-row { gap: 10px; }
+
+/* Day markers under the trend. Hidden from assistive technology: the chart
+   carries its own description and the note beside it names the days that
+   matter, so a run of bare numbers would add noise rather than meaning. */
+.axis-x {
+  display: flex; justify-content: space-between;
+  margin-top: 4px; font-size: 10.5px; color: var(--text-3);
+  font-family: var(--mono);
+}
+
+/* ---- Understand panes: narrow widths ----------------------------------- */
+
+@media (max-width: 860px) {
+  /* A card head holding a title, a hint, and a view switcher has three things
+     competing for one line. Below the breakpoint the switcher drops to its own
+     line instead: the spacer that pushes it right on a wide screen becomes a
+     zero-height full-width flex item, which is what forces the break. Without
+     this the title is squeezed into a column a word wide. */
+  .card-head { flex-wrap: wrap; }
+  .card-head > .spacer { flex: 1 0 100%; height: 0; margin: 0; }
+
+  .vs { grid-template-columns: minmax(0, 1fr); }
+  .funnel-step { grid-template-columns: minmax(0, 1fr) 70px; row-gap: 4px; }
+  .funnel-step > .small { grid-column: 1; grid-row: 1; }
+  .funnel-step > .mono { grid-column: 2; grid-row: 1; }
+  .funnel-bar { grid-column: 1 / -1; grid-row: 2; height: 18px; }
+  /* The label and its value stay on one line and the bar drops beneath them,
+     rather than the bar splitting a figure from the thing it is about. */
+  .rank-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .rank-label { grid-column: 1; grid-row: 1; }
+  .rank-value { grid-column: 2; grid-row: 1; }
+  .rank-track { grid-column: 1 / -1; grid-row: 2; }
+  .rank-note { grid-column: 1 / -1; grid-row: 3; margin-top: 0; }
+  .cat { grid-template-columns: 10px minmax(0, 1fr) auto; row-gap: 4px; }
+  .cat-pct { grid-column: 2 / -1; justify-content: flex-start; }
+  .budget-head { align-items: flex-start; }
+  .budget-note { flex-direction: column; align-items: flex-start; gap: 2px; }
+}
 
 /* ============================ Responsive ================================ */
 

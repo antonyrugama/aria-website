@@ -188,23 +188,34 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     shell.js            pane registry, rail, top bar, filter bar, boot gate
     login.js            the sign-in page controller
+    pane-data.js        shared pane plumbing: source, formatting, states, charts
+    pane-analytics.js   People and usage
+    pane-spend.js       Cloud costs
 ```
 
-The ten pane pages are byte-identical apart from `data-page` and `<title>`. Everything a pane is
-lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages.
+A pane page is the same six lines of HTML with a `data-page` attribute, plus a script tag for
+its own renderer where one exists. Everything a pane *is* lives in the `PANES` registry in
+`shell.js`, so the rail cannot drift from the pages.
+
+A renderer registers itself under its pane id in `window.OpsPanes` and the shell hands it the
+content area. Registration rather than a flag in the registry, because the thing that knows
+whether a pane is built is the pane's own script being on the page; a boolean in the registry
+could claim "built" on a page that loads nothing to build it. The shell boots on
+`DOMContentLoaded` rather than the moment it parses, so a renderer loaded after it is always
+registered before the shell decides what to draw.
 
 ## What this release does and does not do
 
-This release builds the shell, the sign in, and the design system. Every pane routes to a real
-page that says plainly that it is not built yet and which delivery wave builds it: W2 for
-Overview, Happening now, What happened and Problems; W3 for People and usage and Cloud costs;
-W4 for App releases and Look up a user; W5 for Settings. Aria quality is deferred to its own
-project.
+The shell, the sign in, and the design system shipped first. Every pane routes to a real page:
+either the pane itself, or a state that says plainly that it is not built yet and which
+delivery wave builds it. **People and usage** and **Cloud costs** are built. Overview,
+Happening now, What happened and Problems are W2; App releases and Look up a user are W4;
+Settings is W5. Aria quality is deferred to its own project.
 
-The shared filter bar ships now and round trips through the querystring, so later waves read a
-selection rather than inventing one. A pane listens on `window` for two events, both dispatched
-once the session is confirmed and the shell is in the document, so a listener added while
-`shell.js` is still booting cannot miss them:
+The shared filter bar round trips through the querystring, so a pane reads a selection rather
+than inventing one. A pane listens on `window` for two events, both dispatched once the session
+is confirmed and the shell is in the document, so a listener added while `shell.js` is still
+booting cannot miss them:
 
 - `ops:ready`, carrying `{ pane, filters }`, which is the signal that `#content` exists.
 - `ops:filters`, carrying the selection, fired for the starting selection as well as for every
@@ -221,6 +232,76 @@ Role differences surface in navigation affordances only at this stage. Settings 
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
 rather than a destination that silently vanishes. The server enforces this independently; the
 client renders a fact, it does not decide one.
+
+## The two understand panes
+
+### Where their figures come from, and what happens while nothing serves them
+
+Neither pane's read API is published yet. The pane's data source therefore carries a **null**
+endpoint rather than a guessed path, and a null endpoint means no request is made and the pane
+says so. That is a deliberate choice with a visible consequence: today both panes render an
+honest "not reporting yet" state on the live site, and the day the endpoint exists it is one
+line here and nothing else on the pane changes.
+
+Guessing a path instead would have been worse in a specific way. A pane that calls a route
+nobody has written gets a 404, and a 404 renders as a fault. The dashboard would then be
+reporting that the platform is broken when the truth is that a piece of it has not been built,
+and those are the two things every state on this dashboard exists to keep apart.
+
+The panes hold no figures of their own. Every label that names a service, a version, a group,
+or a resource arrives in the response; nothing operational is a literal in these files. What is
+static is the layout, the state copy, and the glossary, because a definition is not a
+measurement.
+
+### The response the panes read
+
+Both read the transport's envelope, so the pane sees `payload.data`.
+
+**Cloud costs** expects `asOf`, `publishLagHours`, `staleness`, `currency`, `period`, `total`,
+`forecast`, `budget`, a `views` object holding any of `category`, `resourceGroup` and `service`
+as `{ label, hint, rows }`, `daily`, `unitCosts`, `reconciliation`, and `anomalies`.
+`availability.state` is `ready`, `not_published`, or anything else, which reads as "no source
+is configured".
+
+**People and usage** expects `asOf`, `coverage`, `apps`, `cohorts`, `funnel`, and `features`.
+`availability.state` is `ready` or `insufficient`.
+
+Two conventions run through both, and both exist so a figure means the same thing on the pane
+that it meant in the data:
+
+- **Money is integer micro-units of the billing currency.** The pane divides once, at the
+  moment of display. This is what lets Cloud costs *add up* its rows and compare the sum with
+  the billed total exactly; a float sum over a few hundred daily rows does not reproduce an
+  invoice, and a near miss is indistinguishable from a real gap.
+- **A rate is basis points, and it arrives with the denominator it was computed over.** No
+  ratio is precomputed as a percentage, because a stored percentage is only correct for the
+  exact window it was computed for.
+
+### Two rules the panes enforce rather than assume
+
+**A rate whose denominator is under 50 is not drawn.** The floor is applied on the surface, to
+every rate the panes draw, including ones that arrive already computed. With a group smaller
+than that, one person moves the figure by several points and the reader has no way to tell that
+from a change. Every suppressed figure says the size of the group it was refused for, and
+offers the raw counts, which are always safe to show.
+
+**Every cost figure carries the moment it was true.** Cost data is never live; billing publishes
+on a cycle. The "as of" stamp is on every state that shows a figure, including the ones that
+show no total, and a reading that is behind is labelled as behind, with the reason, rather than
+quietly replaced by nothing. Losing the number is worse than knowing it is a few hours old.
+
+**People who have not turned on usage analytics appear in no figure here.** That is not a filter
+this client applies. Their activity is never recorded in the first place, so there is nothing on
+this side to leave out, and nothing to get wrong.
+
+### Looking at the states before the data exists
+
+Because neither read API is published, the ready, insufficient, and stale renderings would
+otherwise be unreviewable until it is, which is the wrong way round: the rendering is what is
+being reviewed now. So a pane can be pointed at a same-origin JSON document holding one response
+envelope, by setting `ops-pane-fixture-analytics` or `ops-pane-fixture-spend` in `localStorage`
+to its path. Honoured only when the page itself is served from a loopback address, exactly like
+the API base-url override, so a deployment on the real origin can never read one.
 
 ## Departures from the approved mocks
 
@@ -254,18 +335,44 @@ client renders a fact, it does not decide one.
 8. **Real semantics** where the mock used inert markup: headings are `h1` to `h4` in order and
    take their size from a class, tabs are a `role="tablist"` with arrow-key support, and both
    overlays trap focus, close on Escape, restore focus, and make the background inert.
+9. **The per-page `<style>` blocks the mock gave these two panes became classes**, because the
+   pages allow no inline style. Two consequences worth naming:
+   - Lengths that come from data (a bar's width, a cell's tint, a swatch's colour) are set
+     through the CSSOM, never as a style attribute. That is not a workaround, it is the only
+     path the policy leaves open: `style-src 'self'` refuses `setAttribute('style', ...)` and
+     always has, while a CSSOM property assignment is not an inline style declaration at all.
+     Anything passed through the shell's `h()` helper as a `style` key would be silently
+     dropped, which is worth knowing before writing the next pane.
+   - The mock's `.seg` view switchers became real tablists. A control that swaps the panel
+     beneath it is a tab pattern rather than a toggle, so it is driven by `aria-selected` and
+     inherits the shell's arrow, Home and End keys.
+10. **A `[hidden] { display: none !important }` rule.** The user-agent rule for `hidden` is a
+    bare attribute selector, so any class carrying `display` outranks it and the hidden thing
+    stays on screen. Every collapsible block and every tab panel on these panes is switched
+    with the attribute, so the rule is load bearing rather than defensive.
+11. **Callout fills are mixed into `--surface-1` rather than into transparency.** This closes
+    two of the contrast debts recorded below; see the note under that table.
+12. **A card head wraps below 860px**, dropping its view switcher onto its own line instead of
+    squeezing the title into a column a word wide.
 
-### Known contrast debt, inherited and not yet fixed
+### Known contrast debt, inherited
 
-Measured across both themes against composited backgrounds. **Every pairing this release
-renders passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or
-better. That includes the two pieces of status furniture W1 does draw: the plain `.badge` that
-carries the scope note on Cloud costs, and the `.callout-ai` on Aria quality.
+Measured across both themes against composited backgrounds. **Every pairing rendered by the
+panes built so far passes in both themes**, text at 4.5:1 or better and control boundaries at
+3:1 or better. That was verified again for the two understand panes across all four of their
+states, 68 pairings in total, worst case 4.67:1 in light and 5.99:1 in dark.
 
-The debt below is in the shipped design system and is drawn by nothing in this release, because
-no status badge, tag, or warning callout is on screen yet. In the light theme these pairings sit
-between 3.79:1 and 4.49:1 against the 4.5:1 they need; the same pairings pass in dark. Every one
-is byte-identical to the approved mock. They are recorded here so that the first pane to draw one
+**Two rows are now closed.** The warning and critical callout inks measured 4.41:1 and 4.26:1
+in the light theme *only when the callout sat directly on the page background*, which is darker
+than a card; on a card they passed. A translucent tint takes its final colour from whatever is
+behind it, so the same component had two different ratios depending on where it was put. The
+fix mixes the tint into `--surface-1` instead of into transparency, which makes the fill, and
+therefore the ratio, independent of the surface underneath. They now measure 4.94:1 and 4.74:1.
+No approved hue changed, and dark is unaffected.
+
+The debt below remains and is drawn by nothing built so far. In the light theme these pairings
+sit between 3.79:1 and 4.49:1 against the 4.5:1 they need; the same pairings pass in dark. Every
+one is byte-identical to the approved mock. They are recorded so that the first pane to draw one
 does not ship it unnoticed:
 
 | Pair | Light ratio |
@@ -274,10 +381,12 @@ does not ship it unnoticed:
 | `.btn-danger:hover` | 3.79 |
 | `.tag-backend` on its tint | 4.46 |
 | `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background rather than a card | 4.04 / 4.21 / 4.17 |
-| `callout-warn` / `callout-crit` ink over the page background | 4.41 / 4.26 |
 
 Closing these means darkening the light theme's status hues, which is a design decision about
-approved tokens rather than a shell concern, so it is left to whoever owns the palette.
+approved tokens rather than a pane concern, so it is left to whoever owns the palette. The
+badge row has a cheaper avoidance in the meantime and the understand panes take it: a status
+badge goes inside a card, never loose on the page background, where it measures 4.67:1 or
+better.
 
 ## Working on it locally
 
@@ -299,3 +408,7 @@ network. A local stub therefore has to be served from the same origin and port a
 files: one small server that serves `/ops/` and answers `/api/ops/*`, with the override set to
 that same origin. `python3 -m http.server` on its own serves the files but answers no API, so the
 sign-in form is as far as it goes.
+
+The same stub is what makes the pane fixtures usable: it has to serve the fixture document too,
+because a cross-origin fetch for it would be refused by `connect-src` for the same reason a
+cross-origin API call would be.

@@ -802,8 +802,15 @@
       if (bar) main.appendChild(bar);
 
       var content = h('main', { className: 'content', id: 'content', tabindex: '-1' });
+      /* A pane whose wave has shipped registers a renderer under its own id in
+         OpsPanes and takes over the content area. Registration rather than a
+         flag in the registry above, because the thing that knows whether a
+         pane is built is the pane's own script being on the page: a boolean
+         here could say "built" on a page that loads nothing to build it. */
+      var renderer = (global.OpsPanes || {})[pageId];
       if (pane.roles && !session.hasRole(pane.roles)) content.appendChild(renderDenied(pane));
       else if (pane.deferred) content.appendChild(renderDeferred(pane));
+      else if (renderer) renderer(content, { id: pageId, pane: pane, filters: shallow(filters) });
       else content.appendChild(renderNotBuilt(pane));
       main.appendChild(content);
 
@@ -830,10 +837,21 @@
     });
   }
 
-  /* Pane pages carry no script of their own. Loading this file on a page that
-     names a pane is the whole contract, which is what keeps ten near-identical
-     HTML files from drifting apart. */
-  if (document.body && PANES[document.body.getAttribute('data-page')]) init();
+  /* Loading this file on a page that names a pane is the whole contract, which
+     is what keeps ten near-identical HTML files from drifting apart.
+
+     Booting is deferred to the end of parsing rather than run on the spot,
+     because a pane script is loaded after this file and has to have registered
+     its renderer before the shell decides what to draw. Every script tag in
+     the document has executed by DOMContentLoaded, so ordering stops being
+     something each pane page has to get right. */
+  if (document.body && PANES[document.body.getAttribute('data-page')]) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  }
 
   global.OpsShell = {
     init: init,
