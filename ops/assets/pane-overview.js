@@ -360,7 +360,8 @@
          on it is exactly what it drops. */
       card.appendChild(op.cardHead('Needs attention',
         needing.length
-          ? model.atLeast(fmt.plural(needing.length, 'problem'), capped) + ' with nobody on it'
+          ? model.atLeast(fmt.plural(needing.length, 'problem'), capped) +
+            (needing.length === 1 ? ' with nobody on it' : ' with nobody on them')
           : (capped
               ? 'Nobody is being asked to do anything in the ' + fmt.int(model.PAGE) +
                 ' problems that could be read'

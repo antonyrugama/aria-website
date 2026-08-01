@@ -251,7 +251,10 @@
           ? 'Counted over the ' + PAGE + ' problems that could be read'
           : (takenOn.length
               ? owners(takenOn)
-              : 'Nobody has taken ' + (scope ? 'a ' + scope + ' problem' : 'a problem') + ' on')
+              : 'Nobody has taken ' +
+                (scope
+                  ? (/^[aeiou]/.test(scope) ? 'an ' : 'a ') + scope + ' problem'
+                  : 'a problem') + ' on')
       ));
 
       grid.appendChild(tile(

@@ -108,7 +108,7 @@
     var t = parseTime(iso);
     if (!t) return NONE;
     var secs = Math.max(0, Math.round((Date.now() - t.getTime()) / 1000));
-    if (secs < 60) return secs + ' seconds ago';
+    if (secs < 60) return secs === 1 ? '1 second ago' : secs + ' seconds ago';
     if (secs < 120) return 'a minute ago';
     if (secs < 3600) return Math.floor(secs / 60) + ' minutes ago';
     if (secs < 7200) return 'an hour ago';
@@ -570,7 +570,9 @@
       return true;
     }
 
-    function sync() { go.disabled = !ready(); }
+    /* settling is hoisted; while the action is in flight nothing an input
+       event does may re-enable the primary. Disabled means disabled. */
+    function sync() { go.disabled = settling || !ready(); }
     if (typed) typed.addEventListener('input', sync);
     if (reason) reason.addEventListener('input', sync);
     sync();
