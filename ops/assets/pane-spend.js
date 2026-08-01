@@ -515,12 +515,23 @@
           'over and nothing is counted twice.'
       ]);
     } else {
-      /* Money renders at two decimals, so a sub-cent gap would print three
-         figures that all agree while the callout calls them a mismatch. Name
-         the size of the gap honestly instead of printing $0.00. */
+      /* Money renders to a fixed number of decimals, so a gap smaller than the
+         last place shown would print three figures that all agree while the
+         callout calls them a mismatch. Name the size of the gap in words
+         instead of printing a rendered zero.
+
+         The test is the gap against the rendering unit, not the rendered gap
+         against a rendered zero. Rendering rounds to nearest, so the string
+         test only caught the bottom half of the window: a gap of 6000 micros
+         renders as 0.01, so it was named as a printable difference even though
+         the two totals it sits between can still round to the same string. Any
+         gap below one whole rendering unit is a gap the reader cannot see,
+         whichever way the three figures happen to round. */
       var gap = Math.abs(sum - total);
       var gapText = d.money(gap, data.currency);
-      if (gapText === d.money(0, data.currency)) gapText = 'less than one cent';
+      if (gap < d.RENDER_UNIT_MICROS) {
+        gapText = 'less than the smallest amount these totals can show';
+      }
       box = d.callout('crit', 'warn', [
         d.strong('These rows do not add up to the bill.'),
         ' They come to ' + d.money(sum, data.currency) + ' against a billed ' +
@@ -709,7 +720,7 @@
 
   /* -------------------------------------------------------------- render */
 
-  function mount(content, ctx) {
+  function mount(content) {
     var host = h('div', { className: 'pane' });
     content.appendChild(host);
 
@@ -788,6 +799,5 @@
     global.addEventListener('ops:filters', refresh);
   }
 
-  global.OpsPanes = global.OpsPanes || {};
-  global.OpsPanes[PANE_ID] = mount;
+  shell.definePane(PANE_ID, mount);
 })(window);

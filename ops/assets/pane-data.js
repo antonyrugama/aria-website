@@ -367,6 +367,15 @@
 
   var MICROS = 1000000;
 
+  /* How many decimal places a money figure is shown to unless a caller asks
+     for more, and the size in micros of the last place it shows. A difference
+     smaller than that unit is one no reader can see however the three figures
+     round, so a caller comparing two amounts has something to test the gap
+     against that stays correct if the number of places ever changes. Derived
+     rather than written as 10000 for exactly that reason. */
+  var MONEY_DIGITS = 2;
+  var RENDER_UNIT_MICROS = MICROS / Math.pow(10, MONEY_DIGITS);
+
   /* Money arrives as integer micro-units of the billing currency, because the
      claim these panes make is that the parts sum to the invoice exactly and a
      float sum over a few hundred daily rows does not reproduce that. Division
@@ -374,7 +383,7 @@
   function money(micros, currency, opts) {
     if (typeof micros !== 'number' || !isFinite(micros)) return 'n/a';
     opts = opts || {};
-    var digits = opts.digits === undefined ? 2 : opts.digits;
+    var digits = opts.digits === undefined ? MONEY_DIGITS : opts.digits;
     try {
       /* en-US rather than the locale the operator happens to be in. The bill
          is issued in one currency and the figures are compared against it, so
@@ -885,6 +894,7 @@
 
   global.OpsPaneData = {
     REPORTING_FLOOR: REPORTING_FLOOR,
+    RENDER_UNIT_MICROS: RENDER_UNIT_MICROS,
     load: load,
     isLoopback: isLoopback,
     safeHref: safeHref,

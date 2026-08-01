@@ -154,7 +154,12 @@ What follows from wanting it this strict:
 - **No inline script.** The theme must be applied before first paint or navigating between panes
   flashes the wrong colours, so `assets/theme.js` is a blocking classic script in `<head>`
   rather than an inline snippet. No hash to keep in sync across eleven files.
-- **No inline style attributes.** Everything is a class.
+- **No inline `style` attributes.** Everything that can be a class is a class. The handful of
+  lengths and colours that are genuinely data-driven, a bar segment's width, a skeleton block's
+  height, a legend swatch, are set through CSSOM on the element's `style` property by the pane's
+  own script. That is a declaration made from script rather than a `style` attribute in markup,
+  so `style-src 'self'` allows it without `'unsafe-inline'`, and every value set that way is a
+  number this code computed or a fixed internal token, never a string from the API.
 - **No `innerHTML` anywhere.** The shell is built as DOM with `textContent`, so nothing from the
   API, the querystring, or storage can become markup.
 - `connect-src 'self'` is present because this origin serves static files only; it allows no
@@ -188,29 +193,56 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     shell.js            pane registry, rail, top bar, filter bar, boot gate
     login.js            the sign-in page controller
-    pane-data.js        shared pane plumbing: source, formatting, states, charts
+    operate.css         pane styling for the operate panes
+    operate.js          shared pane furniture: charts, drawer, confirm, states
+    alerts-model.js     the problems API in plain words, shared by two panes
+    pane-overview.js    Overview
+    pane-alerts.js      Problems
+    pane-awaiting-data.js  Happening now and What happened
+    pane-data.js        shared plumbing for the understand panes: source,
+                        formatting, states, charts
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
 ```
 
-A pane page is the same six lines of HTML with a `data-page` attribute, plus a script tag for
-its own renderer where one exists. Everything a pane *is* lives in the `PANES` registry in
-`shell.js`, so the rail cannot drift from the pages.
+A pane page carries the shell, and where the pane has been built, its own module. Everything a
+pane *is* lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages;
+everything a pane *shows* is registered by that module through `OpsShell.definePane`, and a pane
+with no module renders the not-built state. The shell waits for the document to finish parsing
+before it asks for a pane's contents, so which script finishes first cannot change what renders.
 
-A renderer registers itself under its pane id in `window.OpsPanes` and the shell hands it the
-content area. Registration rather than a flag in the registry, because the thing that knows
-whether a pane is built is the pane's own script being on the page; a boolean in the registry
-could claim "built" on a page that loads nothing to build it. The shell boots on
-`DOMContentLoaded` rather than the moment it parses, so a renderer loaded after it is always
-registered before the shell decides what to draw.
+Registration rather than a flag in the registry, because the thing that knows whether a pane is
+built is the pane's own module being on the page; a boolean in the registry could claim "built"
+on a page that loads nothing to build it.
 
 ## What this release does and does not do
 
-The shell, the sign in, and the design system shipped first. Every pane routes to a real page:
-either the pane itself, or a state that says plainly that it is not built yet and which
-delivery wave builds it. **People and usage** and **Cloud costs** are built. Overview,
-Happening now, What happened and Problems are W2; App releases and Look up a user are W4;
-Settings is W5. Aria quality is deferred to its own project.
+The shell, the sign in, and the design system are built. Of the panes, **Problems** is complete:
+it reads the live problems and alert rules, takes a problem on, closes it with a reason, tunes a
+rule where the role allows it, and states whether the alerting is armed and where what it finds
+is sent. **Overview** is built for the part that has a source, which is the urgency question:
+the status ribbon and the needs-attention queue are real, and every entry opens the pane that
+owns the work.
+
+The rest of Overview, and the whole of **Happening now** and **What happened**, are not drawn.
+Their figures are being collected but nothing serves them to a page yet, so those pages say so in
+words instead of showing a zero. A tile reading zero and a tile with no pipeline behind it look
+identical, and that is the one thing an operations screen must never be.
+
+A read answers with at most 100 problems, worst first and then oldest, and there is no second
+page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
+which is the opposite of what a window ending today needs. When a page comes back full, both
+Overview and Problems say so, every count reads as "at least", and the two figures that cannot
+be salvaged, the 30 day false-alarm rate and the 30 day volume chart, say they cannot be worked
+out instead of showing a number that is quietly short.
+
+**People and usage** and **Cloud costs** are drawn in full: every state, every card, and the
+whole of the copy. Neither has a read API published yet, so on the live site both land on an
+honest "not reporting yet" state for the same reason Happening now and What happened do, and the
+section below says exactly what changes on the day their endpoints exist.
+
+The remaining panes route to a page that says plainly it is not built yet: W4 for App releases
+and Look up a user; W5 for Settings. Aria quality is deferred to its own project.
 
 The shared filter bar round trips through the querystring, so a pane reads a selection rather
 than inventing one. A pane listens on `window` for two events, both dispatched once the session
@@ -227,6 +259,23 @@ The scope control follows the rule the mocks encode: All, Mobile and Coaches Web
 where a per-app split is real. Cloud costs says so inline, because cloud spend is billed per
 piece of infrastructure rather than per app and splitting a shared bill by client would be an
 invented number.
+
+That rule now binds a built pane to what its own reads can carry, through the registry's
+`filterNote`. Overview declares no scope, range or environment control, because everything it
+draws is the state of things right now, across every app, in production; Problems keeps its
+window, which is applied to the problems that were read and disclosed in the count line under
+the list, and drops the environment control, because a problem carries no environment to filter
+on. A control that moves and changes nothing is worse than no control: it leaves Staging showing
+in the bar over production figures. Both say so where the control would have been, and both get
+their controls back when something can carry them.
+
+People and usage and Cloud costs keep the controls the registry gives them, and that is the same
+rule rather than an exception to it. With no read API published they draw no figure at all, so
+there is no figure a selection can sit over and be silently wrong about; what a control does
+today is repaint the same "not reporting yet" state, which is honest in every position. The
+selection is what the query will carry on the day an endpoint lands, and if one ships able to
+answer only some of them, the ones it cannot carry become a `filterNote` in the same commit that
+turns the endpoint on.
 
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
@@ -272,7 +321,11 @@ that it meant in the data:
 - **Money is integer micro-units of the billing currency.** The pane divides once, at the
   moment of display. This is what lets Cloud costs *add up* its rows and compare the sum with
   the billed total exactly; a float sum over a few hundred daily rows does not reproduce an
-  invoice, and a near miss is indistinguishable from a real gap.
+  invoice, and a near miss is indistinguishable from a real gap. The comparison is therefore
+  finer than the display: a gap smaller than one whole unit of the last decimal place shown is
+  named in words rather than printed, because printing it would put three figures on screen that
+  do not visibly differ by the amount the sentence beside them claims. The wording names no
+  currency unit, since the billing currency is whatever the response says it is.
 - **A rate is basis points, and it arrives with the denominator it was computed over.** No
   ratio is precomputed as a percentage, because a stored percentage is only correct for the
   exact window it was computed for.
@@ -304,6 +357,14 @@ that it meant in the data:
   fractional seconds of any length), and the date-time shape carrying `Z` or a `+/-HH:MM` or
   `+/-HHMM` offset; the designator belongs to the date-time shape only. A `Date` instance is
   accepted too.
+  Two normalisations run before the shape is matched, and both are narrow on purpose. A single
+  space between the date and the time stands in for `T`; any later space leaves a shape none of
+  the three match. And a lowercase `t` in that separator position, or a lowercase trailing `z`,
+  is folded to uppercase, because the shapes the engine is required to read as UTC are the
+  uppercase ones, so matching a lowercase designator and then passing it through unchanged would
+  hand exactly the strings this guard exists for back to engine-decided parsing. The fold is
+  anchored to those two positions only: it does not touch a lowercase letter anywhere else, so
+  `2026-07-31Tz06:00` and the like still fail the shape and are absent.
   Everything else, including `null`, `0` and strings the language would happily parse such as
   `Jul 31 2026 06:00` or `12/25/2026`, renders the "the time of this reading was not reported"
   sentence. The shape is checked before `new Date` sees the string, not after: `new Date(null)`
@@ -393,8 +454,14 @@ nothing on its own.
    became a real `<input type="checkbox" role="switch">` so that its `<label>` is clickable.
 8. **Real semantics** where the mock used inert markup: headings are `h1` to `h4` in order and
    take their size from a class, tabs are a `role="tablist"` with arrow-key support, and both
-   overlays trap focus, close on Escape, restore focus, and make the background inert.
-9. **The per-page `<style>` blocks the mock gave these two panes became classes**, because the
+   overlays trap focus, close on Escape, restore focus, and make the background inert. Overlays
+   stack, and the stack has two rules that matter to a keyboard user. Only the top overlay acts
+   on a key, so one Escape closes the confirmation and leaves the drawer under it. And an overlay
+   asked to close while something is open above it comes down when it is the top again, rather
+   than restoring the background from underneath an open dialog. A confirmation whose action is
+   in flight refuses Escape and the scrim for that window, the same window in which its buttons
+   are disabled, and re-arms all three together if the action fails.
+9. **The per-page `<style>` blocks the mock gave the understand panes became classes**, because the
    pages allow no inline style. Two consequences worth naming:
    - Lengths that come from data (a bar's width, a cell's tint, a swatch's colour) are set
      through the CSSOM, never as a style attribute. That is not a workaround, it is the only
@@ -421,31 +488,74 @@ panes built so far passes in both themes**, text at 4.5:1 or better and control 
 3:1 or better. That was verified again for the two understand panes across all four of their
 states, 68 pairings in total, worst case 4.67:1 in light and 5.99:1 in dark.
 
-**Two rows are now closed.** The warning and critical callout inks measured 4.41:1 and 4.26:1
-in the light theme *only when the callout sat directly on the page background*, which is darker
-than a card; on a card they passed. A translucent tint takes its final colour from whatever is
-behind it, so the same component had two different ratios depending on where it was put. The
-fix mixes the tint into `--surface-1` instead of into transparency, which makes the fill, and
-therefore the ratio, independent of the surface underneath. They now measure 4.94:1 and 4.74:1.
-No approved hue changed, and dark is unaffected.
+Part of that debt has now come due, and two separate fixes have landed against it, in two
+different stylesheets. Which pages get which follows from which stylesheet they load, so it is
+worth being explicit: `ops.css` is on every page, and `operate.css` is on the four operate pages
+only.
 
-The debt below remains and is drawn by nothing built so far. In the light theme these pairings
-sit between 3.79:1 and 4.49:1 against the 4.5:1 they need; the same pairings pass in dark. Every
-one is byte-identical to the approved mock. They are recorded so that the first pane to draw one
-does not ship it unnoticed:
+**The callout fix is in `ops.css`, so it reaches every page.** The warning and critical callout
+inks measured 4.41:1 and 4.26:1 in the light theme *only when the callout sat directly on the
+page background*, which is darker than a card; on a card they passed. A translucent tint takes
+its final colour from whatever is behind it, so the same component had two different ratios
+depending on where it was put. The fix mixes the tint into `--surface-1` instead of into
+transparency, which makes the fill, and therefore the ratio, independent of the surface
+underneath. They now measure 4.94:1 and 4.74:1. No approved hue changed, and dark is unaffected.
+
+**The badge fix is in `operate.css`, so it reaches the operate panes only.** They are the first
+to draw a status badge loose on the page background, and `operate.css` darkens the three
+light-theme inks, scoped to `[data-theme="light"]` and to the badge's ink alone.
+
+The ratios are computed rather than eyeballed, and are reproducible from the shipped tokens. The
+badge tint is semi-transparent, so the background that decides is the tint composited over
+whatever the badge sits on: `composited = 0.11 x status token + 0.89 x parent surface` in sRGB,
+because `--tint` is 11% in the light theme, then the WCAG 2 relative-luminance ratio. These panes
+put a badge on `--surface-1` `#FFFFFF` (a card, the alert list, the drawer), on `--surface-2`
+`#F6F8FB` (an alert row on hover, the runbook card) and on `--bg` `#EEF2F7` (the filter bar). The
+page is the darkest of the three, so it is the one that has to clear 4.5:1.
+
+| Badge | Ink was | Ink now | On a card | On a hovered row | On the page |
+|---|---|---|---|---|---|
+| `.badge-crit` | `#C8322B` | `#AE2C25` | 4.505 to 5.580 | 4.247 to 5.260 | 4.030 to 4.991 |
+| `.badge-warn` | `#9A5B06` | `#885005` | 4.665 to 5.652 | 4.399 to 5.331 | 4.176 to 5.060 |
+| `.badge-ok` | `#047857` | `#046B4D` | 4.695 to 5.591 | 4.429 to 5.275 | 4.205 to 5.008 |
+
+All three now clear 4.5:1 on every surface W2 draws them on. Before, only the card cleared it and
+only just. The two variants these panes draw but the fix does not touch already pass: `.badge-info`
+is 5.649 on a card and 5.058 on the page, and the plain `.badge` is 6.82 on a card.
+
+An earlier version of this section recorded 4.15 / 4.22 / 4.27 before and 4.55 or better after.
+Neither figure reproduces from the tokens, and the before figures also disagreed with W1's own
+record of 4.04 / 4.21 / 4.17 for crit / ok / warn over the page background, which does match the
+table above. The palette owner acts on these numbers, so they need to be recomputable.
+
+That is a patch and not the fix. The base status tokens are also the dots, the chart series, the
+meters and the callout borders, all of which pass where they are used and all of which are shared
+with the panes other waves are building; darkening the tokens themselves is a decision about the
+approved palette and belongs to whoever owns it. When it happens, the three rules at the end of
+`operate.css` become redundant and should be deleted.
+
+What is left. The first three rows are drawn by nothing built so far, and are recorded so that
+the first pane to draw one does not ship it unnoticed. The fourth is a boundary rather than an
+untouched debt:
 
 | Pair | Light ratio |
 |---|---|
-| `.badge-crit`, `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
+| `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
 | `.btn-danger:hover` | 3.79 |
 | `.tag-backend` on its tint | 4.46 |
-| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background rather than a card | 4.04 / 4.21 / 4.17 |
+| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, on a page without `operate.css` | 4.04 / 4.21 / 4.17 |
 
-Closing these means darkening the light theme's status hues, which is a design decision about
-approved tokens rather than a pane concern, so it is left to whoever owns the palette. The
-badge row has a cheaper avoidance in the meantime and the understand panes take it: a status
-badge goes inside a card, never loose on the page background, where it measures 4.67:1 or
-better.
+The last row is the badge fix's own boundary and is recorded rather than dropped, because the
+darkened inks live in `operate.css` and the understand panes do not load it. Those two panes
+avoid the row rather than inherit it: a status badge on them goes inside a card, never loose on
+the page background, where it measures 4.67:1 or better. The row closes for everyone on the day
+the tokens themselves are darkened, which is the same day the three rules at the end of
+`operate.css` are deleted.
+
+Dark mode passes throughout and is untouched. The badge override is scoped to
+`[data-theme="light"]`, so the dark inks are the ones W1 shipped: over the same three surfaces
+and the same 14% tint, the lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200,
+and `.badge-info` is the next at 5.457. Every other pairing is 5.657 or better.
 
 ## Working on it locally
 

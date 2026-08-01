@@ -599,7 +599,7 @@
 
   /* -------------------------------------------------------------- render */
 
-  function mount(content, ctx) {
+  function mount(content) {
     var host = h('div', { className: 'pane' });
     content.appendChild(host);
 
@@ -677,6 +677,5 @@
     global.addEventListener('ops:filters', refresh);
   }
 
-  global.OpsPanes = global.OpsPanes || {};
-  global.OpsPanes[PANE_ID] = mount;
+  shell.definePane(PANE_ID, mount);
 })(window);
