@@ -276,19 +276,44 @@ that it meant in the data:
 - **A rate is basis points, and it arrives with the denominator it was computed over.** No
   ratio is precomputed as a percentage, because a stored percentage is only correct for the
   exact window it was computed for.
+- **A colour is a token name (`s1` to `s6`, or `muted` for a comparison line), never a colour
+  value.** A raw colour from the response is the one way a figure can end up unreadable on a
+  theme it was not picked against: brand cyan at full brightness measures about 1.3:1 on the
+  light theme's white card. Anything outside that closed set falls back to the default series
+  token, so the answer for both themes stays in the stylesheet, where it was measured.
+- **A link is a relative path.** Any `href` in the response that carries a scheme, or is
+  protocol-relative, is dropped rather than rendered. The pages' content policy would already
+  stop a `javascript:` URL from running; this keeps the guarantee next to the code that builds
+  the link rather than in a meta tag somebody may loosen later.
 
 ### Two rules the panes enforce rather than assume
 
 **A rate whose denominator is under 50 is not drawn.** The floor is applied on the surface, to
-every rate the panes draw, including ones that arrive already computed. With a group smaller
-than that, one person moves the figure by several points and the reader has no way to tell that
-from a change. Every suppressed figure says the size of the group it was refused for, and
+every rate the panes draw *over a group of people*, whether it arrives as a numerator and a
+denominator or already computed, and whether the payload labels it a rate or a decimal: what
+makes a figure subject to it is the denominator travelling with it, not the label. A rate that
+arrives with no denominator at all is not drawn either, because a base nobody reported cannot
+be known to clear the floor. With a group smaller than 50, one person moves the figure by
+several points and the reader has no way to tell that from a change. Every suppressed figure
+says the size of the group it was refused for, or says plainly that the size is unknown, and
 offers the raw counts, which are always safe to show.
+
+Two figures are deliberately outside the floor, because neither is a rate over people: coverage,
+which is the share of an app version's own sessions that report an event, and unit cost, which
+is money. Both are labelled for what they are, and coverage that was never measured says so
+rather than drawing a percentage.
 
 **Every cost figure carries the moment it was true.** Cost data is never live; billing publishes
 on a cycle. The "as of" stamp is on every state that shows a figure, including the ones that
 show no total, and a reading that is behind is labelled as behind, with the reason, rather than
 quietly replaced by nothing. Losing the number is worse than knowing it is a few hours old.
+
+Two details that are easy to get wrong and are therefore fixed in code. A timestamp with no
+timezone designator is read as the UTC the pipeline meant, not as the operator's local time,
+because parsing it locally and then formatting it back out as UTC produces a stamp that is
+wrong by the reader's own offset. And a reading stamped *ahead* of now is reported as two
+clocks disagreeing rather than clamped to fresh, since a future reading is the one kind of
+staleness nobody thinks to look for.
 
 **People who have not turned on usage analytics appear in no figure here.** That is not a filter
 this client applies. Their activity is never recorded in the first place, so there is nothing on
@@ -301,7 +326,15 @@ otherwise be unreviewable until it is, which is the wrong way round: the renderi
 being reviewed now. So a pane can be pointed at a same-origin JSON document holding one response
 envelope, by setting `ops-pane-fixture-analytics` or `ops-pane-fixture-spend` in `localStorage`
 to its path. Honoured only when the page itself is served from a loopback address, exactly like
-the API base-url override, so a deployment on the real origin can never read one.
+the API base-url override, so a deployment on the real origin can never read one, and only when
+the stored value is a relative path, so same-origin is enforced by the code that reads it rather
+than only by the page's `connect-src`.
+
+The pane that has no data yet says so, and says it without a promise it cannot keep: the state
+tells you the reporting behind it is unbuilt and that the release which builds it points the
+pane at it. It does not claim figures will appear "without another release", because both
+`endpoint` values are `null` in these files and a backend publishing a route would change
+nothing on its own.
 
 ## Departures from the approved mocks
 

@@ -33,9 +33,78 @@
 
      The floor lives on the surface rather than in the pipeline on purpose: it
      is a rule about what may be *displayed*, so it has to hold whatever a
-     future read API decides to send. The panes apply it to every rate they
-     draw, including ones that arrive already computed. */
+     future read API decides to send.
+
+     What it covers, stated exactly rather than generously: every rate drawn
+     over a group of people, whether it arrives as a numerator and denominator
+     or already computed. A rate that arrives with no denominator at all is not
+     drawn either, because a base that is unknown cannot be known to clear the
+     floor. Two figures on these panes are deliberately outside it, because
+     neither is a rate over people: coverage, which is a share of sessions on
+     an app version, and unit cost, which is money. */
   var REPORTING_FLOOR = 50;
+
+  /* Whether a value from the payload may be used as a link target.
+
+     Every href on these panes comes from the response, so the pane decides
+     what a link may be rather than trusting the sender. Relative paths only:
+     anything carrying a scheme, and anything protocol-relative, is dropped.
+     The pages' content policy would already stop a javascript: URL from
+     running, but the guarantee belongs next to the code that builds the link
+     rather than in a meta tag somebody may loosen later. */
+  function safeHref(href) {
+    if (typeof href !== 'string' || !href) return null;
+    var text = href.trim();
+    if (!text) return null;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(text)) return null;
+    if (text.charAt(0) === '/' && text.charAt(1) === '/') return null;
+    return text;
+  }
+
+  /* Series colours arrive as token names, never as colour values.
+
+     A raw colour from the payload is the one way a figure can end up unreadable
+     on a theme it was not picked against: brand cyan at full brightness on the
+     light theme's white card is roughly 1.3:1. Naming a token instead keeps
+     both themes' answers in the stylesheet, where they were measured.
+
+     The set is closed: the six series tokens, plus "muted" for the comparison
+     line a trend is read against, which is deliberately not one of the six.
+     Anything else falls back to the default series token rather than being
+     applied. */
+  var SERIES_TOKENS = {
+    s1: 'var(--s1)', s2: 'var(--s2)', s3: 'var(--s3)',
+    s4: 'var(--s4)', s5: 'var(--s5)', s6: 'var(--s6)',
+    muted: 'var(--text-3)'
+  };
+
+  function seriesColor(name) {
+    return (typeof name === 'string' &&
+      Object.prototype.hasOwnProperty.call(SERIES_TOKENS, name))
+      ? SERIES_TOKENS[name] : null;
+  }
+
+  /* A link to another pane, or to this one under a different window, with the
+     operator's current selection carried across.
+
+     Built from the shell's own registry and filter state rather than by
+     concatenating a querystring by hand, so a recovery link cannot silently
+     return somebody scoped to Coaches Web on Staging to All on Production.
+     Only the filters the destination actually has are carried. */
+  function paneUrl(paneId, overrides) {
+    var pane = (shell.panes || {})[paneId];
+    if (!pane) return null;
+    var now = shell.filters();
+    var q = new URLSearchParams();
+    if (pane.scope) q.set('scope', now.scope);
+    if (pane.env) q.set('env', now.env);
+    if (pane.range) {
+      var range = (overrides && overrides.range) || now.range;
+      if (pane.range.indexOf(range) !== -1) q.set('range', range);
+    }
+    var qs = q.toString();
+    return pane.file + (qs ? '?' + qs : '');
+  }
 
   function isLoopback() {
     var host = global.location.hostname;
@@ -53,11 +122,13 @@
      So a pane may be pointed at a same-origin JSON document holding one
      response envelope. Honoured only when the page itself is served from a
      loopback address, exactly like the API base-url override in api.js, so a
-     deployment on the real origin can never read one. */
+     deployment on the real origin can never read one, and only when the stored
+     value is a relative path, so "same-origin" is enforced here rather than
+     left to the page's connect-src. */
   function fixtureUrl(paneId) {
     if (!isLoopback()) return null;
     try {
-      return global.localStorage.getItem('ops-pane-fixture-' + paneId) || null;
+      return safeHref(global.localStorage.getItem('ops-pane-fixture-' + paneId));
     } catch (e) {
       return null;
     }
@@ -100,26 +171,72 @@
 
   /* Every timestamp on these panes is UTC and says so. The pipeline buckets
      every period in UTC, so rendering a browser-local time would put a figure
-     under a date it was not counted on. */
+     under a date it was not counted on.
+
+     Which is why parsing cannot go straight to `new Date`. A date-time string
+     with no offset, "2026-07-31T06:00:00", is parsed as *local* time by the
+     language, so formatting it back out with getUTC* and appending " UTC"
+     produces a stamp that is wrong by the operator's own offset and wrong by a
+     different amount for the next operator. Anything without a designator is
+     read as the UTC the pipeline meant; anything carrying Z or an offset is
+     left alone, because it already says what it is. */
+  var HAS_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+  function parseUtc(value) {
+    if (typeof value !== 'string') {
+      var direct = new Date(value);
+      return isNaN(direct.getTime()) ? null : direct;
+    }
+    var text = value.trim().replace(' ', 'T');
+    /* Date-only strings are already UTC by specification, so only the
+       date-time forms are stamped. */
+    if (/^\d{4}-\d{2}-\d{2}T/.test(text) && !HAS_ZONE.test(text)) text += 'Z';
+    var d = new Date(text);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
   function utcStamp(iso) {
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) return null;
+    var d = parseUtc(iso);
+    if (!d) return null;
     return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear() +
       ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ' UTC';
   }
 
   function utcDay(iso) {
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) return null;
+    var d = parseUtc(iso);
+    if (!d) return null;
     return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
   }
 
-  /* Whole hours since an instant, for staleness. Floors, so "8 hours old"
-     never reads as nine. */
+  /* Whole hours since an instant, for staleness. Signed, and truncated towards
+     zero: a reading eight and a half hours old is "8 hours old" rather than
+     nine, and a reading stamped ahead of now comes back negative rather than
+     clamped to fresh.
+
+     The sign is the point. A reading from the future is not a fresh reading;
+     it is a clock that disagrees with this page, and clamping it to zero hides
+     exactly the case the staleness check exists to catch. Truncating rather
+     than flooring also keeps a stamp a few minutes ahead, which is ordinary
+     clock drift between two machines, from being reported as an hour. */
   function hoursSince(iso) {
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) return null;
-    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 3600000));
+    var d = parseUtc(iso);
+    if (!d) return null;
+    var raw = (Date.now() - d.getTime()) / 3600000;
+    return raw >= 0 ? Math.floor(raw) : -Math.floor(-raw);
+  }
+
+  /* "1 hour", "3 hours". Small, but it is in every staleness sentence. */
+  function hours(n) {
+    return n + (Math.abs(n) === 1 ? ' hour' : ' hours');
+  }
+
+  /* The article a spoken number wants: an 8, an 11, an 18, an 80. Used where a
+     figure from the payload lands mid-sentence. */
+  function article(n) {
+    var s = String(n);
+    if (s === '11' || s === '18') return 'an';
+    if (s.charAt(0) === '8' && s.length <= 2) return 'an';
+    return 'a';
   }
 
   var MICROS = 1000000;
@@ -317,13 +434,20 @@
 
      This is not the shell's "not built yet": the pane itself is built and its
      rendering is what you are looking at. What is missing is the reporting
-     underneath, and saying that plainly is the whole point of the state. */
+     underneath, and saying that plainly is the whole point of the state.
+
+     The closing sentence used to promise that figures would appear "without
+     another release". They will not: the pane holds no path to call, so the
+     slice that builds the reporting has to ship the path with it. Promising
+     otherwise would make this state the one place on the pane that says
+     something the code cannot do. */
   function noSource(opts) {
     return stateCard('empty', opts.title, [
       opts.detail,
-      'Nothing is being hidden from you, and nothing here is a zero. ' +
-        'When the reporting behind this pane starts publishing, this page ' +
-        'shows it without another release.'
+      opts.closing ||
+        'Nothing is being hidden from you, and nothing here is a zero. This ' +
+        'page shows these figures once the reporting behind it is built and ' +
+        'the release that builds it points this pane at it.'
     ]);
   }
 
@@ -384,16 +508,40 @@
     return { min: min, max: max };
   }
 
-  function pathFor(values, bounds, width, height, pad) {
-    var span = bounds.max - bounds.min;
-    var step = values.length > 1 ? (width - pad * 2) / (values.length - 1) : 0;
+  function finiteCount(values) {
+    var n = 0;
+    (values || []).forEach(function (v) {
+      if (typeof v === 'number' && isFinite(v)) n += 1;
+    });
+    return n;
+  }
+
+  function pointY(v, bounds, height, pad) {
+    return height - pad - ((v - bounds.min) / (bounds.max - bounds.min)) * (height - pad * 2);
+  }
+
+  /* One series against an x step handed in from outside.
+
+     The step is a parameter rather than something derived from this series'
+     own length on purpose. Two series drawn on one chart are the same days, so
+     a day missing from one of them must leave a gap in that line rather than
+     stretch it across the full width and put the two lines on different
+     scales. A missing point breaks the path and the pen restarts, which is
+     what a gap in a daily series actually is. */
+  function seriesPath(values, bounds, step, height, pad) {
     var d = '';
-    values.forEach(function (v, i) {
-      var x = pad + i * step;
-      var y = height - pad - ((v - bounds.min) / span) * (height - pad * 2);
-      d += (i === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2);
+    var pen = 'M';
+    (values || []).forEach(function (v, i) {
+      if (typeof v !== 'number' || !isFinite(v)) { pen = 'M'; return; }
+      d += pen + (pad + i * step).toFixed(2) + ' ' +
+        pointY(v, bounds, height, pad).toFixed(2);
+      pen = 'L';
     });
     return d;
+  }
+
+  function stepFor(length, width, pad) {
+    return length > 1 ? (width - pad * 2) / (length - 1) : 0;
   }
 
   /* A twelve-point trend beside a figure. Deliberately unlabelled on its axes:
@@ -404,14 +552,13 @@
     var width = 260;
     var height = 44;
     var svg = chartFrame(width, height, opts.label || 'Trend', 'spark');
-    var clean = (values || []).filter(function (v) { return typeof v === 'number' && isFinite(v); });
-    if (clean.length < 2) return svg;
+    if (finiteCount(values) < 2) return svg;
 
-    var bounds = extent(clean);
+    var bounds = extent(values || []);
     var line = svgEl('path', {
-      d: pathFor(clean, bounds, width, height, 4),
+      d: seriesPath(values, bounds, stepFor((values || []).length, width, 4), height, 4),
       fill: 'none',
-      stroke: opts.color || 'var(--s1)',
+      stroke: seriesColor(opts.color) || 'var(--s1)',
       'stroke-width': 1.8,
       'stroke-linecap': 'round',
       'stroke-linejoin': 'round',
@@ -432,21 +579,28 @@
     svg.setAttribute('preserveAspectRatio', 'none');
 
     var all = [];
+    var length = 0;
     (config.series || []).forEach(function (s) {
-      (s.values || []).forEach(function (v) { all.push(v); });
+      var values = s.values || [];
+      if (values.length > length) length = values.length;
+      values.forEach(function (v) { all.push(v); });
     });
-    if (all.length < 2) return svg;
+    if (finiteCount(all) < 2) return svg;
     var bounds = extent(all.concat([0]));
 
+    /* One x scale for the whole chart, taken from the longest series, so both
+       lines put day seven in the same place whatever either of them is
+       missing. Marks index the series as it arrived rather than a filtered
+       copy of it, so a mark cannot slide onto the wrong day. */
+    var step = stepFor(length, width, pad);
+
     (config.series || []).forEach(function (s) {
-      var values = (s.values || []).filter(function (v) {
-        return typeof v === 'number' && isFinite(v);
-      });
-      if (values.length < 2) return;
+      var values = s.values || [];
+      if (finiteCount(values) < 2) return;
       svg.appendChild(svgEl('path', {
-        d: pathFor(values, bounds, width, height, pad),
+        d: seriesPath(values, bounds, step, height, pad),
         fill: 'none',
-        stroke: s.color || 'var(--s1)',
+        stroke: seriesColor(s.color) || 'var(--s1)',
         'stroke-width': s.dashed ? 1.4 : 2,
         'stroke-dasharray': s.dashed ? '5 4' : '',
         'stroke-linecap': 'round',
@@ -455,12 +609,11 @@
       }));
 
       (s.marks || []).forEach(function (index) {
-        if (index < 0 || index >= values.length) return;
-        var span = bounds.max - bounds.min;
-        var step = values.length > 1 ? (width - pad * 2) / (values.length - 1) : 0;
+        var v = values[index];
+        if (typeof v !== 'number' || !isFinite(v)) return;
         svg.appendChild(svgEl('circle', {
           cx: (pad + index * step).toFixed(2),
-          cy: (height - pad - ((values[index] - bounds.min) / span) * (height - pad * 2)).toFixed(2),
+          cy: pointY(v, bounds, height, pad).toFixed(2),
           r: 3.4,
           fill: 'var(--warn)'
         }));
@@ -483,7 +636,8 @@
     (rows || []).forEach(function (r) {
       var bar = h('i', { 'aria-hidden': 'true' });
       bar.style.setProperty('width', Math.max(1, (r.value / max) * 100).toFixed(2) + '%');
-      if (r.color) bar.style.setProperty('background', r.color);
+      var tone = seriesColor(r.color);
+      if (tone) bar.style.setProperty('background', tone);
 
       var track = h('div', { className: 'rank-track', 'aria-hidden': 'true' }, [bar]);
 
@@ -527,6 +681,10 @@
      owns the keyboard behaviour, so this only has to build the markup it
      expects and hand the subtree back for wiring.
 
+     opts.onSelect, if given, is called with the id of the tab that is selected
+     after every selection, which is what a card needs when its heading names
+     the thing the selected tab switched to.
+
      tabs: [{ id, label, panel }] */
   function tabbed(opts) {
     var wrap = h('div', { className: 'tabbed' });
@@ -542,6 +700,7 @@
         type: 'button', id: tabId, role: 'tab',
         'aria-controls': panelId,
         'aria-selected': String(i === 0),
+        'data-tab': t.id,
         text: t.label
       });
       list.appendChild(button);
@@ -553,6 +712,19 @@
       panels.appendChild(panel);
     });
 
+    /* Listened for on the tablist rather than on each tab, so it runs after
+       the shell's own handler on the tab that was clicked or arrowed to has
+       already moved the selection: a listener on the button itself would read
+       the selection it is about to replace. */
+    if (opts.onSelect) {
+      var relay = function () {
+        var selected = list.querySelector('[role="tab"][aria-selected="true"]');
+        if (selected) opts.onSelect(selected.getAttribute('data-tab'));
+      };
+      list.addEventListener('click', relay);
+      list.addEventListener('keydown', relay);
+    }
+
     wrap.appendChild(list);
     wrap.appendChild(panels);
     return { root: wrap, tablist: list, panels: panels };
@@ -562,10 +734,15 @@
     REPORTING_FLOOR: REPORTING_FLOOR,
     load: load,
     isLoopback: isLoopback,
+    safeHref: safeHref,
+    seriesColor: seriesColor,
+    paneUrl: paneUrl,
 
     utcStamp: utcStamp,
     utcDay: utcDay,
     hoursSince: hoursSince,
+    hours: hours,
+    article: article,
     money: money,
     count: count,
     decimal: decimal,

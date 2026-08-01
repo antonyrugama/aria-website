@@ -40,6 +40,29 @@
       'indistinguishable from a month that cost nothing.'
   };
 
+  /* What the pane says when an answer arrives carrying no billed total.
+     Separate wording from the one above, because the two are different facts:
+     nothing was asked, against something answered and the answer was empty. */
+  var NO_TOTAL = {
+    title: 'This answer carried no billed total',
+    detail: 'The cost reporting answered, but the response held no total for ' +
+      'this period, so there is nothing to show it against and nothing for ' +
+      'the groupings below to be checked against.',
+    closing: 'This is not a period that cost nothing. A missing total and a ' +
+      'zero total look identical on a bar, so this pane draws neither.'
+  };
+
+  /* A number from the payload, or null. Never a substituted zero: on a pane
+     about money, a zero is a claim, and it is the one claim a missing field
+     must not be turned into. */
+  function numeric(value) {
+    return (typeof value === 'number' && isFinite(value)) ? value : null;
+  }
+
+  function totalMicros(data) {
+    return numeric(data && data.total && data.total.micros);
+  }
+
   /* ------------------------------------------------------- as of and stale */
 
   /* The "as of" line, which every state that shows a figure carries.
@@ -61,8 +84,8 @@
 
     if (data.publishLagHours) {
       wrap.appendChild(h('span', {
-        text: 'Billing publishes on a ' + data.publishLagHours +
-          ' hour cycle, so today is only partly counted.'
+        text: 'Billing publishes on ' + d.article(data.publishLagHours) + ' ' +
+          data.publishLagHours + ' hour cycle, so today is only partly counted.'
       }));
     }
 
@@ -70,28 +93,46 @@
     if (stale) {
       var badge = h('span', { className: 'badge badge-warn' });
       badge.appendChild(shell.icon('warn'));
-      badge.appendChild(h('span', { text: 'Stale' }));
+      badge.appendChild(h('span', { text: stale.badge }));
       wrap.appendChild(badge);
-      wrap.appendChild(h('span', { className: 'ink-warn', text: stale }));
+      wrap.appendChild(h('span', { className: 'ink-warn', text: stale.detail }));
     }
     return wrap;
   }
 
-  /* Returns the sentence explaining why a reading is behind, or null.
+  /* Returns the sentence explaining why a reading cannot be read as current,
+     or null.
 
-     Two independent sources of the answer, because they fail differently: the
-     reporting may say outright that its last attempt did not land, and the
-     timestamp may simply be older than the publish cycle can explain. Either
-     one alone would miss a real case. */
+     Three independent sources of the answer, because they fail differently:
+     the reporting may say outright that its last attempt did not land, the
+     timestamp may be older than the publish cycle can explain, and the
+     timestamp may be ahead of now, which is not a fresh reading at all but two
+     clocks disagreeing. The third used to be invisible because the age was
+     clamped at zero, which made the one case nobody would guess at look like
+     the healthiest reading on the pane. */
   function isStale(data) {
-    if (data.staleness && data.staleness.state && data.staleness.state !== 'ok') {
-      return data.staleness.detail || 'The last attempt to read costs did not land.';
-    }
     var age = d.hoursSince(data.asOf);
+    if (age !== null && age < 0) {
+      return {
+        badge: 'Clocks disagree',
+        detail: 'This reading is stamped ' + d.hours(-age) + ' ahead of now, ' +
+          'so the reporting and this page do not agree on the time. Treat the ' +
+          'figures as unverified until that is explained.'
+      };
+    }
+    if (data.staleness && data.staleness.state && data.staleness.state !== 'ok') {
+      return {
+        badge: 'Stale',
+        detail: data.staleness.detail || 'The last attempt to read costs did not land.'
+      };
+    }
     var lag = data.publishLagHours || 8;
     if (age !== null && age > lag * 2) {
-      return 'This reading is ' + age + ' hours old, which is longer than the ' +
-        'publishing cycle explains.';
+      return {
+        badge: 'Stale',
+        detail: 'This reading is ' + d.hours(age) + ' old, which is longer ' +
+          'than the publishing cycle explains.'
+      };
     }
     return null;
   }
@@ -103,9 +144,9 @@
     var card = d.card({});
     var body = d.cardBody('stack-sm');
 
-    var total = (data.total && data.total.micros) || 0;
-    var forecast = data.forecast && data.forecast.micros;
-    var budget = data.budget && data.budget.micros;
+    var total = totalMicros(data);
+    var forecast = numeric(data.forecast && data.forecast.micros);
+    var budget = numeric(data.budget && data.budget.micros);
 
     /* The headline pair: what has been billed, and what that is on course to
        become. Kept side by side because either one alone invites the wrong
@@ -133,12 +174,12 @@
     }
     headline.appendChild(spent);
 
-    if (typeof forecast === 'number') {
+    if (forecast !== null) {
       var right = h('div', { className: 'right budget-forecast' }, [
         h('div', { className: 'small muted', text: 'Forecast to period end' }),
         h('div', { className: 'mono budget-forecast-value', text: d.money(forecast, currency) })
       ]);
-      if (typeof budget === 'number' && budget > 0) {
+      if (budget !== null && budget > 0) {
         right.appendChild(h('div', {
           className: 'tiny muted',
           text: d.percent(Math.round((forecast / budget) * 10000), 0) +
@@ -150,7 +191,8 @@
     }
     body.appendChild(headline);
 
-    body.appendChild(budgetBar(data));
+    var bar = budgetBar(data);
+    if (bar) body.appendChild(bar);
 
     var foot = h('div', { className: 'row row-wrap budget-note' });
     if (data.period) {
@@ -178,12 +220,18 @@
 
      Every length here is also stated in words above or below it. The bar is
      hidden from assistive technology on purpose: repeating three figures as an
-     unlabelled graphic adds nothing a reader can use. */
+     unlabelled graphic adds nothing a reader can use.
+
+     Returns null with no billed total, rather than drawing an empty track: a
+     bar starting at zero is a statement that nothing has been spent, and that
+     is exactly the statement a missing figure is not allowed to make. */
   function budgetBar(data) {
     var currency = data.currency;
-    var total = (data.total && data.total.micros) || 0;
-    var forecast = (data.forecast && data.forecast.micros) || total;
-    var budget = data.budget && data.budget.micros;
+    var total = totalMicros(data);
+    if (total === null) return null;
+    var forecast = numeric(data.forecast && data.forecast.micros);
+    if (forecast === null) forecast = total;
+    var budget = numeric(data.budget && data.budget.micros);
 
     var scale = Math.max(budget || 0, forecast, total) || 1;
     var wrap = h('div', { className: 'budget' });
@@ -199,7 +247,7 @@
       wrap.appendChild(over);
     }
 
-    if (typeof budget === 'number' && budget > 0) {
+    if (budget !== null && budget > 0) {
       var marker = h('span', { className: 'budget-marker' });
       marker.style.setProperty('left', ((budget / scale) * 100).toFixed(2) + '%');
       wrap.appendChild(marker);
@@ -216,7 +264,7 @@
         text: d.money(forecast - total, currency) + ' more forecast'
       }));
     }
-    if (typeof budget === 'number' && budget > 0) {
+    if (budget !== null && budget > 0) {
       var overBudget = forecast > budget;
       row.appendChild(h('span', {
         className: overBudget ? 'mono ink-warn' : 'mono muted',
@@ -238,9 +286,10 @@
     var wrap = h('div', { className: 'stack-sm' });
     found.forEach(function (item) {
       var box = d.callout('warn', 'warn', [d.strong(item.title), ' ' + item.detail]);
-      if (item.link && item.link.href) {
+      var href = item.link && d.safeHref(item.link.href);
+      if (href) {
         box.lastChild.appendChild(h('div', { className: 'row mt-sm' }, [
-          h('a', { className: 'btn btn-sm', href: item.link.href, text: item.link.label })
+          h('a', { className: 'btn btn-sm', href: href, text: item.link.label })
         ]));
       }
       wrap.appendChild(box);
@@ -256,6 +305,13 @@
     { key: 'service', label: 'Service' }
   ];
 
+  /* What the card is called while a given view is selected. The payload names
+     each view; the registry above is the fallback so the heading is never
+     blank and never borrowed from a different grouping. */
+  function viewTitle(view, meta) {
+    return view.label || ('By ' + meta.label.toLowerCase());
+  }
+
   function viewsCard(data) {
     var views = data.views || {};
     var present = VIEWS.filter(function (v) {
@@ -264,18 +320,40 @@
     if (!present.length) return null;
 
     var first = views[present[0].key];
-    var card = d.card({ title: first.label, hint: first.hint });
+    var card = d.card({ title: viewTitle(first, present[0]) });
+    var head = card.querySelector('.card-head');
+    var title = card.querySelector('.card-title');
+
+    /* Built here rather than through the card's own hint option so the element
+       exists whether or not the first view carries one, which is what lets the
+       heading and its hint both follow the selected tab. */
+    var hint = h('span', { className: 'card-hint', text: first.hint || '' });
+    hint.hidden = !first.hint;
+    head.appendChild(hint);
+
     var body = d.cardBody();
 
     if (present.length > 1) {
+      /* The heading names the grouping on screen, so it has to change with the
+         grouping. It is also the heading a screen reader lands on above these
+         rows, and leaving it on the first view meant the rows under "By
+         category" were resource groups on a pane whose whole claim is that
+         these are three different ways of cutting one bill. */
       var built = d.tabbed({
         label: 'How to group the bill',
         idPrefix: 'spendview',
         tabs: present.map(function (v) {
           return { id: v.key, label: v.label, panel: viewPanel(views[v.key], data) };
-        })
+        }),
+        onSelect: function (key) {
+          var view = views[key];
+          if (!view) return;
+          var chosen = VIEWS.filter(function (v) { return v.key === key; })[0];
+          title.textContent = viewTitle(view, chosen);
+          hint.textContent = view.hint || '';
+          hint.hidden = !view.hint;
+        }
       });
-      var head = card.querySelector('.card-head');
       head.appendChild(h('div', { className: 'spacer' }));
       head.appendChild(built.tablist);
       body.appendChild(built.panels);
@@ -298,7 +376,8 @@
       var line = h('div', { className: 'cat' });
 
       var swatch = h('span', { className: 'cat-swatch', 'aria-hidden': 'true' });
-      if (row.color) swatch.style.setProperty('background', row.color);
+      var tone = d.seriesColor(row.color);
+      if (tone) swatch.style.setProperty('background', tone);
       line.appendChild(swatch);
 
       var name = h('div', { className: 'cat-main' }, [
@@ -392,7 +471,8 @@
     var legend = h('div', { className: 'legend' });
     daily.series.forEach(function (s) {
       var swatch = h('i', { 'aria-hidden': 'true' });
-      if (s.color) swatch.style.setProperty('background', s.color);
+      var tone = d.seriesColor(s.color);
+      if (tone) swatch.style.setProperty('background', tone);
       legend.appendChild(h('span', {}, [swatch, h('span', { text: s.label })]));
     });
 
@@ -512,17 +592,30 @@
   /* The period has not published yet. Distinct from a fault and distinct from
      nothing being spent: the export runs on a cycle, and the first hours of a
      new period legitimately have nothing in them. */
-  function renderNotPublished(data) {
+  function renderNotPublished(data, onRetry) {
     var detail = (data.availability && data.availability.detail) ||
       'The billing export has not published for this period yet.';
 
     var actions = [];
     var ranges = ((shell.panes[PANE_ID] || {}).range) || [];
     if (ranges.indexOf('last-month') !== -1) {
-      actions.push(h('a', {
-        className: 'btn', href: 'spend.html?range=last-month',
-        text: 'Show the last closed period'
-      }));
+      /* Built through the shell's filter state rather than by hand, so an
+         operator on Staging is not silently returned to Production by a link
+         offering them a different window. */
+      var href = d.paneUrl(PANE_ID, { range: 'last-month' });
+      if (href) {
+        actions.push(h('a', {
+          className: 'btn', href: href, text: 'Show the last closed period'
+        }));
+      }
+    }
+
+    /* The export publishes on a cycle, so asking again is a real answer to
+       this state rather than the reload it used to need. */
+    if (onRetry) {
+      var again = h('button', { className: 'btn', type: 'button', text: 'Check again' });
+      again.addEventListener('click', onRetry);
+      actions.push(again);
     }
 
     var node = d.stateCard('spend', 'Costs have not published for this period', [
@@ -531,9 +624,10 @@
         'known, not nothing spent.'
     ], actions);
 
-    if (data.asOf) {
-      node.appendChild(h('p', { className: 'axis-note' }, [asOfLine(data)]));
-    }
+    /* Unconditional, because a state that shows no total still has to say
+       when it last looked: asOfLine says so itself when the time is missing.
+       A div rather than a p, because the line it returns is a flex row. */
+    node.appendChild(h('div', { className: 'axis-note' }, [asOfLine(data)]));
     return node;
   }
 
@@ -545,10 +639,15 @@
 
     var token = 0;
 
-    function paint(node) {
+    /* Every state the pane lands in is announced, not only the skeleton. The
+       pane replaces its whole subtree on each filter change, so without this a
+       screen reader hears "Loading figures" and then silence, including when
+       what replaced it was the failure card. */
+    function paint(node, announcement) {
       host.textContent = '';
       host.appendChild(node);
       shell.wireTabs(host);
+      if (announcement) shell.announce(announcement);
     }
 
     function refresh() {
@@ -557,29 +656,46 @@
 
       d.load(SOURCE).then(function (result) {
         if (mine !== token) return;
-        if (result.kind === 'no-source') { paint(d.noSource(NOT_REPORTING)); return; }
+        if (result.kind === 'no-source') {
+          paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title);
+          return;
+        }
 
-        var data = result.data || {};
-        var state = (data.availability && data.availability.state) || 'ready';
-        if (state === 'not_published') { paint(renderNotPublished(data)); return; }
-        if (state !== 'ready') {
+        var data = (result.data && typeof result.data === 'object') ? result.data : null;
+        if (!data) { paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title); return; }
+
+        var state = data.availability && data.availability.state;
+        if (state === 'not_published') {
+          paint(renderNotPublished(data, refresh), 'Costs have not published for this period');
+          return;
+        }
+        if (state && state !== 'ready') {
           paint(d.stateCard('spend', 'Cost reporting is not set up', [
             (data.availability && data.availability.detail) ||
               'No cost source is configured for this period.',
             'This is a configuration fact, not a reading. A source that was ' +
               'never set up reports nothing, which is not the same as a period ' +
               'that cost nothing.'
-          ]));
+          ]), 'Cost reporting is not set up');
           return;
         }
-        paint(renderReady(data));
+
+        /* A response with no availability and no billed total is not a ready
+           pane. Defaulting the state to ready was how a payload carrying
+           nothing became a confident "month to date, $0.00": the most
+           confident branch is the wrong default for an answer this pane cannot
+           read. The total is what the whole pane hangs off, so its absence is
+           the test rather than the presence of any one section. */
+        if (totalMicros(data) === null) { paint(d.noSource(NO_TOTAL), NO_TOTAL.title); return; }
+
+        paint(renderReady(data), 'Cost figures updated');
       }).catch(function (err) {
         if (mine !== token) return;
         paint(d.failure(err, {
           title: NOT_REPORTING.title,
           detail: NOT_REPORTING.detail,
           onRetry: refresh
-        }));
+        }), 'Could not load these figures');
       });
     }
 

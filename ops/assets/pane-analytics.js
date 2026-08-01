@@ -56,13 +56,18 @@
         'people whose app reports it, and anything affected is labelled.'
     ]);
 
-    var row = h('div', { className: 'row mt-sm' });
-    var jump = h('button', {
-      className: 'btn btn-sm', type: 'button', text: 'Show coverage by version'
-    });
-    jump.addEventListener('click', onJump);
-    row.appendChild(jump);
-    box.lastChild.appendChild(row);
+    /* Offered only when there is a per-version card to jump to. A shortfall
+       can be reported without the breakdown behind it, and a button that
+       silently does nothing is worse than no button. */
+    if (onJump) {
+      var row = h('div', { className: 'row mt-sm' });
+      var jump = h('button', {
+        className: 'btn btn-sm', type: 'button', text: 'Show coverage by version'
+      });
+      jump.addEventListener('click', onJump);
+      row.appendChild(jump);
+      box.lastChild.appendChild(row);
+    }
     return box;
   }
 
@@ -85,11 +90,19 @@
         h('div', { className: 'spacer' })
       ]);
 
+      /* Coverage is a share of sessions on a reporting app version, not a rate
+         over people, so the reporting floor does not apply to it. What does
+         apply is that an unreported coverage is not a shortfall: it says so
+         rather than rendering as a figure. */
+      var known = typeof app.coverageBasisPoints === 'number' &&
+        isFinite(app.coverageBasisPoints);
       var full = app.coverageBasisPoints === 10000;
       var badge = h('span', { className: 'badge ' + (full ? 'badge-ok' : 'badge-warn') });
       badge.appendChild(shell.icon(full ? 'check' : 'warn'));
       badge.appendChild(h('span', {
-        text: full ? 'Full coverage' : d.percent(app.coverageBasisPoints) + ' coverage'
+        text: full ? 'Full coverage'
+          : known ? d.percent(app.coverageBasisPoints) + ' coverage'
+          : 'Coverage not reported'
       }));
       head.appendChild(badge);
       col.appendChild(head);
@@ -111,19 +124,44 @@
     return section;
   }
 
-  /* One figure in a column. A rate goes through the floor first; everything
-     else is a count and is always reportable. */
+  /* One figure in a column.
+
+     Anything measured over a group goes through the floor first, and what
+     makes it one is the denominator travelling with it rather than the label
+     the pipeline happened to give it: a ratio delivered as a decimal is still
+     a ratio, and used to walk straight past the guard. Everything left is a
+     count, and a count is always reportable. */
   function metricRow(metric) {
     var row = h('div', { className: 'vs-metric' }, [
       h('span', { text: metric.label })
     ]);
 
-    if (metric.kind === 'rate' && !d.reportable(metric.denominator)) {
+    var overGroup = metric.kind === 'rate' || typeof metric.denominator === 'number';
+    if (overGroup && !d.reportable(metric.denominator)) {
       row.classList.add('is-suppressed');
-      row.appendChild(h('span', {
-        className: 'small suppressed',
-        text: 'Not reported, ' + d.count(metric.denominator || 0) + ' in group'
-      }));
+      /* An absent denominator is an unknown group, not an empty one. Printing
+         it as "0 in group" asserted a size nobody had reported, next to a
+         column that was busy stating real ones. */
+      var known = typeof metric.denominator === 'number' && isFinite(metric.denominator);
+      var said = h('div', { className: 'small suppressed right' }, [
+        h('span', {
+          text: known
+            ? 'Not reported, ' + d.count(metric.denominator) + ' in group, ' +
+              'under the ' + d.REPORTING_FLOOR + ' we report rates from'
+            : 'Not reported, the size of this group was not given'
+        })
+      ]);
+      /* Raw counts are always safe, so they are offered here as they are in
+         the cohort and feature cards, whenever the payload carries one. Under
+         the sentence rather than beside it, so a narrow column keeps two
+         columns rather than growing a third. */
+      if (known && typeof metric.numerator === 'number') {
+        said.appendChild(h('div', {
+          className: 'mono',
+          text: d.count(metric.numerator) + ' of ' + d.count(metric.denominator)
+        }));
+      }
+      row.appendChild(said);
       return row;
     }
 
@@ -308,11 +346,12 @@
         d.strong(funnel.note.title), ' ' + funnel.note.detail
       ]);
       note.classList.add('mt');
-      if (funnel.note.link && funnel.note.link.href) {
+      var href = funnel.note.link && d.safeHref(funnel.note.link.href);
+      if (href) {
         var row = h('div', { className: 'row mt-sm' }, [
           h('a', {
             className: 'btn btn-sm',
-            href: funnel.note.link.href,
+            href: href,
             text: funnel.note.link.label
           })
         ]);
@@ -436,13 +475,31 @@
 
     var body = d.cardBody('stack-sm');
     coverage.versions.forEach(function (version) {
-      var short = version.coverageBasisPoints < 10000;
+      /* The meter draws coverage, so the text beside it has to be coverage.
+         It used to read the session share, a different quantity, which left
+         the number this card exists to show carried by the length and the
+         colour of a bar that is hidden from assistive technology: nowhere in
+         text, and invisible to anybody who cannot compare bar lengths. The
+         session share is still here, as the sentence underneath. */
+      var known = typeof version.coverageBasisPoints === 'number' &&
+        isFinite(version.coverageBasisPoints);
+      var short = known && version.coverageBasisPoints < 10000;
+
+      var notes = [];
+      if (typeof version.sessionShareBasisPoints === 'number') {
+        notes.push(d.percent(version.sessionShareBasisPoints, 0) +
+          ' of sessions in this window ran on it.');
+      }
+      if (version.note) notes.push(version.note);
+
       body.appendChild(d.meterRow({
         label: version.label,
-        value: d.percent(version.sessionShareBasisPoints, 0) + ' of sessions',
-        fillPercent: version.coverageBasisPoints / 100,
-        tone: short ? 'warn' : 'ok',
-        note: version.note
+        value: known
+          ? d.percent(version.coverageBasisPoints, 0) + ' of its sessions report'
+          : 'Reporting not measured',
+        fillPercent: known ? version.coverageBasisPoints / 100 : 0,
+        tone: short || !known ? 'warn' : 'ok',
+        note: notes.join(' ')
       }));
     });
     card.appendChild(body);
@@ -462,12 +519,12 @@
     var root = h('div', { className: 'stack' });
 
     var coverage = coverageCard(data);
-    var warning = coverageWarning(data.coverage, function () {
+    var warning = coverageWarning(data.coverage, coverage ? function () {
       var target = document.getElementById('coverageCard');
       if (!target) return;
       target.scrollIntoView({ block: 'nearest' });
       target.focus();
-    });
+    } : null);
     if (warning) root.appendChild(warning);
 
     root.appendChild(appColumns(data));
@@ -479,6 +536,15 @@
         'work tool, not because it is a better product. Combined totals appear ' +
         'only for counts that share a unit.'
     ]));
+
+    /* The cards below are peers of the app comparison, not parts of it. Their
+       titles are h3, so without a heading of their own they read to anybody
+       navigating by headings as subsections of "Usage by app", which is a
+       section they have nothing to do with. Silent, because the band it names
+       is already obvious on screen from the layout. */
+    root.appendChild(h('h2', {
+      className: 'sr-only', text: 'Behaviour, features and coverage'
+    }));
 
     var grid = h('div', { className: 'grid g-main' });
     var left = h('div', { className: 'stack' });
@@ -495,12 +561,14 @@
     grid.appendChild(right);
     root.appendChild(grid);
 
-    if (data.asOf) {
-      root.appendChild(h('p', {
-        className: 'axis-note',
-        text: 'Counted up to ' + d.utcStamp(data.asOf) + '.'
-      }));
-    }
+    var stamp = data.asOf && d.utcStamp(data.asOf);
+    root.appendChild(h('p', {
+      className: 'axis-note',
+      text: stamp
+        ? 'Counted up to ' + stamp + '.'
+        : 'The window these figures were counted up to was not reported, so ' +
+          'they cannot be trusted as current.'
+    }));
     return root;
   }
 
@@ -511,10 +579,14 @@
     var actions = [];
     var ranges = ((shell.panes[PANE_ID] || {}).range) || [];
     var widest = ranges.filter(function (r) { return r !== 'custom'; }).pop();
-    if (widest) {
+    /* Through the shell's filter state, so widening the window does not also
+       silently move the operator off the app and environment they were
+       looking at. */
+    var href = widest && d.paneUrl(PANE_ID, { range: widest });
+    if (href) {
       actions.push(h('a', {
         className: 'btn btn-primary',
-        href: 'analytics.html?range=' + widest,
+        href: href,
         text: 'Try the widest window'
       }));
     }
@@ -539,10 +611,15 @@
 
     var token = 0;
 
-    function paint(node) {
+    /* Every state the pane lands in is announced, not only the skeleton. The
+       pane replaces its whole subtree on each filter change, so without this a
+       screen reader hears "Loading figures" and then silence, including when
+       what replaced it was the failure card. */
+    function paint(node, announcement) {
       host.textContent = '';
       host.appendChild(node);
       shell.wireTabs(host);
+      if (announcement) shell.announce(announcement);
     }
 
     function refresh() {
@@ -551,20 +628,43 @@
 
       d.load(SOURCE).then(function (result) {
         if (mine !== token) return;
-        if (result.kind === 'no-source') { paint(d.noSource(NOT_REPORTING)); return; }
+        if (result.kind === 'no-source') {
+          paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title);
+          return;
+        }
 
-        var data = result.data || {};
-        var state = (data.availability && data.availability.state) || 'ready';
-        if (state === 'insufficient') { paint(renderInsufficient(data)); return; }
-        if (state !== 'ready') { paint(d.noSource(NOT_REPORTING)); return; }
-        paint(renderReady(data));
+        var data = (result.data && typeof result.data === 'object') ? result.data : null;
+        if (!data) { paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title); return; }
+
+        var state = data.availability && data.availability.state;
+        if (state === 'insufficient') {
+          paint(renderInsufficient(data), 'Not enough data to report');
+          return;
+        }
+        if (state && state !== 'ready') {
+          paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title);
+          return;
+        }
+
+        /* An answer carrying no app columns is not a ready pane. Defaulting
+           the state to ready meant a payload with nothing in it drew the
+           "these columns are never added together" callout and the glossary
+           over no figures at all, which reads as a measured result rather than
+           as an empty answer. The columns are the pane; without them there is
+           nothing to be ready about. */
+        if (!(data.apps || []).length) {
+          paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title);
+          return;
+        }
+
+        paint(renderReady(data), 'Usage figures updated');
       }).catch(function (err) {
         if (mine !== token) return;
         paint(d.failure(err, {
           title: NOT_REPORTING.title,
           detail: NOT_REPORTING.detail,
           onRetry: refresh
-        }));
+        }), 'Could not load these figures');
       });
     }
 
