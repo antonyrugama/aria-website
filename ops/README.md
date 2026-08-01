@@ -199,6 +199,10 @@ ops/
     pane-overview.js    Overview
     pane-alerts.js      Problems
     pane-awaiting-data.js  Happening now and What happened
+    pane-data.js        shared plumbing for the understand panes: source,
+                        formatting, states, charts
+    pane-analytics.js   People and usage
+    pane-spend.js       Cloud costs
 ```
 
 A pane page carries the shell, and where the pane has been built, its own module. Everything a
@@ -206,6 +210,10 @@ pane *is* lives in the `PANES` registry in `shell.js`, so the rail cannot drift 
 everything a pane *shows* is registered by that module through `OpsShell.definePane`, and a pane
 with no module renders the not-built state. The shell waits for the document to finish parsing
 before it asks for a pane's contents, so which script finishes first cannot change what renders.
+
+Registration rather than a flag in the registry, because the thing that knows whether a pane is
+built is the pane's own module being on the page; a boolean in the registry could claim "built"
+on a page that loads nothing to build it.
 
 ## What this release does and does not do
 
@@ -221,21 +229,25 @@ Their figures are being collected but nothing serves them to a page yet, so thos
 words instead of showing a zero. A tile reading zero and a tile with no pipeline behind it look
 identical, and that is the one thing an operations screen must never be.
 
-The remaining panes route to a page that says plainly it is not built yet: W3 for People and
-usage and Cloud costs; W4 for App releases and Look up a user; W5 for Settings. Aria quality is
-deferred to its own project.
-
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
 which is the opposite of what a window ending today needs. When a page comes back full, both
-panes say so, every count reads as "at least", and the two figures that cannot be salvaged, the
-30 day false-alarm rate and the 30 day volume chart, say they cannot be worked out instead of
-showing a number that is quietly short.
+Overview and Problems say so, every count reads as "at least", and the two figures that cannot
+be salvaged, the 30 day false-alarm rate and the 30 day volume chart, say they cannot be worked
+out instead of showing a number that is quietly short.
 
-The shared filter bar ships now and round trips through the querystring, so later waves read a
-selection rather than inventing one. A pane listens on `window` for two events, both dispatched
-once the session is confirmed and the shell is in the document, so a listener added while
-`shell.js` is still booting cannot miss them:
+**People and usage** and **Cloud costs** are drawn in full: every state, every card, and the
+whole of the copy. Neither has a read API published yet, so on the live site both land on an
+honest "not reporting yet" state for the same reason Happening now and What happened do, and the
+section below says exactly what changes on the day their endpoints exist.
+
+The remaining panes route to a page that says plainly it is not built yet: W4 for App releases
+and Look up a user; W5 for Settings. Aria quality is deferred to its own project.
+
+The shared filter bar round trips through the querystring, so a pane reads a selection rather
+than inventing one. A pane listens on `window` for two events, both dispatched once the session
+is confirmed and the shell is in the document, so a listener added while `shell.js` is still
+booting cannot miss them:
 
 - `ops:ready`, carrying `{ pane, filters }`, which is the signal that `#content` exists.
 - `ops:filters`, carrying the selection, fired for the starting selection as well as for every
@@ -257,10 +269,159 @@ on. A control that moves and changes nothing is worse than no control: it leaves
 in the bar over production figures. Both say so where the control would have been, and both get
 their controls back when something can carry them.
 
+People and usage and Cloud costs keep the controls the registry gives them, and that is the same
+rule rather than an exception to it. With no read API published they draw no figure at all, so
+there is no figure a selection can sit over and be silently wrong about; what a control does
+today is repaint the same "not reporting yet" state, which is honest in every position. The
+selection is what the query will carry on the day an endpoint lands, and if one ships able to
+answer only some of them, the ones it cannot carry become a `filterNote` in the same commit that
+turns the endpoint on.
+
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
 rather than a destination that silently vanishes. The server enforces this independently; the
 client renders a fact, it does not decide one.
+
+## The two understand panes
+
+### Where their figures come from, and what happens while nothing serves them
+
+Neither pane's read API is published yet. The pane's data source therefore carries a **null**
+endpoint rather than a guessed path, and a null endpoint means no request is made and the pane
+says so. That is a deliberate choice with a visible consequence: today both panes render an
+honest "not reporting yet" state on the live site, and the day the endpoint exists it is one
+line here and nothing else on the pane changes.
+
+Guessing a path instead would have been worse in a specific way. A pane that calls a route
+nobody has written gets a 404, and a 404 renders as a fault. The dashboard would then be
+reporting that the platform is broken when the truth is that a piece of it has not been built,
+and those are the two things every state on this dashboard exists to keep apart.
+
+The panes hold no figures of their own. Every label that names a service, a version, a group,
+or a resource arrives in the response; nothing operational is a literal in these files. What is
+static is the layout, the state copy, and the glossary, because a definition is not a
+measurement.
+
+### The response the panes read
+
+Both read the transport's envelope, so the pane sees `payload.data`.
+
+**Cloud costs** expects `asOf`, `publishLagHours`, `staleness`, `currency`, `period`, `total`,
+`forecast`, `budget`, a `views` object holding any of `category`, `resourceGroup` and `service`
+as `{ label, hint, rows }`, `daily`, `unitCosts`, `reconciliation`, and `anomalies`.
+`availability.state` is `ready`, `not_published`, or anything else, which reads as "no source
+is configured".
+
+**People and usage** expects `asOf`, `coverage`, `apps`, `cohorts`, `funnel`, and `features`.
+`availability.state` is `ready` or `insufficient`.
+
+Two conventions run through both, and both exist so a figure means the same thing on the pane
+that it meant in the data:
+
+- **Money is integer micro-units of the billing currency.** The pane divides once, at the
+  moment of display. This is what lets Cloud costs *add up* its rows and compare the sum with
+  the billed total exactly; a float sum over a few hundred daily rows does not reproduce an
+  invoice, and a near miss is indistinguishable from a real gap. The comparison is therefore
+  finer than the display: a gap smaller than one whole unit of the last decimal place shown is
+  named in words rather than printed, because printing it would put three figures on screen that
+  do not visibly differ by the amount the sentence beside them claims. The wording names no
+  currency unit, since the billing currency is whatever the response says it is.
+- **A rate is basis points, and it arrives with the denominator it was computed over.** No
+  ratio is precomputed as a percentage, because a stored percentage is only correct for the
+  exact window it was computed for.
+- **A colour is a token name (`s1` to `s6`, or `muted` for a comparison line), never a colour
+  value.** A raw colour from the response is the one way a figure can end up unreadable on a
+  theme it was not picked against: brand cyan at full brightness measures about 1.3:1 on the
+  light theme's white card. Anything outside that closed set falls back to the default series
+  token, so the answer for both themes stays in the stylesheet, where it was measured.
+- **A link is a relative path on this origin.** An `href` in the response is refused if it
+  carries a scheme, if it is protocol-relative, if it holds a control character or whitespace
+  anywhere, or if resolving it against the current page lands on another origin. The last two
+  are what make the first two hold: the URL parser strips tabs and newlines before it reads a
+  scheme, so `java<TAB>script:` reaches the browser as `javascript:`, and it treats a backslash
+  as a path separator, so `/\evil.example/x` resolves cross-origin while looking relative. A
+  refused link renders its label as plain text, so the sentence it belonged to is intact and
+  only the navigation is withheld. The pages' content policy would already stop a `javascript:`
+  URL from running; this keeps the guarantee next to the code that builds the link rather than
+  in a meta tag somebody may loosen later.
+- **A money figure is an object carrying integer `micros`, and nothing else counts as one.**
+  A scalar `total: 0`, an array, or a string is read as no figure rather than as zero. On a
+  pane about money a zero is a claim, and it is the one claim a missing field must not be
+  turned into. Grouping rows read through the same rule, so a row whose `micros` is a string,
+  `null`, `NaN` or `Infinity` makes the reconciliation *unavailable*: the pane says the rows
+  cannot be checked against the bill rather than claiming they add up exactly with the
+  unreadable row silently counted as zero, and rather than reporting a gap that is really a
+  parse failure.
+- **A timestamp is an ISO string in one of three shapes, and anything else is absent.**
+  `YYYY-MM-DD`, `YYYY-MM-DD[T ]HH:MM[:SS[.digits]]` (read as the UTC the pipeline meant, with
+  fractional seconds of any length), and the date-time shape carrying `Z` or a `+/-HH:MM` or
+  `+/-HHMM` offset; the designator belongs to the date-time shape only. A `Date` instance is
+  accepted too.
+  Two normalisations run before the shape is matched, and both are narrow on purpose. A single
+  space between the date and the time stands in for `T`; any later space leaves a shape none of
+  the three match. And a lowercase `t` in that separator position, or a lowercase trailing `z`,
+  is folded to uppercase, because the shapes the engine is required to read as UTC are the
+  uppercase ones, so matching a lowercase designator and then passing it through unchanged would
+  hand exactly the strings this guard exists for back to engine-decided parsing. The fold is
+  anchored to those two positions only: it does not touch a lowercase letter anywhere else, so
+  `2026-07-31Tz06:00` and the like still fail the shape and are absent.
+  Everything else, including `null`, `0` and strings the language would happily parse such as
+  `Jul 31 2026 06:00` or `12/25/2026`, renders the "the time of this reading was not reported"
+  sentence. The shape is checked before `new Date` sees the string, not after: `new Date(null)`
+  is the epoch rather than an invalid date and would print 1 Jan 1970 with an age of half a
+  million hours, and a non-ISO string is parsed as *local* time, which formatted back out with
+  `getUTC*` and labelled UTC gives every operator a different stamp for the same payload and,
+  either side of the date line, a different day.
+
+### Two rules the panes enforce rather than assume
+
+**A rate whose denominator is under 50 is not drawn.** The floor is applied on the surface, to
+every rate the panes draw *over a group of people*, whether it arrives as a numerator and a
+denominator or already computed, and whether the payload labels it a rate or a decimal: what
+makes a figure subject to it is the denominator travelling with it, not the label. A rate that
+arrives with no denominator at all is not drawn either, because a base nobody reported cannot
+be known to clear the floor. With a group smaller than 50, one person moves the figure by
+several points and the reader has no way to tell that from a change. Every suppressed figure
+says the size of the group it was refused for, or says plainly that the size is unknown, and
+offers the raw counts, which are always safe to show.
+
+Two figures are deliberately outside the floor, because neither is a rate over people: coverage,
+which is the share of an app version's own sessions that report an event, and unit cost, which
+is money. Both are labelled for what they are, and coverage that was never measured says so
+rather than drawing a percentage.
+
+**Every cost figure carries the moment it was true.** Cost data is never live; billing publishes
+on a cycle. The "as of" stamp is on every state that shows a figure, including the ones that
+show no total, and a reading that is behind is labelled as behind, with the reason, rather than
+quietly replaced by nothing. Losing the number is worse than knowing it is a few hours old.
+
+Two details that are easy to get wrong and are therefore fixed in code. A timestamp with no
+timezone designator is read as the UTC the pipeline meant, not as the operator's local time,
+because parsing it locally and then formatting it back out as UTC produces a stamp that is
+wrong by the reader's own offset. And a reading stamped *ahead* of now is reported as two
+clocks disagreeing rather than clamped to fresh, since a future reading is the one kind of
+staleness nobody thinks to look for.
+
+**People who have not turned on usage analytics appear in no figure here.** That is not a filter
+this client applies. Their activity is never recorded in the first place, so there is nothing on
+this side to leave out, and nothing to get wrong.
+
+### Looking at the states before the data exists
+
+Because neither read API is published, the ready, insufficient, and stale renderings would
+otherwise be unreviewable until it is, which is the wrong way round: the rendering is what is
+being reviewed now. So a pane can be pointed at a same-origin JSON document holding one response
+envelope, by setting `ops-pane-fixture-analytics` or `ops-pane-fixture-spend` in `localStorage`
+to its path. Honoured only when the page itself is served from a loopback address, exactly like
+the API base-url override, so a deployment on the real origin can never read one, and only when
+the stored value is a relative path, so same-origin is enforced by the code that reads it rather
+than only by the page's `connect-src`.
+
+The pane that has no data yet says so, and says it without a promise it cannot keep: the state
+tells you the reporting behind it is unbuilt and that the release which builds it points the
+pane at it. It does not claim figures will appear "without another release", because both
+`endpoint` values are `null` in these files and a backend publishing a route would change
+nothing on its own.
 
 ## Departures from the approved mocks
 
@@ -300,17 +461,49 @@ client renders a fact, it does not decide one.
    than restoring the background from underneath an open dialog. A confirmation whose action is
    in flight refuses Escape and the scrim for that window, the same window in which its buttons
    are disabled, and re-arms all three together if the action fails.
+9. **The per-page `<style>` blocks the mock gave the understand panes became classes**, because the
+   pages allow no inline style. Two consequences worth naming:
+   - Lengths that come from data (a bar's width, a cell's tint, a swatch's colour) are set
+     through the CSSOM, never as a style attribute. That is not a workaround, it is the only
+     path the policy leaves open: `style-src 'self'` refuses `setAttribute('style', ...)` and
+     always has, while a CSSOM property assignment is not an inline style declaration at all.
+     Anything passed through the shell's `h()` helper as a `style` key would be silently
+     dropped, which is worth knowing before writing the next pane.
+   - The mock's `.seg` view switchers became real tablists. A control that swaps the panel
+     beneath it is a tab pattern rather than a toggle, so it is driven by `aria-selected` and
+     inherits the shell's arrow, Home and End keys.
+10. **A `[hidden] { display: none !important }` rule.** The user-agent rule for `hidden` is a
+    bare attribute selector, so any class carrying `display` outranks it and the hidden thing
+    stays on screen. Every collapsible block and every tab panel on these panes is switched
+    with the attribute, so the rule is load bearing rather than defensive.
+11. **Callout fills are mixed into `--surface-1` rather than into transparency.** This closes
+    two of the contrast debts recorded below; see the note under that table.
+12. **A card head wraps below 860px**, dropping its view switcher onto its own line instead of
+    squeezing the title into a column a word wide.
 
-### Known contrast debt, inherited and not yet fixed
+### Known contrast debt, inherited
 
-Measured across both themes against composited backgrounds. **Every pairing this release
-renders passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or
-better. That includes the two pieces of status furniture W1 does draw: the plain `.badge` that
-carries the scope note on Cloud costs, and the `.callout-ai` on Aria quality.
+Measured across both themes against composited backgrounds. **Every pairing rendered by the
+panes built so far passes in both themes**, text at 4.5:1 or better and control boundaries at
+3:1 or better. That was verified again for the two understand panes across all four of their
+states, 68 pairings in total, worst case 4.67:1 in light and 5.99:1 in dark.
 
-Part of that debt has now come due, because the operate panes are the first to draw a status
-badge. `operate.css` darkens the three light-theme inks, scoped to `[data-theme="light"]` and to
-the badge's ink alone.
+Part of that debt has now come due, and two separate fixes have landed against it, in two
+different stylesheets. Which pages get which follows from which stylesheet they load, so it is
+worth being explicit: `ops.css` is on every page, and `operate.css` is on the four operate pages
+only.
+
+**The callout fix is in `ops.css`, so it reaches every page.** The warning and critical callout
+inks measured 4.41:1 and 4.26:1 in the light theme *only when the callout sat directly on the
+page background*, which is darker than a card; on a card they passed. A translucent tint takes
+its final colour from whatever is behind it, so the same component had two different ratios
+depending on where it was put. The fix mixes the tint into `--surface-1` instead of into
+transparency, which makes the fill, and therefore the ratio, independent of the surface
+underneath. They now measure 4.94:1 and 4.74:1. No approved hue changed, and dark is unaffected.
+
+**The badge fix is in `operate.css`, so it reaches the operate panes only.** They are the first
+to draw a status badge loose on the page background, and `operate.css` darkens the three
+light-theme inks, scoped to `[data-theme="light"]` and to the badge's ink alone.
 
 The ratios are computed rather than eyeballed, and are reproducible from the shipped tokens. The
 badge tint is semi-transparent, so the background that decides is the tint composited over
@@ -341,19 +534,28 @@ with the panes other waves are building; darkening the tokens themselves is a de
 approved palette and belongs to whoever owns it. When it happens, the three rules at the end of
 `operate.css` become redundant and should be deleted.
 
-What is left, still drawn by nothing that ships today:
+What is left. The first three rows are drawn by nothing built so far, and are recorded so that
+the first pane to draw one does not ship it unnoticed. The fourth is a boundary rather than an
+untouched debt:
 
 | Pair | Light ratio |
 |---|---|
 | `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
 | `.btn-danger:hover` | 3.79 |
 | `.tag-backend` on its tint | 4.46 |
-| `callout-warn` / `callout-crit` ink over the page background | 4.41 / 4.26 |
+| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, on a page without `operate.css` | 4.04 / 4.21 / 4.17 |
 
-Dark mode passes throughout and is untouched. The override is scoped to `[data-theme="light"]`, so
-the dark inks are the ones W1 shipped: over the same three surfaces and the same 14% tint, the
-lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200, and `.badge-info` is the next
-at 5.457. Every other pairing is 5.657 or better.
+The last row is the badge fix's own boundary and is recorded rather than dropped, because the
+darkened inks live in `operate.css` and the understand panes do not load it. Those two panes
+avoid the row rather than inherit it: a status badge on them goes inside a card, never loose on
+the page background, where it measures 4.67:1 or better. The row closes for everyone on the day
+the tokens themselves are darkened, which is the same day the three rules at the end of
+`operate.css` are deleted.
+
+Dark mode passes throughout and is untouched. The badge override is scoped to
+`[data-theme="light"]`, so the dark inks are the ones W1 shipped: over the same three surfaces
+and the same 14% tint, the lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200,
+and `.badge-info` is the next at 5.457. Every other pairing is 5.657 or better.
 
 ## Working on it locally
 
@@ -375,3 +577,7 @@ network. A local stub therefore has to be served from the same origin and port a
 files: one small server that serves `/ops/` and answers `/api/ops/*`, with the override set to
 that same origin. `python3 -m http.server` on its own serves the files but answers no API, so the
 sign-in form is as far as it goes.
+
+The same stub is what makes the pane fixtures usable: it has to serve the fixture document too,
+because a cross-origin fetch for it would be refused by `connect-src` for the same reason a
+cross-origin API call would be.
