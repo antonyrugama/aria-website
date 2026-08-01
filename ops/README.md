@@ -294,11 +294,21 @@ that it meant in the data:
 - **A money figure is an object carrying integer `micros`, and nothing else counts as one.**
   A scalar `total: 0`, an array, or a string is read as no figure rather than as zero. On a
   pane about money a zero is a claim, and it is the one claim a missing field must not be
-  turned into.
-- **A timestamp is a string, and anything else is absent.** `null`, `0` and unreadable strings
-  all render the "the time of this reading was not reported" sentence rather than a stamp,
-  because `new Date(null)` is the epoch rather than an invalid date and would otherwise print
-  1 Jan 1970 with an age of half a million hours computed from a field nobody sent.
+  turned into. Grouping rows read through the same rule, so a row whose `micros` is a string,
+  `null`, `NaN` or `Infinity` makes the reconciliation *unavailable*: the pane says the rows
+  cannot be checked against the bill rather than claiming they add up exactly with the
+  unreadable row silently counted as zero, and rather than reporting a gap that is really a
+  parse failure.
+- **A timestamp is an ISO string in one of three shapes, and anything else is absent.**
+  `YYYY-MM-DD`, `YYYY-MM-DD[T ]HH:MM[:SS[.sss]]` (read as the UTC the pipeline meant), and
+  either of those carrying `Z` or a `+/-HH:MM` offset. A `Date` instance is accepted too.
+  Everything else, including `null`, `0` and strings the language would happily parse such as
+  `Jul 31 2026 06:00` or `12/25/2026`, renders the "the time of this reading was not reported"
+  sentence. The shape is checked before `new Date` sees the string, not after: `new Date(null)`
+  is the epoch rather than an invalid date and would print 1 Jan 1970 with an age of half a
+  million hours, and a non-ISO string is parsed as *local* time, which formatted back out with
+  `getUTC*` and labelled UTC gives every operator a different stamp for the same payload and,
+  either side of the date line, a different day.
 
 ### Two rules the panes enforce rather than assume
 

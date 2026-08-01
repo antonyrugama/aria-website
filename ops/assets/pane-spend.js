@@ -401,9 +401,12 @@
     (view.rows || []).forEach(function (row) {
       var line = h('div', { className: 'cat' });
 
+      /* Through seriesStroke, the same helper the daily legend and the lines
+         use, rather than the allowlist raw with a stylesheet default behind
+         it. Two fallbacks that are different colours is how a key stopped
+         matching its own chart in the first place. */
       var swatch = h('span', { className: 'cat-swatch', 'aria-hidden': 'true' });
-      var tone = d.seriesColor(row.color);
-      if (tone) swatch.style.setProperty('background', tone);
+      swatch.style.setProperty('background', d.seriesStroke(row.color));
       line.appendChild(swatch);
 
       var name = h('div', { className: 'cat-main' }, [
@@ -457,22 +460,51 @@
      promise in a footer. Money is in integer micro-units precisely so this
      comparison is exact: a float sum over a few hundred daily rows does not
      reproduce an invoice total, and a near miss would be indistinguishable
-     from a real gap. */
+     from a real gap.
+
+     Which means a row that cannot be read makes the check unavailable, and is
+     neither zero nor automatically a mismatch. Every row goes through the same
+     shape-strict moneyMicros the total goes through. Counting an unreadable
+     row as zero mints the exact zero this pane refuses everywhere else, and
+     does it under the sentence "nothing is left over and nothing is counted
+     twice", which is a false green on the pane's central claim; a row of NaN
+     or Infinity satisfying `typeof === 'number'` failed the other way and
+     reported a permanent gap that was really a parse problem. Three outcomes,
+     not two: it adds up, it does not add up, or it cannot be checked. */
   function reconciliation(view, data) {
     var total = totalMicros(data);
     if (total === null) return null;
 
+    var rows = view.rows || [];
     var sum = 0;
-    (view.rows || []).forEach(function (row) {
-      if (typeof row.micros === 'number') sum += row.micros;
+    var unreadable = 0;
+    rows.forEach(function (row) {
+      var amount = moneyMicros(row);
+      if (amount === null) unreadable += 1;
+      else sum += amount;
     });
 
     var box;
+    if (unreadable) {
+      box = d.callout('warn', 'warn', [
+        d.strong('These rows cannot be checked against the bill.'),
+        ' ' + (unreadable === 1
+          ? 'One row here carries no readable amount'
+          : unreadable + ' rows here carry no readable amount') +
+          ', so the parts cannot be added up and compared with the billed ' +
+          d.money(total, data.currency) + '. Neither a match nor a gap is ' +
+          'something this answer supports, so the pane claims neither. Read ' +
+          'the grouping as incomplete until every row reports its own figure.'
+      ]);
+      box.classList.add('mt');
+      return box;
+    }
     if (sum === total) {
       box = d.callout('info', 'check', [
         d.strong('These rows add up to the bill exactly.'),
-        ' ' + d.money(sum, data.currency) + ' across ' + (view.rows || []).length +
-          ' rows, which is the billed total for the period. Nothing is left ' +
+        ' ' + d.money(sum, data.currency) + ' across ' + rows.length +
+          (rows.length === 1 ? ' row' : ' rows') +
+          ', which is the billed total for the period. Nothing is left ' +
           'over and nothing is counted twice.'
       ]);
     } else {

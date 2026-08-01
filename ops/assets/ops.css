@@ -621,7 +621,9 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
 .legend button { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; cursor: pointer; color: inherit; font-size: inherit; padding: 2px; }
 /* The default matters: a key with no colour of its own is invisible, and the
    line it names is drawn in the default series token regardless. Same reason
-   .cat-swatch and .rank-track i carry one. */
+   .cat-swatch and .rank-track i carry one, and all three carry the same one:
+   the JS now paints every swatch, track fill and line through seriesStroke, so
+   a stylesheet default that differed would only ever show up as a mismatch. */
 .legend i { width: 9px; height: 9px; border-radius: 2px; display: block; background: var(--s1); }
 .legend .off { opacity: .4; text-decoration: line-through; }
 
@@ -915,7 +917,7 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
 }
 .rank-label { color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
 .rank-track { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
-.rank-track i { display: block; height: 100%; border-radius: 4px; background: var(--brand); }
+.rank-track i { display: block; height: 100%; border-radius: 4px; background: var(--s1); }
 .rank-value { text-align: right; color: var(--text); font-weight: 500; }
 .rank-note { grid-column: 1 / -1; margin-top: -7px; }
 
@@ -1050,7 +1052,7 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
   padding: 11px 0; border-bottom: 1px solid var(--border);
 }
 .cat:last-child { border-bottom: 0; }
-.cat-swatch { width: 10px; height: 34px; border-radius: 3px; background: var(--text-3); }
+.cat-swatch { width: 10px; height: 34px; border-radius: 3px; background: var(--s1); }
 .cat-main { min-width: 0; }
 .cat-name { font-size: 13px; font-weight: 500; color: var(--text); }
 .cat-sub { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }

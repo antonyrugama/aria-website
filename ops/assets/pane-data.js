@@ -132,16 +132,28 @@
     return seriesColor(name) || SERIES_TOKENS.s1;
   }
 
-  /* A link the response asked for, or its label as plain text.
+  /* A link the response asked for, or its label as plain text, or a note that
+     it could not be built.
 
      A target safeHref refuses still leaves a label the payload wrote into a
      sentence, so the words stay and only the navigation is withheld. Dropping
      the whole element instead leaves a sentence pointing at a button that is
-     not there. */
+     not there.
+
+     A missing or unusable label is the same problem from the other side, and
+     gets the same answer rather than the opposite one: the response asked for
+     a link here, so the reader is told one was asked for and could not be
+     drawn. Silently rendering nothing hides that a field arrived malformed.
+     An absent `link` is a different fact, and still draws nothing at all. */
   function payloadLink(link, className) {
     if (!link || typeof link !== 'object') return null;
-    var label = typeof link.label === 'string' ? link.label : '';
-    if (!label) return null;
+    var label = typeof link.label === 'string' ? link.label.trim() : '';
+    if (!label) {
+      return h('span', {
+        className: 'small muted',
+        text: 'A link was offered here without a label, so there is nothing to follow.'
+      });
+    }
     var href = safeHref(link.href);
     if (!href) return h('span', { className: 'small muted', text: label });
     return h('a', { className: className || 'btn btn-sm', href: href, text: label });
@@ -250,19 +262,44 @@
      the epoch rather than an invalid date, so a timestamp nobody reported used
      to render "1 Jan 1970 00:00 UTC" and an age of half a million hours, both
      computed from a field that was never sent. `0` does the same. A Date is
-     accepted because a caller may already hold one; nothing else is coerced. */
-  var HAS_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+     accepted because a caller may already hold one; nothing else is coerced.
+
+     Which string counts as readable is decided by shape here, before `new
+     Date` sees it, and not by what `new Date` is willing to accept. That
+     distinction is the whole guard. Stamping Z onto strings that already look
+     ISO still let everything else through to the language's legacy parser,
+     which reads "Jul 31 2026 06:00" and "12/25/2026" as *local* time; the
+     result was then formatted with getUTC* and labelled UTC, so one payload
+     rendered a different stamp for every operator and, west or east of the
+     line, a different day. Only three shapes are read:
+
+       YYYY-MM-DD                              already UTC by specification
+       YYYY-MM-DD[T ]HH:MM[:SS[.sss]]          the pipeline's UTC, stamped Z
+       either of the above carrying Z or +/-HH:MM   already says what it is
+
+     Everything else is absent, which renders the "not reported" sentence.
+     Approximating a stamp nobody can pin to a zone is the one thing a pane
+     that labels its own output " UTC" must not do. */
+  var ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+  var ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
+  var ISO_ZONED = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
 
   function parseUtc(value) {
     if (value instanceof Date) {
       return isNaN(value.getTime()) ? null : value;
     }
     if (typeof value !== 'string') return null;
+    /* One space between the date and the time is the one separator accepted
+       in place of T. Any later space leaves a shape none of the three match. */
     var text = value.trim().replace(' ', 'T');
-    /* Date-only strings are already UTC by specification, so only the
-       date-time forms are stamped. */
-    if (/^\d{4}-\d{2}-\d{2}T/.test(text) && !HAS_ZONE.test(text)) text += 'Z';
-    var d = new Date(text);
+    var d;
+    if (ISO_DAY.test(text) || ISO_ZONED.test(text)) d = new Date(text);
+    else if (ISO_TIME.test(text)) d = new Date(text + 'Z');
+    else return null;
+    /* The shape can be right and the value still out of range: month 13 and
+       hour 61 are Invalid Date and land on absent. A day past the end of its
+       month rolls forward instead, which is the language's own rule and is the
+       same answer in every zone, so it is not this guard's problem. */
     return isNaN(d.getTime()) ? null : d;
   }
 
@@ -739,8 +776,11 @@
     (rows || []).forEach(function (r) {
       var bar = h('i', { 'aria-hidden': 'true' });
       bar.style.setProperty('width', Math.max(1, (r.value / max) * 100).toFixed(2) + '%');
-      var tone = seriesColor(r.color);
-      if (tone) bar.style.setProperty('background', tone);
+      /* Through seriesStroke, so an unrecognised colour lands on the same
+         token every other painted series lands on. Leaving the fallback to the
+         stylesheet gave this bar a different colour from a line naming the
+         same series, which is the disagreement seriesStroke exists to stop. */
+      bar.style.setProperty('background', seriesStroke(r.color));
 
       var track = h('div', { className: 'rank-track', 'aria-hidden': 'true' }, [bar]);
 
@@ -838,7 +878,11 @@
     load: load,
     isLoopback: isLoopback,
     safeHref: safeHref,
-    seriesColor: seriesColor,
+    /* seriesColor is deliberately not exported. It answers "is this token
+       recognised", which is not the question any caller drawing something has;
+       every swatch, track fill and line wants the colour it will actually be
+       painted in, and that is seriesStroke. Exporting the raw lookup is what
+       let two call sites pair it with two different stylesheet defaults. */
     seriesStroke: seriesStroke,
     payloadLink: payloadLink,
     paneUrl: paneUrl,
