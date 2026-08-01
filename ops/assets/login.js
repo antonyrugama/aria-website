@@ -38,7 +38,7 @@
     /* '//' would start a protocol-relative URL, and '..' can climb back out of
        the dashboard directory after the prefix check has passed. */
     if (next.indexOf('..') !== -1) return 'index.html';
-    if (/(^|\/)login\.html(\?|$)/.test(next)) return 'index.html';
+    if (/(^|\/)login\.html([?#]|$)/.test(next)) return 'index.html';
     if (next.indexOf('//') !== -1 || next.charAt(0) !== '/') {
       /* Relative and same-directory only. */
       if (/^[A-Za-z0-9_-]+\.html(\?[^#]*)?$/.test(next)) return next;
@@ -346,13 +346,11 @@
        return Object, which is truthy, and paint "undefined" into the alert. */
     var key = query.get('reason');
     var known = key && Object.prototype.hasOwnProperty.call(REASONS, key);
-    if (known) {
-      setAlert(REASONS[key].text, REASONS[key].tone, false);
-      /* A stale credential in storage is worse than none: it produces a
-         sign-in screen that silently fails on the next call. Only a reason we
-         issued ourselves means the session is over, so an unrecognised value
-         on this public URL must not wipe anybody's session. */
-      session.clearTokens();
-    }
+    /* Display only. This page never clears credentials on the strength of a
+       querystring: ?reason is a public, guessable value, so a cross-site link
+       to login.html?reason=required would otherwise sign the operator out.
+       Every path that genuinely ends a session already calls clearTokens()
+       before it navigates here. */
+    if (known) setAlert(REASONS[key].text, REASONS[key].tone, false);
   }
 })(window);

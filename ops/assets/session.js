@@ -146,6 +146,16 @@
       JSON.stringify({ token: token, expiresAt: expiresAt }));
   }
 
+  /* Throws away the access token everywhere it is held, memory and cache
+     together. Clearing only the memory copy leaves the cache to hand the same
+     rejected token straight back on the next read, which turns the
+     refresh-and-retry path into a silent no-op. */
+  function discardAccess() {
+    accessToken = null;
+    accessExpiresAt = 0;
+    safeRemove(global.sessionStorage, ACCESS_KEY);
+  }
+
   /* Hashes of refresh tokens this profile has already presented. localStorage
      rather than sessionStorage on purpose: it is shared by every tab including
      ones that inherited a copied sessionStorage, which is the only way a tab
@@ -198,12 +208,10 @@
   }
 
   function clearTokens() {
-    accessToken = null;
-    accessExpiresAt = 0;
     refreshInFlight = null;
+    discardAccess();
     safeRemove(global.sessionStorage, REFRESH_KEY);
     safeRemove(global.localStorage, REFRESH_KEY);
-    safeRemove(global.sessionStorage, ACCESS_KEY);
     /* The spent ledger deliberately survives. Its whole job is to remember
        tokens across sign-outs and page loads, and it holds only hashes. */
     state.admin = null;
@@ -379,8 +387,9 @@
         }
         if (RETRYABLE[err.code] && !attempted.refreshed) {
           attempted.refreshed = true;
-          accessToken = null;
-          accessExpiresAt = 0;
+          /* Both copies, or accessTokenReady() rehydrates the very token the
+             server just rejected and the refresh never happens. */
+          discardAccess();
           return attempt();
         }
         if (err.code === 'ops_password_change_required') {
@@ -414,12 +423,20 @@
     });
   }
 
-  /* Best effort. If the network call fails the local credential is dropped
-     anyway: leaving a token on the device because the server could not be
-     reached is the wrong way to fail. */
+  /* Always attempts the server-side revocation, and swallows whatever comes
+     back. Deciding from the presence of a refresh token was wrong: a tab can
+     legitimately hold a live access token with no refresh token beside it,
+     once another tab or a storage failure has removed the shared one. In that
+     state the old check skipped the call, cleared local storage, and left the
+     session alive on the server for every other copy of it. Whether a call can
+     be made is the question, not whether one particular credential is present.
+
+     If the call fails the local credential is dropped anyway: leaving a token
+     on the device because the server could not be reached is the wrong way to
+     fail. */
   function signOut() {
-    var had = readRefreshToken();
-    var done = had
+    var haveSomething = accessToken || readAccessCache() || readRefreshToken();
+    var done = haveSomething
       ? call('/api/ops/auth/logout', { method: 'POST', body: {} }).catch(function () {})
       : Promise.resolve();
     return done.then(function () {
@@ -498,6 +515,11 @@
   /* ------------------------------------------------------- reauth prompt */
 
   var reauthOpen = null;
+  /* Every dialog gets a number. A network call started by one dialog can only
+     finish after the operator has cancelled it and opened another, so its
+     handlers have to be able to tell whether they are still the current
+     dialog before they touch any shared state. */
+  var reauthGeneration = 0;
 
   /* A modal that asks for the password again, used when the API answers
      403 ops_reauth_required. Traps focus, closes on Escape, and returns focus
@@ -506,8 +528,11 @@
   function promptReauth(maxAgeSeconds) {
     if (reauthOpen) return reauthOpen;
 
+    var generation = ++reauthGeneration;
+
     reauthOpen = new Promise(function (resolve) {
       var previous = document.activeElement;
+      var closed = false;
 
       var scrim = document.createElement('div');
       scrim.className = 'scrim is-open';
@@ -584,7 +609,13 @@
         el.setAttribute('aria-hidden', 'true');
       });
 
+      /* Idempotent, and it never touches anything it does not still own. A
+         late-arriving success from a dialog the operator already cancelled
+         would otherwise strip inert off a newer dialog's backdrop, leaving
+         that dialog on screen over a fully interactive shell. */
       function close(result) {
+        if (closed) return;
+        closed = true;
         document.removeEventListener('keydown', onKey, true);
         document.removeEventListener('focusin', onFocusIn, true);
         backdrop.forEach(function (el) {
@@ -593,9 +624,14 @@
         });
         modal.remove();
         scrim.remove();
-        reauthOpen = null;
+        /* Only the current dialog may release the shared slot. */
+        if (generation === reauthGeneration) reauthOpen = null;
         if (previous && previous.focus) previous.focus();
         resolve(result);
+      }
+
+      function isCurrent() {
+        return !closed && generation === reauthGeneration;
       }
 
       /* The Tab wrap below only fires when focus is on the first or last
@@ -641,8 +677,13 @@
         submit.textContent = 'Checking';
         alert.textContent = '';
         reauth(input.value).then(function () {
+          /* The re-authentication itself still counted, so the caller's token
+             is fresh either way. What must not happen is this dialog tidying
+             up after a different one. */
+          if (!isCurrent()) return;
           close(true);
         }, function (err) {
+          if (!isCurrent()) return;
           submit.disabled = false;
           submit.textContent = 'Confirm';
           input.value = '';

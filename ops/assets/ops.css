@@ -40,6 +40,10 @@
      field it outlines, so controls would have had no discernible boundary.
      --border itself is left exactly as the mock drew it. */
   --control-border: #5E7288;
+  /* Hover must be at least as identifiable as rest, not less. The mock's
+     --border-strong measures 1.58:1 against the control fill, so hovering a
+     control was erasing the boundary that WCAG 1.4.11 requires. */
+  --control-border-hover: #7C90A6;
   /* The far end of the primary-action gradient. Split from --brand so the
      light theme can darken the button without darkening every tint derived
      from the brand. */
@@ -103,6 +107,7 @@
   --brand:         #0092AE;
   --brand-bright:  #026A80;
   --control-border: #7A8899;
+  --control-border-hover: #5F6C7C;
   /* #0092AE gave white-on-button only 3.67:1. This holds 4.99:1. */
   --cta-end:       #007A93;
 
@@ -328,7 +333,7 @@ body.is-ready   .gate-app { display: block; }
 }
 /* A pane the signed-in role cannot open. Shown, not hidden: a destination that
    silently disappears is indistinguishable from one that never existed. */
-.nav-item.is-locked { color: var(--text-3); cursor: not-allowed; }
+.nav-item.is-locked { color: var(--text-3); }
 .nav-item.is-locked:hover { background: none; color: var(--text-3); text-decoration: none; }
 .nav-item.is-locked svg { opacity: .45; }
 
@@ -427,7 +432,7 @@ body.is-ready   .gate-app { display: block; }
   transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
   min-height: 30px; white-space: nowrap;
 }
-.btn:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text); }
+.btn:hover { background: var(--surface-hover); border-color: var(--control-border-hover); color: var(--text); }
 .btn svg { width: 14px; height: 14px; }
 .btn-primary {
   background: linear-gradient(140deg, var(--brand-bright), var(--cta-end));
@@ -446,7 +451,7 @@ body.is-ready   .gate-app { display: block; }
   border-radius: var(--radius-sm); padding: 6px 10px;
   color: var(--text); font-size: 12.5px; min-height: 30px;
 }
-.select:hover, .input:hover { border-color: var(--border-strong); }
+.select:hover, .input:hover { border-color: var(--control-border-hover); }
 .input::placeholder { color: var(--text-3); }
 
 .search {
@@ -799,7 +804,7 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
   background: var(--surface-2); border: 1px solid var(--control-border);
   border-radius: var(--radius-sm); color: var(--text); font-size: 16px;
 }
-.field-input:hover { border-color: var(--border-strong); }
+.field-input:hover { border-color: var(--control-border-hover); }
 .field-input[aria-invalid="true"] { border-color: var(--crit); }
 .field-input::placeholder { color: var(--text-3); }
 .field-hint { font-size: 11.5px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }

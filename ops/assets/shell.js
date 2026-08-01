@@ -525,6 +525,39 @@
     if (!rail || !toggle) return;
 
     var scrim = null;
+    var inerted = [];
+
+    /* The scrim stops a pointer reaching the shell behind the drawer, but a
+       virtual cursor walks straight past a scrim. Everything that is not the
+       rail goes inert as well, so the drawer is genuinely modal for a screen
+       reader and not only for a mouse. */
+    function setBackgroundInert(on) {
+      if (!on) {
+        inerted.forEach(function (el) {
+          if ('inert' in el) el.inert = false;
+          el.removeAttribute('aria-hidden');
+        });
+        inerted = [];
+        return;
+      }
+      /* The rail sits inside the app wrapper, so "everything else" is not a
+         list of body children: it is the rail's siblings at every level up to
+         the body. Inerting an ancestor of the rail would inert the rail. */
+      inerted = [];
+      var node = rail;
+      while (node && node !== document.body && node.parentElement) {
+        var parent = node.parentElement;
+        var self = node;
+        Array.prototype.forEach.call(parent.children, function (sib) {
+          if (sib !== self && sib !== scrim) inerted.push(sib);
+        });
+        node = parent;
+      }
+      inerted.forEach(function (el) {
+        if ('inert' in el) el.inert = true;
+        el.setAttribute('aria-hidden', 'true');
+      });
+    }
 
     function open() {
       rail.classList.add('is-open');
@@ -535,6 +568,9 @@
       scrim = h('div', { className: 'scrim is-open' });
       scrim.addEventListener('click', function () { close(); });
       document.body.appendChild(scrim);
+      /* The rail lives inside the app wrapper, so inert has to be applied
+         after the scrim exists and must skip the rail's own ancestors. */
+      setBackgroundInert(true);
       document.addEventListener('keydown', onKey, true);
       document.addEventListener('focusin', onFocusIn, true);
       var first = rail.querySelector('a, button');
@@ -545,6 +581,7 @@
       rail.classList.remove('is-open');
       toggle.setAttribute('aria-expanded', 'false');
       toggle.setAttribute('aria-label', 'Open navigation');
+      setBackgroundInert(false);
       if (scrim) { scrim.remove(); scrim = null; }
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('focusin', onFocusIn, true);

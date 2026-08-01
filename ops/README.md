@@ -187,19 +187,22 @@ client renders a fact, it does not decide one.
    and the `--note-bg` token that only they used.
 3. **`--mono` gains `Consolas`** before the generic `monospace`, so Windows has a real fallback.
 4. **Dark `--text-3` moved from `#667484` to `#8593A2`.** The original measured 3.35:1 on
-   `--surface-3`, its worst rendered pairing, where `.badge`, `.tag`, `.masked`, `.toast` and
-   `.nav-count` all place it, and 3.93:1 on a card. It needs 4.5:1, because it carries metadata,
-   table headers, filter labels and placeholder text, all of which are text. The new value
-   clears 4.76:1 on every surface the stylesheet actually pairs it with.
+   `--surface-3`, its worst rendered pairing, which `.masked` draws, and 3.93:1 on a card. It
+   needs 4.5:1, because it carries metadata, table headers, filter labels and placeholder text,
+   all of which are text. The new value clears 4.71:1 on every surface the stylesheet actually
+   pairs it with.
 5. **A new `--cta-end` token** ends the primary-button gradient. White on the light theme's
    `#0092AE` measured 3.67:1; `#007A93` holds 4.99:1. Splitting it from `--brand` darkens the
    button without darkening every tint derived from the brand. Dark mode is unchanged, because
    dark `--cta-end` is identical to dark `--brand`.
-6. **A new `--control-border` token** outlines interactive controls. WCAG 1.4.11 asks 3:1 of the
-   visual information required to identify a user interface component, which is a text field's
-   outline. The mock's `--border` gives 1.22:1 against the field it outlines, so the login
-   form's inputs and buttons had no discernible boundary in either theme. `--border` itself is
-   left exactly as the mock drew it, because a rule between two paragraphs is not a component.
+6. **New `--control-border` and `--control-border-hover` tokens** outline interactive controls.
+   WCAG 1.4.11 asks 3:1 of the visual information required to identify a user interface
+   component, which is a text field's outline. The mock's `--border` gives 1.22:1 against the
+   field it outlines, and its `--border-strong` hover gives only 1.58:1, so hovering a control
+   erased what little boundary it had. Rest measures 3.53:1 dark and 3.40:1 light against the
+   control fill; hover measures 5.33:1 and 5.03:1, so hover is now more identifiable than rest
+   rather than less. `--border` itself is left exactly as the mock drew it, because a rule
+   between two paragraphs is not a component.
 7. **The switch grew from 34x19 to 40x24** to clear the 24x24 minimum in WCAG 2.2 SC 2.5.8, and
    became a real `<input type="checkbox" role="switch">` so that its `<label>` is clickable.
 8. **Real semantics** where the mock used inert markup: headings are `h1` to `h4` in order and
@@ -208,8 +211,11 @@ client renders a fact, it does not decide one.
 
 ### Known contrast debt, inherited and not yet fixed
 
-Measured across both themes against composited backgrounds. **Dark passes everywhere.** In the
-light theme, the following pairings sit between 3.79:1 and 4.49:1 against the 4.5:1 they need.
+Measured across both themes against composited backgrounds. **Every pairing this release
+renders passes in both themes**, text at 4.5:1 or better and control boundaries at 3:1 or
+better. The remaining debt below is in the shipped design system but is drawn by nothing in
+this release. In the light theme these pairings sit between 3.79:1 and 4.49:1 against the
+4.5:1 they need; the same pairings pass in dark.
 None of them renders in this release, because no badge, tag, or status callout is on screen yet,
 and every one is byte-identical to the approved mock. They are recorded here so that the first
 pane to draw one does not ship them unnoticed:
