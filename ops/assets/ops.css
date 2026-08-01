@@ -919,10 +919,13 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
 }
 .rollout .meter { flex: 1 1 120px; max-width: 220px; }
 
-/* Widths come from script, and the CSP on every page in this directory
-   forbids a style attribute, so the value arrives as a custom property set
-   through the CSSOM (which the policy does not govern) and the width is
-   computed here. Same trick for the stacked adoption bar. */
+/* Widths come from script. The value arrives as a custom property written
+   through the CSSOM, style.setProperty, and the width is computed here. That
+   write does end up serialized as a style attribute in the DOM; what makes it
+   legal under the CSP on every page in this directory is that style-src
+   governs styles arriving as markup rather than programmatic CSSOM writes.
+   Rewriting it as setAttribute('style', ...) would be blocked. Same trick for
+   the stacked adoption bar. */
 .meter-fill.is-set { width: calc(var(--fill, 0) * 1%); }
 .stackbar span.is-set { width: calc(var(--seg, 0) * 1%); }
 .stackbar span.seg-ok { background: var(--ok); }

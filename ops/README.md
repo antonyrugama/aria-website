@@ -154,7 +154,13 @@ What follows from wanting it this strict:
 - **No inline script.** The theme must be applied before first paint or navigating between panes
   flashes the wrong colours, so `assets/theme.js` is a blocking classic script in `<head>`
   rather than an inline snippet. No hash to keep in sync across eleven files.
-- **No inline style attributes.** Everything is a class.
+- **No inline style attributes written as markup.** Everything is a class. The two data-driven
+  widths, the rollout meter and the adoption bar, are the exception and are worth stating
+  precisely so nobody "simplifies" them into a break: script writes a custom property through
+  the CSSOM with `style.setProperty`, which does serialize into a `style` attribute in the DOM,
+  and the stylesheet turns the property into a width. That is legal because `style-src` governs
+  styles arriving as markup rather than programmatic CSSOM writes. `setAttribute('style', ...)`
+  would be blocked.
 - **No `innerHTML` anywhere.** The shell is built as DOM with `textContent`, so nothing from the
   API, the querystring, or storage can become markup.
 - `connect-src 'self'` is present because this origin serves static files only; it allows no
@@ -227,13 +233,20 @@ set of constraints:
   you nothing about who has an account.
 - **Every lookup is recorded**, with the reason the form makes you type, and the record is
   built so it would be safe to show the athlete. It is on the page, per account, under
-  **Who looked**.
-- **Masked by default.** Masking happens in the operations API, not here. This directory never
-  derives a mask from a real value, because that would mean the real value had been sent to the
-  browser.
+  **Who looked**. A response that does not confirm a record says so on screen rather than
+  looking identical to one that does, because a promise nobody can falsify is not a promise.
+- **Masked by default, and a missing flag is masked.** Masking happens in the operations API,
+  not here, and this directory never derives a mask from a real value. Only an explicit
+  `masked: false` renders a field in the clear; absent, null, or a field carrying both a real
+  value and a mask is read as masked.
 - **A reveal is one field, with its own written reason, and it un-reveals itself** when the
-  server's window expires, when the record closes, and when a new search starts.
+  server's window expires, when the record closes, and when a new search starts. A response
+  that carries no expiry does not buy an indefinite reveal: the client applies its own short
+  ceiling and says on screen that it did.
 - **Health data carries no reveal control at all**, not a disabled one and not a role-gated one.
+  The API is expected to send those fields as never-revealable, and the client keeps its own
+  list of health field keys as a floor under that, so a server that got it wrong could not make
+  this page the place it went wrong.
 - **Destructive account actions are absent, not permission-gated.** There is no control for
   deleting an account or wiping its data anywhere on the page. That runs through the account
   deletion workflow, which needs the athlete's own confirmation.

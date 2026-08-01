@@ -33,17 +33,56 @@
 
    WHAT THIS PANE READS
 
+   Every field below is what the code actually consumes, because this contract
+   is the only specification a backend author has for these three routes.
+
      POST /api/ops/users/lookup
        { identifier, reason, scope, state, tier }
        -> { data: { recorded, matchCount, matches[] } }
 
+       recorded    { at, actor, fields, reason }: the access record this
+                   request wrote. Its absence is reported on screen rather
+                   than assumed away, because "every lookup is recorded" is a
+                   promise this page makes to the athlete.
+       matchCount  how many accounts matched. matches[] must be the whole of
+                   that set: a capped array beside an uncapped count would
+                   have the header name accounts the operator cannot see, and
+                   would breach "no bulk listing" quietly. If the two ever
+                   disagree the pane says so rather than picking one.
+       matches[]   { reference, maskedEmail, state, tier, platforms[],
+                     lastActiveAt, flags[] }
+         state       { key, label, tone }, tone one of ok, warn, crit, info
+         tier        { key, label, brand }
+         platforms[] { key, label }, key 'coaches' tags differently
+         flags[]     { key, label, tone }
+
      GET /api/ops/users/{reference}
        -> { data: { reference, kind, state, tier, memberSince, recorded,
-                    summary{fields[]}, activity, devices, billing, access } }
+                    summary{fields[]}, record{fields[], note},
+                    activity{windowDays, events[]}, devices[],
+                    billing{fields[]}, access{windowDays, entries[]},
+                    supportActions{available[]} } }
+
+       kind        'coach' or 'athlete'
+       recorded    as above, for the record this request wrote
+       record      the fuller field list shown in the drawer, falling back to
+                   summary.fields when it is absent
+       events[]    { occurredAt, label, tone, reference, href }: a list of
+                   events and never their content. href is followed only when
+                   it stays on this origin, so it cannot become an off-site
+                   destination reached from a privacy pane.
+       devices[]   { label, appVersion, os, lastSeenAt }
+       access.entries[] { occurredAt, actor, fields, reason, revealed }
+       supportActions.available[] { key, label }
 
      POST /api/ops/users/{reference}/reveal
        { field, reason }
        -> { data: { field, value, expiresAt, recorded } }
+
+       expiresAt   when the value stops being shown. A response that omits it,
+                   or sends something unreadable, does not buy an indefinite
+                   reveal: this file applies REVEAL_CEILING_MS instead and
+                   says on screen that it did.
 
    The identifier is sent in a body rather than a querystring on purpose: it is
    the one value in this dashboard most likely to be somebody's email address,
@@ -51,9 +90,31 @@
    proxy logs, and browser history. A lookup also writes an access record, so a
    POST is what it is.
 
-   summary.fields[] entries carry { key, label, value, maskedValue, masked,
-   reveal } where reveal is 'allowed', 'never', or 'unavailable'. The server
-   decides which; this file renders the decision and owns none of it. */
+   THE FIELD SHAPE, and the one rule inside it that carries weight
+
+   Every field list on this pane, summary.fields[], record.fields[] and
+   billing.fields[], carries entries of
+
+     { key, label, masked, maskedValue, value, reveal,
+       neverShownNote, unavailableNote }
+
+     masked       true, or absent, means the value is personal and is not in
+                  this payload. Only an explicit false says otherwise, and
+                  only then may value appear. The two never travel together:
+                  an entry carrying both a real value and a mask is
+                  contradictory rather than unmasked, and this file reads it
+                  as masked. Rule 2 above is only true if the payload for a
+                  masked field never contains the real value at all, so the
+                  shape has to make that statable, and this is how.
+     maskedValue  what to show while it is masked, already masked by the API.
+     reveal       'allowed', 'never', or 'unavailable'. Anything else, and
+                  anything absent, draws no control. Health field keys are
+                  always 'never'; the client refuses them a control and
+                  refuses to print them in the clear whatever the API says,
+                  because a server that gets rule 4 wrong should not be able
+                  to make this page the place it goes wrong.
+     neverShownNote / unavailableNote
+                  the sentence shown in place of a control. */
 (function (global) {
   'use strict';
 
@@ -64,7 +125,49 @@
 
   var TONE_ICON = { ok: 'check', warn: 'warn', crit: 'warn', info: 'info' };
 
+  /* Field keys that are health data. Rule 4 puts these out of reach at every
+     role, and the API is supposed to send them with reveal 'never'. This list
+     is the client half of that: a key on it gets no control and is never
+     printed in the clear, whatever the payload says. It is a floor under the
+     server's decision rather than a replacement for it. */
+  var HEALTH_KEYS = {
+    weight: 1, height: 1, bodyFat: 1, body_fat: 1,
+    injury: 1, injuries: 1, injuryHistory: 1, injury_history: 1,
+    healthNotes: 1, health_notes: 1, journal: 1, journalEntry: 1,
+    menstrualCycle: 1, menstrual_cycle: 1, sleep: 1, restingHeartRate: 1,
+    resting_heart_rate: 1
+  };
+
+  /* A reveal that never expires is a disclosure, not a reveal. The window is
+     the server's to choose and arrives as expiresAt; when it does not arrive,
+     or cannot be read, this ceiling applies instead. It is deliberately short,
+     because the failure it covers is a server that forgot to say, and the safe
+     reading of silence is "not for long". The cap covers the other end: an
+     expiry far enough in the future is indefinite in every way that matters on
+     a screen somebody walks away from. */
+  var REVEAL_CEILING_MS = 60000;
+  var REVEAL_MAX_MS = 900000;
+
   /* --------------------------------------------------------- formatting */
+
+  function isHealthKey(key) {
+    return !!(key && Object.prototype.hasOwnProperty.call(HEALTH_KEYS, key));
+  }
+
+  /* An API supplied link is followed only when it stays on this origin. The
+     dashboard's own panes are the only destination one is ever meant to name,
+     and an off-site href on a pane that has somebody's account open leaks the
+     referrer along with the fact that it was being looked at. Anything else,
+     including a scheme this file does not recognise, renders as plain text
+     instead of a link. */
+  function safeHref(href) {
+    if (typeof href !== 'string' || !href) return null;
+    try {
+      var url = new URL(href, global.location.href);
+      if (url.origin !== global.location.origin) return null;
+      return url.pathname + url.search + url.hash;
+    } catch (e) { return null; }
+  }
 
   function parseTime(iso) {
     if (!iso) return null;
@@ -165,11 +268,30 @@
     return h('span', { className: cls, text: p.label || p.key });
   }
 
-  /* The recording confirmation. It appears after a lookup rather than before
+  /* The recording confirmation. It appears after a request rather than before
      it, because it reports something that has already happened: this is the
-     row the athlete would be shown if they asked. */
-  function recordedCallout(recorded) {
-    if (!recorded) return null;
+     row the athlete would be shown if they asked.
+
+     When the response does not carry one, the surface says so. The privacy bar
+     above states that every lookup is recorded, and a response that stayed
+     silent about it is the one case where that sentence might not be true.
+     Looking identical either way would make the promise unfalsifiable, so this
+     returns a warning rather than nothing. */
+  function recordingNotice(recorded, what) {
+    if (!recorded) {
+      var warn = h('div', { className: 'callout callout-warn' });
+      warn.appendChild(icon('warn'));
+      var wbody = h('div');
+      wbody.appendChild(h('strong', { text: 'No record was confirmed.' }));
+      wbody.appendChild(document.createTextNode(
+        ' The operations API answered ' + (what || 'this request') + ' without confirming that it ' +
+        'wrote an access record. It may still have written one. Treat this as unrecorded until ' +
+        'the access record shows otherwise.'
+      ));
+      warn.appendChild(wbody);
+      return warn;
+    }
+
     var box = h('div', { className: 'callout callout-info' });
     box.appendChild(icon('lock'));
     var body = h('div');
@@ -179,7 +301,9 @@
     if (recorded.actor) parts.push('by ' + recorded.actor);
     if (recorded.fields) parts.push('as ' + recorded.fields);
     if (recorded.reason) parts.push('reason ' + recorded.reason);
-    body.appendChild(document.createTextNode(' Written ' + parts.join(', ') + '.'));
+    body.appendChild(document.createTextNode(
+      parts.length ? ' Written ' + parts.join(', ') + '.' : ' Written, without the details being reported.'
+    ));
     box.appendChild(body);
     return box;
   }
@@ -294,14 +418,17 @@
     return card;
   }
 
+  /* The invalid marks are cleared on every pass, not only when the message is
+     cleared, and the caller then marks the one field it is complaining about.
+     Clearing only on success left aria-invalid="true" on an identifier that
+     had since been filled in, so a screen reader was told the wrong control
+     was the problem. */
   function setFormError(message) {
     if (!formError) return;
     formError.textContent = '';
-    if (!message) {
-      if (identifierInput) identifierInput.removeAttribute('aria-invalid');
-      if (reasonInput) reasonInput.removeAttribute('aria-invalid');
-      return;
-    }
+    if (identifierInput) identifierInput.removeAttribute('aria-invalid');
+    if (reasonInput) reasonInput.removeAttribute('aria-invalid');
+    if (!message) return;
     formError.appendChild(icon('warn'));
     formError.appendChild(h('span', { text: message }));
   }
@@ -310,16 +437,41 @@
 
   function matchesCard(data, onPick, selectedRef) {
     var card = h('div', { className: 'card' });
+    var rows = (data.matches || []).length;
+    /* The count and the rows are two numbers for the same thing, so the header
+       states the one that is on screen. A server that ever capped the array
+       while leaving the count whole would otherwise have this header name
+       accounts the operator cannot see, which is the "no bulk listing" rule
+       breached without anybody being told. Saying both is the honest reading
+       of a payload that contradicts itself. */
+    var claimed = typeof data.matchCount === 'number' && isFinite(data.matchCount)
+      ? data.matchCount : null;
+    var short = claimed !== null && claimed > rows;
+
     var head = h('div', { className: 'card-head' });
     head.appendChild(h('h3', { className: 'card-title', text: 'Matches' }));
     head.appendChild(h('span', {
       className: 'card-hint',
-      text: data.matchCount === 1 ? '1 account, exact identifier match'
-        : data.matchCount + ' accounts, exact identifier match'
+      text: short
+        ? rows + ' of ' + claimed + ' accounts shown, exact identifier match'
+        : (rows === 1 ? '1 account, exact identifier match'
+          : rows + ' accounts, exact identifier match')
     }));
     head.appendChild(h('div', { className: 'spacer', 'aria-hidden': 'true' }));
     head.appendChild(badge('info', 'Details hidden', 'lock'));
     card.appendChild(head);
+
+    if (short) {
+      var capped = h('div', { className: 'callout callout-warn' });
+      capped.appendChild(icon('warn'));
+      capped.appendChild(h('div', {
+        className: 'small',
+        text: 'The operations API says ' + claimed + ' accounts matched but sent ' + rows +
+          '. The rest are not on this page and this pane has no way to ask for them. Narrow the ' +
+          'identifier rather than reading the number above as a list you can work through.'
+      }));
+      card.appendChild(capped);
+    }
 
     var wrap = h('div', { className: 'table-wrap' });
     var table = h('table', { className: 'data' });
@@ -398,30 +550,66 @@
      closing the drawer, running a new search, or an expiry falling due. */
   var revealed = [];
 
+  /* Reveals whose request is still out. Abandoning the screen has to abandon
+     these too: a response landing afterwards would push an entry onto
+     revealed and arm a timer against a node that is no longer in the
+     document, and that timer would later announce that a field nobody can see
+     has hidden itself. */
+  var pending = [];
+
   function clearReveals() {
+    pending.splice(0, pending.length).forEach(function (token) { token.cancelled = true; });
     revealed.slice().forEach(function (entry) { entry.hide(); });
     revealed = [];
   }
 
+  function dropPending(token) {
+    var at = pending.indexOf(token);
+    if (at !== -1) pending.splice(at, 1);
+  }
+
   function isOwner() { return session.hasRole(['owner']); }
 
-  /* One field row. Three shapes, and which one is drawn is the API's decision:
+  /* Where focus goes when the thing holding it is about to be hidden or
+     detached. #content carries tabindex="-1" for exactly this, and it is a
+     better answer than document.body, which announces nothing. */
+  function focusFallback() {
+    var main = document.getElementById('content');
+    if (main) main.focus();
+  }
 
-       reveal 'never'        no control at all, and a line saying so
-       reveal 'unavailable'  no control, and the reason there is none
-       reveal 'allowed'      a control that asks for a written reason first */
+  /* One field row. Which shape is drawn is the API's decision, with two
+     floors under it that this file will not let the API cross:
+
+       masked absent or true  masked, whatever else the entry carries
+       reveal 'never'         no control at all, and a line saying so
+       reveal 'unavailable'   no control, and the reason there is none
+       reveal 'allowed'       a control that asks for a written reason first
+       a health key           treated as 'never' regardless of what arrived */
   function fieldValue(reference, field) {
     var row = h('div', { className: 'reveal-row' });
+    var health = isHealthKey(field.key);
+
+    /* Masked by default, and the default is what a missing flag gets. The
+       earlier test here was falsy rather than an equality, so an entry whose
+       masked flag was absent, null or 0 while value was populated printed the
+       real value in the clear, with no reveal control, no reason, and no
+       per-field access record, at every role, because this return sat above
+       the owner gate below. Only an explicit false unmasks a field now, and
+       an entry that carries a mask as well is contradictory rather than
+       unmasked, so it is read as masked too. A health key is never unmasked
+       here whatever the payload says. */
+    var unmaskedByDesign = field.masked === false && !field.maskedValue && !health;
 
     var masked = h('span', {
       className: 'masked',
-      text: field.maskedValue || (field.masked ? 'Hidden' : '')
+      text: field.maskedValue || 'Hidden'
     });
     var shown = h('span', { className: 'reveal-value hidden' });
     var note = h('span', { className: 'reveal-note hidden' });
 
-    /* A plain value the API did not consider personal. Rendered as it came. */
-    if (!field.masked) {
+    /* A plain value the API said, in as many words, is not personal. */
+    if (unmaskedByDesign) {
       return h('span', { className: 'reveal-value', text: field.value === null || field.value === undefined ? 'not reported' : String(field.value) });
     }
 
@@ -429,10 +617,13 @@
     row.appendChild(shown);
     row.appendChild(note);
 
-    if (field.reveal === 'never') {
+    if (health || field.reveal === 'never') {
       var never = h('span', { className: 'reveal-never' });
       never.appendChild(icon('lock'));
-      never.appendChild(h('span', { text: field.neverShownNote || 'Never shown here' }));
+      never.appendChild(h('span', {
+        text: field.neverShownNote ||
+          (health ? 'Health data is never shown here' : 'Never shown here')
+      }));
       row.appendChild(never);
       return row;
     }
@@ -460,8 +651,16 @@
     var timer = null;
     var entry = null;
 
+    /* Re-mask. Both ways in here hide the button that may be holding focus:
+       the operator pressing "Hide again", and the expiry falling due while
+       focus happens to be sitting on it. Focus left on a display:none control
+       is focus nobody can see and a keyboard cannot move on from, so it goes
+       back to the Reveal control in the same row. If that control has gone too,
+       which is the drawer closing or a new search replacing the container, the
+       pane's content region takes it rather than document.body. */
     function hide() {
       if (timer) { global.clearTimeout(timer); timer = null; }
+      var heldFocus = row.contains(document.activeElement);
       shown.textContent = '';
       shown.classList.add('hidden');
       note.textContent = '';
@@ -471,6 +670,10 @@
       hideBtn.classList.add('hidden');
       var at = revealed.indexOf(entry);
       if (at !== -1) revealed.splice(at, 1);
+      if (heldFocus) {
+        if (document.contains(revealBtn) && revealBtn.offsetParent !== null) revealBtn.focus();
+        else focusFallback();
+      }
     }
 
     var revealBtn = h('button', { className: 'btn btn-sm', type: 'button' });
@@ -528,10 +731,19 @@
       confirm.disabled = true;
       problem.textContent = '';
 
+      /* Abandoning the screen while this is out cancels it. clearReveals()
+         flips this token, and both callbacks below check it before touching
+         anything, so a late response cannot put a value on a detached node or
+         arm a timer that announces a field nobody is looking at. */
+      var token = { cancelled: false };
+      pending.push(token);
+
       session.call('/api/ops/users/' + encodeURIComponent(reference) + '/reveal', {
         method: 'POST',
         body: { field: field.key, reason: reason }
       }).then(function (payload) {
+        dropPending(token);
+        if (token.cancelled) return;
         confirm.disabled = false;
         var out = (payload && payload.data) || {};
         closeForm(false);
@@ -542,25 +754,35 @@
         hideBtn.classList.remove('hidden');
         revealBtn.classList.add('hidden');
 
-        var expiresIn = parseTime(out.expiresAt);
-        if (expiresIn !== null) {
-          var ms = Math.max(0, expiresIn - Date.now());
-          note.textContent = 'Hides itself in ' + countdownLabel(ms);
-          note.classList.remove('hidden');
-          timer = global.setTimeout(function () {
-            hide();
-            shell.announce(field.label + ' hidden again automatically');
-          }, ms);
-        } else {
-          note.textContent = 'Recorded by field name';
-          note.classList.remove('hidden');
-        }
+        /* The window is the server's to choose and this file's to enforce. A
+           response that carries no expiresAt, or one that cannot be read, does
+           not buy an indefinite reveal: the ceiling applies and the note says
+           that the page picked it. A window longer than the cap is trimmed to
+           the cap for the same reason, because a value still on screen an hour
+           later has not un-revealed itself in any sense that matters. */
+        var expiresAt = parseTime(out.expiresAt);
+        var serverSaid = expiresAt !== null;
+        var ms = serverSaid
+          ? Math.max(0, Math.min(expiresAt - Date.now(), REVEAL_MAX_MS))
+          : REVEAL_CEILING_MS;
+
+        note.textContent = serverSaid
+          ? 'Hides itself in ' + countdownLabel(ms)
+          : 'Hides itself in ' + countdownLabel(ms) + ', a limit this page set because the ' +
+            'response did not give one. Recorded by field name.';
+        note.classList.remove('hidden');
+        timer = global.setTimeout(function () {
+          hide();
+          shell.announce(field.label + ' hidden again automatically');
+        }, ms);
 
         entry = { hide: hide };
         revealed.push(entry);
         hideBtn.focus();
         shell.announce(field.label + ' revealed and recorded');
       }).catch(function (err) {
+        dropPending(token);
+        if (token.cancelled) return;
         confirm.disabled = false;
         problem.textContent = err && err.code === 'ops_role_insufficient'
           ? 'Revealing a field is an owner action.'
@@ -646,10 +868,14 @@
       var line = h('div');
       line.appendChild(h('span', { text: ev.label }));
       /* Only a link when the API gave one, and only ever to another pane in
-         this dashboard. */
-      if (ev.reference && ev.href) {
+         this dashboard. safeHref is what makes that second half true rather
+         than a claim: an off-origin href renders as the plain reference it
+         would otherwise link to, so a page with somebody's account open cannot
+         be turned into a referrer leak by a payload. */
+      var href = ev.reference ? safeHref(ev.href) : null;
+      if (href) {
         line.appendChild(document.createTextNode(' '));
-        line.appendChild(h('a', { className: 'tiny mono', href: ev.href, text: ev.reference }));
+        line.appendChild(h('a', { className: 'tiny mono', href: href, text: ev.reference }));
       } else if (ev.reference) {
         line.appendChild(document.createTextNode(' '));
         line.appendChild(h('span', { className: 'tiny mono muted', text: ev.reference }));
@@ -771,8 +997,16 @@
     drawer.remove();
     drawer = null;
     if (drawerScrim) { drawerScrim.remove(); drawerScrim = null; }
-    if (drawerReturnFocus && document.contains(drawerReturnFocus)) drawerReturnFocus.focus();
+    /* The opener is normally still there. It is not when the pane has
+       re-rendered underneath the open drawer, which the App filter does, and
+       an unguarded focus() on a detached node drops focus to document.body
+       with nothing announced. The content region is the fallback, and the body
+       counts as no opener rather than as one, because focusing it is the same
+       outcome the fallback exists to avoid. */
+    var back = drawerReturnFocus;
     drawerReturnFocus = null;
+    if (back && back !== document.body && document.contains(back)) back.focus();
+    else focusFallback();
   }
 
   function tabPanel(id, labelledBy, selected) {
@@ -818,11 +1052,20 @@
 
     var body = h('div', { className: 'drawer-body stack' });
 
-    var opened = h('div', { className: 'callout callout-info' });
-    opened.appendChild(icon('lock'));
+    /* The claim that opening this was recorded is only made when the response
+       said so. It is the same fact recordingNotice() reports on the column
+       behind the drawer, and asserting it here regardless would have the
+       drawer contradict the card underneath it. */
+    var confirmedRecord = !!detail.recorded;
+    var opened = h('div', { className: 'callout ' + (confirmedRecord ? 'callout-info' : 'callout-warn') });
+    opened.appendChild(icon(confirmedRecord ? 'lock' : 'warn'));
     opened.appendChild(h('div', {
-      text: 'You are viewing the masked record. Opening it has already been recorded. Revealing ' +
-        'any single field needs its own reason and is recorded by field name.'
+      text: confirmedRecord
+        ? 'You are viewing the masked record. Opening it has already been recorded. Revealing ' +
+          'any single field needs its own reason and is recorded by field name.'
+        : 'You are viewing the masked record. The operations API did not confirm that opening it ' +
+          'was recorded, so treat it as unrecorded. Revealing any single field still needs its own ' +
+          'reason and is recorded by field name.'
     }));
     body.appendChild(opened);
 
@@ -1070,6 +1313,11 @@
   var selectedRef = null;
   var scope = 'all';
   var seq = 0;
+  /* Whether a lookup has been issued under the current scope, landed or not.
+     lastResult cannot answer that: it is null both before the first lookup and
+     while one is in flight, and those need different handling on a scope
+     change. */
+  var looked = false;
 
   function paintResult(node) {
     if (!resultRegion) return;
@@ -1102,6 +1350,7 @@
     selectedRef = null;
 
     var mine = ++seq;
+    looked = true;
     resultRegion.setAttribute('aria-busy', 'true');
     paintResult(skeleton());
 
@@ -1132,8 +1381,7 @@
     var matches = lastResult.matches || [];
 
     var stack = h('div', { className: 'stack' });
-    var recorded = recordedCallout(lastResult.recorded);
-    if (recorded) stack.appendChild(recorded);
+    stack.appendChild(recordingNotice(lastResult.recorded, 'this lookup'));
 
     if (!matches.length) {
       stack.appendChild(noMatchState());
@@ -1189,6 +1437,11 @@
       var col = document.getElementById('accountColumn');
       if (!col) return;
       col.textContent = '';
+      /* Opening an account is its own access record, so the same confirmation
+         the lookup gets is reported here. detail.recorded was declared in the
+         contract and never read, which meant a response that confirmed nothing
+         looked exactly like one that did. */
+      col.appendChild(recordingNotice(detail.recorded, 'this account'));
       col.appendChild(summaryCard(detail, function () { openDrawer(detail); }));
       col.appendChild(activityCard(detail));
       col.appendChild(supportCard(detail));
@@ -1242,9 +1495,23 @@
     var next = e.detail.scope || 'all';
     if (next === scope) return;
     scope = next;
+
+    /* The scope is part of the query, so anything already out was asked under
+       a scope that is no longer on screen. The sequence is bumped whether or
+       not a result has landed: leaving it alone let an in-flight lookup
+       resolve and render under the old scope while the filter bar showed the
+       new one, which is the pane silently answering a question nobody asked.
+       Anything revealed under the old scope goes back behind its mask. */
+    ++seq;
+    clearReveals();
+    if (resultRegion) resultRegion.removeAttribute('aria-busy');
+
     /* Refiltering is a new lookup, and a new lookup is a new access record, so
-       it is not run behind the operator's back. */
-    if (lastResult) {
+       it is not run behind the operator's back. The card is drawn whenever a
+       lookup has been run under the old scope, in flight or landed, because
+       the skeleton of a lookup that has just been invalidated would otherwise
+       sit on screen forever. */
+    if (looked) {
       paintResult(h('div', { className: 'card' }, [
         shell.stateBlock('search', 'App filter changed', [
           'The App filter is part of the query, and running it again writes another access ' +
@@ -1253,6 +1520,7 @@
       ]));
       lastResult = null;
       selectedRef = null;
+      looked = false;
       closeDrawer();
     }
   });

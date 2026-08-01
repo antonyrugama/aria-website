@@ -22,23 +22,48 @@
      GET /api/ops/releases?range=7d|30d|90d
 
    answering { data: { ... } } with, all fields optional except platforms and
-   sources, and null meaning "not reported" rather than zero:
+   sources, and null meaning "not reported" rather than zero.
 
-     generatedAt   ISO time the response was assembled
+   Each field is marked with whether anything stores it today, because this
+   block is the only specification a backend author has and a shape that reads
+   as uniformly available is a shape that gets half-filled. "stored" means
+   ops_release_snapshots or a shipped poller in Stadiora/Aria main holds it;
+   "no source yet" means the pane renders it if it ever arrives and says "not
+   reported" until then. Nothing here is speculative in the client: every
+   marked-future field already degrades honestly.
+
+     generatedAt   stored. ISO time the response was assembled
      platforms[]   { platform: 'ios'|'android', label, appIdentifier,
                      sourceKey, tracks[] }
        tracks[]    { track, versionName, versionCode, state,
                      rolloutBasisPoints, rolloutObservedSince, testerCount,
-                     installCount, activeCount, releasedAt, fetchedAt }
-     sources[]     { key, label, description, status, lastSuccessAt,
+                     releasedAt, fetchedAt }               all stored
+                   { installCount, activeCount }           no source yet:
+                     ops_release_snapshots stores testerCount and nothing
+                     beside it. The rollout line draws them when they arrive
+                     and omits them otherwise.
+     sources[]     stored. { key, label, description, status, lastSuccessAt,
                      lastAttemptAt, failureReason, pollSeconds, mode }
-     production    { versionName, builds[{ platform, versionCode }] }
-     adoption      { latestVersion, sampleSessions, buckets[{ key, label,
-                     basisPoints }] }
-     crashFree     { basisPoints, floorBasisPoints, windowHours }
-     health        { platform, current, previous, signals[] }
-     candidate     { versionName, status, reason, checkLabel, checkValue,
-                     href }
+     production    stored, derived from the production track of each platform.
+                   { versionName, builds[{ platform, versionCode }] }
+     adoption      derivable. coverage_sessions is dimensioned by app version,
+                   so the split exists even though no endpoint assembles it
+                   yet. { latestVersion, sampleSessions,
+                   buckets[{ key, label, basisPoints }] }
+     crashFree     no source yet. There is no crash poller in opsPollerKeys
+                   and no crash metric in telemetryMetricKeys, so this stays
+                   "Not reported" until one ships.
+                   { basisPoints, floorBasisPoints, windowHours }
+     health        no source yet, for the same reason: signals[] has nothing
+                   feeding it. { platform, current, previous, signals[] }
+       signals[]   { key, label, unit, previous, current, verdict }
+                   unit is one of percent_bp, rate_bp, seconds, millis,
+                   per_1k. verdict is one of better, worse, slightly_worse,
+                   no_change, unknown.
+     candidate     no source yet. Aria quality is a separate project.
+                   { versionName, status, reason, checkLabel, checkValue,
+                     href }. href is followed only when it stays on this
+                     origin.
 
    track.state is one of the normalized store states the backend already
    defines (processing, in_review, rejected, ready_for_release, rolling_out,
@@ -49,10 +74,13 @@
    unconfigured until somebody issues an API key for it, which is not the same
    fact as a poll that ran and was refused.
 
-   Nothing here uses innerHTML, and nothing sets a style attribute: the CSP on
-   every page in this directory forbids both. Widths that have to be computed
-   are set as a custom property through the CSSOM, which the policy does not
-   govern, and the stylesheet turns that into a width. */
+   Nothing here uses innerHTML. Widths that have to be computed are written as
+   a custom property through the CSSOM, style.setProperty, and the stylesheet
+   turns that into a width. Be exact about why that works, because the obvious
+   "simplification" breaks it: the write does serialize into a style attribute
+   in the DOM, but CSP style-src governs styles that arrive as markup, not
+   programmatic CSSOM writes, so this path is not policed. Rewriting it as
+   setAttribute('style', ...) would be, and would be blocked. */
 (function (global) {
   'use strict';
 
@@ -177,14 +205,32 @@
     try { return n.toLocaleString(); } catch (e) { return String(n); }
   }
 
+  /* 'seconds' meant milliseconds here, which is a figure a thousand times too
+     small for a backend author who read the contract and sent what it asked
+     for. The unit now means what it says, and 'millis' exists for the value
+     the divisor was written for. */
   function signalValue(unit, value) {
     var n = num(value);
     if (n === null) return null;
     if (unit === 'percent_bp') return pct(n, 2);
     if (unit === 'rate_bp') return pct(n, 2);
-    if (unit === 'seconds') return (n / 1000).toFixed(1) + 's';
+    if (unit === 'seconds') return n.toFixed(1) + 's';
+    if (unit === 'millis') return (n / 1000).toFixed(1) + 's';
     if (unit === 'per_1k') return (Math.round(n * 10) / 10).toFixed(1);
     return String(n);
+  }
+
+  /* An API supplied link is followed only when it stays on this origin. The
+     only destination one is ever meant to name is another pane in this
+     dashboard, and this is what makes that a constraint rather than a comment.
+     Anything else renders as a plain badge instead of a link. */
+  function safeHref(href) {
+    if (typeof href !== 'string' || !href) return null;
+    try {
+      var url = new URL(href, global.location.href);
+      if (url.origin !== global.location.origin) return null;
+      return url.pathname + url.search + url.hash;
+    } catch (e) { return null; }
   }
 
   /* ------------------------------------------------------- small pieces */
@@ -490,9 +536,15 @@
 
     card.appendChild(h('div', { className: 'tile-value sm', text: prod.versionName }));
 
+    /* A build with no versionCode says so rather than printing "build null".
+       Every other number on this pane falls back to words, and the empty-array
+       fallback below never covered the case where the array is there and the
+       number inside it is not. */
     var builds = (prod.builds || []).map(function (b) {
       var name = b.platform === 'ios' ? 'iOS' : b.platform === 'android' ? 'Android' : b.platform;
-      return name + ' build ' + b.versionCode;
+      var code = b.versionCode;
+      var reported = code !== null && code !== undefined && code !== '';
+      return reported ? name + ' build ' + code : name + ' build not reported';
     }).join(', ');
     card.appendChild(metaLine(builds || 'Build numbers not reported'));
 
@@ -580,9 +632,14 @@
     }
 
     var floor = num(cf.floorBasisPoints);
+    /* A verdict colour is the outcome of a comparison, so with no floor to
+       compare against the figure carries no colour. Painting it green while
+       the line underneath says "No floor is set for this figure" told the
+       operator something had passed when nothing had been checked. */
     var below = floor !== null && cf.basisPoints < floor;
+    var verdictClass = floor === null ? '' : (below ? ' verdict-worse' : ' verdict-better');
     card.appendChild(h('div', {
-      className: 'tile-value sm ' + (below ? 'verdict-worse' : 'verdict-better'),
+      className: 'tile-value sm' + verdictClass,
       text: pct(cf.basisPoints, 2)
     }));
 
@@ -632,7 +689,8 @@
       var text = c.checkLabel + (c.checkValue ? ' ' + c.checkValue : '');
       /* Only a link when the API gave one. A hard-coded destination here
          would point at a pane that is deferred. */
-      if (c.href) row.appendChild(h('a', { className: 'btn btn-sm', href: c.href, text: text }));
+      var href = safeHref(c.href);
+      if (href) row.appendChild(h('a', { className: 'btn btn-sm', href: href, text: text }));
       else row.appendChild(h('span', { className: 'badge', text: text }));
       card.appendChild(row);
     }
@@ -667,10 +725,15 @@
 
     var wrap = h('div', { className: 'table-wrap' });
     var table = h('table', { className: 'data' });
+    /* Same fallbacks as the visible column headers below. Interpolating the
+       raw values read "undefined compared with undefined" to a screen reader
+       on exactly the payloads the headers handle. */
+    var platformName = health.platform === 'ios' ? 'iOS'
+      : health.platform === 'android' ? 'Android' : 'the reported platform';
     var caption = h('caption', {
       className: 'sr-only',
-      text: 'Release health, ' + health.previous + ' compared with ' + health.current +
-        ' on ' + (health.platform === 'ios' ? 'iOS' : 'Android')
+      text: 'Release health, ' + (health.previous || 'the previous build') + ' compared with ' +
+        (health.current || 'the current build') + ' on ' + platformName
     });
     table.appendChild(caption);
 
@@ -737,13 +800,74 @@
     return stack;
   }
 
+  /* Which stores actually answered, in the words this pane uses for them
+     elsewhere. An empty ladder means "there are no builds" only when both
+     sources were asked and both said nothing; when one is not connected, or
+     polled and was refused, the empty ladder is a store that cannot be seen
+     and says nothing about what is on it. */
+  function sourceStanding(data) {
+    var answered = [];
+    var silent = [];
+
+    ['ios', 'android'].forEach(function (platform) {
+      var payload = null;
+      (data.platforms || []).forEach(function (p) { if (p && p.platform === platform) payload = p; });
+      var source = sourceFor(data, (payload && payload.sourceKey) || PLATFORMS[platform].sourceKey);
+      var name = (source && source.label) || PLATFORMS[platform].label.split(',')[0];
+
+      if (!source) { silent.push(name + ' is not reporting a status at all'); return; }
+      if (source.status === 'unconfigured') { silent.push(name + ' is not connected yet, so it has never been polled'); return; }
+      if (source.status === 'disabled') { silent.push(name + ' is not being polled'); return; }
+      if (source.status === 'failed') {
+        var when = ago(source.lastSuccessAt);
+        silent.push(name + (when ? ' last polled successfully ' + when : ' has never polled successfully'));
+        return;
+      }
+      answered.push(name);
+    });
+
+    return { answered: answered, silent: silent };
+  }
+
+  function sentence(parts) {
+    if (parts.length === 1) return parts[0] + '.';
+    return parts.join('. ') + '.';
+  }
+
+  /* "Empty never means zero." The headline used to assert that both sources
+     answered without checking whether either had, so a page with App Store
+     Connect not connected and Google Play failing rendered "both sources
+     answered, and both are empty" directly above two cards saying otherwise.
+     The sentence is derived from the statuses now, so it can only say what the
+     evidence underneath it says. */
   function emptyState(data) {
     var wrap = h('div', { className: 'stack' });
     var card = h('div', { className: 'card' });
-    card.appendChild(shell.stateBlock('release', 'No builds in flight', [
-      'Neither store reports a build on any track. That is a real answer rather than a missing ' +
-        'one: both sources answered, and both are empty.'
-    ]));
+    var standing = sourceStanding(data);
+
+    var block;
+    if (!standing.silent.length) {
+      block = shell.stateBlock('release', 'No builds in flight', [
+        'Neither store reports a build on any track. That is a real answer rather than a missing ' +
+          'one: both sources answered, and both are empty.'
+      ]);
+    } else if (!standing.answered.length) {
+      block = shell.stateBlock('warn', 'Neither store can be seen', [
+        'There is nothing on the ladders because no store answered, not because there are no ' +
+          'builds. ' + sentence(standing.silent),
+        'Whatever is on those tracks right now, this page cannot tell you. Fix the sources below ' +
+          'and this becomes a real answer.'
+      ]);
+    } else {
+      block = shell.stateBlock('warn', 'One store answered, one could not be seen', [
+        standing.answered.join(' and ') + ' answered and reports no build on any track. ' +
+          sentence(standing.silent),
+        'So this is not "there are no builds". It is one empty store and one that cannot be read, ' +
+          'and the half that cannot be read could have anything on it.'
+      ]);
+    }
+
+    card.appendChild(block);
     wrap.appendChild(card);
     wrap.appendChild(sourcesCard(data));
     return wrap;
@@ -836,6 +960,12 @@
   var platformFilter = 'both';
   var lastData = null;
   var requestSeq = 0;
+  /* The range the newest request was issued for, set when the request goes out
+     rather than when it comes back. lastData cannot stand in for this: it is
+     still null while the first request is in flight, which is exactly the
+     window in which the shell announces the filters the pane booted with. */
+  var requestedRange;
+  var everRequested = false;
 
   function paint(node) {
     if (!content) return;
@@ -846,6 +976,8 @@
   function load(range) {
     var seq = ++requestSeq;
     if (!content) return;
+    requestedRange = range;
+    everRequested = true;
 
     content.setAttribute('aria-busy', 'true');
     paint(h('div', {}, [
@@ -936,7 +1068,13 @@
   global.addEventListener('ops:filters', function (e) {
     if (!started) return;
     var range = e.detail && e.detail.range;
-    if (range === currentRange && lastData) return;
+    /* Asked already, for this exact range, so nothing to do. The old test was
+       "same range and we have data", which could not short circuit the very
+       first ops:filters because that one arrives while the first request is
+       still out and lastData is still null. On a remote API with a local pane
+       script that is the ordering production takes, and it issued the same
+       GET twice on every load, discarding the first response. */
+    if (everRequested && range === requestedRange) return;
     currentRange = range;
     load(currentRange);
   });
