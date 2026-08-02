@@ -208,6 +208,8 @@ ops/
     pane-spend.js       Cloud costs
     pane-releases.js    App releases
     pane-users.js       Look up a user
+    settings.css        pane styling for Settings
+    settings.js         Settings
 ```
 
 A pane page carries the shell, and where the pane has been built, its own module. Everything a
@@ -246,8 +248,9 @@ whole of the copy. Neither has a read API published yet, so on the live site bot
 honest "not reporting yet" state for the same reason Happening now and What happened do, and the
 section below says exactly what changes on the day their endpoints exist.
 
-**Settings** routes to a page that says plainly it is not built yet, in W5. Aria quality is
-deferred to its own project.
+**Settings** is built, and is the one pane that can change something rather than only report it.
+The section on it below is worth reading before the page is used. Aria quality is deferred to its
+own project.
 
 **App releases** and **Look up a user** are built. Everything either of them shows comes from the
 operations API; neither holds any data of its own, and where the API answers with nothing the
@@ -477,6 +480,45 @@ pane at it. It does not claim figures will appear "without another release", bec
 `endpoint` values are `null` in these files and a backend publishing a route would change
 nothing on its own.
 
+## The Settings pane
+
+Settings is owner only and is the one pane that can change something, so it is worth being exact
+about what it does and does not do.
+
+**What is real.** The administrator list, each account's role, status, last sign in and current
+session expiry, the ability to revoke another administrator's access, and the access record all
+come from the API. Revoking asks first, requires a written reason, sends that reason, and reports
+what the server answered rather than what was asked for. The record of the change is reloaded
+beside the change, so the audit entry is on screen next to the thing it describes.
+
+**What is not, and says so.** Retention windows, the cost category mapping, integration
+connection state, and the session and elevated-access windows are settings in the approved mock
+that no API can yet read or write. Each of those renders a state saying which of "not built" and
+"not reported" applies, rather than a select or a switch that would silently write nothing. A
+control that appears to work and does not is worse than no control, and on this pane it would be
+worse than the whole pane being missing.
+
+**The role table is written from the server, not from the design.** Every enforced row traces
+to server code: a `requireOpsRole` call or an ownership branch in the operations routers, or,
+for pane visibility, the shell's registry backed by this pane's owner-only endpoints. A row
+whose endpoint does not exist yet says so on the row, so the table never implies that something
+refuses a capability nothing can yet be asked for. Settings is the only
+pane carrying a role, so "view every pane" is stated with that exception rather than without it:
+a matrix that misreports the permission governing the page it is printed on is worse than no
+matrix, because the person least able to check it is the one reading it.
+
+**Nothing here is a permission check.** The pane draws what the role in hand can do, and the
+server re-reads the account row on every request and refuses independently. A control drawn for
+somebody who may not use it is a cosmetic bug; the server's answer is the one that counts, and it
+is the one shown.
+
+**The export covers what is loaded**, which is what the button says. There is no server-side
+export, and a button labelled "export the record" that quietly sent one page of it would be a lie
+about the record people are meant to be able to check. Cells that begin with a character a
+spreadsheet reads as a formula are prefixed so that opening the file cannot run anything: two
+columns of that export carry text somebody else wrote, including the address submitted on a
+failed sign in.
+
 ## Departures from the approved mocks
 
 `assets/ops.css` is the mock stylesheet with these changes:
@@ -542,6 +584,28 @@ nothing on its own.
 14. **The two ship and support panes darken the light-theme status ink**, scoped to those two
     pages. Same debt as item 11's neighbours and the same shape of fix as `operate.css`; see the
     second half of the note below.
+15. **`.table-wrap` is positioned.** `overflow-x` clips only a descendant whose containing block
+    is the wrapper, and an absolutely positioned one resolves that to the nearest positioned
+    ancestor. Left static, an `.sr-only` span inside a table wider than a phone resolves to the
+    page, escapes the wrapper's clip, and extends the document's scroll width: the table scrolls
+    inside its card and the whole page scrolls sideways with it. `position: relative` puts the
+    containing block back where the clip is.
+
+    Stated exactly, because the rule is on every page: **no pane ships a span that triggers this
+    today**, so it is a guard rather than a repair, and it was measured as one. Put a
+    screen-reader-only span in the last cell of each wrapper at 375px and delete the declaration
+    at run time, and the document's scroll width goes from 375 to 1118 on Settings and to 434 on
+    App releases, with the span's offset parent moving from the wrapper to `body`; with the
+    declaration it stays 375 on both. Settings reaches the same end by a second route, using
+    `aria-label` on the revoke buttons rather than a hidden span, and App releases and People and
+    usage already carry hidden spans inside a wrapper that happen to sit inside the visible width.
+    Both are one layout change away from not doing so.
+
+    It changes nothing else. Every element on all seven pane pages was measured at 1440px and
+    375px with the declaration and without it: the only difference anywhere is the wrapper's own
+    computed `position`. No geometry, paint order, or sticky behaviour moves, because a sticky
+    header is itself positioned and was already painting in the positioned layer, and `z-index`
+    stays `auto` so no stacking context is created.
 
 ### Known contrast debt, inherited
 
@@ -549,6 +613,25 @@ Measured across both themes against composited backgrounds. **Every pairing rend
 panes built so far passes in both themes**, text at 4.5:1 or better and control boundaries at
 3:1 or better. That was verified again for the two understand panes across all four of their
 states, 68 pairings in total, worst case 4.67:1 in light and 5.99:1 in dark.
+
+Settings was measured the same way and **needs no fix of its own**, which is why it carries
+neither of the two page-scoped blocks below. Every text pairing it draws was read off the
+rendered page rather than computed from tokens, by walking each element's ancestor background
+chain and compositing what the engine actually paints: 36 distinct pairings in light and 36 in
+dark, across the ready, empty, per-card failure, access-record failure and denied states, at
+1440px and 375px, plus the revoke confirmation. Nothing fails. The lowest in light is 4.665,
+`.badge-warn` on a card, and the next is `.badge-ok` at 4.695; the lowest in dark is 5.988. Both
+figures land on the "Ink was, on a card" column of the badge table below to three decimals, which
+is the point: those inks are untouched here, and what keeps them passing is where the badge is
+put. Settings draws its status badges **only** inside a card, and it draws no `.badge-crit`, no
+`.badge-info`, no `.btn-danger` and no platform tag anywhere. The whole set of tinted classes on the pane is
+`.badge`, `.badge-ok`, `.badge-warn`, `.badge-brand`, `.tag`, `.callout` and `.callout-warn`.
+
+Two of those figures are worth keeping in view rather than filing away. 4.665 is a pass with
+0.165 to spare, so a Settings badge moved onto the page background, or onto any surface darker
+than a card, fails on the day it is moved; and the light-theme `.badge-warn` ink there is the
+same `#9A5B06` the two blocks below darken elsewhere, so the eventual token change closes this
+margin too.
 
 Part of that debt has now come due, and three separate fixes have landed against it. Which pages
 get which follows from where each one lives, so it is worth being explicit: `ops.css` is on every
