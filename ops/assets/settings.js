@@ -1254,11 +1254,22 @@
     return callout;
   }
 
-  function render() {
-    var content = document.getElementById('content');
-    if (!content) return;
-    content.textContent = '';
-    content.appendChild(intro());
+  /* The shell calls this once, with the pane's content region, after the
+     session is confirmed and the document has finished parsing. A pane with no
+     registration renders the not-built state, so nothing anywhere claims this
+     pane is built: the fact is this file being on the page.
+
+     `host` is not in the document yet when this runs, which is why nothing here
+     looks the content area up by id. The one thing that has to wait for it, the
+     section observer, already does its own lookup a task later.
+
+     The role check that used to sit here is gone rather than moved: the shell
+     renders the denied state for a role that may not open this pane and never
+     asks for its contents, so this runs only for an owner. It was never the
+     gate in either place. The server refuses every request behind this pane on
+     its own, and would refuse them if this file drew every control. */
+  shell.definePane('settings', function (host) {
+    host.appendChild(intro());
 
     var layout = h('div', { className: 'settings' });
     layout.appendChild(sectionNav());
@@ -1273,19 +1284,6 @@
     stack.appendChild(auditCard());
     layout.appendChild(stack);
 
-    content.appendChild(layout);
-  }
-
-  /* onReady rather than a listener on ops:ready, because this file is its own
-     network request and the shell can have finished before it is parsed.
-
-     The shell renders the denied state for a role that may not open this pane,
-     and this file adds nothing in that case. It is not the gate: the server
-     refuses every request behind this pane on its own, and would refuse them
-     if this check were deleted. */
-  shell.onReady(function (detail) {
-    if (!detail || detail.pane !== 'settings') return;
-    if (!session.hasRole(['owner'])) return;
-    render();
+    host.appendChild(layout);
   });
 })(window);
