@@ -660,7 +660,7 @@
     ['Cancel or requeue jobs', true, true, false, true],
     ['Run quality checks', true, true, false, true],
     ['Override a ship check', true, false, false, true],
-    ['Show a hidden personal detail', true, false, false, true],
+    ['Show a hidden personal detail', true, false, false],
     ['See what was asked and answered', true, false, false, true]
   ];
 
