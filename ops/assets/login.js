@@ -30,7 +30,11 @@
        their session ended would send them looking for a fault that is not
        there. */
     continued: { tone: 'is-warn', text: 'This tab was signed out because your session carried on in another tab. Sign in again here to use both.' },
-    switched: { tone: '', text: 'A different administrator signed in on this browser, so this tab was signed out rather than quietly switched over to them. Sign in again to carry on as yourself.' }
+    switched: { tone: '', text: 'A different administrator signed in on this browser, so this tab was signed out rather than quietly switched over to them. Sign in again to carry on as yourself.' },
+    /* Arrived from setup.html having just chosen a first password. Setup
+       issues no session on purpose, so this is the moment the credential gets
+       tried for the first time. */
+    setup: { tone: 'is-ok', text: 'Your password is set. Sign in with it to open the dashboard.' }
   };
 
   var query = new URLSearchParams(global.location.search);
@@ -193,11 +197,15 @@
   var passwordForm = el('passwordForm');
   var signinSubmit = el('signinSubmit');
   var passwordSubmit = el('passwordSubmit');
+  var setupRequest = el('setupRequest');
 
   function showPhase(phase) {
     var signin = phase !== 'password';
     signinForm.hidden = !signin;
     passwordForm.hidden = signin;
+    /* Somebody on the password step has already signed in, so an offer to
+       claim an unclaimed account is noise at best. */
+    setupRequest.hidden = !signin;
 
     el('authTitle').textContent = signin
       ? 'Sign in to Aria Operations'
@@ -337,6 +345,72 @@
     });
   });
 
+  /* ------------------------------------------------- first-time setup ask */
+
+  var setupToggle = el('setupToggle');
+  var setupPanel = el('setupPanel');
+  var setupRequestForm = el('setupRequestForm');
+  var setupRequestSubmit = el('setupRequestSubmit');
+  var setupResult = el('setupRequestResult');
+
+  function openSetupPanel(focusIt) {
+    setupPanel.hidden = false;
+    setupToggle.setAttribute('aria-expanded', 'true');
+    if (focusIt) el('setupEmail').focus();
+  }
+
+  setupToggle.addEventListener('click', function () {
+    if (setupPanel.hidden) {
+      openSetupPanel(true);
+      return;
+    }
+    setupPanel.hidden = true;
+    setupToggle.setAttribute('aria-expanded', 'false');
+  });
+
+  setupRequestForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    clearAlert();
+    clearFieldErrors(['setupEmail']);
+    setupResult.textContent = '';
+
+    var email = el('setupEmail').value.trim();
+    /* Local shape check only, and it is a courtesy rather than a gate: the
+       server answers a malformed body with the same 202 as everything else, so
+       this exists to save a pointless request and nothing more. It must never
+       grow into a judgement about whether an address is one of ours. */
+    if (!email || email.indexOf('@') === -1) {
+      setFieldError('setupEmail', 'Enter the email address the account was created for.');
+      el('setupEmail').focus();
+      return;
+    }
+
+    busy(setupRequestSubmit, true, 'Sending', 'Send setup link');
+
+    api.request('/api/ops/auth/setup/request', {
+      method: 'POST',
+      body: { email: email }
+    }).then(function (payload) {
+      busy(setupRequestSubmit, false, '', 'Send setup link');
+      /* The server's own sentence, verbatim. It is byte-for-byte identical for
+         an unknown address, a known one, and one that already has a password,
+         and rewording it here is how a client hands back the distinction the
+         API spent a timing-equalised code path refusing to give. */
+      var message = payload && payload.data && typeof payload.data.message === 'string'
+        ? payload.data.message
+        : '';
+      setupResult.textContent = message || 'Your request was accepted.';
+    }, function (err) {
+      busy(setupRequestSubmit, false, '', 'Send setup link');
+      /* The endpoint answers 202 for everything it can answer at all, so a
+         failure here is the request not arriving rather than anything about
+         the address. */
+      setAlert(err instanceof api.OpsApiError
+        ? err.message
+        : 'Something went wrong asking for a setup link. Try again.', '', true);
+    });
+  });
+
   /* ---------------------------------------------------------------- start */
 
   wireThemeToggle();
@@ -367,4 +441,9 @@
        before it navigates here. */
     if (known) setAlert(REASONS[key].text, REASONS[key].tone, false);
   }
+
+  /* setup.html sends people here with ?setup=1 when their link turned out to
+     be finished, so the thing they came for is already open when they arrive
+     rather than behind one more button. */
+  if (wanted !== 'password' && query.get('setup') === '1') openSetupPanel(true);
 })(window);

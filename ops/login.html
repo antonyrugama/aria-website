@@ -114,6 +114,38 @@
         <p class="field-hint">Saving signs out every other device using this account.</p>
       </form>
 
+      <!-- First-time setup. An account can be provisioned with no password at
+           all, and the only way to claim one is to prove control of the inbox
+           it is named after. The API answers this request with one fixed
+           sentence for every address it is ever given, so the panel below
+           repeats that sentence and adds nothing to it: any wording of our own
+           about what was or was not found would turn an endpoint designed to
+           reveal nothing into an account enumerator. -->
+      <div id="setupRequest">
+        <div class="rule mt" aria-hidden="true"></div>
+        <h2 class="field-label mt">First time here?</h2>
+        <p class="field-hint">If an operations account was created for you and you have never
+          set a password, ask for a setup link. It goes to the address the account is named
+          after and expires 60 minutes later.</p>
+        <button class="btn mt-sm" type="button" id="setupToggle"
+                aria-expanded="false" aria-controls="setupPanel">Set up your account</button>
+
+        <div id="setupPanel" hidden>
+          <form id="setupRequestForm" method="post" novalidate>
+            <div class="field mt">
+              <label class="field-label" for="setupEmail">Email</label>
+              <input class="field-input" id="setupEmail" name="setupEmail" type="email"
+                     autocomplete="username" inputmode="email" autocapitalize="none"
+                     spellcheck="false" required>
+              <p class="field-error" id="setupEmailError"></p>
+            </div>
+            <button class="btn btn-lg" type="submit" id="setupRequestSubmit">Send setup
+              link</button>
+          </form>
+          <p class="field-hint mt" id="setupRequestResult" role="status"></p>
+        </div>
+      </div>
+
     </div>
 
     <p class="auth-foot">This page is public, and everything it can show is not. The dashboard
