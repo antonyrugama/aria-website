@@ -188,14 +188,14 @@
 
   /* Local verification hook, and the reason it exists.
 
-     Neither pane has a read API yet. The pipeline behind People and usage and
-     the cost read API behind Cloud costs are both later slices, so with no
-     hook the ready, insufficient-data, and stale renderings on these two panes
-     could not be looked at by anybody until those slices land, which is the
-     wrong way round: the rendering is what is being reviewed now.
+     Both panes now read a live API, so this is no longer how their ready
+     rendering gets looked at. What it is still for is the states a live API
+     will not produce on demand: a window billed in two currencies, a reading
+     stamped ahead of this clock, a covered span with holes in the middle. A
+     pane may therefore be pointed at a same-origin JSON document holding one
+     response envelope, which is how those branches are driven in review.
 
-     So a pane may be pointed at a same-origin JSON document holding one
-     response envelope. Honoured only when the page itself is served from a
+     Honoured only when the page itself is served from a
      loopback address, exactly like the API base-url override in api.js, so a
      deployment on the real origin can never read one, and only when the stored
      value is a relative path, so "same-origin" is enforced here rather than
@@ -211,15 +211,16 @@
 
   /* Resolves a pane's figures.
 
-     source.endpoint is deliberately null while the read API for that pane is
-     an unshipped slice. Null is not an oversight and not a placeholder path:
-     there is no endpoint to call, so none is called, and the pane says so.
-     When the read API lands, the wave that adds it sets the path here and
-     nothing else on the pane changes.
+     source.query is as load bearing as source.endpoint and is easy to leave
+     off, because a request with no querystring is answered rather than
+     refused: the cost route falls back to this month and the usage route to
+     every app over thirty days on production. So a pane that sets the path and
+     forgets the query renders confident figures for a selection nobody made,
+     with the operator's own choice sitting in the filter bar above them. Both
+     callers build it from the shell's filter state at the moment of the call.
 
-     Resolves { kind: 'data', data } or { kind: 'no-source' }. Rejects with the
-     OpsApiError the transport raised, which the pane turns into a state rather
-     than into a stack trace. */
+     Resolves { kind: 'data', data }. Rejects with the OpsApiError the transport
+     raised, which the pane turns into a state rather than into a stack trace. */
   function load(source) {
     var fixture = fixtureUrl(source.paneId);
     if (fixture) {
@@ -230,8 +231,6 @@
         return { kind: 'data', data: payload && payload.data };
       });
     }
-
-    if (!source.endpoint) return Promise.resolve({ kind: 'no-source' });
 
     return global.OpsSession.call(source.endpoint, { query: source.query })
       .then(function (payload) { return { kind: 'data', data: payload.data }; });
@@ -589,24 +588,23 @@
     return wrap;
   }
 
-  /* What a pane shows while the read API behind it is an unshipped slice.
+  /* What a pane shows when the reporting behind it has nothing to say.
+
+     Two callers now, and neither is "this pane has no endpoint" any more, so
+     the words have to be true of both: a deployment whose operations API does
+     not answer this route at all (failure() sends ops_route_missing here), and
+     an answer that arrived carrying nothing the pane can draw.
 
      This is not the shell's "not built yet": the pane itself is built and its
      rendering is what you are looking at. What is missing is the reporting
-     underneath, and saying that plainly is the whole point of the state.
-
-     The closing sentence used to promise that figures would appear "without
-     another release". They will not: the pane holds no path to call, so the
-     slice that builds the reporting has to ship the path with it. Promising
-     otherwise would make this state the one place on the pane that says
-     something the code cannot do. */
+     underneath, and saying that plainly is the whole point of the state. */
   function noSource(opts) {
     return stateCard('empty', opts.title, [
       opts.detail,
       opts.closing ||
         'Nothing is being hidden from you, and nothing here is a zero. This ' +
-        'page shows these figures once the reporting behind it is built and ' +
-        'the release that builds it points this pane at it.'
+        'pane asked the operations API for these figures; what came back did ' +
+        'not carry them.'
     ]);
   }
 

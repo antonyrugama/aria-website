@@ -92,8 +92,14 @@
     spend: {
       file: 'spend.html', icon: 'spend', label: 'Cloud costs', group: 'How we are doing',
       question: 'What are we paying for, and is anything unusual?',
+      /* Custom is deliberately not offered. This bar carries a range name and
+         nothing else, so a custom window arrives at the cost API with no start
+         and no end, and that route refuses it (ops_cost_range_unsupported)
+         rather than inventing bounds. Left in the list it would be a selectable
+         option whose only outcome is a failure card with a retry that cannot
+         succeed. It comes back when this bar grows date controls to fill it. */
       wave: 'W3', scope: false, scopeNote: 'Scope filter not applicable',
-      range: ['month', 'last-month', '3m', '12m', 'custom'], env: false
+      range: ['month', 'last-month', '3m', '12m'], env: false
     },
     evals: {
       file: 'evaluations.html', icon: 'eval', label: 'Aria quality', group: 'How we are doing',
@@ -103,7 +109,15 @@
     releases: {
       file: 'releases.html', icon: 'release', label: 'App releases', group: 'Apps and people',
       question: 'Which app version is where, and is the newest one healthy?',
-      wave: 'W4', scope: false, range: ['7d', '30d', '90d'], env: false
+      /* No range. Every figure on this pane is the current state of a store
+         track: ops_release_snapshots is upserted per track, so it holds what is
+         on that track now and no history to window. The read API accepts and
+         echoes a range, but not one field in the response varies by it, so a
+         range control here would move, repaint identically, and imply a filter
+         that does not exist. That is the failure this registry exists to
+         prevent, so the control is removed rather than labelled. */
+      wave: 'W4', scope: false, range: false, env: false,
+      filterNote: 'Store tracks are current state, so there is no window to choose'
     },
     users: {
       file: 'users.html', icon: 'users', label: 'Look up a user', group: 'Apps and people',

@@ -297,6 +297,12 @@ approved design are worth knowing before reading the page:
   usage data reports what people actually have, and both appear as their own figure.
 - **A stale source keeps its rows and shows its last successful poll time.** Hiding figures
   because a poll failed would turn a source outage into a data outage.
+- **A track outside the ladder is named, not dropped.** The ladder is a fixed set of rungs per
+  platform, because its whole point is that promotion runs in one order, so a store reporting a
+  track outside that set has nowhere to draw it. Those arrive separately as
+  `platforms[].unknownTracks` and are listed under the ladder they are not on, and they count as
+  builds in flight: a store whose only build sits on one of them must not render the empty state
+  whose sentence is that both stores answered and both are empty.
 
 Its two stores are in different states and the page says so rather than smoothing it over.
 Google Play is polled. App Store Connect has no API key yet, so the iOS ladder renders as **not
@@ -360,13 +366,25 @@ on. A control that moves and changes nothing is worse than no control: it leaves
 in the bar over production figures. Both say so where the control would have been, and both get
 their controls back when something can carry them.
 
-People and usage and Cloud costs keep the controls the registry gives them, and that is the same
-rule rather than an exception to it. With no read API published they draw no figure at all, so
-there is no figure a selection can sit over and be silently wrong about; what a control does
-today is repaint the same "not reporting yet" state, which is honest in every position. The
-selection is what the query will carry on the day an endpoint lands, and if one ships able to
-answer only some of them, the ones it cannot carry become a `filterNote` in the same commit that
-turns the endpoint on.
+People and usage and Cloud costs keep the controls the registry gives them, and now every one of
+those controls is carried into the read: People and usage sends `scope`, `range` and `env`, and
+Cloud costs sends `range`. That is not automatic. Both read APIs answer a request with no
+querystring rather than refusing it, so a pane that pointed at an endpoint and forgot the query
+would draw confident figures for every app over thirty days on production, with the operator's
+own selection sitting in the bar above them.
+
+Two controls came off in the same commit that turned the endpoints on, for the same reason the
+rule exists:
+
+- **Cloud costs no longer offers Custom.** This bar carries a range name and no bounds, so a
+  custom window reaches the cost API with no start and no end and is refused
+  (`ops_cost_range_unsupported`). Left in the list it would be a selectable option whose only
+  outcome is a failure card with a retry that cannot succeed. It comes back when the bar grows
+  date controls to fill it.
+- **App releases no longer offers a range.** `ops_release_snapshots` is upserted per track, so it
+  holds current state and no history; the route accepts a range and echoes it, and not one field
+  in the response varies by it. The control is removed rather than labelled, and a `filterNote`
+  says so where it was.
 
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
@@ -375,18 +393,20 @@ client renders a fact, it does not decide one.
 
 ## The two understand panes
 
-### Where their figures come from, and what happens while nothing serves them
+### Where their figures come from
 
-Neither pane's read API is published yet. The pane's data source therefore carries a **null**
-endpoint rather than a guessed path, and a null endpoint means no request is made and the pane
-says so. That is a deliberate choice with a visible consequence: today both panes render an
-honest "not reporting yet" state on the live site, and the day the endpoint exists it is one
-line here and nothing else on the pane changes.
+Both panes read a live endpoint: Cloud costs reads `GET /api/ops/costs?range=`, and People and
+usage reads `GET /api/ops/usage?scope=&range=&env=`. Each builds its query from the shell's
+filter state at the moment of the call, so the request and the bar cannot disagree.
 
-Guessing a path instead would have been worse in a specific way. A pane that calls a route
-nobody has written gets a 404, and a 404 renders as a fault. The dashboard would then be
-reporting that the platform is broken when the truth is that a piece of it has not been built,
-and those are the two things every state on this dashboard exists to keep apart.
+The query is as load bearing as the path, and easier to leave off. Neither route refuses a
+request that arrives without one: costs falls back to this month and usage to every app over
+thirty days on production. A pane that set the endpoint and forgot the query would therefore
+render a complete, confident answer to a question nobody asked.
+
+A pane may still be pointed at a same-origin JSON fixture from a loopback page, which is how the
+branches a live API will not produce on demand get looked at: a window billed in two currencies,
+a reading stamped ahead of this clock, a covered span with holes in the middle.
 
 The panes hold no figures of their own. Every label that names a service, a version, a group,
 or a resource arrives in the response; nothing operational is a literal in these files. What is
@@ -400,11 +420,39 @@ Both read the transport's envelope, so the pane sees `payload.data`.
 **Cloud costs** expects `asOf`, `publishLagHours`, `staleness`, `currency`, `period`, `total`,
 `forecast`, `budget`, a `views` object holding any of `category`, `resourceGroup` and `service`
 as `{ label, hint, rows }`, `daily`, `unitCosts`, `reconciliation`, and `anomalies`.
-`availability.state` is `ready`, `not_published`, or anything else, which reads as "no source
-is configured".
+`availability.state` is `ready`, `not_published`, `mixed_currency`, or anything else, which reads
+as "no source is configured".
 
-**People and usage** expects `asOf`, `coverage`, `apps`, `cohorts`, `funnel`, and `features`.
-`availability.state` is `ready` or `insufficient`.
+`mixed_currency` has its own card rather than falling into either neighbour, because neither is
+true of it. The route withholds the total when a period was billed in more than one currency, and
+that is not a timing question ("normal in the first hours of a period") nor a configuration one
+("cost reporting is not set up"): the spending was collected in full, in two currencies, and
+cannot be added. The route names the currencies in its own `detail`, which the card renders,
+because the response carries no `currency` when there is more than one.
+
+The headline label follows the range in the answer rather than saying "Month to date" whatever
+the window is. That was invisible while the pane had no endpoint and would have put those words
+over a twelve month bill the day it got one.
+
+**People and usage** expects `asOf`, `window`, `coverage`, `apps`, `cohorts`, `funnel`, and
+`features`. `availability.state` is `ready`, `insufficient`, or `not_reporting`.
+
+`window` carries three separate facts about how much of the chosen span has figures behind it,
+and the pane renders all three as statements about the *window*, never about a column, because
+each is a union across the selected apps:
+
+- `daysCovered` with `reportingStart` is the span that has ever been aggregated. A 90 day window
+  opened today reaches back past the pipeline's own lifetime, and those earlier days are outside
+  it rather than missing from it. The pane says which days it covers and, where the covered span
+  is shorter than the window, why.
+- `daysMissingRollups` is the real gap: days at or after `reportingStart` that carry no stored
+  figures. Those shorten the session and coverage figures and leave the live people figures
+  alone, and the callout says so.
+- `reportingStart: null` with `daysCovered: 0` arrives as `ready`, because the people figures are
+  read live from accounts and can clear the reporting floor while not one day has been
+  aggregated. The pane draws the live figures, and shows the figures counted from stored days as
+  **not reported** rather than as zero. A zero there would say the apps ran and nobody did
+  anything, which is the one reading the payload has ruled out.
 
 Two conventions run through both, and both exist so a figure means the same thing on the pane
 that it meant in the data:

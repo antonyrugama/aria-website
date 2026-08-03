@@ -19,7 +19,7 @@
 
    WHAT THIS PANE READS
 
-     GET /api/ops/releases?range=7d|30d|90d
+     GET /api/ops/releases
 
    answering { data: { ... } } with, all fields optional except platforms and
    sources, and null meaning "not reported" rather than zero.
@@ -32,9 +32,20 @@
    reported" until then. Nothing here is speculative in the client: every
    marked-future field already degrades honestly.
 
+   The route accepts a range and echoes it, and no field in the response varies
+   by it: ops_release_snapshots is upserted per track, so it holds current state
+   and no history. This pane therefore sends none and offers no range control,
+   rather than drawing one that repaints the same figures. See the registry
+   entry in shell.js.
+
      generatedAt   stored. ISO time the response was assembled
      platforms[]   { platform: 'ios'|'android', label, appIdentifier,
-                     sourceKey, tracks[] }
+                     sourceKey, tracks[], unknownTracks[] }
+       unknownTracks[] stored. Track names the store reported that are not
+                     rungs of the ladder this pane draws. Listed under the
+                     ladder rather than dropped, and counted as builds in
+                     flight, so a store reporting only an unknown track is not
+                     read as a store with nothing on it.
        tracks[]    { track, versionName, versionCode, state,
                      rolloutBasisPoints, rolloutObservedSince, testerCount,
                      releasedAt, fetchedAt }               all stored
@@ -365,6 +376,41 @@
     return row;
   }
 
+  /* Tracks the store reported that are not rungs of the ladder above.
+
+     The ladder is a fixed set per platform, because the whole point of drawing
+     it is that promotion runs in one order. A store is free to report a track
+     outside that set, and one arrived on this response, so there are exactly
+     two honest things to do with it: leave it off the ladder, where it has no
+     rung, and say it exists. Dropping it silently is what would make a build
+     invisible on the pane whose only question is where the builds are. */
+  function unknownTracksOf(payload) {
+    var list = payload && payload.unknownTracks;
+    if (!Array.isArray(list)) return [];
+    return list.filter(function (track) {
+      return typeof track === 'string' && track !== '';
+    });
+  }
+
+  function unknownTracksNote(tracks) {
+    var box = h('div', { className: 'callout callout-warn' });
+    box.appendChild(icon('warn'));
+    var body = h('div');
+    body.appendChild(h('strong', {
+      text: tracks.length === 1
+        ? 'This store also reports a track the ladder does not have.'
+        : 'This store also reports ' + tracks.length + ' tracks the ladder does not have.'
+    }));
+    body.appendChild(document.createTextNode(
+      ' ' + tracks.join(', ') + '. The ladder shows the promotion path this app ' +
+      'ships through, so a track outside it has no rung to sit on and is named ' +
+      'here instead of being dropped. Whatever is on it is a real build: open ' +
+      'the store console to see it.'
+    ));
+    box.appendChild(body);
+    return box;
+  }
+
   function ladderCard(platform, data) {
     var meta = PLATFORMS[platform];
     var payload = null;
@@ -408,6 +454,14 @@
       ladder.appendChild(row);
     });
     card.appendChild(ladder);
+
+    /* Inside a card body, because the ladder above it is a full-bleed grid and
+       a callout appended straight to the card would sit flush against both
+       edges. */
+    var unknown = unknownTracksOf(payload);
+    if (unknown.length) {
+      card.appendChild(h('div', { className: 'card-body' }, [unknownTracksNote(unknown)]));
+    }
 
     var foot = h('div', { className: 'card-foot' });
     foot.appendChild(icon('info'));
@@ -910,12 +964,22 @@
 
   /* ------------------------------------------------------------ the pane */
 
+  /* Whether either store reports a build anywhere, which decides between the
+     pane and the empty state.
+
+     Unknown tracks count. They are not rungs, so they are not in `tracks`, and
+     walking only the rungs meant a store whose single build sat on a track
+     outside the ladder produced the empty state, whose whole sentence is that
+     both stores answered and both are empty. That is precisely the payload
+     that field exists to describe, and the answer was the one thing it is not.
+     Counted here, the pane draws and the ladder card names the track. */
   function hasAnyBuild(data) {
     var found = false;
     (data.platforms || []).forEach(function (p) {
       ((p && p.tracks) || []).forEach(function (t) {
         if (t && (t.versionName || t.versionCode)) found = true;
       });
+      if (unknownTracksOf(p).length) found = true;
     });
     return found;
   }
@@ -966,13 +1030,6 @@
   var platformFilter = 'both';
   var lastData = null;
   var requestSeq = 0;
-  var currentRange = null;
-  /* The range the newest request was issued for, set when the request goes out
-     rather than when it comes back. lastData cannot stand in for this: it is
-     still null while the first request is in flight, which is exactly the
-     window in which the shell announces the filters the pane booted with. */
-  var requestedRange;
-  var everRequested = false;
 
   function paint(node) {
     if (!content) return;
@@ -980,11 +1037,13 @@
     content.appendChild(node);
   }
 
-  function load(range) {
+  /* No querystring. This pane registers no shell filter, and the platform
+     switch below is a view of what has already been fetched rather than a
+     second read, so there is nothing to send. A range would be accepted and
+     echoed and would change no field in the answer. */
+  function load() {
     var seq = ++requestSeq;
     if (!content) return;
-    requestedRange = range;
-    everRequested = true;
 
     content.setAttribute('aria-busy', 'true');
     paint(h('div', {}, [
@@ -992,7 +1051,7 @@
       skeleton()
     ]));
 
-    session.call('/api/ops/releases', { query: { range: range || undefined } })
+    session.call('/api/ops/releases')
       .then(function (payload) {
         if (seq !== requestSeq) return;
         content.removeAttribute('aria-busy');
@@ -1003,7 +1062,7 @@
         if (seq !== requestSeq) return;
         content.removeAttribute('aria-busy');
         lastData = null;
-        paint(errorState(err, function () { load(currentRange); }));
+        paint(errorState(err, function () { load(); }));
       });
   }
 
@@ -1061,7 +1120,7 @@
     b.appendChild(h('span', { text: 'Refresh' }));
     b.addEventListener('click', function () {
       shell.announce('Reloading app releases');
-      load(currentRange);
+      load();
     });
     return b;
   }
@@ -1078,21 +1137,6 @@
       refreshControl()
     ]);
 
-    currentRange = shell.filters().range;
-    load(currentRange);
-  });
-
-  global.addEventListener('ops:filters', function (e) {
-    if (!content) return;
-    var range = e.detail && e.detail.range;
-    /* Asked already, for this exact range, so nothing to do. The old test was
-       "same range and we have data", which could not short circuit the very
-       first ops:filters because that one arrives while the first request is
-       still out and lastData is still null. On a remote API with a local pane
-       script that is the ordering production takes, and it issued the same
-       GET twice on every load, discarding the first response. */
-    if (everRequested && range === requestedRange) return;
-    currentRange = range;
-    load(currentRange);
+    load();
   });
 })(window);
