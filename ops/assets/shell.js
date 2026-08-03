@@ -277,7 +277,9 @@
     var rail = h('aside', { className: 'rail', id: 'rail', 'aria-label': 'Dashboard panes' });
 
     rail.appendChild(h('div', { className: 'rail-brand' }, [
-      h('div', { className: 'rail-mark', text: 'A', 'aria-hidden': 'true' }),
+      h('div', { className: 'rail-mark', 'aria-hidden': 'true' }, [
+        h('img', { src: 'assets/aria-mark.png', alt: '', width: '18', height: '18' })
+      ]),
       h('div', {}, [
         h('div', { className: 'rail-title', text: 'Aria Operations' }),
         h('div', { className: 'rail-sub', text: 'Private, admin only' })

@@ -261,6 +261,25 @@ body.is-ready   .gate-app { display: block; }
   margin: 0 auto 14px;
 }
 
+/* The emblem is a white silhouette, so it reads against the brand gradient
+   the tile is filled with. Sized in the markup as well as here, so the tile
+   does not reflow between the image arriving and the stylesheet applying. */
+.boot-mark img, .auth-mark img { display: block; width: 22px; height: 22px; }
+.rail-mark img { display: block; width: 18px; height: 18px; }
+
+/* The letter this replaced was painted in --text-inverse, which is near black
+   on the default dark theme and white on light, so it stayed legible on the
+   brand gradient in both. The asset is white, which is the light answer, and
+   inverting it on dark restores the same treatment rather than leaving a white
+   mark at roughly 1.8:1 on cyan. */
+:root .boot-mark img, :root .auth-mark img, :root .rail-mark img,
+[data-theme="dark"] .boot-mark img,
+[data-theme="dark"] .auth-mark img,
+[data-theme="dark"] .rail-mark img { filter: invert(1); }
+[data-theme="light"] .boot-mark img,
+[data-theme="light"] .auth-mark img,
+[data-theme="light"] .rail-mark img { filter: none; }
+
 /* ============================ App shell ================================= */
 
 .app {
