@@ -337,7 +337,12 @@
          Tester counts are what a TestFlight or internal track has instead. */
       if (testers) {
         row.appendChild(h('span', { className: 'mono', text: testers }));
-        row.appendChild(h('span', { className: 'muted', text: 'testers' }));
+        /* Agreeing with the count beside it. A track with one tester on it is
+           an ordinary state of an internal track, and "1 testers" is the same
+           defect as "1 day ago" would be below. */
+        row.appendChild(h('span', {
+          className: 'muted', text: track.testerCount === 1 ? 'tester' : 'testers'
+        }));
         if (installs) {
           row.appendChild(h('span', { className: 'mono', text: installs }));
           row.appendChild(h('span', { className: 'muted', text: 'installed' }));
@@ -676,7 +681,9 @@
     if (num(adoption.sampleSessions)) {
       card.appendChild(h('p', {
         className: 'tiny muted',
-        text: 'From ' + count(adoption.sampleSessions) + ' sessions that reported a version.'
+        text: 'From ' + count(adoption.sampleSessions) +
+          (adoption.sampleSessions === 1 ? ' session' : ' sessions') +
+          ' that reported a version.'
       }));
     }
     return card;

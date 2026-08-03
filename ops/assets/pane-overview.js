@@ -5,20 +5,45 @@
    happen. That rule shapes this file more than anything else: nothing here
    renders a table, a facet, or a control that changes a system.
 
-   **What this pane can answer today, and what it says instead of the rest.**
+   **What this pane draws, and what it says instead of the rest.**
 
-   Of the three questions Overview asks, only "is anything urgent" has anything
-   behind it. The problems API is built and serving. The usage, reliability,
-   cost and release figures the approved design puts across the top are
-   collected but not yet served to a page, so this pane does not draw them.
+   Both of Overview's questions now have something behind them. The problems
+   API answers "is anything urgent", and /api/ops/summary answers "are people
+   using it" with the figures that have a real source: active people, Aria AI
+   runs, cloud spend so far this month, and the production app version, plus a
+   day-grain activity line.
 
-   It does not draw them as zeroes either, and that is the point. The mocks
-   make one rule about this explicit: empty never means zero. A tile reading 0
-   active users and a tile whose pipeline is not connected look identical, and
-   an operations screen that cannot tell an operator which one it is showing is
-   worse than one that shows nothing. So the parts with no source say, in
-   words, that they have no source, and name the pane that will own each of
-   them.
+   Four rules from that contract are load bearing here rather than decorative,
+   and every one of them is a rule about NOT drawing something:
+
+     1. **Every figure is labelled with the window it actually covers**, read
+        from `window.days` rather than written into this file. The approved
+        design asks for active people over 24 hours; there is no hourly grain
+        anywhere in this pipeline, so the answer covers seven whole UTC days
+        and the tile says seven. A figure labelled 24 hours that means seven
+        days is worse than one labelled seven days.
+     2. **Empty never means zero.** Every block carries an `availability`
+        state, and the figures are absent from the payload when it is not
+        `ready`. A tile reading 0 active people and a tile whose pipeline is
+        not connected look identical, so a state that is not `ready` renders
+        words rather than a number, and `not_reporting` in particular is never
+        drawn as a zero.
+     3. **Mobile and Coaches Web are never summed.** The activity line is one
+        series per app sharing an x scale, and the headline people figure is
+        the platform's own distinct count rather than the sum of the two:
+        somebody who used both is one person.
+     4. **Nothing absent is filled in.** A day an app has no stored reading for
+        arrives as `null` and breaks the line rather than dropping it to the
+        floor; an absent comparison is drawn as "no comparison available" with
+        the reason, never as 0% and never as a rise from nothing; and anything
+        the design asks for that has no source at all is named in `omissions`
+        with its reason instead of being drawn as an empty bar.
+
+   The change figure beside active people is computed here rather than sent,
+   because the route hands over the two counts and the reporting floor instead
+   of a percentage: a rate over a group this small moves several points on one
+   person, so the floor is applied at the moment of display, where the rule
+   about what may be shown belongs.
 
    The same honesty runs through the status ribbon. "Everything is working" is
    only worth printing when something was in a position to notice that it was
@@ -29,6 +54,14 @@
 
   var shell = global.OpsShell;
   var op = global.OpsOperate;
+  /* The understand panes' plumbing, for the half of this pane that reads
+     figures. It is loaded here for three things this file must not hold a
+     second copy of: the transport and its local fixture hook, the money and
+     count formatting the Cloud costs pane already publishes its bill through,
+     and the line chart that breaks on a missing point. The operate charts
+     cannot draw this line: they drop a whole series that carries one, which
+     turns a day nothing was recorded for into an app that never reported. */
+  var d = global.OpsPaneData;
   var model = global.OpsAlertsModel;
   var session = global.OpsSession;
   var h = shell.h;
@@ -40,35 +73,15 @@
      a second Problems pane. */
   var QUEUE_LIMIT = 4;
 
-  /* The figures the approved design puts on this pane that nothing serves yet.
-     Each names the pane that will own it, so the gap is a signpost rather than
-     a hole. */
-  var AWAITING = [
-    {
-      title: 'How many people are using the apps',
-      body: 'Active people, sessions, and how that is changing.',
-      href: 'analytics.html',
-      pane: 'People and usage'
-    },
-    {
-      title: 'How much Aria is doing, and how often it works',
-      body: 'Requests by type, how many succeeded, and how long they took.',
-      href: 'run-history.html',
-      pane: 'What happened'
-    },
-    {
-      title: 'What we are spending',
-      body: 'Cloud costs so far this month against the budget.',
-      href: 'spend.html',
-      pane: 'Cloud costs'
-    },
-    {
-      title: 'Which app version people are on',
-      body: 'Version spread across iOS and Android, and whether the newest is healthy.',
-      href: 'releases.html',
-      pane: 'App releases'
-    }
-  ];
+  var SUMMARY_ENDPOINT = '/api/ops/summary';
+
+  /* The pane each figure hands its detail to. Overview owns no detail, so
+     every tile is a doorway into the pane that owns the question behind it. */
+  var OWNER_PANE = {
+    people: { href: 'analytics.html', label: 'People and usage' },
+    cost: { href: 'spend.html', label: 'Cloud costs' },
+    release: { href: 'releases.html', label: 'App releases' }
+  };
 
   shell.definePane('overview', function (content) {
     var region = op.region(content);
@@ -86,21 +99,46 @@
       var token = ++loadToken;
       region.loading([
         { type: 'block', height: 78 },
-        { type: 'tiles', count: 2 },
-        { type: 'rows', count: 4 }
+        { type: 'rows', count: 4 },
+        { type: 'tiles', count: 4 },
+        { type: 'block', height: 190 }
       ]);
 
       Promise.all([
         session.call('/api/ops/alerts/problems', { query: { status: 'open', limit: model.PAGE } })
           .then(function (p) { return p.data; }),
-        session.call('/api/ops/alerts/rules').then(function (p) { return p.data; })
+        session.call('/api/ops/alerts/rules').then(function (p) { return p.data; }),
+        /* The figures fail on their own terms rather than through the pane.
+           The two halves of this page answer different questions from
+           different tables, and a summary read that is down must not take the
+           urgent queue off the screen with it: an operator who cannot see
+           spend can still act on a critical problem. The rejection is
+           therefore carried as a value and drawn as one failed section. */
+        summary().then(function (payload) {
+          return { data: (payload && typeof payload === 'object') ? payload : null };
+        }, function (err) {
+          return { error: err };
+        })
       ]).then(function (results) {
         if (token !== loadToken) return;
-        render({ open: results[0], rules: results[1] });
+        render({ open: results[0], rules: results[1], summary: results[2] });
       }).catch(function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
       });
+    }
+
+    /* The summary read.
+       No querystring, because this pane registers no controls and the route
+       accepts no parameter: it reports the environment it answered for in the
+       payload rather than taking one. Through the understand panes' loader so
+       that the same-origin fixture hook they are reviewed with covers the
+       states a live API will not produce on demand, which here is most of
+       them: a window nothing reported, a comparison the retention horizon
+       refused, and a day with no stored reading. */
+    function summary() {
+      return d.load({ paneId: 'overview', endpoint: SUMMARY_ENDPOINT })
+        .then(function (result) { return result.data; });
     }
 
     function render(data) {
@@ -116,9 +154,9 @@
       wrap.appendChild(op.bandHead('What needs a person',
         'Everything here opens the pane that owns the work'));
       wrap.appendChild(queueCard(problems, armed, capped));
-      wrap.appendChild(op.bandHead('Not on this page yet',
-        'Four figures the design puts here, and where each will land'));
-      wrap.appendChild(awaitingCard());
+      wrap.appendChild(op.bandHead('How things are going',
+        'Every figure says the window it covers'));
+      wrap.appendChild(figuresSection(data.summary));
       region.show(wrap);
     }
 
@@ -450,41 +488,615 @@
       return box;
     }
 
-    /* ---------------------------------------------------------- the gap */
+    /* ------------------------------------------------------- the figures */
 
-    function awaitingCard() {
+    /* A number the answer actually sent, or null.
+
+       Never a substituted zero. On a pane whose one stated rule is that empty
+       never means zero, a missing field coerced to 0 is that rule broken in
+       the exact place it was written for, and it is broken silently: the tile
+       still renders, confidently, in the same type as a billed figure. */
+    function num(value) {
+      return (typeof value === 'number' && isFinite(value)) ? value : null;
+    }
+
+    function stateOf(block) {
+      var state = block && block.availability && block.availability.state;
+      return typeof state === 'string' ? state : null;
+    }
+
+    function detailOf(block, fallback) {
+      var detail = block && block.availability && block.availability.detail;
+      return (typeof detail === 'string' && detail) ? detail : fallback;
+    }
+
+    function textOf(value) {
+      return (typeof value === 'string' && value) ? value : null;
+    }
+
+    /* The window a figure covers, in words, read from the answer rather than
+       written here.
+
+       The approved design labels the active-people tile "last 24 hours". There
+       is no hourly grain anywhere behind it, so the route answers over seven
+       whole UTC days and publishes the window beside every figure precisely so
+       that a wrong one moves a label on screen. Reading `days` is what makes
+       that check real; hardcoding seven would put this file back in the
+       business of asserting a window it did not measure. A window the answer
+       did not describe says so rather than guessing. */
+    function windowLabel(window) {
+      var days = num(window && window.days);
+      if (days === null) return 'Window not reported';
+      return 'Last ' + fmt.plural(days, 'whole UTC day');
+    }
+
+    /* The same window mid-sentence, for the chart's spoken description. */
+    function windowPhrase(window) {
+      var days = num(window && window.days);
+      if (days === null) return 'a window the answer did not describe';
+      return 'the last ' + fmt.plural(days, 'whole UTC day');
+    }
+
+    function tile(label) {
+      var card = h('div', { className: 'card tile' });
+      card.appendChild(h('h3', { className: 'tile-label', text: label }));
+      return card;
+    }
+
+    function metaLine(text) {
+      return h('div', { className: 'tile-meta' }, [h('span', { text: text })]);
+    }
+
+    function tinyLine(text, tone) {
+      return h('div', { className: 'tiny mt-xs ' + (tone === 'warn' ? 'ink-warn' : 'muted'), text: text });
+    }
+
+    /* The doorway. Overview owns no detail, so a tile ends at the pane that
+       owns the question behind it. */
+    function doorway(owner) {
+      return h('div', { className: 'row mt-sm' }, [op.link(owner.href, owner.label)]);
+    }
+
+    /* What a tile says when its block is not `ready`.
+
+       This is the branch the whole contract is shaped around, so it is the
+       default rather than the exception: a tile draws a figure only when the
+       state is `ready` AND the figure is a number the answer sent. Everything
+       else lands here, including a state this file has never heard of, and
+       every wording here is words rather than a numeral. `not_reporting` in
+       particular reads "no reading", never 0: the two are different facts and
+       an operator who cannot tell them apart will go looking for the wrong
+       problem, or for none at all. */
+    var UNAVAILABLE_WORDS = {
+      not_reporting: 'No reading',
+      not_collected: 'Not collected',
+      not_reported: 'Not reported',
+      not_published: 'Not published',
+      mixed_currency: 'Two currencies',
+      insufficient: 'Too few to report'
+    };
+
+    function unavailable(card, block, fallbackDetail) {
+      var state = stateOf(block);
+      var words = (state && UNAVAILABLE_WORDS[state]) || 'Not reported';
+      card.appendChild(h('div', { className: 'tile-value sm muted', text: words }));
+      /* A block rather than a tile-meta row: this is a sentence, and the row
+         is a line of short items that would push a narrow tile sideways. */
+      card.appendChild(h('div', {
+        className: 'small muted mt-xs', text: detailOf(block, fallbackDetail)
+      }));
+      return card;
+    }
+
+    /* ------------------------------------------------------ active people */
+
+    function peopleTile(people) {
+      var card = tile('Active people');
+      var active = num(people && people.platform && people.platform.active);
+
+      if (stateOf(people) !== 'ready' || active === null) {
+        unavailable(card, people,
+          'The answer carried no active-people figure for this window.');
+        card.appendChild(doorway(OWNER_PANE.people));
+        return card;
+      }
+
+      card.appendChild(h('div', { className: 'tile-value', text: fmt.int(active) }));
+      card.appendChild(peopleChange(people, active));
+      card.appendChild(metaLine(windowLabel(people.window) +
+        (textOf(people.environment) ? ', ' + people.environment : '')));
+
+      /* The two apps, side by side and never added. The headline above them is
+         the platform's own distinct count rather than their sum, so a reader
+         who adds the two by eye and gets a larger number is looking at the one
+         person who used both. */
+      var apps = (people.apps || []).filter(function (app) {
+        return num(app && app.active) !== null;
+      });
+      if (apps.length) {
+        var row = h('div', { className: 'tile-meta row-wrap mt-xs' });
+        apps.forEach(function (app) {
+          var tag = h('span', {
+            className: 'tag tag-' + (app.tone === 'coaches' ? 'coaches' : 'mobile'),
+            text: app.label || app.app
+          });
+          row.appendChild(h('span', { className: 'row' }, [
+            tag, h('span', { className: 'mono', text: fmt.int(app.active) })
+          ]));
+        });
+        card.appendChild(row);
+        card.appendChild(tinyLine('Not the sum of the two: somebody who used both is one person.'));
+      }
+
+      card.appendChild(doorway(OWNER_PANE.people));
+      return card;
+    }
+
+    /* The change in active people, computed here from the two counts.
+
+       The route hands over this window's count, the window before it, and the
+       reporting floor, rather than a percentage, so that the floor is applied
+       at the moment of display: whether a figure may be SHOWN is a rule about
+       this screen, and it has to hold whatever a later version of the route
+       decides to send.
+
+       The floor is tested against the count being divided by. A share over a
+       group that small moves several points when one person does, and a reader
+       has no way to tell that from a real change, so the two counts are printed
+       instead. They are always safe: a count is not a rate, and one person
+       moves it by one.
+
+       An absent comparison is not a zero and not a rise from nothing. The
+       payload leaves `comparison` and `previousActive` out entirely when the
+       window before has no reading or is past the retention horizon, and both
+       of those are the absence of a measurement rather than a collapse to
+       nobody. The reason travels in the block's own note, which is printed
+       under the tiles. */
+    function peopleChange(people, active) {
+      var before = num(people.platform && people.platform.previousActive);
+      var floor = num(people.reportingFloor);
+      if (floor === null) floor = d.REPORTING_FLOOR;
+
+      if (before === null || !people.comparison) {
+        return metaLine('No comparison available');
+      }
+      if (before < floor) {
+        return h('div', { className: 'tile-meta row-wrap' }, [
+          h('span', { text: 'No change shown, only ' + fmt.plural(before, 'person', 'people') +
+            ' in the window before, under the ' + fmt.int(floor) + ' we report rates from' }),
+          h('span', { className: 'mono', text: fmt.int(active) + ' now, ' + fmt.int(before) + ' before' })
+        ]);
+      }
+
+      var basisPoints = Math.round(((active - before) / before) * 10000);
+      var row = h('div', { className: 'tile-meta row-wrap' });
+      row.appendChild(h('span', {
+        className: 'delta ' + (basisPoints > 0 ? 'delta-up' : basisPoints < 0 ? 'delta-down' : 'delta-flat'),
+        text: d.signedPercent(basisPoints)
+      }));
+      row.appendChild(h('span', {
+        text: 'against ' + fmt.int(before) + ' in the ' +
+          fmt.plural(num(people.comparison.days) === null ? 0 : people.comparison.days, 'day') +
+          ' before'
+      }));
+      return row;
+    }
+
+    /* ----------------------------------------------------------- AI runs */
+
+    function aiRunsTile(aiRuns) {
+      var card = tile('Aria AI runs');
+      var runs = num(aiRuns && aiRuns.runs);
+
+      if (stateOf(aiRuns) !== 'ready' || runs === null) {
+        return unavailable(card, aiRuns,
+          'The answer carried no AI run count for this window.');
+      }
+
+      card.appendChild(h('div', { className: 'tile-value', text: fmt.int(runs) }));
+
+      /* Counts rather than a percentage, and absent rather than zero when the
+         window before was never reconciled: a comparison against a window
+         nothing was collected for reads as a collapse in AI use. */
+      var previous = num(aiRuns.previous && aiRuns.previous.runs);
+      card.appendChild(metaLine(previous === null
+        ? 'No comparison available'
+        : 'against ' + fmt.int(previous) + ' in the window before'));
+
+      card.appendChild(metaLine(windowLabel(aiRuns.window)));
+
+      /* A day with no reconciliation row has no reading, which is not a day
+         with no runs. Saying how many days are behind the total is what lets a
+         reader tell a quiet week from a stalled nightly job. */
+      var missing = (aiRuns.daysMissing || []).length;
+      var reported = num(aiRuns.daysReported);
+      if (missing > 0) {
+        card.appendChild(tinyLine('Counted from ' +
+          (reported === null ? fmt.plural(0, 'day') : fmt.plural(reported, 'day')) +
+          ', ' + fmt.plural(missing, 'day') + ' in this window ' +
+          (missing === 1 ? 'has' : 'have') + ' not been reconciled yet.', 'warn'));
+      }
+      return card;
+    }
+
+    /* -------------------------------------------------------- cloud spend */
+
+    /* Spend, and deliberately no budget bar.
+
+       Nothing in this platform records a cloud budget. The route says so in
+       `omissions` and marks the figure `basis: 'spend'` rather than sending a
+       zero, and a bar drawn against an absent target is the one way this tile
+       could push an operator into an action: an empty track reads as a budget
+       with nothing spent against it, and a full one as a budget already gone.
+       The omission is printed instead, with the reason, under the tiles. */
+    function costTile(cost) {
+      var card = tile('Cloud spend');
+      var micros = num(cost && cost.micros);
+
+      if (stateOf(cost) !== 'ready' || micros === null) {
+        unavailable(card, cost, 'The answer carried no billed total for this period.');
+        card.appendChild(doorway(OWNER_PANE.cost));
+        return card;
+      }
+
+      card.appendChild(h('div', { className: 'tile-value', text: d.money(micros, cost.currency) }));
+
+      var change = num(cost.comparison && cost.comparison.changeBasisPoints);
+      if (change === null) {
+        card.appendChild(metaLine('No comparison available'));
+      } else {
+        /* Sent, not computed. The comparison window is clamped inside the
+           previous period by the route that owns the cost arithmetic, and a
+           second implementation of it here would be a second figure with
+           nothing on screen saying which one an operator is reading. Spending
+           more is the direction that costs money, so it takes the tone the
+           Cloud costs pane gives it rather than the green a rise gets above. */
+        var row = h('div', { className: 'tile-meta row-wrap' });
+        row.appendChild(h('span', {
+          className: 'delta ' + (change > 0 ? 'delta-down' : change < 0 ? 'delta-up' : 'delta-flat'),
+          text: d.signedPercent(change)
+        }));
+        row.appendChild(h('span', {
+          text: textOf(cost.comparison.label) || 'against the same stretch of the period before'
+        }));
+        card.appendChild(row);
+      }
+
+      var period = cost.window || {};
+      var dayOf = num(period.dayOfPeriod);
+      var daysIn = num(period.daysInPeriod);
+      card.appendChild(metaLine(dayOf !== null && daysIn !== null
+        ? 'Month to date, day ' + fmt.int(dayOf) + ' of ' + fmt.int(daysIn)
+        : 'Month to date'));
+
+      if (cost.basis === 'spend') {
+        card.appendChild(tinyLine('Spend so far, not spend against a target.'));
+      }
+
+      var asOf = d.utcStamp(cost.asOf);
+      card.appendChild(tinyLine(asOf
+        ? 'Billed usage as of ' + asOf + '.'
+        : 'The time of this reading was not reported, so it cannot be read as current.'));
+
+      card.appendChild(doorway(OWNER_PANE.cost));
+      return card;
+    }
+
+    /* --------------------------------------------------- the app version */
+
+    /* Per platform and never merged. iOS and Android ship separately and
+       really do sit on different versions, so one headline "the app version"
+       would be true of at most one store. */
+    function releaseTile(release) {
+      var card = tile('App version in production');
+      var platforms = (release && release.platforms) || [];
+
+      if (stateOf(release) !== 'ready' || !platforms.length) {
+        unavailable(card, release, 'Neither store reported a production version.');
+        card.appendChild(doorway(OWNER_PANE.release));
+        return card;
+      }
+
+      var newest = null;
+      platforms.forEach(function (platform) {
+        var version = textOf(platform.versionName);
+        if (!version) return;
+        card.appendChild(h('div', {
+          className: 'tile-meta', text: textOf(platform.label) || platform.platform
+        }));
+        card.appendChild(h('div', {
+          className: 'tile-value sm',
+          text: version + (textOf(platform.versionCode) ? ' (' + platform.versionCode + ')' : '')
+        }));
+        var read = d.hoursSince(platform.fetchedAt);
+        if (read !== null && (newest === null || read < newest)) newest = read;
+      });
+
+      if (newest !== null) {
+        card.appendChild(tinyLine(newest <= 0
+          ? 'Read from the stores within the hour.'
+          : 'Read from the stores ' + d.hours(newest) + ' ago.'));
+      }
+      card.appendChild(doorway(OWNER_PANE.release));
+      return card;
+    }
+
+    /* ------------------------------------------------- the activity line */
+
+    function finiteCount(values) {
+      var n = 0;
+      (values || []).forEach(function (value) { if (num(value) !== null) n += 1; });
+      return n;
+    }
+
+    /* One line per app over the same days, drawn through the understand
+       panes' chart because it is the one that breaks a path on a missing
+       point. A day an app has no stored reading for arrives as null, and both
+       of the alternatives are a lie about a real quantity: joining across it
+       draws people who were never counted, and plotting it as zero draws a day
+       the app was open and nobody used it. */
+    function activityCard(activity) {
+      var series = (activity && activity.series) || [];
       var card = h('div', { className: 'card' });
-      card.appendChild(op.cardHead('These figures have nowhere to read from yet'));
+
+      var legend = h('div', { className: 'legend' });
+      series.forEach(function (one) {
+        var swatch = h('i', { 'aria-hidden': 'true' });
+        swatch.style.setProperty('background', d.seriesStroke(one.color));
+        legend.appendChild(h('span', {}, [swatch, h('span', { text: one.label || one.key })]));
+      });
+
+      card.appendChild(op.cardHead('People active each day',
+        windowLabel(activity && activity.window) + ', one line per app',
+        series.length ? [legend] : null));
+
+      var body = h('div', { className: 'card-body' });
+
+      if (stateOf(activity) !== 'ready' || !series.length) {
+        /* A callout rather than an empty chart. An axis with no line on it is
+           read as a measured flat zero, which is the one thing a window with
+           no stored reading must not look like. */
+        body.appendChild(op.notConfigured('There is no line to draw for this window.',
+          detailOf(activity, 'The answer carried no daily figures for this window.')));
+        card.appendChild(body);
+        appendNote(card, activity && activity.note);
+        return card;
+      }
+
+      var labels = (activity.labels || []).slice();
+      var drawable = series.filter(function (one) { return finiteCount(one.values) > 1; });
+
+      if (drawable.length) {
+        body.appendChild(d.lineChart({
+          height: 190,
+          label: 'People active each day, ' + series.map(function (one) {
+            return one.label || one.key;
+          }).join(' and ') + ', over ' + windowPhrase(activity.window),
+          series: series.map(function (one) {
+            return { color: one.color, values: one.values || [] };
+          })
+        }));
+        if (labels.length) {
+          var axis = h('div', { className: 'axis-x', 'aria-hidden': 'true' });
+          labels.forEach(function (label) { axis.appendChild(h('span', { text: label })); });
+          body.appendChild(axis);
+        }
+      } else {
+        /* One day with a reading is a point, not a line, and the chart draws
+           nothing from it. The figures below still say what was counted. */
+        body.appendChild(op.notConfigured('Not enough days to draw a line yet.',
+          'Fewer than two days in this window have a stored reading, so there is ' +
+          'nothing to join up. The days that do have one are listed below.'));
+      }
+
+      /* The chart's own numbers, in text. Nothing on this pane may exist only
+         inside a picture, and a reader who cannot see the line still has to be
+         able to tell a reported zero from a day with no reading. */
+      var rows = h('div', { className: 'stack-sm mt-sm' });
+      series.forEach(function (one) { rows.appendChild(seriesRow(one, labels)); });
+      body.appendChild(rows);
+
+      card.appendChild(body);
+
+      var missing = (activity.daysMissingRollups || []).filter(function (day) {
+        return typeof day === 'string';
+      });
+      if (missing.length) {
+        var box = h('div', { className: 'card-body' }, [
+          op.notConfigured(missing.length === 1
+            ? 'One day inside this window has no stored figures.'
+            : fmt.plural(missing.length, 'day') + ' inside this window have no stored figures.',
+            listDays(missing) + '. These days are drawn as breaks in the line rather ' +
+            'than as zeroes: no app reported on them, which is not the same as nobody ' +
+            'using the apps.')
+        ]);
+        card.appendChild(box);
+      }
+
+      appendNote(card, activity.note);
+      return card;
+    }
+
+    /* One app's line, said in words: how much of the window it has a reading
+       for, and its last reading with the day it was taken. */
+    function seriesRow(one, labels) {
+      var values = one.values || [];
+      var reported = finiteCount(values);
+      var lastIndex = -1;
+      values.forEach(function (value, index) { if (num(value) !== null) lastIndex = index; });
+
+      var row = h('div', { className: 'row row-wrap' }, [
+        h('span', { className: 'small', text: one.label || one.key }),
+        h('div', { className: 'spacer' })
+      ]);
+      row.appendChild(h('span', {
+        className: 'mono',
+        text: lastIndex === -1
+          ? 'No reading'
+          : fmt.plural(values[lastIndex], 'person', 'people') +
+            (labels[lastIndex] ? ' on ' + labels[lastIndex] : '')
+      }));
+      row.appendChild(h('span', {
+        className: 'tiny muted',
+        text: fmt.int(reported) + ' of ' + fmt.plural(values.length, 'day') + ' with a reading'
+      }));
+      return row;
+    }
+
+    /* Most days named in full before the list is summarised, the same way the
+       People and usage pane lists its gaps. */
+    var MAX_LISTED_GAP_DAYS = 8;
+
+    function listDays(days) {
+      var shown = days.slice(0, MAX_LISTED_GAP_DAYS).map(function (day) {
+        return d.utcDay(day) || day;
+      });
+      var rest = days.length - shown.length;
+      return shown.join(', ') + (rest > 0 ? ', and ' + fmt.plural(rest, 'more day') : '');
+    }
+
+    function appendNote(card, note) {
+      if (!textOf(note)) return;
+      card.appendChild(h('div', { className: 'card-foot' }, [h('span', { text: note })]));
+    }
+
+    /* --------------------------------------------- what is not drawn here */
+
+    /* The figures the approved design puts on this pane that have no source,
+       named with the route's own reason for each.
+
+       This replaces the "Not on this page yet" block, and it is a shorter list
+       than that block was because three of its four entries are now drawn. It
+       is rendered from `omissions` rather than from a list in this file, so a
+       figure that loses or gains a source moves here by itself rather than
+       when somebody remembers to edit the client. */
+    function omissionsCard(omissions) {
+      var entries = (omissions || []).filter(function (entry) {
+        return entry && (textOf(entry.title) || textOf(entry.key));
+      });
+      if (!entries.length) return null;
+
+      var card = h('div', { className: 'card' });
+      card.appendChild(op.cardHead('Not drawn here, and why',
+        entries.length === 1
+          ? 'One figure the design asks for has no source'
+          : fmt.int(entries.length) + ' figures the design asks for have no source'));
 
       var body = h('div', { className: 'card-body stack-sm' });
-      body.appendChild(op.notConfigured('Nothing is being hidden from you.',
-        'Usage, reliability, cost and release figures are being collected, but they cannot ' +
-        'be read onto a page yet. They are left out rather than shown as zeroes, because a ' +
-        'real zero and a figure with nothing behind it would look the same here.'));
-
-      var list = h('div', { className: 'queue' });
-      AWAITING.forEach(function (entry) {
+      entries.forEach(function (entry) {
         var box = h('div', { className: 'callout' });
         box.appendChild(icon('clock'));
         var text = h('div', { className: 'queue-body' });
-        text.appendChild(h('h3', { className: 'queue-title', text: entry.title }));
-        text.appendChild(h('p', { className: 'queue-desc', text: entry.body }));
-        var actions = h('div', { className: 'queue-actions' });
-        actions.appendChild(op.link(entry.href, entry.pane));
-        text.appendChild(actions);
+        text.appendChild(h('h4', {
+          className: 'queue-title', text: textOf(entry.title) || entry.key
+        }));
+        text.appendChild(h('p', {
+          className: 'queue-desc',
+          text: textOf(entry.detail) ||
+            'The answer named this as unavailable and gave no reason.'
+        }));
         box.appendChild(text);
-        list.appendChild(box);
+        body.appendChild(box);
       });
-      body.appendChild(list);
       card.appendChild(body);
 
       card.appendChild(h('div', { className: 'card-foot' }, [
         h('span', {
-          text: 'Each of these belongs to the pane named beside it. Overview will show the ' +
-                'headline and hand the detail over, the way it does for problems today.'
+          text: 'These are left out rather than drawn as zeroes or as empty bars. A ' +
+                'figure with nothing behind it and a real one look the same once ' +
+                'either is on a tile.'
         })
       ]));
       return card;
+    }
+
+    /* ------------------------------------------------ the figures section */
+
+    /* The blocks' own notes, under the tiles they belong to rather than inside
+       them.
+
+       Printed for a block that is not drawn in full, which is where the reason
+       lives: the route appends its refusal to the note, so "no comparison
+       available" on a tile and why there is none are the same sentence in two
+       places on one screen. A block drawn in full says everything it has to say
+       in the tile itself and is left out here, so this stays a footnote rather
+       than becoming an essay nobody reads. */
+    function figureNotes(data) {
+      var wrap = h('div', { className: 'stack-sm' });
+      [
+        { label: 'Active people', block: data.people, whole: hasPeopleComparison(data.people) },
+        { label: 'Aria AI runs', block: data.aiRuns, whole: num(data.aiRuns &&
+            data.aiRuns.previous && data.aiRuns.previous.runs) !== null },
+        { label: 'Cloud spend', block: data.cost, whole: num(data.cost &&
+            data.cost.comparison && data.cost.comparison.changeBasisPoints) !== null },
+        { label: 'App version in production', block: data.release, whole: true }
+      ].forEach(function (entry) {
+        var note = textOf(entry.block && entry.block.note);
+        if (!note) return;
+        if (stateOf(entry.block) === 'ready' && entry.whole) return;
+        wrap.appendChild(h('p', {
+          className: 'axis-note', text: entry.label + ': ' + note
+        }));
+      });
+      return wrap.childNodes.length ? wrap : null;
+    }
+
+    function hasPeopleComparison(people) {
+      return !!(people && people.comparison) &&
+        num(people.platform && people.platform.previousActive) !== null;
+    }
+
+    function figuresSection(summary) {
+      var wrap = h('div', { className: 'stack' });
+
+      if (summary && summary.error) {
+        var card = h('div', { className: 'card' });
+        card.appendChild(h('div', { className: 'card-body' }, [
+          op.partFailure('These figures could not be read',
+            op.failureMessage(summary.error) +
+            ' Nothing here is a zero: the figures are unread, not absent. The problems ' +
+            'above were read separately and are unaffected.',
+            load)
+        ]));
+        wrap.appendChild(card);
+        return wrap;
+      }
+
+      var data = summary && summary.data;
+      if (!data) {
+        wrap.appendChild(op.paneState('empty', 'These figures have nothing behind them yet', [
+          'This pane asked the operations API for the headline figures and what came ' +
+            'back did not carry them.',
+          'Nothing is being hidden from you, and nothing here is a zero.'
+        ]));
+        return wrap;
+      }
+
+      var tiles = h('div', { className: 'grid g4' });
+      tiles.appendChild(peopleTile(data.people));
+      tiles.appendChild(aiRunsTile(data.aiRuns));
+      tiles.appendChild(costTile(data.cost));
+      tiles.appendChild(releaseTile(data.release));
+      wrap.appendChild(tiles);
+
+      var notes = figureNotes(data);
+      if (notes) wrap.appendChild(notes);
+
+      wrap.appendChild(activityCard(data.activity));
+
+      var omissions = omissionsCard(data.omissions);
+      if (omissions) wrap.appendChild(omissions);
+
+      var stamp = d.utcStamp(data.generatedAt);
+      wrap.appendChild(h('p', {
+        className: 'axis-note',
+        text: (stamp
+          ? 'Read at ' + stamp + '. '
+          : 'The time these figures were read was not reported, so they cannot be ' +
+            'read as current. ') +
+          (textOf(data.consent && data.consent.detail) || '')
+      }));
+      return wrap;
     }
 
     load();
