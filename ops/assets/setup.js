@@ -54,13 +54,19 @@
      and refusing to spend it would leave the account unclaimable without
      buying back any of the exposure. Nothing is logged, because the only
      interesting thing to log here would be the value we are trying to hide. */
+  var tokenStillInBar = false;
   if (token !== null) {
     query.delete('token');
     var rest = query.toString();
     try {
       global.history.replaceState(null, '',
         global.location.pathname + (rest ? '?' + rest : '') + global.location.hash);
-    } catch (e) { /* address bar unchanged, nothing else to do */ }
+    } catch (e) {
+      /* Address bar unchanged. Setup still proceeds, but the operator is the
+         only one who can act on what is now sitting in their history, so they
+         are told rather than left to assume the link was cleaned up. */
+      tokenStillInBar = true;
+    }
   }
 
   /* ------------------------------------------------------------- alerting */
@@ -198,9 +204,20 @@
      can resubmit it. */
   function showRecovery(text) {
     token = null;
+    /* Cleared rather than merely hidden: a hidden input still holds its value,
+       and the value here is a password the operator may be about to type
+       somewhere else. The success path already does this. */
+    el('newPassword').value = '';
+    el('confirmPassword').value = '';
     setupForm.hidden = true;
     recoveryText.textContent = text;
     recovery.hidden = false;
+  }
+
+  if (tokenStillInBar) {
+    setAlert('This browser would not let the page clear the link from the address bar. ' +
+      'Finish setting your password, then close this tab and clear it from your history.',
+      '', false);
   }
 
   /* ------------------------------------------------------------- submit */
@@ -275,7 +292,8 @@
            sends the operator somewhere that can actually help. */
         showRecovery('That link may have expired, it may have been used already, or a newer ' +
           'link may have replaced it. Links last 60 minutes, and asking for a new one retires ' +
-          'the old one, so use the most recent email.');
+          'the old one, so use the most recent email. If you already set a password with an ' +
+          'earlier link, sign in with it instead.');
         setAlert('That setup link did not work.', '', true);
         return;
       }
@@ -285,12 +303,20 @@
         return;
       }
       if (err.status >= 500 || err.code === 'ops_route_missing') {
-        /* A fault in front of the handler, or a body this page cannot read as
-           a routed error. Whatever the server said is not written for an
-           operator, and this page cannot tell whether the link survived, so it
-           says neither. */
-        setAlert('The operations API could not complete that. Wait a moment and try again, ' +
-          'and ask for a new link if it keeps failing.', '', true);
+        /* A fault after the password was written is indistinguishable here
+           from one before it. The server sets the password first and only then
+           records the change, so a 500 can arrive with the account already
+           claimed, and an account that is already claimed is refused a new
+           setup link in silence. Telling the operator setup failed and sending
+           them back to the email would strand them there with a password that
+           works. So this says what is actually true, which is that the outcome
+           is unknown, and puts the one check that settles it first. */
+        showRecovery('The operations API did not answer clearly, so whether your password ' +
+          'was saved is not something this page can tell you. Try signing in with the ' +
+          'password you just chose. If it works, setup is done. If it does not, ask for a ' +
+          'new setup link.');
+        setAlert('That did not complete cleanly. Try signing in before asking for a new link.',
+          '', true);
         return;
       }
       /* ops_unreachable and anything else: nothing here knows the link has
