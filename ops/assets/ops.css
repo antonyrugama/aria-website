@@ -261,6 +261,11 @@ body.is-ready   .gate-app { display: block; }
   margin: 0 auto 14px;
 }
 
+/* The emblem is a white silhouette, so it reads against the brand gradient
+   the tile is filled with. Sized in the markup as well as here, so the tile
+   does not reflow between the image arriving and the stylesheet applying. */
+.boot-mark img, .auth-mark img { display: block; width: 22px; height: 22px; }
+
 /* ============================ App shell ================================= */
 
 .app {
