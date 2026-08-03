@@ -29,14 +29,28 @@
 
   var PANE_ID = 'spend';
 
-  /* The cost read API is a later slice. The figures are being collected, but
-     nothing serves them yet, so there is no path to call and none is guessed. */
-  var SOURCE = { paneId: PANE_ID, endpoint: null };
+  var ENDPOINT = '/api/ops/costs';
+
+  /* Where the figures come from, built at the moment of the call.
+
+     The range is the only control this pane registers, and it has to travel:
+     the cost route defaults an absent range to this month, so a pane that sent
+     no querystring would answer "Last 3 months" with this month's bill and put
+     the operator's own selection in the bar above it as though it had been
+     applied. Every range the shell offers here is one this route serves, which
+     is why Custom is no longer among them. */
+  function source() {
+    return {
+      paneId: PANE_ID,
+      endpoint: ENDPOINT,
+      query: { range: shell.filters().range }
+    };
+  }
 
   var NOT_REPORTING = {
     title: 'Cost reporting is not available yet',
-    detail: 'Costs are being collected, but nothing serves them to this page ' +
-      'yet, so there is no total to show. A blank total would be ' +
+    detail: 'This pane asked the operations API for the bill and did not get ' +
+      'one back, so there is no total to show. A blank total would be ' +
       'indistinguishable from a month that cost nothing.'
   };
 
@@ -169,6 +183,29 @@
 
   /* ------------------------------------------------------- budget header */
 
+  /* What the headline figure is the total of.
+
+     It said "Month to date" whatever the range was, which was invisible while
+     this pane had no endpoint and became wrong the moment it had one: the same
+     words sat over a twelve month bill. The range travels in the response, so
+     the label is read from the answer rather than from the control, and an
+     unrecognised one falls back to words that are true of any window rather
+     than to the name of a window this might not be. */
+  var RANGE_LABELS = {
+    'month': 'Month to date',
+    'last-month': 'Last month',
+    '7d': 'Last 7 days',
+    '3m': 'Last 3 months',
+    '12m': 'Last 12 months'
+  };
+
+  function totalLabel(data) {
+    var range = data && data.range;
+    return (typeof range === 'string' &&
+      Object.prototype.hasOwnProperty.call(RANGE_LABELS, range))
+      ? RANGE_LABELS[range] : 'Billed in this period';
+  }
+
   function budgetCard(data) {
     var currency = data.currency;
     var card = d.card({});
@@ -184,7 +221,7 @@
     var headline = h('div', { className: 'row row-wrap budget-head' });
 
     var spent = h('div', {}, [
-      h('h2', { className: 'tile-label', text: 'Month to date' }),
+      h('h2', { className: 'tile-label', text: totalLabel(data) }),
       h('div', { className: 'row row-wrap budget-figure' }, [
         h('div', { className: 'tile-value', text: d.money(total, currency) })
       ])
@@ -676,23 +713,32 @@
   /* The period has not published yet. Distinct from a fault and distinct from
      nothing being spent: the export runs on a cycle, and the first hours of a
      new period legitimately have nothing in them. */
+  /* A link to the last closed period, or null when this pane does not offer
+     that window.
+
+     Built through the shell's filter state rather than by hand, so an operator
+     on Staging is not silently returned to Production by a link offering them
+     a different window. */
+  function lastClosedPeriodLink() {
+    var ranges = ((shell.panes[PANE_ID] || {}).range) || [];
+    if (ranges.indexOf('last-month') === -1) return null;
+    /* Offering to go where the operator already is makes a button that looks
+       like a way out and does nothing when pressed. The state it sits on is
+       reachable on the last closed period too, since that period can also have
+       published nothing yet. */
+    if ((shell.filters() || {}).range === 'last-month') return null;
+    var href = d.paneUrl(PANE_ID, { range: 'last-month' });
+    if (!href) return null;
+    return h('a', { className: 'btn', href: href, text: 'Show the last closed period' });
+  }
+
   function renderNotPublished(data, onRetry) {
     var detail = (data.availability && data.availability.detail) ||
       'The billing export has not published for this period yet.';
 
     var actions = [];
-    var ranges = ((shell.panes[PANE_ID] || {}).range) || [];
-    if (ranges.indexOf('last-month') !== -1) {
-      /* Built through the shell's filter state rather than by hand, so an
-         operator on Staging is not silently returned to Production by a link
-         offering them a different window. */
-      var href = d.paneUrl(PANE_ID, { range: 'last-month' });
-      if (href) {
-        actions.push(h('a', {
-          className: 'btn', href: href, text: 'Show the last closed period'
-        }));
-      }
-    }
+    var earlier = lastClosedPeriodLink();
+    if (earlier) actions.push(earlier);
 
     /* The export publishes on a cycle, so asking again is a real answer to
        this state rather than the reload it used to need. */
@@ -720,6 +766,53 @@
        badge on the bare page background is the exact contrast pairing this
        page's stylesheet has not fixed. Badges live inside cards here, and
        this is the one state that was violating that. */
+    node.firstChild.appendChild(h('div', { className: 'axis-note' }, [asOfLine(data)]));
+    return node;
+  }
+
+  /* The period was billed in more than one currency, so the route withheld the
+     total rather than adding amounts that cannot be added.
+
+     Its own state because neither of the two it used to fall into is true of
+     it. "Costs have not published for this period" says this is normal in the
+     first hours of a period, and this is not a timing question at all: the
+     figures were collected, in full, in two currencies. "Cost reporting is not
+     set up" says nothing has been collected, which is the opposite of what
+     happened. Both would have sent an operator looking for a fault that is not
+     there, and neither says the one thing that is actionable, which is that
+     the answer exists and is unaddable.
+
+     The currencies are named in the route's own detail sentence, which is why
+     it is rendered rather than summarised: this pane has no currency list of
+     its own here, because the response deliberately carries no `currency` when
+     there is more than one, and inventing the words "more than one currency"
+     without the codes would leave the reader unable to tell which bills these
+     were. */
+  function renderMixedCurrency(data) {
+    var detail = (data.availability && data.availability.detail) ||
+      'This period was billed in more than one currency, and the response did ' +
+      'not say which. The parts of a bill in different currencies cannot be ' +
+      'added together.';
+
+    var actions = [];
+    var earlier = lastClosedPeriodLink();
+    if (earlier) actions.push(earlier);
+
+    var node = d.stateCard('spend', 'This period was billed in more than one currency', [
+      detail,
+      'So there is no single total here, and the groupings are not shown ' +
+        'either: every one of them is a different way of cutting the same ' +
+        'bill, and each would have to add up to a total that does not exist. ' +
+        'Adding the parts anyway would produce the one number on this pane ' +
+        'that must never be wrong.',
+      'Nothing is missing and nothing is a zero. The spending was collected in ' +
+        'full. A period billed in a single currency, such as an earlier closed ' +
+        'one, shows its total normally.'
+    ], actions);
+
+    /* Inside the card, for the same reason the not-published state does it:
+       the line can carry the Stale badge, and a badge on the bare page
+       background is a contrast pairing this stylesheet has not fixed. */
     node.firstChild.appendChild(h('div', { className: 'axis-note' }, [asOfLine(data)]));
     return node;
   }
@@ -756,12 +849,8 @@
       var mine = ++token;
       paint(d.loading([120, 260]));
 
-      d.load(SOURCE).then(function (result) {
+      d.load(source()).then(function (result) {
         if (mine !== token) return;
-        if (result.kind === 'no-source') {
-          paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title);
-          return;
-        }
 
         var data = (result.data && typeof result.data === 'object') ? result.data : null;
         if (!data) { paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title); return; }
@@ -769,6 +858,10 @@
         var state = data.availability && data.availability.state;
         if (state === 'not_published') {
           paint(renderNotPublished(data, refresh), 'Costs have not published for this period');
+          return;
+        }
+        if (state === 'mixed_currency') {
+          paint(renderMixedCurrency(data), 'This period was billed in more than one currency');
           return;
         }
         if (state && state !== 'ready') {

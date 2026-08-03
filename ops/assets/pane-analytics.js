@@ -30,10 +30,32 @@
 
   var PANE_ID = 'analytics';
 
-  /* The read API for the usage pipeline is a later slice, so there is nothing
-     to call yet. Null rather than a guessed path: a pane that calls a route
-     nobody has written reports a 404 as though the platform were broken. */
-  var SOURCE = { paneId: PANE_ID, endpoint: null };
+  var ENDPOINT = '/api/ops/usage';
+
+  /* Where the figures come from, built at the moment of the call.
+
+     All three of this pane's registered controls are real reads, so all three
+     have to travel. None of them is optional in the way an absent parameter
+     usually is: the route answers a request with no querystring for every app,
+     over thirty days, on production, which is a complete and confident answer
+     to a question the operator did not ask. Picking Coaches Web on Staging and
+     being shown both apps on production, with both selections sitting in the
+     bar as though they had been applied, is the exact failure the filter bar
+     exists to prevent.
+
+     The parameter is `scope`, not `app`. The route accepts `app` as an alias
+     for callers written against the issue's wording, but `scope` is what this
+     shell writes into the querystring and carries between panes, and sending
+     the name the operator's own URL uses keeps one spelling from the address
+     bar through to the read. */
+  function source() {
+    var now = shell.filters();
+    return {
+      paneId: PANE_ID,
+      endpoint: ENDPOINT,
+      query: { scope: now.scope, range: now.range, env: now.env }
+    };
+  }
 
   var NOT_REPORTING = {
     title: 'Usage reporting has not started yet',
@@ -71,11 +93,124 @@
     return box;
   }
 
+  /* ------------------------------------------------- what the window covers */
+
+  /* How much of the chosen window has stored figures behind it, or null when
+     the answer did not say.
+
+     Three separate facts, and the payload keeps them separate because they are
+     answered differently. `window.days` is what the operator asked for.
+     `window.daysCovered` is how much of it this pipeline has ever been able to
+     write: the nightly aggregation started on a particular day, so a 90 day
+     window opened today reaches back past its own lifetime, and calling those
+     earlier days missing is a claim about days on which there was never
+     anything to aggregate. `window.daysMissingRollups` is the real gap: days
+     at or after the first covered one that carry no stored figures. */
+  function windowSpan(data) {
+    var w = data.window;
+    if (!w || typeof w !== 'object') return null;
+    var covered = w.daysCovered;
+    if (typeof covered !== 'number' || !isFinite(covered)) return null;
+    return {
+      covered: covered,
+      days: (typeof w.days === 'number' && isFinite(w.days)) ? w.days : null,
+      start: typeof w.reportingStart === 'string' ? w.reportingStart : null,
+      missing: Array.isArray(w.daysMissingRollups)
+        ? w.daysMissingRollups.filter(function (day) { return typeof day === 'string'; })
+        : []
+    };
+  }
+
+  /* Nothing in this window has stored figures. Its own question rather than a
+     shade of the one above, because it is the case the payload reports as
+     `reportingStart: null` with `daysCovered: 0` and still calls ready: the
+     people figures are read live from accounts and can clear the reporting
+     floor while not one day of the window has been aggregated. */
+  function hasNoStoredDays(data) {
+    var span = windowSpan(data);
+    return !!span && span.covered === 0;
+  }
+
+  /* Most days named in full before the list is summarised. Long enough to be
+     useful on a week with a couple of holes, short enough that a 90 day window
+     with a stalled job does not print a paragraph of dates. */
+  var MAX_LISTED_GAP_DAYS = 8;
+
+  function listDays(days) {
+    var shown = days.slice(0, MAX_LISTED_GAP_DAYS).map(function (day) {
+      return d.utcDay(day) || day;
+    });
+    var rest = days.length - shown.length;
+    return shown.join(', ') + (rest > 0
+      ? ', and ' + d.count(rest) + ' more'
+      : '');
+  }
+
+  function dayCount(n) {
+    return d.count(n) + (n === 1 ? ' day' : ' days');
+  }
+
+  /* What the window covers, in display order, or an empty list when the answer
+     did not say.
+
+     Every sentence here is about the WINDOW rather than about an app, and is
+     worded that way on purpose: `reportingStart` is the earliest day ANY
+     selected app reported and the gap list is the days NO selected app
+     reported, so both are a union across the columns on screen. Read as a
+     per-app statement they would be wrong in both directions, promising that
+     Mobile reported on a day only Coaches Web did, and denying a Coaches Web
+     reading on a day Mobile was silent. */
+  function windowNotes(data) {
+    var span = windowSpan(data);
+    if (!span) return [];
+    var notes = [];
+
+    if (span.missing.length) {
+      notes.push(d.callout('warn', 'warn', [
+        d.strong(span.missing.length === 1
+          ? 'One day inside the covered span has no stored figures.'
+          : dayCount(span.missing.length) + ' inside the covered span have no stored figures.'),
+        ' ' + listDays(span.missing) + '. These are gaps rather than days ' +
+          'outside the reporting, so the session and coverage figures below ' +
+          'are short by them. The figures counted from accounts, active people ' +
+          'and feature use, are read live and are not. This is a statement ' +
+          'about the window as a whole: a listed day is one no selected app ' +
+          'reported.'
+      ]));
+    }
+
+    if (span.covered === 0) {
+      notes.push(d.callout('warn', 'warn', [
+        d.strong('No day in this window has stored figures.'),
+        ' Nothing has been aggregated for the window you chose, so the figures ' +
+          'counted from stored days are shown as not reported rather than as ' +
+          'zero: a zero would say the apps ran and nobody did anything. The ' +
+          'figures counted from accounts are read live and are unaffected, so ' +
+          'they are shown as they are.'
+      ]));
+      return notes;
+    }
+
+    var sentence = 'These figures cover the last ' + dayCount(span.covered) + ' of this window';
+    var from = span.start ? d.utcDay(span.start) : null;
+    sentence += from ? ', from ' + from + ' onwards.' : '.';
+    if (span.days !== null && span.covered < span.days) {
+      sentence += ' The ' + dayCount(span.days) + ' you asked for reaches back before ' +
+        'this reporting began, so the earlier days are outside its lifetime ' +
+        'rather than gaps in it.';
+    }
+    sentence += ' That is a property of the window rather than of any one ' +
+      'column: it starts at the earliest day any selected app reported.';
+
+    notes.push(h('p', { className: 'axis-note', text: sentence }));
+    return notes;
+  }
+
   /* ------------------------------------------------------- app comparison */
 
   /* One column per app. Never a blend, never a total: the wrapper is a grid of
      independent columns and there is no row that adds them. */
-  function appColumns(data) {
+  function appColumns(data, opts) {
     var section = h('section', { className: 'vs', 'aria-labelledby': 'vsHeading' });
     section.appendChild(h('h2', { className: 'sr-only', id: 'vsHeading', text: 'Usage by app' }));
 
@@ -108,7 +243,7 @@
       col.appendChild(head);
 
       (app.metrics || []).forEach(function (metric) {
-        col.appendChild(metricRow(metric));
+        col.appendChild(metricRow(metric, opts));
       });
 
       if (app.trend && app.trend.values && app.trend.values.length > 1) {
@@ -124,6 +259,29 @@
     return section;
   }
 
+  /* Whether a figure is counted from the stored day-grain rollups.
+
+     Matched on the label because that is the only signal there is: the metric
+     union carries a kind and, for anything over a group, a denominator, and
+     neither says where the number came from. Named exactly, not by substring,
+     so a future figure that merely mentions sessions in its label is not
+     silently withheld.
+
+     Only consulted when the window has no stored days at all, and only when
+     the value is zero, so a mislabelled or relabelled metric fails towards
+     showing the figure rather than towards hiding one. The callout above the
+     columns says the same thing in words for that reason: if this list ever
+     goes stale the reader is still told the window has nothing stored, which
+     is the fact that matters. Where this really belongs is a provenance field
+     in the payload, and that is the change to make if a third such figure
+     arrives. */
+  var FROM_STORED_DAYS = ['Sessions', 'Sessions per person'];
+
+  function fromStoredDays(metric) {
+    return typeof metric.label === 'string' &&
+      FROM_STORED_DAYS.indexOf(metric.label) !== -1;
+  }
+
   /* One figure in a column.
 
      Anything measured over a group goes through the floor first, and what
@@ -131,10 +289,18 @@
      the pipeline happened to give it: a ratio delivered as a decimal is still
      a ratio, and used to walk straight past the guard. Everything left is a
      count, and a count is always reportable. */
-  function metricRow(metric) {
+  function metricRow(metric, opts) {
     var row = h('div', { className: 'vs-metric' }, [
       h('span', { text: metric.label })
     ]);
+
+    if (opts && opts.noStoredDays && fromStoredDays(metric) && metric.value === 0) {
+      row.classList.add('is-suppressed');
+      row.appendChild(h('div', { className: 'small suppressed right' }, [
+        h('span', { text: 'Not reported, no day in this window has stored figures' })
+      ]));
+      return row;
+    }
 
     var overGroup = metric.kind === 'rate' || typeof metric.denominator === 'number';
     if (overGroup && !d.reportable(metric.denominator)) {
@@ -518,7 +684,13 @@
     } : null);
     if (warning) root.appendChild(warning);
 
-    root.appendChild(appColumns(data));
+    /* Above the columns rather than in a footnote under them. Both notes
+       change how the figures immediately below are read, and one of them says
+       that some of those figures are absent, so a reader who stops at the
+       numbers has to have met it first. */
+    windowNotes(data).forEach(function (note) { root.appendChild(note); });
+
+    root.appendChild(appColumns(data, { noStoredDays: hasNoStoredDays(data) }));
 
     root.appendChild(d.callout('info', 'info', [
       d.strong('These columns are never added together.'),
@@ -626,12 +798,8 @@
       var mine = ++token;
       paint(d.loading([132, 220]));
 
-      d.load(SOURCE).then(function (result) {
+      d.load(source()).then(function (result) {
         if (mine !== token) return;
-        if (result.kind === 'no-source') {
-          paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title);
-          return;
-        }
 
         var data = (result.data && typeof result.data === 'object') ? result.data : null;
         if (!data) { paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title); return; }
