@@ -167,17 +167,50 @@ What follows from wanting it this strict:
   API, the querystring, or storage can become markup.
 - `connect-src 'self'` is present because this origin serves static files only; it allows no
   capability the pages do not already have.
-- `form-action 'none'` matters more than it looks. Both sign-in forms are submitted by script
-  with `preventDefault`. If that script ever failed to load, a browser would otherwise navigate
-  the form and put a password in the address bar.
+- `form-action 'none'` matters more than it looks. Every form on these pages is submitted by
+  script with `preventDefault`. If that script ever failed to load, a browser would otherwise
+  navigate the form and put a password in the address bar.
 
 `frame-ancestors` is deliberately absent: it is ignored in a `<meta>` tag.
+
+`setup.html` carries one thing the other pages do not: `<meta name="referrer" content="no-referrer">`,
+declared above every subresource in the file. That page is opened from a link whose query string
+holds a one-time credential, and a referrer policy only governs the requests made after the
+browser has parsed it, so anything loaded before that declaration would put the whole URL in a
+`Referer` header before a line of script had run.
+
+## First-time setup
+
+An administrator account can exist with no password at all, and the only way to claim one is to
+prove control of the address it is named after. Two pages carry that:
+
+- The sign-in page offers **First time here?**, which asks the API for a setup link. That
+  endpoint answers one fixed sentence for every address it is ever given, and the panel repeats
+  that sentence unchanged. Anything the client added to it would turn an endpoint designed to
+  reveal nothing into a way of asking whether an address is an administrator.
+- `setup.html` is where the emailed link lands. It reads the token out of the query string into
+  a variable, strips it from the address bar with `replaceState` before anything else happens,
+  and never writes it into the DOM, a link, a form action, or a log. Opened without a link the
+  page has no form on it at all, so there is nothing there to submit.
+
+Setting the password does not sign anybody in, because the API deliberately issues no session
+here: the owner signs in immediately afterwards with what they just chose, which proves the
+credential works while they are still in front of the form that made it. `setup.js` loads the
+transport and nothing else, so this page has no function on it capable of adopting a session
+even if one were handed to it.
+
+Whether a link is still good is not a question this page answers. The API returns one generic
+rejection for a link that is unknown, expired, already used, or replaced by a newer one, so the
+page names those possibilities rather than choosing between them, and offers a way to ask for a
+new link. The token's shape is not checked here either: a second opinion on validity can only
+ever disagree with the first one.
 
 ## Layout
 
 ```
 ops/
-  login.html            sign in, and the choose-your-own-password step
+  login.html            sign in, the choose-your-own-password step, and the setup-link request
+  setup.html            first-time setup: spend the emailed link, choose the first password
   index.html            Overview
   jobs-live.html        Happening now
   run-history.html      What happened
@@ -196,6 +229,7 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     shell.js            pane registry, rail, top bar, filter bar, boot gate
     login.js            the sign-in page controller
+    setup.js            the first-time setup page controller
     operate.css         pane styling for the operate panes
     operate.js          shared pane furniture: charts, drawer, confirm, states
     alerts-model.js     the problems API in plain words, shared by two panes
