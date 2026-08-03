@@ -722,6 +722,11 @@
   function lastClosedPeriodLink() {
     var ranges = ((shell.panes[PANE_ID] || {}).range) || [];
     if (ranges.indexOf('last-month') === -1) return null;
+    /* Offering to go where the operator already is makes a button that looks
+       like a way out and does nothing when pressed. The state it sits on is
+       reachable on the last closed period too, since that period can also have
+       published nothing yet. */
+    if ((shell.filters() || {}).range === 'last-month') return null;
     var href = d.paneUrl(PANE_ID, { range: 'last-month' });
     if (!href) return null;
     return h('a', { className: 'btn', href: href, text: 'Show the last closed period' });

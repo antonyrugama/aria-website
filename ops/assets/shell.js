@@ -87,7 +87,15 @@
     analytics: {
       file: 'analytics.html', icon: 'analytics', label: 'People and usage', group: 'How we are doing',
       question: 'Who is using the app, and is that growing?',
-      wave: 'W3', scope: true, range: ['7d', '14d', '30d', '90d', 'custom'], rangeDefault: '30d', env: true
+      /* Custom is deliberately not offered, for the same reason as Cloud costs
+         below and one that bites harder here. This bar carries a range name and
+         nothing else, so a custom window reaches the usage API with no start and
+         no end. That route does not refuse it: it answers over the widest window
+         retention allows. Left in the list it would draw confident figures for a
+         window the operator never chose, with nothing on screen saying so, which
+         is worse than the cost pane's honest failure card. It comes back when
+         this bar grows date controls to fill it. */
+      wave: 'W3', scope: true, range: ['7d', '14d', '30d', '90d'], rangeDefault: '30d', env: true
     },
     spend: {
       file: 'spend.html', icon: 'spend', label: 'Cloud costs', group: 'How we are doing',
