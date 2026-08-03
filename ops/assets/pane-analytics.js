@@ -416,7 +416,9 @@
         className: 'na cohort-suppressed',
         colspan: String((cohort.offsets || []).length)
       });
-      cell.appendChild(h('div', { text: d.suppressionReason(row.size, 'people signed up') }));
+      cell.appendChild(h('div', {
+        text: d.suppressionReason(row.size, 'people signed up', 'person signed up')
+      }));
 
       var raw = rawCounts(row, cohort);
       if (raw) {

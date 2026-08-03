@@ -236,8 +236,8 @@ ops/
     pane-overview.js    Overview
     pane-alerts.js      Problems
     pane-awaiting-data.js  Happening now and What happened
-    pane-data.js        shared plumbing for the understand panes: source,
-                        formatting, states, charts
+    pane-data.js        shared plumbing for the understand panes and for
+                        Overview's figures: source, formatting, states, charts
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
     pane-releases.js    App releases
@@ -261,14 +261,32 @@ on a page that loads nothing to build it.
 The shell, the sign in, and the design system are built. Of the panes, **Problems** is complete:
 it reads the live problems and alert rules, takes a problem on, closes it with a reason, tunes a
 rule where the role allows it, and states whether the alerting is armed and where what it finds
-is sent. **Overview** is built for the part that has a source, which is the urgency question:
-the status ribbon and the needs-attention queue are real, and every entry opens the pane that
-owns the work.
+is sent. **Overview** answers both of its questions from live reads. The status ribbon and the
+needs-attention queue come from the problems API, and every entry opens the pane that owns the
+work; the four headline figures, the day-grain activity line, and the list of what is
+deliberately not drawn come from `GET /api/ops/summary`, which composes them server side.
 
-The rest of Overview, and the whole of **Happening now** and **What happened**, are not drawn.
-Their figures are being collected but nothing serves them to a page yet, so those pages say so in
-words instead of showing a zero. A tile reading zero and a tile with no pipeline behind it look
-identical, and that is the one thing an operations screen must never be.
+Three things about that pane are rules rather than styling, and each one is a rule about not
+drawing something. Every figure is labelled with the window the answer says it covers, read from
+`window.days`: the approved design asks for active people over 24 hours, nothing behind it is
+aggregated more finely than a day, and a tile labelled 24 hours that means seven days is worse
+than one labelled seven days. Every block carries an `availability` state and its figures are
+absent from the payload unless that state is `ready`, so a tile that is not ready renders words
+and never a numeral. And the two apps are never added together: the activity line is one series
+per app, and the headline people figure is the platform's own distinct count rather than the sum
+of the two, because somebody who used both is one person.
+
+The cost tile draws no budget bar. Nothing in the platform records a cloud budget, so the route
+marks the figure `basis: 'spend'` and names the gap in `omissions`, and the pane prints the
+omission with its reason instead of drawing a track against a target that does not exist. The
+same list is what replaced the old "Not on this page yet" block, and it is rendered from the
+answer rather than from a list in the client, so a figure that gains a source leaves it without
+an edit here.
+
+**Happening now** and **What happened** are still not drawn. Their figures are being collected
+but nothing serves them to a page yet, so those pages say so in words instead of showing a zero.
+A tile reading zero and a tile with no pipeline behind it look identical, and that is the one
+thing an operations screen must never be.
 
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
@@ -278,9 +296,8 @@ be salvaged, the 30 day false-alarm rate and the 30 day volume chart, say they c
 out instead of showing a number that is quietly short.
 
 **People and usage** and **Cloud costs** are drawn in full: every state, every card, and the
-whole of the copy. Neither has a read API published yet, so on the live site both land on an
-honest "not reporting yet" state for the same reason Happening now and What happened do, and the
-section below says exactly what changes on the day their endpoints exist.
+whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET /api/ops/costs`,
+and land on an honest state rather than a zero wherever an answer carries no figure.
 
 **Settings** is built, and is the one pane that can change something rather than only report it.
 The section on it below is worth reading before the page is used. Aria quality is deferred to its

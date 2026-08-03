@@ -235,6 +235,16 @@
     return day + ' ' + time;
   }
 
+  /* A count and its noun, agreeing.
+
+     Every number on this pane comes from the answer, so every one of them can
+     be one: a lookup that matched a single account, a window a day long. "1
+     accounts" is the same defect the countdown below already guards against,
+     read by somebody deciding whether they are looking at a whole list. */
+  function plural(n, one, many) {
+    return n + ' ' + (n === 1 ? one : (many || one + 's'));
+  }
+
   /* How long a revealed value has left. Rounding a short window up to
      "1 minutes" is both wrong and ungrammatical, and the window is the server's
      to choose, so both units are handled here. */
@@ -478,9 +488,8 @@
     head.appendChild(h('span', {
       className: 'card-hint',
       text: short
-        ? rows + ' of ' + claimed + ' accounts shown, exact identifier match'
-        : (rows === 1 ? '1 account, exact identifier match'
-          : rows + ' accounts, exact identifier match')
+        ? rows + ' of ' + plural(claimed, 'account') + ' shown, exact identifier match'
+        : plural(rows, 'account') + ', exact identifier match'
     }));
     head.appendChild(h('div', { className: 'spacer', 'aria-hidden': 'true' }));
     head.appendChild(badge('info', 'Details hidden', 'lock'));
@@ -491,7 +500,7 @@
       capped.appendChild(icon('warn'));
       capped.appendChild(h('div', {
         className: 'small',
-        text: 'The operations API says ' + claimed + ' accounts matched but sent ' + rows +
+        text: 'The operations API says ' + plural(claimed, 'account') + ' matched but sent ' + rows +
           '. The rest are not on this page and this pane has no way to ask for them. Narrow the ' +
           'identifier rather than reading the number above as a list you can work through.'
       }));
@@ -903,7 +912,7 @@
     head.appendChild(h('span', {
       className: 'card-hint',
       text: activity && activity.windowDays
-        ? 'Last ' + activity.windowDays + ' days, events only'
+        ? 'Last ' + plural(activity.windowDays, 'day') + ', events only'
         : 'Events only'
     }));
     card.appendChild(head);
@@ -1253,7 +1262,9 @@
     var head = h('div', { className: 'sec-head' });
     head.appendChild(h('h3', { className: 'sec-title', text: 'Who has looked at this account' }));
     if (access && access.windowDays) {
-      head.appendChild(h('span', { className: 'sec-hint', text: 'Last ' + access.windowDays + ' days' }));
+      head.appendChild(h('span', {
+        className: 'sec-hint', text: 'Last ' + plural(access.windowDays, 'day')
+      }));
     }
     wrap.appendChild(head);
 

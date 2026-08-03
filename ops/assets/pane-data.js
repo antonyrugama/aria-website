@@ -1,5 +1,11 @@
 /* Shared plumbing for the understand panes: People and usage, Cloud costs.
 
+   Overview's headline figures read it too. That pane is an operate pane and
+   keeps its ribbon and its queue on the operate furniture, but the half of it
+   that draws figures is the same job as these two: one read, the same four
+   states, money in micros and rates as two counts, and a daily line that has
+   to break where an app has no stored reading.
+
    Three things live here because both panes need all three and neither may
    hold a second copy:
 
@@ -450,11 +456,21 @@
   }
 
   /* The sentence a suppressed figure carries. Says the floor, says the size,
-     and says why, because "hidden" on its own reads as a permission problem. */
-  function suppressionReason(denominator, noun) {
-    var size = (typeof denominator === 'number' && isFinite(denominator))
-      ? count(denominator) : 'Too few';
-    return 'Hidden, only ' + size + ' ' + (noun || 'people') +
+     and says why, because "hidden" on its own reads as a permission problem.
+
+     The noun agrees with the size. Every group this sentence is written for is
+     under the floor, so a group of one is not an edge case here, it is the
+     smallest ordinary case: a signup week with one account in it read "only 1
+     people signed up in this group". `one` is the singular form, and it is a
+     parameter rather than a suffix rule because the plural callers pass is a
+     phrase ("people signed up") whose head word is not at the end. */
+  function suppressionReason(denominator, noun, one) {
+    var known = typeof denominator === 'number' && isFinite(denominator);
+    var size = known ? count(denominator) : 'Too few';
+    var word = (known && denominator === 1)
+      ? (one || 'person')
+      : (noun || 'people');
+    return 'Hidden, only ' + size + ' ' + word +
       ' in this group and we do not report rates below ' + REPORTING_FLOOR + '.';
   }
 
