@@ -142,7 +142,7 @@
     submitBtn.textContent = 'Updating...';
 
     try {
-      var res = await fetch('https://ca-aria-mobile-prod.calmcliff-31ba567d.westus.azurecontainerapps.io/api/auth/reset-password', {
+      var res = await fetch('https://api.runwitharia.com/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: token, newPassword: pw1.value }),
