@@ -70,8 +70,36 @@
   .success { color: #B7F348; font-size: 15px; margin-top: 16px; }
   .rule { font-size: 12px; color: #B2C0D0; margin-top: 6px; }
   .rule.valid { color: #B7F348; }
-  .hidden { display: none; }
   a { color: #B7F348; text-decoration: none; }
+  .handoff {
+    display: block;
+    width: 100%;
+    text-align: center;
+    border: 1px solid rgba(0, 217, 255, 0.32);
+    border-radius: 10px;
+    padding: 13px;
+    margin-bottom: 20px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #F7FBFF;
+  }
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 4px;
+    color: #B2C0D0;
+    font-size: 12px;
+  }
+  .divider::before, .divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  /* Last rule on purpose: .handoff and .divider set their own `display`, and an
+     equal-specificity rule declared later would otherwise win over this one. */
+  .hidden { display: none; }
 </style>
 </head>
 <body>
@@ -80,6 +108,9 @@
     <h1>Reset your Aria XII password</h1>
 
     <div id="form-view">
+      <a id="handoff" class="handoff hidden" href="#">Open in the Aria XII app</a>
+      <p id="handoff-divider" class="divider hidden">or reset here</p>
+
       <p class="muted">Choose a new password for your Aria XII account. Make it at least 8 characters.</p>
 
       <form id="reset-form">
@@ -127,6 +158,20 @@
     formView.classList.add('hidden');
     invalidView.classList.remove('hidden');
     return;
+  }
+
+  // App handoff (ariaxii-external-link-namespace-decision.md): this HTTPS page is
+  // the carrier, and the native scheme is the preferred destination when Aria XII
+  // is installed. Offered as an explicit tap rather than an automatic redirect —
+  // a failed scheme navigation surfaces a browser error dialog, and on desktop it
+  // always fails. The form below stays the fallback either way.
+  //
+  // Mobile-only: a desktop browser has no app to hand off to.
+  if (/android|iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    var handoff = document.getElementById('handoff');
+    handoff.href = 'ariaxii://reset-password?token=' + encodeURIComponent(token);
+    handoff.classList.remove('hidden');
+    document.getElementById('handoff-divider').classList.remove('hidden');
   }
 
   pw1.addEventListener('input', function () {
