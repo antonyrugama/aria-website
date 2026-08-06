@@ -1,0 +1,43 @@
+name: Reset page smoke
+
+# Guards the password-reset pages against the failure that took web password
+# reset down for months: the API hostname they POST to was retired, so every
+# reset failed in the browser while this repo stayed green. See
+# scripts/check-reset-endpoints.sh for the full rationale.
+#
+# The schedule matters as much as the change triggers — breaking these pages
+# requires no commit here, so change-only checks would never have caught it.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
+
+on:
+  pull_request:
+    paths:
+      - 'auth/reset-password/index.html'
+      - 'aria-xii/reset-password/index.html'
+      - 'scripts/check-reset-endpoints.sh'
+      - '.github/workflows/reset-page-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'auth/reset-password/index.html'
+      - 'aria-xii/reset-password/index.html'
+      - 'scripts/check-reset-endpoints.sh'
+      - '.github/workflows/reset-page-smoke.yml'
+  schedule:
+    # Mondays 08:17 UTC. A failure here emails the repo owner.
+    - cron: '17 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check reset endpoints are live and CORS-reachable
+        run: bash scripts/check-reset-endpoints.sh
