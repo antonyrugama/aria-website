@@ -79,7 +79,7 @@
         <label for="pw2">Confirm new password</label>
         <input type="password" id="pw2" autocomplete="new-password" required minlength="8">
 
-        <div id="error" class="error hidden"></div>
+        <div id="error" class="error hidden" role="alert" aria-live="polite"></div>
 
         <button type="submit" id="submit-btn">Update password</button>
       </form>
@@ -162,7 +162,10 @@
 
       showError('Something went wrong. Please try again.');
     } catch (err) {
-      showError('Network error. Please check your connection and try again.');
+      // A rejected fetch is not necessarily the user's connection — a retired
+      // API host or a CORS misconfiguration lands here too, and telling people
+      // to check their signal hides that. Stay neutral about the cause.
+      showError("Couldn't reach Aria. Try again, or request a new reset link.");
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Update password';
