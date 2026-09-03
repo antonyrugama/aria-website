@@ -258,6 +258,23 @@ test("reveal:'never' masks the field when a maskedValue is present too", () => {
    contradiction it names, so that deleting any single guard from the source
    turns this test red rather than being covered for by its neighbours. */
 test('each guard on unmaskedByDesign is load-bearing on its own', async (t) => {
+  /* The disclosure this file has already shipped once: a missing, null or 0
+     `masked` flag beside a populated value, read as false by a truthiness
+     test. Only an explicit false unmasks, so these three stay masked and the
+     equality is distinguishable from `!field.masked`. */
+  for (const masked of [undefined, null, 0]) {
+    await t.test(`masked ${String(masked)} beside a populated value`, () => {
+      const field = { key: 'email', label: 'Email', value: SECRET };
+      if (masked !== undefined) field.masked = masked;
+
+      const row = loadPane('owner').fieldValue('acct_1', field);
+
+      assert.ok(!row.textContent.includes(SECRET), `the raw value reached the screen: ${row.textContent}`);
+      assert.ok(classesOf(row).includes('reveal-row'), 'expected the masked row shape');
+      assert.equal(withClass(row, 'masked')[0].textContent, 'Hidden');
+    });
+  }
+
   await t.test('a mask beside masked:false, with no reveal flag at all', () => {
     const pane = loadPane('owner');
     const row = pane.fieldValue('acct_1', {
