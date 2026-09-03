@@ -13,8 +13,15 @@
    asserted about: the defect only exists once a browser has laid the page
    out at a particular width against particular data. So this check does what
    the bug needed doing to it — it serves the real pages, answers the
-   operations API with a stub, lays them out in headless Chrome at 375px, and
-   reads `documentElement.scrollWidth` back.
+   operations API with a stub, lays them out in headless Chrome at phone
+   widths, and reads `documentElement.scrollWidth` back.
+
+   Two widths, not one. The reported defect is at 375px, but the first CI
+   run of this check failed at 375px on a finding Windows had passed: a
+   sentence in the filter bar that Linux renders wider. Font metrics differ
+   per platform, so a single width tests one machine's fonts. 320px is the
+   narrowest phone the dashboard supports and it reproduces the same class of
+   defect on either platform.
 
    The stub is deliberately hostile rather than tidy. It sends a rule that
    cannot judge and whose reason is the longest sentence the vocabulary in
@@ -34,7 +41,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = '/ops/alerts.html';
-const WIDTH = 375;
+const WIDTHS = [375, 320];
 const HEIGHT = 812;
 const THEMES = ['dark', 'light'];
 
@@ -271,9 +278,6 @@ try {
 
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
-  await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: true
-  });
 
   const origin = `http://127.0.0.1:${PORT}`;
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
@@ -282,6 +286,11 @@ try {
       "localStorage.setItem('ops-api-base', " + JSON.stringify(origin) + ");" +
       "sessionStorage.setItem('ops-refresh', JSON.stringify({ t: 'stub', s: 'adm_1' }));" +
       "} catch (e) {}"
+  });
+
+  for (const WIDTH of WIDTHS) {
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: true
   });
 
   for (const theme of THEMES) {
@@ -328,6 +337,7 @@ try {
         `${seen.ruleRows} rule rows drawn`);
     }
   }
+  }
 } finally {
   if (cdp) cdp.close();
   browser.kill();
@@ -344,5 +354,5 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('\nThe Problems pane fits a 375px viewport in both themes.');
+console.log('\nThe Problems pane fits ' + WIDTHS.join('px and ') + 'px in both themes.');
 process.exit(0);

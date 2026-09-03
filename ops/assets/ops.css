@@ -424,6 +424,10 @@ body.is-ready   .gate-app { display: block; }
   color: var(--text-3); font-weight: 600; margin-right: 2px;
 }
 .filter-gap { margin-left: 6px; }
+/* A note in the bar is a sentence, not a chip, and .badge does not wrap. On a
+   phone the sentence is wider than the bar, and a flex item will not shrink
+   below its unbreakable content, so the page scrolled sideways instead. */
+.filterbar .badge { white-space: normal; }
 .filter-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
 /* A label and the control it names wrap as one unit. Without this the bar
    breaks between them on a narrow screen and leaves an orphaned "RANGE". */
