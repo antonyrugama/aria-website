@@ -41,10 +41,22 @@ function createElement(tag) {
     listeners: Object.create(null),
     parentNode: null,
     value: '',
-    disabled: false,
     offsetParent: null,
     _text: ''
   };
+
+  /* `disabled` is a boolean content attribute, so the property and the
+     attribute are the same fact. The pane sets it both ways — through h's
+     setAttribute for the placeholder control, and as a property while a reveal
+     is in flight — and a stub that kept them apart would let an assertion on
+     `.disabled` pass for a control the pane had plainly disabled. */
+  Object.defineProperty(node, 'disabled', {
+    get() { return 'disabled' in node.attributes; },
+    set(next) {
+      if (next) node.attributes.disabled = 'disabled';
+      else delete node.attributes.disabled;
+    }
+  });
 
   Object.defineProperty(node, 'textContent', {
     get() {
@@ -222,9 +234,10 @@ test("reveal:'never' masks the field even when the payload also says masked:fals
   }
 });
 
-/* The same contradiction with a mask beside it, which is the shape the
-   pane already refused before, kept here so the two halves of
-   `unmaskedByDesign` cannot regress independently. */
+/* The same contradiction with a mask beside it. This one is masked by two of
+   the three guards at once, so it proves neither of them on its own — the
+   test below does that — and it is here because it is the payload shape the
+   server would most plausibly get wrong. */
 test("reveal:'never' masks the field when a maskedValue is present too", () => {
   const pane = loadPane('owner');
   const row = pane.fieldValue('acct_1', {
@@ -239,6 +252,60 @@ test("reveal:'never' masks the field when a maskedValue is present too", () => {
   assert.ok(!row.textContent.includes(SECRET));
   assert.equal(withClass(row, 'reveal-never').length, 1);
   assert.equal(withClass(row, 'masked')[0].textContent, 'a•••@example.com');
+});
+
+/* One fixture per guard on `unmaskedByDesign`, each carrying exactly the one
+   contradiction it names, so that deleting any single guard from the source
+   turns this test red rather than being covered for by its neighbours. */
+test('each guard on unmaskedByDesign is load-bearing on its own', async (t) => {
+  await t.test('a mask beside masked:false, with no reveal flag at all', () => {
+    const pane = loadPane('owner');
+    const row = pane.fieldValue('acct_1', {
+      key: 'email',
+      label: 'Email',
+      masked: false,
+      maskedValue: 'a•••@example.com',
+      value: SECRET
+    });
+
+    assert.ok(!row.textContent.includes(SECRET), `the raw value reached the screen: ${row.textContent}`);
+    assert.ok(classesOf(row).includes('reveal-row'), 'expected the masked row shape');
+    assert.equal(withClass(row, 'masked')[0].textContent, 'a•••@example.com');
+  });
+
+  /* The empty-string mask this file was fixed for once already: it is a mask
+     the API built and got wrong, not the absence of one. */
+  await t.test('an empty-string mask beside masked:false', () => {
+    const pane = loadPane('owner');
+    const row = pane.fieldValue('acct_1', {
+      key: 'email',
+      label: 'Email',
+      masked: false,
+      maskedValue: '',
+      value: SECRET
+    });
+
+    assert.ok(!row.textContent.includes(SECRET), `the raw value reached the screen: ${row.textContent}`);
+    assert.equal(withClass(row, 'masked')[0].textContent, 'Hidden');
+  });
+
+  /* Rule 4: a health key is never printed here, whatever the payload says and
+     whatever the reveal flag says, which is why the fixture carries neither a
+     mask nor a reveal. */
+  await t.test('a health key under masked:false', () => {
+    const pane = loadPane('owner');
+    const row = pane.fieldValue('acct_1', {
+      key: 'weight',
+      label: 'Weight',
+      masked: false,
+      value: '72.4 kg'
+    });
+
+    assert.ok(!row.textContent.includes('72.4'), `the raw value reached the screen: ${row.textContent}`);
+    assert.equal(withClass(row, 'reveal-never').length, 1, 'expected the never-shown line');
+    assert.equal(withTag(row, 'button').length, 0, 'a health key gets no control');
+    assert.match(row.textContent, /Health data is never shown here/);
+  });
 });
 
 /* The fix must not turn the pane into one that masks everything. A field the
@@ -257,19 +324,32 @@ test('a field the API says is not personal still renders in the clear', () => {
 });
 
 /* And a genuinely revealable masked field still offers the control, so the
-   never-branch cannot swallow the case the pane exists to serve. */
-test("a masked reveal:'allowed' field still offers the control to an owner", () => {
-  const pane = loadPane('owner');
-  const row = pane.fieldValue('acct_1', {
+   never-branch cannot swallow the case the pane exists to serve. The
+   non-owner row is here as the discriminator: both roles draw a button
+   labelled Reveal, and the only things separating a live control from the
+   placeholder are the disabled state and the note beside it. */
+test("a masked reveal:'allowed' field is revealable by an owner and not by anyone else", () => {
+  const field = {
     key: 'email',
     label: 'Email',
     masked: true,
     maskedValue: 'a•••@example.com',
     reveal: 'allowed'
-  });
+  };
 
-  assert.equal(withClass(row, 'reveal-never').length, 0);
-  const reveal = withTag(row, 'button').filter((b) => b.textContent === 'Reveal');
-  assert.equal(reveal.length, 1, 'expected a Reveal control');
-  assert.equal(reveal[0].disabled, false);
+  const ownerRow = loadPane('owner').fieldValue('acct_1', field);
+  assert.equal(withClass(ownerRow, 'reveal-never').length, 0);
+  const live = withTag(ownerRow, 'button').filter((b) => b.textContent === 'Reveal');
+  assert.equal(live.length, 1, 'expected a Reveal control');
+  assert.equal(live[0].disabled, false, 'an owner gets a live control');
+  assert.equal(live[0].getAttribute('disabled'), null);
+  assert.ok(!ownerRow.textContent.includes('Owner action'), 'an owner is not told to be an owner');
+
+  for (const role of ['operator', 'viewer', 'none']) {
+    const row = loadPane(role).fieldValue('acct_1', field);
+    const placeholder = withTag(row, 'button').filter((b) => b.textContent === 'Reveal');
+    assert.equal(placeholder.length, 1, `expected the placeholder control at role ${role}`);
+    assert.equal(placeholder[0].disabled, true, `the control must be dead at role ${role}`);
+    assert.match(row.textContent, /Owner action/);
+  }
 });
