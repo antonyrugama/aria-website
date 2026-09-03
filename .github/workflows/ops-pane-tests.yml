@@ -1,0 +1,42 @@
+name: Ops pane tests
+
+# The operations dashboard is the one part of this site that puts a real
+# person's record on screen, and the masking floors in ops/assets/pane-users.js
+# are enforced in the browser rather than by anything upstream. This runs the
+# unit tests that hold those floors in place.
+#
+# The tests use only what ships with Node — node:test, node:assert, node:vm —
+# because this repository has no build step and no package manager, and that
+# was worth keeping.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
+
+on:
+  pull_request:
+    paths:
+      - 'ops/assets/**'
+      - 'scripts/*.test.mjs'
+      - '.github/workflows/ops-pane-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/assets/**'
+      - 'scripts/*.test.mjs'
+      - '.github/workflows/ops-pane-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run the ops pane tests
+        run: node --test scripts/ops-pane-users.test.mjs

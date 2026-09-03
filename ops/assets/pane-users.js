@@ -108,11 +108,15 @@
                   shape has to make that statable, and this is how.
      maskedValue  what to show while it is masked, already masked by the API.
      reveal       'allowed', 'never', or 'unavailable'. Anything else, and
-                  anything absent, draws no control. Health field keys are
-                  always 'never'; the client refuses them a control and
-                  refuses to print them in the clear whatever the API says,
-                  because a server that gets rule 4 wrong should not be able
-                  to make this page the place it goes wrong.
+                  anything absent, draws no control. 'never' also dominates
+                  masked: false, for the same reason a mask beside a value
+                  does: the two are not supposed to travel together, so an
+                  entry carrying both is contradictory rather than unmasked.
+                  Health field keys are always 'never'; the client refuses
+                  them a control and refuses to print them in the clear
+                  whatever the API says, because a server that gets rule 4
+                  wrong should not be able to make this page the place it
+                  goes wrong.
      neverShownNote / unavailableNote
                   the sentence shown in place of a control. */
 (function (global) {
@@ -639,10 +643,19 @@
        masked: false, and an empty string is carrying one: it is a mask the API
        built and got wrong, which is a reason to trust the entry less rather
        than a reason to print the real value. A falsy test read `maskedValue:
-       ""` as no mask and unmasked the field. */
+       ""` as no mask and unmasked the field.
+
+       `reveal: 'never'` is the same idea once more. A field the API says is
+       never shown here, in the same breath as saying it is not personal, is a
+       payload disagreeing with itself, and the row it draws already refuses a
+       control on the strength of the 'never'. Reading the other flag as a
+       licence to print the value would let the contradiction decide the
+       disclosure. No such payload exists today; this is why it would not
+       matter if one did. */
     var carriesMask = Object.prototype.hasOwnProperty.call(field, 'maskedValue') &&
       field.maskedValue !== null && field.maskedValue !== undefined;
-    var unmaskedByDesign = field.masked === false && !carriesMask && !health;
+    var unmaskedByDesign = field.masked === false && !carriesMask && !health &&
+      field.reveal !== 'never';
 
     var masked = h('span', {
       className: 'masked',
