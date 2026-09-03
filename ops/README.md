@@ -878,3 +878,9 @@ confirmed session.
 The same stub is what makes the pane fixtures usable: it has to serve the fixture document too,
 because a cross-origin fetch for it would be refused by `connect-src` for the same reason a
 cross-origin API call would be.
+
+`scripts/check-ops-narrow-overflow.mjs` is one such stub, written for a narrow-viewport
+regression and reusable as a starting point. It serves this repository, answers the auth calls
+and the two Problems reads, lays the pane out in headless Chrome at 375px in both themes, and
+fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
+`node scripts/check-ops-narrow-overflow.mjs`; it also runs in CI on any change under `ops/`.

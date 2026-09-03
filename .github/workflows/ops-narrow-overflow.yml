@@ -1,0 +1,44 @@
+name: Ops narrow viewport
+
+# Guards the operations dashboard's Problems pane against scrolling the whole
+# page sideways on a phone. The pane shipped that way and nothing here could
+# see it: this repository has no build step and no test runner, and the defect
+# only exists once a browser has laid the page out at 375px against a rule
+# that cannot reach a verdict. See scripts/check-ops-narrow-overflow.mjs.
+#
+# Change-triggered only, unlike the reset-page smoke test. Breaking this needs
+# a commit in this repository, so there is nothing for a schedule to catch.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
+
+on:
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-narrow-overflow.mjs'
+      - '.github/workflows/ops-narrow-overflow.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-narrow-overflow.mjs'
+      - '.github/workflows/ops-narrow-overflow.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  narrow-viewport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # Node 22 or newer, because the check drives headless Chrome over the
+      # DevTools Protocol through the global WebSocket rather than a package.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check the Problems pane fits a 375px viewport
+        run: node scripts/check-ops-narrow-overflow.mjs
