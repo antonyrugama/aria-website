@@ -2,10 +2,15 @@
 set -euo pipefail
 
 readonly attribution='Exercise data and videos provided by MuscleWiki.com.'
-count="$(grep -Foc "$attribution" privacy.html)"
+readonly privacy_file="${1:-privacy.html}"
+count="$(
+  { grep -Fo "$attribution" "$privacy_file" || true; } |
+    wc -l |
+    tr -d '[:space:]'
+)"
 
 if [[ "$count" -ne 1 ]]; then
-  echo "privacy.html must contain the exact MuscleWiki attribution once; found $count" >&2
+  echo "$privacy_file must contain the exact MuscleWiki attribution once; found $count" >&2
   exit 1
 fi
 
