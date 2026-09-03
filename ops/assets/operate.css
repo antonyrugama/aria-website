@@ -175,6 +175,16 @@
     align-items: flex-start; grid-column: 2;
   }
   .rule-row { grid-template-columns: 1fr auto; }
+  /* A rule that cannot reach a verdict carries a badge saying why, and a
+     badge never wraps, so that whole sentence became the minimum width of
+     the column holding it. A 1fr column will not go under its content's
+     minimum, so the threshold and the switch were pushed off the right of
+     the document and the page scrolled sideways. Letting the badge wrap is
+     what Settings already does with a sentence in a narrow cell, and it is
+     the half of this that matters: letting the column shrink instead
+     (minmax(0, 1fr)) stops the page scrolling but runs the badge under the
+     switch, which trades a scrollbar for an unreadable row. */
+  .rule-row .badge { white-space: normal; }
   .rule-head { display: none; }
 }
 

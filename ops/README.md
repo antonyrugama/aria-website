@@ -705,6 +705,18 @@ failed sign in.
     computed `position`. No geometry, paint order, or sticky behaviour moves, because a sticky
     header is itself positioned and was already painting in the positioned layer, and `z-index`
     stays `auto` so no stacking context is created.
+16. **A filter-bar note wraps.** `.badge` is `nowrap`, which is right for a chip and wrong for
+    the sentence a `scopeNote` or `filterNote` puts in the bar. A flex item will not shrink
+    below unbreakable content, so on a phone the note was wider than the bar and pushed the
+    document sideways with it: `/ops/alerts.html` measured 385px against a 375px viewport on
+    the "Problems are production only" note. `.filterbar .badge { white-space: normal; }`
+    lets it take a second line. Same repair as item 12 and the same reasoning as item 15 — a
+    row wraps or scrolls inside its own container, and the page never scrolls sideways.
+
+    Worth knowing for anything measured this way: **font metrics differ per platform**. That
+    375px overflow reproduces on Linux and not on Windows, where the same sentence renders
+    narrow enough to fit. It was found by the check in `scripts/check-ops-narrow-overflow.mjs`
+    running in CI, after a local run of the same commit had passed.
 
 ### Known contrast debt, inherited
 
@@ -878,3 +890,9 @@ confirmed session.
 The same stub is what makes the pane fixtures usable: it has to serve the fixture document too,
 because a cross-origin fetch for it would be refused by `connect-src` for the same reason a
 cross-origin API call would be.
+
+`scripts/check-ops-narrow-overflow.mjs` is one such stub, written for a narrow-viewport
+regression and reusable as a starting point. It serves this repository, answers the auth calls
+and the two Problems reads, lays the pane out in headless Chrome at 375px in both themes, and
+fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
+`node scripts/check-ops-narrow-overflow.mjs`; it also runs in CI on any change under `ops/`.
