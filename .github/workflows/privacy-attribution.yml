@@ -1,0 +1,26 @@
+name: Privacy attribution
+
+on:
+  pull_request:
+    paths:
+      - 'privacy.html'
+      - 'scripts/check-privacy-attribution.sh'
+      - '.github/workflows/privacy-attribution.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'privacy.html'
+      - 'scripts/check-privacy-attribution.sh'
+      - '.github/workflows/privacy-attribution.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify required privacy attribution
+        run: bash scripts/check-privacy-attribution.sh
