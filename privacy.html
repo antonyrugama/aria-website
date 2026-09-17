@@ -151,6 +151,7 @@
             font-weight:700;letter-spacing:-.01em;
             color:var(--t1);
             margin:32px 0 10px;
+            scroll-margin-top:100px;
         }
         .prose h4{
             font-family:'Space Grotesk',sans-serif;
@@ -294,7 +295,7 @@
             <i></i>
             <span>Version 3 &mdash; Effective July 14, 2026</span>
         </div>
-        <p style="margin-top:16px;font-size:14px;color:var(--t2)">Last Updated: September 3, 2026</p>
+        <p style="margin-top:16px;font-size:14px;color:var(--t2)">Last Updated: September 17, 2026</p>
     </div>
 </section>
 
@@ -376,6 +377,12 @@
     <p>This diagnostic data is sent to a first-party Aria backend, which forwards it to Microsoft Azure Application Insights acting as a processor on our behalf. It does <strong>not</strong> include emails, names, messages or other free text, health, fitness, or cycle data, photos or videos, location, or authentication tokens. The app never sends a raw user identifier with diagnostics; when you are signed in, the backend attaches only a salted, pseudonymous hash derived server-side so that related reports can be grouped without exposing your identity.</p>
     <p>Crash and error reporting is <strong>on by default</strong> but optional. You can turn it off at any time in Settings (crash and error reporting). Product and usage analytics, where offered, is a separate, opt-in feature.</p>
 
+    <h3 id="optional-product-analytics">Optional product analytics, not yet enabled</h3>
+    <p>We are preparing optional product-usage analytics with PostHog for Run with Aria, FitMG and Aria for Coaches. <strong>PostHog collection is not yet enabled. We do not currently send product-usage data to PostHog.</strong></p>
+    <p>The planned purpose is internal product improvement, using selected activity outcomes, bounded timings, and basic product, platform and app/build information. It excludes names, email addresses, health values, messages, AI content, and names of sensitive activities. It is not for advertising. The planned configuration keeps session replay, other optional PostHog features, PostHog AI analysis and model training off.</p>
+    <p>Existing first-party operational records and Microsoft Azure Application Insights diagnostics remain in use. Where offered, usage analytics remains opt-in and off by default, separate from crash reporting, health permissions and sharing data with coaches. This advance notice does not change your choices or turn on PostHog.</p>
+    <p>The PostHog hosting location, retention and export/deletion arrangements are not yet finalized. Before enabling collection, we will update this policy and the relevant in-app notices to describe the actual data flow, identifiers, choices and processor arrangements. Collection will remain off until those arrangements and the required consent and release checks are in place.</p>
+
     <h2 id="use">2. How We Use Information</h2>
     <p>We use information to:</p>
     <ul>
@@ -414,6 +421,7 @@
         <li>Apple, Google, App Store, and Google Play services for sign-in, subscriptions, purchase validation, app distribution, and platform compliance.</li>
         <li>Strava, Apple Health, Android Health Connect, or other integrations only when you enable those integrations or grant permission.</li>
     </ul>
+    <p>PostHog is a planned processor for <a href="#optional-product-analytics">optional product analytics</a>, <strong>not yet enabled</strong>. It is not a current recipient of product-usage data.</p>
     <h3>Community Feed And Conversation Participants</h3>
     <ul>
         <li>Content you publish to the Community Feed, together with the Social Profile identity attached to it, is shared with eligible Aria users according to the current audience, relationship, group, and blocking rules. It is not published to the open web by Aria.</li>
@@ -463,7 +471,7 @@
     <p><strong>Email:</strong> <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a></p>
 
     <hr>
-    <p style="font-size:13px;color:var(--t3)">Version 3 &mdash; Effective July 14, 2026. Last Updated: September 3, 2026.</p>
+    <p style="font-size:13px;color:var(--t3)">Version 3 &mdash; Effective July 14, 2026. Last Updated: September 17, 2026.</p>
 </main>
 
 <!-- FOOTER -->
