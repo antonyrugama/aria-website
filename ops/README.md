@@ -964,9 +964,21 @@ fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
 | Check | What it can see that nothing else can |
 |---|---|
 | `node --test scripts/*.test.mjs` | The accessible name every chart derives, that preview state is applied in **both** directions, and that the theme button re-resolves each chart's colours. Runs `scripts/ops-aria-shell.test.mjs` alongside the pane tests. |
-| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
+| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape to hold the other theme's pinned value. Both directions. |
+
+Charts and icons are swept for paint **separately**, with their own counts and their own
+messages, and every `<svg>` on the page has to belong to exactly one of the two sweeps. The icon
+sweep exists because the chart sweep excluded icons, on the grounds that an icon takes its colour
+from `currentColor` rather than from a token and so cannot fail the way an unresolved tone fails.
+That was true about one cause and said nothing about coverage: deleting `stroke` from `icon()`
+left sixty icons a blank box with the unit suite at 60/60 and this guard exiting 0.
+
+What the icon sweep does **not** answer is whether an ink that resolves to a real colour can be
+seen against what is painted behind it. That needs the effective background — layered gradients
+and `color-mix` alpha here, not any one ancestor's `background-color` — and it belongs to a
+contrast oracle rather than to a paint-presence check.
 
 The pre-paint half of the shell check is the part worth keeping. A theme default written in two
 places that disagree produces a page that paints one theme and switches to the other a moment

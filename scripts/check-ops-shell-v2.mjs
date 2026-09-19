@@ -461,7 +461,13 @@ const PAINT_HELPERS = `
     const unreadable = found.filter((f) => f.kind === 'unreadable');
     if (unreadable.length) return { unreadable: true, why: unreadable.map((f) => f.why).join(', ') };
     const fatal = found.some((f) => f.kind === 'empty-attribute' || f.kind === 'gradient-empty');
-    if (found.length === 2 || fatal) return { unpainted: true, why: found.map((f) => f.why).join(', ') };
+    if (found.length === 2 || fatal) {
+      return {
+        unpainted: true,
+        emptyAttribute: found.some((f) => f.kind === 'empty-attribute'),
+        why: found.map((f) => f.why).join(', ')
+      };
+    }
     return null;
   };
 `;
@@ -571,6 +577,7 @@ const ICON_PROBE = `(() => {
 
   const unpainted = [];
   const unreadable = [];
+  const resolvedToNothing = [];
   const empty = [];
   let shapes = 0;
   for (const svg of icons) {
@@ -579,15 +586,22 @@ const ICON_PROBE = `(() => {
     if (!els.length) { empty.push(label(svg)); continue; }
     const why = [];
     let cannotRead = false;
+    let fingerprint = false;
     for (const el of els) {
       const v = verdict(el);
       if (!v) continue;
       if (v.unreadable) cannotRead = true;
+      if (v.emptyAttribute) fingerprint = true;
       if (why.indexOf(v.why) === -1) why.push(v.why);
     }
     if (!why.length) continue;
     const entry = label(svg) + ' — ' + why.join('; ');
+    /* The fingerprint outranks the computed value on purpose. An empty paint
+       attribute says a colour lookup came back with nothing, which is true
+       whether or not a CSS rule happens to paint the shape anyway — and
+       calling that "no paint at all" would be a claim this cannot make. */
     if (cannotRead) unreadable.push(entry);
+    else if (fingerprint) resolvedToNothing.push(entry);
     else unpainted.push(entry);
   }
 
@@ -597,6 +611,7 @@ const ICON_PROBE = `(() => {
     allSvgs: document.querySelectorAll('svg').length,
     chartSvgs: [...document.querySelectorAll(SVG_SET)].filter((s) => !s.classList.contains('ico')).length,
     unpainted: unpainted,
+    resolvedToNothing: resolvedToNothing,
     unreadablePaint: unreadable,
     shapeless: empty
   });
@@ -844,6 +859,7 @@ try {
        read, and would let a floor written for charts be satisfied by icons
        alone. */
     const icons = await evaluate(ICON_PROBE);
+    const iconFailures = failures.length;
     if (icons.icons < 50) {
       failures.push(`${SHELL} (${theme}): the icon sweep found ${icons.icons} icons, so it ` +
         'measured almost nothing. The shell draws 61.');
@@ -874,6 +890,15 @@ try {
         'sweep excluded it; that is a statement about one cause, not about coverage. Deleting ' +
         "stroke from icon() leaves every rail, top bar and gallery icon a blank box (#10308).");
     }
+    if (icons.resolvedToNothing.length) {
+      failures.push(`${SHELL} (${theme}): ${icons.resolvedToNothing.length} of ${icons.icons} ` +
+        'icon(s) carry a paint attribute that resolved to nothing — ' +
+        `${icons.resolvedToNothing.slice(0, 6).join('; ')}` +
+        (icons.resolvedToNothing.length > 6 ? `; and ${icons.resolvedToNothing.length - 6} more` : '') +
+        '. An empty presentation attribute is the fingerprint: the browser drops it and then ' +
+        'reports the INHERITED default, so the computed value reads as a plausible lie. Whether ' +
+        'a CSS rule happens to paint the shape anyway, the colour asked for came back empty.');
+    }
     if (icons.unreadablePaint.length) {
       failures.push(`${SHELL} (${theme}): ${icons.unreadablePaint.length} icon(s) are painted ` +
         `in a colour syntax this check cannot read — ${icons.unreadablePaint.slice(0, 6).join('; ')}` +
@@ -881,8 +906,12 @@ try {
         '. It fails rather than skipping them: a sweep that silently drops what it cannot parse ' +
         'reports a coverage it does not have (monorepo #10255).');
     }
-    note(`${SHELL} ${theme}: ${icons.icons} icons holding ${icons.iconShapes} shapes all ` +
-      'resolve a paint where they sit');
+    /* Only when nothing above fired. A note that says "all" while a failure
+       below says otherwise is the same overclaim in a friendlier voice. */
+    if (failures.length === iconFailures) {
+      note(`${SHELL} ${theme}: ${icons.icons} icons holding ${icons.iconShapes} shapes all ` +
+        'resolve a paint where they sit');
+    }
 
     /* ------------------------------------------------------ four states */
     for (const state of STATES) {
