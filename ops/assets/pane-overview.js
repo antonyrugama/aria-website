@@ -5,16 +5,12 @@
    happen. That rule shapes this file more than anything else: nothing here
    renders a table, a facet, or a control that changes a system.
 
-   **What this pane draws, and what it says instead of the rest.**
+   Drawn on the v2 design system through assets/shell-pane-v2.js. The pane
+   holds no session, filter or navigation logic of its own.
 
-   Both of Overview's questions now have something behind them. The problems
-   API answers "is anything urgent", and /api/ops/summary answers "are people
-   using it" with the figures that have a real source: active people, Aria AI
-   runs, cloud spend so far this month, and the production app version, plus a
-   day-grain activity line.
-
-   Four rules from that contract are load bearing here rather than decorative,
-   and every one of them is a rule about NOT drawing something:
+   Four rules from the /api/ops/summary contract are load bearing here rather
+   than decorative, and every one of them is a rule about NOT drawing
+   something:
 
      1. **Every figure is labelled with the window it actually covers**, read
         from `window.days` rather than written into this file. The approved
@@ -39,6 +35,14 @@
         the design asks for that has no source at all is named in `omissions`
         with its reason instead of being drawn as an empty bar.
 
+   The cost tile is where the fourth rule is most visible. Nothing in this
+   platform records a cloud budget, so the route marks the figure
+   `basis: 'spend'` and names the gap in `omissions`; the approved design's
+   budget bar is not drawn, because an empty track reads as a budget with
+   nothing spent against it and a full one as a budget already gone. The
+   omissions list is rendered FROM the answer rather than from a list in this
+   file, so a figure that gains a source leaves the list without an edit here.
+
    The change figure beside active people is computed here rather than sent,
    because the route hands over the two counts and the reporting floor instead
    of a percentage: a rate over a group this small moves several points on one
@@ -52,56 +56,77 @@
 (function (global) {
   'use strict';
 
-  var shell = global.OpsShell;
-  var op = global.OpsOperate;
-  /* The understand panes' plumbing, for the half of this pane that reads
-     figures. It is loaded here for three things this file must not hold a
-     second copy of: the transport and its local fixture hook, the money and
-     count formatting the Cloud costs pane already publishes its bill through,
-     and the line chart that breaks on a missing point. The operate charts
-     cannot draw this line: they drop a whole series that carries one, which
-     turns a day nothing was recorded for into an app that never reported. */
-  var d = global.OpsPaneData;
+  var S = global.OpsPaneShell;
   var model = global.OpsAlertsModel;
   var session = global.OpsSession;
-  var h = shell.h;
-  var icon = shell.icon;
-  var fmt = op.fmt;
+  var h = S.h;
+  var icon = S.icon;
+  var fmt = S.fmt;
 
   /* How many problems the needs-attention queue shows before it stops and
      sends the operator to the pane that owns them. Overview is a doorway, not
      a second Problems pane. */
-  var QUEUE_LIMIT = 4;
+  var QUEUE_LIMIT = 3;
 
   var SUMMARY_ENDPOINT = '/api/ops/summary';
+
+  /* The group size a share may be reported over, used only when the answer
+     does not carry its own floor. Kept the same as the understand panes'
+     OpsPaneData.REPORTING_FLOOR, and pinned to it by
+     scripts/ops-overview-v2.test.mjs so the two cannot drift. */
+  var REPORTING_FLOOR = 50;
 
   /* The pane each figure hands its detail to. Overview owns no detail, so
      every tile is a doorway into the pane that owns the question behind it. */
   var OWNER_PANE = {
     people: { href: 'analytics.html', label: 'People and usage' },
+    runs: { href: 'run-history.html', label: 'Run history' },
     cost: { href: 'spend.html', label: 'Cloud costs' },
     release: { href: 'releases.html', label: 'App releases' }
   };
 
-  shell.definePane('overview', function (content) {
-    var region = op.region(content);
+  /* The response names a series colour from the closed set the v1 design
+     system published. Mapped rather than passed through: an unrecognised name
+     takes the first series colour, exactly as OpsPaneData.seriesStroke does,
+     so a line is never drawn with no stroke at all. */
+  var SERIES_TONE = {
+    s1: 'tone-cyan', s2: 'tone-violet', s3: 'tone-emerald',
+    s4: 'tone-amber', s5: 'tone-rose', s6: 'tone-blue',
+    muted: 'tone-muted'
+  };
+  var DEFAULT_SERIES_TONE = 'tone-cyan';
+
+  function seriesTone(name) {
+    return (typeof name === 'string' &&
+      Object.prototype.hasOwnProperty.call(SERIES_TONE, name))
+      ? SERIES_TONE[name] : DEFAULT_SERIES_TONE;
+  }
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function svgEl(name, attrs) {
+    var el = document.createElementNS(SVG_NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    return el;
+  }
+
+  S.definePane('overview', function (content) {
+    var region = S.region(content);
     var loadToken = 0;
 
-    /* This pane listens for no filter change, because it offers none. The
-       scope, range and environment controls were on the bar while nothing
-       could act on them: a request carrying none of the three answered the
-       same way whichever was picked, so selecting Staging left production
-       figures on screen looking like staging ones. The shell now states in the
-       bar that they do not apply here rather than offering a control that
-       cannot do what it says. */
+    /* This pane listens for no filter change, because the registry gives it
+       none. A request carrying scope, range or environment is answered the
+       same way whichever is picked, so a control here would leave somebody who
+       chose Staging looking at production figures with their own selection
+       sitting above them. The bar states the absence instead. */
 
     function load() {
       var token = ++loadToken;
       region.loading([
         { type: 'block', height: 78 },
-        { type: 'rows', count: 4 },
+        { type: 'rows', count: 3 },
         { type: 'tiles', count: 4 },
-        { type: 'block', height: 190 }
+        { type: 'block', height: 210 }
       ]);
 
       Promise.all([
@@ -113,7 +138,8 @@
            different tables, and a summary read that is down must not take the
            urgent queue off the screen with it: an operator who cannot see
            spend can still act on a critical problem. The rejection is
-           therefore carried as a value and drawn as one failed section. */
+           therefore carried as a value and drawn as one failed section, with
+           the pane in its degraded state rather than its live one. */
         summary().then(function (payload) {
           return { data: (payload && typeof payload === 'object') ? payload : null };
         }, function (err) {
@@ -131,13 +157,13 @@
     /* The summary read.
        No querystring, because this pane registers no controls and the route
        accepts no parameter: it reports the environment it answered for in the
-       payload rather than taking one. Through the understand panes' loader so
-       that the same-origin fixture hook they are reviewed with covers the
-       states a live API will not produce on demand, which here is most of
-       them: a window nothing reported, a comparison the retention horizon
-       refused, and a day with no stored reading. */
+       payload rather than taking one. Through the shell's loader so that the
+       same-origin fixture hook covers the states a live API will not produce
+       on demand, which here is most of them: a window nothing reported, a
+       comparison the retention horizon refused, a day with no stored
+       reading. */
     function summary() {
-      return d.load({ paneId: 'overview', endpoint: SUMMARY_ENDPOINT })
+      return S.read({ paneId: 'overview', endpoint: SUMMARY_ENDPOINT })
         .then(function (result) { return result.data; });
     }
 
@@ -148,16 +174,71 @@
          and then oldest and stop at model.PAGE, so every count on this pane is
          "at least" when the page came back full. */
       var capped = model.capped(data.open.problems);
+      var failed = !!(data.summary && data.summary.error);
+      var figures = data.summary && data.summary.data;
+
+      badgeProblems(problems, capped);
+
+      /* Empty is a real state with a real trigger, and a narrow one: not one
+         quiet window, but a pane with nothing behind either of its halves.
+         Anything less than that renders whatever did come back. */
+      if (!failed && !figures && !problems.length && !armed.total) {
+        region.empty(nothingBehindIt());
+        return;
+      }
 
       var wrap = h('div', { className: 'stack' });
       wrap.appendChild(ribbon(problems, armed, capped));
-      wrap.appendChild(op.bandHead('What needs a person',
-        'Everything here opens the pane that owns the work'));
-      wrap.appendChild(queueCard(problems, armed, capped));
-      wrap.appendChild(op.bandHead('How things are going',
-        'Every figure says the window it covers'));
-      wrap.appendChild(figuresSection(data.summary));
-      region.show(wrap);
+
+      var attention = S.band('What needs a person',
+        'Each one opens the pane that owns the work');
+      attention.appendChild(queueCard(problems, armed, capped));
+      wrap.appendChild(attention);
+
+      var going = S.band('How things are going', 'Every figure says its window');
+      figuresSection(going, data.summary);
+      wrap.appendChild(going);
+
+      /* Degraded is the pane on screen with one of its reads unusable, which
+         is exactly this: the problems half answered and the figures half did
+         not. It is not the empty state, because a read that never landed has
+         not earned the sentence "there is nothing here". */
+      if (failed) region.degraded(wrap);
+      else region.show(wrap);
+    }
+
+    /* The Problems count beside the rail item.
+
+       A real read or nothing: this is the count this pane just asked for, and
+       a rail badge that invents one is worse than a rail with no badge. It is
+       cleared as well as set, so a page that lands on a quiet system does not
+       keep a stale count from a previous render. */
+    function badgeProblems(problems, capped) {
+      var needing = model.needingAction(problems).length;
+      if (!needing) {
+        S.setBadge('alerts', null);
+        return;
+      }
+      S.setBadge('alerts', {
+        label: fmt.int(needing) + (capped ? '+' : ''),
+        tone: 'hot',
+        description: needing === 1
+          ? 'one problem with nobody on it'
+          : fmt.int(needing) + ' problems with nobody on them'
+      });
+    }
+
+    function nothingBehindIt() {
+      var box = S.card();
+      var block = S.stateBlock('empty', 'Nothing is behind this pane yet', [
+        'No alert rule has been created and the operations API returned no figures.',
+        'Nothing is being hidden from you, and nothing here is a zero.'
+      ]);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [
+        S.link(S.paneHref('settings') || 'settings.html', 'Settings', 'btn btn-primary')
+      ]));
+      box.appendChild(block);
+      return box;
     }
 
     /* ------------------------------------------------------------- ribbon
@@ -179,66 +260,46 @@
        critical incident turn this ribbon green the moment an engineer puts
        their name against it. The queue below still separates the two, because
        what needs a person and what is being worked on are different lists. */
+    var RIBBON_TONE = { crit: 'st-bad', warn: 'st-warn', info: 'st-acc' };
+
     function ribbon(problems, armed, capped) {
       var active = model.active(problems);
       var needing = model.needingAction(problems);
       var worst = model.worstSeverity(active);
 
-      var card = h('div', { className: 'card ribbon' });
-      var grid = h('div', { className: 'ribbon-grid' });
-
-      var state = h('div', { className: 'ribbon-state' });
-      var words = h('div');
+      var title;
+      var sub;
+      var tone;
 
       if (!armed.trustworthy) {
-        state.appendChild(h('span', { className: 'dot dot-warn', 'aria-hidden': 'true' }));
-        words.appendChild(h('p', {
-          className: 'ribbon-title is-warn', text: 'Nothing is being checked'
-        }));
-        words.appendChild(h('p', {
-          className: 'ribbon-sub is-warn', text: unarmedSentence(armed)
-        }));
+        tone = 'st-warn';
+        title = 'Nothing is being checked';
+        sub = unarmedSentence(armed);
       } else if (!active.length) {
-        state.appendChild(h('span', { className: 'dot dot-live', 'aria-hidden': 'true' }));
-        words.appendChild(h('p', { className: 'ribbon-title', text: 'Everything is working' }));
-        words.appendChild(h('p', {
-          className: 'ribbon-sub',
-          text: fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) +
-                ' rules are checking' +
-                (armed.lastEvaluatedAt
-                  ? ', last ' + fmt.ago(armed.lastEvaluatedAt)
-                  : '') + '.'
-        }));
+        tone = 'st-ok';
+        title = 'Everything is working';
+        sub = fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking' +
+          (armed.lastEvaluatedAt ? ', last ' + fmt.ago(armed.lastEvaluatedAt) : '');
       } else {
         /* The ribbon takes its tone from the worst thing that is actually
            open. Painting a single informational problem in warning colours
            would make the pane cry wolf, and a pane that cries wolf is a pane
            whose red is ignored the day it means something. */
-        var tone = model.SEVERITY_TONE[worst] || 'info';
-        state.appendChild(h('span', {
-          className: 'dot dot-' + (tone === 'crit' ? 'crit' : tone === 'warn' ? 'warn' : 'idle'),
-          'aria-hidden': 'true'
-        }));
-        words.appendChild(h('p', {
-          className: 'ribbon-title is-' + tone,
-          text: ribbonTitle(active, needing, capped)
-        }));
-        words.appendChild(h('p', {
-          className: 'ribbon-sub is-' + tone, text: activeSentence(active, needing, capped)
-        }));
+        tone = RIBBON_TONE[model.SEVERITY_TONE[worst]] || 'st-acc';
+        title = ribbonTitle(active, needing, capped);
+        sub = activeSentence(active, needing, capped);
       }
 
-      state.appendChild(words);
-      grid.appendChild(state);
-      grid.appendChild(ribbonBadges(problems, armed, capped));
-
-      var open = op.link('alerts.html', 'Open problems', 'btn');
-      open.appendChild(icon('external'));
-      grid.appendChild(open);
-      card.appendChild(grid);
-
-      card.appendChild(severityBar(problems, armed));
-      return card;
+      var hero = h('section', { className: 'hero ' + tone });
+      hero.appendChild(h('div', { className: 'hero-orb', 'aria-hidden': 'true' }, [
+        h('i'), h('i'), h('b')
+      ]));
+      hero.appendChild(h('div', {}, [
+        h('h2', { className: 'hero-title', text: title }),
+        h('p', { className: 'hero-sub', text: sub })
+      ]));
+      hero.appendChild(ribbonChips(problems, armed, capped));
+      return hero;
     }
 
     /* One problem is named. More than one is counted, and the count says
@@ -267,22 +328,20 @@
       if (needing.length) bits.push(oldestSentence(needing));
       else {
         bits.push('Somebody is on ' + (active.length === 1 ? 'it' : 'each of them') +
-          ', and ' + (active.length === 1 ? 'it is' : 'they are') + ' still open.');
+          ', still open.');
       }
       if (needing.length && taken > 0) {
         bits.push(fmt.plural(taken, 'other problem') +
-          (taken === 1 ? ' already has somebody on it.' : ' already have somebody on them.'));
+          (taken === 1 ? ' has somebody on it.' : ' have somebody on them.'));
       }
       if (capped) bits.push(cappedSentence());
       return bits.join(' ');
     }
 
-    /* Said in full wherever a count from a full read is printed, because "at
-       least" on its own reads as a rounding rather than as a ceiling that was
-       hit. */
+    /* Said wherever a count from a full read is printed, because "at least" on
+       its own reads as a rounding rather than as a ceiling that was hit. */
     function cappedSentence() {
-      return 'Only ' + fmt.int(model.PAGE) + ' problems can be read at a time and that many ' +
-        'came back, so these counts are the lowest they could be.';
+      return 'Read stopped at ' + fmt.int(model.PAGE) + ', so counts are the lowest possible.';
     }
 
     /* Why nothing can be believed, in the reading that is actually true.
@@ -298,30 +357,37 @@
         return 'The rules are enabled but none has run yet, so nothing has been judged.';
       }
       if (armed.errored === armed.enabled) {
-        return 'Every enabled rule failed its own check the last time it ran. ' +
-          'Treat this as unmonitored.';
+        return 'Every enabled rule failed its own check the last time it ran.';
       }
       if (armed.errored) {
         return 'No enabled rule reached a verdict the last time it ran, and ' +
-          fmt.int(armed.errored) + ' of them failed the check itself. ' +
-          'Treat this as unmonitored.';
+          fmt.int(armed.errored) + ' of them failed the check itself.';
       }
-      return 'Every enabled rule is short of the data it needs to judge. ' +
-        'Treat this as unmonitored.';
+      return 'Every enabled rule is short of the data it needs to judge.';
     }
 
     function oldestSentence(needing) {
       var oldest = model.iso(model.oldest(needing.map(function (p) { return p.firedAt; })));
       var taken = needing.length === 1 ? 'Nobody is on it' : 'Nobody is on them';
       if (!oldest) return taken + '.';
-      return 'Oldest started ' + fmt.stamp(oldest) + ', ' +
-        fmt.since(oldest) + ' ago. ' + taken + '.';
+      return 'Oldest started ' + fmt.stamp(oldest) + ', ' + fmt.since(oldest) + ' ago. ' +
+        taken + '.';
     }
 
-    /* The counts, as badges, each carrying a glyph so none of them relies on
-       its colour to be read. */
-    function ribbonBadges(problems, armed, capped) {
-      var row = h('div', { className: 'ribbon-badges' });
+    /* The counts, as chips, each carrying a glyph and a word so none of them
+       relies on its colour to be read. */
+    var CHIP_CLASS = { crit: 'down', warn: 'warn', info: 'info', ok: 'up' };
+    var CHIP_ICON = { crit: 'warn', warn: 'warn', info: 'info', ok: 'check' };
+
+    function chip(tone, text) {
+      var pill = h('span', { className: 'pill ' + (CHIP_CLASS[tone] || '') });
+      pill.appendChild(icon(CHIP_ICON[tone] || 'info'));
+      pill.appendChild(h('span', { text: text }));
+      return pill;
+    }
+
+    function ribbonChips(problems, armed, capped) {
+      var row = h('div', { className: 'hero-chips' });
       var counts = { critical: 0, warning: 0, info: 0 };
       /* Counted over everything still open, taken on or not, for the same
          reason the ribbon reads it that way: a problem with somebody's name on
@@ -332,63 +398,33 @@
 
       ['critical', 'warning', 'info'].forEach(function (severity) {
         if (!counts[severity]) return;
-        row.appendChild(op.statusBadge(model.SEVERITY_TONE[severity],
+        row.appendChild(chip(model.SEVERITY_TONE[severity],
           model.atLeast(fmt.int(counts[severity]), capped) + ' ' + severity));
       });
 
       var taken = model.takenOn(problems);
       if (taken.length) {
-        row.appendChild(op.statusBadge('info',
+        row.appendChild(chip('info',
           model.atLeast(fmt.plural(taken.length, 'problem'), capped) + ' taken on'));
       }
 
-      row.appendChild(op.statusBadge(
-        armed.trustworthy ? 'ok' : 'warn',
-        fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking'
-      ));
+      row.appendChild(chip(armed.trustworthy ? 'ok' : 'warn',
+        fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking'));
 
       /* A channel that was never connected is where a problem goes to be
          missed, so it is stated here rather than only on the pane that owns
          it. */
       var unconfigured = armed.channels.filter(function (c) { return !c.configured; });
       if (unconfigured.length) {
-        row.appendChild(op.statusBadge('warn',
-          fmt.plural(unconfigured.length, 'route') + ' not set up'));
+        row.appendChild(chip('warn', fmt.plural(unconfigured.length, 'route') + ' not set up'));
       }
       return row;
-    }
-
-    /* The bar under the ribbon. Full width and healthy only when nothing is
-       open at all, split by severity when something is. It reads the same list
-       the ribbon's words do: a green bar over a critical problem somebody has
-       taken on would contradict the pane it is drawn on. */
-    function severityBar(problems, armed) {
-      var active = model.active(problems);
-      var segments = [];
-
-      if (!armed.trustworthy) {
-        segments = [{ value: 1, color: 'var(--warn)', label: 'Nothing is being checked' }];
-      } else if (!active.length) {
-        segments = [{ value: 1, color: 'var(--ok)', label: 'Nothing needs attention' }];
-      } else {
-        ['critical', 'warning', 'info'].forEach(function (severity) {
-          var n = active.filter(function (p) { return p.severity === severity; }).length;
-          if (!n) return;
-          segments.push({
-            value: n,
-            color: severity === 'critical' ? 'var(--crit)'
-              : severity === 'warning' ? 'var(--warn)' : 'var(--info)',
-            label: fmt.int(n) + ' ' + severity
-          });
-        });
-      }
-      return op.stackbar(segments, 'ribbon-bar');
     }
 
     /* -------------------------------------------------------------- queue */
 
     function queueCard(problems, armed, capped) {
-      var card = h('div', { className: 'card' });
+      var card = S.card();
       var needing = model.needingAction(problems);
       var taken = model.takenOn(problems);
 
@@ -396,7 +432,7 @@
          cannot be qualified by the footer alone: a full page keeps the oldest
          of each severity and drops the newest, and a newer problem with nobody
          on it is exactly what it drops. */
-      card.appendChild(op.cardHead('Needs attention',
+      card.appendChild(S.cardHead('Needs attention',
         needing.length
           ? model.atLeast(fmt.plural(needing.length, 'problem'), capped) +
             (needing.length === 1 ? ' with nobody on it' : ' with nobody on them')
@@ -404,88 +440,112 @@
               ? 'Nobody is being asked to do anything in the ' + fmt.int(model.PAGE) +
                 ' problems that could be read'
               : 'Nobody is being asked to do anything'),
-        [op.link('alerts.html', 'All problems')]));
+        [S.link(S.paneHref('alerts') || 'alerts.html', 'All problems', 'btn btn-sm btn-ghost')]));
 
       var body = h('div', { className: 'card-body' });
 
       if (!problems.length) {
         body.appendChild(armed.trustworthy
           ? quietBlock(armed)
-          : op.partFailure('The checks are not running',
-              unarmedSentence(armed) + ' Nothing on this page can tell you the system is healthy ' +
-              'until they are.'));
+          : S.stateBlock('warn', 'The checks are not running', [unarmedSentence(armed)]));
         card.appendChild(body);
         return card;
       }
 
-      var queue = h('div', { className: 'queue' });
+      var list = h('div', { className: 'q-list' });
       var shown = needing.concat(taken).slice(0, QUEUE_LIMIT);
-      shown.forEach(function (problem) { queue.appendChild(queueItem(problem)); });
-      body.appendChild(queue);
+      shown.forEach(function (problem) { list.appendChild(queueItem(problem)); });
+      body.appendChild(list);
       card.appendChild(body);
 
+      var foot = h('div', { className: 'card-foot' });
       var rest = problems.length - shown.length;
       if (rest > 0 || capped) {
-        card.appendChild(h('div', { className: 'card-foot' }, [
-          h('span', {
-            text: (rest > 0
-              ? model.atLeast(fmt.plural(rest, 'more problem'), capped) + ' open. '
-              : '') +
-              'Overview shows the worst few and hands the rest to Problems.' +
-              (capped ? ' ' + cappedSentence() : '')
-          })
-        ]));
+        foot.appendChild(h('span', {
+          text: (rest > 0
+            ? model.atLeast(fmt.plural(rest, 'more problem'), capped) + ' open'
+            : cappedSentence())
+        }));
+      } else {
+        foot.appendChild(h('span', {
+          className: 'dot ok', 'aria-hidden': 'true'
+        }));
+        foot.appendChild(h('span', {
+          text: fmt.plural(armed.checking, 'rule') + ' watching, nothing else tripped'
+        }));
       }
+      card.appendChild(foot);
       return card;
     }
 
     /* A quiet queue has to prove it is quiet for the right reason, exactly as
        the Problems pane's own empty state does. */
     function quietBlock(armed) {
-      var block = h('div', { className: 'callout' });
-      block.appendChild(icon('check'));
-      var body = h('div');
-      body.appendChild(h('strong', { text: 'Nothing needs attention.' }));
-      body.appendChild(document.createTextNode(
-        ' ' + fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) +
-        ' rules are enabled and reached a verdict the last time they ran' +
-        (armed.lastEvaluatedAt ? ', last ' + fmt.ago(armed.lastEvaluatedAt) : '') +
-        '. ' +
-        (armed.lastFiredAt
-          ? 'The last problem fired ' + fmt.ago(armed.lastFiredAt) + '.'
-          : 'No problem has ever fired.')
-      ));
-      block.appendChild(body);
-      return block;
+      return S.stateBlock('check', 'Nothing needs attention', [
+        fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) +
+          ' rules reached a verdict the last time they ran' +
+          (armed.lastEvaluatedAt ? ', ' + fmt.ago(armed.lastEvaluatedAt) : '') + '.',
+        armed.lastFiredAt
+          ? 'Last problem fired ' + fmt.ago(armed.lastFiredAt) + '.'
+          : 'No problem has ever fired.'
+      ]);
     }
 
+    var SEVERITY_ACCENT = { crit: 'acc-bad', warn: 'acc-warn', info: 'acc-blue' };
+    var SEVERITY_INK = { crit: 'is-crit', warn: 'is-warn', info: 'is-info' };
+
     function queueItem(problem) {
-      var tone = problem.severity === 'critical' ? 'crit'
-        : problem.severity === 'warning' ? 'warn' : 'info';
-      var box = h('div', { className: 'callout callout-' + tone });
-      box.appendChild(icon(problem.severity === 'info' ? 'info' : 'warn'));
+      var tone = model.SEVERITY_TONE[problem.severity] || 'info';
+      var box = S.card('accent q-item ' + (SEVERITY_ACCENT[tone] || 'acc-blue'));
+      var body = h('div', { className: 'card-body' });
+      var row = h('div', { className: 'q-row' });
 
-      var body = h('div', { className: 'queue-body' });
-      body.appendChild(h('h3', { className: 'queue-title is-' + tone, text: problem.title }));
-      body.appendChild(h('p', { className: 'queue-desc', text: problem.summary }));
+      var glyph = icon(problem.severity === 'info' ? 'info' : 'warn',
+        'q-ico ' + (SEVERITY_INK[tone] || 'is-info'));
+      glyph.setAttribute('aria-hidden', 'true');
+      row.appendChild(glyph);
 
-      var actions = h('div', { className: 'queue-actions' });
+      var words = h('div');
+      /* The severity in words as well as in the accent colour and the glyph,
+         because the accent is the only thing separating a critical item from
+         an informational one at a glance. */
+      words.appendChild(h('h3', {
+        className: 'q-title ' + (SEVERITY_INK[tone] || 'is-info'),
+        text: model.SEVERITY_LABEL[problem.severity] + ': ' + problem.title
+      }));
+      words.appendChild(h('p', { className: 'q-desc', text: problem.summary }));
+
+      var actions = h('div', { className: 'q-actions' });
       var file = model.PANE_FILE[problem.workPane];
       /* The doorway. Overview owns no detail, so the only thing it offers is
          the pane where the work happens and the pane that owns the problem. */
       if (file && problem.workPane !== 'overview') {
-        actions.appendChild(op.link(file, problem.workPaneLabel));
+        actions.appendChild(S.link(S.paneHref(paneKey(problem.workPane)) || file,
+          problem.workPaneLabel));
       }
-      actions.appendChild(op.link('alerts.html', 'Problem ' + problem.reference));
+      actions.appendChild(S.link(S.paneHref('alerts') || 'alerts.html',
+        'Problem ' + problem.reference));
       if (problem.status === 'acknowledged' && problem.acknowledgedByEmail) {
         actions.appendChild(h('span', {
-          className: 'tiny muted', text: problem.acknowledgedByEmail + ' is on it'
+          className: 'q-who', text: problem.acknowledgedByEmail + ' is on it'
         }));
       }
-      body.appendChild(actions);
+      words.appendChild(actions);
 
+      row.appendChild(words);
+      body.appendChild(row);
       box.appendChild(body);
       return box;
+    }
+
+    /* The problems API names a work pane with the file-ish keys
+       OpsAlertsModel.PANE_FILE holds; the registry keys differ for two of
+       them. Translated rather than assumed, so a link that cannot be built
+       from the registry falls back to the model's own file. */
+    var WORK_PANE_KEY = { 'jobs-live': 'jobs', 'run-history': 'history' };
+
+    function paneKey(workPane) {
+      return WORK_PANE_KEY[workPane] || workPane;
     }
 
     /* ------------------------------------------------------- the figures */
@@ -524,37 +584,50 @@
        that check real; hardcoding seven would put this file back in the
        business of asserting a window it did not measure. A window the answer
        did not describe says so rather than guessing. */
-    function windowLabel(window) {
-      var days = num(window && window.days);
+    function windowLabel(win) {
+      var days = num(win && win.days);
       if (days === null) return 'Window not reported';
       return 'Last ' + fmt.plural(days, 'whole UTC day');
     }
 
     /* The same window mid-sentence, for the chart's spoken description. */
-    function windowPhrase(window) {
-      var days = num(window && window.days);
+    function windowPhrase(win) {
+      var days = num(win && win.days);
       if (days === null) return 'a window the answer did not describe';
       return 'the last ' + fmt.plural(days, 'whole UTC day');
     }
 
     function tile(label) {
-      var card = h('div', { className: 'card tile' });
-      card.appendChild(h('h3', { className: 'tile-label', text: label }));
+      var card = S.card('kpi');
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(h('h3', { className: 'kpi-label', text: label }));
+      card.appendChild(body);
+      card.body = body;
       return card;
     }
 
-    function metaLine(text) {
-      return h('div', { className: 'tile-meta' }, [h('span', { text: text })]);
+    function value(card, text) {
+      card.body.appendChild(h('div', { className: 'kpi-val', text: text }));
     }
 
-    function tinyLine(text, tone) {
-      return h('div', { className: 'tiny mt-xs ' + (tone === 'warn' ? 'ink-warn' : 'muted'), text: text });
+    function meta(card, nodes) {
+      card.body.appendChild(h('div', { className: 'kpi-meta' }, nodes));
+    }
+
+    function why(card, text, tone) {
+      card.body.appendChild(h('div', {
+        className: 'kpi-why' + (tone === 'warn' ? ' is-warn' : ''), text: text
+      }));
     }
 
     /* The doorway. Overview owns no detail, so a tile ends at the pane that
        owns the question behind it. */
-    function doorway(owner) {
-      return h('div', { className: 'row mt-sm' }, [op.link(owner.href, owner.label)]);
+    function doorway(card, owner, extra) {
+      var foot = h('div', { className: 'kpi-foot' });
+      (extra || []).forEach(function (node) { foot.appendChild(node); });
+      if (extra && extra.length) foot.appendChild(h('div', { className: 'spacer' }));
+      foot.appendChild(h('a', { href: owner.href, text: owner.label }));
+      card.appendChild(foot);
     }
 
     /* What a tile says when its block is not `ready`.
@@ -578,13 +651,11 @@
 
     function unavailable(card, block, fallbackDetail) {
       var state = stateOf(block);
-      var words = (state && UNAVAILABLE_WORDS[state]) || 'Not reported';
-      card.appendChild(h('div', { className: 'tile-value sm muted', text: words }));
-      /* A block rather than a tile-meta row: this is a sentence, and the row
-         is a line of short items that would push a narrow tile sideways. */
-      card.appendChild(h('div', {
-        className: 'small muted mt-xs', text: detailOf(block, fallbackDetail)
+      card.body.appendChild(h('div', {
+        className: 'kpi-val words',
+        text: (state && UNAVAILABLE_WORDS[state]) || 'Not reported'
       }));
+      why(card, detailOf(block, fallbackDetail));
       return card;
     }
 
@@ -597,14 +668,14 @@
       if (stateOf(people) !== 'ready' || active === null) {
         unavailable(card, people,
           'The answer carried no active-people figure for this window.');
-        card.appendChild(doorway(OWNER_PANE.people));
+        doorway(card, OWNER_PANE.people);
         return card;
       }
 
-      card.appendChild(h('div', { className: 'tile-value', text: fmt.int(active) }));
-      card.appendChild(peopleChange(people, active));
-      card.appendChild(metaLine(windowLabel(people.window) +
-        (textOf(people.environment) ? ', ' + people.environment : '')));
+      value(card, fmt.int(active));
+      meta(card, peopleChange(people, active));
+      why(card, windowLabel(people.window) +
+        (textOf(people.environment) ? ', ' + people.environment : ''));
 
       /* The two apps, side by side and never added. The headline above them is
          the platform's own distinct count rather than their sum, so a reader
@@ -613,22 +684,17 @@
       var apps = (people.apps || []).filter(function (app) {
         return num(app && app.active) !== null;
       });
-      if (apps.length) {
-        var row = h('div', { className: 'tile-meta row-wrap mt-xs' });
-        apps.forEach(function (app) {
-          var tag = h('span', {
-            className: 'tag tag-' + (app.tone === 'coaches' ? 'coaches' : 'mobile'),
-            text: app.label || app.app
-          });
-          row.appendChild(h('span', { className: 'row' }, [
-            tag, h('span', { className: 'mono', text: fmt.int(app.active) })
-          ]));
-        });
-        card.appendChild(row);
-        card.appendChild(tinyLine('Not the sum of the two: somebody who used both is one person.'));
-      }
+      var pills = apps.map(function (app) {
+        var pill = h('span', { className: 'pill' });
+        pill.appendChild(h('span', {
+          className: 'dot ' + (app.tone === 'coaches' ? 'vio' : 'acc'), 'aria-hidden': 'true'
+        }));
+        pill.appendChild(h('span', { text: app.label || app.app }));
+        pill.appendChild(h('span', { className: 'mono', text: fmt.int(app.active) }));
+        return pill;
+      });
 
-      card.appendChild(doorway(OWNER_PANE.people));
+      doorway(card, OWNER_PANE.people, pills);
       return card;
     }
 
@@ -655,31 +721,38 @@
     function peopleChange(people, active) {
       var before = num(people.platform && people.platform.previousActive);
       var floor = num(people.reportingFloor);
-      if (floor === null) floor = d.REPORTING_FLOOR;
+      if (floor === null) floor = REPORTING_FLOOR;
 
       if (before === null || !people.comparison) {
-        return metaLine('No comparison available');
+        return [h('span', { text: 'No comparison available' })];
       }
       if (before < floor) {
-        return h('div', { className: 'tile-meta row-wrap' }, [
-          h('span', { text: 'No change shown, only ' + fmt.plural(before, 'person', 'people') +
-            ' in the window before, under the ' + fmt.int(floor) + ' we report rates from' }),
-          h('span', { className: 'mono', text: fmt.int(active) + ' now, ' + fmt.int(before) + ' before' })
-        ]);
+        return [
+          h('span', { className: 'mono', text: fmt.int(before) + ' before' }),
+          h('span', {
+            text: 'no rate under ' + fmt.plural(floor, 'person', 'people')
+          })
+        ];
       }
 
       var basisPoints = Math.round(((active - before) / before) * 10000);
-      var row = h('div', { className: 'tile-meta row-wrap' });
-      row.appendChild(h('span', {
-        className: 'delta ' + (basisPoints > 0 ? 'delta-up' : basisPoints < 0 ? 'delta-down' : 'delta-flat'),
-        text: d.signedPercent(basisPoints)
-      }));
-      row.appendChild(h('span', {
-        text: 'against ' + fmt.int(before) + ' in the ' +
-          fmt.plural(num(people.comparison.days) === null ? 0 : people.comparison.days, 'day') +
-          ' before'
-      }));
-      return row;
+      return [
+        deltaPill(basisPoints, basisPoints > 0 ? 'up' : basisPoints < 0 ? 'down' : ''),
+        h('span', {
+          text: 'against ' + fmt.int(before) + ' in the ' +
+            fmt.plural(num(people.comparison.days) === null ? 0 : people.comparison.days, 'day') +
+            ' before'
+        })
+      ];
+    }
+
+    /* A change, with its direction carried by a glyph and a sign as well as by
+       the pill's colour. */
+    function deltaPill(basisPoints, tone) {
+      var pill = h('span', { className: 'pill' + (tone ? ' ' + tone : '') });
+      if (tone) pill.appendChild(icon(tone === 'up' ? 'up' : 'down'));
+      pill.appendChild(h('span', { text: fmt.signedPercent(basisPoints) }));
+      return pill;
     }
 
     /* ----------------------------------------------------------- AI runs */
@@ -689,21 +762,24 @@
       var runs = num(aiRuns && aiRuns.runs);
 
       if (stateOf(aiRuns) !== 'ready' || runs === null) {
-        return unavailable(card, aiRuns,
-          'The answer carried no AI run count for this window.');
+        unavailable(card, aiRuns, 'The answer carried no AI run count for this window.');
+        doorway(card, OWNER_PANE.runs);
+        return card;
       }
 
-      card.appendChild(h('div', { className: 'tile-value', text: fmt.int(runs) }));
+      value(card, fmt.int(runs));
 
       /* Counts rather than a percentage, and absent rather than zero when the
          window before was never reconciled: a comparison against a window
          nothing was collected for reads as a collapse in AI use. */
       var previous = num(aiRuns.previous && aiRuns.previous.runs);
-      card.appendChild(metaLine(previous === null
-        ? 'No comparison available'
-        : 'against ' + fmt.int(previous) + ' in the window before'));
+      meta(card, [h('span', {
+        text: previous === null
+          ? 'No comparison available'
+          : 'against ' + fmt.int(previous) + ' in the window before'
+      })]);
 
-      card.appendChild(metaLine(windowLabel(aiRuns.window)));
+      why(card, windowLabel(aiRuns.window));
 
       /* A day with no reconciliation row has no reading, which is not a day
          with no runs. Saying how many days are behind the total is what lets a
@@ -711,11 +787,11 @@
       var missing = (aiRuns.daysMissing || []).length;
       var reported = num(aiRuns.daysReported);
       if (missing > 0) {
-        card.appendChild(tinyLine('Counted from ' +
-          (reported === null ? fmt.plural(0, 'day') : fmt.plural(reported, 'day')) +
-          ', ' + fmt.plural(missing, 'day') + ' in this window ' +
-          (missing === 1 ? 'has' : 'have') + ' not been reconciled yet.', 'warn'));
+        why(card, 'Counted from ' + fmt.plural(reported === null ? 0 : reported, 'day') +
+          ', ' + fmt.plural(missing, 'day') + ' not reconciled yet.', 'warn');
       }
+
+      doorway(card, OWNER_PANE.runs);
       return card;
     }
 
@@ -735,50 +811,43 @@
 
       if (stateOf(cost) !== 'ready' || micros === null) {
         unavailable(card, cost, 'The answer carried no billed total for this period.');
-        card.appendChild(doorway(OWNER_PANE.cost));
+        doorway(card, OWNER_PANE.cost);
         return card;
       }
 
-      card.appendChild(h('div', { className: 'tile-value', text: d.money(micros, cost.currency) }));
+      value(card, fmt.money(micros, cost.currency));
 
       var change = num(cost.comparison && cost.comparison.changeBasisPoints);
+      var period = cost.window || {};
+      var dayOf = num(period.dayOfPeriod);
+      var daysIn = num(period.daysInPeriod);
+      var when = dayOf !== null && daysIn !== null
+        ? 'day ' + fmt.int(dayOf) + ' of ' + fmt.int(daysIn)
+        : 'month to date';
+
       if (change === null) {
-        card.appendChild(metaLine('No comparison available'));
+        meta(card, [h('span', { text: 'No comparison available' }), h('span', { text: when })]);
       } else {
         /* Sent, not computed. The comparison window is clamped inside the
            previous period by the route that owns the cost arithmetic, and a
            second implementation of it here would be a second figure with
            nothing on screen saying which one an operator is reading. Spending
-           more is the direction that costs money, so it takes the tone the
-           Cloud costs pane gives it rather than the green a rise gets above. */
-        var row = h('div', { className: 'tile-meta row-wrap' });
-        row.appendChild(h('span', {
-          className: 'delta ' + (change > 0 ? 'delta-down' : change < 0 ? 'delta-up' : 'delta-flat'),
-          text: d.signedPercent(change)
-        }));
-        row.appendChild(h('span', {
-          text: textOf(cost.comparison.label) || 'against the same stretch of the period before'
-        }));
-        card.appendChild(row);
+           more is the direction that costs money, so a rise takes the falling
+           tone the Cloud costs pane gives it. */
+        meta(card, [
+          deltaPill(change, change > 0 ? 'down' : change < 0 ? 'up' : ''),
+          h('span', { text: when })
+        ]);
       }
 
-      var period = cost.window || {};
-      var dayOf = num(period.dayOfPeriod);
-      var daysIn = num(period.daysInPeriod);
-      card.appendChild(metaLine(dayOf !== null && daysIn !== null
-        ? 'Month to date, day ' + fmt.int(dayOf) + ' of ' + fmt.int(daysIn)
-        : 'Month to date'));
+      if (cost.basis === 'spend') why(card, 'Spend so far, not spend against a target.');
 
-      if (cost.basis === 'spend') {
-        card.appendChild(tinyLine('Spend so far, not spend against a target.'));
-      }
+      var asOf = fmt.utcStamp(cost.asOf);
+      why(card, asOf ? 'Billed usage as of ' + asOf + '.'
+        : 'The time of this reading was not reported.',
+        asOf ? null : 'warn');
 
-      var asOf = d.utcStamp(cost.asOf);
-      card.appendChild(tinyLine(asOf
-        ? 'Billed usage as of ' + asOf + '.'
-        : 'The time of this reading was not reported, so it cannot be read as current.'));
-
-      card.appendChild(doorway(OWNER_PANE.cost));
+      doorway(card, OWNER_PANE.cost);
       return card;
     }
 
@@ -789,35 +858,39 @@
        would be true of at most one store. */
     function releaseTile(release) {
       var card = tile('App version in production');
-      var platforms = (release && release.platforms) || [];
+      var platforms = ((release && release.platforms) || []).filter(function (platform) {
+        return textOf(platform && platform.versionName);
+      });
 
       if (stateOf(release) !== 'ready' || !platforms.length) {
         unavailable(card, release, 'Neither store reported a production version.');
-        card.appendChild(doorway(OWNER_PANE.release));
+        doorway(card, OWNER_PANE.release);
         return card;
       }
 
+      var rows = h('div', { className: 'kpi-rows' });
       var newest = null;
       platforms.forEach(function (platform) {
-        var version = textOf(platform.versionName);
-        if (!version) return;
-        card.appendChild(h('div', {
-          className: 'tile-meta', text: textOf(platform.label) || platform.platform
-        }));
-        card.appendChild(h('div', {
-          className: 'tile-value sm',
-          text: version + (textOf(platform.versionCode) ? ' (' + platform.versionCode + ')' : '')
-        }));
-        var read = d.hoursSince(platform.fetchedAt);
+        rows.appendChild(h('div', { className: 'kpi-row' }, [
+          h('span', { className: 'kpi-plat', text: textOf(platform.label) || platform.platform }),
+          h('div', { className: 'spacer' }),
+          h('span', {
+            className: 'num',
+            text: platform.versionName +
+              (textOf(platform.versionCode) ? ' (' + platform.versionCode + ')' : '')
+          })
+        ]));
+        var read = fmt.hoursSince(platform.fetchedAt);
         if (read !== null && (newest === null || read < newest)) newest = read;
       });
+      card.body.appendChild(rows);
 
       if (newest !== null) {
-        card.appendChild(tinyLine(newest <= 0
+        why(card, newest <= 0
           ? 'Read from the stores within the hour.'
-          : 'Read from the stores ' + d.hours(newest) + ' ago.'));
+          : 'Read from the stores ' + fmt.hours(newest) + ' ago.');
       }
-      card.appendChild(doorway(OWNER_PANE.release));
+      doorway(card, OWNER_PANE.release);
       return card;
     }
 
@@ -825,39 +898,34 @@
 
     function finiteCount(values) {
       var n = 0;
-      (values || []).forEach(function (value) { if (num(value) !== null) n += 1; });
+      (values || []).forEach(function (v) { if (num(v) !== null) n += 1; });
       return n;
     }
 
-    /* One line per app over the same days, drawn through the understand
-       panes' chart because it is the one that breaks a path on a missing
-       point. A day an app has no stored reading for arrives as null, and both
-       of the alternatives are a lie about a real quantity: joining across it
-       draws people who were never counted, and plotting it as zero draws a day
-       the app was open and nobody used it. */
     function activityCard(activity) {
       var series = (activity && activity.series) || [];
-      var card = h('div', { className: 'card' });
+      var card = S.card();
 
       var legend = h('div', { className: 'legend' });
       series.forEach(function (one) {
-        var swatch = h('i', { 'aria-hidden': 'true' });
-        swatch.style.setProperty('background', d.seriesStroke(one.color));
-        legend.appendChild(h('span', {}, [swatch, h('span', { text: one.label || one.key })]));
+        var key = h('span', { className: seriesTone(one.color) });
+        key.appendChild(h('i', { 'aria-hidden': 'true' }));
+        key.appendChild(h('span', { text: one.label || one.key }));
+        legend.appendChild(key);
       });
 
-      card.appendChild(op.cardHead('People active each day',
-        windowLabel(activity && activity.window) + ', one line per app',
+      card.appendChild(S.cardHead('People active each day',
+        windowLabel(activity && activity.window),
         series.length ? [legend] : null));
 
       var body = h('div', { className: 'card-body' });
 
       if (stateOf(activity) !== 'ready' || !series.length) {
-        /* A callout rather than an empty chart. An axis with no line on it is
-           read as a measured flat zero, which is the one thing a window with
-           no stored reading must not look like. */
-        body.appendChild(op.notConfigured('There is no line to draw for this window.',
-          detailOf(activity, 'The answer carried no daily figures for this window.')));
+        /* Words rather than an empty chart. An axis with no line on it is read
+           as a measured flat zero, which is the one thing a window with no
+           stored reading must not look like. */
+        body.appendChild(S.stateBlock('empty', 'There is no line to draw for this window',
+          [detailOf(activity, 'The answer carried no daily figures for this window.')]));
         card.appendChild(body);
         appendNote(card, activity && activity.note);
         return card;
@@ -867,32 +935,26 @@
       var drawable = series.filter(function (one) { return finiteCount(one.values) > 1; });
 
       if (drawable.length) {
-        body.appendChild(d.lineChart({
-          height: 190,
-          label: 'People active each day, ' + series.map(function (one) {
-            return one.label || one.key;
-          }).join(' and ') + ', over ' + windowPhrase(activity.window),
-          series: series.map(function (one) {
-            return { color: one.color, values: one.values || [] };
-          })
-        }));
+        body.appendChild(lineChart(series, labels, activity.window));
         if (labels.length) {
           var axis = h('div', { className: 'axis-x', 'aria-hidden': 'true' });
-          labels.forEach(function (label) { axis.appendChild(h('span', { text: label })); });
+          axis.appendChild(h('span', { text: labels[0] }));
+          if (labels.length > 1) {
+            axis.appendChild(h('span', { text: labels[labels.length - 1] }));
+          }
           body.appendChild(axis);
         }
       } else {
-        /* One day with a reading is a point, not a line, and the chart draws
-           nothing from it. The figures below still say what was counted. */
-        body.appendChild(op.notConfigured('Not enough days to draw a line yet.',
-          'Fewer than two days in this window have a stored reading, so there is ' +
-          'nothing to join up. The days that do have one are listed below.'));
+        /* One day with a reading is a point, not a line, and there is nothing
+           to join up. The figures below still say what was counted. */
+        body.appendChild(S.stateBlock('empty', 'Not enough days to draw a line yet',
+          ['Fewer than two days in this window have a stored reading.']));
       }
 
       /* The chart's own numbers, in text. Nothing on this pane may exist only
          inside a picture, and a reader who cannot see the line still has to be
          able to tell a reported zero from a day with no reading. */
-      var rows = h('div', { className: 'stack-sm mt-sm' });
+      var rows = h('div', { className: 'series-rows' });
       series.forEach(function (one) { rows.appendChild(seriesRow(one, labels)); });
       body.appendChild(rows);
 
@@ -902,19 +964,154 @@
         return typeof day === 'string';
       });
       if (missing.length) {
-        var box = h('div', { className: 'card-body' }, [
-          op.notConfigured(missing.length === 1
-            ? 'One day inside this window has no stored figures.'
-            : fmt.plural(missing.length, 'day') + ' inside this window have no stored figures.',
-            listDays(missing) + '. These days are drawn as breaks in the line rather ' +
-            'than as zeroes: no app reported on them, which is not the same as nobody ' +
-            'using the apps.')
-        ]);
-        card.appendChild(box);
+        card.appendChild(h('div', { className: 'card-foot' }, [
+          icon('info'),
+          h('span', {
+            text: (missing.length === 1 ? 'No stored figures on ' : 'No stored figures on ') +
+              listDays(missing) + '. Drawn as breaks, not zeroes.'
+          })
+        ]));
       }
 
       appendNote(card, activity.note);
       return card;
+    }
+
+    /* The line, drawn here rather than through aria.js's area renderer.
+
+       That renderer filters its values before plotting them, so a null day is
+       removed and the path is drawn straight across the gap: the picture then
+       shows people who were never counted. Both alternatives to a break are a
+       lie about a real quantity, the other being a zero, which draws a day the
+       app was open and nobody used it.
+
+       role="img" makes the whole subtree presentational, so every <text> in
+       here is announced to nobody and the accessible NAME has to carry the
+       data. chartName() is the only thing that decides it. */
+    var CHART_W = 720;
+    var CHART_H = 210;
+    var PAD_L = 44, PAD_R = 10, PAD_T = 10, PAD_B = 16;
+
+    function lineChart(series, labels, win) {
+      var iw = CHART_W - PAD_L - PAD_R;
+      var ih = CHART_H - PAD_T - PAD_B;
+
+      var hi = 0;
+      var span = 0;
+      series.forEach(function (one) {
+        var values = one.values || [];
+        if (values.length > span) span = values.length;
+        values.forEach(function (v) {
+          var n = num(v);
+          if (n !== null && n > hi) hi = n;
+        });
+      });
+      hi = hi * 1.14 || 1;
+
+      var svg = svgEl('svg', {
+        'class': 'chart',
+        viewBox: '0 0 ' + CHART_W + ' ' + CHART_H,
+        role: 'img',
+        'aria-label': chartName(series, labels, win)
+      });
+
+      var ticks = 4;
+      for (var i = 0; i <= ticks; i++) {
+        var y = PAD_T + ih - (i / ticks) * ih;
+        var gridline = svgEl('line', {
+          'class': 'gridline', x1: PAD_L, y1: y.toFixed(1), x2: CHART_W - PAD_R, y2: y.toFixed(1)
+        });
+        if (i !== 0) gridline.setAttribute('stroke-dasharray', '2 4');
+        svg.appendChild(gridline);
+
+        var label = svgEl('text', {
+          'class': 'axis', x: PAD_L - 8, y: (y + 3.5).toFixed(1), 'text-anchor': 'end'
+        });
+        label.textContent = fmt.int(Math.round(hi * i / ticks));
+        svg.appendChild(label);
+      }
+
+      series.forEach(function (one) {
+        var group = svgEl('g', { 'class': seriesTone(one.color) });
+        var values = one.values || [];
+        var x = function (index) {
+          return PAD_L + (span > 1 ? (index / (span - 1)) * iw : iw / 2);
+        };
+        var y2 = function (v) { return PAD_T + ih - (v / hi) * ih; };
+
+        /* Consecutive readings become one path. A gap ends the path and the
+           next reading starts a new one, so the break is the absence of a
+           stroke rather than a stroke through nothing. */
+        var run = [];
+        var flush = function () {
+          if (run.length > 1) {
+            group.appendChild(svgEl('path', {
+              'class': 'ln',
+              d: run.map(function (p, i) {
+                return (i ? 'L' : 'M') + p[0].toFixed(2) + ' ' + p[1].toFixed(2);
+              }).join(' ')
+            }));
+          } else if (run.length === 1) {
+            /* A single reading between two gaps has no line to belong to, and
+               drawing nothing for it would hide a day that was measured. */
+            group.appendChild(svgEl('circle', {
+              'class': 'ln-pt', cx: run[0][0].toFixed(2), cy: run[0][1].toFixed(2), r: '2.6'
+            }));
+          }
+          run = [];
+        };
+
+        values.forEach(function (v, index) {
+          var n = num(v);
+          if (n === null) { flush(); return; }
+          run.push([x(index), y2(n)]);
+        });
+        flush();
+        svg.appendChild(group);
+      });
+
+      return svg;
+    }
+
+    /* The chart's accessible name, and the only place its data is announced.
+
+       Every series says how much of the window it has a reading for, its range
+       and its last reading, because none of that is announced from the <text>
+       nodes inside a role="img". A series with no reading at all says so
+       rather than being left out of the name. */
+    function chartName(series, labels, win) {
+      var head = 'People active each day, one line per app, over ' + windowPhrase(win);
+      if (labels.length) {
+        head += ', ' + labels[0] +
+          (labels.length > 1 ? ' to ' + labels[labels.length - 1] : '');
+      }
+      return head + '. ' + series.map(function (one) {
+        return seriesSentence(one, labels);
+      }).join(' ');
+    }
+
+    function seriesSentence(one, labels) {
+      var name = one.label || one.key;
+      var values = one.values || [];
+      var reported = [];
+      var lastIndex = -1;
+      values.forEach(function (v, index) {
+        var n = num(v);
+        if (n === null) return;
+        reported.push(n);
+        lastIndex = index;
+      });
+
+      if (!reported.length) {
+        return name + ': no reading on any of ' + fmt.plural(values.length, 'day') + '.';
+      }
+      var lo = Math.min.apply(null, reported);
+      var high = Math.max.apply(null, reported);
+      return name + ': ' + fmt.int(reported.length) + ' of ' +
+        fmt.plural(values.length, 'day') + ' with a reading, ' +
+        (lo === high ? 'flat at ' + fmt.int(lo) : 'low ' + fmt.int(lo) + ', high ' + fmt.int(high)) +
+        ', ending ' + fmt.int(values[lastIndex]) +
+        (labels[lastIndex] ? ' on ' + labels[lastIndex] : '') + '.';
     }
 
     /* One app's line, said in words: how much of the window it has a reading
@@ -923,22 +1120,23 @@
       var values = one.values || [];
       var reported = finiteCount(values);
       var lastIndex = -1;
-      values.forEach(function (value, index) { if (num(value) !== null) lastIndex = index; });
+      values.forEach(function (v, index) { if (num(v) !== null) lastIndex = index; });
 
-      var row = h('div', { className: 'row row-wrap' }, [
-        h('span', { className: 'small', text: one.label || one.key }),
+      var row = h('div', { className: 'series-row ' + seriesTone(one.color) }, [
+        h('i', { className: 'dot', 'aria-hidden': 'true' }),
+        h('span', { text: one.label || one.key }),
         h('div', { className: 'spacer' })
       ]);
       row.appendChild(h('span', {
-        className: 'mono',
+        className: 'num series-read',
         text: lastIndex === -1
           ? 'No reading'
           : fmt.plural(values[lastIndex], 'person', 'people') +
             (labels[lastIndex] ? ' on ' + labels[lastIndex] : '')
       }));
       row.appendChild(h('span', {
-        className: 'tiny muted',
-        text: fmt.int(reported) + ' of ' + fmt.plural(values.length, 'day') + ' with a reading'
+        className: 'series-cover',
+        text: fmt.int(reported) + ' of ' + fmt.plural(values.length, 'day')
       }));
       return row;
     }
@@ -949,7 +1147,7 @@
 
     function listDays(days) {
       var shown = days.slice(0, MAX_LISTED_GAP_DAYS).map(function (day) {
-        return d.utcDay(day) || day;
+        return fmt.utcDay(day) || day;
       });
       var rest = days.length - shown.length;
       return shown.join(', ') + (rest > 0 ? ', and ' + fmt.plural(rest, 'more day') : '');
@@ -965,9 +1163,7 @@
     /* The figures the approved design puts on this pane that have no source,
        named with the route's own reason for each.
 
-       This replaces the "Not on this page yet" block, and it is a shorter list
-       than that block was because three of its four entries are now drawn. It
-       is rendered from `omissions` rather than from a list in this file, so a
+       Rendered from `omissions` rather than from a list in this file, so a
        figure that loses or gains a source moves here by itself rather than
        when somebody remembers to edit the client. */
     function omissionsCard(omissions) {
@@ -976,37 +1172,29 @@
       });
       if (!entries.length) return null;
 
-      var card = h('div', { className: 'card' });
-      card.appendChild(op.cardHead('Not drawn here, and why',
+      var card = S.card();
+      card.appendChild(S.cardHead('Not drawn here, and why',
         entries.length === 1
           ? 'One figure the design asks for has no source'
           : fmt.int(entries.length) + ' figures the design asks for have no source'));
 
-      var body = h('div', { className: 'card-body stack-sm' });
+      var body = h('div', { className: 'card-body omit' });
       entries.forEach(function (entry) {
-        var box = h('div', { className: 'callout' });
-        box.appendChild(icon('clock'));
-        var text = h('div', { className: 'queue-body' });
-        text.appendChild(h('h4', {
-          className: 'queue-title', text: textOf(entry.title) || entry.key
-        }));
-        text.appendChild(h('p', {
-          className: 'queue-desc',
-          text: textOf(entry.detail) ||
-            'The answer named this as unavailable and gave no reason.'
-        }));
-        box.appendChild(text);
-        body.appendChild(box);
+        var item = h('div', { className: 'omit-item' });
+        var glyph = icon('clock');
+        glyph.setAttribute('aria-hidden', 'true');
+        item.appendChild(glyph);
+        item.appendChild(h('div', {}, [
+          h('h3', { className: 'omit-title', text: textOf(entry.title) || entry.key }),
+          h('p', {
+            className: 'omit-desc',
+            text: textOf(entry.detail) ||
+              'The answer named this as unavailable and gave no reason.'
+          })
+        ]));
+        body.appendChild(item);
       });
       card.appendChild(body);
-
-      card.appendChild(h('div', { className: 'card-foot' }, [
-        h('span', {
-          text: 'These are left out rather than drawn as zeroes or as empty bars. A ' +
-                'figure with nothing behind it and a real one look the same once ' +
-                'either is on a tile.'
-        })
-      ]));
       return card;
     }
 
@@ -1022,7 +1210,7 @@
        in the tile itself and is left out here, so this stays a footnote rather
        than becoming an essay nobody reads. */
     function figureNotes(data) {
-      var wrap = h('div', { className: 'stack-sm' });
+      var wrap = h('div', { className: 'notes' });
       [
         { label: 'Active people', block: data.people, whole: hasPeopleComparison(data.people) },
         { label: 'Aria AI runs', block: data.aiRuns, whole: num(data.aiRuns &&
@@ -1034,9 +1222,7 @@
         var note = textOf(entry.block && entry.block.note);
         if (!note) return;
         if (stateOf(entry.block) === 'ready' && entry.whole) return;
-        wrap.appendChild(h('p', {
-          className: 'axis-note', text: entry.label + ': ' + note
-        }));
+        wrap.appendChild(h('p', { className: 'note-line', text: entry.label + ': ' + note }));
       });
       return wrap.childNodes.length ? wrap : null;
     }
@@ -1046,30 +1232,31 @@
         num(people.platform && people.platform.previousActive) !== null;
     }
 
-    function figuresSection(summary) {
-      var wrap = h('div', { className: 'stack' });
-
-      if (summary && summary.error) {
-        var card = h('div', { className: 'card' });
-        card.appendChild(h('div', { className: 'card-body' }, [
-          op.partFailure('These figures could not be read',
-            op.failureMessage(summary.error) +
-            ' Nothing here is a zero: the figures are unread, not absent. The problems ' +
-            'above were read separately and are unaffected.',
-            load)
-        ]));
-        wrap.appendChild(card);
-        return wrap;
+    function figuresSection(band, result) {
+      if (result && result.error) {
+        var box = S.card();
+        var block = S.stateBlock('warn', 'These figures could not be read', [
+          S.failureMessage(result.error),
+          'Nothing here is a zero: the figures are unread, not absent. The problems ' +
+            'above were read separately and are unaffected.'
+        ]);
+        var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+        again.addEventListener('click', function () { load(); });
+        block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+        box.appendChild(block);
+        band.appendChild(box);
+        return;
       }
 
-      var data = summary && summary.data;
+      var data = result && result.data;
       if (!data) {
-        wrap.appendChild(op.paneState('empty', 'These figures have nothing behind them yet', [
-          'This pane asked the operations API for the headline figures and what came ' +
-            'back did not carry them.',
+        var empty = S.card();
+        empty.appendChild(S.stateBlock('empty', 'These figures have nothing behind them yet', [
+          'The operations API answered without the headline figures.',
           'Nothing is being hidden from you, and nothing here is a zero.'
         ]));
-        return wrap;
+        band.appendChild(empty);
+        return;
       }
 
       var tiles = h('div', { className: 'grid g4' });
@@ -1077,26 +1264,23 @@
       tiles.appendChild(aiRunsTile(data.aiRuns));
       tiles.appendChild(costTile(data.cost));
       tiles.appendChild(releaseTile(data.release));
-      wrap.appendChild(tiles);
+      band.appendChild(tiles);
 
       var notes = figureNotes(data);
-      if (notes) wrap.appendChild(notes);
+      if (notes) band.appendChild(notes);
 
-      wrap.appendChild(activityCard(data.activity));
+      band.appendChild(activityCard(data.activity));
 
       var omissions = omissionsCard(data.omissions);
-      if (omissions) wrap.appendChild(omissions);
+      if (omissions) band.appendChild(omissions);
 
-      var stamp = d.utcStamp(data.generatedAt);
-      wrap.appendChild(h('p', {
-        className: 'axis-note',
-        text: (stamp
-          ? 'Read at ' + stamp + '. '
-          : 'The time these figures were read was not reported, so they cannot be ' +
-            'read as current. ') +
+      var stamp = fmt.utcStamp(data.generatedAt);
+      band.appendChild(h('p', {
+        className: 'note-line',
+        text: (stamp ? 'Read at ' + stamp + '. '
+          : 'The time these figures were read was not reported. ') +
           (textOf(data.consent && data.consent.detail) || '')
       }));
-      return wrap;
     }
 
     load();

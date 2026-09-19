@@ -234,6 +234,12 @@ test('dataset form shows field errors received through the operations API transp
 test('viewers can validate declarations without being offered evidence import', () => {
   const pane = loadPane(undefined, Date, 'viewer');
   const shell = { OpsSession: pane.window.OpsSession };
+  /* The registry moved out of shell.js so the v2 pane bootstrap can read the
+     same table; shell.js now refuses to load without it. */
+  vm.runInNewContext(
+    readFileSync(new URL('../ops/assets/pane-registry.js', import.meta.url), 'utf8'),
+    { window: shell, document: {} },
+  );
   vm.runInNewContext(
     readFileSync(new URL('../ops/assets/shell.js', import.meta.url), 'utf8'),
     { window: shell, document: {} },
