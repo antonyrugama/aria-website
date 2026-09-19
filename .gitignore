@@ -12,3 +12,8 @@ desktop.ini
 
 # Local
 *.log
+
+# Chrome profile written by scripts/check-ops-theme-redraw.mjs. Kept in the
+# repository rather than a temp directory so the path is the same on a laptop
+# and on the runner; removed by the check itself, ignored in case it is not.
+.ops-theme-redraw-*/
