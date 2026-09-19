@@ -233,6 +233,13 @@ test('dataset form shows field errors received through the operations API transp
 
 test('viewers can validate declarations without being offered evidence import', () => {
   const pane = loadPane(undefined, Date, 'viewer');
+  const shell = { OpsSession: pane.window.OpsSession };
+  vm.runInNewContext(
+    readFileSync(new URL('../ops/assets/shell.js', import.meta.url), 'utf8'),
+    { window: shell, document: {} },
+  );
+  assert.equal(shell.OpsSession.hasRole(shell.OpsShell.panes.evals.roles), true,
+    'the shell must allow a viewer to enter Aria quality');
   const root = { children: [], appendChild(child) { this.children.push(child); } };
   pane.render(root);
   assert.ok(findNode(root, node => node.className === 'card dataset-form'));
