@@ -902,6 +902,38 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
 .form-alert.is-warn { background: var(--warn-dim); border-color: var(--warn-line); color: var(--warn-ink); }
 .form-alert.is-ok { background: var(--ok-dim); border-color: var(--ok-line); color: var(--ok); }
 
+/* Evidence quarantine */
+.evidence-form { max-width: 920px; }
+.evidence-form-grid { margin-top: 14px; }
+.evidence-authority {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-top: 14px;
+}
+.evidence-authority legend {
+  padding: 0 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.evidence-actions { justify-content: flex-end; }
+.evidence-actions .btn { width: auto; min-width: 190px; }
+.evidence-result { max-width: 920px; }
+.evidence-meta { display: grid; gap: 8px; }
+.evidence-meta-row {
+  display: grid;
+  grid-template-columns: minmax(120px, .35fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.evidence-meta dt { color: var(--text-3); font-size: 12px; }
+.evidence-meta dd {
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 /* ====================== Pane not built yet ============================== */
 
 .notbuilt { max-width: 620px; margin: 40px auto; text-align: center; }
@@ -1327,6 +1359,8 @@ table.data th.right { text-align: right; }
     transition: transform 220ms cubic-bezier(.32,.72,0,1), visibility 0s;
   }
   .g2, .g3, .g4, .g-main, .g-main-b { grid-template-columns: minmax(0,1fr); }
+  .evidence-meta-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .evidence-actions .btn { width: 100%; min-height: 44px; }
   .page-question { display: none; }
   .content { padding: 14px; }
   .filterbar { padding: 8px 14px; }

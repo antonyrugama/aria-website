@@ -217,7 +217,7 @@ ops/
   alerts.html           Problems
   analytics.html        People and usage
   spend.html            Cloud costs
-  evaluations.html      Aria quality (deferred, coming-soon banner)
+  evaluations.html      Aria quality: imported evidence quarantine
   releases.html         App releases
   users.html            Look up a user
   settings.html         Settings (owner only)
@@ -240,6 +240,7 @@ ops/
                         Overview's figures: source, formatting, states, charts
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
+    pane-evaluations.js private quarantine import, metadata-only result
     pane-releases.js    App releases
     pane-users.js       Look up a user
     settings.css        pane styling for Settings
@@ -300,8 +301,12 @@ whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET
 and land on an honest state rather than a zero wherever an answer carries no figure.
 
 **Settings** is built, and is the one pane that can change something rather than only report it.
-The section on it below is worth reading before the page is used. Aria quality is deferred to its
-own project.
+The section on it below is worth reading before the page is used. **Aria quality** currently
+implements only imported-evidence quarantine. Owners and operators can submit a local synthetic
+or exactly authorised production-derived file to the shared Ciel operation. The page sends no
+credential or endpoint in request data, renders no raw evidence or storage location, and never
+describes quarantine as admission, evaluation consent, training consent, export permission, or
+proof of de-identification.
 
 **App releases** and **Look up a user** are built. Everything either of them shows comes from the
 operations API; neither holds any data of its own, and where the API answers with nothing the
