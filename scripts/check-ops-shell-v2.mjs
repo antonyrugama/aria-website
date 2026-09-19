@@ -1,4 +1,4 @@
-/* Guards the v2 operations shell against the four ways it can break silently.
+/* Guards the v2 operations shell against the five ways it can break silently.
 
    None of these can be caught by reading the source. A design system is a set
    of names that only mean anything once a browser has resolved them, and every
@@ -28,6 +28,13 @@
      4. A console error on a pane. This shell is additive — no pane file was
         touched — and the cheapest proof of that is to load every one of them
         and listen.
+
+     5. An icon that draws nothing. Icons take their colour from currentColor
+        rather than from a token, so they are not vulnerable to (1) — which is
+        why the chart sweep excluded them, and why deleting stroke from icon()
+        left sixty invisible icons and a green build (#10308). They get their
+        own sweep, with their own count and their own message, over the same
+        paint helpers so the two cannot drift.
 
    Usage:  node scripts/check-ops-shell-v2.mjs
    Chrome: CHROME_PATH, or the usual install locations.
@@ -365,10 +372,105 @@ const STATE_PROBE = (state) => `(() => {
   });
 })()`;
 
+/* ------------------------------------------------------------ paint */
+
+/* Paint, as the browser resolved it. Shared verbatim by the chart sweep and
+   the icon sweep, because two copies of this drift and the drift is silent:
+   each sweep goes on passing on the class it still understands.
+
+   Three things it has to get right, every one of them learned by running a
+   mutation rather than by reading the code:
+
+   - The empty attribute is the fingerprint, not the computed value. A colour
+     that resolved to nothing is written as stroke="" — an invalid
+     presentation attribute, which the browser drops and then reports the
+     INHERITED default for, so getComputedStyle alone reads a plausible lie:
+     `none` where a stroke is missing, black where a fill is. Presentation
+     attributes inherit, so the nearest ancestor-or-self carrying the
+     attribute is the one that decides what this shape asked for.
+   - A paint can be a live reference. fill="url(#id)" is not `none`, and the
+     gradient it names can hold the empty colour in every one of its stops.
+   - Alpha is a number, not a string. Matching the text 'rgba(0, 0, 0, 0)'
+     misses `color(srgb 0 0 0 / 0)`, which is how Chromium serialises a
+     color-mix() — the shape of monorepo #10255, where a parser that only
+     understood rgb() silently dropped 40 sites and 10 real failures with
+     them. So the value is parsed, and a syntax this cannot read is reported
+     LOUDLY. A checker that skips what it cannot read is worse than no
+     checker: it reports a coverage it does not have. */
+const PAINT_HELPERS = `
+  const PAINTABLE = 'path, rect, circle, line, polyline, polygon, ellipse';
+  const SVG_SET = '.wrap svg, main svg, .page svg, #view svg, body svg';
+
+  /* Alpha is all this needs: whether the shape paints, not what colour. */
+  const alphaOf = (value) => {
+    const s = String(value === null || value === undefined ? '' : value).trim();
+    if (!s || s === 'none') return { kind: 'none' };
+    if (s === 'transparent') return { kind: 'colour', a: 0 };
+    const num = (t) => (/%$/.test(t) ? Number(t.slice(0, -1)) / 100 : Number(t));
+    let m = s.match(/^rgba?\\(([^)]*)\\)$/i);
+    if (!m) m = s.match(/^color\\(\\s*[a-z0-9-]+([^)]*)\\)$/i);
+    if (m) {
+      const parts = m[1].trim().split(/[\\s,\\/]+/).filter(Boolean);
+      if (parts.length === 3) return { kind: 'colour', a: 1 };
+      if (parts.length === 4) {
+        const a = num(parts[3]);
+        if (!Number.isNaN(a)) return { kind: 'colour', a: a };
+      }
+    }
+    return { kind: 'unreadable' };
+  };
+
+  /* null when the shape paints through this channel, otherwise why it does
+     not. kind is what the caller keys on; why is what a person reads. */
+  const dead = (el, prop) => {
+    let carrier = el;
+    while (carrier && carrier.getAttribute && !carrier.hasAttribute(prop)) {
+      carrier = carrier.parentElement;
+      if (carrier && carrier.namespaceURI !== 'http://www.w3.org/2000/svg') carrier = null;
+    }
+    if (carrier && carrier.getAttribute(prop) === '') {
+      return { kind: 'empty-attribute', why: prop + '="" on <' + carrier.tagName +
+        '>, which the browser drops — the colour asked for resolved to nothing' };
+    }
+    const v = getComputedStyle(el)[prop];
+    const ref = (v || '').trim().startsWith('url(')
+      ? (v.slice(v.indexOf('#') + 1).split(/[)"']/)[0] || '') : '';
+    if (ref) {
+      const def = document.getElementById(ref);
+      if (!def) return { kind: 'missing-ref', why: prop + ' points at #' + ref + ', which does not exist' };
+      const stops = [...def.querySelectorAll('stop')];
+      if (stops.length && stops.every((s) => s.getAttribute('stop-color') === ''))
+        return { kind: 'gradient-empty', why: prop + ' is a gradient whose stops hold no colour' };
+      return null;
+    }
+    const paint = alphaOf(v);
+    if (paint.kind === 'unreadable') {
+      return { kind: 'unreadable', why: prop + ' is ' + v + ', a colour syntax this check ' +
+        'cannot read. Teach alphaOf() the syntax; do not let the sweep skip the shape.' };
+    }
+    if (paint.kind === 'none') return { kind: 'no-paint', why: prop + ' is ' + (v || 'empty') };
+    if (paint.a === 0) return { kind: 'no-paint', why: prop + ' is ' + v + ', which is fully transparent' };
+    return null;
+  };
+
+  /* Both channels dead, or one channel whose paint was asked for and came
+     back as nothing. A missing gradient reference on its own is not enough:
+     the other channel may still be painting the shape. */
+  const verdict = (el) => {
+    const found = ['stroke', 'fill'].map((p) => dead(el, p)).filter(Boolean);
+    const unreadable = found.filter((f) => f.kind === 'unreadable');
+    if (unreadable.length) return { unreadable: true, why: unreadable.map((f) => f.why).join(', ') };
+    const fatal = found.some((f) => f.kind === 'empty-attribute' || f.kind === 'gradient-empty');
+    if (found.length === 2 || fatal) return { unpainted: true, why: found.map((f) => f.why).join(', ') };
+    return null;
+  };
+`;
+
 /* What survived boot. Every figure here is a fact the shell is responsible for
    and none of it can be read off the source: the rail is generated, the icons
    are swapped in place, and the chart names are derived from the data. */
 const SHELL_PROBE = `(() => {
+  ${PAINT_HELPERS}
   const named = [...document.querySelectorAll('svg.chart[role="img"]')]
     .map((s) => s.getAttribute('aria-label'));
 
@@ -387,37 +489,21 @@ const SHELL_PROBE = `(() => {
      - a bar is fill="url(#id)", a live reference to a gradient whose stops
        hold the empty colour, so the paint is not none and has to be followed;
      - the empty attribute is the fingerprint, not the computed value, because
-       the browser reports the inherited default once it drops the attribute. */
-  const PAINTABLE = 'path, rect, circle, line, polyline, polygon, ellipse';
-  const nopaint = (v) => !v || v === 'none' || v === 'rgba(0, 0, 0, 0)' || v === 'transparent';
-  const dead = (el, prop) => {
-    if (el.getAttribute(prop) === '') return prop + ' is an empty attribute';
-    const v = getComputedStyle(el)[prop];
-    const ref = (v || '').trim().startsWith('url(')
-      ? (v.slice(v.indexOf('#') + 1).split(/[)"']/)[0] || '') : '';
-    if (ref) {
-      const def = document.getElementById(ref);
-      if (!def) return prop + ' points at #' + ref + ', which does not exist';
-      const stops = [...def.querySelectorAll('stop')];
-      if (stops.length && stops.every((s) => s.getAttribute('stop-color') === ''))
-        return prop + ' is a gradient whose stops hold no colour';
-      return '';
-    }
-    return nopaint(v) ? prop + ' is ' + (v || 'empty') : '';
-  };
-
-  const shapes = [...document.querySelectorAll('.wrap svg, main svg, .page svg, #view svg, body svg')]
-    .filter((s) => !s.classList.contains('ico'))
+       the browser reports the inherited default once it drops the attribute.
+     All three now live in PAINT_HELPERS, which the icon sweep shares. */
+  const chartSvgs = [...document.querySelectorAll(SVG_SET)]
+    .filter((s) => !s.classList.contains('ico'));
+  const shapes = chartSvgs
     .flatMap((s) => [...s.querySelectorAll(PAINTABLE)].map((el) => ({ svg: s, el })));
   const unpainted = [];
+  const unreadable = [];
   for (const { svg, el } of shapes) {
-    const why = [dead(el, 'stroke'), dead(el, 'fill')].filter(Boolean);
-    if (why.length === 2 || why.some((w) => w.includes('empty attribute')) ||
-        why.some((w) => w.includes('no colour'))) {
-      unpainted.push((svg.getAttribute('aria-label') || svg.getAttribute('class') ||
-        (svg.hasAttribute('aria-hidden') ? 'a decorative graphic' : 'an unnamed graphic')) +
-        ' > ' + el.tagName + ' (' + why.join(', ') + ')');
-    }
+    const v = verdict(el);
+    if (!v) continue;
+    const where = (svg.getAttribute('aria-label') || svg.getAttribute('class') ||
+      (svg.hasAttribute('aria-hidden') ? 'a decorative graphic' : 'an unnamed graphic')) +
+      ' > ' + el.tagName + ' (' + v.why + ')';
+    (v.unreadable ? unreadable : unpainted).push(where);
   }
 
   return JSON.stringify({
@@ -429,6 +515,7 @@ const SHELL_PROBE = `(() => {
     charts: document.querySelectorAll('svg.chart').length,
     chartShapes: shapes.length,
     unpainted: unpainted,
+    unreadablePaint: unreadable,
     namedCharts: named,
     anonymousCharts: [...document.querySelectorAll('svg.chart')]
       .filter((s) => !s.hasAttribute('aria-hidden') && !s.getAttribute('aria-label')).length,
@@ -436,6 +523,82 @@ const SHELL_PROBE = `(() => {
       || (document.querySelector('.ribbon') || {}).getAttribute
       && (document.querySelector('.ribbon')).getAttribute('aria-label'),
     api: Object.keys(window.Aria).sort()
+  });
+})()`;
+
+/* Every icon on the page, swept for paint the same way the charts are.
+
+   The chart sweep excluded icons — `.filter((s) => !s.classList.contains('ico'))`
+   — because an icon takes its colour from currentColor rather than from a
+   token, so it cannot fail the way an unresolved tone fails. That was a true
+   statement about one cause and a false one about coverage: deleting
+   `stroke: 'currentColor'` from icon() in ops/assets/aria.js leaves every icon
+   in the rail, the top bar and the gallery a blank box, and both suites stay
+   green (#10308).
+
+   Two things it measures that a chart sweep would not have to:
+
+   - currentColor is resolved AT THE POINT THE ICON SITS. Reading it on the
+     document element answers a different question: a rule that paints one
+     subtree transparent leaves the root colour untouched and every icon in
+     that subtree invisible. getComputedStyle on the shape itself is the
+     resolution the browser actually used for it.
+   - An icon with no shapes at all draws nothing. icon() falls back to the
+     info glyph for a name it does not know, but an entry that exists and is
+     empty is not an unknown name: it produces an <svg> that is correctly
+     classed, correctly sized, and empty.
+
+   What it does NOT measure: an ink that resolves to a real colour but is too
+   close to what is painted behind it to see. That needs the effective
+   background, which on this page is layered gradients and colour-mix alpha
+   rather than any one ancestor's background-color, and it is the contrast
+   oracle's job (Stadiora/Aria#10287), not this sweep's. */
+const ICON_PROBE = `(() => {
+  ${PAINT_HELPERS}
+  const icons = [...document.querySelectorAll('svg.ico')];
+
+  /* Icons carry no name of their own — the <i data-i="..."> placeholder they
+     replaced is gone by the time this runs — so they are located by what
+     holds them. */
+  const label = (svg) => {
+    const p = svg.parentElement;
+    if (!p) return 'a detached icon';
+    const cls = (p.getAttribute('class') || '').trim();
+    const text = (p.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 24);
+    return p.tagName.toLowerCase() + (cls ? '.' + cls.split(/\\s+/).join('.') : '') +
+      (text ? ' "' + text + '"' : '');
+  };
+
+  const unpainted = [];
+  const unreadable = [];
+  const empty = [];
+  let shapes = 0;
+  for (const svg of icons) {
+    const els = [...svg.querySelectorAll(PAINTABLE)];
+    shapes += els.length;
+    if (!els.length) { empty.push(label(svg)); continue; }
+    const why = [];
+    let cannotRead = false;
+    for (const el of els) {
+      const v = verdict(el);
+      if (!v) continue;
+      if (v.unreadable) cannotRead = true;
+      if (why.indexOf(v.why) === -1) why.push(v.why);
+    }
+    if (!why.length) continue;
+    const entry = label(svg) + ' — ' + why.join('; ');
+    if (cannotRead) unreadable.push(entry);
+    else unpainted.push(entry);
+  }
+
+  return JSON.stringify({
+    icons: icons.length,
+    iconShapes: shapes,
+    allSvgs: document.querySelectorAll('svg').length,
+    chartSvgs: [...document.querySelectorAll(SVG_SET)].filter((s) => !s.classList.contains('ico')).length,
+    unpainted: unpainted,
+    unreadablePaint: unreadable,
+    shapeless: empty
   });
 })()`;
 
@@ -646,6 +809,12 @@ try {
         'token resolves to the empty string, which SVG ignores, so the chart is named and ' +
         'correct and draws nothing.');
     }
+    if (shell.unreadablePaint.length) {
+      failures.push(`${SHELL} (${theme}): ${shell.unreadablePaint.length} chart shape(s) are ` +
+        `painted in a colour syntax this check cannot read — ${shell.unreadablePaint.join('; ')}. ` +
+        'It fails rather than skipping them: a sweep that silently drops what it cannot parse ' +
+        'reports a coverage it does not have (monorepo #10255).');
+    }
     /* The a11y guarantee carried over from the mocks: role="img" makes an
        SVG's whole subtree presentational, so a chart that draws its labels as
        <text> and carries no name announces nothing at all. */
@@ -667,6 +836,53 @@ try {
         `expected ${JSON.stringify(api)}`);
     }
     note(`${SHELL} ${theme}: rail, icons and ${shell.namedCharts.length} named charts drawn`);
+
+    /* ------------------------------------------------------- the icons */
+    /* Its own sweep, its own count and its own message, rather than more
+       shapes in the chart figure: 111 icon shapes added to 26 chart shapes
+       would make "the charts drew N paintable shapes" a number nobody can
+       read, and would let a floor written for charts be satisfied by icons
+       alone. */
+    const icons = await evaluate(ICON_PROBE);
+    if (icons.icons < 50) {
+      failures.push(`${SHELL} (${theme}): the icon sweep found ${icons.icons} icons, so it ` +
+        'measured almost nothing. The shell draws 61.');
+    }
+    if (icons.iconShapes < 90) {
+      failures.push(`${SHELL} (${theme}): those icons hold ${icons.iconShapes} paintable ` +
+        'shapes, so the sweep below measured almost nothing. The shell draws 111.');
+    }
+    /* The two sweeps partition every <svg> on the page between them. This is
+       the assertion the excluded-icons gap itself would have failed: a third
+       kind of graphic that belongs to neither is a category nothing checks. */
+    if (icons.allSvgs !== icons.icons + icons.chartSvgs) {
+      failures.push(`${SHELL} (${theme}): the page holds ${icons.allSvgs} <svg> elements but ` +
+        `the two sweeps see ${icons.icons} icons and ${icons.chartSvgs} charts. ` +
+        `${icons.allSvgs - icons.icons - icons.chartSvgs} graphic(s) belong to neither sweep, ` +
+        'so nothing checks whether they paint.');
+    }
+    if (icons.shapeless.length) {
+      failures.push(`${SHELL} (${theme}): ${icons.shapeless.length} icon(s) hold no paintable ` +
+        `shape at all — ${icons.shapeless.join('; ')}. An empty entry in the path map is not an ` +
+        'unknown name, so it does not fall back to the info glyph: it draws an empty box.');
+    }
+    if (icons.unpainted.length) {
+      failures.push(`${SHELL} (${theme}): ${icons.unpainted.length} of ${icons.icons} icon(s) ` +
+        `reach the page with no paint at all — ${icons.unpainted.slice(0, 6).join('; ')}` +
+        (icons.unpainted.length > 6 ? `; and ${icons.unpainted.length - 6} more` : '') +
+        '. An icon takes its colour from currentColor rather than from a token, so the chart ' +
+        'sweep excluded it; that is a statement about one cause, not about coverage. Deleting ' +
+        "stroke from icon() leaves every rail, top bar and gallery icon a blank box (#10308).");
+    }
+    if (icons.unreadablePaint.length) {
+      failures.push(`${SHELL} (${theme}): ${icons.unreadablePaint.length} icon(s) are painted ` +
+        `in a colour syntax this check cannot read — ${icons.unreadablePaint.slice(0, 6).join('; ')}` +
+        (icons.unreadablePaint.length > 6 ? `; and ${icons.unreadablePaint.length - 6} more` : '') +
+        '. It fails rather than skipping them: a sweep that silently drops what it cannot parse ' +
+        'reports a coverage it does not have (monorepo #10255).');
+    }
+    note(`${SHELL} ${theme}: ${icons.icons} icons holding ${icons.iconShapes} shapes all ` +
+      'resolve a paint where they sit');
 
     /* ------------------------------------------------------ four states */
     for (const state of STATES) {
