@@ -111,8 +111,9 @@
     },
     evals: {
       file: 'evaluations.html', icon: 'eval', label: 'Aria quality', group: 'How we are doing',
-      question: 'Is Aria giving better or worse answers than before?',
-      tag: 'soon', deferred: true, wave: null, scope: false, range: false, env: false
+      question: 'Can this approved evidence enter private quarantine safely?',
+      wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator'],
+      filterNote: 'Quarantine is source-specific, so app, range and environment filters do not apply'
     },
     releases: {
       file: 'releases.html', icon: 'release', label: 'App releases', group: 'Apps and people',

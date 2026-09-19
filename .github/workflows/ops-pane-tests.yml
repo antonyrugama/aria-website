@@ -39,4 +39,4 @@ jobs:
         with:
           node-version: '22'
       - name: Run the ops pane tests
-        run: node --test scripts/ops-pane-users.test.mjs
+        run: node --test scripts/ops-pane-*.test.mjs
