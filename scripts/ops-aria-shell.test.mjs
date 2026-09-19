@@ -17,9 +17,14 @@ const SOURCE = new URL('../ops/assets/aria.js', import.meta.url);
 /* Attributes are the storage for everything an element knows: class, dataset
    and the aria-* names all read back out of the same map, because that is how
    a browser behaves and because a stub with a private field per accessor will
-   happily agree with code that never set the attribute at all. */
+   happily agree with code that never set the attribute at all.
+
+   `tokens` is a map of custom property to value, or a function returning one.
+   The function form exists because the tokens move with the theme in a real
+   browser, and a fixed map cannot express that. */
 function makeDom(tokens) {
   let doc;
+  const readTokens = typeof tokens === 'function' ? tokens : () => tokens;
 
   function parseSelector(sel) {
     const parts = sel.trim().split(/(?=[.[])/);
@@ -156,7 +161,7 @@ function makeDom(tokens) {
 
   const window = {
     document: doc,
-    getComputedStyle: () => ({ getPropertyValue: (n) => tokens[n] || '' }),
+    getComputedStyle: () => ({ getPropertyValue: (n) => readTokens()[n] || '' }),
     addEventListener() {},
     setTimeout: () => 0,
     clearTimeout() {},
@@ -607,4 +612,134 @@ test('the theme button reflects what theme.js decided and never decides itself',
   assert.equal(btn.getAttribute('aria-label'), 'Switch to light theme');
   assert.equal(dom.root.getAttribute('data-theme'), null,
     'aria.js wrote the theme attribute itself; theme.js owns that, and two writers disagree');
+});
+
+/* Every chart colour is resolved at DRAW time, out of the tokens, and the
+   tokens move with the theme — so a chart is only correct for the theme it was
+   drawn in. syncTheme() closes that gap by redrawing after the toggle, and
+   until Stadiora/Aria#10309 nothing bound the edge: deleting the call left
+   every chart in the previous theme's palette with the whole suite green.
+
+   What the test below proves: pressing the theme button re-resolves the colour
+   aria.js writes onto each chart shape, in both directions. What it does NOT
+   prove, and does not claim, is anything about the painted page — these are the
+   presentation attributes the renderer wrote, read back out of a hand-written
+   DOM whose token map is supplied by the test. The resolved paint on a
+   laid-out page, against the palette aria.css really declares, is
+   scripts/check-ops-theme-redraw.mjs. */
+const THEME_TOKENS = {
+  dark: {
+    '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
+    '--amber': '#FBBF24', '--line-2': 'rgba(255, 255, 255, .11)',
+  },
+  light: {
+    '--cyan': '#0891B2', '--violet': '#7C3AED', '--emerald': '#059669',
+    '--amber': '#B45309', '--line-2': 'rgba(11, 18, 32, .15)',
+  },
+};
+
+/* aria.js against a DOM whose tokens move with the theme, the way a
+   :root[data-theme] block does. theme.js still owns the decision: OpsTheme is
+   the stub, exactly as on a real page. */
+function themedDom(start, build) {
+  let theme = start;
+  const dom = makeDom(() => THEME_TOKENS[theme]);
+  const body = dom.element('body');
+  dom.root.appendChild(body);
+  el(dom, body, 'header', { id: 'topbar' });
+  dom.window.OpsTheme = {
+    current: () => theme,
+    toggle() { theme = theme === 'dark' ? 'light' : 'dark'; return theme; },
+  };
+  if (build) build(dom, body);
+  vm.createContext(dom.window);
+  vm.runInContext(SRC, dom.window, { filename: 'aria.js' });
+  return { ...dom, body, Aria: dom.window.Aria, theme: () => theme };
+}
+
+/* Every literal colour the renderer painted inside a chart, in document order.
+   Scoped to the chart hosts so the top bar's icons stay out: those are
+   stroke="currentColor" and follow the theme through inherited colour with no
+   redraw at all, so counting them would let a broken redraw look repainted.
+   url(#...) and none carry no colour of their own — the gradients they point
+   at are read through their own stop-color, which is the only colour a bar or
+   an area fill has. */
+const CHART_HOSTS = ['[data-area]', '[data-bars]', '[data-spark]', '[data-gauge]'];
+
+function chartPaints(body) {
+  const out = [];
+  for (const sel of CHART_HOSTS) {
+    body.querySelectorAll(sel).forEach((host, hi) => {
+      let ni = 0;
+      (function walk(node) {
+        for (const c of node.childNodes) {
+          if (!c.tagName) continue;
+          ni += 1;
+          for (const attr of ['stroke', 'fill', 'stop-color']) {
+            const v = c.getAttribute(attr);
+            if (!v || v === 'none' || v.indexOf('url(') === 0) continue;
+            out.push({ where: `${sel}#${hi}|${ni}|${c.tagName}.${attr}`, value: v });
+          }
+          walk(c);
+        }
+      })(host);
+    });
+  }
+  return out;
+}
+
+test('the theme button repaints every chart in the new palette, in both directions', () => {
+  /* Without this the rest is vacuous in the quietest way there is: a token
+     holding the same value in both themes passes whether or not anything was
+     ever redrawn. */
+  for (const name of Object.keys(THEME_TOKENS.dark)) {
+    assert.notEqual(THEME_TOKENS.dark[name], THEME_TOKENS.light[name],
+      `${name} is the same in both themes, so every shape painted from it asserts nothing`);
+  }
+
+  /* Both ways round. A redraw wired one way is a real defect, and an assertion
+     that only runs dark -> light cannot see it. */
+  for (const [start, end] of [['dark', 'light'], ['light', 'dark']]) {
+    const dom = themedDom(start, (d, b) => {
+      el(d, b, 'div', {
+        'data-area': 'Mobile:cyan:58,44,32;Coaches Web:violet:14,9,6',
+        'data-xaxis': '00,06,12',
+      });
+      el(d, b, 'div', { 'data-bars': 'Mon:cyan:42;Tue:cyan:51', 'data-label': 'Runs per day' });
+      el(d, b, 'div', { class: 'kpi-spark', 'data-tone': 'cyan', 'data-spark': '742,760,735' });
+      el(d, b, 'div', { 'data-tone': 'emerald', 'data-label': 'Spend', 'data-spark': '12,19,14' });
+      el(d, b, 'div', { 'data-gauge': '88', 'data-tone': 'amber', 'data-val': '88%' });
+    });
+    dom.Aria.boot({});
+
+    const before = chartPaints(dom.body);
+    assert.ok(before.length >= 20,
+      `only ${before.length} chart paints were found in ${start}, so this measured almost ` +
+      'nothing');
+
+    /* Each paint is pinned to the token it came from, and the expectation is
+       that token's OTHER value — stated up front, from the palette, rather
+       than read back off the page after the switch. */
+    const tokenOf = new Map(Object.entries(THEME_TOKENS[start]).map(([n, v]) => [v, n]));
+    const tokensSeen = new Set();
+    const want = before.map((p) => {
+      const token = tokenOf.get(p.value);
+      assert.ok(token,
+        `${p.where} was painted ${p.value}, which is not a value the ${start} palette writes`);
+      tokensSeen.add(token);
+      return THEME_TOKENS[end][token];
+    });
+    assert.equal(tokensSeen.size, Object.keys(THEME_TOKENS[start]).length,
+      `only ${[...tokensSeen].join(', ')} reached the page, so the rest assert nothing`);
+
+    dom.doc.getElementById('themeBtn').dispatch('click');
+    assert.equal(dom.theme(), end, 'the button did not change the theme, so nothing was asked');
+
+    const after = chartPaints(dom.body);
+    assert.deepEqual(after.map((p) => p.where), before.map((p) => p.where),
+      'the charts have a different shape after the redraw, so the two are not comparable');
+    assert.deepEqual(after.map((p) => p.value), want,
+      `switching from ${start} to ${end} left a chart holding the ${start} palette. Chart ` +
+      'colours are resolved at draw time, so syncTheme() has to redraw after the toggle.');
+  }
 });
