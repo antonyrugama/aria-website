@@ -245,7 +245,47 @@ ops/
     pane-users.js       Look up a user
     settings.css        pane styling for Settings
     settings.js         Settings
+  shell-v2.html         the v2 design system, rendered — reference page, not a pane
+  assets/
+    aria.css            v2 design system: tokens, rail, top bar, components
+    aria.js             v2 runtime: rail, icons, charts, preview states
+    shell-v2.js         the controller for shell-v2.html
 ```
+
+### The v2 layer
+
+`aria.css` and `aria.js` are the design system from `docs/mocks/ops-dashboard-v2/` in the Aria
+monorepo, ported here so the panes can be remodelled one at a time. They sit **beside** `ops.css`
+and `shell.js` rather than replacing them: both define `.card`, `.rail`, `.topbar`, `.btn`,
+`.seg`, `.pill`, `.tbl` and `.nav-item` from different token sets, so **a page loads one or the
+other, never both.** Every pane listed above still loads v1 and still reads the endpoint it
+always read. Panes move across in their own changes, and the day the last one moves, `ops.css`,
+`shell.js`, `operate.css` and `icons.js` go.
+
+`shell-v2.html` exists so the system can be seen and checked. It makes no API call and holds no
+operational data — every number on it is a literal in the page — so unlike a pane it has nothing
+to gate and no session to wait for. It is the surface `scripts/check-ops-shell-v2.mjs` measures.
+
+Three things about `aria.js` are worth knowing before using it:
+
+- `Aria.icon(name)` returns an **SVGElement**, not a string. Nothing in this repository builds
+  markup from a string, so the mock's `innerHTML` form could not come across.
+- The rail's badges and the account footer are **passed in** through `boot({ badges, account })`
+  and render nothing when absent. The mock hard-codes both; they are operational facts, and a
+  dashboard that invents a count is worse than one that shows nothing.
+- `boot`, `icon`, `redraw` and `applyState` are the whole surface. There is no `Aria.icons()`.
+
+Theme is **not** decided in `aria.js`. `theme.js` is a blocking script in every `<head>` and owns
+the pre-paint decision; `aria.js` reads what it wrote. The stylesheet's `:root` default has to
+agree with `theme.js`'s own fallback, because that is what paints when scripting is off — two
+places that each decide a default eventually disagree, and then the page paints one theme and
+visibly switches to the other.
+
+Preview states are keyed on an attribute: `data-state` lists the states an element belongs to,
+`Aria.applyState()` puts `data-shown` on the matching ones, and `aria.css` hides the rest with
+`[data-state]:not([data-shown])`. Hiding rather than showing is the point — a shown element keeps
+its own display type, so `data-state` works on a `<tr>`, a `.pill` and a `.card` alike. Setting
+`display: block` on the shown case instead would flatten all three.
 
 A pane page carries the shell, and where the pane has been built, its own module. Everything a
 pane *is* lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages;
@@ -909,3 +949,19 @@ regression and reusable as a starting point. It serves this repository, answers 
 and the two Problems reads, lays the pane out in headless Chrome at 375px in both themes, and
 fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
 `node scripts/check-ops-narrow-overflow.mjs`; it also runs in CI on any change under `ops/`.
+
+`shell-v2.html` needs none of that. It calls no API, so `python3 -m http.server 8000` and
+`http://127.0.0.1:8000/ops/shell-v2.html` is the whole setup.
+
+### What checks this
+
+| Check | What it can see that nothing else can |
+|---|---|
+| `node --test scripts/*.test.mjs` | The accessible name every chart derives, and that preview state is applied in **both** directions. Runs `scripts/ops-aria-shell.test.mjs` alongside the pane tests. |
+| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all, what `--cyan` actually is per theme, whether a shown `<tr>` is still `table-row`, and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
+| `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
+
+The pre-paint half of the shell check is the part worth keeping. A theme default written in two
+places that disagree produces a page that paints one theme and switches to the other a moment
+later, and *any* assertion that runs after boot sees the corrected page and passes. The only way
+to see it is to stop the script that does the correcting.
