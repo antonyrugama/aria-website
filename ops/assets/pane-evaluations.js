@@ -1,8 +1,8 @@
-/* Aria quality: imported evidence quarantine.
+/* Aria quality: dataset declarations and imported evidence quarantine.
 
-   This pane deliberately implements one operation and no more:
-   ciel.artifact.quarantine. It places imported bytes behind the server's
-   private, immutable quarantine boundary. A successful response is not
+   Dataset validation checks supplied declarations without reading referenced
+   files or storing a dataset. Evidence import places bytes behind the server's
+   private, immutable quarantine boundary. Neither successful operation is
    admission, evaluation consent, training consent, export permission,
    provider-transfer permission, or proof of de-identification.
 
@@ -202,7 +202,158 @@
     ]);
   }
 
+  function datasetValidationSection() {
+    var declarations = h('textarea', {
+      className: 'field-input',
+      rows: 12,
+      spellcheck: 'false',
+      placeholder: 'Paste the dataset validation input JSON.'
+    });
+    declarations.required = true;
+    declarations.setAttribute('aria-describedby', 'dataset-input-hint dataset-limitations dataset-error');
+    var declarationField = field('dataset-input', 'Dataset validation input', declarations);
+    declarationField.appendChild(h('p', {
+      id: 'dataset-input-hint',
+      className: 'field-hint',
+      text: 'Synthetic declarations only. Supply a JSON object with datasets and fixtureDigests. The server checks references, proposed labels and declared lineage within this request.'
+    }));
+    var error = h('div', { id: 'dataset-error', className: 'field-error', role: 'alert' });
+    var result = h('div', { className: 'dataset-result', 'aria-live': 'polite' });
+    var submit = h('button', {
+      className: 'btn btn-primary btn-lg',
+      type: 'submit',
+      text: 'Validate declarations'
+    });
+    var generation = 0;
+    var pending = false;
+    var form = h('form', { className: 'card dataset-form' }, [
+      h('div', { className: 'card-head' }, [
+        h('div', {}, [
+          h('h2', { className: 'card-title', text: 'Validate dataset declarations' }),
+          h('p', {
+            className: 'card-hint',
+            text: 'Viewer, operator and owner access. No dataset is stored.'
+          })
+        ])
+      ]),
+      h('div', { className: 'card-body' }, [
+        declarationField,
+        h('p', {
+          id: 'dataset-limitations',
+          className: 'field-hint',
+          text: 'Validation does not inspect referenced files, admit evidence, verify qualifications or approve a release.'
+        }),
+        error
+      ]),
+      h('div', { className: 'card-foot evidence-actions' }, [submit])
+    ]);
+
+    declarations.addEventListener('input', function () {
+      generation += 1;
+      result.textContent = '';
+      error.textContent = '';
+      declarations.setAttribute('aria-invalid', 'false');
+    });
+
+    form.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      if (pending) return;
+      error.textContent = '';
+      result.textContent = '';
+      declarations.setAttribute('aria-invalid', 'false');
+      var inputValue;
+      try {
+        inputValue = JSON.parse(declarations.value);
+      } catch (caught) {
+        error.textContent = 'Enter valid JSON containing datasets and fixtureDigests.';
+        declarations.setAttribute('aria-invalid', 'true');
+        declarations.focus();
+        return;
+      }
+      var submittedGeneration = ++generation;
+      pending = true;
+      submit.disabled = true;
+      submit.textContent = 'Validating...';
+      try {
+        var requestId = global.crypto.randomUUID();
+        var response = await session.call('/api/ops/ciel/operations', {
+          method: 'POST',
+          body: {
+            schemaVersion: 'ciel.operation.request.v1',
+            requestId: requestId,
+            operationId: 'ciel.dataset.validate',
+            mode: 'remote',
+            client: {
+              name: 'aria-operations-dashboard',
+              version: '1.0.0',
+              contractVersions: ['ciel.operations.v1']
+            },
+            input: inputValue
+          }
+        });
+        if (submittedGeneration !== generation) return;
+        var resource = response && response.resource;
+        var value = resource && resource.value;
+        if (!response || response.schemaVersion !== 'ciel.operation.response.v1' ||
+            response.requestId !== requestId || response.operationId !== 'ciel.dataset.validate' ||
+            response.status !== 'success' || response.exitCode !== 0 ||
+            !resource || resource.type !== 'ciel.dataset-validation' ||
+            !value || value.valid !== true || !Array.isArray(value.digests) ||
+            !value.digests.length || value.digests.some(function (entry) {
+              return !entry || typeof entry.datasetId !== 'string' ||
+                !Number.isInteger(entry.revision) || entry.revision < 1 ||
+                typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(entry.sha256);
+            })) {
+          throw new Error('Dataset validation did not return a valid result for this request.');
+        }
+        var rows = [metadataRow('Request', requestId)];
+        value.digests.forEach(function (entry) {
+          rows.push(metadataRow(entry.datasetId + ' / revision ' + entry.revision, entry.sha256));
+        });
+        result.appendChild(h('div', { className: 'card' }, [
+          h('div', { className: 'card-head' }, [
+            h('h3', { className: 'card-title', text: 'Dataset declarations valid' })
+          ]),
+          h('dl', { className: 'card-body evidence-meta' }, rows),
+          h('div', {
+            className: 'card-foot',
+            text: 'These digests identify the supplied manifests. Referenced bytes and proposed labels have not been verified.'
+          })
+        ]));
+        shell.announce('Dataset declarations valid. Referenced bytes have not been verified.');
+      } catch (caught) {
+        if (submittedGeneration !== generation) return;
+        error.textContent = caught && caught.message
+          ? caught.message
+          : 'Dataset declarations could not be validated.';
+        if (caught && Array.isArray(caught.details) && caught.details.length) {
+          error.appendChild(h('ul', { className: 'dataset-issues' }, caught.details.map(function (entry) {
+            return h('li', { text: entry.path + ': ' + entry.reason });
+          })));
+        }
+        if (caught && (caught.code === 'validation_failed' || caught.code === 'invalid_request')) {
+          declarations.setAttribute('aria-invalid', 'true');
+          declarations.focus();
+        }
+        shell.announce('Dataset validation failed.');
+      } finally {
+        pending = false;
+        submit.disabled = false;
+        submit.textContent = 'Validate declarations';
+      }
+    });
+
+    return h('div', { className: 'stack' }, [form, result]);
+  }
+
   function render(root) {
+    if (!session.hasRole(['owner', 'operator'])) {
+      root.appendChild(h('div', { className: 'stack' }, [
+        datasetValidationSection(),
+        h('p', { className: 'field-hint', text: 'Evidence import requires operator or owner access.' })
+      ]));
+      return;
+    }
     var fileInput = input('file');
     fileInput.setAttribute('accept', '.json,.txt,image/jpeg,image/png,audio/mpeg,audio/wav,video/mp4,video/quicktime');
     var source = select([
@@ -392,6 +543,7 @@
     });
 
     root.appendChild(h('div', { className: 'stack' }, [
+      datasetValidationSection(),
       h('div', { className: 'callout callout-warn' }, [
         icon('warn'),
         h('div', {}, [

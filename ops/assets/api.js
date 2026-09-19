@@ -49,6 +49,7 @@
     this.retryAfter = extra && extra.retryAfter;
     this.requiredRoles = extra && extra.requiredRoles;
     this.maxAgeSeconds = extra && extra.maxAgeSeconds;
+    this.details = extra && extra.details;
   }
   OpsApiError.prototype = Object.create(Error.prototype);
   OpsApiError.prototype.constructor = OpsApiError;
@@ -65,7 +66,12 @@
       return new OpsApiError(status, e.code || 'ops_unknown', e.message || GENERIC, {
         retryAfter: typeof e.retryAfter === 'number' ? e.retryAfter : undefined,
         requiredRoles: Array.isArray(e.requiredRoles) ? e.requiredRoles : undefined,
-        maxAgeSeconds: typeof e.maxAgeSeconds === 'number' ? e.maxAgeSeconds : undefined
+        maxAgeSeconds: typeof e.maxAgeSeconds === 'number' ? e.maxAgeSeconds : undefined,
+        details: Array.isArray(e.details) ? e.details.slice(0, 100).filter(function (entry) {
+          return entry && typeof entry.path === 'string' && typeof entry.reason === 'string';
+        }).map(function (entry) {
+          return { path: entry.path.slice(0, 500), reason: entry.reason.slice(0, 500) };
+        }) : undefined
       });
     }
     if (payload && typeof payload.error === 'string') {
