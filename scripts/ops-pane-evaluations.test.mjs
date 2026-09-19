@@ -19,7 +19,7 @@ function paneBody() {
   return source.slice(start + WRAPPER_OPEN.length, end);
 }
 
-function loadPane(call = () => Promise.reject(new Error('unexpected request'))) {
+function loadPane(call = () => Promise.reject(new Error('unexpected request')), Clock = Date) {
   function element(tag, opts = {}, children = []) {
     let text = opts.text || '';
     const node = {
@@ -87,7 +87,7 @@ function loadPane(call = () => Promise.reject(new Error('unexpected request'))) 
     TextDecoder,
     TextEncoder,
     Uint8Array,
-    Date,
+    Date: Clock,
     crypto: webcrypto,
     console,
   });
@@ -112,8 +112,8 @@ function findNode(root, predicate) {
   return null;
 }
 
-function renderedPane(call) {
-  const pane = loadPane(call);
+function renderedPane(call, Clock = Date) {
+  const pane = loadPane(call, Clock);
   const root = {
     children: [],
     appendChild(child) {
@@ -502,3 +502,112 @@ test('the rendered form rejects invalid minimization before transport', async ()
   assert.match(view.error.textContent, /necessary categories cannot combine/i);
   assert.equal(calls, 0);
 });
+
+function retentionView(t, timeZone, now) {
+  const priorZone = process.env.TZ;
+  process.env.TZ = timeZone;
+  t.after(() => {
+    if (priorZone === undefined) delete process.env.TZ;
+    else process.env.TZ = priorZone;
+  });
+  class Clock extends Date {
+    constructor(...args) {
+      super(...(args.length ? args : [now]));
+    }
+    static now() { return Date.parse(now); }
+  }
+  const requests = [];
+  const view = renderedPane(async (path, options) => {
+    assert.equal(path, '/api/ops/ciel/operations');
+    assert.equal(options.method, 'POST');
+    requests.push(plain(options.body));
+    return { status: 'success', resource: { value: { artifactId: 'example', state: 'quarantined' } } };
+  }, Clock);
+  const bytes = new TextEncoder().encode('example');
+  view.byId('evidence-file').files = [{
+    name: 'example.txt',
+    async arrayBuffer() { return bytes.slice().buffer; },
+  }];
+  view.byId('evidence-source').value = 'synthetic';
+  view.byId('evidence-profile').value = 'trace';
+  view.byId('evidence-type').value = 'text/plain';
+  view.byId('evidence-purpose').value = 'quality_review';
+  return { view, requests };
+}
+
+for (const scenario of [
+  {
+    name: 'UTC minute precision',
+    zone: 'UTC', now: '2026-06-10T12:34:56.789Z',
+    local: '2026-07-10T12:34', utc: '2026-07-10T12:34:00.000Z',
+  },
+  {
+    name: 'positive offset with a next-day boundary',
+    zone: 'Asia/Tokyo', now: '2026-01-01T22:30:45.678Z',
+    local: '2026-02-01T07:30', utc: '2026-01-31T22:30:00.000Z',
+  },
+  {
+    name: 'negative offset with a previous-day boundary',
+    zone: 'America/Los_Angeles', now: '2026-01-01T02:15:45.678Z',
+    local: '2026-01-30T18:15', utc: '2026-01-31T02:15:00.000Z',
+  },
+  {
+    name: 'target offset after spring DST change',
+    zone: 'America/New_York', now: '2026-02-15T15:45:30.123Z',
+    local: '2026-03-17T11:45', utc: '2026-03-17T15:45:00.000Z',
+  },
+  {
+    name: 'target offset after autumn DST change',
+    zone: 'Europe/Berlin', now: '2026-10-15T10:20:45.678Z',
+    local: '2026-11-14T11:20', utc: '2026-11-14T10:20:00.000Z',
+  },
+  {
+    name: 'ambiguous fall-back time retains native earlier-occurrence parsing',
+    zone: 'America/New_York', now: '2026-10-02T06:30:45.678Z',
+    local: '2026-11-01T01:30', utc: '2026-11-01T05:30:00.000Z',
+  },
+]) {
+  test(`default retention uses ${scenario.name}`, async t => {
+    const { view, requests } = retentionView(t, scenario.zone, scenario.now);
+    assert.equal(view.byId('evidence-expiry').value, scenario.local);
+    view.form.dispatch('submit');
+    await waitFor(() => !view.submit.disabled, 'default retention submission did not finish');
+    assert.equal(view.error.textContent, '');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].input.manifest.retention.expiresAt, scenario.utc);
+    assert.equal(view.byId('evidence-expiry').value, scenario.local);
+  });
+}
+
+test('retention hint identifies the browser zone, minute precision and UTC submission', t => {
+  const { view } = retentionView(t, 'Asia/Tokyo', '2026-01-01T00:00:00Z');
+  const field = findNode(view.root, node =>
+    node.children?.includes(view.byId('evidence-expiry')));
+  const hint = field.children.find(node => node.className === 'field-hint');
+  assert.match(hint.textContent, /Local time \(Asia\/Tokyo\)/);
+  assert.match(hint.textContent, /minute precision/);
+  assert.match(hint.textContent, /sent as UTC/);
+  assert.match(hint.textContent, /automated expiry enforcement is delivered separately/);
+});
+
+for (const scenario of [
+  { name: 'a manual local edit', local: '2026-02-10T09:25', utc: '2026-02-10T17:25:00.000Z' },
+  { name: 'an expired manual edit', local: '2025-12-31T09:25', error: /future date and time/ },
+  { name: 'a manual edit past 90 days', local: '2026-04-03T09:25', error: /cannot exceed 90 days/ },
+]) {
+  test(`retention preserves validation for ${scenario.name}`, async t => {
+    const { view, requests } = retentionView(t, 'America/Los_Angeles', '2026-01-01T12:00:00Z');
+    view.byId('evidence-expiry').value = scenario.local;
+    view.form.dispatch('submit');
+    await waitFor(() => !view.submit.disabled, 'manual retention submission did not finish');
+    assert.equal(view.byId('evidence-expiry').value, scenario.local);
+    if (scenario.error) {
+      assert.match(view.error.textContent, scenario.error);
+      assert.equal(requests.length, 0);
+    } else {
+      assert.equal(view.error.textContent, '');
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].input.manifest.retention.expiresAt, scenario.utc);
+    }
+  });
+}
