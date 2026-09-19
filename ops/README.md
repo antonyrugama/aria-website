@@ -308,6 +308,14 @@ credential or endpoint in request data, renders no raw evidence or storage locat
 describes quarantine as admission, evaluation consent, training consent, export permission, or
 proof of de-identification.
 
+The retention field shows the browser's local timezone and submits UTC. Its default starts
+30 elapsed days ahead and uses the offset at that future instant, including DST changes,
+rather than writing UTC clock text into a local-time input. The control has minute precision:
+seconds and milliseconds are omitted. A repeated fall-back hour cannot encode which occurrence
+was intended; native JavaScript parsing selects the earlier occurrence, so this is not an exact
+instant round-trip for the later occurrence. Manual edits still use the displayed local time,
+and the future-date and 90-day retention bounds are unchanged.
+
 **App releases** and **Look up a user** are built. Everything either of them shows comes from the
 operations API; neither holds any data of its own, and where the API answers with nothing the
 pane says which kind of nothing it is.

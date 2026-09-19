@@ -227,7 +227,9 @@
     ]);
     var expiry = input('datetime-local');
     var defaultExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    expiry.value = defaultExpiry.toISOString().slice(0, 16);
+    // datetime-local needs wall-clock fields at the expiry instant's DST offset.
+    expiry.value = new Date(defaultExpiry.getTime() -
+      defaultExpiry.getTimezoneOffset() * 60 * 1000).toISOString().slice(0, 16);
     var necessary = input('text', 'none');
     var removed = input('text', 'none');
     var idempotency = input('text');
@@ -303,7 +305,8 @@
           field('evidence-type', 'Media type', mediaType),
           field('evidence-purpose', 'Purpose', purpose),
           field('evidence-expiry', 'Retention expires at', expiry,
-            'This slice records expiry; automated expiry enforcement is delivered separately.'),
+            'Local time (' + Intl.DateTimeFormat().resolvedOptions().timeZone +
+            '), minute precision; sent as UTC. This slice records expiry; automated expiry enforcement is delivered separately.'),
           field('evidence-key', 'Idempotency key', idempotency,
             'Optional. Blank generates a unique key; reuse a key only for an identical request.')
         ]),
