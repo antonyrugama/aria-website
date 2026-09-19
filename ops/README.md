@@ -217,7 +217,7 @@ ops/
   alerts.html           Problems
   analytics.html        People and usage
   spend.html            Cloud costs
-  evaluations.html      Aria quality: dataset declarations and evidence quarantine
+  evaluations.html      Aria quality: dataset declarations, quarantine and approval handoffs
   releases.html         App releases
   users.html            Look up a user
   settings.html         Settings (owner only)
@@ -240,7 +240,7 @@ ops/
                         Overview's figures: source, formatting, states, charts
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
-    pane-evaluations.js dataset declaration validation and private quarantine import
+    pane-evaluations.js dataset validation, private quarantine import and approval handoffs
     pane-releases.js    App releases
     pane-users.js       Look up a user
     settings.css        pane styling for Settings
@@ -311,8 +311,13 @@ and grants no evidence access or release approval.
 Owners and operators can also submit a local synthetic
 or exactly authorised production-derived file to the shared Ciel operation. The page sends no
 credential or endpoint in request data, renders no raw evidence or storage location, and never
-describes quarantine as admission, evaluation consent, training consent, export permission, or
-proof of de-identification.
+describes quarantine or approval as admission, evaluation consent, training consent, access,
+export permission, or proof of de-identification.
+
+The same pane provides metadata-only approval request, lookup, and decision handoffs. Approval
+controls bind exact artifact, source, retained, request, purpose, policy, revision, and expiry
+values. Qualification is resolved server-side from an external verified record; the dashboard
+cannot provision or assert it.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,

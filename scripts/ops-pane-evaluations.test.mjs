@@ -600,6 +600,169 @@ test('production-derived evidence carries exact documented authority and approve
   });
 });
 
+test('approval operation builders bind exact artifact digests without qualification claims', () => {
+  const pane = loadPane();
+  const requestId = '83525f56-198f-4c2f-8f83-93c8e4ab7248';
+  const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
+  const sourceDigest = 'a'.repeat(64);
+  const retainedDigest = 'b'.repeat(64);
+  const targetRequestDigest = 'c'.repeat(64);
+
+  const approvalRequest = pane.buildApprovalRequest({
+    artifactId: '4e1d10f7-1f13-4daf-82b6-c9dd43124138',
+    artifactRevision: 1,
+    sourceDigest,
+    retainedDigest,
+    targetRequestDigest,
+    purpose: 'quality_review',
+    policyRevision: 'ciel-evidence-admission.v1',
+    expiresAt: '2026-10-19T00:00:00.000Z',
+    idempotencyKey: 'dashboard-approval-request-1',
+  }, requestId);
+  const approvalGet = pane.buildApprovalGet({
+    approvalRequestId,
+  }, requestId);
+  const approvalDecision = pane.buildApprovalDecision({
+    approvalRequestId,
+    expectedRevision: 1,
+    decision: 'approved',
+    reason: 'Exact retained bytes and policy binding reviewed.',
+    idempotencyKey: 'dashboard-approval-decision-1',
+  }, requestId);
+
+  assert.deepEqual(plain(approvalRequest), {
+    schemaVersion: 'ciel.operation.request.v1',
+    requestId,
+    operationId: 'ciel.approval.request',
+    mode: 'remote',
+    client: {
+      name: 'aria-operations-dashboard',
+      version: '1.0.0',
+      contractVersions: ['ciel.operations.v1'],
+    },
+    input: {
+      targetOperationId: 'ciel.artifact.admit',
+      targetRequestDigest,
+      artifact: {
+        artifactId: '4e1d10f7-1f13-4daf-82b6-c9dd43124138',
+        revision: 1,
+        sourceDigest,
+        retainedDigest,
+      },
+      purpose: 'quality_review',
+      policyRevision: 'ciel-evidence-admission.v1',
+      expiresAt: '2026-10-19T00:00:00.000Z',
+    },
+    idempotencyKey: 'dashboard-approval-request-1',
+  });
+  assert.deepEqual(plain(approvalGet), {
+    schemaVersion: 'ciel.operation.request.v1',
+    requestId,
+    operationId: 'ciel.approval.get',
+    mode: 'remote',
+    client: {
+      name: 'aria-operations-dashboard',
+      version: '1.0.0',
+      contractVersions: ['ciel.operations.v1'],
+    },
+    input: { approvalRequestId },
+  });
+  assert.deepEqual(plain(approvalDecision), {
+    schemaVersion: 'ciel.operation.request.v1',
+    requestId,
+    operationId: 'ciel.approval.decide',
+    mode: 'remote',
+    client: {
+      name: 'aria-operations-dashboard',
+      version: '1.0.0',
+      contractVersions: ['ciel.operations.v1'],
+    },
+    input: {
+      approvalRequestId,
+      decision: 'approved',
+      reason: 'Exact retained bytes and policy binding reviewed.',
+    },
+    expectedRevision: 1,
+    idempotencyKey: 'dashboard-approval-decision-1',
+  });
+  assert.doesNotMatch(JSON.stringify([
+    approvalRequest,
+    approvalGet,
+    approvalDecision,
+  ]), /qualification|credential|issuer/i);
+});
+
+test('the rendered approval forms submit request, get and decision operations without trust provisioning', async () => {
+  const calls = [];
+  const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
+  const view = renderedPane(async (path, options) => {
+    calls.push({ path, options: plain(options) });
+    const operationId = options.body.operationId;
+    const state = operationId === 'ciel.approval.decide' ? 'approved' : 'pending';
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: options.body.requestId,
+      operationId,
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.approval-request',
+        id: approvalRequestId,
+        revision: state === 'approved' ? 2 : 1,
+        value: {
+          approvalRequestId,
+          revision: state === 'approved' ? 2 : 1,
+          state,
+          expiresAt: '2026-10-19T00:00:00.000Z',
+        },
+      },
+    };
+  });
+
+  view.byId('approval-artifact-id').value = '4e1d10f7-1f13-4daf-82b6-c9dd43124138';
+  view.byId('approval-artifact-revision').value = '1';
+  view.byId('approval-source-digest').value = 'a'.repeat(64);
+  view.byId('approval-retained-digest').value = 'b'.repeat(64);
+  view.byId('approval-target-digest').value = 'c'.repeat(64);
+  view.byId('approval-purpose').value = 'quality_review';
+  view.byId('approval-policy-revision').value = 'ciel-evidence-admission.v1';
+  view.byId('approval-expiry').value = '2026-10-19T00:00';
+  view.byId('approval-request-key').value = 'dashboard-approval-request-1';
+  view.byId('approval-request-form').dispatch('submit');
+  await waitFor(() => calls.length === 1, 'approval request did not complete');
+
+  view.byId('approval-get-id').value = approvalRequestId;
+  view.byId('approval-get-form').dispatch('submit');
+  await waitFor(() => calls.length === 2, 'approval lookup did not complete');
+
+  view.byId('approval-decision-id').value = approvalRequestId;
+  view.byId('approval-expected-revision').value = '1';
+  view.byId('approval-decision').value = 'approved';
+  view.byId('approval-reason').value = 'Exact retained bytes and policy binding reviewed.';
+  view.byId('approval-decision-key').value = 'dashboard-approval-decision-1';
+  view.byId('approval-decision-form').dispatch('submit');
+  await waitFor(() => calls.length === 3, 'approval decision did not complete');
+
+  assert.deepEqual(calls.map(call => call.path), [
+    '/api/ops/ciel/operations',
+    '/api/ops/ciel/operations',
+    '/api/ops/ciel/operations',
+  ]);
+  assert.deepEqual(calls.map(call => call.options.body.operationId), [
+    'ciel.approval.request',
+    'ciel.approval.get',
+    'ciel.approval.decide',
+  ]);
+  assert.equal(calls[1].options.body.idempotencyKey, undefined);
+  assert.equal(calls[2].options.body.expectedRevision, 1);
+  assert.equal(view.byId('approval-qualification'), null);
+  assert.ok(findNode(
+    view.byId('approval-trust-note'),
+    node => /cannot provision qualification/i.test(node.textContent),
+  ));
+  assert.match(view.byId('approval-result').textContent, /approved/i);
+});
+
 test('blank dashboard idempotency input derives a unique key from the request correlation', async () => {
   const pane = loadPane();
   const requestId = '83525f56-198f-4c2f-8f83-93c8e4ab7248';
