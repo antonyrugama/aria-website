@@ -958,7 +958,7 @@ fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
 | Check | What it can see that nothing else can |
 |---|---|
 | `node --test scripts/*.test.mjs` | The accessible name every chart derives, and that preview state is applied in **both** directions. Runs `scripts/ops-aria-shell.test.mjs` alongside the pane tests. |
-| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all, what `--cyan` actually is per theme, whether a shown `<tr>` is still `table-row`, and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
+| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
 
 The pre-paint half of the shell check is the part worth keeping. A theme default written in two

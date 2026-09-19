@@ -228,7 +228,8 @@ const REQUIRED_TOKENS = [
    says the light palette is ported AS WRITTEN, not derived, because a
    mechanical inversion of the dark set fails contrast on white.
  
-   All 26, not a sample. Pinning --cyan alone leaves twelve meaning-bearing
+   All 26, not a sample, and with INVARIANT below that is all 33 tokens plus
+   color-scheme. Pinning --cyan alone leaves twelve meaning-bearing
    light values free to move, and the one that matters most is not --cyan: the
    six -ink tokens are the WCAG AA fix from monorepo #10042, and deleting one
    of them silently falls back to :root, where it resolves to the bright base
@@ -237,7 +238,24 @@ const REQUIRED_TOKENS = [
    The dark -ink entries are the resolved value, not the literal var(--cyan)
    the file writes, because a custom property's computed value is already
    substituted. Dark is where base and ink are the same colour; light is where
-   they diverge. */
+   they diverge.
+
+   INVARIANT holds the seven tokens that are deliberately the SAME in both
+   themes — geometry and type, which carry no meaning a theme could change.
+   They are pinned for the opposite reason to the palette: a theme block that
+   quietly redefined --rail or --mono would be a departure from the design
+   nothing else here would notice. color-scheme rides along because it decides
+   the colour of things the page does not paint — form controls, scrollbars,
+   the canvas behind an overscroll — and it is per-theme, not invariant. */
+const INVARIANT = {
+  '--r-sm': '8px', '--r': '12px', '--r-lg': '16px', '--r-xl': '22px',
+  '--rail': '244px',
+  '--sans': "'Geist', 'Inter Tight', 'Inter', -apple-system, system-ui, sans-serif",
+  '--mono': "'Geist Mono', 'JetBrains Mono', ui-monospace, monospace",
+};
+
+const COLOR_SCHEME = { dark: 'dark', light: 'light' };
+
 const PALETTE = {
   dark: {
     '--cyan': '#22D3EE', '--cyan-lit': '#67E8F9', '--violet': '#A78BFA',
@@ -275,8 +293,13 @@ const PALETTE = {
    being visible at all.
 
    aria.js does not reference tokens by name in a var(): it reads them with
-   getPropertyValue('--' + tone), where the tone comes from a data attribute.
-   Those are covered by the chart assertions further down, not by this list. */
+   getPropertyValue('--' + tone), where the tone comes from a data attribute
+   or from the page's own chart config. A scan of this shape cannot see those
+   — the name is assembled at runtime — and neither can the palette check,
+   because a name that is not a token was never in the stylesheet to compare.
+   They are caught downstream instead, on the paint that reached the page:
+   SHELL_PROBE fails any chart shape that arrives with no stroke and no fill,
+   which is exactly what an unresolved tone produces. */
 const LOCAL_TOKENS = new Set(['--c', '--st', '--acc']);
 const REFERENCED = [...new Set(
   fs.readFileSync(new URL('../ops/assets/aria.css', import.meta.url), 'utf8')
@@ -286,7 +309,8 @@ const REFERENCED = [...new Set(
 const TOKENS = (theme) => `(() => {
   const required = ${JSON.stringify(REQUIRED_TOKENS)};
   const referenced = ${JSON.stringify(REFERENCED)};
-  const palette = ${JSON.stringify(PALETTE[theme])};
+  const palette = Object.assign({}, ${JSON.stringify(PALETTE[theme])}, ${JSON.stringify(INVARIANT)});
+  const colorScheme = ${JSON.stringify(COLOR_SCHEME[theme])};
   const declared = [];
   for (const sheet of document.styleSheets) {
     let rules;
@@ -303,6 +327,10 @@ const TOKENS = (theme) => `(() => {
     .filter((n) => read(n) !== palette[n].replace(/\\s+/g, ' ').toUpperCase())
     .map((n) => n + ' is ' + (computed.getPropertyValue(n).trim() || '(nothing)') +
       ', the palette writes ' + palette[n]);
+  if (computed.colorScheme.trim() !== colorScheme) {
+    wrong.push('color-scheme is ' + (computed.colorScheme.trim() || '(nothing)') +
+      ', the design writes ' + colorScheme);
+  }
   return JSON.stringify({
     declared,
     palettePinned: Object.keys(palette).length,
@@ -343,6 +371,55 @@ const STATE_PROBE = (state) => `(() => {
 const SHELL_PROBE = `(() => {
   const named = [...document.querySelectorAll('svg.chart[role="img"]')]
     .map((s) => s.getAttribute('aria-label'));
+
+  /* aria.js reads its tones with getPropertyValue('--' + tone), which returns
+     the empty string for a name that is not a token — misspelled in the
+     renderer, or misspelled in the page data that names the tone. The empty
+     string is an invalid presentation attribute, so the browser ignores it and
+     the shape falls back to no paint: a chart that is named correctly, sized
+     correctly, throws nothing, and draws nothing. Neither the resolution check
+     nor the palette check can see it, because the name asked for was never in
+     the stylesheet to compare against.
+
+     Three things this has to get right, each of which it got wrong first and
+     was caught by running the mutation rather than by reading the code:
+     - the gauge's svg carries no class, so a selector of svg.chart misses it;
+     - a bar is fill="url(#id)", a live reference to a gradient whose stops
+       hold the empty colour, so the paint is not none and has to be followed;
+     - the empty attribute is the fingerprint, not the computed value, because
+       the browser reports the inherited default once it drops the attribute. */
+  const PAINTABLE = 'path, rect, circle, line, polyline, polygon, ellipse';
+  const nopaint = (v) => !v || v === 'none' || v === 'rgba(0, 0, 0, 0)' || v === 'transparent';
+  const dead = (el, prop) => {
+    if (el.getAttribute(prop) === '') return prop + ' is an empty attribute';
+    const v = getComputedStyle(el)[prop];
+    const ref = (v || '').trim().startsWith('url(')
+      ? (v.slice(v.indexOf('#') + 1).split(/[)"']/)[0] || '') : '';
+    if (ref) {
+      const def = document.getElementById(ref);
+      if (!def) return prop + ' points at #' + ref + ', which does not exist';
+      const stops = [...def.querySelectorAll('stop')];
+      if (stops.length && stops.every((s) => s.getAttribute('stop-color') === ''))
+        return prop + ' is a gradient whose stops hold no colour';
+      return '';
+    }
+    return nopaint(v) ? prop + ' is ' + (v || 'empty') : '';
+  };
+
+  const shapes = [...document.querySelectorAll('.wrap svg, main svg, .page svg, #view svg, body svg')]
+    .filter((s) => !s.classList.contains('ico'))
+    .flatMap((s) => [...s.querySelectorAll(PAINTABLE)].map((el) => ({ svg: s, el })));
+  const unpainted = [];
+  for (const { svg, el } of shapes) {
+    const why = [dead(el, 'stroke'), dead(el, 'fill')].filter(Boolean);
+    if (why.length === 2 || why.some((w) => w.includes('empty attribute')) ||
+        why.some((w) => w.includes('no colour'))) {
+      unpainted.push((svg.getAttribute('aria-label') || svg.getAttribute('class') ||
+        (svg.hasAttribute('aria-hidden') ? 'a decorative graphic' : 'an unnamed graphic')) +
+        ' > ' + el.tagName + ' (' + why.join(', ') + ')');
+    }
+  }
+
   return JSON.stringify({
     groups: [...document.querySelectorAll('.nav-group')].map((n) => n.textContent.trim()),
     navItems: document.querySelectorAll('.nav-item').length,
@@ -350,6 +427,8 @@ const SHELL_PROBE = `(() => {
     unexpandedIcons: document.querySelectorAll('[data-i]').length,
     expandedIcons: document.querySelectorAll('#iconGallery svg.ico').length,
     charts: document.querySelectorAll('svg.chart').length,
+    chartShapes: shapes.length,
+    unpainted: unpainted,
     namedCharts: named,
     anonymousCharts: [...document.querySelectorAll('svg.chart')]
       .filter((s) => !s.hasAttribute('aria-hidden') && !s.getAttribute('aria-label')).length,
@@ -514,15 +593,16 @@ try {
       failures.push(`${SHELL} (${theme}): ${tokens.unresolved.length} token(s) declared but ` +
         `resolving to nothing: ${tokens.unresolved.join(', ')}`);
     }
-    if (tokens.palettePinned < 26) {
+    if (tokens.palettePinned < 33) {
       failures.push(`${SHELL} (${theme}): the palette contract pins only ` +
         `${tokens.palettePinned} tokens, so the comparison below measured almost nothing`);
     }
     if (tokens.wrong.length) {
       failures.push(`${SHELL} (${theme}): ${tokens.wrong.length} token(s) do not hold the value ` +
-        `the design writes — ${tokens.wrong.join('; ')}. The light palette is ported as written, ` +
-        'not derived: a status ink that falls back to its base colour drops that status text to ' +
-        'about 3:1 on its own tint, which is the defect monorepo #10042 fixed.');
+        `the design writes — ${tokens.wrong.join('; ')}. The design's values are ported as ` +
+        'written, not derived. A status ink that falls back to its base colour drops that ' +
+        'status text to about 3:1 on its own tint (monorepo #10042); geometry and type are the ' +
+        'same in both themes on purpose, so a theme that redefines one is a departure too.');
     }
     note(`${SHELL} ${theme}: ${tokens.declared.length} tokens all resolve, ` +
       `${tokens.palettePinned} hold the exact value the design writes`);
@@ -548,6 +628,23 @@ try {
     }
     if (shell.charts < 4) {
       failures.push(`${SHELL} (${theme}): ${shell.charts} charts drawn, expected at least 4`);
+    }
+    /* A chart can be named, sized, and completely invisible. aria.js resolves
+       every series colour through getPropertyValue('--' + tone), which returns
+       the empty string for a name that is not a token — in the renderer or in
+       the page data that names the tone. stroke="" is ignored, the shape
+       inherits no paint, and nothing throws. This is the one class the token
+       resolution and palette checks structurally cannot see, because the name
+       asked for never reaches the stylesheet at all. */
+    if (shell.chartShapes < 15) {
+      failures.push(`${SHELL} (${theme}): the charts drew ${shell.chartShapes} paintable ` +
+        'shapes, so the paint check below measured almost nothing');
+    }
+    if (shell.unpainted.length) {
+      failures.push(`${SHELL} (${theme}): ${shell.unpainted.length} chart shape(s) reach the ` +
+        `page with no paint at all — ${shell.unpainted.join('; ')}. A tone name that is not a ` +
+        'token resolves to the empty string, which SVG ignores, so the chart is named and ' +
+        'correct and draws nothing.');
     }
     /* The a11y guarantee carried over from the mocks: role="img" makes an
        SVG's whole subtree presentational, so a chart that draws its labels as
