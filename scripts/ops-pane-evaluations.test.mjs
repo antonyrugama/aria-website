@@ -274,8 +274,9 @@ for (const outcome of ['success', 'error']) {
     input.value = JSON.stringify(datasetInput());
     const pending = form.dispatch('submit');
     assert.equal(submit.disabled, true);
-    await form.dispatch('submit');
+    const duplicate = form.dispatch('submit');
     assert.equal(calls, 1, 'a pending request must not be submitted twice');
+    await duplicate;
     input.value = '{}';
     input.dispatch('input');
     finish();
