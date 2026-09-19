@@ -199,7 +199,42 @@ function connect(url) {
 /* Every custom property the stylesheet declares on :root, resolved the way the
    browser resolves it, plus every property name aria.css and aria.js reference
    through var(). A name in the second list and not the first paints nothing. */
+/* The set of tokens aria.css is required to declare, written here and not read
+   out of the stylesheet. Deriving the expectation from the file under test is
+   how the first version of this check passed while --cyan-lit was renamed to
+   --cyan-lite: it asked the stylesheet what it declared, then asked whether
+   those names resolved, and of course they did.
+
+   The first 26 are the set issue #9945 names, minus --bg-2, which the mock
+   neither declares nor references (inventing it would be worse). The six -ink
+   tokens arrive with the palette's WCAG AA fix (monorepo #10042) and are the
+   whole reason status text clears contrast in light. */
+const REQUIRED_TOKENS = [
+  '--cyan', '--cyan-lit', '--violet', '--emerald', '--amber', '--rose', '--blue',
+  '--bg', '--surface', '--surface-2', '--surface-3',
+  '--ink', '--ink-2', '--ink-3',
+  '--line', '--line-2', '--edge',
+  '--shadow-1', '--shadow-2', '--shadow-3',
+  '--r-sm', '--r', '--r-lg', '--r-xl',
+  '--rail', '--sans', '--mono',
+  '--cyan-ink', '--violet-ink', '--emerald-ink', '--amber-ink', '--rose-ink', '--blue-ink',
+];
+
+/* Every var(--x) aria.css actually asks for, read off the file. A reference to
+   a property that does not exist resolves to the empty string and the browser
+   silently drops the declaration — no error, no log, just a missing colour.
+   Component-scoped properties (--c, --st, --acc) are set on the elements that
+   use them rather than on :root, so they are excluded here and checked by
+   being visible at all. */
+const LOCAL_TOKENS = new Set(['--c', '--st', '--acc']);
+const REFERENCED = [...new Set(
+  fs.readFileSync(new URL('../ops/assets/aria.css', import.meta.url), 'utf8')
+    .match(/var\(\s*(--[a-z0-9-]+)/g) || []
+)].map((m) => m.replace(/var\(\s*/, '')).filter((n) => !LOCAL_TOKENS.has(n));
+
 const TOKENS = `(() => {
+  const required = ${JSON.stringify(REQUIRED_TOKENS)};
+  const referenced = ${JSON.stringify(REFERENCED)};
   const declared = [];
   for (const sheet of document.styleSheets) {
     let rules;
@@ -210,10 +245,14 @@ const TOKENS = `(() => {
     }
   }
   const computed = getComputedStyle(document.documentElement);
-  const unresolved = declared.filter((n) => computed.getPropertyValue(n).trim() === '');
+  const empty = (n) => computed.getPropertyValue(n).trim() === '';
   return JSON.stringify({
     declared,
-    unresolved,
+    missingRequired: required.filter(empty),
+    unreferencedExtras: declared.filter((n) => !required.includes(n)),
+    danglingReferences: referenced.filter(empty),
+    referencedCount: referenced.length,
+    unresolved: declared.filter(empty),
     cyan: computed.getPropertyValue('--cyan').trim(),
     theme: document.documentElement.getAttribute('data-theme')
   });
@@ -308,7 +347,7 @@ let initScript = null;
    an on-new-document script is the only ordering that actually holds, and
    getting it wrong is invisible: theme.js falls back to prefers-color-scheme
    and the page looks fine, just not in the theme the check asked for. */
-async function setTheme(theme) {
+async function setTheme(theme, media) {
   if (initScript) {
     await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: initScript });
   }
@@ -323,11 +362,11 @@ async function setTheme(theme) {
       '} catch (e) {}'
   });
   initScript = res.identifier;
-  /* Emulated to the OPPOSITE of the stored theme on purpose. theme.js falls
+  /* Emulated to the OPPOSITE of the stored theme by default. theme.js falls
      back to prefers-color-scheme when nothing is stored, so matching them
      would make a failed storage write look like a success. */
   await cdp.send('Emulation.setEmulatedMedia', {
-    features: [{ name: 'prefers-color-scheme', value: theme === 'dark' ? 'light' : 'dark' }]
+    features: [{ name: 'prefers-color-scheme', value: media || (theme === 'dark' ? 'light' : 'dark') }]
   });
 }
 
@@ -393,6 +432,24 @@ try {
     if (!tokens.declared.length) {
       failures.push(`${SHELL} (${theme}): aria.css declared no custom properties on :root, so ` +
         'nothing below was actually measured');
+    }
+    if (tokens.referencedCount < 25) {
+      failures.push(`${SHELL} (${theme}): only ${tokens.referencedCount} var() references were ` +
+        'read out of aria.css, so the dangling-reference check measured almost nothing');
+    }
+    if (tokens.missingRequired.length) {
+      failures.push(`${SHELL} (${theme}): ${tokens.missingRequired.length} required token(s) ` +
+        `resolve to nothing: ${tokens.missingRequired.join(', ')}`);
+    }
+    if (tokens.danglingReferences.length) {
+      failures.push(`${SHELL} (${theme}): aria.css references ` +
+        `${tokens.danglingReferences.join(', ')}, which resolve to nothing. A var() naming a ` +
+        'property that does not exist drops the whole declaration, silently.');
+    }
+    if (tokens.unreferencedExtras.length) {
+      failures.push(`${SHELL} (${theme}): :root declares ${tokens.unreferencedExtras.join(', ')}, ` +
+        'which the required set does not name. Either add it to REQUIRED_TOKENS here with a ' +
+        'reason, or it is a stray.');
     }
     if (tokens.unresolved.length) {
       failures.push(`${SHELL} (${theme}): ${tokens.unresolved.length} token(s) declared but ` +
@@ -529,6 +586,26 @@ try {
         `(${seen.visibleStateElements.join(' | ')}), so the page flashes a state it is not in`);
     }
     note(`${SHELL} ${theme}: pre-paint theme correct with aria.js blocked, no state flash`);
+  }
+
+  /* Nothing stored. theme.js now has to decide from the system, and this is
+     the third place the default is written — the branch the two cases above
+     can never reach, because they always store a choice. Run in both
+     directions: a fallback hard-coded either way passes one and fails the
+     other. */
+  for (const [media, expected] of [['dark', 'dark'], ['light', 'light']]) {
+    await setTheme(null, media);
+    await load(origin + SHELL, { settle: 400 });
+    const seen = await evaluate(PREPAINT_PROBE);
+    if (seen.theme !== expected) {
+      failures.push(`${SHELL} (nothing stored, system ${media}): theme.js painted ` +
+        `data-theme="${seen.theme}", expected ${expected}`);
+    }
+    if (seen.cyan.toUpperCase() !== CYAN[expected]) {
+      failures.push(`${SHELL} (nothing stored, system ${media}): --cyan painted ${seen.cyan}, ` +
+        `expected ${CYAN[expected]}`);
+    }
+    note(`${SHELL}: with nothing stored and the system on ${media}, the page paints ${expected}`);
   }
 
   /* All scripting blocked, including theme.js. What paints then is the

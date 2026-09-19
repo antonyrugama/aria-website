@@ -857,6 +857,7 @@ svg { display: block; }
 
 .row { display: flex; align-items: center; gap: 8px; }
 .col { display: flex; flex-direction: column; gap: 8px; }
+.grow { flex: 1; min-width: 0; }
 .wrap { flex-wrap: wrap; }
 .sp { margin-left: auto; }
 .muted { color: var(--ink-3); }
