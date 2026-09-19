@@ -83,6 +83,10 @@ function findNode(root, predicate) {
   return null;
 }
 
+function textOf(node) {
+  return [node.textContent || '', ...(node.children || []).map(textOf)].join(' ');
+}
+
 function endpoint() {
   const url = new URL(required('CIEL_PARITY_ENDPOINT'));
   assert.equal(url.protocol, 'http:', 'parity endpoint must use loopback HTTP');
@@ -118,6 +122,18 @@ async function main() {
   };
   const window = {
     crypto: deterministicCrypto,
+    location: { hostname: '127.0.0.1' },
+    async fetch(url, options) {
+      const response = await fetch(url, options);
+      transactions.push({
+        path: new URL(url).pathname,
+        method: options.method,
+        request: JSON.parse(options.body),
+        status: response.status,
+        response: await response.clone().json(),
+      });
+      return response;
+    },
     btoa(value) {
       return Buffer.from(value, 'binary').toString('base64');
     },
@@ -128,27 +144,14 @@ async function main() {
       announce: () => {},
     },
     OpsSession: {
-      async call(path, options) {
-        const response = await fetch(`${baseUrl}${path}`, {
-          method: options.method,
-          headers: {
-            Authorization: `Bearer ${required('CIEL_PARITY_ACCESS_TOKEN')}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(options.body),
+      hasRole(roles) {
+        return roles.includes(process.env.CIEL_PARITY_ADMIN_ROLE || 'operator');
+      },
+      call(path, options) {
+        return window.OpsApi.request(path, {
+          ...options,
+          token: required('CIEL_PARITY_ACCESS_TOKEN'),
         });
-        const body = await response.json();
-        transactions.push({
-          path,
-          method: options.method,
-          request: options.body,
-          status: response.status,
-          response: body,
-        });
-        if (!response.ok) {
-          throw new Error(body?.error?.message || 'The operation failed.');
-        }
-        return body;
       },
     },
   };
@@ -161,7 +164,18 @@ async function main() {
     Date,
     crypto: deterministicCrypto,
     console,
+    URLSearchParams,
+    localStorage: {
+      getItem(key) {
+        return key === 'ops-api-base' ? baseUrl : null;
+      },
+    },
   });
+  vm.runInContext(
+    readFileSync(new URL('../ops/assets/api.js', import.meta.url), 'utf8'),
+    context,
+    { filename: 'ops/assets/api.js' },
+  );
   vm.runInContext(pane.body, context, { filename: 'ops/assets/pane-evaluations.js' });
 
   const root = {
@@ -173,11 +187,36 @@ async function main() {
   };
   context.render(root);
   const byId = id => findNode(root, node => node.attributes?.id === id);
-  const form = findNode(root, node => node.tag === 'form');
-  const error = findNode(root, node => node.className === 'field-error');
+  function report(error, result) {
+    assert.equal(transactions.length, 1, 'form must submit exactly one operation');
+    process.stdout.write(`${JSON.stringify({
+      paneSha256: pane.digest,
+      transaction: transactions[0],
+      errorText: textOf(error),
+      renderedResultCount: result.children.length,
+      renderedResultText: textOf(result),
+    })}\n`);
+  }
+  const operationId = process.env.CIEL_PARITY_OPERATION_ID || 'ciel.artifact.quarantine';
+  if (operationId === 'ciel.dataset.validate') {
+    const form = findNode(root, node => node.className === 'card dataset-form');
+    assert.ok(form, 'dataset form did not render');
+    const error = findNode(form, node => node.className === 'field-error');
+    const result = findNode(root, node => node.className === 'dataset-result');
+    const input = byId('dataset-input');
+    assert.ok(error && result && input, 'dataset form controls did not render');
+    input.value = readFileSync(required('CIEL_PARITY_DATASET_INPUT_PATH'), 'utf8');
+    await form.dispatch('submit');
+    report(error, result);
+    return;
+  }
+  assert.equal(operationId, 'ciel.artifact.quarantine', 'unsupported form operation');
+  const form = findNode(root, node => node.className === 'card evidence-form');
+  assert.ok(form, 'quarantine form did not render');
+  const error = findNode(form, node => node.className === 'field-error');
   const result = findNode(root, node => node.className === 'evidence-result');
-  const submit = findNode(root, node => node.tag === 'button' && node.attributes.type === 'submit')
-    || findNode(root, node => node.tag === 'button');
+  const submit = findNode(form, node => node.tag === 'button' && node.attributes.type === 'submit')
+    || findNode(form, node => node.tag === 'button');
   assert.ok(form && error && result && submit, 'quarantine form did not render');
 
   const bytes = new TextEncoder().encode('approved fixture');
@@ -207,12 +246,7 @@ async function main() {
     () => transactions.length === 1 && !submit.disabled,
     'dashboard quarantine request did not complete',
   );
-  process.stdout.write(`${JSON.stringify({
-    paneSha256: pane.digest,
-    transaction: transactions[0],
-    errorText: error.textContent,
-    renderedResultCount: result.children.length,
-  })}\n`);
+  report(error, result);
 }
 
 main().catch(error => {

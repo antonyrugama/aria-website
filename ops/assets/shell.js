@@ -111,9 +111,9 @@
     },
     evals: {
       file: 'evaluations.html', icon: 'eval', label: 'Aria quality', group: 'How we are doing',
-      question: 'Can this approved evidence enter private quarantine safely?',
-      wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator'],
-      filterNote: 'Quarantine is source-specific, so app, range and environment filters do not apply'
+      question: 'Can I validate dataset declarations or quarantine evidence?',
+      wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer'],
+      filterNote: 'These actions use supplied declarations or evidence, not app, date or environment filters'
     },
     releases: {
       file: 'releases.html', icon: 'release', label: 'App releases', group: 'Apps and people',

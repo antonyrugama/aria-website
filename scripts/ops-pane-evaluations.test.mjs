@@ -19,7 +19,7 @@ function paneBody() {
   return source.slice(start + WRAPPER_OPEN.length, end);
 }
 
-function loadPane(call = () => Promise.reject(new Error('unexpected request')), Clock = Date) {
+function loadPane(call = () => Promise.reject(new Error('unexpected request')), Clock = Date, role = 'operator') {
   function element(tag, opts = {}, children = []) {
     let text = opts.text || '';
     const node = {
@@ -79,6 +79,7 @@ function loadPane(call = () => Promise.reject(new Error('unexpected request')), 
     },
     OpsSession: {
       call,
+      hasRole: roles => roles.includes(role),
     },
   };
   const context = vm.createContext({
@@ -98,6 +99,211 @@ function loadPane(call = () => Promise.reject(new Error('unexpected request')), 
 function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
+
+function datasetInput() {
+  const reference = (id, path) => ({ id, version: 1, path, sha256: 'a'.repeat(64) });
+  return {
+    datasets: [{
+      schemaVersion: 'ciel.dataset.v1',
+      datasetId: 'dataset.example',
+      revision: 1,
+      provenance: {
+        origin: 'synthetic',
+        authoredAt: '2026-09-19T00:00:00Z',
+        authorRef: 'author.synthetic',
+        sourceRefs: [reference('source.example', 'source.json')],
+      },
+      cases: [{
+        scenario: reference('scenario.example', 'scenario.json'),
+        fixtures: [],
+        media: [],
+        schemas: [reference('schema.example', 'schema.json')],
+        rubrics: [reference('rubric.example', 'rubric.json')],
+        product: 'product.example',
+        capabilityRef: 'ciel.g01.athlete-chat',
+        locale: 'en',
+        risk: { level: 'low', domains: ['training'] },
+        split: 'development',
+        lineage: {
+          personaRefs: ['persona.example'],
+          conversationRefs: [],
+          incidentRefs: [],
+          nearDuplicateGroupRefs: [],
+        },
+        labels: [],
+      }],
+    }],
+    fixtureDigests: [],
+  };
+}
+
+function datasetResponse(requestId) {
+  return {
+    schemaVersion: 'ciel.operation.response.v1',
+    requestId,
+    operationId: 'ciel.dataset.validate',
+    status: 'success',
+    exitCode: 0,
+    resource: {
+      type: 'ciel.dataset-validation',
+      id: requestId,
+      revision: 1,
+      value: {
+        valid: true,
+        issues: [],
+        digests: [{ datasetId: 'dataset.example', revision: 1, sha256: 'b'.repeat(64) }],
+      },
+    },
+  };
+}
+
+test('dataset form sends declarations and clears its result when the input changes', async () => {
+  const input = datasetInput();
+  let observed;
+  const view = renderedPane(async (path, options) => {
+    observed = { path, options: plain(options) };
+    return datasetResponse(options.body.requestId);
+  });
+  const form = findNode(view.root, node => node.className === 'card dataset-form');
+  assert.ok(form, 'dataset validation form is missing');
+  view.byId('dataset-input').value = JSON.stringify(input);
+  await form.dispatch('submit');
+
+  assert.equal(observed.path, '/api/ops/ciel/operations');
+  assert.equal(observed.options.method, 'POST');
+  assert.deepEqual(Object.keys(observed.options.body).sort(),
+    ['schemaVersion', 'requestId', 'operationId', 'mode', 'client', 'input'].sort());
+  assert.equal(observed.options.body.schemaVersion, 'ciel.operation.request.v1');
+  assert.equal(observed.options.body.operationId, 'ciel.dataset.validate');
+  assert.equal(observed.options.body.mode, 'remote');
+  assert.deepEqual(observed.options.body.client, {
+    name: 'aria-operations-dashboard',
+    version: '1.0.0',
+    contractVersions: ['ciel.operations.v1'],
+  });
+  assert.deepEqual(observed.options.body.input, input);
+  const result = findNode(view.root, node => node.className === 'dataset-result');
+  const text = node => [node.textContent || '', ...(node.children || []).map(text)].join(' ');
+  assert.match(text(result), /Dataset declarations valid/);
+  assert.match(text(result), /dataset.example/);
+  assert.ok(text(result).includes('b'.repeat(64)));
+  view.byId('dataset-input').dispatch('input');
+  assert.equal(result.children.length, 0, 'a changed declaration must not retain the previous result');
+});
+
+test('dataset form shows field errors received through the operations API transport', async () => {
+  const window = {
+    location: { hostname: 'runwitharia.com' },
+    async fetch() {
+      return {
+        ok: false,
+        status: 400,
+        async text() {
+          return JSON.stringify({
+            error: {
+              code: 'validation_failed',
+              message: 'Dataset declarations are invalid.',
+              details: [{
+                path: '/input/datasets/0/revision',
+                reason: 'positive_integer',
+              }],
+            },
+          });
+        },
+      };
+    },
+  };
+  vm.runInNewContext(
+    readFileSync(new URL('../ops/assets/api.js', import.meta.url), 'utf8'),
+    { window, URLSearchParams },
+  );
+  const view = renderedPane((path, options) => window.OpsApi.request(path, options));
+  const input = datasetInput();
+  input.datasets[0].revision = 0;
+  view.byId('dataset-input').value = JSON.stringify(input);
+  const form = findNode(view.root, node => node.className === 'card dataset-form');
+  await form.dispatch('submit');
+  const error = findNode(form, node => node.className === 'field-error');
+  const text = node => [node.textContent || '', ...(node.children || []).map(text)].join(' ');
+  assert.match(text(error), /Dataset declarations are invalid/);
+  assert.match(text(error), /\/input\/datasets\/0\/revision/);
+  assert.match(text(error), /positive_integer/);
+  assert.equal(findNode(view.root, node => node.className === 'dataset-result').children.length, 0);
+});
+
+test('viewers can validate declarations without being offered evidence import', () => {
+  const pane = loadPane(undefined, Date, 'viewer');
+  const root = { children: [], appendChild(child) { this.children.push(child); } };
+  pane.render(root);
+  assert.ok(findNode(root, node => node.className === 'card dataset-form'));
+  assert.equal(findNode(root, node => node.className === 'card evidence-form'), null);
+});
+
+test('dataset form reports local request preparation errors and restores the submit button', async () => {
+  let calls = 0;
+  const view = renderedPane(async () => { calls += 1; });
+  view.pane.window.crypto = {
+    randomUUID() { throw new Error('Secure request identity is unavailable.'); },
+  };
+  view.byId('dataset-input').value = JSON.stringify(datasetInput());
+  const form = findNode(view.root, node => node.className === 'card dataset-form');
+  const submit = findNode(form, node => node.tag === 'button');
+  await form.dispatch('submit');
+  assert.equal(calls, 0);
+  assert.match(findNode(form, node => node.className === 'field-error').textContent,
+    /Secure request identity is unavailable/);
+  assert.equal(submit.disabled, false);
+  assert.equal(submit.textContent, 'Validate declarations');
+});
+
+for (const outcome of ['success', 'error']) {
+  test(`dataset form ignores an obsolete pending ${outcome} after the declarations change`, async () => {
+    let finish;
+    let calls = 0;
+    const view = renderedPane((path, options) => {
+      calls += 1;
+      return new Promise((resolve, reject) => {
+        finish = () => outcome === 'success'
+          ? resolve(datasetResponse(options.body.requestId))
+          : reject(new Error('Old declaration was invalid.'));
+      });
+    });
+    const form = findNode(view.root, node => node.className === 'card dataset-form');
+    const submit = findNode(form, node => node.tag === 'button');
+    const input = view.byId('dataset-input');
+    input.value = JSON.stringify(datasetInput());
+    const pending = form.dispatch('submit');
+    assert.equal(submit.disabled, true);
+    await form.dispatch('submit');
+    assert.equal(calls, 1, 'a pending request must not be submitted twice');
+    input.value = '{}';
+    input.dispatch('input');
+    finish();
+    await pending;
+    assert.equal(findNode(view.root, node => node.className === 'dataset-result').children.length, 0);
+    assert.equal(findNode(form, node => node.className === 'field-error').textContent, '');
+    assert.equal(submit.disabled, false);
+    assert.equal(submit.textContent, 'Validate declarations');
+  });
+}
+
+test('dataset form rejects mismatched or malformed success responses', async () => {
+  for (const invalid of ['request', 'operation', 'digest']) {
+    const view = renderedPane(async (path, options) => {
+      const response = datasetResponse(options.body.requestId);
+      if (invalid === 'request') response.requestId = 'another-request';
+      if (invalid === 'operation') response.operationId = 'ciel.artifact.quarantine';
+      if (invalid === 'digest') response.resource.value.digests[0].sha256 = 'invalid-digest';
+      return response;
+    });
+    const form = findNode(view.root, node => node.className === 'card dataset-form');
+    view.byId('dataset-input').value = JSON.stringify(datasetInput());
+    await form.dispatch('submit');
+    assert.match(findNode(form, node => node.className === 'field-error').textContent,
+      /did not return a valid result for this request/, invalid);
+    assert.equal(findNode(view.root, node => node.className === 'dataset-result').children.length, 0);
+  }
+});
 
 function futureExpiry() {
   return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -123,15 +329,16 @@ function renderedPane(call, Clock = Date) {
   };
   pane.render(root);
   const byId = id => findNode(root, node => node.attributes?.id === id);
+  const form = findNode(root, node => node.className === 'card evidence-form');
   return {
     pane,
     root,
     byId,
-    form: findNode(root, node => node.tag === 'form'),
-    error: findNode(root, node => node.className === 'field-error'),
+    form,
+    error: findNode(form, node => node.className === 'field-error'),
     result: findNode(root, node => node.className === 'evidence-result'),
-    submit: findNode(root, node => node.tag === 'button' && node.attributes.type === 'submit')
-      || findNode(root, node => node.tag === 'button'),
+    submit: findNode(form, node => node.tag === 'button' && node.attributes.type === 'submit')
+      || findNode(form, node => node.tag === 'button'),
   };
 }
 

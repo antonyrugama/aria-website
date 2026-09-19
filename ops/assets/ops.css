@@ -927,6 +927,9 @@ table.data tbody tr.is-warn td:first-child { box-shadow: inset 2px 0 0 var(--war
   gap: 12px;
 }
 .evidence-meta dt { color: var(--text-3); font-size: 12px; }
+.dataset-result .evidence-meta dt { overflow-wrap: anywhere; }
+.dataset-form .field-error { flex-direction: column; overflow-wrap: anywhere; }
+.dataset-issues { margin: 0; padding-left: 20px; }
 .evidence-meta dd {
   color: var(--text-2);
   font-family: var(--mono);

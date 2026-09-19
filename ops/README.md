@@ -217,7 +217,7 @@ ops/
   alerts.html           Problems
   analytics.html        People and usage
   spend.html            Cloud costs
-  evaluations.html      Aria quality: imported evidence quarantine
+  evaluations.html      Aria quality: dataset declarations and evidence quarantine
   releases.html         App releases
   users.html            Look up a user
   settings.html         Settings (owner only)
@@ -240,7 +240,7 @@ ops/
                         Overview's figures: source, formatting, states, charts
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
-    pane-evaluations.js private quarantine import, metadata-only result
+    pane-evaluations.js dataset declaration validation and private quarantine import
     pane-releases.js    App releases
     pane-users.js       Look up a user
     settings.css        pane styling for Settings
@@ -301,8 +301,14 @@ whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET
 and land on an honest state rather than a zero wherever an answer carries no figure.
 
 **Settings** is built, and is the one pane that can change something rather than only report it.
-The section on it below is worth reading before the page is used. **Aria quality** currently
-implements only imported-evidence quarantine. Owners and operators can submit a local synthetic
+The section on it below is worth reading before the page is used. **Aria quality** lets
+viewers, operators and owners validate synthetic dataset declarations. Paste an input object
+containing `datasets` and `fixtureDigests`; the page supplies the operation envelope. The server
+returns manifest digests or field paths and reason codes. Editing the input clears the old
+result. Validation stores no dataset, inspects no referenced bytes, verifies no qualification
+and grants no evidence access or release approval.
+
+Owners and operators can also submit a local synthetic
 or exactly authorised production-derived file to the shared Ciel operation. The page sends no
 credential or endpoint in request data, renders no raw evidence or storage location, and never
 describes quarantine as admission, evaluation consent, training consent, export permission, or
