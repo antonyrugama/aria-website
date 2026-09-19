@@ -52,11 +52,10 @@ const PANES = [
   '/ops/settings.html', '/ops/login.html', '/ops/setup.html'
 ];
 
-/* The light theme is not a mechanical inversion of the dark one. Cyan at full
-   brightness is unreadable on white, so anything carrying meaning as text
-   drops to the deeper end of the ramp. These are the two values the design
-   decides; a port that inverted the palette instead would pass every other
-   assertion in this file. */
+/* The one value the pre-paint probe reads, where reading the whole palette
+   would mean shipping the palette twice. The whole palette is pinned in
+   PALETTE below and checked on the booted page; this is the sentinel for
+   "which theme painted", not a claim that the palette is only two values. */
 const CYAN = { dark: '#22D3EE', light: '#0891B2' };
 
 const MIME = {
@@ -196,9 +195,12 @@ function connect(url) {
 
 /* ----------------------------------------------------------------- probes */
 
-/* Every custom property the stylesheet declares on :root, resolved the way the
-   browser resolves it, plus every property name aria.css and aria.js reference
-   through var(). A name in the second list and not the first paints nothing. */
+/* Three things measured on the booted page: every custom property :root
+   declares, resolved the way the browser resolves it; every property name
+   aria.css references through var(); and the value each token that differs
+   between the themes actually holds. A name referenced but not declared
+   paints nothing. A token that resolves but holds the wrong value paints the
+   wrong design — which is the failure mode a resolution check cannot see. */
 /* The set of tokens aria.css is required to declare, written here and not read
    out of the stylesheet. Deriving the expectation from the file under test is
    how the first version of this check passed while --cyan-lit was renamed to
@@ -220,21 +222,71 @@ const REQUIRED_TOKENS = [
   '--cyan-ink', '--violet-ink', '--emerald-ink', '--amber-ink', '--rose-ink', '--blue-ink',
 ];
 
+/* Every token whose value differs between the two themes, with the value each
+   one is required to hold. Taken from docs/mocks/ops-dashboard-v2/assets/
+   aria.css in the Aria monorepo, which is the source of truth: issue #9945
+   says the light palette is ported AS WRITTEN, not derived, because a
+   mechanical inversion of the dark set fails contrast on white.
+ 
+   All 26, not a sample. Pinning --cyan alone leaves twelve meaning-bearing
+   light values free to move, and the one that matters most is not --cyan: the
+   six -ink tokens are the WCAG AA fix from monorepo #10042, and deleting one
+   of them silently falls back to :root, where it resolves to the bright base
+   colour and drops status text to about 3:1 on its own tint.
+
+   The dark -ink entries are the resolved value, not the literal var(--cyan)
+   the file writes, because a custom property's computed value is already
+   substituted. Dark is where base and ink are the same colour; light is where
+   they diverge. */
+const PALETTE = {
+  dark: {
+    '--cyan': '#22D3EE', '--cyan-lit': '#67E8F9', '--violet': '#A78BFA',
+    '--emerald': '#34D399', '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
+    '--cyan-ink': '#22D3EE', '--violet-ink': '#A78BFA', '--emerald-ink': '#34D399',
+    '--amber-ink': '#FBBF24', '--rose-ink': '#FB7185', '--blue-ink': '#60A5FA',
+    '--bg': '#06080B', '--surface': '#0E1218', '--surface-2': '#141A22', '--surface-3': '#1B222C',
+    '--ink': '#E8EEF6', '--ink-2': '#97A6BA', '--ink-3': '#7E8DA3',
+    '--line': 'rgba(255, 255, 255, .07)', '--line-2': 'rgba(255, 255, 255, .11)',
+    '--edge': 'rgba(255, 255, 255, .06)',
+    '--shadow-1': '0 1px 2px rgba(0,0,0,.4)',
+    '--shadow-2': '0 4px 16px -4px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.3)',
+    '--shadow-3': '0 18px 48px -12px rgba(0,0,0,.7), 0 4px 12px rgba(0,0,0,.4)',
+  },
+  light: {
+    '--cyan': '#0891B2', '--cyan-lit': '#06A9CC', '--violet': '#7C3AED',
+    '--emerald': '#059669', '--amber': '#B45309', '--rose': '#E11D48', '--blue': '#2563EB',
+    '--cyan-ink': '#155E75', '--violet-ink': '#5B21B6', '--emerald-ink': '#065F46',
+    '--amber-ink': '#92400E', '--rose-ink': '#9F1239', '--blue-ink': '#1E40AF',
+    '--bg': '#F4F7FB', '--surface': '#FFFFFF', '--surface-2': '#F7FAFD', '--surface-3': '#EDF2F8',
+    '--ink': '#0B1220', '--ink-2': '#4A5B70', '--ink-3': '#55637A',
+    '--line': 'rgba(11, 18, 32, .09)', '--line-2': 'rgba(11, 18, 32, .15)',
+    '--edge': 'rgba(255, 255, 255, .9)',
+    '--shadow-1': '0 1px 2px rgba(11,18,32,.06)',
+    '--shadow-2': '0 4px 14px -4px rgba(11,18,32,.10), 0 1px 3px rgba(11,18,32,.06)',
+    '--shadow-3': '0 18px 44px -14px rgba(11,18,32,.18), 0 3px 10px rgba(11,18,32,.07)',
+  },
+};
+
 /* Every var(--x) aria.css actually asks for, read off the file. A reference to
    a property that does not exist resolves to the empty string and the browser
    silently drops the declaration — no error, no log, just a missing colour.
    Component-scoped properties (--c, --st, --acc) are set on the elements that
    use them rather than on :root, so they are excluded here and checked by
-   being visible at all. */
+   being visible at all.
+
+   aria.js does not reference tokens by name in a var(): it reads them with
+   getPropertyValue('--' + tone), where the tone comes from a data attribute.
+   Those are covered by the chart assertions further down, not by this list. */
 const LOCAL_TOKENS = new Set(['--c', '--st', '--acc']);
 const REFERENCED = [...new Set(
   fs.readFileSync(new URL('../ops/assets/aria.css', import.meta.url), 'utf8')
     .match(/var\(\s*(--[a-z0-9-]+)/g) || []
 )].map((m) => m.replace(/var\(\s*/, '')).filter((n) => !LOCAL_TOKENS.has(n));
 
-const TOKENS = `(() => {
+const TOKENS = (theme) => `(() => {
   const required = ${JSON.stringify(REQUIRED_TOKENS)};
   const referenced = ${JSON.stringify(REFERENCED)};
+  const palette = ${JSON.stringify(PALETTE[theme])};
   const declared = [];
   for (const sheet of document.styleSheets) {
     let rules;
@@ -245,9 +297,16 @@ const TOKENS = `(() => {
     }
   }
   const computed = getComputedStyle(document.documentElement);
+  const read = (n) => computed.getPropertyValue(n).trim().replace(/\\s+/g, ' ').toUpperCase();
   const empty = (n) => computed.getPropertyValue(n).trim() === '';
+  const wrong = Object.keys(palette)
+    .filter((n) => read(n) !== palette[n].replace(/\\s+/g, ' ').toUpperCase())
+    .map((n) => n + ' is ' + (computed.getPropertyValue(n).trim() || '(nothing)') +
+      ', the palette writes ' + palette[n]);
   return JSON.stringify({
     declared,
+    palettePinned: Object.keys(palette).length,
+    wrong,
     missingRequired: required.filter(empty),
     unreferencedExtras: declared.filter((n) => !required.includes(n)),
     danglingReferences: referenced.filter(empty),
@@ -425,7 +484,7 @@ try {
       failures.push(`${SHELL} (${theme}) raised:\n      ` + problems.join('\n      '));
     }
 
-    const tokens = await evaluate(TOKENS);
+    const tokens = await evaluate(TOKENS(theme));
     if (tokens.theme !== theme) {
       failures.push(`${SHELL} (${theme}): documentElement carries data-theme="${tokens.theme}"`);
     }
@@ -455,11 +514,18 @@ try {
       failures.push(`${SHELL} (${theme}): ${tokens.unresolved.length} token(s) declared but ` +
         `resolving to nothing: ${tokens.unresolved.join(', ')}`);
     }
-    if (tokens.cyan.toUpperCase() !== CYAN[theme]) {
-      failures.push(`${SHELL} (${theme}): --cyan is ${tokens.cyan}, expected ${CYAN[theme]}. ` +
-        'The light palette is written, not derived.');
+    if (tokens.palettePinned < 26) {
+      failures.push(`${SHELL} (${theme}): the palette contract pins only ` +
+        `${tokens.palettePinned} tokens, so the comparison below measured almost nothing`);
     }
-    note(`${SHELL} ${theme}: ${tokens.declared.length} tokens all resolve, --cyan ${tokens.cyan}`);
+    if (tokens.wrong.length) {
+      failures.push(`${SHELL} (${theme}): ${tokens.wrong.length} token(s) do not hold the value ` +
+        `the design writes — ${tokens.wrong.join('; ')}. The light palette is ported as written, ` +
+        'not derived: a status ink that falls back to its base colour drops that status text to ' +
+        'about 3:1 on its own tint, which is the defect monorepo #10042 fixed.');
+    }
+    note(`${SHELL} ${theme}: ${tokens.declared.length} tokens all resolve, ` +
+      `${tokens.palettePinned} hold the exact value the design writes`);
 
     const shell = await evaluate(SHELL_PROBE);
     const expectGroups = ['Right now', 'How we are doing', 'Apps and people'];

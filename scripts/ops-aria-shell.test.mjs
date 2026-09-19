@@ -328,8 +328,23 @@ test('a badge renders with a spoken description; the account footer renders init
   assert.equal(foot[0].querySelector('.who-av').getAttribute('aria-hidden'), 'true');
 });
 
-/* ================================= states ============================== */
+test('a page that names no title gets no heading, not the word "undefined"', () => {
+  const { doc, Aria } = railDom();
+  Aria.boot({ pane: 'index' });
+  const heads = doc.querySelectorAll('h1');
+  assert.deepEqual(heads.map((e) => e.textContent), [],
+    'boot() with no title rendered a heading; an absent title must render nothing');
+});
 
+test('a title and a subtitle are both rendered when the page names them', () => {
+  const { doc, Aria } = railDom();
+  Aria.boot({ pane: 'index', title: 'Right now', sub: 'What is happening' });
+  assert.deepEqual(doc.querySelectorAll('h1').map((e) => e.textContent), ['Right now']);
+  assert.deepEqual(doc.querySelectorAll('.page-sub').map((e) => e.textContent),
+    ['What is happening']);
+});
+
+/* ================================= states ============================== */
 function stateDom() {
   return load((dom, b) => {
     el(dom, b, 'header', { id: 'topbar' });

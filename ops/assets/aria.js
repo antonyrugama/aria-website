@@ -244,8 +244,12 @@
 
   function renderTop(root, cfg) {
     clear(root);
+    /* Both lines are guarded the same way. h() stringifies whatever it is
+       given, so an unguarded title paints the word "undefined" as the page
+       heading, and an empty <h1> is its own accessibility defect. A page that
+       names no title gets no heading. */
     root.appendChild(h('div', {}, [
-      h('h1', { className: 'page-title', text: cfg.title }),
+      cfg.title ? h('h1', { className: 'page-title', text: cfg.title }) : null,
       cfg.sub ? h('p', { className: 'page-sub', text: cfg.sub }) : null
     ]));
 
