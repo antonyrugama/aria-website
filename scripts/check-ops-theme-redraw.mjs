@@ -422,20 +422,23 @@ try {
     /* --------------------------------------------------------- PINNED TOKENS */
     /* What this file pins against what the stylesheet resolved. The paint
        assertions below compare against the pins, so a pin that had drifted from
-       aria.css would quietly move the target; this is the line that stops it. */
-    let drifted = false;
-    for (const name of Object.keys(CHART_TOKENS)) {
-      const got = rgba(before.tokens[name]);
-      const want = rgba(CHART_TOKENS[name][start]);
-      if (got !== want) {
-        drifted = true;
-        failures.push(`${where}: aria.css resolves ${name} to ` +
-          `${before.tokens[name] || '(nothing)'} in ${start}, but this check pins it to ` +
-          `${CHART_TOKENS[name][start]}. Reconcile with the palette contract in ` +
-          'scripts/check-ops-shell-v2.mjs before trusting anything below.');
-      }
+       aria.css would quietly move the target; this is the line that stops it.
+       Checked for whichever theme is loaded, and again for the other one after
+       the switch, because a check that only ever validated the start theme
+       reports a drifted end pin as "the chart did not follow the theme" — the
+       wrong diagnosis for the wrong file. */
+    const drift = (theme, tokens) => Object.keys(CHART_TOKENS)
+      .filter((name) => rgba(tokens[name]) !== rgba(CHART_TOKENS[name][theme]))
+      .map((name) => `${name} resolves to ${tokens[name] || '(nothing)'} in ${theme}, but this ` +
+        `check pins it to ${CHART_TOKENS[name][theme]}`);
+
+    const drifted = drift(start, before.tokens);
+    if (drifted.length) {
+      failures.push(`${where}: aria.css and this check disagree — ${drifted.join('; ')}. ` +
+        'Reconcile with the palette contract in scripts/check-ops-shell-v2.mjs before ' +
+        'trusting anything below.');
+      continue;
     }
-    if (drifted) continue;
 
     /* -------------------------------------- every paint is a palette value */
     const expected = new Map();
@@ -489,6 +492,15 @@ try {
     }
     if (problems.length) {
       failures.push(`${where} raised on the theme change:\n      ` + problems.join('\n      '));
+    }
+
+    const driftedAfter = drift(end, after.tokens);
+    if (driftedAfter.length) {
+      failures.push(`${where}: aria.css and this check disagree — ${driftedAfter.join('; ')}. ` +
+        'Reconcile with the palette contract in scripts/check-ops-shell-v2.mjs; until then ' +
+        'the comparison below is against the wrong target, not against a chart that failed ' +
+        'to repaint.');
+      continue;
     }
 
     /* ------------------------------------- the charts hold the OTHER palette */
