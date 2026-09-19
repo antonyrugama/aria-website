@@ -53,11 +53,14 @@
     return trimmed;
   }
 
-  function categories(value, label) {
+  function categories(value, label, allowEmpty) {
     var entries = String(value || '').split(',').map(function (entry) {
       return entry.trim();
     }).filter(Boolean);
-    if (!entries.length) throw new Error(label + ' must name at least one category or "none".');
+    if (!entries.length) {
+      if (allowEmpty) return [];
+      throw new Error(label + ' must name at least one category or "none".');
+    }
     var unique = entries.filter(function (entry, index) {
       return entries.indexOf(entry) === index;
     });
@@ -95,7 +98,11 @@
       throw new Error('Retention cannot exceed 90 days.');
     }
     categories(draft.necessaryCategories || 'none', 'Necessary categories');
-    categories(draft.removedCategories || 'none', 'Removed categories');
+    categories(
+      draft.removedCategories === undefined ? 'none' : draft.removedCategories,
+      'Removed categories',
+      true
+    );
     requireReference(draft.idempotencyKey, 'Idempotency key');
     if (draft.sourceKind === 'production_derived') {
       requireReference(draft.authorityRef, 'Authority reference');
@@ -143,7 +150,11 @@
           },
           minimization: {
             necessaryCategories: categories(draft.necessaryCategories || 'none', 'Necessary categories'),
-            removedCategories: categories(draft.removedCategories || 'none', 'Removed categories')
+            removedCategories: categories(
+              draft.removedCategories === undefined ? 'none' : draft.removedCategories,
+              'Removed categories',
+              true
+            )
           },
           providerHandling: production ? {
             status: 'approved',
@@ -300,7 +311,7 @@
           field('evidence-necessary', 'Necessary privacy categories', necessary,
             'Comma-separated contract categories, or none. Sensitive categories are not accepted as necessary.'),
           field('evidence-removed', 'Categories removed before import', removed,
-            'Comma-separated contract categories, or none.')
+            'Comma-separated contract categories; leave blank when none were removed.')
         ]),
         productionFields,
         error
