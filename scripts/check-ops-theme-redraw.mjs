@@ -509,12 +509,14 @@ try {
       }
     }
     if (stale.length) {
+      const shown = stale.slice(0, 6);
+      const rest = stale.length - shown.length;
       failures.push(`${where}: ${stale.length} of ${expected.size} chart paint(s) did not ` +
-        `follow the theme — ${stale.join('; ')}. Chart colours are resolved at draw time, so a ` +
-        'chart is only correct for the theme it was drawn in; syncTheme() in ' +
-        'ops/assets/aria.js has to redraw after the toggle. A dark-palette chart left on a ' +
-        'light surface is the WCAG AA failure monorepo Stadiora/Aria#10042 fixed the palette ' +
-        'to prevent.');
+        `follow the theme — ${shown.join('; ')}${rest ? `; and ${rest} more` : ''}. Chart ` +
+        'colours are resolved at draw time, so a chart is only correct for the theme it was ' +
+        'drawn in; syncTheme() in ops/assets/aria.js has to redraw after the toggle. A ' +
+        'dark-palette chart left on a light surface is the WCAG AA failure monorepo ' +
+        'Stadiora/Aria#10042 fixed the palette to prevent.');
     }
     if (!stale.length && !missing) {
       note(`${where}: all ${expected.size} chart paints moved to the ${end} palette when the ` +
