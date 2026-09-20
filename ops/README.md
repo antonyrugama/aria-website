@@ -1078,6 +1078,12 @@ would blend them is not drawn.
    about the release, and the mocks' own rule is one fact per slot. The facts those blocks
    carried are on screen: the store ceiling is named beside the share, and the age of a store
    reading is attached to the row it fed.
+9. **A chip inside a version-share segment reads `57%`, not `1.1.1 · 57%`.** The mock's wide
+   chip carries the version name as well as the share. A chip is sized by its segment and a
+   store version name has no length limit, so the mock's shape clips its own tail at the width
+   the data decides — the version, which is the part that identifies the bar it is in. The
+   share is the number the chip exists to state, and the version is already on the key beside
+   it. See `assets/pane-releases.js:173-188` and `assets/pane-releases-v2.css:157-166`.
 
 Two additions the mock does not have, both of which exist because the pane reads a live answer
 where the mock reads its own sample text:
@@ -1138,14 +1144,26 @@ the thing it describes is the worse of the two failures.
    memberSince, summary, record, activity, devices, billing, access and supportActions, and
    nothing about consent. A consent grid invented on the page is worse than none, because it
    would be read as the record.
-6. **One adoption of the mock's wording, not its shape, for "Not granted means not collected".**
-   The sentence is true and load-bearing, but it belongs to the card in 5 that has no source. The
-   fact it protects — that a mask is not a hidden value waiting to be unlocked — is in the
-   account card's foot, where the masks actually are.
+6. **The mock's "Not granted means not collected" is dropped, and nothing on this pane replaces
+   it.** It belongs to the card in 5 that has no source, and the fact it carries has no home
+   here: it is a statement about **consent** — nothing was collected, so there is nothing behind
+   the mask to unlock — and on this pane a mask is the opposite, a value the owner *can* unlock
+   with a recorded reason. The account card's foot (`assets/pane-users.js:943`) says that
+   plainly, "Hidden for every role, including this one, until a reveal is recorded", and reading
+   it as the mock's sentence in a new place would get it backwards. Where a field genuinely has
+   no value behind it, the API says so in `unavailableNote` and the pane prints what it was sent
+   (`:692`) rather than authoring the claim itself.
 7. **The mock's `why` blocks are not reproduced.** They argue for the design rather than state a
    fact about the account, and the mocks' own rule is one fact per slot. What they carried that
    is a fact is on screen: the reveal card says what is recorded, the access band says how long
    it is kept, the activity card says what is not shown.
+8. **No "Recently looked up" row.** This one is a privacy decision and not an editorial one. The
+   mock keeps the coded references this browser has opened and offers them back as shortcuts;
+   the pane keeps none, in any store, for any length of time. A list of the accounts an
+   administrator has recently opened is a small standing record of who was looked at, sitting on
+   the device rather than in the access record where the athlete can see it — and the access
+   record is the thing that makes the rest of this pane defensible. Typing the reference again
+   costs a few seconds and leaves the only copy in the place that is auditable.
 
 Two additions the mock does not have, both because the pane reads a live answer where the mock
 reads its own sample text:

@@ -513,7 +513,7 @@
     var short = claimed !== null && claimed > rows;
 
     box.appendChild(shell.cardHead(
-      'Matches',
+      'Accounts matching that reference',
       short
         ? rows + ' of ' + plural(claimed, 'account') + ' shown'
         : plural(rows, 'account'),
@@ -1004,7 +1004,7 @@
     var events = (activity && activity.events) || [];
 
     box.appendChild(shell.cardHead(
-      'Recent activity',
+      'What this account has done',
       activity && activity.windowDays ? 'Last ' + plural(activity.windowDays, 'day') : null,
       null
     ));
@@ -1111,7 +1111,7 @@
   function billingCard(detail) {
     var box = shell.card();
     var billing = detail.billing;
-    box.appendChild(shell.cardHead('Subscription', null, [tierPill(detail.tier)]));
+    box.appendChild(shell.cardHead('Subscription', null, null));
 
     if (!billing || !(billing.fields || []).length) {
       box.appendChild(h('div', { className: 'card-body' }, [
@@ -1202,7 +1202,7 @@
 
     box.appendChild(shell.cardHead(
       'Account actions',
-      'Audited, and the athlete is told',
+      'Named here, not performed here. Audited, and the athlete is told.',
       [pill('ghost', 'Re-authentication required', 'lock')]
     ));
 
@@ -1215,11 +1215,7 @@
     } else {
       actions.forEach(function (a) {
         body.appendChild(h('div', { className: 'srow' }, [
-          h('div', {}, [
-            h('div', { className: 's-main', text: a.label || a.key }),
-            h('div', { className: 's-sub', text: 'Not reachable from this pane.' })
-          ]),
-          h('div', { className: 's-end' }, [pill('ghost', 'Re-authentication required', 'lock')])
+          h('div', {}, [h('div', { className: 's-main', text: a.label || a.key })])
         ]));
       });
     }

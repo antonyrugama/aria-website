@@ -340,6 +340,11 @@ function byClass(root, cls) {
 /* One card, found by the text of its head. Whole-pane text is the wrong
    instrument for a claim about one card: the pane has five of them and an
    assertion over all of it passes without the right one being right. */
+/* Two card titles the pane deliberately does not share with the band above
+   them, named once here so a rename is one edit and cannot half-land. */
+const MATCHES = 'Accounts matching that reference';
+const ACTIVITY = 'What this account has done';
+
 function card(dom, title) {
   return byClass(panel(dom, 'live'), 'card').find((box) => {
     const head = byClass(box, 'card-title')[0];
@@ -626,7 +631,7 @@ test('promise 5 holds: a reveal that has re-masked itself is still in the access
 
 test('promise 6 is on screen: request and reply content is not shown, for any role', async () => {
   const dom = await openAccount();
-  assert.match(footOf(dom, 'Recent activity'), /Request and reply content is not shown, for any role\./);
+  assert.match(footOf(dom, ACTIVITY), /Request and reply content is not shown, for any role\./);
 });
 
 test('promise 6 holds: an event prints its label, time and reference and nothing else it carries', async () => {
@@ -636,7 +641,7 @@ test('promise 6 holds: an event prints its label, time and reference and nothing
       d.activity.events[0].reply = 'what Aria actually answered';
     }),
   });
-  const box = card(dom, 'Recent activity');
+  const box = card(dom, ACTIVITY);
   const text = allText(box);
   assert.match(text, /Chat reply/);
   assert.match(text, /run_88214/);
@@ -661,7 +666,7 @@ test('a health field carries no control and is never printed, whatever the paylo
 
 test('an off-origin activity href renders as plain text; a same-origin one is a link', async () => {
   const dom = await openAccount();
-  const box = card(dom, 'Recent activity');
+  const box = card(dom, ACTIVITY);
   const links = findAll(box, (n) => n.tagName === 'A');
   assert.equal(links.length, 1, 'expected exactly one link');
   assert.equal(links[0].getAttribute('href'), '/ops/run-history.html');
@@ -683,7 +688,7 @@ test('a match count larger than the rows sent is reported, not silently believed
     }, { match: /\/users\//, data: detailFixture() }],
   });
   await lookUp(dom);
-  const box = card(dom, 'Matches');
+  const box = card(dom, MATCHES);
   assert.match(allText(box), /2 of 9 accounts shown/);
   assert.match(allText(box), /says 9 accounts matched but sent 2/);
   assert.match(allText(box), /Narrow the identifier/);
@@ -691,7 +696,7 @@ test('a match count larger than the rows sent is reported, not silently believed
 
 test('a match list that agrees with its count draws no warning', async () => {
   const dom = await openAccount();
-  const box = card(dom, 'Matches');
+  const box = card(dom, MATCHES);
   assert.match(allText(box), /1 account/);
   assert.ok(!allText(box).includes('but sent'));
 });
@@ -700,11 +705,11 @@ test('the matches table shows coded references and the mask the API sent, and no
   const dom = await openAccount({
     lookup: lookupFixture((d) => { d.matches[0].email = SECRET; }),
   });
-  const box = card(dom, 'Matches');
+  const box = card(dom, MATCHES);
   assert.match(allText(box), /ath_2277/);
   assert.match(allText(box), /a•••@example\.invalid/);
   assert.ok(!allText(box).includes(SECRET));
-  assert.match(footOf(dom, 'Matches'), /masked by the operations API, not by this page/);
+  assert.match(footOf(dom, MATCHES), /masked by the operations API, not by this page/);
 });
 
 /* The danger zone. The mock draws four buttons; no route performs one, so the
@@ -729,10 +734,16 @@ test('an action the API does report is named, still with no control and still be
   });
   const box = card(dom, 'Account actions');
   assert.match(allText(box), /Reset the password/);
-  assert.match(allText(box), /Not reachable from this pane/);
   assert.equal(buttons(box).length, 0, 'a reported action became a control');
   assert.equal(byClass(box, 'srow').length, 1);
-  assert.match(allText(byClass(box, 'srow')[0]), /Re-authentication required/);
+
+  /* Both facts are the band's, not the row's, so they are asserted on the head
+     and the row is asserted to carry nothing but the name. Checking only the
+     card would pass with them back on every row, which is what this says. */
+  const head = byClass(box, 'card-head')[0];
+  assert.match(allText(head), /Named here, not performed here/);
+  assert.match(allText(head), /Re-authentication required/);
+  assert.equal(allText(byClass(box, 'srow')[0]).trim(), 'Reset the password');
 });
 
 /* ================================================= re-masking, in three ways */
