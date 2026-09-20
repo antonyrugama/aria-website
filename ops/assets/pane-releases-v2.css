@@ -57,6 +57,40 @@
   background: repeating-linear-gradient(90deg, var(--line-2) 0 4px, transparent 4px 8px);
 }
 
+/* A stage this build is already past.
+
+   `done` was written into the class list by assets/pane-releases.js and
+   defined by no stylesheet in this repository — not the three this page
+   loads, not ops.css, not operate.css. A completed stage was therefore drawn
+   entirely by the base rules above, so deleting the word changed nothing on
+   screen: the state was in the DOM and nowhere else. Stadiora/Aria#10646, and
+   Stadiora/Aria#10456's shape exactly.
+
+   The rail is what says it. Three stages, three rails: behind a stage that is
+   done the rail is solid, 3px, and drawn clear of the nodes at both ends;
+   above out of the stage that is current it is the 2px 38% hairline; ahead of
+   one not yet reached it is dashed. That is weight and shape rather than hue,
+   so it survives greyscale, forced colours and every form of colour blindness,
+   and the tone painted on top of it agrees with the reading instead of
+   carrying it. The glyph inside the node is the second channel and was already
+   there; the third is a word only a screen reader hears, in
+   assets/pane-releases.js — six rows of four stages is 18 visible words for a
+   fact the rail states, and the pane is already dense.
+
+   The ends move because .pipe-node's fill is a 16% tint, not an opaque disc:
+   the base rail runs centre to centre and is faint enough to read as a shadow
+   under the glyph, but a solid 3px one shows straight through the node and
+   cuts the checkmark in half. 22px is the node's width, so the rail now starts
+   where the node ends; `right: 0` is the next step's left edge, which is where
+   the next node begins. Half a pixel of top keeps the thicker rail centred on
+   the hairline it replaces. */
+.pipe-step.done::before {
+  left: 22px; right: 0;
+  top: 9.5px;
+  height: 3px;
+  background: var(--n, var(--ink-3));
+}
+
 .pipe-node {
   position: relative; z-index: 1;
   width: 22px; height: 22px;

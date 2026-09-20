@@ -40,6 +40,61 @@
    wraps. Scoped to this stylesheet, which no other pane loads. */
 .filters .filter-note { white-space: normal; }
 
+/* ----------------------------------------------- what ops.css used to hold
+
+   evaluations.html loads assets/aria.css, assets/shell-pane-v2.css and this
+   file. It does not load ops.css, and five of the classes the pane writes were
+   painted there and nowhere else — so when the pane moved onto the v2
+   bootstrap its half of that stylesheet stayed behind and five class names
+   went on being written into a DOM no rule could see. Stadiora/Aria#10647,
+   which is Stadiora/Aria#10456's shape at five times the size.
+
+   What follows is that half, in v2 tokens, plus the two never-defined layout
+   classes the same band writes.
+
+   One measure for every surface a person types into or reads an answer off.
+   ops.css capped .evidence-form at 920px and capped nothing else, so the
+   dataset form, its answer and the widest approval card ran the full 984px of
+   the band while the evidence form beside them stopped short. A form is a
+   measure, not a page width. */
+.dataset-form,
+.dataset-result,
+.evidence-form,
+.approval-card { max-width: 920px; }
+
+/* Neither a validation message nor a dataset name has a space in it to break
+   at: a digest is 64 unbroken characters and a JSON pointer is one token. Both
+   of these carried `overflow-wrap: anywhere` in ops.css and arrived here with
+   nothing, so either one runs out of its box rather than wrapping inside it. */
+.dataset-form .field-error { overflow-wrap: anywhere; }
+.dataset-result .evidence-meta-row dt { overflow-wrap: anywhere; }
+
+/* The approval forms' field grid. The pane draws two two-column field grids —
+   .q-grid on the evidence form and this one on the three approval forms — and
+   they were two different shapes for one job: 13px and 14px of gap, collapsing
+   to a single column at 900px and at 980px. This is the same grid as .q-grid,
+   so a field grid on this pane behaves one way.
+
+   Declared rather than inherited from aria.css's .g2 because this sheet loads
+   after aria.css: at equal specificity the later rule wins, so .g2's own
+   980px collapse would be overridden at every width and has to be replaced
+   here rather than merely amended. */
+.evidence-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+/* Two steps of one workflow, side by side. aria.css's .grid stretches its
+   children to the tallest, which is right for a pair of comparable cards and
+   leaves a void under a short one: "Get approval state" holds one field and
+   "Decide request" holds five, so the short card was drawn 475px tall with
+   400px of nothing under its button. Same finding, same fix, as .share-grid
+   on App releases. The measure is here as well as on the card so the band's
+   right edge is straight: .approval-card's own cap only binds the one card
+   that is not in this grid, the two inside it being narrower than 920px
+   already. */
+.approval-workflow-grid { max-width: 920px; align-items: start; }
+
 .q-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field-label { font-size: 12px; font-weight: 540; color: var(--ink-2); }
 
@@ -102,19 +157,47 @@ select.field-input { appearance: none; padding-right: 26px; }
 }
 
 /* ---------------------------------------------------------------- callout
-   The consent boundary. It is not a status, so it does not take a status
-   colour; it is the one sentence on the pane a person can get wrong in a way
-   that matters, so it does not look like a hint either. */
+   Two sentences on this pane are callouts, and they are not the same kind of
+   thing. The consent boundary under "Put evidence into quarantine" states what
+   quarantine is not; the trust note above the approval handoff warns that the
+   dashboard cannot make a reviewer qualified, and assets/pane-evaluations.js
+   marks it `callout callout-warn`.
+
+   `callout-warn` was defined only in ops.css, which this page deliberately
+   does not load, so the modifier landed on nothing and the base rule here
+   painted BOTH boxes in the same amber, behind the same triangle, at the same
+   weight. The warning did not read as a warning because it was
+   indistinguishable from the sentence beside it — Stadiora/Aria#10647, and
+   Stadiora/Aria#10456's shape.
+
+   So the v1 division comes back, in v2 tokens: the base is neutral, the
+   modifier is the tint. That is also what the rule underneath this comment
+   always claimed — "it is not a status, so it does not take a status colour" —
+   and the amber contradicted it.
+
+   The warning is told apart on four channels, only one of which is colour:
+   a 3px rail down its left edge (a border, so it is the one channel that
+   survives forced-colours mode, where every shadow and tint is thrown away),
+   the warning triangle against the consent boundary's padlock, the literal
+   word "Warning" opening its sentence, and the amber. */
 .callout {
   display: flex; gap: 11px; align-items: flex-start;
   padding: 13px 15px;
   border-radius: var(--r);
-  background: color-mix(in srgb, var(--amber) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 26%, transparent);
+  border-left: 3px solid transparent;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
-.callout svg { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--amber-ink); }
+.callout svg { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--ink-2); }
 .callout strong { font-size: 13px; font-weight: 580; display: block; }
 .callout p { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); margin-top: 4px; max-width: 78ch; }
+
+.callout-warn {
+  border-left-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 26%, transparent);
+}
+.callout-warn svg { color: var(--amber-ink); }
 
 /* ----------------------------------------------------------- not-built yet
    Sized like a hero rather than a note, because a reader who skims past it
@@ -207,6 +290,19 @@ select.field-input { appearance: none; padding-right: 26px; }
 .u-score-val { font-family: var(--mono); font-size: 14.5px; text-align: right; font-variant-numeric: tabular-nums; }
 .u-score-chg { display: flex; justify-content: flex-end; }
 
+/* The change beside a score. `u-move` marks the pills that are a movement —
+   assets/pane-evaluations.js queries it, because `.pill.down` is also the red
+   tone and the release-held pill wears that without being a fall — and it
+   carried no rule of its own, in this sheet or any other the page loads
+   (Stadiora/Aria#10647).
+
+   What it now carries is the one thing every element wearing it has in common
+   and nothing else on the pane needs: the content is a figure, and the figures
+   are stacked in a column. Proportional digits set "+0.03" and "-0.11" to
+   different widths, so a right-aligned column of them does not line up on the
+   decimal. Tabular figures do. */
+.u-move { font-variant-numeric: tabular-nums; }
+
 /* -------------------------------------------------------- side by side */
 .u-vs { display: grid; grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }
 .u-vs-rule { background: var(--line); }
@@ -251,7 +347,8 @@ select.field-input { appearance: none; padding-right: 26px; }
 }
 
 @media (max-width: 900px) {
-  .q-grid { grid-template-columns: minmax(0, 1fr); }
+  .q-grid,
+  .evidence-form-grid { grid-template-columns: minmax(0, 1fr); }
   /* The bar drops under the row, and the three text cells keep the row.
      Placing the bar explicitly matters: auto-placement pushed it to a row of
      its own and then started a third row for the score and the change, which
