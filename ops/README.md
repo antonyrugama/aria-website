@@ -1039,8 +1039,12 @@ the run and a wrong number does not:
   both measured passing at the same anchor where `opacity` and `filter` are both caught; they
   are in NOT COVERED below rather than in the list, because enumerating CSS is the losing half
   of this trade. `backdrop-filter` is a deliberate omission of a different kind — it alters the
-  backdrop, which the screenshot samples correctly. The shell sets none of the four today (its
+  backdrop, which the screenshot samples correctly — and that reasoning is specific to
+  `backdrop-filter`, not a general property of the screenshot: `text-shadow` is painted on the
+  real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four today (its
   one `filter` is a `:hover` the sweep never enters), so the refusals cost no coverage.
+  `::first-line` and `::first-letter` are refused on the same terms — see the pseudo-element
+  paragraph below — and likewise match nothing on the shell today.
 
 The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
 --self-test` runs six parts against a synthetic fixture — the formula against published WebAIM
@@ -1068,15 +1072,34 @@ any of the three paints text — for `::before`/`::after` a quoted string, `coun
 `counters()`, `attr()` or a quote keyword; for `::marker`, `display: list-item` with a
 `list-style-type` other than `none`, because a marker's `content` computes to `normal` whatever
 the page asks for and the words come from the type. `content: ''`, the decorative form this page
-uses everywhere, is not text and is not flagged. **Those three are the pseudo-elements CSS
-defines as painting text today; a fourth would walk straight through, exactly as `::marker` did
-until round 4 of this PR's review caught it.** What is claimed is that these three cannot pass
-unmeasured — not that generated text in general cannot.
+uses everywhere, is not text and is not flagged. What is claimed is that **these three cannot
+pass unmeasured** — nothing more.
+
+**Three other pseudo-elements are handled by two other mechanisms, and the list is still open.**
+`::placeholder` is collected and **read** from its own computed style, because it carries its own
+colour. `::first-line` and `::first-letter` repaint the element's **own** text — no new text node,
+no new box, no change to the site count, and the plate lifts them correctly — so nothing in the
+census or the plate check can see them; they are **refused by name** instead, detected by
+comparing the pseudo-element's resolved ink against the element's own on the element and on every
+ancestor, since first-line styles propagate into inline descendants. (`-webkit-text-fill-color`
+does not apply through either one in Chromium, measured rather than assumed, so `color` is the
+whole channel.) That is six pseudo-elements by three mechanisms — and **`::selection`,
+`::target-text` and the highlight pseudos repaint text too and are neither censused, read nor
+refused.** Six handled is not "all of them"; round 5 of this PR's review found `::first-line` by
+reading past exactly this kind of sentence.
 
 **Text painted through `filter`, `mix-blend-mode`, `-webkit-text-stroke` or an SVG `stroke` is
 not measured** — it is refused, which fails the run, so it can neither pass unmeasured nor be
 reported as a number the tool cannot stand behind. The same goes for a surface painted inside a
 fade. These are refusals, not coverage.
+
+**`text-shadow` is deleted on the plate, so the surface immediately around a glyph is not the
+surface measured.** A shadow paints from the glyph outline even when the text itself is
+transparent, so leaving it in would put glyph geometry into the very sample the plate exists to
+keep clean — clearing it is right for the plate and wrong for the reader, who sees the halo. A
+five-deep `text-shadow` on `.tbl th` changes 259 of 4608 pixels in the sampled band on the real
+page and **0** on the plate, and the run stays green. No claim is made about which direction that
+error runs: WCAG 2.x does not model a halo and this tool does not invent one.
 
 **A paint-affecting property outside those four is neither modelled nor refused**, and text
 under one is measured as though it were painted in full. `mask-image` and `clip-path` are the

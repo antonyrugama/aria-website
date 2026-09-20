@@ -27,9 +27,11 @@
  *      layered gradients and color-mix alpha, and no single ancestor holds the
  *      colour under the text — the surface behind a given word is a stack, not
  *      a value. Instead this takes a PLATE — a second screenshot of the same page
- *      with every glyph made transparent — and samples the element's own box on
- *      it. That is the real painted backdrop, gradients and all, with no text
- *      pixels left to pull the average.
+ *      with every glyph made transparent — and samples the rects of the
+ *      element's own TEXT RUNS on it, not its box: a row that contains a chip
+ *      is 12% chip and its words sit on none of it. That is the real painted
+ *      backdrop, gradients and all, with no text pixels left to pull the
+ *      average.
  *
  *   3. A PARSER THAT CANNOT READ A COLOUR MUST SAY SO, NEVER SKIP. Chromium
  *      serialises color-mix() as `color(srgb r g b / a)`. The monorepo's parser
@@ -520,6 +522,32 @@ const COLLECT = `(() => {
           parseFloat(st.strokeWidth) > 0) {
         return 'SVG stroke ' + st.stroke + ' at ' + st.strokeWidth + ' on ' + nameOf(n);
       }
+      /* ::first-line and ::first-letter repaint an element's OWN text — no
+         new text node, no new box, no change to the site count, and the
+         plate lifts them correctly because its transparent fill inherits in.
+         So nothing else here can see them: the ink read asks the element,
+         which still says the designed colour, while the page paints the
+         pseudo-element's. Compared as VALUES rather than scanned for as
+         rules, and checked on every ancestor too, because first-line styles
+         propagate into inline descendants and getComputedStyle reports them
+         only on the block that owns the rule.
+
+         Measured, not assumed: -webkit-text-fill-color does NOT apply through
+         either pseudo-element in Chromium (glyphs stay the element's colour),
+         so color is the whole channel here — and reading
+         webkitTextFillColor || color on BOTH sides keeps an element-level
+         fill colour, which does win, from reading as a difference. */
+      if (n.namespaceURI !== 'http://www.w3.org/2000/svg') {
+        const own = st.webkitTextFillColor || st.color;
+        for (const pe of ['::first-line', '::first-letter']) {
+          const ps = getComputedStyle(n, pe);
+          const pink = ps.webkitTextFillColor || ps.color;
+          if (pink && own && pink !== own) {
+            return pe + ' repaints this text ' + pink + ' where ' + nameOf(n) +
+              ' asks for ' + own;
+          }
+        }
+      }
       return null;
     };
 
@@ -641,9 +669,13 @@ const COLLECT = `(() => {
    page says, and the words come from list-style-type. So the test is
    display: list-item with a list-style-type other than none.
 
-   Three pseudo-elements, which is what CSS defines as painting text today.
-   Not a claim that a fourth cannot exist — if one does, it walks through
-   here exactly as ::marker did. See NOT COVERED.
+   Three pseudo-elements CENSUSED — not a claim about how many can paint
+   text. This tool meets three more elsewhere: ::placeholder is collected and
+   READ from its own style (see inkStyle in COLLECT), and ::first-line and
+   ::first-letter repaint the element's own text and are REFUSED by name in
+   unmodelled(). Six handled, by three different mechanisms, and the list is
+   not closed — ::selection, ::target-text and the highlight pseudos repaint
+   text too and are neither censused, read nor refused. See NOT COVERED.
 
    `content: ''` — the decorative case this page actually uses for rings and
    glows — carries no text and is not flagged. */
