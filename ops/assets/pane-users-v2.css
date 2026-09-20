@@ -199,6 +199,46 @@
 /* A timestamp is one token; wrapping it mid-date reads as two. */
 .tbl tbody th.num { white-space: nowrap; }
 
+/* ------------------------------------------------- the match being described
+
+   Stadiora/Aria#10456: pane-users.js wrote `is-selected` onto the picked row
+   and no stylesheet users.html loads had a rule for it, so picking a match
+   changed nothing a sighted operator could see — on the one control that
+   decides which account the whole column underneath is about. Measured at the
+   filing: identical background, border and weight against an unpicked row, in
+   both themes.
+
+   Three channels, because one of them is colour:
+
+     the wash   a cyan tint over every cell in the row
+     the rail   a 3px bar down the row's leading edge, which is a SHAPE where
+                there was none rather than a recolouring of one
+     the word   "Selected", written into the row by pane-users.js, which is
+                the channel that survives a monochrome screen and a reader
+
+   The wash is on the CELLS and not on the row: .tbl is border-collapse:
+   collapse, a cell background paints over a row background, and a row-level
+   wash would therefore be what the hover rule in aria.css covers rather than
+   the other way round. Putting it on the cells makes the picked state the
+   stronger of the two, which is what it is. Hover still moves, one step
+   further into the same tint, so the row under the pointer is still saying
+   something. */
+.tbl tbody tr.is-selected > th,
+.tbl tbody tr.is-selected > td {
+  background: color-mix(in srgb, var(--cyan) 10%, transparent);
+  border-top-color: color-mix(in srgb, var(--cyan) 28%, transparent);
+}
+.tbl tbody tr.is-selected:hover > th,
+.tbl tbody tr.is-selected:hover > td {
+  background: color-mix(in srgb, var(--cyan) 15%, transparent);
+}
+.tbl tbody tr.is-selected > th:first-child {
+  box-shadow: inset 3px 0 0 0 var(--cyan);
+}
+
+/* The word, on the line the coded reference is on. */
+.match-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 /* ------------------------------------------------------------- responsive */
 @media (max-width: 720px) {
   .hunt { padding: 18px 16px 16px; border-radius: var(--r-lg); }

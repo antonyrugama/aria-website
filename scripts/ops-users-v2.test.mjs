@@ -40,14 +40,24 @@
                     nothing else from the event
 
    Every test here has a published mutation — the exact file, the exact
-   original line, and the payload that makes that one test fail. 41 tests, 46
-   rows: 40 in PR antonyrugama/aria-website#58, and 6 for the 41st ("an empty
-   subscription card names the tier it was sent and classifies nothing") in
-   the follow-up that added it. Six because that test's name makes two
-   promises — it names the tier, and it classifies nothing — and the API can
-   send a tier three ways, so each promise has to be broken on each shape.
-   Rows exceed tests whenever a test has more than one way to fail; they are
-   not the same number and the breakdown is the check on both.
+   original line, and the payload that makes that one test fail. 45 tests, 63
+   rows: 40 in PR antonyrugama/aria-website#58, and 23 in the PR for
+   Stadiora/Aria#10456 and #10487, which added the three selection tests and
+   the tier-filter sweep and rewrote the empty-subscription test. The tier
+   follow-up's 6 rows are not in that total — they proved a predicate #10487
+   deleted, and rows 15 to 23 of the newer battery replace them against the
+   assertion that is there now. Rows exceed tests whenever a test has more
+   than one way to fail; they are not the same number and the breakdown is
+   the check on both.
+
+   Two of the 23 are not reds, and they are the load-bearing ones. Row 22 puts
+   the deleted predicate back at correct, unmutated production code and it
+   goes red — that is #10487, a guard that fails the fix rather than the
+   defect. Row 23 hands that same predicate a real classification the pane
+   should never print ("It is an unpaid account", which `/\b(free|paid)\b/i`
+   cannot see, because `unpaid` has no word boundary before `paid`) and it
+   goes green, which is the same predicate's other half. Row 8 is stated green
+   on purpose: see the note on the first-paint call site below.
 
    ONE of the 40 no longer holds: #58's row 33 replaces a line in the
    danger-zone action row, and this follow-up took the second child off that
@@ -79,18 +89,42 @@
        measures anything; scripts/check-ops-narrow-overflow.mjs measures, and
        since Stadiora/Aria#10492 it does lay this page out — at 375px and
        360px, in both themes, in the state it has before a lookup is
-       submitted, which is the only state it serves without one. Nothing
-       measures a result view, and nothing anywhere measures contrast on this
-       pane.
+       submitted, which is the only state it serves without one. No guard in
+       this repository measures a result view, and none measures contrast on
+       this pane: scripts/check-ops-contrast.mjs sweeps /ops/shell-v2.html
+       only. The selected row's own widths and per-site contrast were
+       measured in Chrome for the Stadiora/Aria#10456 pull request and the
+       numbers are in its body; that is a one-off measurement in a review,
+       not a standing guard, and nothing re-runs it.
      - whether a CSS rule RENDERS. Node has no layout engine, so nothing here
        can tell a rule that applies from one that is overridden, and no
-       assertion in this file reads a computed style. What the pane draws is
-       evidenced by the screenshots and the width measurements in the pull
-       request, not here. (Until round 5 this bullet named three specific
-       shapes -- the hatched mask, an accent rail, the 720px stack -- as
-       "shape assertions here". Two of the three appear nowhere in this file.
-       A NOT COVERED bullet that overclaims in the covered direction is the
-       same defect as one that overclaims anywhere else.)
+       assertion in this file reads a computed style. One test does read
+       assets/pane-users-v2.css: "the class a picked row gains is a class a
+       loaded stylesheet has a rule for" parses the sheet for a rule matching
+       the class the rendered rows actually gained. That is the hole
+       Stadiora/Aria#10456 fell through and it is the whole of what that test
+       claims — a rule EXISTS, declares a background, and declares an inset
+       box-shadow with a non-zero leading number. It does not claim the rule
+       wins the cascade, that the selector matches at run time, that the
+       colours resolve, or that anything is painted. What the pane draws is
+       evidenced by the screenshots, the computed styles and the per-site
+       contrast numbers in the pull request, not here. (Until round 5 this
+       bullet named three specific shapes -- the hatched mask, an accent rail,
+       the 720px stack -- as "shape assertions here". Two of the three appear
+       nowhere in this file. A NOT COVERED bullet that overclaims in the
+       covered direction is the same defect as one that overclaims anywhere
+       else.)
+     - the picked branch of the FIRST paint of the match table. matchesCard
+       takes a selectedRef and applySelection is called with it as every row
+       is built, but runLookup sets selectedRef to null before every render
+       the pane performs, so that argument is false on every path this pane
+       has today and no test can reach it true. Battery row 8 hard-codes it
+       false and the suite stays green, which is that statement measured
+       rather than asserted. What row 7 does cover is the call itself: delete
+       it and the rows carry no baseline — no match-row class, no
+       aria-pressed="false" — and three tests go red. The site is kept
+       because it is the one place the unpicked baseline is established, not
+       because the picked branch is live.
      - focus movement. The stub's focus() sets document.activeElement and
        nothing computes offsetParent, so the re-mask focus fallback is
        exercised but its CHOICE of destination is not asserted.
@@ -749,6 +783,168 @@ test('the matches table shows coded references and the mask the API sent, and no
   assert.match(footOf(dom, MATCHES), /masked by the operations API, not by this page/);
 });
 
+/* Stadiora/Aria#10456: pane-users.js wrote `is-selected` onto the picked row
+   and no stylesheet users.html loads had a rule for it, so picking a match
+   changed nothing a sighted operator could see. The filing reviewer measured
+   a picked row against an unpicked one with the pointer moved away:
+   identical background, identical border, identical weight, in both themes.
+
+   That the class is SET is not the claim and never was — an assertion that
+   only read the attribute would have passed for the whole life of the defect.
+   So selection is asserted as four channels, each of which reaches a reader
+   the others do not, and in both directions: what the picked row gains, and
+   what the row it was picked from loses.
+
+   The one thing below that is a claim about a STYLESHEET is deliberately
+   narrow. Node has no layout engine, so nothing here can say the rule wins the
+   cascade or paints; what it can say is that the class the pane emits is a
+   class a loaded sheet has a rule for, which is exactly the hole #10456 fell
+   through. The rendered evidence — computed styles, the pixels, and the
+   contrast of every text site in the row in both themes — is in the pull
+   request. */
+
+const matchRows = (dom) => byClass(panel(dom, 'live'), 'match-row');
+
+const rowMarks = (tr) => {
+  const pick = byClass(tr, 'match-row-btn')[0];
+  return {
+    ref: pick && pick.getAttribute('data-ref'),
+    klass: hasClass(tr, 'is-selected'),
+    current: tr.getAttribute('aria-current'),
+    pressed: pick && pick.getAttribute('aria-pressed'),
+    word: byClass(tr, 'sel-mark').map((n) => allText(n).trim()).join(' '),
+  };
+};
+
+const PICKED = { klass: true, current: 'true', pressed: 'true', word: 'Selected' };
+const UNPICKED = { klass: false, current: null, pressed: 'false', word: '' };
+
+/* Three matches, so nothing is opened for the operator — one match is not a
+   choice and the pane picks it — and so there is a row to move the mark OFF
+   as well as one to move it on. */
+const threeMatches = () => lookupFixture((d) => {
+  d.matchCount = 3;
+  d.matches = [
+    d.matches[0],
+    { ...d.matches[0], reference: 'ath_2419' },
+    { ...d.matches[0], reference: 'coach_318' },
+  ];
+});
+
+async function pick(dom, reference) {
+  const btn = findAll(panel(dom, 'live'), (n) => hasClass(n, 'match-row-btn') &&
+    n.getAttribute('data-ref') === reference)[0];
+  assert.ok(btn, `no control for ${reference}`);
+  btn.dispatch('click');
+  await flush();
+  return btn;
+}
+
+test('picking a match marks that row in four channels, and unmarks the row it left', async () => {
+  const dom = await boot({
+    answers: [
+      { match: /\/lookup$/, data: threeMatches() },
+      { match: /\/users\//, data: detailFixture() },
+    ],
+  });
+  await lookUp(dom);
+
+  const before = matchRows(dom).map(rowMarks);
+  assert.equal(before.length, 3);
+  for (const row of before) {
+    assert.deepEqual({ ...row, ref: undefined }, { ...UNPICKED, ref: undefined },
+      `${row.ref} was marked before anything was picked`);
+  }
+
+  await pick(dom, 'ath_2419');
+  const after = matchRows(dom).map(rowMarks);
+  assert.deepEqual(after.map((r) => r.ref), ['ath_2277', 'ath_2419', 'coach_318'],
+    'the rows moved, so the rest of this is about different rows');
+  assert.deepEqual({ ...after[1], ref: undefined }, { ...PICKED, ref: undefined });
+  assert.deepEqual({ ...after[0], ref: undefined }, { ...UNPICKED, ref: undefined });
+  assert.deepEqual({ ...after[2], ref: undefined }, { ...UNPICKED, ref: undefined });
+
+  /* The other direction. A mark that is set and never cleared reads as three
+     picked rows, and the fact the pane is trying to state — which ONE account
+     everything below the table is describing — is then stated about all of
+     them. This is also what catches a channel hard-coded on. */
+  await pick(dom, 'coach_318');
+  const moved = matchRows(dom).map(rowMarks);
+  assert.deepEqual({ ...moved[2], ref: undefined }, { ...PICKED, ref: undefined });
+  assert.deepEqual({ ...moved[1], ref: undefined }, { ...UNPICKED, ref: undefined },
+    'the row that was picked first is still marked');
+  assert.deepEqual({ ...moved[0], ref: undefined }, { ...UNPICKED, ref: undefined });
+
+  /* And the word is in the row rather than only in the stylesheet's head: a
+     reader that ignores every ARIA attribute still reads it. */
+  assert.match(allText(matchRows(dom)[2]), /Selected/);
+  assert.ok(!allText(matchRows(dom)[1]).includes('Selected'));
+});
+
+test('a picked row is marked before the account it picked has answered', async () => {
+  const held = { release: null };
+  const dom = await boot({
+    answers: [
+      { match: /\/lookup$/, data: threeMatches() },
+      { match: /\/users\//, defer: held },
+    ],
+  });
+  await lookUp(dom);
+  await pick(dom, 'ath_2419');
+
+  /* Nothing has answered for the account yet: the column below is a skeleton.
+     The row still says which one was picked, because the pick is the
+     operator's act and not the API's. */
+  assert.equal(byClass(panel(dom, 'live'), 'skel').length > 0, true,
+    'the account column already landed, so this proves nothing');
+  assert.deepEqual({ ...rowMarks(matchRows(dom)[1]), ref: undefined },
+    { ...PICKED, ref: undefined });
+
+  held.release();
+  await flush();
+  assert.deepEqual({ ...rowMarks(matchRows(dom)[1]), ref: undefined },
+    { ...PICKED, ref: undefined }, 'the mark did not survive the response');
+});
+
+test('the class a picked row gains is a class a loaded stylesheet has a rule for', async () => {
+  const dom = await boot({
+    answers: [
+      { match: /\/lookup$/, data: threeMatches() },
+      { match: /\/users\//, data: detailFixture() },
+    ],
+  });
+  await lookUp(dom);
+  await pick(dom, 'ath_2419');
+
+  /* Taken off the rendered rows rather than written down here, so renaming the
+     class in pane-users.js and not in the stylesheet turns this red — which is
+     the shape of #10456 exactly. */
+  const classes = (tr) => (tr.className || '').split(/\s+/).filter(Boolean);
+  const rows = matchRows(dom);
+  const gained = classes(rows[1]).filter((c) => !classes(rows[0]).includes(c));
+  assert.deepEqual(gained, ['is-selected'],
+    'a picked row gains something other than one class, so the rule below is the wrong question');
+
+  const css = readFile('assets/pane-users-v2.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selector, body]) => ({ selector: selector.trim(), body }))
+    .filter((r) => r.selector.includes(`.${gained[0]}`));
+  assert.ok(rules.length > 0,
+    `pane-users-v2.css has no rule for .${gained[0]}, so picking a match draws nothing`);
+
+  const declared = rules.flatMap((r) => r.body.split(';'))
+    .map((d) => d.split(':')[0].trim()).filter(Boolean);
+  assert.ok(declared.includes('background'), 'the picked row has no wash');
+
+  /* More than colour. The rail is a 3px bar down the leading edge — a shape
+     where there was none — and it is the channel that survives a screen, or a
+     reader, that does not separate these two cyans from the surface. */
+  const rail = rules.flatMap((r) => r.body.split(';'))
+    .find((d) => d.split(':')[0].trim() === 'box-shadow');
+  assert.ok(rail, 'the picked row is drawn in colour alone');
+  assert.match(rail, /inset\s+[1-9]/, 'the rail has no width, so it draws nothing');
+});
+
 /* The tier came off the Subscription head because it was a third copy of it.
    That head was the only thing naming the tier when there is no billing
    record, so the empty state names it — and only names it. Round 2 of this
@@ -757,44 +953,109 @@ test('the matches table shows coded references and the mask the API sent, and no
    team account, one of the pane's own three tier filters, carries no `brand`
    and was told it was on the free tier. The pane is not sent that fact, so it
    states none. All three shapes the API can send are asserted, because each
-   one is a different way to be wrong. */
-test('an empty subscription card names the tier it was sent and classifies nothing', async () => {
-  /* "Classifies nothing" is half this test's name, so every shape the API can
-     send gets the negative, and the negative covers BOTH words. Round 2's
-     defect read `tier.brand` -- a pill tone with no documented meaning -- and
-     called a `coach_team` account free; the same field would have called
-     `{brand: true}` paid. Round 5 found the nameless shape carrying no
-     negative at all, which is the branch that field's defect lived on, and
-     the two negatives that did exist only said "free". */
-  const classifies = (t) => /\b(free|paid)\b/i.test(t);
+   one is a different way to be wrong.
 
+   ENTITLEMENT. This pane does not derive one. The three routes it reads send
+   `tier { key, label, brand }` and a `billing.fields[]`, and none of those
+   four carries paid-or-free: `brand` picks a pill tone, and `key` and `label`
+   are names the product chose. An absent billing record is the only fact in
+   the payload that touches it, and it is ambiguous — a free account has no
+   billing record, and so does a paid one the billing system has not answered
+   for. So the card states the absence, names the tier, and stops. Round 2's
+   defect was the pane answering a question the API never gave it the field
+   for, and the fix is not a better field; it is the pane admitting it cannot
+   tell.
+
+   WHOLE TEXT, NOT A PREDICATE. Until Stadiora/Aria#10487 the negative here was
+   `/\b(free|paid)\b/i` over the card's text — which cannot tell "named the
+   tier it was sent" apart from "classified the account", because the only
+   thing it looks at is whether the words appear. The pane's own tier filter
+   offers `free`, so an account the API genuinely reports as
+   `{ key: 'free', label: 'Free' }` renders the correct sentence "The account
+   is on Free." and that predicate went red at correct code. It was latent
+   rather than live — every fixture here used coach_team — and it would have
+   become a CI failure the first time somebody wrote the obvious fixture.
+
+   Whole-text equality per arm replaces it, and it is the stronger assertion in
+   both directions at once: the card cannot drop the tier's name (the string
+   would be short) and it cannot add a classification (the string would be
+   long), in a spelling the predicate anticipated or in one it did not —
+   `free-tier`, `FREE`, or the word split across two DOM nodes. A negative
+   alone would pass on a card that rendered nothing; a positive alone would
+   pass on a card that named the tier AND classified it. */
+
+/* The card an empty billing record draws, whole, as one line of text. Built
+   from the sentence each arm should render, so an arm states its own sentence
+   and nothing else about the card is restated four times. */
+const subscriptionCard = (sentence) => `Subscription No subscription record ${sentence}`;
+
+test('an empty subscription card names the tier it was sent and classifies nothing', async () => {
   const unbranded = await openAccount({
     detail: detailFixture((d) => {
       d.billing = { fields: [] };
       d.tier = { key: 'coach_team', label: 'Coach team' };
     }),
   });
-  const box1 = card(unbranded, 'Subscription');
-  assert.match(allText(box1), /No subscription record/);
-  assert.match(allText(box1), /The account is on Coach team\./);
-  assert.ok(!classifies(allText(box1)), 'a tier with no brand key was classified');
+  assert.equal(allText(card(unbranded, 'Subscription')),
+    subscriptionCard('The account is on Coach team.'));
 
   const none = await openAccount({
     detail: detailFixture((d) => { d.billing = { fields: [] }; delete d.tier; }),
   });
-  const box2 = card(none, 'Subscription');
-  assert.match(allText(box2), /No tier was reported for this account either\./);
-  assert.ok(!/The account is on/.test(allText(box2)), 'a tier was named that was never sent');
-  assert.ok(!classifies(allText(box2)), 'an unreported tier was classified');
+  assert.equal(allText(card(none, 'Subscription')),
+    subscriptionCard('No tier was reported for this account either.'));
 
   const nameless = await openAccount({
     detail: detailFixture((d) => { d.billing = { fields: [] }; d.tier = { brand: true }; }),
   });
-  const box3 = card(nameless, 'Subscription');
-  assert.ok(!allText(box3).includes('undefined'), 'the pane printed undefined to an operator');
-  assert.ok(!/The account is on/.test(allText(box3)), 'a nameless tier was given a name');
-  assert.ok(!classifies(allText(box3)), 'a nameless tier was classified from its brand flag');
-  assert.match(allText(box3), /The tier it reported has no name\./);
+  assert.equal(allText(card(nameless, 'Subscription')),
+    subscriptionCard('The tier it reported has no name.'));
+
+  /* The arm #10487 was filed for. `free` is one of the pane's own tier
+     filters, so this is a payload the product produces, and the sentence it
+     draws is the required one rather than a classification — which the old
+     predicate could not tell apart. */
+  const free = await openAccount({
+    detail: detailFixture((d) => {
+      d.billing = { fields: [] };
+      d.tier = { key: 'free', label: 'Free' };
+    }),
+  });
+  assert.equal(allText(card(free, 'Subscription')), subscriptionCard('The account is on Free.'));
+});
+
+/* The arm above pins one tier by hand, which is one tier's worth of proof. The
+   pane offers three, and the list is the pane's own: a tier joining it is a
+   tier the API is expected to send back.
+
+   The options are read out of the rendered form rather than restated here, and
+   each one is then sent back through the real lookup and the real detail
+   render, because a parity test that compares one list against another list
+   proves the two lists agree and nothing about what the pane does with either.
+   A tier added to the filter joins this sweep without anybody remembering to
+   add it, and if the pane ever classified one of its own tiers, the sentence
+   would not be the sentence. */
+test('every tier this pane offers as a filter is named and not classified', async () => {
+  const dom = await boot({ answers: [] });
+  const options = findAll(dom.doc.getElementById('lookupTier'), (n) => n.tagName === 'OPTION')
+    .map((o) => ({ key: o.getAttribute('value'), label: allText(o).trim() }))
+    .filter((o) => o.key);
+
+  assert.ok(options.length >= 3, 'the tier filter offers nothing, so this proves nothing');
+  assert.ok(options.some((o) => o.key === 'free'),
+    'the tier filter no longer offers free, which is the tier Stadiora/Aria#10487 is about');
+
+  for (const tier of options) {
+    const opened = await openAccount({
+      detail: detailFixture((d) => {
+        d.billing = { fields: [] };
+        d.tier = { key: tier.key, label: tier.label };
+      }),
+    });
+    assert.equal(allText(card(opened, 'Subscription')),
+      subscriptionCard(`The account is on ${tier.label}.`),
+      `the ${tier.key} tier`);
+  }
 });
 
 /* The danger zone. The mock draws four buttons; no route performs one, so the
