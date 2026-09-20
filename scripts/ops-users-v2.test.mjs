@@ -39,7 +39,7 @@
           behaviour the activity table prints label, time and reference and
                     nothing else from the event
 
-   Every test here had a published mutation in PR antonyrugama/aria-website#56:
+   Every test here had a published mutation in PR antonyrugama/aria-website#58:
    the exact file, the exact original line, and the payload that makes that one
    test fail. If you add a test, that claim does not stretch to cover it —
    prove it and say so, or narrow this paragraph.
