@@ -697,6 +697,14 @@ function card(dom, heading) {
 const switchCard = (dom) =>
   byClass(livePanel(dom), 'card').filter((n) => byClass(n, 'sp-views').length > 0)[0];
 
+/* A link by its words, as the thing it actually is: an `a` carrying an
+   `href`. Reading the words alone only says that a way out is printed; the
+   href is the half that says where it goes, and a link that reads correctly
+   and travels to the wrong place fails silently. */
+const linkNamed = (root, words) =>
+  findAll(root, (n) => n.tagName && n.tagName.toUpperCase() === 'A'
+    && String(n.textContent || '').trim() === words)[0];
+
 /* Every text run under a node joined once each -- see `runs` for why this is
    not `allText`. A figure printed as a number and again inside a sentence
    appears twice here and once in `runCount`. */
@@ -1090,6 +1098,64 @@ test('the chart\'s scale is HTML beside it, never <text> inside the role="img"',
     'the scale is real text outside the drawing');
 });
 
+/* Three things around the picture, each of which can be deleted with every
+   other test in this file still passing: the dates the chart is drawn over,
+   the names of the two lines, and how much of the period has a bill behind
+   it. Each is user-visible, each fails silently, so each gets its own test. */
+
+test('the day chart carries an x axis of the dates the route labelled', async () => {
+  const data = payload({ range: 'month', billedThrough: 10 });
+  const sent = data.daily.labels.filter(Boolean);
+  assert.ok(sent.length >= 2, 'the fixture sends labels at all, or this test proves nothing');
+
+  const dom = await boot({ costs: data });
+  const axis = byClass(livePanel(dom), 'sp-xaxis')[0];
+  assert.ok(axis, 'a chart of days with no dates under it is a shape, not a reading');
+  assert.deepEqual(runs(axis), sent,
+    'every label the route sent, in the order it sent them');
+  assert.equal(axis.getAttribute('aria-hidden'), 'true',
+    'and it is hidden from the reader, because the chart\'s own name already carries the dates');
+});
+
+test('both lines on the day chart are named, so the dashed one is not just a texture', async () => {
+  const data = payload({ range: 'month', billedThrough: 10 });
+  const dom = await boot({ costs: data });
+
+  const chartCard = byClass(livePanel(dom), 'card')
+    .filter((n) => findAll(n, (x) => x.getAttribute && x.getAttribute('role') === 'img').length > 0)[0];
+  assert.ok(chartCard, 'the day chart is on the page');
+
+  const legend = byClass(chartCard, 'legend')[0];
+  assert.ok(legend, 'the chart names its lines beside itself');
+  const named = runs(legend);
+  assert.ok(named.indexOf(data.daily.series[0].label) !== -1,
+    'the current stretch is named: ' + named.join(' | '));
+  assert.ok(named.indexOf(data.daily.series[1].label) !== -1,
+    'and so is the stretch it is drawn against: ' + named.join(' | '));
+});
+
+test('a period billed only part way through says how far, in days and a date', async () => {
+  const data = payload({ range: 'month', billedThrough: 10 });
+  assert.equal(data.period.billedDays, 10, 'ten days of a thirty day September');
+  assert.equal(data.period.daysInPeriod, 30);
+
+  const dom = await boot({ costs: data });
+  assert.equal(runCount(livePanel(dom), /^10 of 30 days billed, through 10 Sep 2026$/), 1,
+    'the pill states the part of the period that has a bill behind it, and to which day');
+
+  /* The other direction, which is the half a one-sided test would miss: a
+     period billed to its own end must NOT print the pill, because the range
+     name already says it and the pill would be that fact twice. */
+  const full = payload({
+    range: 'last-month', now: new Date('2026-07-15T09:00:00.000Z'), billedThrough: 30,
+  });
+  assert.equal(full.period.billedDays, full.period.daysInPeriod,
+    'a closed month billed to its own end');
+  const whole = await boot({ costs: full });
+  assert.equal(runCount(livePanel(whole), /days billed$/), 0,
+    'and a fully billed period does not repeat what the range name already says');
+});
+
 test('the route\'s own note about the two stretches is printed once', async () => {
   /* A fully billed June against the whole of May: 30 days against 31, which
      is the route's rule 1 -- a period billed to its own end is compared
@@ -1124,6 +1190,36 @@ test('nothing published for the period is its own state, with a way out', async 
     'a closed month is the one window that is always published, so it answers "is anything '
     + 'arriving at all"');
 });
+
+/* The words are not the way out; the href is. `Try last month` sitting on the
+   page says only that a way out was drawn, and the failure this pane can
+   actually have is silent: the link stays, still reads correctly, and travels
+   back to the empty period it exists to escape.
+
+   The contract is stated here independently of the code that builds it -- the
+   link goes to THIS pane under `range=last-month`, whatever range the
+   operator was standing in -- and it is asserted from two different starting
+   ranges, because a link that merely echoed the current selection would
+   satisfy a single-range version of this test by accident. */
+test('the way out of an empty period goes to last month, not back to the period it escapes',
+  async () => {
+    for (const from of ['month', '3m']) {
+      const dom = await boot({
+        search: '?range=' + from,
+        costs: payload({ range: from, billedThrough: 0, pollerState: { status: 'ok' } }),
+      });
+      const out = linkNamed(panel(dom, 'empty'), 'Try last month');
+      assert.ok(out, 'the way out is a link rather than a sentence, from range=' + from);
+
+      const href = out.getAttribute('href');
+      assert.ok(href, 'and it carries an href, from range=' + from);
+      const url = new URL(href, 'https://ops.example.invalid/ops/spend.html');
+      assert.equal(url.pathname, '/ops/spend.html',
+        'it stays on this pane rather than leaving it, from range=' + from);
+      assert.equal(url.searchParams.get('range'), 'last-month',
+        'and it asks for the closed month, not the period it is escaping, from range=' + from);
+    }
+  });
 
 test('cost collection not being set up is a different state from nothing published', async () => {
   const dom = await boot({
