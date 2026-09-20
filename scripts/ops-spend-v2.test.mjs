@@ -1152,7 +1152,7 @@ test('a period billed only part way through says how far, in days and a date', a
   assert.equal(full.period.billedDays, full.period.daysInPeriod,
     'a closed month billed to its own end');
   const whole = await boot({ costs: full });
-  assert.equal(runCount(livePanel(whole), /days billed$/), 0,
+  assert.equal(runCount(livePanel(whole), /\d+ of \d+ days billed/), 0,
     'and a fully billed period does not repeat what the range name already says');
 });
 
