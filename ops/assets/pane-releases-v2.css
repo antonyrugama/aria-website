@@ -152,7 +152,12 @@
    surface of its own — the same --surface/--ink pair every other reading
    surface in this dashboard uses — and the fill is left exactly as it was, so
    the bar and the legend still read as one colour key. Re-toning the segments
-   until an ink fitted would have broken that key in both themes. */
+   until an ink fitted would have broken that key in both themes.
+
+   The number stays inside the chip, because the share is the one thing an
+   in-segment label says that the key beside it does not — see .share-key
+   below, which is the other half of that division and drops the number from
+   any key whose bucket already carries a chip. */
 .stackbar > i > b {
   padding: 2px 8px;
   border-radius: 20px;
@@ -182,6 +187,16 @@
    tight for a bar, its key and the sentence that reads them together. */
 .share-stack { display: flex; flex-direction: column; gap: 16px; }
 .share-line { font-size: 12px; color: var(--ink-2); line-height: 1.55; }
+
+/* One fact, one slot, at every width. A bucket whose segment carries a chip
+   has already stated its share inside the bar, so its key states the bucket
+   and stops. A bucket too narrow for a chip has no other carrier and keeps
+   the number. display:none rather than visibility, so the duplicate leaves
+   the accessibility tree too: the bar's role="img" name already reads every
+   bucket with its share.
+   The 560px query at the end of this file is the other end of this rule — it
+   takes the chips away, and puts these numbers back. */
+.legend .share-key.has-chip .share-key-pct { display: none; }
 
 /* ------------------------------------------------------------- key/value */
 .kv { display: flex; flex-direction: column; }
@@ -299,9 +314,11 @@
 
 /* On a phone the widest segment holds about eight characters, so the chip
    arrives truncated — "1.1.1 · …", which is a label that has stopped being a
-   label. The legend directly beneath carries every bucket with its share, and
-   the bar's accessible name carries all of them regardless, so the chips go
-   rather than shrink. */
+   label. The chips go rather than shrink, and the keys directly beneath take
+   the numbers back — every one of them, because at this width no segment is
+   carrying a share any more. The bar's accessible name carries all of them
+   regardless of width. */
 @media (max-width: 560px) {
   .stackbar > i > b { display: none; }
+  .legend .share-key.has-chip .share-key-pct { display: inline-flex; }
 }

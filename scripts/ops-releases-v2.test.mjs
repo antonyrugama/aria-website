@@ -25,10 +25,16 @@
    role="img", which is children-presentational, so its accessible NAME has to
    carry the reading. Nothing inside it is announced to anybody.
 
-   Every test here has a published mutation in the pull request: the exact
-   file, the exact original line, and the payload that makes that one test
-   fail. Both directions are published for every invariant that has two —
-   "stays masked" and "does show once it should" are two tests, not one.
+   Every test here had a published mutation in PR antonyrugama/aria-website#55
+   — the exact file, the exact original line, and the payload that makes that
+   one test fail. 41 tests, 41 rows, checked by counting `test(` names against
+   row names rather than by eye: the first round of that review found the
+   claim was 38 of 39, because one test had been added without a row. If you
+   add a test here, that claim does not stretch to cover it. Prove it and say
+   so, or narrow this paragraph.
+
+   Both directions are published for every invariant that has two — "stays
+   masked" and "does show once it should" are two tests, not one.
 
    NOT COVERED by any published mutation, and stated rather than implied:
 
@@ -37,6 +43,11 @@
        pinned to /ops/alerts.html and does not visit this page. The 320px and
        375px readings for this pane are in the pull request as hand-run
        numbers, not as a guard.
+     - whether a CSS rule RENDERS. Node has no layout engine. The rule that
+       drops the duplicate share from a key whose bucket already carries a
+       chip is half markup and half stylesheet, and the test below proves only
+       that the two halves still name the same classes. What it looks like on
+       screen was checked in a browser by hand and published.
      - the contrast of the version-share label chip. The ratio is a property of
        ops/assets/aria.css's tokens, which this change may not edit, so the
        test below pins the chip's SHAPE — a <b> inside the segment — and says
@@ -286,6 +297,23 @@ function shareBar(dom) {
 function shareSegments(dom) {
   const bar = shareBar(dom);
   return bar ? bar.childNodes.filter((n) => n.tagName === 'I') : [];
+}
+
+/* The key beneath the bar: one span per bucket, each a swatch, a name and a
+   share. Reached through the bar so a second .legend elsewhere on the pane
+   could never be mistaken for this one. */
+function shareKeys(dom) {
+  const stack = shareBar(dom) && shareBar(dom).parentNode;
+  if (!stack) return [];
+  const legend = stack.childNodes.filter(
+    (n) => (n.className || '').split(/\s+/).includes('legend'))[0];
+  return legend ? legend.childNodes.filter((n) => n.tagName === 'SPAN') : [];
+}
+
+function keyPct(key) {
+  const el = key.childNodes.filter(
+    (n) => (n.className || '').split(/\s+/).includes('share-key-pct'))[0];
+  return el ? allText(el).trim() : null;
 }
 
 function shareCardText(dom) {
@@ -636,10 +664,49 @@ test('a bucket too narrow to hold a chip is still in the bar, the legend and the
      segment. The segment's own fill is the data and is never re-toned to make
      ink readable on it, so a bucket that cannot hold a chip carries no ink at
      all and reads off the legend instead. */
-    assert.equal(allText(segments[0]).trim(), '1.1.2 · 61%');
+  assert.equal(allText(segments[0]).trim(), '1.1.2 · 61%');
   assert.equal(allText(segments[2]).trim(), '');
   assert.match(shareCardText(dom), /Older 11%/);
   assert.match(shareBar(dom).getAttribute('aria-label'), /Older 11%/);
+});
+
+/* The share is one fact and takes one slot at a given width. The bar and the
+   key beneath it are the two candidate slots, and which one holds the number
+   is decided per bucket by whether the segment was wide enough for a chip.
+   Asserted in both directions: a bucket whose chip carries the share is
+   marked so the stylesheet can drop the duplicate, and a bucket with no chip
+   is NOT marked, because dropping its number would leave the share of that
+   bucket nowhere on screen at all. */
+test('a bucket that carries a chip is marked so its key can drop the duplicate share, and a bucket without one is not', async () => {
+  const dom = await boot({});
+  const keys = shareKeys(dom);
+  assert.equal(keys.length, 3, 'one key per bucket');
+
+  /* Stated as literals rather than read back off the segments: an expectation
+     derived from the thing under test moves with the mutation. 61% and 27%
+     clear the 15% a chip needs, 11% does not. */
+  const marked = keys.map((k) => (k.getAttribute('class') || '').split(/\s+/).includes('has-chip'));
+  assert.deepEqual(marked, [true, true, false]);
+
+  /* Every key still HOLDS its share, in its own element. The marked ones have
+     it hidden by the stylesheet above 560px and shown again below it, where
+     no chip is drawn; the unmarked one is never hidden. */
+  assert.deepEqual(keys.map(keyPct), ['61%', '27%', '11%']);
+  assert.deepEqual(keys.map((k) => allText(k).replace(keyPct(k), '').trim()),
+    ['1.1.2', '1.1.1', 'Older']);
+});
+
+/* The rule above is half markup and half stylesheet, and the two halves meet
+   at two class names. This does not prove the stylesheet renders — node has
+   no layout — it proves the names have not drifted apart, which is the way a
+   split rule silently stops applying. The rendered halves were checked in a
+   browser by hand and the measurements are published in the pull request. */
+test('the class the key is marked with is the class the stylesheet keys on', async () => {
+  const css = read('assets/pane-releases-v2.css');
+
+  assert.match(css, /\.legend \.share-key\.has-chip \.share-key-pct \{ display: none; \}/);
+  assert.match(css,
+    /@media \(max-width: 560px\) \{[^}]*\.stackbar > i > b \{ display: none; \}\s*\.legend \.share-key\.has-chip \.share-key-pct \{ display: inline-flex; \}/);
 });
 
 test('the segment width is written through the CSSOM and the colour never is', async () => {

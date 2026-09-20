@@ -170,8 +170,19 @@
   var BUCKET_TONE = { latest: 'tone-cyan', previous: 'tone-violet', older: 'tone-older' };
   var BUCKET_ORDER = ['latest', 'previous', 'older'];
 
-  /* A label fits inside a segment at roughly this share and not below it. */
+  /* A label fits inside a segment at roughly this share and not below it.
+     The same predicate decides the chip in the bar and the `has-chip` marker
+     on the key beside it, so the two can never disagree about which buckets
+     already carry their share. */
   var LABEL_MIN_BP = 1500;
+
+  function segmentBp(bucket) {
+    return Math.max(0, Math.min(FULL_ROLLOUT_BP, num(bucket.basisPoints) || 0));
+  }
+
+  function hasChip(bucket) {
+    return segmentBp(bucket) >= LABEL_MIN_BP;
+  }
 
   /* --------------------------------------------------------- formatting */
 
@@ -696,7 +707,7 @@
     });
 
     buckets.forEach(function (bucket) {
-      var bp = Math.max(0, Math.min(FULL_ROLLOUT_BP, num(bucket.basisPoints) || 0));
+      var bp = segmentBp(bucket);
       var seg = h('i', {
         className: BUCKET_TONE[bucket.key] || 'tone-older',
         'aria-hidden': 'true'
@@ -707,9 +718,9 @@
       seg.style.setProperty('--w', (bp / 100) + '%');
       /* The chip is a reading surface with its own --surface fill: a segment
          fill is data and cannot also carry ink (monorepo #10293). Only where
-         the segment is wide enough to hold one; the rest read off the
-         legend. */
-      if (bp >= LABEL_MIN_BP) {
+         the segment is wide enough to hold one; a narrower bucket reads its
+         share off the key instead, which is what `has-chip` below arranges. */
+      if (hasChip(bucket)) {
         seg.appendChild(h('b', { text: bucketLabel(bucket) + ' · ' + pct(bp) }));
       }
       bar.appendChild(seg);
@@ -717,13 +728,25 @@
     return bar;
   }
 
+  /* The share is ONE fact and takes ONE slot at a given width.
+
+     A bucket wide enough for a chip has already said its share inside the bar,
+     so its key says the bucket name and stops. A bucket too narrow for a chip
+     has no other carrier, so its key keeps the number. The marker is a class
+     rather than a missing element because below 560px no segment carries a
+     chip at all, and the same key has to put the number back; that half is the
+     stylesheet's, keyed on this exact class name. */
   function shareLegend(buckets) {
     var legend = h('div', { className: 'legend' });
     buckets.forEach(function (bucket) {
-      legend.appendChild(h('span', {}, [
+      legend.appendChild(h('span', {
+        className: hasChip(bucket) ? 'share-key has-chip' : 'share-key'
+      }, [
         h('i', { className: BUCKET_TONE[bucket.key] || 'tone-older', 'aria-hidden': 'true' }),
+        h('span', { text: bucketLabel(bucket) }),
         h('span', {
-          text: bucketLabel(bucket) + ' ' + (pct(bucket.basisPoints) || 'not reported')
+          className: 'share-key-pct',
+          text: pct(bucket.basisPoints) || 'not reported'
         })
       ]));
     });
