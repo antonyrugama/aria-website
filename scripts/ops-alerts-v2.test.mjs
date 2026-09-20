@@ -18,7 +18,11 @@
      - a close note is content, so it is printed from the record rather than
        dropped;
      - an empty page proves which kind of empty it is, and a read that never
-       landed is never allowed to claim there is nothing there.
+       landed is never allowed to claim there is nothing there;
+     - the box the rules table scrolls inside carries its own tab stop and its
+       own name, so the columns past its edge are not a pointer's alone;
+     - and what the STYLESHEET's docblock claims about its own paint, which is
+       prose about code and so is derived from the code instead.
 
    Every test here has a published mutation in the pull request: the exact file
    and the exact original line whose removal, inversion or insertion makes that
@@ -29,9 +33,12 @@
      - Layout. Nothing here measures anything; scripts/check-ops-narrow-overflow.mjs
        lays this page out in Chrome at 375px and is the only check that can see
        an overflow.
-     - The stylesheet. ops/assets/pane-alerts-v2.css declares no behaviour these
-       tests can read, and the tone words it maps are declared by
-       ops/assets/aria.css, which this pull request does not edit.
+     - What the stylesheet LOOKS like. Nothing here renders it. The last
+       section does read two things OUT of ops/assets/pane-alerts-v2.css --
+       what its docblock claims about its own paint, and the two rules the
+       rules table's scrolling box depends on -- but it measures no layout,
+       and the tone words the sheet maps are declared by ops/assets/aria.css,
+       which this pull request does not edit.
      - Anything the operations API decides. The role checks below prove the
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
@@ -68,8 +75,12 @@
        finding; widening them to ignore `live` entirely would satisfy every
        assertion that starts from <body> while carrying the operator off a
        control that survived, which is round 4's fix undone -- so the severity
-       button and the range select are each used with focus ON them, and
-       asserted to still hold it.
+       button (this pane's own, marked in place rather than rebuilt) and the
+       range select (#fRange, which the SHELL draws and this pane never
+       redraws) are each used with focus ON them, and asserted to still hold
+       it. Two different mechanisms of survival, one assertion each; the
+       second probe used to land on this pane's own #fCategory while the
+       sentence around it claimed the shell's control (Stadiora/Aria#10460).
 
        The enumeration below is the part of this file a reader should distrust
        first. */
@@ -90,6 +101,8 @@ const V1_SHELL_SRC = read('assets/shell.js');
 const OPERATE_SRC = read('assets/operate.js');
 const MODEL_SRC = read('assets/alerts-model.js');
 const PANE_SRC = read('assets/pane-alerts.js');
+const PANE_CSS = read('assets/pane-alerts-v2.css');
+const ARIA_CSS = read('assets/aria.css');
 
 const TOKENS = {
   '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
@@ -343,6 +356,23 @@ function buttonNamed(root, re) {
 
 const numerals = (text) => (text.match(/\d/g) || []).length;
 
+/* What can take a tab stop, as far as the document itself can say: a control
+   that is not disabled, a link with a target, or anything asking for one with
+   tabindex.
+
+   Chrome ALSO grants a stop to a scrollable box that contains nothing
+   focusable, and Safari does not. Neither behaviour is modelled here, and the
+   rules table no longer depends on either: it carries its own tabindex. */
+const FOCUSABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'];
+function focusable(node) {
+  if (node.nodeType !== 1) return false;
+  const index = node.getAttribute('tabindex');
+  if (index !== null && index !== undefined && Number(index) >= 0) return true;
+  if (node.disabled) return false;
+  if (node.tagName === 'A') return node.hasAttribute('href');
+  return FOCUSABLE_TAGS.includes(node.tagName);
+}
+
 /* ================================ focus ================================ */
 
 const severityButton = (dom, label) => findAll(dom.doc.querySelector('.filters-pane'),
@@ -481,15 +511,33 @@ test('every control that reloads the pane hands focus back rather than dropping 
   assert.equal(standing.doc.activeElement, critical,
     'pressing a severity carried the operator off the button they were standing on');
 
-  /* The same question for the range control, which lives in the shell rather
-     than in this pane and is a <select> rather than a button. */
+  /* The same question for the range control, which lives in the SHELL rather
+     than in this pane and is a <select> rather than a button. That difference
+     is the point, so it is asserted rather than described: #fRange is drawn by
+     shell-pane-v2.js into .filters, outside the .filters-pane slot this pane
+     owns, and it survives a re-read because nothing in this pane redraws it.
+     A probe that landed on the pane's own #fCategory would be testing the
+     opposite mechanism under this sentence.
+
+     The value has to actually CHANGE. The shell only re-emits ops:filters
+     with the new range, and this pane ignores an event whose range it is
+     already showing, so dispatching over an unchanged selection would read
+     nothing, move nothing, and leave the assertion below passing on a page
+     where no re-read ever happened. The call count is the proof it did. */
   const ranged = await boot({ search: '?range=7d' });
-  const select = findAll(ranged.doc.querySelector('.filters-pane'),
-    (n) => n.tagName === 'SELECT')[0];
-  assert.ok(select, 'the filter bar drew no select');
+  const select = ranged.doc.getElementById('fRange');
+  assert.ok(select, 'the shell drew no range control');
+  assert.ok(select.closest('.filters'),
+    'the range control is not in the shell\'s own filter bar');
+  assert.equal(select.closest('.filters-pane'), null,
+    'the range control is inside the slot this pane owns, so it is not the shell\'s');
+  const readsBefore = ranged.calls.length;
+  select.value = '30d';
   select.focus();
   select.dispatch('change');
   await settle();
+  assert.ok(ranged.calls.length > readsBefore,
+    'changing the range re-read nothing, so nothing was in a position to move focus');
   assert.equal(ranged.doc.activeElement, select,
     'changing a filter carried the operator out of the control they were using');
 
@@ -1789,4 +1837,356 @@ test('a pane that could not be read prints no numeral that could be read as a co
   });
   assert.equal(numerals(liveText(dom)), 0,
     'an unreadable pane printed a numeral: ' + liveText(dom).replace(/\s+/g, ' ').slice(0, 200));
+});
+
+/* ===================== the rules table as a region ===================== */
+
+/* Six columns hold a 760px minimum, so on a phone the rules table scrolls
+   inside its own box. A box that scrolls sideways and cannot be focused
+   belongs to a pointer: measured on the real page at 375px, that box reported
+   clientWidth 343 against scrollWidth 967, with 624px of table past its own
+   edge (Stadiora/Aria#10459).
+
+   Everything below is asserted about THE BOX THAT CLIPS -- the table's own
+   parent, reached from the table rather than from a class name -- and the
+   overflow that makes it clip is read out of the stylesheet, so a rule that
+   moved the scrolling somewhere else cannot leave these assertions passing on
+   a box that no longer scrolls. */
+test('the rules table scrolls inside a box a keyboard can reach and a screen reader can name',
+  async () => {
+    const dom = await boot({});
+    const table = findAll(panel(dom, 'live'),
+      (n) => n.tagName === 'TABLE' && allText(n).includes('What it watches'))[0];
+    assert.ok(table, 'the pane drew no rules table');
+
+    const box = table.parentNode;
+    const classes = (box.className || '').split(/\s+/).filter(Boolean);
+    assert.equal(classes.length, 1, 'the box around the table carries more than one class');
+    const paint = declarations(PANE_CSS)
+      .filter((d) => d.selector === '.' + classes[0] && d.property === 'overflow-x');
+    assert.deepEqual(paint.map((d) => d.value), ['auto'],
+      'the table\'s own parent is not the box the stylesheet scrolls, so these '
+      + 'assertions would be about an element that clips nothing');
+
+    assert.equal(box.getAttribute('tabindex'), '0',
+      'the box that clips the table has no tab stop, so the columns past its edge '
+      + 'are a pointer\'s alone');
+    assert.equal(box.getAttribute('role'), 'region');
+
+    /* A tab stop with no name is announced as "group" and nothing else. The
+       name is the table's own caption, so the region and the table cannot end
+       up describing themselves differently. */
+    const named = box.getAttribute('aria-labelledby');
+    assert.ok(named, 'the region has no accessible name');
+    const targets = findAll(dom.doc.body, (n) => n.getAttribute('id') === named);
+    assert.equal(targets.length, 1,
+      'aria-labelledby resolves to ' + targets.length + ' elements, so the name is '
+      + (targets.length ? 'ambiguous' : 'nothing at all'));
+    assert.equal(targets[0].tagName, 'CAPTION', 'the name is not the table\'s own caption');
+    assert.equal(targets[0].parentNode, table, 'the caption names some other table');
+    assert.ok(allText(targets[0]).trim().length > 0, 'the caption is empty');
+
+    /* The ring is the global one, moved. aria.css puts :focus-visible that
+       far OUTSIDE the element; this box is flush with its card's left, right
+       and top edges, so outside the box is outside the CARD -- measured on
+       the rendered page at both widths and both themes, all of the default
+       ring lands beyond the box and none of it on the table. The override is
+       the NEGATION of aria.css's own offset, derived here rather than typed,
+       so a global ring that moves takes this one with it instead of leaving a
+       stale -2px behind. */
+    const global = declarations(ARIA_CSS).filter(
+      (d) => d.selector === ':focus-visible' && d.property === 'outline-offset');
+    assert.equal(global.length, 1, 'aria.css no longer draws one global focus ring offset');
+    const outside = Number(/^(-?[\d.]+)px$/.exec(global[0].value)?.[1]);
+    assert.ok(Number.isFinite(outside) && outside > 0,
+      'aria.css\'s global ring is no longer outside the element, so there is nothing to pull in');
+
+    const offsets = declarations(PANE_CSS).filter(
+      (d) => d.selector === '.' + classes[0] + ':focus-visible' && d.property === 'outline-offset');
+    assert.deepEqual(offsets.map((d) => d.value), [(-outside) + 'px'],
+      'the focus ring on the scrolling box is not pulled in by what aria.css pushed it out');
+  });
+
+/* The state the tab stop exists FOR. Every rule switch is disabled for anyone
+   below owner, so for them the box holds nothing focusable at all and the stop
+   on the box itself is the only way into the columns past its edge. */
+test('for a non-owner the scrolling box holds nothing else that can take focus', async () => {
+  const dom = await boot({ role: 'viewer' });
+  const table = findAll(panel(dom, 'live'),
+    (n) => n.tagName === 'TABLE' && allText(n).includes('What it watches'))[0];
+  const box = table.parentNode;
+
+  const inside = findAll(box, (n) => n !== box && focusable(n));
+  assert.deepEqual(inside.map((n) => n.tagName), [],
+    'a non-owner has something else to tab to in here, so this fixture no longer '
+    + 'reproduces the state the stop is for');
+  assert.ok(focusable(box), 'nothing in or on the box can take focus');
+});
+
+/* ========================== what the sheet paints ====================== */
+
+/* ops/assets/pane-alerts-v2.css opens with three positive claims about its
+   own paint. Prose is where this programme's defects have lived, so they are
+   derived from the file here rather than trusted: the sheet itself said "no
+   new colour value" while painting one (Stadiora/Aria#10460).
+
+   NOT COVERED by the reader below: strings and url(), which it does not
+   parse -- the first assertion refuses a sheet containing either rather than
+   mis-splitting one. And paints() decides "this property can carry a
+   colour" from the property's NAME, so a bare colour keyword set on a
+   property carrying none of those stems would walk past; a hex, a colour
+   function or an unknown function in the same place would not. */
+
+/* Every declaration in a sheet, as { selector, property, value }. A reader
+   rather than a regex over the source: `white-space` contains the word
+   "white", `--acc` is a custom property holding a colour, and a rule nested
+   in @media is still a rule. */
+function declarations(css) {
+  const src = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const out = [];
+  const stack = [];
+  let buf = '';
+  let depth = 0;
+  const flush = () => {
+    const text = buf.trim();
+    const i = text.indexOf(':');
+    if (!text || !stack.length || i < 0) return;
+    out.push({
+      selector: stack[stack.length - 1],
+      property: text.slice(0, i).trim(),
+      value: text.slice(i + 1).trim().replace(/\s+/g, ' '),
+    });
+  };
+  for (const ch of src) {
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    if (depth === 0 && (ch === '{' || ch === '}' || ch === ';')) {
+      if (ch === '{') stack.push(buf.trim().replace(/\s+/g, ' '));
+      else { flush(); if (ch === '}') stack.pop(); }
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  return out;
+}
+
+/* var() first, then a function name, then a hex, then a measure, then a bare
+   word. Order matters: `var(--cyan)` must not come back as the word `var`. */
+const atomsOf = (value) => value.match(
+  /var\(\s*--[\w-]+\s*\)|-?[a-zA-Z][\w-]*\(|#[0-9a-fA-F]{3,8}\b|-?\.?\d[\w.%]*|-?[a-zA-Z][\w-]*/g
+) || [];
+
+/* Property names that can carry a colour, by stem. Anything starting with --
+   counts too: .acc-blue sets --acc to one. */
+const PAINT_STEMS = ['color', 'background', 'shadow', 'outline', 'border', 'fill', 'stroke'];
+const paints = (property) =>
+  property.startsWith('--') || PAINT_STEMS.some((stem) => property.includes(stem));
+
+/* Words that appear inside a colour-bearing value and are not paint. Pinned,
+   so a fourth one is classified by a person rather than assumed. */
+const COLOUR_SYNTAX = ['in', 'inset', 'solid', 'srgb'];
+
+/* The functions this sheet is allowed to call, anywhere. An unknown one is a
+   failure rather than a skip: rgb(), hsl() and every other colour function
+   arrives here first, and so does a var() written with a fallback -- only the
+   bare `var(--token)` spelling is read as a token below. */
+const FUNCTIONS = ['color-mix(', 'linear-gradient(', 'minmax(', 'translateX('];
+
+/* Every atom this sheet paints with that is NOT a token aria.css declares,
+   one entry per site. deepEqual, so a new one fails the suite rather than
+   joining the list quietly -- and so does removing one of these. */
+const NON_TOKEN_PAINT = [
+  { selector: '.av', property: 'color', atom: 'black' },
+  { selector: '.p-detail', property: 'background', atom: 'transparent' },
+  { selector: '.p-close', property: 'background', atom: 'transparent' },
+  { selector: '.sw', property: 'background', atom: 'transparent' },
+  { selector: '.sw:checked', property: 'background', atom: 'transparent' },
+  { selector: '.sw:checked', property: 'box-shadow', atom: 'transparent' },
+];
+
+test('every colour this sheet paints is a token aria.css declares, bar the '
+  + NON_TOKEN_PAINT.length + ' sites named here',
+  () => {
+    for (const quoted of PANE_CSS.match(/'[^'\n]*'|"[^"\n]*"/g) || []) {
+      assert.ok(!/[;{}]/.test(quoted),
+        'a quoted string carries a brace or a semicolon, which declarations() splits on: '
+        + quoted);
+    }
+    assert.ok(!/\burl\(/.test(PANE_CSS), 'the sheet grew a url(), which declarations() cannot read');
+
+    const decls = declarations(PANE_CSS);
+    assert.ok(decls.length > 150, 'the reader found only ' + decls.length + ' declarations');
+
+    const functions = new Set();
+    const found = [];
+    for (const d of decls) {
+      for (const atom of atomsOf(d.value)) {
+        if (atom.endsWith('(')) { functions.add(atom); continue; }
+        if (atom.startsWith('var(')) continue;
+        if (/^-?\.?\d/.test(atom)) continue;
+        if (atom.startsWith('#')) { found.push({ ...d, atom }); continue; }
+        if (!paints(d.property) || COLOUR_SYNTAX.includes(atom)) continue;
+        found.push({ ...d, atom });
+      }
+    }
+
+    assert.deepEqual([...functions].sort(), FUNCTIONS,
+      'the sheet calls a function this test has not classified; every colour function '
+      + 'arrives here first');
+    assert.deepEqual(
+      found.map((f) => ({ selector: f.selector, property: f.property, atom: f.atom })),
+      NON_TOKEN_PAINT,
+      'the sheet paints with something that is not a token aria.css declares');
+
+    /* And the sheet's own docblock says the same thing in words. It is read
+       out of the comment rather than believed, because a docblock that claims
+       one thing while the rules below it do another is what filed
+       Stadiora/Aria#10460 in the first place. */
+    const claimed = /^\s*NON-TOKEN PAINT:(.*)$/m.exec(PANE_CSS);
+    assert.ok(claimed, 'the sheet\'s docblock no longer names what it paints outside the tokens');
+    assert.deepEqual(
+      claimed[1].split(',').map((s) => s.trim()).filter(Boolean).sort(),
+      [...new Set(NON_TOKEN_PAINT.map((p) => p.atom))].sort(),
+      'the docblock names a different set of non-token paint than the sheet uses');
+  });
+
+test('every token this sheet paints with is one aria.css actually declares', () => {
+  const declared = new Set(
+    declarations(ARIA_CSS).filter((d) => d.property.startsWith('--')).map((d) => d.property));
+  const own = new Set(
+    declarations(PANE_CSS).filter((d) => d.property.startsWith('--')).map((d) => d.property));
+  assert.ok(declared.size > 20, 'aria.css declared only ' + declared.size + ' custom properties');
+
+  const missing = [];
+  for (const d of declarations(PANE_CSS)) {
+    for (const atom of atomsOf(d.value)) {
+      const ref = /^var\(\s*(--[\w-]+)\s*\)$/.exec(atom);
+      if (!ref || declared.has(ref[1]) || own.has(ref[1])) continue;
+      missing.push(d.selector + ' { ' + d.property + ': ' + d.value + ' }');
+    }
+  }
+  assert.deepEqual(missing, [],
+    'a rule asks for a custom property nothing declares, so it paints its fallback or nothing');
+});
+
+/* --------------------------------------- the one exception, and its reason */
+
+/* WCAG relative luminance and contrast ratio, sRGB. Proved against two
+   published figures before anything below is believed. */
+const channel = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+const luminance = (c) =>
+  0.2126 * channel(c[0] / 255) + 0.7152 * channel(c[1] / 255) + 0.0722 * channel(c[2] / 255);
+const ratio = (a, b) => {
+  const [hi, lo] = luminance(a) >= luminance(b) ? [luminance(a), luminance(b)]
+    : [luminance(b), luminance(a)];
+  return (hi + 0.05) / (lo + 0.05);
+};
+const rgbOf = (hex) => {
+  const body = hex.slice(1);
+  const full = body.length === 3 ? [...body].map((c) => c + c).join('') : body;
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+};
+/* CSS color-mix(in srgb, ...) and linear-gradient() both interpolate in
+   gamma-encoded sRGB, which is componentwise on the 0-255 values. */
+const blend = (a, b, t) => a.map((v, i) => v * (1 - t) + b[i] * t);
+
+/* The two theme blocks aria.css declares, with one level of var() resolved:
+   the dark theme writes --cyan-ink: var(--cyan) and the light one writes a
+   hex. A token that is not an opaque hex -- --line is an rgba() -- comes back
+   null and is not offered as an ink. */
+function themeTokens(css) {
+  const rows = declarations(css).filter((d) => d.property.startsWith('--'));
+  const of = (selector) => new Map(
+    rows.filter((d) => d.selector === selector).map((d) => [d.property, d.value]));
+  const dark = of(':root');
+  const light = new Map([...dark, ...of('[data-theme="light"]')]);
+  const resolve = (table, name, depth) => {
+    const raw = table.get(name);
+    if (!raw || (depth || 0) > 4) return null;
+    const ref = /^var\(\s*(--[\w-]+)\s*\)$/.exec(raw);
+    if (ref) return resolve(table, ref[1], (depth || 0) + 1);
+    return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(raw) ? rgbOf(raw) : null;
+  };
+  return {
+    names: [...new Set([...dark.keys(), ...light.keys()])],
+    dark: (name) => resolve(dark, name),
+    light: (name) => resolve(light, name),
+  };
+}
+
+/* The only raw colour word the sheet is allowed. Spelled out so that changing
+   the exception to a different keyword fails here rather than going
+   unmeasured. */
+const KEYWORD_RGB = { black: [0, 0, 0] };
+
+test('the avatar ink is the one paint no aria.css token could have made', () => {
+  assert.equal(Math.round(ratio(rgbOf('#000000'), rgbOf('#ffffff'))), 21,
+    'the contrast formula does not reproduce black on white');
+  assert.equal(ratio(rgbOf('#777777'), rgbOf('#ffffff')).toFixed(2), '4.48',
+    'the contrast formula does not reproduce the published 4.48:1 of #777 on white');
+
+  const sheet = declarations(PANE_CSS).filter((d) => d.selector === '.av');
+  const ink = sheet.filter((d) => d.property === 'color').map((d) => d.value);
+  const tile = sheet.filter((d) => d.property === 'background').map((d) => d.value);
+  assert.equal(ink.length, 1, '.av declares ' + ink.length + ' inks');
+  assert.equal(tile.length, 1, '.av declares ' + tile.length + ' backgrounds');
+
+  const mixed = /^color-mix\(in srgb, var\((--[\w-]+)\) ([\d.]+)%, ([a-z]+)\)$/.exec(ink[0]);
+  assert.ok(mixed, '.av\'s ink is no longer a color-mix this test can read: ' + ink[0]);
+  const [, inkToken, inkShare, inkKeyword] = mixed;
+  assert.ok(KEYWORD_RGB[inkKeyword], '.av mixes toward ' + inkKeyword + ', which has no value here');
+  assert.deepEqual(
+    NON_TOKEN_PAINT.filter((p) => p.selector === '.av'),
+    [{ selector: '.av', property: 'color', atom: inkKeyword }],
+    'the exception the sheet paints and the exception pinned above have come apart');
+
+  const stops = (tile[0].match(/var\(\s*--[\w-]+\s*\)/g) || [])
+    .map((v) => /--[\w-]+/.exec(v)[0]);
+  assert.equal(stops.length, 2, '.av\'s tile is no longer a two-stop gradient of tokens');
+
+  const tokens = themeTokens(ARIA_CSS);
+  const AA = 4.5;
+
+  /* The darkest point of the gradient, sampled rather than argued: luminance
+     is convex along an sRGB interpolation, so the minimum is not always an
+     endpoint. */
+  const worstTile = (theme) => {
+    const ends = stops.map((name) => {
+      const value = tokens[theme](name);
+      assert.ok(value, 'aria.css declares no opaque value for ' + name + ' in ' + theme);
+      return value;
+    });
+    let worst = null;
+    for (let i = 0; i <= 100; i += 1) {
+      const point = blend(ends[0], ends[1], i / 100);
+      if (!worst || luminance(point) < luminance(worst)) worst = point;
+    }
+    return worst;
+  };
+
+  const share = Number(inkShare) / 100;
+  const reached = {};
+  for (const theme of ['dark', 'light']) {
+    const base = tokens[theme](inkToken);
+    assert.ok(base, 'aria.css declares no opaque value for ' + inkToken + ' in ' + theme);
+    const painted = blend(KEYWORD_RGB[inkKeyword], base, share);
+    reached[theme] = ratio(painted, worstTile(theme));
+    assert.ok(reached[theme] >= AA,
+      'the avatar ink reaches only ' + reached[theme].toFixed(2) + ':1 in ' + theme
+      + ' against the darkest point of its own tile');
+  }
+
+  /* And the reason the exception exists: every token aria.css declares, tried
+     in the same mix, in both themes. The tile is opaque in both, so what is
+     behind the card cannot rescue any of them. */
+  const couldStandIn = tokens.names.filter((name) => ['dark', 'light'].every((theme) => {
+    const toward = tokens[theme](name);
+    const base = tokens[theme](inkToken);
+    if (!toward || !base) return false;
+    return ratio(blend(toward, base, share), worstTile(theme)) >= AA;
+  }));
+  assert.deepEqual(couldStandIn, [],
+    'aria.css now declares a token that could paint this ink, so the exception in the '
+    + 'sheet\'s docblock has an answer and should be taken: ' + couldStandIn.join(', '));
 });

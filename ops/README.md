@@ -1426,6 +1426,17 @@ It is printed from the problem's own record — the `closed` event's `detail.not
 `GET /api/ops/alerts/problems/:id` — and the closed list says where to find it rather than
 dropping it.
 
+The rules table **scrolls inside a named region with its own tab stop**. Six columns hold a
+760px minimum, so on a phone the table scrolls inside its card rather than taking the document
+sideways with it, and a scroll region a keyboard cannot get to fails WCAG 2.1.1. For anyone
+below owner every switch in that table is disabled, so the box then contains nothing focusable
+at all: Chrome grants a scrollable box a tab stop of its own, but leaves it unnamed and
+roleless, and Safari grants none. So the box carries `tabindex="0"`, `role="region"` and the
+table's own screen-reader `<caption>` as its accessible name, and the focus ring is pulled
+inside its edge, because `aria.css` draws that ring 2px outside the element and the box is
+flush with the card. Same three attributes and the same one CSS line as App releases'
+`.tbl-scroll` and Settings' `tableWrap()` (`Stadiora/Aria#10459`).
+
 ### People and usage on v2: where the pane departs from the mock
 
 `docs/mocks/ops-dashboard-v2/analytics.html` in the Aria monorepo is the approved design.

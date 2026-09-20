@@ -1305,6 +1305,11 @@
 
     /* ------------------------------------------------------------- rules */
 
+    /* The table names its own scroller, so the region's name and the table's
+       name are one sentence that cannot drift apart. Same shape as
+       pane-releases.js's HEALTH_CAPTION_ID. */
+    var RULES_CAPTION_ID = 'alertsRulesCaption';
+
     function rulesBand(armed, queue) {
       var section = S.band('What is being watched',
         fmt.int(armed.enabled) + ' of ' + fmt.int(armed.total) + ' rules on');
@@ -1318,8 +1323,27 @@
         return section;
       }
 
-      var scroll = h('div', { className: 'scrollx' });
+      /* Six columns hold a 760px minimum, so on a phone this box scrolls
+         sideways inside its card rather than taking the document with it
+         (pane-alerts-v2.css). A box that scrolls has to be reachable from a
+         keyboard, or the columns past the edge belong to a pointer alone —
+         and for a non-owner every switch in here is disabled, so the box then
+         holds nothing focusable at all and there is no other way in. tabindex
+         gives it the stop, role="region" makes the stop a landmark, and the
+         name is the table's own caption rather than a second sentence that
+         could drift from it. Both sibling v2 panes do this: pane-releases.js
+         .tbl-scroll and settings.js tableWrap(). */
+      var scroll = h('div', {
+        className: 'scrollx',
+        tabindex: '0',
+        role: 'region',
+        'aria-labelledby': RULES_CAPTION_ID
+      });
       var table = h('table', { className: 'tbl' });
+      table.appendChild(h('caption', {
+        className: 'sr', id: RULES_CAPTION_ID,
+        text: 'Alert rules and what each one watches'
+      }));
       var head = h('tr');
       [
         { label: 'Rule' },
