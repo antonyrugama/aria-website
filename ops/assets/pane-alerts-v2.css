@@ -46,9 +46,10 @@
    opaque gradient of that same token in BOTH themes and its ink has to clear
    AA against both, and no token aria.css declares can do that — every one of
    them is tried in that mix to say so ("the avatar ink is the one paint no
-   aria.css token could have made"), rather than being asserted here. Both lines are deepEqual to what the sheet paints, so on a
-   paint-named property a third spelling, a moved one or a renamed token fails
-   the suite rather than joining the list quietly.
+   aria.css token could have made"), rather than being asserted here. Both
+   lines are deepEqual to what the sheet paints, so on a paint-named property
+   a third spelling, a moved one or a renamed token fails the suite rather
+   than joining the list quietly.
 
    Status text takes the -ink variant of its tone, because the base colour is
    the tint and the -ink is the text on that tint. Every .is- rule here is
