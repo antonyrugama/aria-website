@@ -1067,15 +1067,28 @@ async function openReauth(options) {  const opts = options || {};
    three) — which dismisses a BARE `[data-theme]` too, and a bare one matches
    in both themes — and an attribute selector carrying any operator other than
    `=` or `~=` mis-parsed into an attribute name nothing carries, answered
-   `false` from a line the loose reading never reached (round four). Hence the
-   theme seeding lives in `cascade()` and not in a caller, and an attribute
-   token outside the grammar above is REFUSED where it reaches the dialog
-   rather than answered: every one of the four was a NEGATIVE answer given
-   where the honest answer was "I cannot read this".
+   `false` from a line the loose reading never reached (round four), and two
+   more case-sensitivity holes one line apart: `!important` read in exactly
+   one of its spellings, and the candidate pre-filter below matching attribute
+   NAMES case-sensitively, one line before the `attrOf` lowercasing that round
+   four added could help (round five).
 
-   What it REFUSES BY NAME rather than skipping: an `!important` declaration,
-   a media feature it cannot evaluate, and any selector it cannot read that
-   COULD still reach the dialog — reachability judged by the loosest reading
+   Every one of the six was the same substitution -- a confident NEGATIVE
+   answer given where the honest answer was "I cannot read this". So the theme
+   seeding lives in `cascade()` and not in a caller; an attribute token outside
+   the grammar above is REFUSED where it reaches the dialog rather than
+   answered; the pre-filter is deliberately CASE-INSENSITIVE and therefore
+   only ever widening, leaving the case-sensitive question to `matchToken`
+   where a wrong answer is dismissal rather than silence; and an at-rule this
+   cannot evaluate is recursed INTO so the refusal can be gated on
+   reachability like every other refusal here, rather than thrown at parse
+   time against a block that may not touch the dialog at all.
+
+   What it REFUSES BY NAME rather than skipping: an `!important` declaration
+   in any of its spellings -- the flag is case-insensitive and the `!` need
+   not touch the keyword -- a media feature or at-rule condition it cannot
+   evaluate, and any selector it cannot read that COULD still reach the
+   dialog — reachability judged by the loosest reading
    of each combinator in turn, `>` and descendant both read as "some
    ancestor", `+` and `~` both read as "some earlier sibling", every
    unreadable pseudo taken as matching, so a rule is only dismissed when no
@@ -1335,11 +1348,20 @@ function cssRules(src, sheet) {
       if (prelude[0] === '@') {
         if (/^@media\b/.test(prelude)) {
           walk(body, (media || []).concat(prelude.slice(6).trim().split(/\s+and\s+/)));
+        } else if (/^@(supports|layer)\b/.test(prelude)) {
+          /* Recursed into rather than refused on sight. A condition this
+             cannot evaluate is carried down as an unreadable media query, so
+             the refusal happens where every other refusal here happens --
+             after the rule is known to reach the dialog. Refusing at PARSE
+             time fired on an `@supports` block in a pane sheet that cannot
+             touch the dialog, which is a false red rather than a false green,
+             but a loud one with a confusing message. Round five. */
+          walk(body, (media || []).concat(prelude.replace(/\s*\{?$/, '').trim()));
         } else if (!/^@(keyframes|font-face)\b/.test(prelude)) {
           throw new Error('REFUSED, unreadable at-rule in ' + sheet + ': ' + prelude);
         }
       } else {
-        for (const one of prelude.split(',')) {
+        for (const one of splitSelector(prelude, ',')) {
           const selector = one.trim();
           if (selector) out.push({ sheet, selector, body, media: media || [], order: out.length });
         }
@@ -1367,7 +1389,13 @@ function declarations(rule) {
     const at = part.indexOf(':');
     assert.ok(at > 0, 'REFUSED, unreadable declaration in ' + rule.sheet + ' ' + rule.selector + ': ' + part.trim());
     const value = part.slice(at + 1).trim();
-    assert.ok(!/!important/.test(value),
+    /* CSS matches the important flag ASCII-case-insensitively and allows
+       whitespace between the `!` and the keyword, so `!IMPORTANT` and
+       `! important` are the same declaration as `!important`. Reading only
+       the one spelling kept the others as ORDINARY declarations, which then
+       lost on specificity -- a confident negative, because importance
+       outranks specificity in a browser. Round five. */
+    assert.ok(!/!\s*important/i.test(value),
       'REFUSED, !important reaches the dialog from ' + rule.sheet + ' ' + rule.selector +
       ' and this resolver does not order importance');
     map.set(part.slice(0, at).trim(), value);
@@ -1384,7 +1412,8 @@ function mediaMatches(queries, env) {
        of refused. aria.css:910 ships one and check-ops-narrow-overflow.mjs
        launches Chrome with --force-prefers-reduced-motion, so it is a live
        shape. Refused by name like every other feature this cannot evaluate. */
-    throw new Error('REFUSED, unreadable media query: ' + q);
+    throw new Error('REFUSED, unreadable ' + (q[0] === '@' ? 'at-rule condition' : 'media query') +
+      ' reaches the dialog: ' + q);
   });
 }
 
@@ -1448,7 +1477,14 @@ function cascade(nodes, sheets, theme) {
       for (const a of attrs) named.add('\\[\\s*' + esc(a) + '(?=[\\]~^$*|=\\s])');
     }
   }
-  const CANDIDATE = new RegExp([...named].join('|'));
+  /* Case-insensitive, and only widening: this is a pre-filter that decides
+     what to CONSIDER, never what matches. HTML attribute names are ASCII
+     case-insensitive and `attrOf` lowercases them, so a case-sensitive
+     filter here dropped `[DATA-THEME="light"]` one line before the lowercasing
+     could help it (round five). Class names stay case-SENSITIVE where it
+     counts, in `matchToken`, so a widened candidate that does not really
+     match is still dismissed there rather than answered. */
+  const CANDIDATE = new RegExp([...named].join('|'), 'i');
 
   const rules = [];
   let order = 0;
@@ -1530,11 +1566,11 @@ function styledClasses(nodes, sheets) {
   for (const el of nodes) {
     for (const cls of classesOf(el)) {
       const hit = rules.some((rule) => {
-        if (!new RegExp('\\.' + cls + '(?![-\\w])').test(rule.selector)) return false;
+        if (!new RegExp('\\.' + esc(cls) + '(?![-\\w])').test(rule.selector)) return false;
         const parts = parseSelector(rule.selector);
         if (!parts) return false;
         const last = parts[parts.length - 1].compound;
-        if (!new RegExp('\\.' + cls + '(?![-\\w])').test(last)) return false;
+        if (!new RegExp('\\.' + esc(cls) + '(?![-\\w])').test(last)) return false;
         if (!selectorReaches(rule.selector, el)) return false;
         /* A rule that reaches the class but declares nothing paints nothing,
            so it must not count as the class being styled. Nor does one whose
