@@ -365,8 +365,10 @@ ops/assets/settings.css = gone; loaded by no page; named by no script
 monorepo, ported here so the panes can be remodelled one at a time. They sit **beside** `ops.css`
 and `shell.js` rather than replacing them: the two sheets declare a great many of the same class
 names from different token sets, so **a page loads one or the other, never both.** How many, and
-which of them reach furthest, is counted out of the sheets — a list typed here once said `ops.css`
-declares `.pill` and `.tbl`, and it declares neither, and never did.
+which of them carry the most selectors in `ops.css` — the widest eight, ties broken on the first
+letter, so the list is a sample of that width and not all of it — is counted out of the sheets. A
+list typed here once said `ops.css` declares `.pill` and `.tbl`, and it declares neither, and
+never did.
 
 ```claims id=v1-v2-collision
 class names declared in both ops.css and aria.css = 47
@@ -1158,8 +1160,8 @@ those panes now.
    `--surface-3`, its worst rendered pairing at the time, and 3.93:1 on a card. It
    needs 4.5:1, because it carries metadata, table headers, filter labels and placeholder text,
    all of which are text. What the new value clears is not typed here — it is measured from the
-   shipped token against every background token declared beside it, which is how the figure in
-   this sentence came to disagree with the comment on the token itself by 0.05:
+   shipped token against every background token declared beside it. The figure that used to sit
+   in this sentence disagreed with the comment on the token itself by 0.05:
 
    ```claims id=dark-text-3
    --text-3 in ops.css's dark :root = #8593A2
@@ -1218,7 +1220,7 @@ those panes now.
     those two pages. That block was deleted from the end of `ops.css` in `aria-website#74` when
     App releases and Look up a user moved to the v2 layer and stopped loading this stylesheet;
     the arithmetic it was computed from is kept in the historical record below.
-15. **A sideways-scrolling wrapper needs to be positioned, and seven of the eight are not.**
+15. **A sideways-scrolling wrapper needs to be positioned, and most of the v2 ones are not.**
     `overflow-x` clips only a descendant whose containing block is the wrapper, and an absolutely
     positioned one resolves that to the nearest **positioned** ancestor. Left static, an
     `.sr-only` span inside a table wider than a phone resolves past the wrapper, escapes its
@@ -1244,9 +1246,9 @@ those panes now.
 
     `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
     `login.html` and `setup.html` load and neither of them draws a table. `.u-scroll` on People
-    and usage is the one v2 wrapper that carries the repair. The other seven are static, so the
-    escape route above is open on them the moment a pane puts an absolutely positioned
-    screen-reader span inside one. **No pane ships such a span today** — that is why nothing is
+    and usage is the one v2 wrapper that carries the repair. Every other wrapper in the block is
+    static, so the escape route above is open on them the moment a pane puts an absolutely
+    positioned screen-reader span inside one. **No pane ships such a span today** — that is why nothing is
     broken on screen — which makes this an open gap rather than a shipped guard, and the guard
     this README is checked by now says so out loud instead of describing a rule that moved out
     from underneath it. Tracked as `Stadiora/Aria#10706`.
@@ -1937,6 +1939,9 @@ Which of these classes any page can still draw is therefore derived rather than 
 .btn-danger = declared in ops.css, pane-settings-v2.css; drawn by settings.html; painted where drawn
 .field-error = declared in ops.css, pane-evaluations-v2.css, pane-users-v2.css; drawn by evaluations.html, login.html, setup.html, users.html; painted where drawn
 .callout-warn = declared in ops.css; drawn by evaluations.html; no sheet declares it on evaluations.html
+.callout-crit = declared in ops.css; drawn by (no page)
+.callout-info = declared in ops.css; drawn by (no page)
+.callout-ai = declared in ops.css; drawn by (no page)
 ```
 
 Three lines in that block are worth reading twice:
@@ -2128,12 +2133,13 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front is older than the breach reads not clearing and one whose front arrived after it reads moving, that both can be on screen at once and stay different, that a missing unit, a missing or negative observation, a missing breach start or a span of zero produces cannot tell rather than the alarming one, that a problem whose `conditionClearedAt` is set reads stopped in the past tense rather than as a live breach, is excluded from the longest-wait tile and sorts below everything still going, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that the bar draws no app and no environment control at all and says why instead, that an empty page says whether anything was watching, that no `button` or `input` is drawn without a route behind it, and that the read carries its querystring as well as its path. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
-| `scripts/ops-spend-v2.test.mjs` | That each of the three cuts of the bill — the two the switch offers and the per-service table — adds up to the billed total exactly and that the line says so in both directions — reconciled, and the gap named when they do not — and that a sum which cannot be checked says that instead of reporting a gap of zero; that the `ungrouped` row is drawn and marked rather than hidden and is inside the sum; that a row with no figure prints words and is not added up as a zero; that the change pill's chevron follows the figure's own sign and that a rise and a fall are not the same glyph; that the per-service rows are drawn once and no state of the switch draws them again; that activating the switch hands focus back to the button that was activated, and only when focus was there to begin with; that a forecast is drawn only when the route sent one; that the age of the answer is printed beside the total once the poller is behind — the stale path — and against the answer's own publish lag rather than a constant in the pane; that the day line breaks on a day past the end of a stretch instead of joining across it; that each of the five availability states gets its own words and an unknown sixth still gets some; that the chart is named with its data and draws no `<text>` inside the figure; that the day chart carries the dates the route labelled under it and names both of its lines, so the dashed one is not just a texture; that a period billed only part way through says how far and to which day, and one billed to its own end does not repeat what the range name says; that the way out of an empty period travels to the closed month rather than back to the period it escapes — read from the link's `href`, not from its words; that no view button is offered for a grouping the answer did not carry; that the box holding the per-service table is reachable from a keyboard and names itself from the answer's own label, because at 320px the whole Change column is past its visible edge; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup. **Not covered**: that money is divided once at display and never summed as a float — every figure in the fixture is a whole number of dollars, so rounding each row to cents before summing changes no output and no mutation can make it red; it becomes testable when a fixture row carries a fraction of a cent. In a property whose name carries none of the colour-bearing words the value scan gates on — `text-decoration`, `text-emphasis` and `mask-image` are the three shapes — **anything the spelling clause cannot read** is seen by neither clause: a named colour, an `oklch()`, a `lab()`, a `color-mix()`. Not only the named colour `text-decoration: underline crimson` names (`Stadiora/Aria#10663`). The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Which properties are gated and which spellings are read is the `spend-colour-gate` block below, produced by running the guard's own two matchers rather than by reading them. Three exotic ways to write markup or a style attribute walk through the module guard: `setAttributeNS(null, 'style', …)`, a capitalised `Style:` prop key on `h()`, and `createContextualFragment()`. None of the four is drawn by this pane today. |
+| `scripts/ops-spend-v2.test.mjs` | That each of the three cuts of the bill — the two the switch offers and the per-service table — adds up to the billed total exactly and that the line says so in both directions — reconciled, and the gap named when they do not — and that a sum which cannot be checked says that instead of reporting a gap of zero; that the `ungrouped` row is drawn and marked rather than hidden and is inside the sum; that a row with no figure prints words and is not added up as a zero; that the change pill's chevron follows the figure's own sign and that a rise and a fall are not the same glyph; that the per-service rows are drawn once and no state of the switch draws them again; that activating the switch hands focus back to the button that was activated, and only when focus was there to begin with; that a forecast is drawn only when the route sent one; that the age of the answer is printed beside the total once the poller is behind — the stale path — and against the answer's own publish lag rather than a constant in the pane; that the day line breaks on a day past the end of a stretch instead of joining across it; that each of the five availability states gets its own words and an unknown sixth still gets some; that the chart is named with its data and draws no `<text>` inside the figure; that the day chart carries the dates the route labelled under it and names both of its lines, so the dashed one is not just a texture; that a period billed only part way through says how far and to which day, and one billed to its own end does not repeat what the range name says; that the way out of an empty period travels to the closed month rather than back to the period it escapes — read from the link's `href`, not from its words; that no view button is offered for a grouping the answer did not carry; that the box holding the per-service table is reachable from a keyboard and names itself from the answer's own label, because at 320px the whole Change column is past its visible edge; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup. **Not covered**: that money is divided once at display and never summed as a float — every figure in the fixture is a whole number of dollars, so rounding each row to cents before summing changes no output and no mutation can make it red; it becomes testable when a fixture row carries a fraction of a cent. In a property whose name carries none of the colour-bearing words the value scan gates on — `text-decoration`, `text-emphasis` and `mask-image` are the three shapes — **anything the spelling clause cannot read** is seen by neither clause: a named colour, an `oklch()`, a `lab()`, a `color-mix()`. Not only the named colour `text-decoration: underline crimson` names (`Stadiora/Aria#10663`). The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Which properties are gated and which spellings are read is the `spend-colour-gate` block below, produced by running the guard's own two matchers rather than by reading them. Which exotic ways to write markup or a style attribute walk through the module guard, and whether the module writes any of them, is the `spend-write-gate` block below — run against the guard's own two patterns rather than counted in a sentence here, which is how this row came to say "none of the four" about a list of three. |
 | `node scripts/check-ops-result-view.mjs` | Whether a state the JavaScript can enter is one a loaded stylesheet can **paint**. It drives every pane the registry declares past its landing state to a result view, proves it arrived by a string only that view draws, and then asks two things in real Chrome with no pointer over the page: that every class the pane wrote is reached by at least one rule from a sheet that page loads, and that every positive `aria-current`/`-selected`/`-pressed`/`-checked`/`-expanded` is painted differently from the same shape without it. `Stadiora/Aria#10456` is the shape: `pane-users.js` wrote `is-selected` on the picked match, no sheet `users.html` loads had a rule for it, and every other guard stayed green for the life of the defect. Known failures are enumerated in `KNOWN_UNPAINTED`, and each entry must still reproduce. **Not covered**, from its own docblock: one width (1280px); contrast, since two states that differ imperceptibly both pass; the accessibility tree, since the state is read off the markup rather than out of Chrome; any result view nobody drives — one per pane; a class judged per page rather than per site; the reach of a `~` or `+` clause; and paint that is not a class at all. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon on `/ops/shell-v2.html`** reaches that page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. All of that is measured on that one page, which is the only page in the repository that draws `aria.js`'s charts and its icon gallery. It does load every other page in `ops/` afterwards, in both themes, but only to catch a console error or a page that rendered nothing: a pane shipping an unpainted icon is **not** seen here. |
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
 | `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at 375px **and 360px** in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the page. A colour resolved at **draw time** is only correct for the theme it was drawn in; this loads every pane `assets/pane-registry.js` declares plus `/ops/shell-v2.html`, clicks the real button, and requires **every node's** resolved paint to equal the paint that node carries on a **fresh load** of the same page in the theme the button switched to — sixteen paint properties per node, with a `url(#id)` gradient resolved to its stops, because the ids are minted per draw. Two assertions stand either side of that one: that the two fresh loads differ at all, so the comparison is not vacuous on a page the theme never reached, and, on the pages that draw `aria.js`'s charts, that every shape painted from a token holds the palette's pinned value — the only one of the three that would notice `aria.css` drifting away from the palette, since a page compared against itself agrees with itself. Both directions, every page. **Not covered**, from its own docblock: pseudo-elements, any property outside those sixteen, a gradient that changed in a way its stops do not record, a page whose DOM differs between the two loads (reported as not comparable rather than passed), the populated states of People and usage and Cloud costs — the shared stub answers both with an empty envelope — and any theme beyond dark and light. |
+| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and the two PNGs must be byte-identical — a scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It fails rather than skips when it opens no dialog. |
 
 The `33` in that first row is not typed either. It is the size of the guard's own two pinned
 tables — the per-theme palette and the tokens it holds invariant across themes — counted out of
@@ -2149,7 +2155,7 @@ color-scheme pinned per theme = 2
 ```
 
 Which browser guard runs where is read out of the guards and the workflows, so a guard added
-next week is a red run here rather than a paragraph that quietly describes four of five: the
+next week is a red run here rather than a paragraph that quietly describes all of them but the newest: the
 workflow whose job line carries `node scripts/<guard>`, and the pages the guard's own source
 names — `every pane the registry declares` where it boots from `OpsPaneRegistry` rather than
 from a literal list. This says what each guard **loads**, which is the half that goes stale; what
@@ -2157,6 +2163,7 @@ it then asserts on each page is the table above.
 
 ```claims id=browser-guards
 check-ops-contrast.mjs = ops-contrast.yml; /ops/shell-v2.html
+check-ops-dialog-hit.mjs = ops-dialog-hit.yml; /ops/settings.html
 check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry declares
 check-ops-result-view.mjs = ops-result-view.yml; every pane the registry declares + /ops/run-history.html
 check-ops-shell-v2.mjs = ops-shell-v2.yml; every page in ops/
@@ -2193,6 +2200,16 @@ value lab(50% 40 59) = spelling clause cannot read it
 value color-mix(in srgb, crimson 50%, transparent) = spelling clause cannot read it
 ```
 
+The same row's other count is the three spellings the module guard is documented as **not**
+matching. Whether each still walks through it, and whether the module writes it, is run against
+the guard's own patterns:
+
+```claims id=spend-write-gate
+setAttributeNS(null, 'style', …) = walks through the guard; and the module does not write it
+a capitalised Style: key on h() = walks through the guard; and the module does not write it
+createContextualFragment() = walks through the guard; and the module does not write it
+```
+
 Charts and icons are swept for paint **separately**, with their own counts and their own
 messages, and each sweep marks what it swept so that every `<svg>` on the page has to be claimed
 by exactly one of them. The icon sweep exists because the chart sweep excluded icons, on the
@@ -2211,8 +2228,9 @@ the stroke channel, because that is the channel icons paint through; an icon hid
 
 ### Where this README points at code
 
-Six places below point at a comment or a line rather than a file. The anchor each one quotes is
-the subject; **the line number is derived**, so a pointer whose code moved is a red run naming
+The block below points at comments and lines rather than at files; how many is its own business
+rather than this sentence's. The anchor each one quotes is the subject; **the line number is
+derived**, so a pointer whose code moved is a red run naming
 the new line, and a pointer whose code is gone is a red run saying so. Three of the seven line
 citations this file used to carry had already drifted — `pane-registry.js:103-110` was the
 alerting note, not the Custom-range comment, and both `pane-users.js` citations were about 250
@@ -2245,19 +2263,23 @@ block here must be one it derives — and a `claims` fence it cannot parse is a 
 a block quietly skipped — so a block cannot be added, renamed or dropped silently, and the run
 prints what it judged, per block, in CI.
 
-Two blocks take their **subjects** from this file rather than from the code, and the guard says
-so in as many words: `source-anchors` reads which file and which quoted comment to go and find,
-and `deleted-assets` reads which absent path to look for, because neither set is greppable out of
-a tree the files are absent from. Both still derive every **value**. What that shape cannot catch
-by itself is a row deleted from this file, so both carry a row floor in the guard that has to be
-lowered deliberately, in code, before a row can go.
+Five blocks cannot derive **which** rows they carry, only what each row says: `source-anchors`
+and `deleted-assets` read their subjects out of this file, and `v1-status-classes`,
+`spend-colour-gate` and `spend-write-gate` read theirs from hand-written arrays in the guard,
+because no sheet says which of its classes carry status and no tree lists the files it has lost.
+All five still derive every **value**. What that shape cannot catch by itself is a subject
+deleted, so all five are pinned **row by row** in the guard — by name, not by count, because a
+count is absorbed the moment the block grows — and a row can only go by deleting it there too.
 
 Which blocks those are is itself derived, out of the guard rather than out of a sentence here:
 the enumeration that used to sit in this paragraph said nine and fell three behind, missing two
-blocks added in review and one added by the commit that fixed it. The sweep named on the last
-line requires every repository file path this README spells in a code span to be in the tree or
-declared in `deleted-assets`, which is what makes a file deleted elsewhere red here rather than
-quietly stale.
+blocks added in review and one added by the commit that fixed it. Two row sets are held by a
+test instead of a block, and are the last two lines: the sweep requires every repository file
+path this README spells in a code span to be in the tree or declared in `deleted-assets`, which
+is what makes a file deleted elsewhere red here rather than quietly stale; and the checks table
+above must carry a row for every `check-ops-*.mjs` in `scripts/`, which is how the sixth browser
+guard got a row the day it landed instead of the day somebody noticed. Neither judges the
+**words** in the row — only that the row is there.
 
 ```claims id=claims-blocks
 claims id=assets-by-page
@@ -2272,10 +2294,12 @@ claims id=scroll-wrapper-position
 claims id=shell-v2-pins
 claims id=source-anchors
 claims id=spend-colour-gate
+claims id=spend-write-gate
 claims id=table-focus-rings
 claims id=v1-status-classes
 claims id=v1-v2-collision
-and one sweep over every repository file path the README names in a code span
+and a test, every repository file ops/README.md names is in the tree or declared deleted
+and a test, every browser guard in the tree has a row in the checks table
 ```
 
 **NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence

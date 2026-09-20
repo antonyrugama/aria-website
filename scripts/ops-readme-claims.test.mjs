@@ -27,20 +27,30 @@
    have and the reason none of these assertions greps the README for a
    sentence.
 
-   TWO BLOCKS TAKE THEIR SUBJECTS FROM THE README, and it is worth being exact
-   about what that does and does not mean. `source-anchors` reads which file
-   and which quoted comment to go looking for, and `deleted-assets` reads which
-   absent path to look for; both then derive every value — the line number, the
-   uniqueness of the anchor, the absence of the file, who loads and reads it.
-   Editing a value in either block is red. What that shape cannot catch on its
-   own is a row DELETED from the README, which shrinks the expectation with it,
-   so both are pinned by a row floor in `ROW_FLOOR` at the foot of this file:
-   dropping a row is red until someone lowers the floor deliberately. The other
-   ten blocks derive their row set as well as their values, so shrinking one is
-   already red without a floor.
+   FIVE BLOCKS CANNOT DERIVE WHICH ROWS THEY CARRY, and it is worth being
+   exact about what that does and does not mean. `source-anchors` reads which
+   file and which quoted comment to go looking for and `deleted-assets` reads
+   which absent path to look for, both out of the README; `v1-status-classes`,
+   `spend-colour-gate` and `spend-write-gate` read their subjects from
+   V1_STATUS_CLASSES, COLOUR_PROBES and WRITE_PROBES in this file. All five
+   then derive every value — the line
+   number, the uniqueness of an anchor, the absence of a file, who loads and
+   reads it, what the spend guard's own matchers answer. Editing a value in
+   any of them is red. What that shape cannot catch on its own is a subject
+   DELETED, which shrinks the expectation with it, so all five are pinned row
+   by row in `REQUIRED_ROWS` at the foot of this file. A count would not do:
+   pin the size and a block that grows by one absorbs the deletion of a
+   different row silently. Every other block derives its row set as well as
+   its values, so shrinking one is already red without a pin.
 
    NOT COVERED, stated so nobody reads a green run as more than it is:
 
+   - The WORDS in a checks-table row. That table is held to the browser
+     guards only by its row SET: every `check-ops-*.mjs` in `scripts/` has to
+     be named by some row. What the row then says that guard sees is prose,
+     and a row describing a guard it no longer describes is invisible here.
+     The table is also found by its exact header line, so reformatting that
+     header is a failure rather than a silent skip.
    - Prose. This file judges the fenced blocks and the file paths the README
      names. A sentence that restates a block's content in English, or makes a
      claim no block carries, is not judged. The remedy used in the rewrite is
@@ -79,7 +89,13 @@
      table in the contrast section is bound here only by WHERE its classes are
      defined and whether any page can draw them.
    - The deleted-asset list is checked for absence only. The pull request each
-     line names is not verifiable from a shallow checkout. */
+     line names is not verifiable from a shallow checkout, and this file is
+     excluded from the scripts that "name" a dead asset, because it names all
+     of them by construction.
+   - A claims fence shown as an example inside another fenced block is read as
+     a real block. The reader is line-based and does not track an enclosing
+     fence, so the format is described in prose in the README and never
+     demonstrated there. */
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -92,6 +108,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const list = (rel) => fs.readdirSync(path.join(ROOT, rel)).sort();
 
+const SELF = path.basename(fileURLToPath(import.meta.url));
 const README_PATH = 'ops/README.md';
 const README = read(README_PATH);
 
@@ -102,28 +119,35 @@ const WORKFLOWS = list('.github/workflows').filter((f) => f.endsWith('.yml'));
 
 /* ------------------------------------------------------------ the blocks */
 
-/* Every ```claims id=<id> block in the README, as its raw lines. Any fence
-   opening with the word `claims` is taken as one, so a fence this reader
-   cannot parse — a capital in the id, a stray word after it, no id at all — is
-   a failure here rather than a block quietly not judged. A duplicate id and a
-   block that never closes are failures too. */
+/* Every claims block in the README, as its raw lines. Any fence whose info
+   string starts with the word `claims` is taken as one — three backticks or
+   more, a tilde fence, and a space before the word are all the same block to
+   CommonMark and all the same block here — so a fence this reader cannot
+   parse (a capital in the id, a stray word after it, no id at all) is a
+   failure rather than a block quietly not judged. A duplicate id and a block
+   that never closes are failures too. A claims fence shown as an EXAMPLE
+   inside another fenced block is read as a real one: this reader is
+   line-based and does not track an enclosing fence, which is why the format
+   is described in prose here and never demonstrated. */
 function claimBlocks(md) {
   const lines = md.split('\n');
   const blocks = new Map();
   for (let i = 0; i < lines.length; i += 1) {
-    const fence = /^(\s*)```claims\b(.*)$/.exec(lines[i]);
+    const fence = /^(\s*)(`{3,}|~{3,})\s*claims\b(.*)$/.exec(lines[i]);
     if (!fence) continue;
-    const open = /^\s+id=([a-z0-9-]+)\s*$/.exec(fence[2]);
+    const open = /^\s+id=([a-z0-9-]+)\s*$/.exec(fence[3]);
     assert.ok(
       open,
-      `${README_PATH}:${i + 1}: a claims fence this file cannot read: \`\`\`claims${fence[2]}` +
+      `${README_PATH}:${i + 1}: a claims fence this file cannot read: ${fence[2]}claims${fence[3]}` +
         ' — the info string must be exactly ```claims id=<lower-case-kebab-id>',
     );
     const id = open[1];
     const indent = fence[1];
+    const delimiter = fence[2];
+    const closes = new RegExp(`^${delimiter[0] === '`' ? '`' : '~'}{${delimiter.length},}$`);
     const body = [];
     let j = i + 1;
-    for (; j < lines.length && lines[j].trim() !== '```'; j += 1) {
+    for (; j < lines.length && !closes.test(lines[j].trim()); j += 1) {
       body.push(lines[j].startsWith(indent) ? lines[j].slice(indent.length) : lines[j]);
     }
     assert.ok(j < lines.length, `${README_PATH}:${i + 1}: claims block never closes`);
@@ -342,13 +366,48 @@ DERIVED['spend-colour-gate'] = () => {
   ];
 };
 
+/* The three spellings the spend module's write guard is documented as NOT
+   matching, run against the guard's own two patterns rather than restated.
+   Each probe is also looked for in the module itself, because "walks through
+   the guard" only matters while the module does not write it. A sentence here
+   once counted these three as four. */
+const WRITE_PROBES = [
+  ["setAttributeNS(null, 'style', …)", "el.setAttributeNS(null, 'style', 'color: red');", /setAttributeNS/],
+  ['a capitalised Style: key on h()', "h('div', { Style: 'color: red' })", /[{,]\s*['"`]?Style['"`]?\s*:/],
+  ['createContextualFragment()', 'document.createRange().createContextualFragment(markup);', /createContextualFragment/],
+];
+
+DERIVED['spend-write-gate'] = () => {
+  const src = read('scripts/ops-spend-v2.test.mjs');
+  const lift = (name) => {
+    const m = new RegExp(`const ${name} = (/[^\\n]+/[a-z]*);`).exec(src);
+    assert.ok(m, `scripts/ops-spend-v2.test.mjs: could not lift ${name}`);
+    return new RegExp(m[1].slice(1, m[1].lastIndexOf('/')), m[1].slice(m[1].lastIndexOf('/') + 1));
+  };
+  const patterns = [lift('MARKUP_WRITE'), lift('STYLE_ATTR_WRITE')];
+  /* Comments stripped the way ops-spend-v2.test.mjs strips them for PANE_CODE,
+     so a spelling named in a comment is not read as a write. */
+  const module = read('ops/assets/pane-spend.js')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  return WRITE_PROBES.map(([label, probe, inModule]) => {
+    const seen = patterns.some((re) => re.test(probe));
+    return `${label} = ${seen ? 'the guard matches it' : 'walks through the guard'}`
+      + `; ${inModule.test(module) ? 'and the module writes it' : 'and the module does not write it'}`;
+  });
+};
+
 /* The v1 status classes the contrast record below is written about: where
-   each one is still declared, and which pages can still draw it. */
+   each one is still declared, and which pages can still draw it. The list is
+   hand-chosen — a sheet does not say which of its classes carry status — so
+   it is pinned row by row in REQUIRED_ROWS and an omission is nobody's red.
+   `ops.css` declares the four callout tones as one block, so all four are
+   here even though the record only stops to explain the warning one. */
 const V1_STATUS_CLASSES = [
   'badge', 'badge-ok', 'badge-warn', 'badge-crit', 'badge-info', 'badge-brand',
   'flagchip', 'tag-mobile', 'tag-coaches', 'tag-backend', 'build', 'masked',
   'verdict-better', 'verdict-worse', 'verdict-slightly-worse', 'reveal-note',
-  'nav-count', 'btn-danger', 'field-error', 'callout-warn'
+  'nav-count', 'btn-danger', 'field-error',
+  'callout-warn', 'callout-crit', 'callout-info', 'callout-ai'
 ];
 
 /* Every class token a file can put on an element: the `class` attributes in a
@@ -554,10 +613,23 @@ DERIVED['dark-text-3'] = () => {
 
 /* The blocks this file derives, listed out of this file rather than typed into
    the README, because the README's enumeration of them fell three behind. */
-DERIVED['claims-blocks'] = () => [
-  ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
-  'and one sweep over every repository file path the README names in a code span',
-];
+const SWEEP_TEST = 'every repository file ops/README.md names is in the tree or declared deleted';
+
+DERIVED['claims-blocks'] = () => {
+  /* Two row sets are judged by a test rather than by a block — the file
+     sweep and the checks table — so their rows are read out of this file's
+     own source: delete either test and its row goes with it, which a typed
+     sentence would not do. */
+  const self = read(path.join('scripts', SELF));
+  const tests = [
+    ...(self.includes('test(SWEEP_TEST,') ? [SWEEP_TEST] : []),
+    ...(self.includes('test(TABLE_TEST,') ? [TABLE_TEST] : []),
+  ];
+  return [
+    ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
+    ...tests.map((name) => `and a test, ${name}`),
+  ];
+};
 
 /* What the content security policy costs, counted rather than remembered:
    how many pages would need a hash if the theme were inlined, and whether the
@@ -594,7 +666,10 @@ DERIVED['deleted-assets'] = () => {
       const base = path.basename(file);
       const pages = PAGES.filter((page) => loadedAssets(page).includes(base));
       const spelling = new RegExp(`assets/${base.replace(/\./g, '\\.')}`);
-      const readers = SCRIPTS.filter((s) => spelling.test(read(path.join('scripts', s))));
+      /* This file is not a reader of a dead asset: it names every one of them
+         by construction, in the block above and in REQUIRED_ROWS, so counting
+         itself would move this row on every edit to its own pin list. */
+      const readers = SCRIPTS.filter((s) => s !== SELF && spelling.test(read(path.join('scripts', s))));
       return `${file} = gone; ${pages.length ? `still loaded by ${pages.join(', ')}` : 'loaded by no page'}`
         + `; ${readers.length ? `named in ${readers.join(', ')}` : 'named by no script'}`;
     });
@@ -615,10 +690,31 @@ for (const id of Object.keys(DERIVED)) {
   });
 }
 
+/* The checks table carries a row per check, in prose nothing can derive. What
+   IS derivable is the ROW SET: every browser guard in the tree has to have a
+   row there. A guard that lands next week is red here, the way the sixth one
+   (check-ops-dialog-hit.mjs, aria-website#95) was red in browser-guards while
+   the table beside it silently described five of six. The row's TEXT is not
+   judged — see NOT COVERED at the top of this file. */
+const TABLE_TEST = 'every browser guard in the tree has a row in the checks table';
+test(TABLE_TEST, () => {
+  const head = README.indexOf('| Check | What it can see that nothing else can |');
+  assert.ok(head > -1, 'ops/README.md: the checks table header is gone or reworded, so no row set can be read');
+  const body = README.slice(head).split(/\n(?!\|)/)[0];
+  const rows = body.split('\n').filter((l) => l.startsWith('|'));
+  assert.ok(rows.length > 2, 'ops/README.md: the checks table has no rows');
+  const guards = SCRIPTS.filter((f) => /^check-ops-.*\.mjs$/.test(f));
+  assert.ok(guards.length > 0, 'scripts/ holds no check-ops-*.mjs at all, so this test is judging nothing');
+  const missing = guards.filter((g) => !rows.some((r) => r.includes(g)));
+  assert.deepStrictEqual(missing, [],
+    'ops/README.md: these browser guards run in this repository and the checks table does not name them');
+  JUDGED['checks table'] = rows.length - 2;
+});
+
 /* The README names files. Every one of them is either in the tree or declared
    dead in the deleted-assets block — which is what makes a deletion elsewhere
    in the repository red here rather than silently stale. */
-test('every repository file ops/README.md names is in the tree or declared deleted', () => {
+test(SWEEP_TEST, () => {
   const inTree = new Set([
     ...PAGES.map((p) => `ops/${p}`),
     ...list('ops/assets').map((a) => `ops/assets/${a}`),
@@ -668,15 +764,59 @@ test('every repository file ops/README.md names is in the tree or declared delet
   JUDGED['file-paths'] = judged;
 });
 
-/* Two blocks take their SUBJECTS from the README — which anchors to locate,
-   which deleted files to look for — because neither set is greppable out of a
-   tree the files are absent from or the comments were chosen by hand. Every
-   VALUE in them is still derived, but a row deleted from the README would
-   shrink the expectation with it and run green. These floors are the pin: a
-   row can be removed only by lowering the number here on purpose, in code, in
-   the diff. Nothing else in this file is allowed a floor — the other ten
-   blocks derive their row set, so shrinking one is already red. */
-const ROW_FLOOR = { 'source-anchors': 6, 'deleted-assets': 2 };
+/* Five blocks cannot derive WHICH rows they carry, only what each row says.
+   Two read their subjects from the README — `source-anchors` (which comment
+   to go and find) and `deleted-assets` (which absent path to look for) — and
+   two read them from a hand-written array up in this file:
+   `v1-status-classes` from V1_STATUS_CLASSES and `spend-colour-gate` from
+   COLOUR_PROBES. In all four, deleting a subject deletes the expectation with
+   it and runs green.
+
+   So the pin is the SET, keyed per row, not the count. A count absorbs every
+   deletion some addition has already paid for: grow a block by one, drop a
+   different row, and a floor of six still sees six. Each row named here must
+   still be judged, by name, so removing one is a deliberate two-line deletion
+   in this file and visible in the diff. Growing a block is free.
+
+   Every other block derives its row set from the tree, the pages, the
+   registry or the sheets, so shrinking one is already red without a pin. */
+const REQUIRED_ROWS = {
+  'source-anchors': [
+    'ops/assets/pane-analytics.js "`features.coverageNote` carries two facts"',
+    'ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs"',
+    'ops/assets/pane-releases.js "The chip carries the share and nothing else"',
+    'ops/assets/pane-releases-v2.css "The chip holds the share and nothing else"',
+    'ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded."',
+    'ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for"',
+  ],
+  'deleted-assets': ['ops/assets/operate.css', 'ops/assets/settings.css'],
+  /* Spelled out rather than mapped from V1_STATUS_CLASSES, COLOUR_PROBES and
+     WRITE_PROBES: a pin computed from the array it is pinning moves with the
+     deletion and pins nothing. Deleting a subject means deleting it twice, in
+     two places in this file, both in the diff. */
+  'v1-status-classes': [
+    '.badge', '.badge-ok', '.badge-warn', '.badge-crit', '.badge-info', '.badge-brand',
+    '.flagchip', '.tag-mobile', '.tag-coaches', '.tag-backend', '.build', '.masked',
+    '.verdict-better', '.verdict-worse', '.verdict-slightly-worse', '.reveal-note',
+    '.nav-count', '.btn-danger', '.field-error',
+    '.callout-warn', '.callout-crit', '.callout-info', '.callout-ai',
+  ],
+  'spend-colour-gate': [
+    'property --sp-ink', 'property color', 'property background-image',
+    'property border-color', 'property outline-color', 'property fill',
+    'property stroke', 'property box-shadow', 'property filter',
+    'property text-decoration', 'property text-emphasis', 'property mask-image',
+    'property accent-color',
+    'value #2b7fff', 'value #333', 'value rgb(255, 0, 0)', 'value hsl(0 100% 50%)',
+    'value crimson', 'value oklch(0.7 0.2 250)', 'value lab(50% 40 59)',
+    'value color-mix(in srgb, crimson 50%, transparent)',
+  ],
+  'spend-write-gate': [
+    "setAttributeNS(null, 'style', …)",
+    'a capitalised Style: key on h()',
+    'createContextualFragment()',
+  ],
+};
 
 /* A claims guard that judged nothing is the worst outcome this file has, and
    a green run says nothing about how much was compared. So the count goes in
@@ -686,12 +826,17 @@ test('the run reports what it judged', () => {
   const rows = Object.keys(JUDGED).sort().map((id) => `  ${id}: ${JUDGED[id]}`);
   const total = Object.values(JUDGED).reduce((a, b) => a + b, 0);
   console.log(`ops/README.md claims judged against the code:\n${rows.join('\n')}\n  TOTAL: ${total}`);
-  assert.equal(Object.keys(JUDGED).length, Object.keys(DERIVED).length + 1,
+  /* Every block, plus the two tests that judge a row set without a block of
+     their own: the file sweep and the checks table. */
+  assert.deepStrictEqual([...Object.keys(JUDGED)].sort(),
+    [...Object.keys(DERIVED), 'file-paths', 'checks table'].sort(),
     'a block was not judged in this run');
   assert.ok(total > 0, 'nothing was judged');
-  for (const [id, floor] of Object.entries(ROW_FLOOR)) {
-    assert.ok(JUDGED[id] >= floor,
-      `claims id=${id} judged ${JUDGED[id]} rows and this file pins a floor of ${floor}: ` +
-      'a row was deleted from the README, or the floor has to come down on purpose');
+  for (const [id, required] of Object.entries(REQUIRED_ROWS)) {
+    const rows = (BLOCKS.get(id)?.lines || []).map((l) => l.trim());
+    const gone = required.filter((subject) => !rows.some((row) => row.startsWith(subject)));
+    assert.deepStrictEqual(gone, [],
+      `claims id=${id} no longer judges rows this file pins by name: ${gone.join(', ')} — ` +
+      'a subject was deleted, or REQUIRED_ROWS has to lose it on purpose');
   }
 });
