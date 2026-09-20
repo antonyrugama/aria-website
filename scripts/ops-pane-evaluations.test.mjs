@@ -1275,6 +1275,92 @@ async function bootPane(options = {}) {
   return { ...dom, body, calls, content: dom.doc.getElementById('content') };
 }
 
+function approvalLookupResponse(id, state, revision) {
+  return {
+    resource: {
+      type: 'ciel.approval-request',
+      id,
+      revision,
+      value: { approvalRequestId: id, state, revision },
+    },
+  };
+}
+
+test('v2: approval lookup clears the previous success while its replacement is pending', async () => {
+  let resolveReplacement;
+  let calls = 0;
+  const view = await bootPane({
+    role: 'viewer',
+    call: () => ++calls === 1
+      ? Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2))
+      : new Promise(resolve => { resolveReplacement = resolve; }),
+  });
+  const form = view.doc.getElementById('approval-get-form');
+  const input = view.doc.getElementById('approval-get-id');
+  const result = view.doc.getElementById('approval-result');
+  const submit = form.querySelector('button');
+  assert.equal(view.doc.getElementById('approval-request-form'), null);
+  assert.equal(view.doc.getElementById('approval-decision-form'), null);
+  input.value = 'approval-first';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'first approval lookup did not settle');
+  assert.equal(result.hidden, false);
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  input.value = 'approval-next';
+  form.dispatch('submit');
+  assert.equal(submit.disabled, true);
+  assert.equal(submit.textContent, 'Loading…');
+  try {
+    assert.equal(result.hidden, true, 'the previous approval must not remain current while loading');
+    assert.equal(result.textContent, '');
+  } finally {
+    resolveReplacement(approvalLookupResponse('approval-next', 'pending', 4));
+  }
+  await waitFor(() => !submit.disabled, 'replacement approval lookup did not settle');
+  assert.equal(result.hidden, false);
+  assert.equal(result.textContent, 'Approval request approval-next is pending at revision 4.');
+});
+
+test('v2: approval lookup keeps old success cleared after denial and shows a later successful lookup', async () => {
+  let calls = 0;
+  const view = await bootPane({
+    role: 'viewer',
+    call: () => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error('Lookup denied.'));
+      return Promise.resolve(calls === 1
+        ? approvalLookupResponse('approval-first', 'approved', 2)
+        : approvalLookupResponse('approval-recovered', 'pending', 5));
+    },
+  });
+  const form = view.doc.getElementById('approval-get-form');
+  const input = view.doc.getElementById('approval-get-id');
+  const result = view.doc.getElementById('approval-result');
+  const submit = form.querySelector('button');
+  const error = form.querySelector('[role="alert"]');
+  input.value = 'approval-first';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'first approval lookup did not settle');
+  assert.equal(result.hidden, false);
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  input.value = 'approval-denied';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'denied approval lookup did not settle');
+  assert.equal(error.textContent, 'Lookup denied.');
+  assert.equal(result.hidden, true, 'a denial must not retain the earlier approval');
+  assert.equal(result.textContent, '');
+  assert.equal(submit.textContent, 'Load request');
+
+  input.value = 'approval-recovered';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'recovered approval lookup did not settle');
+  assert.equal(error.textContent, '');
+  assert.equal(result.hidden, false);
+  assert.equal(result.textContent, 'Approval request approval-recovered is pending at revision 5.');
+});
+
 const hasClass = (node, cls) => (node.getAttribute('class') || '').split(/\s+/).includes(cls);
 const isBand = node => node.tagName === 'SECTION' && hasClass(node, 'band');
 const within = (node, ancestor) => {

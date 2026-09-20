@@ -469,6 +469,8 @@ The same pane provides metadata-only approval request, lookup, and decision hand
 controls bind exact artifact, source, retained, request, purpose, policy, revision, and expiry
 values. Qualification is resolved server-side from an external verified record; the dashboard
 cannot provision or assert it.
+Starting another lookup clears the previous result. If it fails, only the lookup error is shown;
+a later successful lookup displays its current result.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,
