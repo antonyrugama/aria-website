@@ -507,6 +507,170 @@ test('a missing breach start is cannot tell, because there is no span to compare
     'a span measured from a missing start was treated as a span');
 });
 
+/* ================= stopped: the record says it is over ================== */
+
+/* The alerting engine never closes a problem. On the first non-breaching
+   check it records a recovery, sets conditionClearedAt and leaves the problem
+   OPEN for a person to close, and it stops writing observedValue and
+   lastObservedAt because refreshProblem only runs on a breaching sample. The
+   route's `status=open` means open-or-acknowledged and never looks at
+   conditionClearedAt, so the pane is handed the frozen figures of an incident
+   that ended. Drawn live they say a queue that recovered is not clearing, with
+   a wait nobody is doing. Every assertion below is about that gap. */
+
+test('a queue whose condition has stopped is drawn in the past tense', async () => {
+  const dom = await boot({
+    problems: {
+      problems: [queueProblem({
+        firstBreachedAt: at(100 * MINUTE),
+        firedAt: at(95 * MINUTE),
+        lastObservedAt: at(40 * MINUTE),
+        conditionClearedAt: at(40 * MINUTE),
+      })],
+      summary: {},
+    },
+  });
+  const row = queueRows(dom)[0];
+  assert.match(allText(row), /Stopped/, 'a recovered queue did not read as stopped');
+  assert.doesNotMatch(allText(row), /Not clearing|Moving, behind|Cannot tell/,
+    'a recovered queue kept a live verdict: ' + allText(row));
+  assert.equal(rowSentence(row),
+    'This queue is no longer over the line. The readings beside it are from when it was, ' +
+    'and it is still on this page because closing a problem is somebody\'s decision rather ' +
+    'than the engine\'s.',
+    'the row says something other than what conditionClearedAt proves');
+  assert.match(allText(row), /oldest when it stopped 1h 0m/,
+    'the frozen age was labelled as a live wait');
+  assert.match(allText(row), /was over the line 1h 0m/,
+    'the frozen span was labelled as still running');
+  assert.match(allText(row), /stopped 40 minutes ago/,
+    'the row did not say when it stopped');
+});
+
+test('a queue that has stopped is not the longest wait, because nobody is waiting it', async () => {
+  const dom = await boot({
+    problems: {
+      problems: [queueProblem({ conditionClearedAt: at(40 * MINUTE) })],
+      summary: {},
+    },
+  });
+  const tile = tileText(dom, /Oldest job waiting/);
+  assert.match(tile, /Not over the line/, 'the tile quoted a wait from a queue that recovered');
+  assert.equal(numerals(tile), 0, 'the tile drew a frozen figure as a live numeral: ' + tile);
+  assert.match(tile, /nothing is over the line now/,
+    'the tile did not say why the figure is absent');
+});
+
+test('the hero of a page where everything stopped says so, and does not sound the alarm', async () => {
+  const one = await boot({
+    problems: {
+      problems: [queueProblem({ conditionClearedAt: at(40 * MINUTE) })],
+      summary: {},
+    },
+  });
+  assert.match(heroText(one), /It has stopped, and nobody has closed it/,
+    'the hero of a recovered page did not say it had stopped');
+  assert.doesNotMatch(heroText(one), /is not clearing|is behind|are failing/,
+    'the hero called a recovered page live: ' + heroText(one));
+  assert.equal(heroSub(one),
+    'Nothing is over the line now. What is below stopped on its own and stays open until ' +
+    'somebody says which of "we fixed it" and "it went away" happened.',
+    'the hero says something other than what conditionClearedAt proves');
+
+  const two = await boot({
+    problems: {
+      problems: [
+        queueProblem({ conditionClearedAt: at(40 * MINUTE) }),
+        failingProblem({ conditionClearedAt: at(12 * MINUTE) }),
+      ],
+      summary: {},
+    },
+  });
+  assert.match(heroText(two), /2 have stopped, and nobody has closed them/,
+    'the hero counted recovered problems singly or not at all: ' + heroText(two));
+});
+
+test('a queue that is still going outranks one that stopped, in the hero and in the order', async () => {
+  const dom = await boot({
+    problems: {
+      problems: [
+        queueProblem({ id: 111, scopeLabel: 'Sprint video', conditionClearedAt: at(40 * MINUTE) }),
+        queueProblem({
+          id: 112,
+          scopeKey: 'form_check',
+          scopeLabel: 'Form check',
+          severity: 'warning',
+          observedValue: 3600,
+        }),
+      ],
+      summary: {},
+    },
+  });
+  assert.match(heroText(dom), /is not clearing/,
+    'a live queue lost the hero to one that had already stopped: ' + heroText(dom));
+  /* Severity is how bad it WAS. The stopped row here is critical and the live
+     one is only a warning, so a sort that reads severity first puts the
+     recovered incident at the top of the page. */
+  const rows = queueRows(dom);
+  assert.match(allText(rows[0]), /Not clearing/, 'the stopped row was drawn first');
+  assert.match(allText(rows[1]), /Stopped/, 'the live row was not drawn first');
+  assert.match(tileText(dom, /Oldest job waiting/), /1h 0m/,
+    'the tile skipped the queue that is still over the line');
+});
+
+test('work that stopped failing says so, and keeps no severity pill', async () => {
+  const dom = await boot({
+    problems: {
+      problems: [failingProblem({ conditionClearedAt: at(12 * MINUTE) })],
+      summary: {},
+    },
+  });
+  const row = findAll(sectionWithHeading(dom, /Flowing, and failing/),
+    (n) => hasClass(n, 'queue-row'))[0];
+  assert.equal(rowSentence(row),
+    'The answers were coming back wrong and are not any more. The figure beside this is ' +
+    'from when they were.',
+    'a recovered failure still said the answers are coming back wrong');
+  assert.match(allText(row), /was finishing cleanly 88\.0%/,
+    'the frozen rate was labelled as a live one');
+  assert.match(allText(row), /stopped 12 minutes ago/, 'the row did not say when it stopped');
+  assert.doesNotMatch(allText(row), /Critical/,
+    'a recovered failure kept its severity pill, which reads as still burning');
+});
+
+test('a problem on another pane that stopped is marked, not quietly listed', async () => {
+  const dom = await boot({
+    problems: {
+      problems: [elsewhereProblem({ conditionClearedAt: at(3 * MINUTE) })],
+      summary: {},
+    },
+  });
+  const section = sectionWithHeading(dom, /Open elsewhere/);
+  assert.match(allText(section), /stopped 3 minutes ago/,
+    'a recovered problem elsewhere was listed as though it were still going');
+  assert.match(heroText(dom), /It has stopped, and nobody has closed it/,
+    'the hero treated a recovered problem elsewhere as live: ' + heroText(dom));
+});
+
+test('a live problem elsewhere still outranks anything that stopped', async () => {
+  const dom = await boot({
+    problems: {
+      problems: [
+        queueProblem({ conditionClearedAt: at(40 * MINUTE) }),
+        elsewhereProblem(),
+      ],
+      summary: {},
+    },
+  });
+  assert.match(heroText(dom), /One problem is going, and it is not the queue/,
+    'a live problem elsewhere lost the hero to a recovered queue: ' + heroText(dom));
+  assert.equal(heroSub(dom),
+    'Nothing is queueing and nothing is failing. What is still going belongs to another ' +
+    'pane, and each one below says which. The rest have stopped and are waiting to be ' +
+    'closed.',
+    'the hero did not account for the recovered problem it was not counting');
+});
+
 /* ========================== the hero says which ========================= */
 
 test('the hero names the fact, not just that something is wrong', async () => {
@@ -533,6 +697,78 @@ test('the hero names the fact, not just that something is wrong', async () => {
     'the hero says something other than what oldest < span proves');
   assert.doesNotMatch(heroText(behind), /is not clearing/,
     'the hero called a draining queue not clearing, which is the whole distinction collapsed');
+});
+
+/* The singular forks above are bound whole; these are the plural ones. Round 3
+   of review demonstrated that they were not — the hero rewritten to
+   "N queues are stuck" with its old sub restored survived the suite — and a
+   claim that is only bound in one of its two spellings is bound in neither,
+   because the fork a mutation lands in is a coin toss. */
+test('the plural hero forks claim exactly what the singular ones do', async () => {
+  const twoHolding = await boot({
+    problems: {
+      problems: [
+        queueProblem({ id: 111 }),
+        queueProblem({ id: 112, scopeKey: 'form_check', scopeLabel: 'Form check' }),
+      ],
+      summary: {},
+    },
+  });
+  assert.match(heroText(twoHolding), /2 queues are not clearing/,
+    'the fixture did not reach the plural fork under test');
+  assert.equal(heroSub(twoHolding),
+    'Work that was already waiting when they went over the line is still waiting.',
+    'the plural hero says something other than what oldest >= span proves');
+
+  const twoBehind = await boot({
+    problems: {
+      problems: [
+        queueProblem({ id: 111, observedValue: 660 }),
+        queueProblem({
+          id: 112,
+          scopeKey: 'form_check',
+          scopeLabel: 'Form check',
+          observedValue: 660,
+        }),
+      ],
+      summary: {},
+    },
+  });
+  assert.match(heroText(twoBehind), /2 queues are behind/,
+    'the fixture did not reach the plural fork under test');
+  assert.equal(heroSub(twoBehind),
+    'Everything they were holding when the line was crossed has since left. What is waiting ' +
+    'now arrived after that.',
+    'the plural hero says something other than what oldest < span proves');
+});
+
+test('cannot tell claims exactly what an unreadable record proves, and no more', async () => {
+  /* The third verdict is the one with the strongest pull towards guessing: a
+     pane that quietly rounds it to the alarming answer sends an operator to a
+     queue that is working, and a pane that rounds it to the quiet one hides a
+     queue that is not. The sentence is bound whole for the same reason the
+     other two are. */
+  const dom = await boot({
+    problems: { problems: [queueProblem({ observedValue: null })], summary: {} },
+  });
+  const row = queueRows(dom)[0];
+  assert.match(allText(row), /Cannot tell/, 'the fixture did not reach the verdict under test');
+  assert.equal(rowSentence(row),
+    'Whether this queue is clearing cannot be read from what was recorded, so it is not ' +
+    'being guessed at.',
+    'the row guessed at, or overstated, a verdict it could not read');
+});
+
+test('a failing row claims exactly that work is flowing, and never that it is queued', async () => {
+  const dom = await boot({
+    problems: { problems: [failingProblem()], summary: {} },
+  });
+  const row = findAll(sectionWithHeading(dom, /Flowing, and failing/),
+    (n) => hasClass(n, 'queue-row'))[0];
+  assert.equal(rowSentence(row),
+    'Work is being picked up and the answers are coming back wrong. This is not a queue: ' +
+    'nothing is waiting.',
+    'the failing row says something other than that work is flowing and failing');
 });
 
 test('work that is flowing and failing is a third fact, not a queue', async () => {

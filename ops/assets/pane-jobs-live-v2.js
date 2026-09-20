@@ -75,6 +75,42 @@
    means work is flowing and failing. Nothing is waiting; the answers are
    coming back wrong. It is drawn as its own thing.
 
+   WHEN T IS, AND WHEN IT IS NOT NOW
+
+   Every figure on this pane is a statement about the last observation that was
+   OVER THE LINE. Call that time T. A pane called "Happening now" presents each
+   of them as a statement about now, so the step from "at T" to "now" needs a
+   reason, and there is exactly one field that supplies it.
+
+   The engine does not close a problem when its condition stops. On the first
+   non-breaching check it records a recovery and sets conditionClearedAt, and
+   the problem STAYS OPEN until a person closes it
+   (opsAlertLifecycle.ts record_recovery -> opsAlertRepository.setConditionCleared,
+   which writes conditionClearedAt and nothing else). observedValue and
+   lastObservedAt are written only by refreshProblem, and refreshProblem runs
+   only on a breaching observation. So after recovery both figures are frozen
+   at T and T stops advancing, while `status=open` — the route maps it to open
+   AND acknowledged and never looks at conditionClearedAt — keeps returning the
+   problem indefinitely.
+
+   That is the ordinary state of every incident between "it stopped" and "a
+   human closed it", which on a small team is hours. Drawn in the present tense
+   it says a queue that recovered forty minutes ago is not clearing, with an
+   oldest-wait figure that has not been true since T.
+
+   So conditionClearedAt is read FIRST, ahead of the arithmetic above, and a
+   problem carrying it is drawn in the past tense: the verdict becomes STOPPED,
+   the two figures keep their values but get past-tense labels, the row says
+   when it stopped, and the "Oldest job waiting" tile excludes it rather than
+   quoting a wait nobody is doing. This matches the Problems pane, which has
+   said "Stopped <ago>" against conditionClearedAt since before this pane
+   existed; the two must not disagree about the same record.
+
+   The remaining gap is honest and named: T is the last BREACHING sample, so
+   while a problem is still going the figures are as fresh as the last check
+   and no fresher. The pane draws lastObservedAt-derived spans, not wall-clock
+   ones, so it never inflates a wait past what was measured.
+
    WHAT THIS PANE READS
 
      GET /api/ops/alerts/problems ?status=open&limit=100
@@ -82,8 +118,9 @@
 
        `status=open` is the route's own word for open AND acknowledged, and it
        excludes `pending` — a problem that has not held for its duration is not
-       yet something a person should be looking at. That is exactly the present
-       tense this pane wants.
+       yet something a person should be looking at. It is NOT a filter on
+       whether the condition is still happening: see WHEN T IS above, and
+       conditionClearedAt on each problem, which is.
 
      GET /api/ops/alerts/rules
        -> { data: { rules[], summary, channels[] } }
@@ -218,17 +255,37 @@
     return span > 0 ? span : null;
   }
 
-  /* One of three answers, never two of them merged. 'unknown' is a real
-     answer here and is drawn as words: told the backlog is not clearing when
-     the truth is unreadable, an operator goes looking for a queue that is
-     working. */
+  /* When the condition stopped, or null while it is still going. This is the
+     one field that decides whether anything else on the row is present tense,
+     which is why it is read before the arithmetic and not after it: see WHEN
+     T IS, AND WHEN IT IS NOT NOW in the docblock. */
+  function clearedAt(problem) {
+    var when = model.latest([problem.conditionClearedAt]);
+    return when === -Infinity ? null : when;
+  }
+
+  /* One of four answers, never two of them merged. 'stopped' comes first
+     because a cleared condition makes the other three unaskable: both of them
+     are statements about a queue that is over the line, and this one is not
+     any more. 'unknown' is a real answer too and is drawn as words: told the
+     backlog is not clearing when the truth is unreadable, an operator goes
+     looking for a queue that is working. */
   function movement(problem, rule) {
     var oldest = observedSeconds(problem, rule);
     var span = breachSeconds(problem);
-    if (oldest === null || span === null) {
-      return { state: 'unknown', oldest: oldest, span: span };
+    var cleared = clearedAt(problem);
+    if (cleared !== null) {
+      return { state: 'stopped', oldest: oldest, span: span, cleared: cleared };
     }
-    return { state: oldest >= span ? 'holding' : 'behind', oldest: oldest, span: span };
+    if (oldest === null || span === null) {
+      return { state: 'unknown', oldest: oldest, span: span, cleared: null };
+    }
+    return {
+      state: oldest >= span ? 'holding' : 'behind',
+      oldest: oldest,
+      span: span,
+      cleared: null
+    };
   }
 
   /* The sentences say only what two numbers can carry. 'holding' is not a
@@ -252,6 +309,13 @@
       tone: 'ghost',
       sentence: 'Whether this queue is clearing cannot be read from what was recorded, so it ' +
         'is not being guessed at.'
+    },
+    stopped: {
+      label: 'Stopped',
+      tone: 'ghost',
+      sentence: 'This queue is no longer over the line. The readings beside it are from when ' +
+        'it was, and it is still on this page because closing a problem is somebody\'s ' +
+        'decision rather than the engine\'s.'
     }
   };
 
@@ -269,11 +333,17 @@
     });
   }
 
-  /* Worst first, then the one that has been over the line longest. A queue
-     that has been over the line for an hour outranks one that crossed it a
-     minute ago at the same severity. */
+  /* Still going first, then worst, then the one that has been over the line
+     longest. A queue that has stopped goes below every queue that has not,
+     whatever its severity: severity is how bad it was, and a critical row that
+     recovered is not more urgent than a warning row that is still going. At
+     equal standing a queue that has been over the line for an hour outranks
+     one that crossed it a minute ago. */
   function worstFirst(rows) {
     return rows.slice().sort(function (a, b) {
+      var byLive = (a.movement.state === 'stopped' ? 1 : 0) -
+        (b.movement.state === 'stopped' ? 1 : 0);
+      if (byLive) return byLive;
       var bySeverity = model.severityRank(a.problem.severity) -
         model.severityRank(b.problem.severity);
       if (bySeverity) return bySeverity;
@@ -438,6 +508,18 @@
       var holding = queues.filter(function (row) { return row.movement.state === 'holding'; });
       var behind = queues.filter(function (row) { return row.movement.state === 'behind'; });
       var unreadable = queues.filter(function (row) { return row.movement.state === 'unknown'; });
+      var stillFailing = failing.filter(function (problem) {
+        return clearedAt(problem) === null;
+      });
+      var stillElsewhere = elsewhere.filter(function (problem) {
+        return clearedAt(problem) === null;
+      });
+      /* Every open problem whose condition has stopped, across all three
+         groups. The three groups partition the open list by ruleKey, so when
+         nothing above matches, this is the whole of it. */
+      var stopped = queues.length + failing.length + elsewhere.length -
+        queues.filter(function (row) { return row.movement.state !== 'stopped'; }).length -
+        stillFailing.length - stillElsewhere.length;
 
       var tone = 'st-acc';
       var title = '';
@@ -465,19 +547,32 @@
           : unreadable.length + ' queues are over the line';
         sub = 'Whether ' + (unreadable.length === 1 ? 'it is' : 'they are') +
           ' clearing cannot be read from what was recorded.';
-      } else if (failing.length) {
+      } else if (stillFailing.length) {
         tone = 'st-bad';
-        title = failing.length === 1
-          ? coded(failing[0].scopeLabel || 'Aria runs') + ' are failing'
-          : failing.length + ' request types are failing';
+        title = stillFailing.length === 1
+          ? coded(stillFailing[0].scopeLabel || 'Aria runs') + ' are failing'
+          : stillFailing.length + ' request types are failing';
         sub = 'Nothing is waiting. The work is flowing and the answers are coming back wrong.';
-      } else {
+      } else if (stillElsewhere.length) {
         tone = 'st-warn';
-        title = elsewhere.length === 1
-          ? 'One problem is open, and it is not the queue'
-          : elsewhere.length + ' problems are open, and none is the queue';
-        sub = 'Nothing is queueing and nothing is failing. What is open belongs to ' +
-          'another pane, and each one below says which.';
+        title = stillElsewhere.length === 1
+          ? 'One problem is going, and it is not the queue'
+          : stillElsewhere.length + ' problems are going, and none is the queue';
+        sub = 'Nothing is queueing and nothing is failing. What is still going belongs to ' +
+          'another pane, and each one below says which.' + (stopped
+            ? ' The rest have stopped and are waiting to be closed.'
+            : '');
+      } else {
+        /* Nothing is happening now, and that is the answer somebody paged an
+           hour ago came here for. It is not the all-clear: the engine never
+           closes a problem itself, so these are waiting on a person to say
+           which of "we fixed it" and "it went away" happened. */
+        tone = 'st-ok';
+        title = stopped === 1
+          ? 'It has stopped, and nobody has closed it'
+          : stopped + ' have stopped, and nobody has closed them';
+        sub = 'Nothing is over the line now. What is below stopped on its own and stays open ' +
+          'until somebody says which of "we fixed it" and "it went away" happened.';
       }
 
       var section = h('section', { className: 'hero ' + tone });
@@ -562,14 +657,21 @@
        it breaches and at no other time, so below the threshold this is an
        absence rather than a zero, and it says which. */
     function oldestWaitFigure(queues) {
-      var readable = queues.filter(function (row) { return row.movement.oldest !== null; });
+      /* A stopped queue's figure is the age at its last breaching sample, not
+         a wait anybody is doing now, so it cannot be the answer to "what is
+         the longest wait". Excluded here rather than clamped: the tile has an
+         absence to say and it should say it. */
+      var live = queues.filter(function (row) { return row.movement.state !== 'stopped'; });
+      var readable = live.filter(function (row) { return row.movement.oldest !== null; });
 
-      if (!queues.length) {
+      if (!live.length) {
         return {
           label: 'Oldest job waiting',
           availability: 'unrecorded',
           words: 'Not over the line',
-          note: 'the wait is only recorded while a queue is breaching'
+          note: queues.length
+            ? 'nothing is over the line now; what is open below has stopped'
+            : 'the wait is only recorded while a queue is breaching'
         };
       }
 
@@ -623,8 +725,13 @@
     /* --------------------------------------------------------- the queues */
 
     function queueBand(queues, queueRule) {
+      var anyStopped = queues.some(function (row) {
+        return row.movement.state === 'stopped';
+      });
       var section = S.band('Waiting, and whether it is clearing',
-        'The front of the queue, per request type');
+        'The front of the queue, per request type' + (anyStopped
+          ? '. Rows that have stopped are last.'
+          : ''));
       var box = S.card();
       var body = h('div', { className: 'card-body col' });
 
@@ -658,13 +765,20 @@
       words.appendChild(h('div', { className: 't-sub', text: verdict.sentence }));
       line.appendChild(words);
 
+      /* Past tense for a queue that has stopped, because both figures froze
+         when it did: the engine writes observedValue and lastObservedAt only
+         on a BREACHING observation, so "oldest" is the age at the last sample
+         that was over the line and "over the line" stops growing there. Drawn
+         with a live label they are a measurement of now that nobody took. */
+      var stopped = row.movement.state === 'stopped';
       var facts = h('div', { className: 'queue-facts' });
-      facts.appendChild(factPill('clock', 'oldest', row.movement.oldest === null
-        ? 'not readable'
-        : waited(row.movement.oldest)));
-      facts.appendChild(factPill('history', 'over the line', row.movement.span === null
-        ? 'not readable'
-        : waited(row.movement.span)));
+      facts.appendChild(factPill('clock', stopped ? 'oldest when it stopped' : 'oldest',
+        row.movement.oldest === null ? 'not readable' : waited(row.movement.oldest)));
+      facts.appendChild(factPill('history', stopped ? 'was over the line' : 'over the line',
+        row.movement.span === null ? 'not readable' : waited(row.movement.span)));
+      if (stopped) {
+        facts.appendChild(factPill('check', 'stopped', fmt.ago(problem.conditionClearedAt)));
+      }
       line.appendChild(facts);
 
       /* The verdict carries its words as well as its tone: a screen that is
@@ -697,6 +811,7 @@
       var body = h('div', { className: 'card-body col' });
 
       failing.forEach(function (problem) {
+        var cleared = clearedAt(problem);
         var line = h('div', { className: 'queue-row' });
 
         var words = h('div', { className: 'queue-words' });
@@ -706,8 +821,11 @@
         }));
         words.appendChild(h('div', {
           className: 't-sub',
-          text: 'Work is being picked up and the answers are coming back wrong. This is not ' +
-            'a queue: nothing is waiting.'
+          text: cleared === null
+            ? 'Work is being picked up and the answers are coming back wrong. This is not ' +
+              'a queue: nothing is waiting.'
+            : 'The answers were coming back wrong and are not any more. The figure beside ' +
+              'this is from when they were.'
         }));
         line.appendChild(words);
 
@@ -716,14 +834,22 @@
           fmt.isNum(problem.observedValue) && problem.observedValue >= 0
           ? fmt.percent(problem.observedValue)
           : null;
-        facts.appendChild(factPill('check', 'finishing cleanly',
+        facts.appendChild(factPill('check',
+          cleared === null ? 'finishing cleanly' : 'was finishing cleanly',
           observed === null ? 'not readable' : observed));
+        if (cleared !== null) {
+          facts.appendChild(factPill('history', 'stopped', fmt.ago(problem.conditionClearedAt)));
+        }
         line.appendChild(facts);
 
         var state = h('div', { className: 'queue-state' });
         state.appendChild(h('span', {
-          className: 'pill ' + (model.SEVERITY_TONE[problem.severity] === 'crit' ? 'down' : 'warn'),
-          text: model.SEVERITY_LABEL[problem.severity] || 'Unrated'
+          className: 'pill ' + (cleared !== null
+            ? 'ghost'
+            : (model.SEVERITY_TONE[problem.severity] === 'crit' ? 'down' : 'warn')),
+          text: cleared !== null
+            ? 'Stopped'
+            : (model.SEVERITY_LABEL[problem.severity] || 'Unrated')
         }));
         line.appendChild(state);
 
@@ -776,6 +902,9 @@
           className: 'pill ' + (model.SEVERITY_TONE[problem.severity] === 'crit' ? 'down' : 'warn'),
           text: model.SEVERITY_LABEL[problem.severity] || 'Unrated'
         }));
+        if (clearedAt(problem) !== null) {
+          facts.appendChild(factPill('check', 'stopped', fmt.ago(problem.conditionClearedAt)));
+        }
         line.appendChild(facts);
 
         var state = h('div', { className: 'queue-state' });
