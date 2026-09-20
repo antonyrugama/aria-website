@@ -933,6 +933,8 @@
     approvalGetForm.addEventListener('submit', function (event) {
       event.preventDefault();
       approvalGetError.textContent = '';
+      approvalResult.hidden = true;
+      approvalResult.textContent = '';
       approvalGetSubmit.disabled = true;
       approvalGetSubmit.textContent = 'Loading…';
       session.call('/api/ops/ciel/operations', {
