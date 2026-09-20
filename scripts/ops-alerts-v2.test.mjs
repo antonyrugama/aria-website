@@ -470,6 +470,26 @@ test('a figure read over a filtered answer says which filter it was read over', 
     'a severity-scoped answer was presented as a total');
 });
 
+/* A problem goes open -> closed and never back, so of two copies the one
+   carrying `closedAt` was read later. Keeping the first showed one reference
+   as "Still happening" in the queue and "Closed a minute ago" in the list
+   below it, on one screen. */
+test('a problem that is in both answers is the closed one, not the stale open one', async () => {
+  const id = 'prb_r';
+  const dom = await boot({
+    search: '?range=7d',
+    open: { problems: [problem({ id, reference: 'AO-500', status: 'open' })] },
+    closed: { problems: [closedProblem({ id, reference: 'AO-500' })] },
+  });
+  const cards = problemCards(dom);
+  assert.equal(cards.length, 1, 'the problem was drawn twice');
+  const text = allText(cards[0]).replace(/\s+/g, ' ');
+  assert.doesNotMatch(text, /Still happening/,
+    'the queue kept the stale open copy of a problem the closed read says is closed: ' + text);
+  assert.match(text, /Closed/,
+    'the closed copy lost its state as well: ' + text);
+});
+
 /* ===================== a closed problem is not an open one ============== */
 
 /* `Open for` measures to now, so on a closed problem it counts on past the
