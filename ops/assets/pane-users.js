@@ -17,7 +17,7 @@
      3. A reveal is one field, with a written reason, and it un-reveals itself.
         The reason is required by the form and again by the server. The value
         comes back with the moment it expires, and this file re-masks at that
-        moment, when the drawer closes, and when a new search starts.
+        moment, when a new account is opened, and when a new search starts.
      4. Health data has no reveal control at all. Not a disabled one, not one
         that asks for a stronger role: the field carries no control, because a
         control that can never succeed still tells an operator that the value
@@ -27,14 +27,36 @@
    messages" is a fact about the service; what was said is not this pane's to
    show, at any role.
 
-   Destructive account actions are absent by design rather than hidden behind a
-   permission. Deleting an account runs through the account deletion workflow,
-   which needs the athlete's own confirmation, and there is no path to it here.
+   THE SIX PROMISES THIS PANE MAKES TO THE ATHLETE, and where each is on screen
+
+   They are the reason the pane is shaped the way it is, so each one is a
+   sentence somebody can read rather than a property of the code:
+
+     1. personal fields are hidden for every role, the owner included, until a
+        reveal is recorded   -> the privilege strip, and the account card foot
+     2. a reveal is owner only and needs a written reason
+                             -> the reveal band note, the reason box itself,
+                                and the disabled control a non-owner gets
+     3. a reveal is recorded by field name, never by value
+                             -> the reveal band note and the note a landed
+                                reveal leaves beside the value
+     4. the athlete can see that it happened and who did it
+                             -> the privilege strip, and the access band
+     5. reveal records outlive the reveal and cannot be erased by one
+                             -> the access band foot
+     6. request and reply content is not shown here, at any role
+                             -> the activity card foot
+
+   scripts/ops-users-v2.test.mjs asserts all six are present, and asserts the
+   mechanism behind each separately from the sentence, because a sentence that
+   outlives the thing it describes is the worse of the two failures.
 
    WHAT THIS PANE READS
 
    Every field below is what the code actually consumes, because this contract
-   is the only specification a backend author has for these three routes.
+   is the only specification a backend author has for these three routes. The
+   routes are unchanged by the v2 remodel: this file draws the same answers
+   differently.
 
      POST /api/ops/users/lookup
        { identifier, reason, scope, state, tier }
@@ -65,8 +87,8 @@
 
        kind        'coach' or 'athlete'
        recorded    as above, for the record this request wrote
-       record      the fuller field list shown in the drawer, falling back to
-                   summary.fields when it is absent
+       record      the fuller field list, falling back to summary.fields when
+                   it is absent
        events[]    { occurredAt, label, tone, reference, href }: a list of
                    events and never their content. href is followed only when
                    it stays on this origin, so it cannot become an off-site
@@ -118,16 +140,36 @@
                   wrong should not be able to make this page the place it
                   goes wrong.
      neverShownNote / unavailableNote
-                  the sentence shown in place of a control. */
+                  the sentence shown in place of a control.
+
+   WHAT THE V2 REMODEL CHANGED, and what it deliberately did not
+
+   The drawer is gone. Four tabs behind a "Full record" button held the fuller
+   field list, the devices, the billing record and the access record, and the
+   access record is the one thing on this pane that makes the rest of it
+   defensible. It is a band on the page now, so "who has looked at this
+   account" is read without asking for it.
+
+   Nothing about the reveal flow moved. fieldValue below is the same function,
+   with the same three floors under the API's decision, because every one of
+   them was put there by a defect that had already shipped once.
+
+   The danger zone is stated and not drawn as controls. The mock carries four
+   account actions behind re-authentication; the operations API has no route
+   that performs one, so this pane draws the rows, says re-authentication is
+   required, and draws no button. A control that cannot succeed is worse than
+   no control, and hiding the section entirely would only make people ask
+   whether it exists. */
 (function (global) {
   'use strict';
 
-  var shell = global.OpsShell;
+  var shell = global.OpsPaneShell;
   var session = global.OpsSession;
   var h = shell.h;
   var icon = shell.icon;
 
   var TONE_ICON = { ok: 'check', warn: 'warn', crit: 'warn', info: 'info' };
+  var TONE_PILL = { ok: 'up', warn: 'warn', crit: 'down', info: 'info' };
 
   /* Field keys that are health data. Rule 4 puts these out of reach at every
      role, and the operations API is what decides which fields those are: it is
@@ -161,6 +203,17 @@
   var REVEAL_MAX_MS = 900000;
 
   /* --------------------------------------------------------- formatting */
+
+  /* Emptying a container. `node.textContent = ''` is the one-liner for this in
+     a browser and it is not used anywhere in this file, because it is a
+     property assignment whose child-removing side effect only a real DOM has:
+     a test stub that models textContent as a plain field reports the container
+     as empty while every stale node is still under it, and a test reading the
+     result would be reading a screen nobody has. assets/shell-pane-v2.js
+     clears the same way. */
+  function clear(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+  }
 
   function isHealthKey(key) {
     return !!(key && Object.prototype.hasOwnProperty.call(HEALTH_KEYS, key));
@@ -259,56 +312,44 @@
     return minutes + (minutes === 1 ? ' minute' : ' minutes');
   }
 
-  function dateOnly(iso) {
-    var t = parseTime(iso);
-    if (t === null) return null;
-    try {
-      return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-    } catch (e) { return new Date(t).toISOString().slice(0, 10); }
-  }
-
   /* ------------------------------------------------------- small pieces */
 
-  function badge(tone, text, iconName) {
-    var b = h('span', { className: 'badge' + (tone ? ' badge-' + tone : '') });
-    var glyph = iconName || TONE_ICON[tone];
-    if (glyph) b.appendChild(icon(glyph));
-    b.appendChild(h('span', { text: text }));
-    return b;
+  /* A status, never as colour alone: every pill carries a glyph or a word that
+     says the same thing the colour does. */
+  function pill(tone, text, iconName) {
+    var p = h('span', { className: 'pill' + (tone ? ' ' + tone : '') });
+    if (iconName) p.appendChild(icon(iconName));
+    p.appendChild(h('span', { text: text }));
+    return p;
   }
 
-  function stateBadge(state) {
-    if (!state) return badge('', 'State not reported');
-    return badge(state.tone || '', state.label || state.key || 'Unknown');
+  function tonePill(tone, text) {
+    return pill(TONE_PILL[tone] || '', text, TONE_ICON[tone]);
   }
 
-  function tierBadge(tier) {
-    if (!tier) return badge('', 'Tier not reported');
-    return badge(tier.brand ? 'brand' : '', tier.label || tier.key || 'Unknown');
+  function stateePill(state) {
+    if (!state) return pill('', 'State not reported', 'info');
+    return tonePill(state.tone, state.label || state.key || 'Unknown');
   }
 
-  function flagChip(flag) {
-    var chip = h('span', { className: 'flagchip' + (flag.tone ? ' is-' + flag.tone : '') });
-    var glyph = TONE_ICON[flag.tone];
-    if (glyph) chip.appendChild(icon(glyph));
-    chip.appendChild(h('span', { text: flag.label || flag.key }));
-    return chip;
+  function tierPill(tier) {
+    if (!tier) return pill('', 'Tier not reported', 'info');
+    return pill(tier.brand ? 'acc' : '', tier.label || tier.key || 'Unknown');
   }
 
-  function platformTag(p) {
-    var cls = p.key === 'coaches' ? 'tag tag-coaches' : 'tag tag-mobile';
-    return h('span', { className: cls, text: p.label || p.key });
+  function code(text) {
+    return h('span', { className: 'code', text: text });
   }
 
   /* The recording confirmation. It appears after a request rather than before
      it, because it reports something that has already happened: this is the
      row the athlete would be shown if they asked.
 
-     When the response does not carry one, the surface says so. The privacy bar
-     above states that every lookup is recorded, and a response that stayed
-     silent about it is the one case where that sentence might not be true.
-     Looking identical either way would make the promise unfalsifiable, so this
-     returns a warning rather than nothing. */
+     When the response does not carry one, the surface says so. The privilege
+     strip above states that every lookup is recorded, and a response that
+     stayed silent about it is the one case where that sentence might not be
+     true. Looking identical either way would make the promise unfalsifiable,
+     so this returns a warning rather than nothing. */
   function recordingNotice(recorded, what) {
     /* what names the thing that was recorded, and both sentences are built
        from it. The confirmed branch used to be the word "lookup" hard coded,
@@ -318,23 +359,22 @@
     var Subject = subject.charAt(0).toUpperCase() + subject.slice(1);
 
     if (!recorded) {
-      var warn = h('div', { className: 'callout callout-warn' });
+      var warn = h('div', { className: 'note note-warn' });
       warn.appendChild(icon('warn'));
       var wbody = h('div');
-      wbody.appendChild(h('strong', { text: 'No record was confirmed.' }));
+      wbody.appendChild(h('b', { text: 'No record was confirmed.' }));
       wbody.appendChild(document.createTextNode(
-        ' The operations API handled ' + subject + ' without confirming that it ' +
-        'wrote an access record. It may still have written one. Treat this as unrecorded until ' +
-        'the access record shows otherwise.'
+        ' The operations API handled ' + subject + ' without confirming an access record. ' +
+        'Treat it as unrecorded until the access record shows otherwise.'
       ));
       warn.appendChild(wbody);
       return warn;
     }
 
-    var box = h('div', { className: 'callout callout-info' });
+    var box = h('div', { className: 'note' });
     box.appendChild(icon('lock'));
     var body = h('div');
-    body.appendChild(h('strong', { text: Subject + ' is on the record.' }));
+    body.appendChild(h('b', { text: Subject + ' is on the record.' }));
     var parts = [];
     if (recorded.at) parts.push('at ' + (dateTime(recorded.at) || recorded.at));
     if (recorded.actor) parts.push('by ' + recorded.actor);
@@ -347,20 +387,17 @@
     return box;
   }
 
-  /* ------------------------------------------------------- privacy bar */
+  /* --------------------------------------------------- the privilege strip
 
-  function privacyBar() {
-    var bar = h('div', { className: 'privacy-bar' });
-    bar.appendChild(icon('lock'));
-    var body = h('div');
-    body.appendChild(h('strong', { text: 'Every lookup on this page is recorded.' }));
-    body.appendChild(document.createTextNode(
-      ' Your account, the account you viewed, the time, and the reason you gave are written to ' +
-      'the access record, and the athlete can be shown that record. Personal details stay hidden ' +
-      'until you show them one at a time, and each one you show is recorded by name.'
-    ));
-    bar.appendChild(body);
-    return bar;
+     Promise 1 and promise 4, as pills, at the top of the pane. The registry
+     gives this pane an App filter and nothing else, so this is not the filter
+     bar restated: it is what the signed-in role may do here. */
+  function privilegeStrip() {
+    var strip = h('div', { className: 'privilege' });
+    strip.appendChild(pill(isOwner() ? 'vio' : '', isOwner() ? 'Owner' : 'Not an owner', 'lock'));
+    strip.appendChild(pill('', 'Personal fields hidden until revealed', 'eye'));
+    strip.appendChild(pill('', 'Every reveal is visible to the athlete', 'person'));
+    return strip;
   }
 
   /* --------------------------------------------------------- the search */
@@ -373,71 +410,65 @@
   var formError = null;
 
   function selectControl(id, label, options) {
-    var sel = h('select', { className: 'select', id: id });
+    var sel = h('select', { id: id, 'aria-label': label });
     options.forEach(function (o) {
       sel.appendChild(h('option', { value: o.v, text: o.l }));
     });
-    return h('div', { className: 'lookup-field' }, [
-      h('label', { className: 'field-label', for: id, text: label }),
-      sel
-    ]);
+    var wrap = h('div', { className: 'sel' }, [sel, icon('chev')]);
+    return wrap;
   }
 
-  function searchCard(onSubmit) {
-    var card = h('div', { className: 'card' });
-    card.appendChild(h('div', { className: 'card-head' }, [
-      h('h2', { className: 'card-title', text: 'Find an account' }),
-      h('span', { className: 'card-hint', text: 'Exact identifier only. There is no way to browse everyone.' })
-    ]));
+  function huntPanel(onSubmit) {
+    var panel = h('section', { className: 'hunt', 'aria-labelledby': 'huntTitle' });
+    panel.appendChild(h('h2', { className: 'hunt-title', id: 'huntTitle', text: 'Find one account' }));
+    panel.appendChild(h('p', {
+      className: 'hunt-sub',
+      text: 'Exact identifier only. Near matches are never returned.'
+    }));
 
-    var body = h('div', { className: 'card-body' });
-    form = h('form', { className: 'lookup-form', novalidate: 'novalidate' });
+    form = h('form', { className: 'hunt-form', novalidate: 'novalidate' });
 
     identifierInput = h('input', {
-      className: 'lookup-input', id: 'lookupIdentifier', type: 'text',
+      id: 'lookupIdentifier', type: 'text',
       autocomplete: 'off', spellcheck: 'false',
-      placeholder: 'Exact email, user id, or support reference'
+      'aria-label': 'Identifier',
+      placeholder: 'Coded reference, email address, or support ticket'
     });
-    var idField = h('div', { className: 'lookup-field' }, [
-      h('label', { className: 'field-label', for: 'lookupIdentifier', text: 'Identifier' }),
-      identifierInput
-    ]);
+    var idField = h('div', { className: 'field field-lg' }, [icon('search'), identifierInput]);
+
+    var submit = h('button', { className: 'btn btn-primary', type: 'submit' });
+    submit.appendChild(icon('search'));
+    submit.appendChild(h('span', { text: 'Look up' }));
+
+    form.appendChild(h('div', { className: 'hunt-line' }, [idField, submit]));
 
     reasonInput = h('input', {
-      className: 'lookup-input', id: 'lookupReason', type: 'text',
-      autocomplete: 'off', placeholder: 'Ticket number or short reason'
+      id: 'lookupReason', type: 'text', autocomplete: 'off',
+      'aria-label': 'Reason for this lookup',
+      placeholder: 'Reason, written to the access record beside your name'
     });
-    var reasonField = h('div', { className: 'lookup-field' }, [
-      h('label', { className: 'field-label', for: 'lookupReason', text: 'Reason for this lookup' }),
-      reasonInput
-    ]);
-
-    var stateField = selectControl('lookupState', 'State', [
+    var stateSel = selectControl('lookupState', 'State', [
       { v: '', l: 'Any state' },
       { v: 'active', l: 'Active' },
       { v: 'payment_failed', l: 'Payment failed' },
       { v: 'deletion_requested', l: 'Deletion requested' },
       { v: 'suspended', l: 'Suspended' }
     ]);
-    stateSelect = stateField.querySelector('select');
+    stateSelect = stateSel.querySelector('select');
 
-    var tierField = selectControl('lookupTier', 'Tier', [
+    var tierSel = selectControl('lookupTier', 'Tier', [
       { v: '', l: 'Any tier' },
       { v: 'free', l: 'Free' },
       { v: 'pro', l: 'Pro' },
       { v: 'coach_team', l: 'Coach team' }
     ]);
-    tierSelect = tierField.querySelector('select');
+    tierSelect = tierSel.querySelector('select');
 
-    var submit = h('button', { className: 'btn btn-primary', type: 'submit' });
-    submit.appendChild(icon('search'));
-    submit.appendChild(h('span', { text: 'Look up' }));
-
-    form.appendChild(idField);
-    form.appendChild(reasonField);
-    form.appendChild(stateField);
-    form.appendChild(tierField);
-    form.appendChild(h('div', { className: 'lookup-field' }, [submit]));
+    form.appendChild(h('div', { className: 'hunt-line' }, [
+      h('div', { className: 'field' }, [icon('history'), reasonInput]),
+      stateSel,
+      tierSel
+    ]));
 
     formError = h('p', { className: 'field-error', role: 'alert' });
 
@@ -446,15 +477,9 @@
       onSubmit();
     });
 
-    body.appendChild(form);
-    body.appendChild(formError);
-    body.appendChild(h('p', {
-      className: 'field-hint',
-      text: 'A reason is required because it is written to the access record beside your name. ' +
-        'Near matches are never returned, so a wrong guess tells you nothing about who has an account.'
-    }));
-    card.appendChild(body);
-    return card;
+    panel.appendChild(form);
+    panel.appendChild(formError);
+    return panel;
   }
 
   /* The invalid marks are cleared on every pass, not only when the message is
@@ -464,7 +489,7 @@
      was the problem. */
   function setFormError(message) {
     if (!formError) return;
-    formError.textContent = '';
+    clear(formError);
     if (identifierInput) identifierInput.removeAttribute('aria-invalid');
     if (reasonInput) reasonInput.removeAttribute('aria-invalid');
     if (!message) return;
@@ -475,7 +500,7 @@
   /* --------------------------------------------------------- match list */
 
   function matchesCard(data, onPick, selectedRef) {
-    var card = h('div', { className: 'card' });
+    var box = shell.card();
     var rows = (data.matches || []).length;
     /* The count and the rows are two numbers for the same thing, so the header
        states the one that is on screen. A server that ever capped the array
@@ -487,40 +512,33 @@
       ? data.matchCount : null;
     var short = claimed !== null && claimed > rows;
 
-    var head = h('div', { className: 'card-head' });
-    head.appendChild(h('h3', { className: 'card-title', text: 'Matches' }));
-    head.appendChild(h('span', {
-      className: 'card-hint',
-      text: short
-        ? rows + ' of ' + plural(claimed, 'account') + ' shown, exact identifier match'
-        : plural(rows, 'account') + ', exact identifier match'
-    }));
-    head.appendChild(h('div', { className: 'spacer', 'aria-hidden': 'true' }));
-    head.appendChild(badge('info', 'Details hidden', 'lock'));
-    card.appendChild(head);
+    box.appendChild(shell.cardHead(
+      'Matches',
+      short
+        ? rows + ' of ' + plural(claimed, 'account') + ' shown'
+        : plural(rows, 'account'),
+      [pill('', 'Details hidden', 'lock')]
+    ));
 
     if (short) {
-      var capped = h('div', { className: 'callout callout-warn' });
+      var capped = h('div', { className: 'note note-warn' });
       capped.appendChild(icon('warn'));
       capped.appendChild(h('div', {
-        className: 'small',
         text: 'The operations API says ' + plural(claimed, 'account') + ' matched but sent ' + rows +
-          '. The rest are not on this page and this pane has no way to ask for them. Narrow the ' +
-          'identifier rather than reading the number above as a list you can work through.'
+          '. The rest are not on this page and cannot be asked for. Narrow the identifier.'
       }));
-      card.appendChild(capped);
+      box.appendChild(h('div', { className: 'card-body' }, [capped]));
     }
 
-    var wrap = h('div', { className: 'table-wrap' });
-    var table = h('table', { className: 'data' });
-    table.appendChild(h('caption', { className: 'sr-only', text: 'Accounts matching the identifier you entered' }));
+    var wrap = h('div', { className: 'tbl-wrap' });
+    var table = h('table', { className: 'tbl' });
+    table.appendChild(h('caption', { className: 'sr', text: 'Accounts matching the identifier you entered' }));
 
     table.appendChild(h('thead', {}, [
       h('tr', {}, [
         h('th', { scope: 'col', text: 'Account' }),
         h('th', { scope: 'col', text: 'State' }),
         h('th', { scope: 'col', text: 'Tier' }),
-        h('th', { scope: 'col', text: 'Platforms' }),
         h('th', { scope: 'col', text: 'Last active' }),
         h('th', { scope: 'col', text: 'Flags' })
       ])
@@ -535,35 +553,29 @@
          keyboard, so the account cell carries a real button and that button is
          what selects the account. */
       var pick = h('button', {
-        className: 'match-row-btn', type: 'button',
+        className: 'btn btn-ghost btn-sm match-row-btn', type: 'button',
         'data-ref': m.reference,
         'aria-pressed': String(m.reference === selectedRef)
       });
-      pick.appendChild(h('div', { className: 'cell-strong mono', text: m.reference }));
-      if (m.maskedEmail) {
-        pick.appendChild(h('div', { className: 'tiny' }, [
-          h('span', { className: 'masked', text: m.maskedEmail })
-        ]));
-      }
-      pick.appendChild(h('span', { className: 'sr-only', text: ', open this account' }));
+      pick.appendChild(code(m.reference));
+      pick.appendChild(h('span', { className: 'sr', text: ', open this account' }));
       pick.addEventListener('click', function () { onPick(m.reference); });
 
       var cell = h('th', { scope: 'row' });
       cell.appendChild(pick);
+      if (m.maskedEmail) {
+        cell.appendChild(h('div', { className: 't-sub' }, [
+          h('span', { className: 'locked' }, [icon('lock'), h('span', { text: m.maskedEmail })])
+        ]));
+      }
       tr.appendChild(cell);
 
-      tr.appendChild(h('td', {}, [stateBadge(m.state)]));
-      tr.appendChild(h('td', {}, [tierBadge(m.tier)]));
-
-      var platforms = h('td');
-      (m.platforms || []).forEach(function (p) { platforms.appendChild(platformTag(p)); });
-      if (!(m.platforms || []).length) platforms.appendChild(h('span', { className: 'muted tiny', text: 'not reported' }));
-      tr.appendChild(platforms);
-
-      tr.appendChild(h('td', { className: 'mono', text: ago(m.lastActiveAt) || 'not reported' }));
+      tr.appendChild(h('td', {}, [stateePill(m.state)]));
+      tr.appendChild(h('td', {}, [tierPill(m.tier)]));
+      tr.appendChild(h('td', { className: 'num dim', text: ago(m.lastActiveAt) || 'not reported' }));
 
       var flags = h('td');
-      (m.flags || []).forEach(function (f) { flags.appendChild(flagChip(f)); });
+      (m.flags || []).forEach(function (f) { flags.appendChild(tonePill(f.tone, f.label || f.key)); });
       if (!(m.flags || []).length) flags.appendChild(h('span', { className: 'muted tiny', text: 'none' }));
       tr.appendChild(flags);
 
@@ -571,21 +583,19 @@
     });
     table.appendChild(tbody);
     wrap.appendChild(table);
-    card.appendChild(wrap);
+    box.appendChild(wrap);
 
-    card.appendChild(h('div', { className: 'card-foot' }, [
-      h('span', {
-        text: 'Rows show coded ids. The part-hidden email is only enough to check you have the ' +
-          'right person, and it is masked by the operations API rather than by this page.'
-      })
+    box.appendChild(h('div', { className: 'card-foot' }, [
+      icon('lock'),
+      h('span', { text: 'The part-hidden email is masked by the operations API, not by this page.' })
     ]));
-    return card;
+    return box;
   }
 
   /* ------------------------------------------------------ field reveal */
 
   /* Every revealed field on screen, so that one call re-masks all of them:
-     closing the drawer, running a new search, or an expiry falling due. */
+     opening another account, running a new search, or an expiry falling due. */
   var revealed = [];
 
   /* Reveals whose request is still out. Abandoning the screen has to abandon
@@ -657,10 +667,12 @@
     var unmaskedByDesign = field.masked === false && !carriesMask && !health &&
       field.reveal !== 'never';
 
-    var masked = h('span', {
-      className: 'masked',
-      text: field.maskedValue || 'Hidden'
-    });
+    /* The mask carries the word as well as the hatching, so it is never the
+       texture alone that says a value is withheld. */
+    var masked = h('span', { className: 'masked locked' }, [
+      icon('lock'),
+      h('span', { text: field.maskedValue || 'Hidden' })
+    ]);
     var shown = h('span', { className: 'reveal-value hidden' });
     var note = h('span', { className: 'reveal-note hidden' });
 
@@ -675,7 +687,7 @@
 
     if (health || field.reveal === 'never') {
       var never = h('span', { className: 'reveal-never' });
-      never.appendChild(icon('lock'));
+      never.appendChild(icon('x'));
       never.appendChild(h('span', {
         text: field.neverShownNote ||
           (health ? 'Health data is never shown here' : 'Never shown here')
@@ -712,8 +724,8 @@
        focus happens to be sitting on it. Focus left on a display:none control
        is focus nobody can see and a keyboard cannot move on from, so it goes
        back to the Reveal control in the same row. If that control has gone too,
-       which is the drawer closing or a new search replacing the container, the
-       pane's content region takes it rather than document.body. */
+       which is another account being opened or a new search replacing the
+       container, the pane's content region takes it rather than document.body. */
     function hide() {
       if (timer) { global.clearTimeout(timer); timer = null; }
       var heldFocus = row.contains(document.activeElement);
@@ -742,26 +754,24 @@
       shell.announce(field.label + ' hidden again');
     });
 
-    var reasonForm = h('form', { className: 'reveal-row hidden' });
+    var reasonForm = h('form', { className: 'reveal-form hidden' });
     var reasonId = 'reveal-' + reference + '-' + field.key;
     var reasonBox = h('input', {
-      className: 'lookup-input', id: reasonId, type: 'text', autocomplete: 'off',
+      id: reasonId, type: 'text', autocomplete: 'off',
       placeholder: 'Reason, recorded by field name'
     });
     var confirm = h('button', { className: 'btn btn-sm btn-primary', type: 'submit', text: 'Show ' + (field.label || field.key).toLowerCase() });
     var cancel = h('button', { className: 'btn btn-sm', type: 'button', text: 'Cancel' });
     var problem = h('span', { className: 'tiny reveal-note' });
 
-    reasonForm.appendChild(h('label', { className: 'sr-only', for: reasonId, text: 'Reason for revealing ' + (field.label || field.key) }));
-    reasonForm.appendChild(reasonBox);
-    reasonForm.appendChild(confirm);
-    reasonForm.appendChild(cancel);
-    reasonForm.appendChild(problem);
+    reasonForm.appendChild(h('label', { className: 'sr', for: reasonId, text: 'Reason for revealing ' + (field.label || field.key) }));
+    reasonForm.appendChild(h('div', { className: 'field' }, [icon('history'), reasonBox]));
+    reasonForm.appendChild(h('div', { className: 'row' }, [confirm, cancel, problem]));
 
     function closeForm(restoreFocus) {
       reasonForm.classList.add('hidden');
       reasonBox.value = '';
-      problem.textContent = '';
+      clear(problem);
       revealBtn.classList.remove('hidden');
       if (restoreFocus) revealBtn.focus();
     }
@@ -785,7 +795,7 @@
       }
       reasonBox.removeAttribute('aria-invalid');
       confirm.disabled = true;
-      problem.textContent = '';
+      clear(problem);
 
       /* Abandoning the screen while this is out cancels it. clearReveals()
          flips this token, and both callbacks below check it before touching
@@ -815,7 +825,7 @@
            Every step between the value appearing and the timer being armed is
            a step in which a throw would leave a revealed field with no expiry
            and outside the re-mask registry, which is the one failure on this
-           pane that cannot be recovered from by closing the drawer. parseTime
+           pane that cannot be recovered from by closing something. parseTime
            is total, so this is belt as well as braces. */
         var expiresAt = parseTime(out.expiresAt);
         var serverSaid = expiresAt !== null;
@@ -825,8 +835,8 @@
 
         /* The reveal writes its own access record, and the response says
            whether it did. Claiming otherwise in the announcement while the
-           drawer behind it warns that nothing was confirmed is the same
-           contradiction the lookup callout exists to avoid, so the sentence on
+           surface beside it warns that nothing was confirmed is the same
+           contradiction the lookup note exists to avoid, so the sentence on
            screen and the one a screen reader hears are both built from it. */
         var onRecord = !!out.recorded;
         var noteText = serverSaid
@@ -873,527 +883,403 @@
     return row;
   }
 
-  function fieldList(reference, fields, columns) {
-    var dl = h('dl', { className: 'dl' + (columns ? ' ' + columns : '') });
+  /* A key and value list, one field per line. The key is a <dt> and the value
+     a <dd> so the pairing survives a screen reader reading down the column,
+     which a pair of styled divs does not. */
+  function fieldList(reference, fields) {
+    var kv = h('dl', { className: 'kv' });
     (fields || []).forEach(function (f) {
-      dl.appendChild(h('dt', { text: f.label || f.key }));
-      var dd = h('dd', { className: 'plain' });
+      var line = h('div');
+      line.appendChild(h('dt', { className: 'k', text: f.label || f.key }));
+      var dd = h('dd', { className: 'v' });
       dd.appendChild(fieldValue(reference, f));
-      dl.appendChild(dd);
+      line.appendChild(dd);
+      kv.appendChild(line);
     });
-    return dl;
+    return kv;
   }
 
   /* -------------------------------------------------------- the account */
 
-  function summaryCard(detail, onOpenDrawer) {
-    var card = h('div', { className: 'card' });
-    var head = h('div', { className: 'card-head' });
-    head.appendChild(h('h3', { className: 'card-title', text: 'Account summary' }));
-    head.appendChild(h('span', { className: 'mono small', text: detail.reference }));
-    head.appendChild(h('div', { className: 'spacer', 'aria-hidden': 'true' }));
-    var full = h('button', { className: 'btn btn-sm', type: 'button', text: 'Full record' });
-    full.addEventListener('click', onOpenDrawer);
-    head.appendChild(full);
-    card.appendChild(head);
+  /* Promise 1 lives in this card's foot, next to the fields it is about. */
+  function accountCard(detail) {
+    var box = shell.card();
+    var kind = detail.kind === 'coach' ? 'Coach' : 'Athlete';
+    box.appendChild(shell.cardHead('Account', null, [
+      code(detail.reference),
+      stateePill(detail.state),
+      tierPill(detail.tier)
+    ]));
 
     var body = h('div', { className: 'card-body' });
-    body.appendChild(fieldList(detail.reference, (detail.summary && detail.summary.fields) || []));
-    card.appendChild(body);
+    var facts = h('dl', { className: 'kv' });
+    facts.appendChild(h('div', {}, [
+      h('dt', { className: 'k', text: 'Kind' }),
+      h('dd', { className: 'v dim', text: kind })
+    ]));
+    if (detail.memberSince) {
+      facts.appendChild(h('div', {}, [
+        h('dt', { className: 'k', text: 'Member since' }),
+        h('dd', { className: 'v num dim', text: whenLabel(detail.memberSince) || detail.memberSince })
+      ]));
+    }
+    body.appendChild(facts);
 
-    var foot = h('div', { className: 'card-foot' });
-    foot.appendChild(icon('lock'));
-    /* Says what the weaker of the two guarantees says. Which fields count as
-       health data is the operations API's call, and the client's key list is a
-       floor under it rather than the authority, so the sentence names the API
-       rather than implying this page holds the definitive list. */
-    foot.appendChild(h('span', {
-      text: 'Weight, injuries, journal entries, and messages are never shown here at all, and ' +
-        'there is no button on this page that would reveal them. Which fields count as health ' +
-        'data is decided by the operations API; this page keeps its own list of health keys ' +
-        'underneath that decision and refuses those whatever a payload says.'
-    }));
-    card.appendChild(foot);
-    return card;
+    var fields = (detail.record && detail.record.fields) ||
+      (detail.summary && detail.summary.fields) || [];
+    body.appendChild(h('div', { className: 'divider mt-sm' }));
+    body.appendChild(h('div', { className: 'mt-sm' }, [fieldList(detail.reference, fields)]));
+
+    if (detail.record && detail.record.note) {
+      var box2 = h('div', { className: 'note note-warn mt-sm' });
+      box2.appendChild(icon('warn'));
+      box2.appendChild(h('div', { text: detail.record.note }));
+      body.appendChild(box2);
+    }
+    box.appendChild(body);
+
+    box.appendChild(h('div', { className: 'card-foot' }, [
+      icon('lock'),
+      h('span', { text: 'Hidden for every role, including this one, until a reveal is recorded.' })
+    ]));
+    return box;
   }
 
-  function activityCard(detail) {
-    var card = h('div', { className: 'card' });
-    var activity = detail.activity;
-    var head = h('div', { className: 'card-head' });
-    head.appendChild(h('h3', { className: 'card-title', text: 'Recent activity' }));
-    head.appendChild(h('span', {
-      className: 'card-hint',
-      text: activity && activity.windowDays
-        ? 'Last ' + plural(activity.windowDays, 'day') + ', events only'
-        : 'Events only'
-    }));
-    card.appendChild(head);
+  /* Promises 2 and 3. The controls themselves are per field, beside the field
+     they uncover, so this card states the rule once and then shows what has
+     already been revealed on this account. */
+  function revealCard(detail) {
+    var box = shell.card();
+    box.appendChild(shell.cardHead('Revealing a personal field', null, [
+      pill(isOwner() ? 'vio' : '', 'Owner only', 'lock')
+    ]));
 
     var body = h('div', { className: 'card-body' });
-    var events = (activity && activity.events) || [];
+    var rules = h('ul', { className: 'list-tick' });
+    [
+      'A written reason is required, and the server asks for it again.',
+      'Recorded by field name, never by value.',
+      'Shown once, then it hides itself.'
+    ].forEach(function (line) {
+      rules.appendChild(h('li', {}, [icon('check'), h('span', { text: line })]));
+    });
+    body.appendChild(rules);
 
-    if (!events.length) {
-      body.appendChild(shell.stateBlock('empty', 'No activity in this window', [
-        activity
-          ? 'The account exists and reported nothing in the window. That is a quiet account, not a missing one.'
-          : 'The operations API did not report activity for this account.'
-      ], 4));
-      card.appendChild(body);
-      return card;
+    if (!isOwner()) {
+      body.appendChild(h('p', { className: 'tiny muted mt-sm', text:
+        'You are not an owner, so every Reveal control on this page is dead. It is shown rather ' +
+        'than hidden so the rule is legible.' }));
     }
 
-    var timeline = h('div', { className: 'timeline' });
+    var entries = ((detail.access && detail.access.entries) || [])
+      .filter(function (e) { return e.revealed; });
+    var inset = h('div', { className: 'inset mt-sm' });
+    inset.appendChild(h('div', { className: 'row' }, [
+      h('span', { className: 'dot vio' }),
+      h('span', { className: 'inset-title', text: 'Previously revealed' })
+    ]));
+    if (!entries.length) {
+      inset.appendChild(h('p', { className: 'tiny muted mt-xs', text:
+        'No field has been revealed on this account inside the reported window.' }));
+    } else {
+      var list = h('dl', { className: 'kv mt-xs' });
+      entries.slice(0, 6).forEach(function (e) {
+        list.appendChild(h('div', {}, [
+          h('dt', { className: 'k', text: e.fields || 'field revealed' }),
+          h('dd', { className: 'v tiny dim', text:
+            (whenLabel(e.occurredAt) || 'time not reported') + ' · ' + (e.actor || 'actor not reported') })
+        ]));
+      });
+      inset.appendChild(list);
+    }
+    body.appendChild(inset);
+    box.appendChild(body);
+    return box;
+  }
+
+  /* Promise 6 lives in this card's foot. */
+  function activityCard(detail) {
+    var box = shell.card();
+    var activity = detail.activity;
+    var events = (activity && activity.events) || [];
+
+    box.appendChild(shell.cardHead(
+      'Recent activity',
+      activity && activity.windowDays ? 'Last ' + plural(activity.windowDays, 'day') : null,
+      null
+    ));
+
+    if (!events.length) {
+      box.appendChild(h('div', { className: 'card-body' }, [
+        shell.stateBlock('empty', 'No activity in this window', [
+          activity
+            ? 'The account exists and reported nothing. A quiet account, not a missing one.'
+            : 'The operations API did not report activity for this account.'
+        ], 4)
+      ]));
+      return box;
+    }
+
+    var wrap = h('div', { className: 'tbl-wrap' });
+    var table = h('table', { className: 'tbl' });
+    table.appendChild(h('caption', { className: 'sr', text: 'Recent activity on this account' }));
+    table.appendChild(h('thead', {}, [
+      h('tr', {}, [
+        h('th', { scope: 'col', text: 'When' }),
+        h('th', { scope: 'col', text: 'What happened' }),
+        h('th', { scope: 'col', text: 'Reference' })
+      ])
+    ]));
+
+    var tbody = h('tbody');
     events.forEach(function (ev) {
-      var item = h('div', { className: 'tl-item' + (ev.tone ? ' ' + ev.tone : '') });
-      item.appendChild(h('div', { className: 'tl-time', text: whenLabel(ev.occurredAt) || 'time not reported' }));
-      var line = h('div');
-      line.appendChild(h('span', { text: ev.label }));
+      var what = h('td');
+      what.appendChild(h('div', { className: 't-main', text: ev.label }));
+      if (ev.tone) what.appendChild(h('div', { className: 'mt-xs' }, [tonePill(ev.tone, ev.tone === 'ok' ? 'Delivered' : ev.tone === 'info' ? 'Noted' : 'Needs a look')]));
+
+      var ref = h('td');
       /* Only a link when the API gave one, and only ever to another pane in
          this dashboard. safeHref is what makes that second half true rather
          than a claim: an off-origin href renders as the plain reference it
          would otherwise link to, so a page with somebody's account open cannot
          be turned into a referrer leak by a payload. */
       var href = ev.reference ? safeHref(ev.href) : null;
-      if (href) {
-        line.appendChild(document.createTextNode(' '));
-        line.appendChild(h('a', { className: 'tiny mono', href: href, text: ev.reference }));
-      } else if (ev.reference) {
-        line.appendChild(document.createTextNode(' '));
-        line.appendChild(h('span', { className: 'tiny mono muted', text: ev.reference }));
-      }
-      item.appendChild(line);
-      timeline.appendChild(item);
-    });
-    body.appendChild(timeline);
-    card.appendChild(body);
+      if (href) ref.appendChild(h('a', { className: 'code', href: href, text: ev.reference }));
+      else if (ev.reference) ref.appendChild(code(ev.reference));
+      else ref.appendChild(h('span', { className: 'muted tiny', text: '—' }));
 
-    card.appendChild(h('div', { className: 'card-foot' }, [
-      h('span', {
-        text: 'Activity is a list of events, never content. "Chat session, 8 messages" is shown. ' +
-          'What was said is not, at any role.'
-      })
+      tbody.appendChild(h('tr', {}, [
+        h('th', { scope: 'row', className: 'num dim', text: whenLabel(ev.occurredAt) || 'time not reported' }),
+        what,
+        ref
+      ]));
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    box.appendChild(wrap);
+
+    box.appendChild(h('div', { className: 'card-foot' }, [
+      icon('lock'),
+      h('span', { text: 'Request and reply content is not shown, for any role.' })
     ]));
-    return card;
+    return box;
   }
 
-  /* The support card exists to say what is not here as much as what is. The
-     destructive half is absent by design: no button, no permission check, no
-     path. That is the point, so it is stated rather than left to be noticed. */
-  function supportCard(detail) {
-    var card = h('div', { className: 'card' });
-    card.appendChild(h('div', { className: 'card-head' }, [
-      h('h3', { className: 'card-title', text: 'Support actions' })
-    ]));
-
-    var body = h('div', { className: 'card-body stack-sm' });
-    var actions = (detail.supportActions && detail.supportActions.available) || [];
-
-    if (!actions.length) {
-      body.appendChild(h('p', { className: 'state-desc', text:
-        'No support action is wired up to this pane yet. When one is, it appears here as a ' +
-        'button that names exactly what it does.' }));
-    } else {
-      var list = h('ul', { className: 'notbuilt-list' });
-      actions.forEach(function (a) { list.appendChild(h('li', { text: a.label || a.key })); });
-      body.appendChild(list);
-    }
-
-    var warn = h('div', { className: 'callout callout-warn' });
-    warn.appendChild(icon('warn'));
-    warn.appendChild(h('div', { className: 'small', text:
-      'Destructive actions, deleting an account or wiping its data, are not available here at ' +
-      'all. They are not hidden behind a permission: there is no control for them on this page. ' +
-      "They run through the account deletion workflow, which needs the athlete's own confirmation." }));
-    body.appendChild(warn);
-
-    card.appendChild(body);
-    return card;
-  }
-
-  /* --------------------------------------------------------- the drawer */
-
-  var drawer = null;
-  var drawerScrim = null;
-  var drawerReturnFocus = null;
-  var drawerInert = [];
-
-  function setBackgroundInert(on) {
-    if (!on) {
-      drawerInert.forEach(function (el) {
-        if ('inert' in el) el.inert = false;
-        el.removeAttribute('aria-hidden');
-      });
-      drawerInert = [];
-      return;
-    }
-    drawerInert = Array.prototype.filter.call(document.body.children, function (el) {
-      /* Live regions stay reachable. One carrying aria-hidden announces
-         nothing, and neither holds focusable content, so leaving them out
-         costs the drawer's modality nothing. */
-      return el !== drawer && el !== drawerScrim &&
-        !el.hasAttribute('aria-live') && !el.classList.contains('toast-host');
-    });
-    drawerInert.forEach(function (el) {
-      if ('inert' in el) el.inert = true;
-      el.setAttribute('aria-hidden', 'true');
-    });
-  }
-
-  function focusables() {
-    if (!drawer) return [];
-    return Array.prototype.filter.call(
-      drawer.querySelectorAll('a[href], button:not([disabled]), input, select, [tabindex]:not([tabindex="-1"])'),
-      function (el) { return el.offsetParent !== null || el === document.activeElement; }
-    );
-  }
-
-  function onDrawerKey(e) {
-    if (!drawer) return;
-    if (e.key === 'Escape') { e.preventDefault(); closeDrawer(); return; }
-    if (e.key !== 'Tab') return;
-    var items = focusables();
-    if (!items.length) return;
-    var first = items[0];
-    var last = items[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-  }
-
-  function onDrawerFocus(e) {
-    if (drawer && !drawer.contains(e.target)) {
-      var items = focusables();
-      if (items.length) items[0].focus();
-    }
-  }
-
-  function closeDrawer() {
-    if (!drawer) return;
-    /* Anything revealed inside the drawer goes back behind its mask on the way
-       out. A revealed field left alive in a detached node would come back on
-       screen the next time the drawer opened. */
-    clearReveals();
-    document.removeEventListener('keydown', onDrawerKey, true);
-    document.removeEventListener('focusin', onDrawerFocus, true);
-    setBackgroundInert(false);
-    drawer.remove();
-    drawer = null;
-    if (drawerScrim) { drawerScrim.remove(); drawerScrim = null; }
-    /* The opener is normally still there. It is not when the pane has
-       re-rendered underneath the open drawer, which the App filter does, and
-       an unguarded focus() on a detached node drops focus to document.body
-       with nothing announced. The content region is the fallback, and the body
-       counts as no opener rather than as one, because focusing it is the same
-       outcome the fallback exists to avoid. */
-    var back = drawerReturnFocus;
-    drawerReturnFocus = null;
-    if (back && back !== document.body && document.contains(back)) back.focus();
-    else focusFallback();
-  }
-
-  function tabPanel(id, labelledBy, selected) {
-    var panel = h('div', {
-      className: 'mt', role: 'tabpanel', id: id, 'aria-labelledby': labelledBy, tabindex: '0'
-    });
-    panel.hidden = !selected;
-    return panel;
-  }
-
-  function openDrawer(detail) {
-    closeDrawer();
-    drawerReturnFocus = document.activeElement;
-
-    drawerScrim = h('div', { className: 'scrim is-open' });
-    drawerScrim.addEventListener('click', function () { closeDrawer(); });
-    document.body.appendChild(drawerScrim);
-
-    drawer = h('aside', {
-      className: 'drawer is-open', role: 'dialog', 'aria-modal': 'true',
-      'aria-labelledby': 'drawerTitle'
-    });
-
-    var head = h('div', { className: 'drawer-head' });
-    var titleWrap = h('div', { className: 'drawer-title' });
-    var titleRow = h('div', { className: 'row row-wrap' });
-    titleRow.appendChild(h('h2', { className: 'mono strong', id: 'drawerTitle', text: detail.reference }));
-    titleRow.appendChild(stateBadge(detail.state));
-    titleRow.appendChild(tierBadge(detail.tier));
-    titleWrap.appendChild(titleRow);
-    titleWrap.appendChild(h('p', {
-      className: 'small muted',
-      text: (detail.kind === 'coach' ? 'Coach account' : 'Athlete account') +
-        (detail.memberSince ? ', member since ' + (dateOnly(detail.memberSince) || detail.memberSince) : '')
-    }));
-    head.appendChild(titleWrap);
-
-    var close = h('button', { className: 'icon-btn', type: 'button', 'aria-label': 'Close the account record' });
-    close.appendChild(icon('close'));
-    close.addEventListener('click', function () { closeDrawer(); });
-    head.appendChild(close);
-    drawer.appendChild(head);
-
-    var body = h('div', { className: 'drawer-body stack' });
-
-    /* The claim that opening this was recorded is only made when the response
-       said so. It is the same fact recordingNotice() reports on the column
-       behind the drawer, and asserting it here regardless would have the
-       drawer contradict the card underneath it. */
-    var confirmedRecord = !!detail.recorded;
-    var opened = h('div', { className: 'callout ' + (confirmedRecord ? 'callout-info' : 'callout-warn') });
-    opened.appendChild(icon(confirmedRecord ? 'lock' : 'warn'));
-    opened.appendChild(h('div', {
-      text: confirmedRecord
-        ? 'You are viewing the masked record. Opening it has already been recorded. Revealing ' +
-          'any single field needs its own reason and is recorded by field name.'
-        : 'You are viewing the masked record. The operations API did not confirm that opening it ' +
-          'was recorded, so treat it as unrecorded. Revealing any single field still needs its own ' +
-          'reason and is recorded by field name.'
-    }));
-    body.appendChild(opened);
-
-    var TABS = [
-      { key: 'account', label: 'Account' },
-      { key: 'devices', label: 'Devices' },
-      { key: 'billing', label: 'Billing' },
-      { key: 'access', label: 'Who looked' }
-    ];
-
-    var list = h('div', { className: 'tabs', role: 'tablist', 'aria-label': 'Account record sections' });
-    var panels = h('div');
-
-    TABS.forEach(function (t, i) {
-      var tabId = 'drawerTab-' + t.key;
-      var panelId = 'drawerPanel-' + t.key;
-      var tab = h('button', {
-        className: '', type: 'button', role: 'tab', id: tabId,
-        'aria-controls': panelId, 'aria-selected': String(i === 0), text: t.label
-      });
-      list.appendChild(tab);
-
-      var panel = tabPanel(panelId, tabId, i === 0);
-      if (t.key === 'account') panel.appendChild(accountPanel(detail));
-      if (t.key === 'devices') panel.appendChild(devicesPanel(detail));
-      if (t.key === 'billing') panel.appendChild(billingPanel(detail));
-      if (t.key === 'access') panel.appendChild(accessPanel(detail));
-      panels.appendChild(panel);
-    });
-
-    body.appendChild(list);
-    body.appendChild(panels);
-    drawer.appendChild(body);
-
-    var foot = h('div', { className: 'drawer-foot' });
-    foot.appendChild(h('span', {
-      className: 'tiny muted',
-      text: 'Everything on this page is masked by the operations API before it is sent here.'
-    }));
-    drawer.appendChild(foot);
-
-    document.body.appendChild(drawer);
-    setBackgroundInert(true);
-    document.addEventListener('keydown', onDrawerKey, true);
-    document.addEventListener('focusin', onDrawerFocus, true);
-    shell.wireTabs(drawer);
-    close.focus();
-  }
-
-  function accountPanel(detail) {
-    var wrap = h('div');
-    wrap.appendChild(fieldList(detail.reference, (detail.record && detail.record.fields) ||
-      (detail.summary && detail.summary.fields) || []));
-    if (detail.record && detail.record.note) {
-      var box = h('div', { className: 'callout callout-warn mt' });
-      box.appendChild(icon('warn'));
-      box.appendChild(h('div', { text: detail.record.note }));
-      wrap.appendChild(box);
-    }
-    return wrap;
-  }
-
-  function devicesPanel(detail) {
+  function devicesCard(detail) {
+    var box = shell.card();
     var devices = detail.devices || [];
+    box.appendChild(shell.cardHead('Devices', null,
+      [pill('', plural(devices.length, 'device'), 'plug')]));
+
     if (!devices.length) {
-      return shell.stateBlock('empty', 'No devices reported', [
-        'No device on this account has reported an app version. Device level version data is ' +
-          'sent by the apps themselves, so an account that has not opened one recently has none.'
-      ], 3);
+      box.appendChild(h('div', { className: 'card-body' }, [
+        shell.stateBlock('empty', 'No device reported', [
+          'Device level version data is sent by the apps themselves, so an account that has not ' +
+            'opened one recently has none.'
+        ], 4)
+      ]));
+      return box;
     }
 
-    var wrap = h('div', { className: 'table-wrap' });
-    var table = h('table', { className: 'data' });
-    table.appendChild(h('caption', { className: 'sr-only', text: 'Devices on this account' }));
+    var wrap = h('div', { className: 'tbl-wrap' });
+    var table = h('table', { className: 'tbl' });
+    table.appendChild(h('caption', { className: 'sr', text: 'Devices on this account' }));
     table.appendChild(h('thead', {}, [
       h('tr', {}, [
         h('th', { scope: 'col', text: 'Device' }),
-        h('th', { scope: 'col', text: 'App version' }),
-        h('th', { scope: 'col', text: 'OS' }),
+        h('th', { scope: 'col', text: 'App' }),
         h('th', { scope: 'col', text: 'Last seen' })
       ])
     ]));
     var tbody = h('tbody');
     devices.forEach(function (d) {
+      var app = h('td');
+      app.appendChild(h('div', { className: 't-main num', text: d.appVersion || 'not reported' }));
+      if (d.os) app.appendChild(h('div', { className: 't-sub', text: d.os }));
       tbody.appendChild(h('tr', {}, [
-        h('th', { scope: 'row', className: 'cell-strong', text: d.label || 'Unnamed device' }),
-        h('td', { className: 'mono', text: d.appVersion || 'not reported' }),
-        h('td', { text: d.os || 'not reported' }),
-        h('td', { className: 'mono', text: ago(d.lastSeenAt) || 'not reported' })
+        h('th', { scope: 'row', className: 't-main', text: d.label || 'Unnamed device' }),
+        app,
+        h('td', { className: 'num dim', text: ago(d.lastSeenAt) || 'not reported' })
       ]));
     });
     table.appendChild(tbody);
     wrap.appendChild(table);
-    return wrap;
+    box.appendChild(wrap);
+    return box;
   }
 
-  function billingPanel(detail) {
+  function billingCard(detail) {
+    var box = shell.card();
     var billing = detail.billing;
+    box.appendChild(shell.cardHead('Subscription', null, [tierPill(detail.tier)]));
+
     if (!billing || !(billing.fields || []).length) {
-      return shell.stateBlock('empty', 'No billing record', [
-        'This account has no subscription record. On the free tier that is the expected answer ' +
-          'rather than a missing one.'
-      ], 3);
+      box.appendChild(h('div', { className: 'card-body' }, [
+        shell.stateBlock('empty', 'No subscription record', [
+          'On the free tier that is the expected answer rather than a missing one.'
+        ], 4)
+      ]));
+      return box;
     }
-    var wrap = h('div');
-    wrap.appendChild(fieldList(detail.reference, billing.fields));
-    var box = h('div', { className: 'callout mt' });
-    box.appendChild(icon('info'));
-    box.appendChild(h('div', {
-      className: 'small',
-      text: 'Tier is read from the subscription record, which is the single source of truth. ' +
-        'An expired period end resolves to free regardless of any cached state elsewhere.'
-    }));
-    wrap.appendChild(box);
-    return wrap;
+
+    box.appendChild(h('div', { className: 'card-body' }, [
+      fieldList(detail.reference, billing.fields)
+    ]));
+    return box;
   }
 
-  /* The access record, per account. This is the tab that makes the rest of the
-     pane defensible: it is built so that it would be safe to show the athlete
-     whose account it belongs to. */
-  function accessPanel(detail) {
+  /* Promises 4 and 5. This is the band that makes the rest of the pane
+     defensible: it is built so that it would be safe to show the athlete whose
+     account it belongs to, which is why it is a band on the page rather than a
+     tab behind a button, as it was before the remodel. */
+  function accessCard(detail) {
     var access = detail.access;
-    var wrap = h('div');
-
-    var head = h('div', { className: 'sec-head' });
-    head.appendChild(h('h3', { className: 'sec-title', text: 'Who has looked at this account' }));
-    if (access && access.windowDays) {
-      head.appendChild(h('span', {
-        className: 'sec-hint', text: 'Last ' + plural(access.windowDays, 'day')
-      }));
-    }
-    wrap.appendChild(head);
-
+    var box = shell.card();
     var entries = (access && access.entries) || [];
+
+    box.appendChild(shell.cardHead(
+      'Who has looked at this account',
+      access && access.windowDays ? 'Last ' + plural(access.windowDays, 'day') : null,
+      [pill('', 'Shown to the athlete on request', 'person')]
+    ));
+
     if (!entries.length) {
-      wrap.appendChild(shell.stateBlock('empty', 'No recorded access', [
-        access
-          ? 'Nobody has opened this account inside the retention window, including you until this ' +
-            'lookup is written.'
-          : 'The operations API did not report an access record for this account.'
-      ], 4));
-      return wrap;
+      box.appendChild(h('div', { className: 'card-body' }, [
+        shell.stateBlock('empty', 'No recorded access', [
+          access
+            ? 'Nobody has opened this account inside the reported window, including you until this lookup is written.'
+            : 'The operations API did not report an access record for this account.'
+        ], 4)
+      ]));
+    } else {
+      var wrap = h('div', { className: 'tbl-wrap' });
+      var table = h('table', { className: 'tbl' });
+      table.appendChild(h('caption', { className: 'sr', text: 'Recorded access to this account' }));
+      table.appendChild(h('thead', {}, [
+        h('tr', {}, [
+          h('th', { scope: 'col', text: 'When' }),
+          h('th', { scope: 'col', text: 'Who' }),
+          h('th', { scope: 'col', text: 'What' }),
+          h('th', { scope: 'col', text: 'Reason' })
+        ])
+      ]));
+      var tbody = h('tbody');
+      entries.forEach(function (e) {
+        var what = h('td');
+        /* A revealed entry is marked with a word as well as a colour, because
+           "somebody read a personal field" is the row on this table that an
+           athlete reading it would care about most. */
+        if (e.revealed) what.appendChild(pill('vio', e.fields || 'field revealed', 'eye'));
+        else what.appendChild(h('span', { className: 'tiny dim', text: e.fields || 'summary only' }));
+
+        tbody.appendChild(h('tr', {}, [
+          h('th', { scope: 'row', className: 'num dim', text: whenLabel(e.occurredAt) || 'not reported' }),
+          h('td', { text: e.actor || 'not reported' }),
+          what,
+          h('td', { className: 'tiny dim', text: e.reason || 'no reason recorded' })
+        ]));
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      box.appendChild(wrap);
     }
 
-    var tableWrap = h('div', { className: 'table-wrap' });
-    var table = h('table', { className: 'data' });
-    table.appendChild(h('caption', { className: 'sr-only', text: 'Recorded access to this account' }));
-    table.appendChild(h('thead', {}, [
-      h('tr', {}, [
-        h('th', { scope: 'col', text: 'When' }),
-        h('th', { scope: 'col', text: 'Who' }),
-        h('th', { scope: 'col', text: 'Fields' }),
-        h('th', { scope: 'col', text: 'Reason' })
-      ])
+    box.appendChild(h('div', { className: 'card-foot' }, [
+      icon('history'),
+      h('span', { text: 'Kept for the life of the account. A reveal cannot erase one.' })
     ]));
-    var tbody = h('tbody');
-    entries.forEach(function (e) {
-      var fields = h('td', { className: 'tiny' });
-      if (e.revealed) fields.appendChild(h('span', { className: 'reveal-note', text: e.fields || 'field revealed' }));
-      else fields.appendChild(h('span', { text: e.fields || 'summary only' }));
+    return box;
+  }
 
-      tbody.appendChild(h('tr', {}, [
-        h('th', { scope: 'row', className: 'mono', text: whenLabel(e.occurredAt) || 'not reported' }),
-        h('td', { text: e.actor || 'not reported' }),
-        fields,
-        h('td', { className: 'tiny', text: e.reason || 'no reason recorded' })
-      ]));
-    });
-    table.appendChild(tbody);
-    tableWrap.appendChild(table);
-    wrap.appendChild(tableWrap);
+  /* The danger zone. The mock carries four account actions behind
+     re-authentication; the operations API answers no route that performs one,
+     so the rows are named and none of them is a button. A control that cannot
+     succeed is worse than no control, and hiding the band entirely would only
+     make people ask whether it exists. */
+  function dangerCard(detail) {
+    var box = shell.card('accent acc-bad');
+    var actions = (detail.supportActions && detail.supportActions.available) || [];
 
-    var box = h('div', { className: 'callout callout-info mt' });
-    box.appendChild(icon('info'));
-    box.appendChild(h('div', {
-      className: 'small',
-      text: 'The athlete can ask for this record. Building it so that it is safe to show them is ' +
-        'what keeps the rest of this pane defensible.'
-    }));
-    wrap.appendChild(box);
-    return wrap;
+    box.appendChild(shell.cardHead(
+      'Account actions',
+      'Audited, and the athlete is told',
+      [pill('ghost', 'Re-authentication required', 'lock')]
+    ));
+
+    var body = h('div', { className: 'card-body' });
+    if (!actions.length) {
+      body.appendChild(h('p', { className: 'tiny muted', text:
+        'The operations API reports no account action on this deployment, so there is nothing ' +
+        'here to press. Deleting an account runs through the deletion workflow, which needs the ' +
+        "athlete's own confirmation." }));
+    } else {
+      actions.forEach(function (a) {
+        body.appendChild(h('div', { className: 'srow' }, [
+          h('div', {}, [
+            h('div', { className: 's-main', text: a.label || a.key }),
+            h('div', { className: 's-sub', text: 'Not reachable from this pane.' })
+          ]),
+          h('div', { className: 's-end' }, [pill('ghost', 'Re-authentication required', 'lock')])
+        ]));
+      });
+    }
+    box.appendChild(body);
+    return box;
   }
 
   /* ------------------------------------------------------------- states */
 
   function idleState() {
-    var card = h('div', { className: 'card' });
-    card.appendChild(shell.stateBlock('search', 'Nothing looked up yet', [
-      'Enter an exact email, user id, or support reference above, with the reason you are ' +
-        'looking. This pane has no list of accounts to start from, on purpose.'
+    var box = shell.card();
+    box.appendChild(shell.stateBlock('search', 'Nothing looked up yet', [
+      'Enter an exact coded reference, email address or support ticket above, with your reason.',
+      'This pane has no list of accounts to start from, on purpose.'
     ]));
-    return card;
+    return box;
   }
 
-  function noMatchState() {
-    var card = h('div', { className: 'card' });
-    card.appendChild(shell.stateBlock('search', 'No account matches that identifier', [
-      'Nothing matched the email, id, or reference you typed. Near matches are never returned, ' +
-        'so a wrong guess cannot be used to find out who has an account.',
-      'That is a real answer rather than a failed one: the operations API looked and found nothing.'
-    ]));
-    return card;
-  }
-
-  function skeleton() {
-    var stack = h('div', { className: 'stack' });
-    stack.appendChild(h('div', { className: 'card' }, [
-      h('div', { className: 'card-body' }, [
-        h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }),
-        h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }),
-        h('div', { className: 'skel skel-row', 'aria-hidden': 'true' })
-      ])
-    ]));
-    return stack;
+  function noMatchState(identifier) {
+    var box = shell.card();
+    var block = shell.stateBlock('search', 'No account matches that identifier', [
+      'The operations API looked and found nothing. Near matches are never returned, so a wrong ' +
+        'guess cannot be used to find out who has an account.'
+    ]);
+    if (identifier) {
+      block.appendChild(h('div', { className: 'row mt-sm' }, [code(identifier)]));
+    }
+    box.appendChild(block);
+    return box;
   }
 
   function errorState(err, retry) {
-    var card = h('div', { className: 'card' });
+    var box = shell.card();
     var missing = err && err.code === 'ops_route_missing';
     var block = missing
-      ? shell.stateBlock('build', 'This pane has no API yet', [
-        'The operations API does not answer the account lookup routes on this deployment. The ' +
-          'page is built and is asking for the right thing; the endpoints behind it have not shipped.',
+      ? shell.stateBlock('plug', 'This pane has no API yet', [
+        'The operations API does not answer the account lookup routes on this deployment.',
         'Nothing has been recorded, because nothing was looked up.'
       ])
       : shell.stateBlock('warn', 'Could not look that up', [
-        (err && err.message) || 'The operations API did not answer.',
+        shell.failureMessage(err),
         'Nothing has been signed out.'
       ]);
 
     if (retry) {
-      var row = h('div', { className: 'row mt' });
       var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
       again.addEventListener('click', retry);
-      row.appendChild(again);
-      block.appendChild(row);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
     }
-    card.appendChild(block);
-    return card;
+    box.appendChild(block);
+    return box;
   }
 
   /* ------------------------------------------------------------ wiring */
 
   var content = null;
+  var region = null;
   var resultRegion = null;
   var lastResult = null;
+  var lastIdentifier = '';
   var selectedRef = null;
   var scope = 'all';
   var seq = 0;
@@ -1405,7 +1291,7 @@
 
   function paintResult(node) {
     if (!resultRegion) return;
-    resultRegion.textContent = '';
+    clear(resultRegion);
     if (node) resultRegion.appendChild(node);
   }
 
@@ -1414,7 +1300,7 @@
     var reason = (reasonInput.value || '').trim();
 
     if (!identifier) {
-      setFormError('Enter an exact email, user id, or support reference.');
+      setFormError('Enter an exact coded reference, email address or support ticket.');
       identifierInput.setAttribute('aria-invalid', 'true');
       identifierInput.focus();
       return;
@@ -1430,13 +1316,12 @@
     /* A new search starts from a clean screen: nothing revealed carries over
        into a different account's record. */
     clearReveals();
-    closeDrawer();
     selectedRef = null;
+    lastIdentifier = identifier;
 
     var mine = ++seq;
     looked = true;
-    resultRegion.setAttribute('aria-busy', 'true');
-    paintResult(skeleton());
+    region.loading([{ type: 'rows', count: 3 }]);
 
     session.call('/api/ops/users/lookup', {
       method: 'POST',
@@ -1449,44 +1334,49 @@
       }
     }).then(function (payload) {
       if (mine !== seq) return;
-      resultRegion.removeAttribute('aria-busy');
       lastResult = (payload && payload.data) || {};
       renderResult();
     }).catch(function (err) {
       if (mine !== seq) return;
-      resultRegion.removeAttribute('aria-busy');
       lastResult = null;
       paintResult(errorState(err, runLookup));
+      region.degraded(resultRegion);
     });
+  }
+
+  /* live or degraded, decided by the one fact that separates them here: a
+     surface on screen that could not confirm the access record it promised is
+     a half-read pane, not a healthy one. */
+  function settle(recorded) {
+    if (recorded) region.show(resultRegion);
+    else region.degraded(resultRegion);
   }
 
   function renderResult() {
     if (!lastResult) return;
     var matches = lastResult.matches || [];
 
-    var stack = h('div', { className: 'stack' });
-    stack.appendChild(recordingNotice(lastResult.recorded, 'this lookup'));
-
     if (!matches.length) {
-      stack.appendChild(noMatchState());
-      paintResult(stack);
+      paintResult(noMatchState(lastIdentifier));
+      region.empty(resultRegion);
       shell.announce('No account matches that identifier');
       return;
     }
 
-    var grid = h('div', { className: 'grid g-main-b' });
-    grid.appendChild(matchesCard(lastResult, selectAccount, selectedRef));
+    var stack = h('div', { className: 'stack' });
+    stack.appendChild(recordingNotice(lastResult.recorded, 'this lookup'));
 
-    var side = h('div', { className: 'stack', id: 'accountColumn' });
-    side.appendChild(h('div', { className: 'card' }, [
-      shell.stateBlock('users', 'Pick an account', [
-        'Choose one of the matches to see its summary, its recent activity, and who has looked ' +
-          'at it. Opening one is itself recorded.'
-      ], 3)
+    var matchBand = shell.band('Matches', null, null);
+    matchBand.appendChild(matchesCard(lastResult, selectAccount, selectedRef));
+    stack.appendChild(matchBand);
+
+    stack.appendChild(h('div', { className: 'stack', id: 'accountColumn' }, [
+      h('div', { className: 'card' }, [
+        shell.stateBlock('person', 'Pick an account', ['Opening one is itself recorded.'], 3)
+      ])
     ]));
-    grid.appendChild(side);
-    stack.appendChild(grid);
     paintResult(stack);
+    settle(lastResult.recorded);
 
     shell.announce(matches.length === 1 ? '1 account matched' : matches.length + ' accounts matched');
 
@@ -1500,10 +1390,10 @@
 
     var column = document.getElementById('accountColumn');
     if (!column) return;
-    column.textContent = '';
+    clear(column);
     column.appendChild(h('div', { className: 'card' }, [
       h('div', { className: 'card-body' }, [
-        h('p', { className: 'sr-only', role: 'status', text: 'Loading account record' }),
+        h('p', { className: 'sr', role: 'status', text: 'Loading account record' }),
         h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }),
         h('div', { className: 'skel skel-row', 'aria-hidden': 'true' })
       ])
@@ -1515,21 +1405,47 @@
       var detail = (payload && payload.data) || {};
       detail.reference = detail.reference || reference;
 
-      /* Redraw the matches so the selected row is marked, then fill the
-         column beside it. */
       renderSelectedRow();
       var col = document.getElementById('accountColumn');
       if (!col) return;
-      col.textContent = '';
+      clear(col);
       /* Opening an account is its own access record, so the same confirmation
          the lookup gets is reported here. detail.recorded was declared in the
          contract and never read, which meant a response that confirmed nothing
          looked exactly like one that did. */
       col.appendChild(recordingNotice(detail.recorded, 'opening this account'));
-      col.appendChild(summaryCard(detail, function () { openDrawer(detail); }));
-      col.appendChild(activityCard(detail));
-      col.appendChild(supportCard(detail));
-      /* The same fact the callout directly above this reports. Announcing
+
+      var one = shell.band('One account', null, null);
+      one.appendChild(h('div', { className: 'grid g2' }, [
+        accountCard(detail),
+        revealCard(detail)
+      ]));
+      col.appendChild(one);
+
+      var story = shell.band('Recent activity', null, null);
+      story.appendChild(activityCard(detail));
+      col.appendChild(story);
+
+      var subs = shell.band('Subscription and devices', null, null);
+      subs.appendChild(h('div', { className: 'grid g2' }, [
+        billingCard(detail),
+        devicesCard(detail)
+      ]));
+      col.appendChild(subs);
+
+      var seen = shell.band('Access record', null, null);
+      seen.appendChild(accessCard(detail));
+      col.appendChild(seen);
+
+      var danger = shell.band('Danger zone', 'Not reversible from this pane', [
+        pill('vio', 'Owner only', 'lock')
+      ]);
+      danger.appendChild(dangerCard(detail));
+      col.appendChild(danger);
+
+      settle(lastResult && lastResult.recorded && detail.recorded);
+
+      /* The same fact the note directly above this reports. Announcing
          "opened and recorded" over a warning that says no record was confirmed
          would leave a screen reader with the one version of events the page
          has just said it cannot vouch for. */
@@ -1540,8 +1456,9 @@
       if (mine !== seq) return;
       var col = document.getElementById('accountColumn');
       if (!col) return;
-      col.textContent = '';
+      clear(col);
       col.appendChild(errorState(err, function () { selectAccount(reference); }));
+      region.degraded(resultRegion);
     });
   }
 
@@ -1563,14 +1480,15 @@
     content = host;
     scope = shell.filters().scope || 'all';
 
-    var stack = h('div', { className: 'stack' });
-    stack.appendChild(privacyBar());
-    stack.appendChild(searchCard(runLookup));
+    content.appendChild(h('div', { className: 'stack' }, [
+      privilegeStrip(),
+      huntPanel(runLookup)
+    ]));
 
+    region = shell.region(content);
     resultRegion = h('div', { className: 'stack', id: 'lookupResult' });
     resultRegion.appendChild(idleState());
-    stack.appendChild(resultRegion);
-    content.appendChild(stack);
+    region.empty(resultRegion);
   });
 
   global.addEventListener('ops:filters', function (e) {
@@ -1587,7 +1505,6 @@
        Anything revealed under the old scope goes back behind its mask. */
     ++seq;
     clearReveals();
-    if (resultRegion) resultRegion.removeAttribute('aria-busy');
 
     /* Refiltering is a new lookup, and a new lookup is a new access record, so
        it is not run behind the operator's back. The card is drawn whenever a
@@ -1597,14 +1514,13 @@
     if (looked) {
       paintResult(h('div', { className: 'card' }, [
         shell.stateBlock('search', 'App filter changed', [
-          'The App filter is part of the query, and running it again writes another access ' +
-            'record, so it is not run for you. Look up again when you are ready.'
+          'Running the lookup again writes another access record, so it is not run for you.'
         ])
       ]));
+      region.empty(resultRegion);
       lastResult = null;
       selectedRef = null;
       looked = false;
-      closeDrawer();
     }
   });
 })(window);

@@ -258,6 +258,7 @@ ops/
     pane-overview-v2.css  Overview's own shapes
     pane-releases-v2.css  App releases' own shapes
     pane-settings-v2.css  Settings' own shapes
+    pane-users-v2.css     Look up a user's own shapes
 ```
 
 ### The v2 layer
@@ -1007,6 +1008,76 @@ where the mock reads its own sample text:
 `assets/pane-releases-v2.css` carries this pane's own shapes. Two rules in it are scoped
 overrides of shared stylesheets that this change is not allowed to edit; both name
 `Stadiora/Aria#10397`, which is filed to move them.
+
+### Look up a user on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/users.html` in the Aria monorepo is the approved design. The pane
+follows its structure — the lookup panel, the match list, the account card, the reveal card, the
+activity table, subscription and devices, the access record, the danger zone.
+
+As above, this is **not a complete diff**. It names the departures that carry a decision.
+
+Six promises are made to the athlete on this pane, and each is a sentence on screen rather than
+a property of the code. They are the constraint every departure below is measured against:
+personal fields are hidden for every role including the owner until a reveal is recorded; a
+reveal is owner only and needs a written reason; it is recorded by field name, never by value;
+the athlete can see that it happened and who did it; the record outlives the reveal and a reveal
+cannot erase one; and request and reply content is not shown here at any role.
+`assets/pane-users.js` names where each one is drawn, and `scripts/ops-users-v2.test.mjs`
+asserts the sentence and the mechanism behind it separately, because a sentence that outlives
+the thing it describes is the worse of the two failures.
+
+1. **The drawer is gone.** The mock holds the fuller field list, the devices, the billing record
+   and the access record behind a "Full record" button with four tabs. They are bands on the page
+   now. The access record is the one thing on this pane that makes the rest of it defensible, and
+   a promise the athlete is given should not be one click further away than the reveal it covers.
+2. **The danger zone is stated and not drawn as controls.** The mock carries account actions
+   behind re-authentication with live buttons. `GET`/`POST /api/ops/users/*` is unchanged by this
+   remodel and answers no action route, so the pane names each action the response reports, keeps
+   "Re-authentication required" on the head, and draws no button. A control that cannot succeed
+   is the filter problem in another costume; hiding the band would only make people ask whether
+   the actions exist.
+3. **The privilege strip is in the pane body, not the filter bar.** The mock puts "Owner",
+   "Personal fields hidden until revealed" and "Every reveal is visible to the athlete" among the
+   filters. `assets/pane-registry.js` is the one table both shells read and is not this change's
+   to edit; it gives this pane a scope control and no room for three pills. Two of the six
+   promises are carried there, so they went into the pane rather than nowhere.
+4. **No support-context card.** The mock shows an open ticket with its subject, its state, its
+   age and the run behind it. `supportActions.available[]` is what the contract carries and it is
+   a list of action names; nothing in the response holds a ticket. Drawing the card would also
+   put a request's subject line on a pane whose sixth promise is that request content is not
+   shown here.
+5. **No consent card.** Four consent rows with their grant dates are the clearest thing in the
+   mock and there is no field behind any of them: the detail response carries state, tier,
+   memberSince, summary, record, activity, devices, billing, access and supportActions, and
+   nothing about consent. A consent grid invented on the page is worse than none, because it
+   would be read as the record.
+6. **One adoption of the mock's wording, not its shape, for "Not granted means not collected".**
+   The sentence is true and load-bearing, but it belongs to the card in 5 that has no source. The
+   fact it protects — that a mask is not a hidden value waiting to be unlocked — is in the
+   account card's foot, where the masks actually are.
+7. **The mock's `why` blocks are not reproduced.** They argue for the design rather than state a
+   fact about the account, and the mocks' own rule is one fact per slot. What they carried that
+   is a fact is on screen: the reveal card says what is recorded, the access band says how long
+   it is kept, the activity card says what is not shown.
+
+Two additions the mock does not have, both because the pane reads a live answer where the mock
+reads its own sample text:
+
+- **A lookup that wrote no access record says so.** "Every lookup is recorded" is a promise, and
+  a response whose `recorded` is missing has not kept it. The pane runs degraded and names it
+  rather than drawing a clean page over it.
+- **A `matchCount` larger than `matches[]` is reported.** A capped list beside an uncapped count
+  would have the header naming accounts the operator cannot see, which is bulk listing with the
+  listing removed. The pane says the two disagree rather than believing one of them.
+
+`assets/pane-users-v2.css` carries this pane's own shapes.
+
+One inherited leftover is worth naming here rather than fixing: the light-theme badge block at
+the end of `ops.css` is scoped `[data-theme="light"] body:is([data-page="releases"],
+[data-page="users"])`, and neither page carries `data-page` any more — releases lost it in #55
+and this change takes the last one. The block now matches nothing. `ops.css` is not this change's
+to edit, so it is filed rather than deleted here.
 
 ### Known contrast debt, inherited
 
