@@ -953,7 +953,18 @@ test('a Load more page that fails after a revoke reloaded the pane is not report
 
 test('a Load more page from before a reload cannot make the pane think it is idle',
   async () => {
-    const server = auditServer(reloadingPlan(beforeWindow(), afterWindow()));
+    const before = beforeWindow();
+    const after = afterWindow();
+    let zeroth = 0;
+    const server = auditServer((offset) => {
+      if (offset !== 0) return HOLD;
+      zeroth += 1;
+      if (zeroth === 1) return before;
+      if (zeroth === 2) return after;
+      /* Every reread after the reload is held too, so this test chooses when
+         the refresh below lands rather than having it answer itself. */
+      return HOLD;
+    });
     const { dom, refreshButton } = await reloadUnderAPage(server);
 
     /* Refresh is never disabled - only Load more is - so a reload asked for
@@ -981,6 +992,7 @@ test('a Load more page from before a reload cannot make the pane think it is idl
     await dom.settle();
     assert.deepEqual(server.asked, [0, AUDIT_PAGE, 0, 0, 0],
       'the reload that was held never ran');
+    assert.equal(server.holdCount(), 3);
   });
 
 /* ================================================================ the export */
