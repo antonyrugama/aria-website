@@ -370,6 +370,15 @@
       var queue = openFailed ? [] : visibleProblems(data);
       var openProblems = problemsOf(data.open);
       var capped = model.capped(openProblems);
+      /* The queue is not the open read. On a window the queue draws from BOTH
+         reads, so a capped closed read makes the queue short even when the
+         open read came back with room to spare -- and short of exactly the
+         closures a recent window is made of, because a read comes back worst
+         first and then oldest. The figure the hero prints over that queue is
+         a floor, and it has to say so itself; a sentence under a number that
+         reads as exact is read after the number. */
+      var queueCapped = capped ||
+        Boolean(model.capped(problemsOf(data.closed)) && RANGE_DAYS[filters.range]);
 
       badgeProblems(openProblems, capped, openFailed);
 
@@ -389,14 +398,14 @@
       }
 
       var wrap = h('div', { className: 'stack' });
-      wrap.appendChild(hero(queue, armed, capped, rulesFailed));
+      wrap.appendChild(hero(queue, armed, capped, queueCapped, rulesFailed));
 
       var late = latenessNote(armed, rulesFailed);
       if (late) wrap.appendChild(late);
 
       wrap.appendChild(openFailed
         ? failedBand('Open problems', 'The problems could not be read', data.open.error)
-        : problemsBand(queue, data, armed, capped));
+        : problemsBand(queue, data, armed, capped, queueCapped));
 
       wrap.appendChild(rulesFailed
         ? failedBand('What is being watched', 'The rules could not be read', data.rules.error)
@@ -448,7 +457,7 @@
 
     /* ---------------------------------------------------------------- hero */
 
-    function hero(queue, armed, capped, rulesFailed) {
+    function hero(queue, armed, capped, queueCapped, rulesFailed) {
       var active = model.active(queue);
       var needing = model.needingAction(queue);
       var worst = model.worstSeverity(active.length ? active : queue);
@@ -463,7 +472,7 @@
       ]));
 
       var words = h('div', {}, [
-        h('h2', { className: 'hero-title', text: heroTitle(queue, active, capped) })
+        h('h2', { className: 'hero-title', text: heroTitle(queue, active, capped, queueCapped) })
       ]);
       var sub = heroSub(needing, active, armed, rulesFailed);
       if (sub) words.appendChild(h('p', { className: 'hero-sub', text: sub }));
@@ -472,9 +481,12 @@
       return box;
     }
 
-    function heroTitle(queue, active, capped) {
+    /* Two flags because the two branches count two different things: the
+       window counts the QUEUE, which is both reads, and "open" counts only
+       what the open read answered with. */
+    function heroTitle(queue, active, capped, queueCapped) {
       if (RANGE_DAYS[filters.range]) {
-        return model.atLeast(fmt.plural(queue.length, 'problem'), capped) +
+        return model.atLeast(fmt.plural(queue.length, 'problem'), queueCapped) +
           ' in the last ' + RANGE_DAYS[filters.range] + ' days';
       }
       return model.atLeast(fmt.plural(active.length, 'problem'), capped) + ' open';
@@ -575,7 +587,7 @@
 
     /* -------------------------------------------------------- the problems */
 
-    function problemsBand(queue, data, armed, capped) {
+    function problemsBand(queue, data, armed, capped, queueCapped) {
       var section = S.band(
         RANGE_DAYS[filters.range] ? 'Problems in this window' : 'Open problems',
         'Worst first, then oldest'
@@ -592,7 +604,7 @@
       if (foot) box.appendChild(foot);
       section.appendChild(box);
 
-      var notes = disclosures(data, capped);
+      var notes = disclosures(data, capped, queueCapped);
       if (notes) section.appendChild(notes);
       return section;
     }
@@ -620,7 +632,7 @@
     /* Only what is true is said. Nothing narrowing and nothing truncated
        leaves this off the page entirely: a line reading "showing 3 problems"
        under three problems is the count restated, and the hero has it. */
-    function disclosures(data, capped) {
+    function disclosures(data, capped, queueCapped) {
       var parts = [];
       var scope = severityScope();
 
@@ -647,12 +659,21 @@
           'then oldest, and that many came back, so the most recent ones are missing from ' +
           'this list and from the counts above.');
       }
-      /* The closed read's own cap is NOT restated here. The closed card
-         discloses it on every load, in its own foot, and on the two windows
-         that admit closed problems into the queue this note fired as well --
-         forty words for one fact, on a pane rejected once for captioning
-         everything twice. One fact, one slot: the cap belongs to the card
-         that draws from the capped read. */
+      /* One cap, two surfaces, two consequences -- and each surface states
+         only its own. The closed card's foot says which ROWS are missing from
+         the list it draws; this says what the capped read does to the COUNT
+         above it, which is the queue's fact and appears nowhere else. A dozen
+         words rather than the card's sentence repeated: the earlier build
+         printed both in full and said one thing twice.
+
+         Not folded into `capped`: a queue is short whenever the CLOSED read
+         came back full, even where the open read had room to spare, and on a
+         window that is the ordinary shape -- a handful open over a long
+         closed history. */
+      if (queueCapped && !capped) {
+        parts.push('The closed problems came back full as well, so the count above is a ' +
+          'floor and the most recent closures are missing from this queue.');
+      }
       if (!parts.length) return null;
 
       var notes = h('div', { className: 'p-notes' });
@@ -1064,9 +1085,8 @@
     }
 
     function closeForm(problem, surface, onCancel) {
-      var safe = surface + '-' + String(problem.id).replace(/[^A-Za-z0-9_-]/g, '');
-      var reasonId = 'close-reason-' + safe;
-      var noteId = 'close-note-' + safe;
+      var reasonId = discloseId('close-reason', surface);
+      var noteId = discloseId('close-note', surface);
 
       var box = h('form', { className: 'p-close' });
       box.appendChild(h('p', {
@@ -1682,7 +1702,6 @@
            defect the routing card carried, in the state where it costs more:
            an operator reads it three inches from "this part is unread". */
         block = S.stateBlock('warn', 'Nothing is open, and whether anything is watching is unknown', [
-          UNREAD_WATCH,
           'An empty problems page and alerting that has stopped look identical, and the ' +
             'read that tells them apart is the one that failed. Treat this as unverified ' +
             'until the rules can be read.'

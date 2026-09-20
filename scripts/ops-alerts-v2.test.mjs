@@ -1001,6 +1001,45 @@ test('a capped closed read is disclosed on the window that does not filter by it
     'a read that came back short stopped saying how many it held: ' + shortText);
 });
 
+/* The queue is not the open read. On a window it draws from BOTH reads, so a
+   capped closed read makes the QUEUE short -- and short of exactly the recent
+   closures the window is made of. The hero counts that queue. This was a
+   regression: the note existed, was deleted as a duplicate of the closed
+   card's foot, and nothing in the suite noticed either way. */
+test('a capped closed read hedges the queue\'s own count, not only the closed list', async () => {
+  const dom = await boot({
+    search: '?range=7d',
+    open: { problems: [problem()] },
+    closed: { problems: manyProblems(100).map((_, i) => closedProblem({
+      id: 'cl_' + i, reference: 'AO-' + (700 + i),
+    })) },
+  });
+  const title = allText(withClass(dom.doc.body, 'hero-title')[0]);
+  assert.match(title, /^At least /,
+    'the hero printed an exact total over a queue drawn from a capped read: ' + title);
+
+  const notes = withClass(dom.doc.body, 'p-notes')[0];
+  assert.ok(notes, 'the queue carried no disclosure at all over a capped read');
+  const noteText = allText(notes).replace(/\s+/g, ' ');
+  assert.match(noteText, /missing from this queue/,
+    'the queue said nothing about being short of the window it is counting: ' + noteText);
+
+  /* The default window counts only open problems, and the closed read cannot
+     make THAT queue short -- so the hedge must not fire there, or it is on
+     every page and says nothing. */
+  const openWindow = await boot({
+    open: { problems: [problem()] },
+    closed: { problems: manyProblems(100).map((_, i) => closedProblem({
+      id: 'cl_' + i, reference: 'AO-' + (700 + i),
+    })) },
+  });
+  assert.match(allText(withClass(openWindow.doc.body, 'hero-title')[0]), /^1 problem open/,
+    'the open-window count was hedged by a cap that cannot reach it');
+  const openNotes = withClass(openWindow.doc.body, 'p-notes')[0];
+  assert.ok(!openNotes || !/missing from this queue/.test(allText(openNotes)),
+    'the queue hedge fired on a window the closed read cannot shorten');
+});
+
 /* The closed query sends no date bound, so once more than PAGE closures exist
    the PAGE that come back are the oldest and every one can predate this
    window. The card then draws "nothing has been closed" from a sample that was
@@ -1014,7 +1053,6 @@ test('a capped closed read that reaches back past the window reports no zero', a
       firedAt: at(61 * DAY), closedAt: at(60 * DAY),
     })) },
   });
-  const card = old.doc.querySelector('.c-card') || old.doc.querySelector('.card');
   const text = liveText(old);
   assert.doesNotMatch(text, /Nothing has been closed in the last/,
     'a capped read that reaches back past the window was reported as a zero: ' + text);
@@ -1022,7 +1060,8 @@ test('a capped closed read that reaches back past the window reports no zero', a
     'the card said nothing about why it cannot answer: ' + text);
   assert.match(text, /most recent closures are missing/,
     'the cap was not disclosed anywhere on a page that has no other disclosure');
-  assert.ok(card, 'the closed card was not drawn at all');
+  assert.ok(old.doc.querySelector('.c-list') || /cannot be told from this read/.test(text),
+    'neither the closed list nor its refusal was drawn at all');
 
   /* A read that came back SHORT and empty is a real zero and still says so. */
   const none = await boot({ closed: { problems: [] } });
