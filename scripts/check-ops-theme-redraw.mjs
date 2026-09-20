@@ -12,7 +12,7 @@
    (monorepo Stadiora/Aria#10042), so a dark-palette chart on a light surface is
    the AA failure that fix exists to prevent.
 
-   Nothing else in the repository can see it:
+   Nothing else in the repository measures it on a real page:
 
      - scripts/check-ops-shell-v2.mjs stores a theme, RELOADS, and measures the
        fresh page. A freshly loaded page is correct in either theme, because the
@@ -24,11 +24,20 @@
      - Reading ops/assets/aria.js cannot answer it either: the call is one line
        and a grep for it pins the string, not the behaviour.
 
+   One thing does see the deletion: scripts/ops-aria-shell.test.mjs, added with
+   this check, goes red on it. What that suite reads back is the presentation
+   attribute the renderer wrote, out of a hand-written DOM whose token map the
+   test supplies — not a resolved colour on a laid-out page, and not the palette
+   aria.css really declares. That half is this file.
+
    So this drives a real browser, draws the page in one theme, clicks the real
    theme button in the top bar, and asserts the resolved paint on every chart
-   shape now holds the OTHER theme's pinned value. Both directions, because a
-   redraw wired one way round is the same defect wearing a hat, and an assertion
-   that only runs dark -> light cannot see it.
+   shape aria.js paints from a token now holds the OTHER theme's pinned value.
+   The chart parts aria.css paints — a .gridline stroke, an .axis label fill —
+   carry no presentation attribute, re-resolve on the attribute change for free,
+   and are deliberately outside the probe; PAINT_PROBE below says why. Both
+   directions, because a redraw wired one way round is the same defect wearing a
+   hat, and an assertion that only runs dark -> light cannot see it.
 
    Deliberately NOT asserted here: that redrawCharts() was called. A spy passes
    while the redraw paints nothing. The only thing that matters is the colour
@@ -71,7 +80,8 @@ const CHART_TOKENS = {
 };
 
 /* Both directions. Each entry is one whole experiment: load in `start`, click
-   the theme button once, and require `end` on every chart shape. */
+   the theme button once, and require `end` on every chart shape aria.js paints
+   from a token. */
 const DIRECTIONS = [
   { start: 'dark', end: 'light' },
   { start: 'light', end: 'dark' },
@@ -315,7 +325,8 @@ const origin = `http://127.0.0.1:${PORT}`;
 
 /* Kept inside the repository rather than in a temp directory so the path is the
    same on a developer machine and on the runner, and removed in the finally
-   below either way. */
+   below once Chrome has actually exited — see stopBrowser(), which is what
+   makes "removed" true rather than aspirational. */
 const profile = fs.mkdtempSync(path.join(ROOT, '.ops-theme-redraw-'));
 
 const browser = spawn(chromePath(), [
@@ -324,6 +335,42 @@ const browser = spawn(chromePath(), [
   '--disable-gpu', '--disable-extensions', '--hide-scrollbars',
   '--force-device-scale-factor=1', '--force-prefers-reduced-motion', 'about:blank',
 ], { stdio: 'ignore' });
+
+/* Chrome has to be GONE before its profile is deleted. browser.kill() only
+   sends SIGTERM and returns, and Chrome re-creates Default, Local State and
+   VariationsSeedV2 while it shuts down — after an rmSync that ran immediately
+   has already succeeded. That is why the catch in the finally never fired: the
+   removal worked and the directory came back, one ~100 KB .ops-theme-redraw-*
+   per run on a developer machine, forever. A CI runner is ephemeral, so nothing
+   there ever showed it.
+
+   The wait is bounded, because a wedged Chrome that never acknowledges SIGTERM
+   must not hang the guard: SIGTERM, then SIGKILL after KILL_GRACE_MS, then give
+   up after a further KILL_GRACE_MS. On expiry stopBrowser() returns false, the
+   finally attempts the removal anyway and warns that the profile may survive
+   the run — which is what the .gitignore entry for these directories covers.
+   Either way the exit status and every assertion above it are untouched. */
+const KILL_GRACE_MS = 5000;
+
+function exitsWithin(ms) {
+  return new Promise((resolve) => {
+    const onExit = () => { clearTimeout(timer); resolve(true); };
+    const timer = setTimeout(() => { browser.off('exit', onExit); resolve(false); }, ms);
+    browser.once('exit', onExit);
+  });
+}
+
+async function stopBrowser() {
+  const gone = () => browser.exitCode !== null || browser.signalCode !== null;
+  if (gone()) return true;
+  const terminated = exitsWithin(KILL_GRACE_MS);
+  browser.kill();
+  if (await terminated) return true;
+  if (gone()) return true;
+  const killed = exitsWithin(KILL_GRACE_MS);
+  browser.kill('SIGKILL');
+  return (await killed) || gone();
+}
 
 let cdp;
 let problems = [];
@@ -398,6 +445,15 @@ try {
     if (problems.length) {
       failures.push(`${where} raised on load:\n      ` + problems.join('\n      '));
     }
+    /* Reported once, at the moment it happened. `problems` is cleared per
+       direction in load(), so without this line every load-time error is still
+       in the array when the post-switch check reads it and gets reported a
+       second time as if the theme change had raised it — the same failure
+       printed twice, the second copy naming the wrong moment and sending
+       whoever reads the log to the wrong file. From here on the array holds
+       only what arrived after the page had settled: the click and the redraw
+       it triggers. */
+    problems = [];
 
     const before = await evaluate(PAINT_PROBE);
 
@@ -537,9 +593,13 @@ try {
   }
 } finally {
   if (cdp) cdp.close();
-  browser.kill();
+  const stopped = await stopBrowser();
   server.close();
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
+  if (!stopped) {
+    console.error(`\n  ! Chrome did not exit within ${KILL_GRACE_MS * 2}ms of being asked to. ` +
+      `${path.basename(profile)} may survive this run; it is git-ignored, delete it by hand.`);
+  }
 }
 
 if (failures.length) {
