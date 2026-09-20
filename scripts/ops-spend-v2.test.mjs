@@ -1608,25 +1608,156 @@ test('the page carries a strict policy and names its pane', () => {
    the defect is reinstated" shape, with the sentence doing the matching. */
 const PANE_CODE = PANE_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
+/* Every spelling that turns a value into markup, not the one this module
+   happens not to use. A guard that names `innerHTML` alone passes
+   `outerHTML`, `insertAdjacentHTML` and `document.write`, which are the same
+   defect typed differently. */
+const MARKUP_WRITE = /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*write/;
+
+/* A style ATTRIBUTE, which `ops/spend.html`'s `style-src 'self'` forbids,
+   in the two ways this module could write one: by name, and as an option key
+   to `h()` or `svgEl()`. Both of those helpers `setAttribute` every key that
+   is not `className` or `text` (`shell-pane-v2.js:149-159`), so
+   `h('div', { style: '...' })` writes a literal style attribute through the
+   module's own primary idiom -- a spelling `setAttribute('style'` cannot
+   see. Quoted keys and a key on its own line are the same defect, so the
+   pattern allows for both.
+
+   NOT COVERED, deliberately: `element.style.setProperty(...)`. The module
+   does that twice on purpose -- a share bar's width and a gridline label's
+   offset are lengths computed from the answer -- and CSSOM is not gated by
+   the policy. The clause below pins that exception rather than trusting it:
+   every `.style` contact in the module must BE a `setProperty` call. Also
+   not covered: an attribute name assembled at runtime, which no source scan
+   can see and which the page's own policy is the enforcement for. */
+const STYLE_ATTR_WRITE = /setAttribute\(\s*['"]style['"]|[{,]\s*['"]?style['"]?\s*:/;
+
 test('the pane module writes no markup and no style attribute', () => {
   assert.ok(/innerHTML/.test(PANE_SRC),
     'the docblock explains why there is none, so the raw file DOES carry the word: this asserts '
     + 'the guard below is reading stripped code rather than passing vacuously');
-  assert.ok(!/innerHTML/.test(PANE_CODE),
+
+  /* A positive control per clause, so the widened guard cannot claim a
+     spelling it does not actually see. Each of these is the defect the test
+     is named for, written the way it would really arrive. */
+  const CAUGHT = [
+    ['node.innerHTML = value;', MARKUP_WRITE],
+    ['node.outerHTML = markup;', MARKUP_WRITE],
+    ['node.insertAdjacentHTML(\'beforeend\', markup);', MARKUP_WRITE],
+    ['document.write(markup);', MARKUP_WRITE],
+    ['node.setAttribute(\'style\', \'color: red\');', STYLE_ATTR_WRITE],
+    ['h(\'div\', { className: \'x\', style: \'color: red\' })', STYLE_ATTR_WRITE],
+    ['h(\'div\', {\n      className: \'x\',\n      style: bar\n    })', STYLE_ATTR_WRITE],
+    ['svgEl(\'path\', { \'style\': \'fill: red\' })', STYLE_ATTR_WRITE],
+  ];
+  CAUGHT.forEach(function (pair) {
+    assert.ok(pair[1].test(pair[0]), 'the guard cannot see this spelling: ' + pair[0]);
+  });
+
+  assert.ok(!MARKUP_WRITE.test(PANE_CODE),
     'the pane shows production data to an administrator; no value may become markup');
-  assert.ok(!/setAttribute\(\s*['"]style['"]/.test(PANE_CODE),
+  assert.ok(!STYLE_ATTR_WRITE.test(PANE_CODE),
     'a style attribute is forbidden by the page\'s own policy');
+
+  /* The documented exception, held to its own words: CSSOM, and only CSSOM. */
+  const styleContacts = PANE_CODE.match(/\.style\b[\s\S]{0,14}/g) || [];
+  assert.ok(styleContacts.length > 0, 'the two computed lengths are still there to be checked');
+  styleContacts.forEach(function (contact) {
+    assert.match(contact, /^\.style\s*\.\s*setProperty\(/,
+      'the docblock allows CSSOM for two computed lengths and nothing else; this is: ' + contact);
+  });
+
   assert.ok(!/\bstyle\s*=/.test(PAGE_HTML), 'and none is written into the page either');
 });
 
+/* ------------------------------------------- colour values in the sheet
+
+   What may stand in a colour slot here is a theme token, the absence of a
+   colour, and the geometry that shares a shorthand with one. Everything else
+   is a colour this pane invented.
+
+   Scanned as an allowlist over declaration VALUES rather than as a list of
+   spellings, because a guard that names the spellings it knows passes every
+   spelling it does not: the previous form of this test matched `#hex` and
+   `rgb(` only, and a CSS named colour, an `oklch()` and a `color-mix()`
+   carrying a raw colour all walked through it. Values rather than the whole
+   file, because a selector may legitimately carry a colour word -- `.sp-tan`
+   names no colour -- and a property name may not be scanned as its own
+   value. */
+const COLOUR_SLOT = /(^--)|color|background|border|outline|fill|stroke|shadow/;
+
+const COLOURLESS_WORDS = new Set([
+  'none', 'solid', 'dashed', 'dotted', 'double', 'inset', 'outset', 'hidden',
+  'transparent', 'currentcolor', 'inherit', 'initial', 'unset', 'revert', 'auto',
+  'round', 'square', 'butt', 'miter', 'bevel', 'evenodd', 'nonzero',
+  'repeat', 'no-repeat', 'space', 'center', 'cover', 'contain',
+  'border-box', 'padding-box', 'content-box', 'collapse', 'separate',
+]);
+
+/* Strips the two things allowed to WRAP a value -- a token reference, and a
+   `color-mix()` whose own arguments are then scanned -- plus the lengths and
+   numbers that share colour shorthands. Whatever is left is examined. A
+   `color-mix(in srgb, var(--ink) 22%, transparent)` reduces to nothing and
+   passes; `color-mix(in srgb, white 40%, transparent)` leaves `white`. */
+function colourResidue(value) {
+  let out = value;
+  let before;
+  do {
+    before = out;
+    out = out.replace(/var\(\s*--[a-z0-9-]+\s*(,[^()]*)?\)/gi, ' ');
+  } while (out !== before);
+  return out
+    .replace(/color-mix\(\s*in\s+[a-z-]+\s*,/gi, ' ')
+    .replace(/[\d.]+(px|rem|em|ex|ch|%|s|ms|deg|fr|vh|vw|vmin|vmax|pt)?/gi, ' ');
+}
+
+/* Every colour value a body of declarations states outright, as
+   `property: value` strings so a failure names the site rather than a count. */
+function colourValues(body) {
+  const found = [];
+  body.split(';').forEach((decl) => {
+    const at = decl.indexOf(':');
+    if (at === -1) return;
+    const prop = decl.slice(0, at).trim().toLowerCase();
+    const value = decl.slice(at + 1).trim();
+    if (!prop || !value || !COLOUR_SLOT.test(prop)) return;
+    const residue = colourResidue(value);
+    const words = (residue.match(/[a-z][a-z0-9-]*/gi) || [])
+      .filter((word) => !COLOURLESS_WORDS.has(word.toLowerCase()));
+    if (/#[0-9a-f]/i.test(residue) || words.length) found.push(prop + ': ' + value);
+  });
+  return found;
+}
+
 test('the stylesheet introduces no colour value of its own', () => {
-  const body = PANE_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
-  const hex = body.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
-  assert.deepEqual(hex, [],
-    'the v2 palette is AA by construction; a hex here is outside that proof and does not follow '
-    + 'the theme');
-  const raw = body.match(/\b(rgb|rgba|hsl|hsla)\(/g) || [];
-  assert.deepEqual(raw, [], 'same rule, spelled the other way');
+  /* A positive control per spelling, so the allowlist cannot claim a reach
+     it does not have -- and the legitimate forms alongside, because a guard
+     that flags everything is as useless as one that flags nothing. */
+  const CAUGHT = [
+    'background: #2b7fff', 'color: #FFF', 'background: white',
+    'stroke: rgb(0, 0, 0)', 'color: rgba(0,0,0,.4)', 'background: hsl(210 90% 60%)',
+    'background: oklch(0.72 0.19 250)', 'color: lab(50% 40 59)',
+    'background: color-mix(in srgb, white 40%, transparent)',
+    '--c: crimson', 'border-top: 1px solid #2b7fff', 'box-shadow: 0 1px 2px rgba(0,0,0,.4)',
+  ];
+  CAUGHT.forEach((decl) => {
+    assert.equal(colourValues(decl + ';').length, 1, 'the guard cannot see: ' + decl);
+  });
+  const ALLOWED = [
+    'color: var(--ink)', 'background: var(--c, var(--cyan))', 'fill: none',
+    'border-top: 1px solid var(--line)', 'stroke-width: 1', '--c: var(--cyan)',
+    'background: color-mix(in srgb, var(--ink) 22%, transparent)',
+    'background: transparent', 'color: currentColor', 'border-radius: 20px',
+  ];
+  ALLOWED.forEach((decl) => {
+    assert.deepEqual(colourValues(decl + ';'), [], 'the guard mis-reads: ' + decl);
+  });
+
+  const stated = [];
+  RULES.forEach((rule) => { stated.push(...colourValues(rule.body)); });
+  assert.deepEqual(stated, [],
+    'the v2 palette is AA by construction; a colour here is outside that proof and does not '
+    + 'follow the theme');
 });
 
 test('a card cannot set the page\'s own minimum width', () => {
