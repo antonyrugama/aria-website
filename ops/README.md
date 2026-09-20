@@ -263,6 +263,7 @@ ops/
     pane-run-history-v2.js   What happened
     pane-run-history-v2.css  What happened's own shapes
     pane-evaluations-v2.css  Aria quality's own shapes
+    pane-analytics-v2.css  People and usage's own shapes
 ```
 
 ### The v2 layer
@@ -1211,6 +1212,45 @@ is not a complete diff: it names the departures that carry a decision.
    and an end for one, and a guessed window is worse than a stated refusal.
 
 `assets/pane-run-history-v2.css` carries this pane's own shapes.
+### People and usage on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/analytics.html` in the Aria monorepo is the approved design.
+`ops/analytics.html` follows its structure and the rules its README calls normative, and reads
+`GET /api/ops/usage` unchanged: this is a surface remodel, and no field moved to make it.
+
+The list below is **not a complete diff against the mock**. It names the departures that carry a
+decision — something the mock draws that nothing behind the pane can answer, and a second caption
+for a fact already on screen. Wording and ordering differ in more places than are listed, because
+the mock is a static page with hand-written sample text and the pane writes its words from the
+answer.
+
+1. **No week-over-week pill on a tile, and no "New signups this month" tile.** The response
+   carries one window and no previous one, and no signup count. Both are figures rather than
+   phrasing: a delta drawn from the window the pane already has would be a number nobody
+   measured.
+2. **No "Returning after 7 days" headline.** Retention arrives as a grid of signup groups, each
+   with its own denominator. Collapsing them into one figure means choosing a group and an
+   offset, and the pane would then be publishing a rate the answer never sent.
+3. **No "Where people are" region table.** No region or country field is in the response.
+4. **No per-row ribbon, no `Times` column and no `Week over week` column in the feature table.**
+   The response sends a share of people and the group it was measured over, not an event count
+   and not a daily series per feature.
+5. **The chart's scale is HTML beside the drawing rather than `<text>` inside it.** `role="img"`
+   carries `children-presentational`, so text inside the picture is announced to nobody, and the
+   drawing is stretched to the width of its card, which would render that text at about four
+   pixels on a phone. The picture keeps an accessible name that states the series, its window,
+   and each line's first, last, low and high.
+6. **No Custom range**, which is the registry's decision and is stated in the bar where the
+   control would have been: the bar carries a range name and no bounds, so a custom window
+   reaches the usage API with no start and no end, and that route answers over the widest window
+   retention allows rather than refusing it. The figures would be confident and for a window
+   nobody chose.
+7. **The retention grid has no legend.** Every cell prints its own percentage, so a key mapping
+   tint to range is the same fact again; the one symbol that is not a number, `·` for a week a
+   group has not reached yet, is named once in the band note and carries its own text for a
+   screen reader.
+8. **The mock's explanatory captions are not reproduced.** The mocks encode one fact per slot,
+   which is the rule that took the approved set from 7,240 words to 4,842.
 
 ### Problems on v2: where the pane departs from the mock
 
@@ -1452,6 +1492,7 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
 | `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that a selection the record cannot act on is refused rather than answered, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
+| `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer is on screen and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px **and 360px** in both themes: that nothing is past the right edge, and that the longest sentence the pane can put in a rule row was actually laid out — the check would otherwise pass on a page that never drew the row it exists for. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
