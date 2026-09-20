@@ -400,12 +400,15 @@ an edit here.
 **Happening now** draws what a rule reported in the last few minutes, because no route lists
 jobs. It does not have a job table, a lane, an age per job or a retry count, and it says so in a
 band of its own rather than drawing an empty one. Its one real question is whether a queue that
-is over the line is **moving** or **stuck**, which are different problems with different fixes
-and look identical in a count: it compares the age of the job at the front of the queue against
-how long the queue has been over the line, and a front older than the breach is a front that has
-not moved since the breach began. Where the unit of the observation, the observation itself or
-the breach start is missing, the verdict is **cannot tell**, drawn in words — the two verdicts
-are never guessed at, and an unknown is never rounded up to the alarming one. A count of running
+is over the line is **moving, behind** or **not clearing**, which are different problems with
+different fixes and look identical in a count: it compares the age of the job at the front of the
+queue against how long the queue has been over the line. A front younger than the breach proves
+the queue emptied past everything it held when it crossed the line; a front older than the breach
+proves only that nothing queued since has reached the front, and the pane claims no more than
+that — a burst that all arrived before the breach can drain steadily and still show an old front.
+Where the unit of the observation, the observation itself, the breach start or the elapsed time is
+missing, the verdict is **cannot tell**, drawn in words — the two verdicts are never guessed at,
+and an unknown is never rounded up to the alarming one. A count of running
 or queued jobs is not drawn at all: a tile reading zero and a tile with no pipeline behind it
 look identical, and that is the one thing an operations screen must never be.
 
@@ -1218,9 +1221,9 @@ is not a complete diff: it names the departures that carry a decision.
 
 `docs/mocks/ops-dashboard-v2/jobs-live.html` in the Aria monorepo is the approved design. The
 pane keeps what that design is for — the one-line verdict at the top, the counters beneath it,
-the queue read worst-first, the callout that separates a wedged queue from a busy one — and
-departs where nothing behind the page can answer what the mock draws. As with the sections
-above, this is not a complete diff: it names the departures that carry a decision.
+the queue read worst-first, the callout that separates a queue which is not clearing from a busy
+one — and departs where nothing behind the page can answer what the mock draws. As with the
+sections above, this is not a complete diff: it names the departures that carry a decision.
 
 1. **There is no job table, because there are no jobs to list.** The mock draws every open job
    with its lane, its age and its retry count. No route serves a job, a lane or a retry, so the
@@ -1228,11 +1231,16 @@ above, this is not a complete diff: it names the departures that carry a decisio
 2. **Running and queued are not counted.** The mock draws both as tiles. Nothing serves either
    count, and a tile reading zero is indistinguishable from a tile with nothing behind it, so
    neither is drawn as a numeral.
-3. **Moving, stuck and cannot tell are three answers, not two.** The mock's callout says a queue
-   is stuck. The pane derives that from the alerting record — the age of the job at the front of
-   the queue against how long the queue has been over the line — and prints **cannot tell** when
-   the unit, the observation or the breach start is missing. The unit lives only on the rules
-   read, so a failure of that read costs the verdict rather than producing a guessed one.
+3. **Moving, not clearing and cannot tell are three answers, not two.** The mock's callout says
+   a queue is stuck. Two numbers cannot prove that, so the pane says less: it compares the age of
+   the job at the front of the queue against how long the queue has been over the line, and calls
+   the older front **not clearing** — work that was already waiting when it crossed the line is
+   still waiting — rather than stuck, which would claim the front has not moved. It prints
+   **cannot tell** when the unit, the observation, the breach start or the elapsed time is
+   missing. The unit lives only on the rules read, so a failure of that read costs the verdict
+   rather than producing a guessed one. The pane's question in `pane-registry.js` still reads
+   "is anything stuck?" and is deliberately left alone: that is the operator's question, and
+   answering it with the strongest thing the record supports is the point.
 4. **Cancel, retry and export are absent.** The mock offers all three. There is no route behind
    any of them; a control that cannot succeed says the thing is within reach, so the pane names
    the three rather than drawing them disabled.
@@ -1441,7 +1449,7 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-shell-pane-v2.test.mjs` | That the rail cannot drift from the registry, that a pane is offered exactly the filters it declared and never one more, that a role without access gets a named refusal rather than a blank pane, that the three gates stay mutually exclusive, and that the v2 formatters still agree with the v1 ones they were ported from. |
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
 | `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that a selection the record cannot act on is refused rather than answered, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
-| `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front has not moved since it crossed the line reads stuck and a queue that has drained past its old front reads moving, that both can be on screen at once and stay different, that a missing unit, observation or breach start produces cannot tell rather than the alarming one, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that staging is refused before the read rather than after it, that an empty page says whether anything was watching, that no control is drawn without a route behind it, and that the read carries its querystring as well as its path. |
+| `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front is older than the breach reads not clearing and one whose front arrived after it reads moving, that both can be on screen at once and stay different, that a missing unit, a missing or negative observation, a missing breach start or a span of zero produces cannot tell rather than the alarming one, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that staging is refused before the read rather than after it, that an empty page says whether anything was watching, that no `button` or `input` is drawn without a route behind it, and that the read carries its querystring as well as its path. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |

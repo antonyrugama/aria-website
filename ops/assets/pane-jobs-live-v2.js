@@ -1,4 +1,4 @@
-/* Happening now: what is Aria working on, and is anything stuck?
+/* Happening now: what is Aria working on, and is any of it not clearing?
 
    WHAT THIS PANE CAN ACTUALLY ANSWER TODAY, AND WHAT IT CANNOT
 
@@ -16,9 +16,9 @@
    identical, and on a pane whose whole job is to say whether anything is
    wrong, the confident reading is the wrong one.
 
-   WORKING, BEHIND, OR STUCK — AND HOW THE PANE CAN TELL
+   MOVING, NOT CLEARING, OR UNREADABLE — AND WHAT THE RECORD CAN ACTUALLY PROVE
 
-   A job that is merely slow and a job that is wedged are different facts with
+   A queue that is draining and a queue that is not are different facts with
    different fixes, and an operator sent to the wrong one wastes the only time
    that matters. The pane never collapses them into a single "needs attention".
 
@@ -33,20 +33,34 @@
 
    then
 
-     oldest >= span   the job at the front was already waiting when the breach
-                      began. Nothing has left the front of that queue in the
-                      whole time it has been over the line: STUCK.
+     oldest <  span   the job at the front arrived AFTER the breach began.
+                      Everything the queue was holding when it crossed the line
+                      is therefore gone — a job older than the front cannot
+                      still be queued — so the queue has emptied past its whole
+                      backlog at least once while over the line. Work is
+                      leaving; it is arriving faster: MOVING, BEHIND.
 
-     oldest <  span   the job at the front arrived after the breach began, so
-                      the queue has drained past its old front at least once.
-                      Work is leaving; it is arriving faster: BEHIND.
+     oldest >= span   the front arrived at or before the breach began, so
+                      nothing queued since then has reached the front and the
+                      backlog the queue had when it crossed the line is still
+                      there: NOT CLEARING.
 
-   The unit is the reason the verdict can be unavailable. It lives on the rules
+   What the second reading does NOT prove is that the front has not moved. A
+   burst that all arrived before the breach can drain one job at a time and
+   satisfy oldest >= span the whole way, because each new front is still older
+   than the breach. One sample of one figure cannot separate that from a queue
+   nothing is picking up, and the pane must not say it can. "Not clearing" is
+   the whole claim: work that was already waiting when it went over the line is
+   still waiting.
+
+   The unit is one reason the verdict can be unavailable. It lives on the rules
    read and not on the problem, which is the same reason the Problems pane
    prints no observed figure without it: a bare 620 beside a threshold of "over
-   10 minutes" is worse than saying nothing. Where the unit, the observation or
-   the breach start is missing, the pane says the verdict cannot be read. It
-   does not guess, and it does not fall back to the more alarming of the two.
+   10 minutes" is worse than saying nothing. A span of zero is another: two
+   readings taken at the same instant leave no elapsed time for either statement
+   to be about. Where the unit, the observation, the breach start or the elapsed
+   time is missing, the pane says the verdict cannot be read. It does not guess,
+   and it does not fall back to the more alarming of the two.
 
    A third fact sits beside those two and is neither: `ai_success_rate` firing
    means work is flowing and failing. Nothing is waiting; the answers are
@@ -163,7 +177,7 @@
     return box;
   }
 
-  /* ------------------------------------------------ working, behind, stuck */
+  /* --------------------------------------- moving, not clearing, unreadable */
 
   function ruleFor(rules, ruleKey) {
     var list = (rules && rules.rules) || [];
@@ -178,48 +192,57 @@
      not a reading. */
   function observedSeconds(problem, rule) {
     if (!rule || rule.thresholdUnit !== 'seconds') return null;
-    return fmt.isNum(problem.observedValue) ? problem.observedValue : null;
+    if (!fmt.isNum(problem.observedValue) || problem.observedValue < 0) return null;
+    return problem.observedValue;
   }
 
   /* How long the queue has been over the line, in seconds, or null. Both ends
-     have to be real times: a span measured from a missing start is not a
-     span. */
+     have to be real times and the second has to be after the first: a span
+     measured from a missing start is not a span, and a span of zero is two
+     readings taken at the same instant, which supports no statement about what
+     happened between them. */
   function breachSeconds(problem) {
     var began = model.oldest([problem.firstBreachedAt]);
     var measured = model.latest([problem.lastObservedAt]);
     if (began === Infinity || measured === -Infinity) return null;
     var span = (measured - began) / 1000;
-    return span >= 0 ? span : null;
+    return span > 0 ? span : null;
   }
 
   /* One of three answers, never two of them merged. 'unknown' is a real
-     answer here and is drawn as words: told "stuck" when the truth is
-     unreadable, an operator restarts workers that were working. */
+     answer here and is drawn as words: told the backlog is not clearing when
+     the truth is unreadable, an operator goes looking for a queue that is
+     working. */
   function movement(problem, rule) {
     var oldest = observedSeconds(problem, rule);
     var span = breachSeconds(problem);
     if (oldest === null || span === null) {
       return { state: 'unknown', oldest: oldest, span: span };
     }
-    return { state: oldest >= span ? 'stuck' : 'behind', oldest: oldest, span: span };
+    return { state: oldest >= span ? 'holding' : 'behind', oldest: oldest, span: span };
   }
 
+  /* The sentences say only what two numbers can carry. 'holding' is not a
+     claim that the front has not moved — see the docblock — it is a claim that
+     nothing queued since the breach has reached it. */
   var MOVEMENT = {
-    stuck: {
-      label: 'Stuck',
+    holding: {
+      label: 'Not clearing',
       tone: 'down',
-      sentence: 'Nothing has left the front of this queue since it went over the line.'
+      sentence: 'Work that was already waiting when this queue went over the line is still ' +
+        'waiting. Nothing queued since has reached the front.'
     },
     behind: {
       label: 'Moving, behind',
       tone: 'warn',
-      sentence: 'Jobs are completing. They are arriving faster than they leave.'
+      sentence: 'Everything waiting when it went over the line has since been handled. Jobs ' +
+        'are leaving; they are arriving faster.'
     },
     unknown: {
       label: 'Cannot tell',
       tone: 'ghost',
-      sentence: 'Whether the front of this queue is moving cannot be read from what was ' +
-        'recorded, so it is not being guessed at.'
+      sentence: 'Whether this queue is clearing cannot be read from what was recorded, so it ' +
+        'is not being guessed at.'
     }
   };
 
@@ -238,7 +261,7 @@
   }
 
   /* Worst first, then the one that has been over the line longest. A queue
-     that has been wedged for an hour outranks one that crossed the line a
+     that has been over the line for an hour outranks one that crossed it a
      minute ago at the same severity. */
   function worstFirst(rows) {
     return rows.slice().sort(function (a, b) {
@@ -301,8 +324,8 @@
     }
 
     /* Through the shell's loader, so the same-origin fixture hook covers the
-       states a live API will not produce on demand: a quiet system, a wedged
-       queue, a system with nothing watching it.
+       states a live API will not produce on demand: a quiet system, a queue
+       that is not clearing, a system with nothing watching it.
 
        status 'open' is the route's word for open and acknowledged. This pane
        is the present tense: a problem somebody closed on Tuesday belongs to
@@ -399,11 +422,11 @@
     /* ------------------------------------------------------------- hero */
 
     /* The one sentence somebody reads before they decide whether to put their
-       coffee down. Stuck outranks behind, behind outranks failing, and all
-       three outrank a problem that belongs to another pane, because that is
-       the order in which they cost an athlete something. */
+       coffee down. Not clearing outranks behind, behind outranks failing, and
+       all three outrank a problem that belongs to another pane, because that
+       is the order in which they cost an athlete something. */
     function hero(queues, failing, elsewhere) {
-      var stuck = queues.filter(function (row) { return row.movement.state === 'stuck'; });
+      var holding = queues.filter(function (row) { return row.movement.state === 'holding'; });
       var behind = queues.filter(function (row) { return row.movement.state === 'behind'; });
       var unreadable = queues.filter(function (row) { return row.movement.state === 'unknown'; });
 
@@ -411,26 +434,27 @@
       var title = '';
       var sub = '';
 
-      if (stuck.length) {
+      if (holding.length) {
         tone = 'st-bad';
-        title = stuck.length === 1
-          ? coded(stuck[0].problem.scopeLabel || 'A queue') + ' is stuck'
-          : stuck.length + ' queues are stuck';
-        sub = 'Nothing has left the front of ' + (stuck.length === 1 ? 'it' : 'them') +
-          ' since the queue went over the line.';
+        title = holding.length === 1
+          ? coded(holding[0].problem.scopeLabel || 'A queue') + ' is not clearing'
+          : holding.length + ' queues are not clearing';
+        sub = 'Work that was already waiting when ' + (holding.length === 1 ? 'it' : 'they') +
+          ' went over the line is still waiting.';
       } else if (behind.length) {
         tone = 'st-warn';
         title = behind.length === 1
           ? coded(behind[0].problem.scopeLabel || 'A queue') + ' is behind'
           : behind.length + ' queues are behind';
-        sub = 'Jobs are completing. They are arriving faster than they leave.';
+        sub = 'Everything waiting when the line was crossed has since been handled. Jobs ' +
+          'are arriving faster than they leave.';
       } else if (unreadable.length) {
         tone = 'st-warn';
         title = unreadable.length === 1
           ? coded(unreadable[0].problem.scopeLabel || 'A queue') + ' is over the line'
           : unreadable.length + ' queues are over the line';
-        sub = 'Whether the front of ' + (unreadable.length === 1 ? 'it is' : 'them are') +
-          ' moving cannot be read from what was recorded.';
+        sub = 'Whether ' + (unreadable.length === 1 ? 'it is' : 'they are') +
+          ' clearing cannot be read from what was recorded.';
       } else if (failing.length) {
         tone = 'st-bad';
         title = failing.length === 1
@@ -589,7 +613,7 @@
     /* --------------------------------------------------------- the queues */
 
     function queueBand(queues, queueRule) {
-      var section = S.band('Waiting, and whether it is moving',
+      var section = S.band('Waiting, and whether it is clearing',
         'The front of the queue, per request type');
       var box = S.card();
       var body = h('div', { className: 'card-body col' });

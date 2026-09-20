@@ -2,16 +2,21 @@
    design system.
 
    The one thing this pane exists to get right is the difference between a
-   queue that is slow and a queue that is wedged. They are different problems
-   with different fixes, they look identical in a screenshot, and no overflow
-   check or contrast oracle can see which one the pane said. So most of what is
-   below is about that distinction and about the third answer, which is that
-   the pane cannot tell:
+   queue that has emptied past everything it was holding and one that has not.
+   They are different problems with different fixes, they look identical in a
+   screenshot, and no overflow check or contrast oracle can see which one the
+   pane said. So most of what is below is about that distinction, about the
+   third answer — that the pane cannot tell — and about the boundary of what
+   two numbers prove, because an overclaim here reads as a verdict:
 
-     - a queue whose front has not moved since it crossed the line reads STUCK;
-     - a queue that has drained past its old front reads MOVING, BEHIND;
-     - where the unit, the observation or the breach start is missing, the
-       verdict is CANNOT TELL, and is never rounded up to the alarming one;
+     - a queue whose front is older than the breach reads NOT CLEARING;
+     - a queue whose front arrived after the breach reads MOVING, BEHIND;
+     - NOT CLEARING never claims the front has not moved: a burst that all
+       arrived before the breach can drain steadily and still show an old
+       front, so the words stop at what was proved;
+     - where the unit, the observation, the breach start or the elapsed time is
+       missing, the verdict is CANNOT TELL, and is never rounded up to the
+       alarming one;
      - work that is flowing and failing is a third fact, not a fourth kind of
        queue;
      - a figure nothing records renders words and never a numeral;
@@ -58,9 +63,10 @@ const at = (msAgo) => new Date(Date.now() - msAgo).toISOString();
 
 /* ------------------------------------------------------------- fixtures */
 
-/* A queue that is over the line. `observed` is the age of the job at the front
-   of it in seconds, and the breach window is an hour wide, so a fixture that
-   passes `observed` at or above 3540 is a queue whose front has not moved. */
+/* A queue that is over the line. `observedValue` is the age of the job at the
+   front of it in seconds, and the breach window is 59 minutes wide, so a
+   fixture at or above 3540 is a queue whose front was already waiting when it
+   crossed the line. */
 function queueProblem(over) {
   return Object.assign({
     id: 110,
@@ -271,7 +277,7 @@ function hasClass(node, name) {
 }
 
 function queueRows(dom) {
-  const section = sectionWithHeading(dom, /Waiting, and whether it is moving/);
+  const section = sectionWithHeading(dom, /Waiting, and whether it is clearing/);
   return section ? findAll(section, (n) => hasClass(n, 'queue-row')) : [];
 }
 
@@ -294,35 +300,65 @@ function linksIn(node) {
   return findAll(node, (n) => n.tagName === 'A');
 }
 
-/* ===================== working, behind, stuck are three ================= */
+/* ============== moving, not clearing and cannot tell are three =========== */
 
-test('a queue whose front has not moved since it crossed the line reads stuck', async () => {
+test('a queue whose front is older than the breach reads not clearing', async () => {
   /* Breach began 60 minutes ago and was last measured a minute ago, so it has
      been over the line for 59 minutes. The job at the front has been waiting
-     60. It was therefore already there when the breach began: nothing has left
-     the front of that queue since. */
+     60. It was therefore already there when the breach began: nothing queued
+     since has reached the front. */
   const dom = await boot({
     problems: { problems: [queueProblem({ observedValue: 3600 })], summary: {} },
   });
   const rows = queueRows(dom);
   assert.equal(rows.length, 1, 'the queue band drew no row for a queue that is over the line');
   const text = allText(rows[0]);
-  assert.match(text, /Stuck/, 'a wedged queue was not called stuck');
-  assert.doesNotMatch(text, /Moving/, 'a wedged queue was also called moving');
+  assert.match(text, /Not clearing/, 'a queue holding its backlog was not called not clearing');
+  assert.doesNotMatch(text, /Moving/, 'a queue holding its backlog was also called moving');
 });
 
-test('a queue that has drained past its old front reads moving, behind', async () => {
+test('not clearing does not claim the front has stopped moving', async () => {
+  /* The boundary of what two numbers prove, and the reason this pane does not
+     say "stuck". A burst that all arrived before the breach can drain one job
+     at a time and satisfy oldest >= span the whole way, because every new
+     front is still older than the breach. This fixture IS that burst: the
+     front is 30m30s old and the queue has been over the line 20m, so the row
+     must not tell an operator the front has not moved.
+
+     The mutation for this test is the sentence it reads: putting
+     MOVEMENT.holding.sentence back to "Nothing has left the front of this
+     queue since it went over the line." fails it. */
+  const dom = await boot({
+    problems: {
+      problems: [queueProblem({
+        observedValue: 1830,
+        firstBreachedAt: at(20 * MINUTE),
+        firedAt: at(18 * MINUTE),
+        lastObservedAt: at(0),
+      })],
+      summary: {},
+    },
+  });
+  const text = allText(queueRows(dom)[0]);
+  assert.match(text, /Not clearing/, 'the fixture did not reach the verdict under test');
+  assert.match(text, /already waiting/,
+    'the row stopped saying the one thing the two numbers do prove');
+  assert.doesNotMatch(text, /left the front|front has not moved|has not moved since/i,
+    'the row claimed the front has not moved, which these two numbers cannot prove: ' + text);
+});
+
+test('a queue whose front arrived after the breach reads moving, behind', async () => {
   /* Same 59 minute breach, but the job at the front has only been waiting 11
-     minutes, so the queue has emptied past its old front at least once. Work
-     is leaving; it is arriving faster. */
+     minutes, so nothing the queue was holding when it crossed the line is
+     still there. Work is leaving; it is arriving faster. */
   const dom = await boot({
     problems: { problems: [queueProblem({ observedValue: 660 })], summary: {} },
   });
   const text = allText(queueRows(dom)[0]);
   assert.match(text, /Moving, behind/, 'a draining queue was not called moving');
-  assert.doesNotMatch(text, /Stuck/,
-    'a queue that is draining was called stuck, which sends somebody to restart workers ' +
-    'that are working');
+  assert.doesNotMatch(text, /Not clearing/,
+    'a queue that has emptied past its whole backlog was called not clearing, which sends ' +
+    'somebody to restart workers that are working');
 });
 
 test('the two verdicts can be on screen at once and stay different', async () => {
@@ -345,7 +381,7 @@ test('the two verdicts can be on screen at once and stay different', async () =>
     const text = allText(row);
     byScope[/Sprint video/.test(text) ? 'video' : 'chat'] = text;
   });
-  assert.match(byScope.video, /Stuck/, 'the wedged queue lost its verdict');
+  assert.match(byScope.video, /Not clearing/, 'the queue holding its backlog lost its verdict');
   assert.match(byScope.chat, /Moving, behind/, 'the draining queue lost its verdict');
 });
 
@@ -358,7 +394,7 @@ test('a verdict is never read from an observation with no unit', async () => {
   });
   const text = allText(queueRows(dom)[0]);
   assert.match(text, /Cannot tell/, 'a verdict was reached without the unit of the observation');
-  assert.doesNotMatch(text, /Stuck|Moving, behind/,
+  assert.doesNotMatch(text, /Not clearing|Moving, behind/,
     'an unreadable observation produced one of the two verdicts anyway');
 });
 
@@ -368,8 +404,43 @@ test('a missing observation is cannot tell, and never the alarming one', async (
   });
   const text = allText(queueRows(dom)[0]);
   assert.match(text, /Cannot tell/, 'a missing observation did not say so');
-  assert.doesNotMatch(text, /Stuck/,
-    'a missing observation was rounded up to stuck, which is the guess this pane must not make');
+  assert.doesNotMatch(text, /Not clearing/,
+    'a missing observation was rounded up to the alarming verdict, which is the guess this ' +
+    'pane must not make');
+});
+
+test('a negative observation is cannot tell, because an age below zero is not a reading', async () => {
+  /* A number is not automatically a measurement. The elapsed-time formatter
+     already refuses a negative, and the verdict has to refuse the same figure,
+     or -5 reads as "older than the breach" and prints the alarming verdict. */
+  const dom = await boot({
+    problems: { problems: [queueProblem({ observedValue: -5 })], summary: {} },
+  });
+  const text = allText(queueRows(dom)[0]);
+  assert.match(text, /Cannot tell/, 'an age below zero was accepted as an observation');
+  assert.doesNotMatch(text, /Not clearing|Moving, behind/,
+    'a negative age produced a verdict, and a negative age produces the alarming one');
+});
+
+test('a span of zero is cannot tell, because no time elapsed for either claim', async () => {
+  /* Measured at the instant it crossed the line. Both verdicts are statements
+     about what happened while the queue was over the line, and nothing has
+     happened yet, so oldest >= span is satisfied by every non-negative age and
+     means nothing. */
+  const dom = await boot({
+    problems: {
+      problems: [queueProblem({
+        firstBreachedAt: at(10 * MINUTE),
+        firedAt: at(10 * MINUTE),
+        lastObservedAt: at(10 * MINUTE),
+      })],
+      summary: {},
+    },
+  });
+  const text = allText(queueRows(dom)[0]);
+  assert.match(text, /Cannot tell/, 'a zero-width breach window was treated as a span');
+  assert.doesNotMatch(text, /Not clearing|Moving, behind/,
+    'a zero-width window produced a verdict about time that had not passed');
 });
 
 test('a missing breach start is cannot tell, because there is no span to compare', async () => {
@@ -383,17 +454,21 @@ test('a missing breach start is cannot tell, because there is no span to compare
 /* ========================== the hero says which ========================= */
 
 test('the hero names the fact, not just that something is wrong', async () => {
-  const stuck = await boot({
+  const holding = await boot({
     problems: { problems: [queueProblem({ observedValue: 3600 })], summary: {} },
   });
-  assert.match(heroText(stuck), /is stuck/, 'the hero did not say the queue was stuck');
+  const held = heroText(holding);
+  assert.match(held, /is not clearing/, 'the hero did not say the queue was not clearing');
+  /* The hero carries the same claim as the row and the same limit on it. */
+  assert.doesNotMatch(held, /left the front|has not moved|stuck/i,
+    'the hero claimed the front has not moved, which two numbers cannot prove: ' + held);
 
   const behind = await boot({
     problems: { problems: [queueProblem({ observedValue: 660 })], summary: {} },
   });
   assert.match(heroText(behind), /is behind/, 'the hero did not say the queue was behind');
-  assert.doesNotMatch(heroText(behind), /is stuck/,
-    'the hero called a draining queue stuck, which is the whole distinction collapsed');
+  assert.doesNotMatch(heroText(behind), /is not clearing/,
+    'the hero called a draining queue not clearing, which is the whole distinction collapsed');
 });
 
 test('work that is flowing and failing is a third fact, not a queue', async () => {
@@ -402,7 +477,7 @@ test('work that is flowing and failing is a third fact, not a queue', async () =
   });
   const hero = heroText(dom);
   assert.match(hero, /failing/, 'a failing request type was not named as failing');
-  assert.doesNotMatch(hero, /stuck|behind|queue/i,
+  assert.doesNotMatch(hero, /not clearing|behind|queue/i,
     'work that is flowing and failing was reported as a queue: ' + hero);
   assert.match(liveText(dom), /Nothing is waiting/,
     'nothing said that this is not a queue at all');
