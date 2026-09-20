@@ -56,10 +56,21 @@
 
        The class is every control that is DISABLED OR DESTROYED by being used,
        which is not the same as every re-read, and not the same as every
-       control handler either: rounds 4, 5, 6 and 7 each found members the
-       round before had missed -- three re-reads, three more re-reads, three
-       refused writes, and then the two writes that SUCCEED, whose re-read
-       arrives through afterChange() rather than from a control's own handler.
+       control handler either: rounds 4 through 8 each found members the round
+       before had missed -- three re-reads, three more re-reads, three refused
+       writes, the two writes that SUCCEED (whose re-read arrives through
+       afterChange() rather than from a control's own handler), and then the
+       two the server answers ops_problem_moved to, which are afterChange()'s
+       other two call sites and are not failures. Sharing a function is not
+       the same as being one site: each is named below on its own.
+
+       The guards are pinned in BOTH directions. Narrowing them is round 7's
+       finding; widening them to ignore `live` entirely would satisfy every
+       assertion that starts from <body> while carrying the operator off a
+       control that survived, which is round 4's fix undone -- so the severity
+       button and the range select are each used with focus ON them, and
+       asserted to still hold it.
+
        The enumeration below is the part of this file a reader should distrust
        first. */
 import assert from 'node:assert/strict';
@@ -457,6 +468,31 @@ test('every control that reloads the pane hands focus back rather than dropping 
     wide.doc.getElementById('content'),
     'Clear the filters on a window the pane does not start on left nothing holding focus');
 
+  /* And it is CONDITIONAL, which the sites above cannot show: they all start
+     from <body>, so a guard that ignored `live` entirely would satisfy every
+     one of them while undoing the fix that started this whole class. The
+     severity control is marked in place rather than rebuilt, so the operator
+     is still standing on the button they pressed and nothing may move them. */
+  const standing = await boot({});
+  const critical = severityButton(standing, 'Critical');
+  critical.focus();
+  critical.dispatch('click');
+  await settle();
+  assert.equal(standing.doc.activeElement, critical,
+    'pressing a severity carried the operator off the button they were standing on');
+
+  /* The same question for the range control, which lives in the shell rather
+     than in this pane and is a <select> rather than a button. */
+  const ranged = await boot({ search: '?range=7d' });
+  const select = findAll(ranged.doc.querySelector('.filters-pane'),
+    (n) => n.tagName === 'SELECT')[0];
+  assert.ok(select, 'the filter bar drew no select');
+  select.focus();
+  select.dispatch('change');
+  await settle();
+  assert.equal(ranged.doc.activeElement, select,
+    'changing a filter carried the operator out of the control they were using');
+
   /* A rule switch disables itself while the PATCH is in flight, which drops
      focus on its own before the re-read replaces the row. */
   const rules = await boot({});
@@ -560,25 +596,41 @@ test('a write the server refuses hands the control back rather than dropping it'
    handler, so an enumeration walked from the control handlers misses both.
    Six review rounds did.
 
-   Acknowledging and closing each have a second path -- the server answering
-   ops_problem_moved -- which lands in the same afterChange(), so the two
-   scenarios below reach all four call sites. */
+   afterChange() has FOUR call sites, not two: acknowledging and closing each
+   have a second path, the server answering ops_problem_moved, which is not a
+   failure and re-reads exactly as the success does. Round 8 found the two
+   moved branches were outside the enumeration while three places said they
+   were inside it, so all four are named here one at a time rather than
+   assumed to be one site because they share a function. */
 test('a write that lands hands focus back too, not only one that is refused', async () => {
-  const ack = await boot({});
-  const take = buttonNamed(problemCards(ack)[0], /I am on it/);
-  assert.ok(take, 'the open problem was offered no acknowledge button');
-  assert.equal(await focusAfter(ack, () => take.dispatch('click')),
-    ack.doc.getElementById('content'),
-    'acknowledging a problem left the operator nowhere once the card was rebuilt');
+  const moved = () => Object.assign(new Error('That problem has already moved on.'),
+    { code: 'ops_problem_moved' });
 
-  const closing = await boot({});
-  buttonNamed(problemCards(closing)[0], /Close/).dispatch('click');
-  await settle();
-  const form = findAll(problemCards(closing)[0], (n) => n.tagName === 'FORM')[0];
-  assert.ok(form, 'pressing Close opened no form');
-  assert.equal(await focusAfter(closing, () => form.dispatch('submit')),
-    closing.doc.getElementById('content'),
+  const acknowledged = async (answers, why) => {
+    const dom = await boot(answers);
+    const take = buttonNamed(problemCards(dom)[0], /I am on it/);
+    assert.ok(take, 'the open problem was offered no acknowledge button');
+    assert.equal(await focusAfter(dom, () => take.dispatch('click')),
+      dom.doc.getElementById('content'), why);
+  };
+  await acknowledged({},
+    'acknowledging a problem left the operator nowhere once the card was rebuilt');
+  await acknowledged({ acknowledge: moved() },
+    'acknowledging a problem somebody else had already changed left the operator nowhere');
+
+  const closed = async (answers, why) => {
+    const dom = await boot(answers);
+    buttonNamed(problemCards(dom)[0], /Close/).dispatch('click');
+    await settle();
+    const form = findAll(problemCards(dom)[0], (n) => n.tagName === 'FORM')[0];
+    assert.ok(form, 'pressing Close opened no form');
+    assert.equal(await focusAfter(dom, () => form.dispatch('submit')),
+      dom.doc.getElementById('content'), why);
+  };
+  await closed({},
     'closing a problem left the operator nowhere once the queue was rebuilt');
+  await closed({ close: moved() },
+    'closing a problem somebody else had already closed left the operator nowhere');
 });
 
 /* One fact, one slot: the queue's footer answers "would we know", and the
