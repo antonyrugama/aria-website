@@ -40,7 +40,24 @@
        covered is what it sends and what it says.
      - whether ops/settings.html loads the right stylesheets in the right
        order. scripts/check-ops-shell-v2.mjs boots the real page in headless
-       Chrome and is where that is answered. */
+       Chrome and is where that is answered.
+     - the ++ in `var token = ++record.token;` in loadRecord(). Replacing it
+       with `var token = record.token;` leaves the whole suite green, and that
+       mutant is published on the pull request as a stated green rather than
+       left out: record.busy already means one record read at a time, so under
+       correct code no two record requests are ever in flight to tell the two
+       spellings apart. The line that carries the fix is the increment in
+       load(), and deleting that one turns this section red.
+     - a Load more issued BETWEEN load()'s reset and the render that answers
+       it. The token is bumped once per load(), at the reset, so a request
+       made inside that window is current when its answer arrives and lands on
+       top of the freshly-rendered first page. It is not reachable from the
+       pane: aria.css line 888 is
+       `[data-state]:not([data-shown]) { display: none !important; }`, and
+       region.loading() takes data-shown off the live panel for exactly that
+       window, so the Load more button is display:none while it lasts. The
+       stub has no layout and would let a test click it anyway, which is why
+       this is stated here instead of asserted. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
