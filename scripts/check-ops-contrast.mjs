@@ -2091,23 +2091,39 @@ async function measureFocusIndicators(where) {
  * rather than optimistic, which is the direction to be wrong in, but a
  * pessimistic answer off an arbitrary sample is still an arbitrary sample.
  *
- * Also NOT COVERED, and named because KNOWN_BELOW_FOCUS is empty: the focus
- * freeze reconciler has four branches, and only two of them have a live entry
- * to exercise. An entry that stops reproducing, and a refusal frozen for one
- * reason that starts happening for another, are both proven by mutation. The
- * RATIO-DRIFT and SURFACE-DRIFT branches need an entry that still reproduces
- * — a ring genuinely under 3:1 — and there is not one on this shell any more.
- * They are fail-closed and unproven, not proven. Raising FOCUS_RATIO to
- * manufacture one would fail the run for a different reason and prove
- * nothing, so it was not done — but that reason considers only one of the two
- * places a frozen entry could live. The reconcile step is inline in the run
- * loop; lifted out the way focusFindings was lifted, part H could freeze .h9
- * at 2.83 / #CCCCCC and drive both branches off a fixture that stays under
- * 3:1 by construction, with no shell and no threshold involved. That is the
- * right shape and it is deliberately not done here: guard code written
- * mid-review is itself unproven code, and this file would rather carry a
- * named gap than an unproven closure of one. Whoever next needs those two
- * branches proven — that is the seam, and it is already cut next door.
+ * Also NOT COVERED, and named because KNOWN_BELOW_FOCUS is empty: the RING
+ * reconciler — the loop over KNOWN_BELOW_FOCUS, distinct from the REFUSAL
+ * reconciler over KNOWN_UNMEASURABLE_FOCUS, which does have live entries and
+ * whose reason-matching is proven both directions. Deleting the ring loop
+ * outright changes no answer today, because it iterates an empty table. So
+ * EVERY branch in it is fail-closed and unexercised by the page — not some
+ * of them, and the count is deliberately not written here, because that is
+ * the number Stadiora/Aria#10365 is about and a branch could be added
+ * tomorrow.
+ *
+ * One of those branches is nevertheless proven, off an entry a mutation
+ * supplies rather than one the page has: F11 inserts a stale entry and the
+ * run fails, which is what makes the empty table an assertion rather than an
+ * absence. The rest need an entry that still REPRODUCES — a ring genuinely
+ * under 3:1, matching exactly once, so control reaches past the count check —
+ * and there is no such ring on this shell any more. Named individually, so
+ * that adding a branch without a proof is visible rather than absorbed into a
+ * number: RATIO DRIFT (frozen at one ratio, measuring another), SURFACE DRIFT
+ * (same ratio, landing on a different adjacent colour), and RING-COLOUR DRIFT
+ * (same ratio and surface, the outline itself repainted). All three are
+ * fail-closed and unproven, not proven.
+ *
+ * Raising FOCUS_RATIO to manufacture an entry would fail the run for a
+ * different reason and prove nothing, so it was not done — but that reason
+ * considers only one of the two places a frozen entry could live. The
+ * reconcile step is inline in the run loop; lifted out the way focusFindings
+ * was lifted, part H could freeze .h9 at 2.83 / #CCCCCC and drive all three
+ * off a fixture that stays under 3:1 by construction, with no shell and no
+ * threshold involved. That is the right shape and it is deliberately not done
+ * here: guard code written mid-review is itself unproven code, and this file
+ * would rather carry a named gap than an unproven closure of one. Whoever
+ * next needs those branches proven — that is the seam, and it is already cut
+ * next door.
  *
  * Also NOT COVERED: the scroll refusal. preventScroll is asked for and the
  * two scroll positions are compared, but nothing on this page or the shell
@@ -2115,6 +2131,20 @@ async function measureFocusIndicators(where) {
  * fail-closed against a future :focus rule that scrolls, and unexercised —
  * as is the translucent-neighbour refusal, which cannot fire while Chromium
  * hands back PNG colour type 2.
+ *
+ * Also NOT COVERED, and both are constants pinned in one direction only.
+ * FOCUS_MIN_ADJACENT: raising it fails the run, lowering it to 1 does not,
+ * because nothing here produces a sample between 1 and 8 — the thinnest real
+ * one is printed every run and is two orders of magnitude clear. The unbound
+ * direction is the unsafe one, where a starved sample would be judged rather
+ * than refused; it is latent, not live. FOCUS_ADJACENT_RADIUS: the self-test
+ * cannot tell 1 from 4, because every fixture ring sits in a large uniform
+ * surround, so widening it returns the same ratios off bigger samples. The
+ * full shell run does catch it. Both would close with one more fixture — a
+ * ring hemmed in on every side, and a ring whose surround changes colour
+ * within a few pixels — at the same seam named above, and both are left open
+ * for the same reason: an unproven fixture written to answer a review is not
+ * an improvement on a named gap.
  */
 const FIXTURE_CASES = [
   { bg: '#ffffff', expect: [255, 255, 255] },
@@ -3294,9 +3324,10 @@ try {
         /* The adjacent surface is half the measurement, so a ring that is
            still 2.73:1 against a DIFFERENT colour is a different fact and the
            entry no longer describes it. One byte per channel of slack, which
-           is renderer noise in the mean over a bucket. No live entry
-           exercises this branch while KNOWN_BELOW_FOCUS is empty; see NOT
-           COVERED. */
+           is renderer noise in the mean over a bucket. Nothing reaches this
+           line, or the ring-colour line under it, while KNOWN_BELOW_FOCUS is
+           empty: control gets here only past the count check above, which
+           needs an entry that still reproduces. See NOT COVERED. */
         failures.push(`${SHELL}: the frozen below-3:1 focus ring ${key} now lands on ` +
           `${got.bg}, not the ${e.against} it was frozen against. The ratio is unchanged, so ` +
           'this is the ring moving to another surface rather than the surface changing ' +
