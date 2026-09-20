@@ -1318,6 +1318,40 @@ test('a window with no start leaves the dates unplaced rather than placed by gue
     placedAt(dom).forEach((cell) => assert.equal(cell.left, null));
   });
 
+test('the narrow layout drops every other date to a line of its own, clear of the first',
+  () => {
+    /* At 320px six dates at 9.5px do not fit side by side: measured in Chrome
+       on a twelve-month period, the closest pair overlaps by 0.74px. Every
+       other date therefore drops to a second line, rather than some of them
+       being dropped altogether -- which days the route chose to label is its
+       statement about the series.
+
+       The drop has to clear the line box it came from or the two lines still
+       touch: measured at 9.5px the line box is 14.25px, so 1.5em, and an
+       earlier 1.35em stagger left the boxes overlapping by 1.4px while the
+       text looked separated. The strip then has to be tall enough for both
+       lines or the second one paints over whatever follows it. */
+    const LINE_BOX_EM = 1.5;   // 14.25px at 9.5px, measured in Chrome
+    const narrow = RULES.filter((r) => r.media && /max-width:\s*420px/.test(r.media));
+    assert.ok(narrow.length > 0, 'the stylesheet has a narrow layout');
+
+    const stagger = narrow.filter((r) => r.targets(/nth-child\(even\)/))[0];
+    assert.ok(stagger, 'every other date is offset at this width');
+    const top = /(?:^|[;{\s])top:\s*([\d.]+)em/.exec(stagger.body);
+    assert.ok(top, 'offset in em, so it follows the font size rather than a fixed pixel guess');
+    assert.ok(Number(top[1]) >= LINE_BOX_EM,
+      'a date dropped ' + top[1] + 'em still sits inside the ' + LINE_BOX_EM
+      + 'em line box of the one before it');
+
+    const strip = narrow.filter((r) => r.targets(/^\s*\.sp-xaxis$/))[0];
+    assert.ok(strip, 'the strip is restyled at this width');
+    const min = /(?:^|[;{\s])min-height:\s*([\d.]+)em/.exec(strip.body);
+    assert.ok(min, 'and given a height');
+    assert.ok(Number(min[1]) >= Number(top[1]) + LINE_BOX_EM,
+      'the strip is ' + min[1] + 'em tall, which does not hold a second line at '
+      + top[1] + 'em');
+  });
+
 test('the date strip is laid out in the same box as the drawing it labels', () => {
   /* The percentages above are percentages OF THE STRIP. They are percentages
      of the plot only while the strip is the same width as the drawing, which
