@@ -235,12 +235,9 @@ ops/
     operate.css         pane styling for the operate panes
     operate.js          shared pane furniture: charts, drawer, confirm, states
     alerts-model.js     the problems API in plain words, shared by two panes
-    pane-overview.js    Overview (on the v2 layer)
-    pane-alerts.js      Problems (on the v2 layer)
-    pane-awaiting-data.js  Happening now
     pane-overview.js    Overview
     pane-alerts.js      Problems
-    pane-awaiting-data.js  Happening now and What happened
+    pane-awaiting-data.js  Happening now
     pane-data.js        shared plumbing for the understand panes and for
                         Overview's figures: source, formatting, states, charts
     pane-analytics.js   People and usage
