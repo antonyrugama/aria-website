@@ -586,8 +586,9 @@ test('every filter the registry declares is claimed by this file, and every clai
     }
   }
 
-  /* alerts IS booted, and rules 2 and 4 to 6 reach every value on this list.
-     What none of them can see is a value ADDED to it, so the list is pinned. */
+  /* alerts IS booted, and every value on this list is booted by rules 1, 5 and
+     6. What none of them can see is a value ADDED to it, so the list is
+     pinned. */
   for (const id of Object.keys(ALSO_PINNED)) {
     for (const filter of Object.keys(ALSO_PINNED[id])) {
       const offered = Array.from(valuesFor(reg, PANES[id], filter));
