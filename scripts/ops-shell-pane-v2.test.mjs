@@ -58,6 +58,12 @@ function buildPage(dom, body, paneId) {
   body.setAttribute('data-pane', paneId);
   body.className = 'is-booting';
 
+  /* Every ops page opens with the skip link, outside the app wrapper. It is
+     the one body-level sibling the drawer's inert walk has to reach past its
+     own level to find, so leaving it out of this page would make a walk that
+     only inerts the rail's own siblings look complete. */
+  el(body, 'a', { class: 'skip', href: '#content' }).textContent = 'Skip to content';
+
   const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
 
@@ -1370,6 +1376,7 @@ test('the dialog is painted as a dialog: over the page, on its own surface, boun
   const { modal, scrim, card, input, alert } = await openReauth();
   const nodes = [scrim, modal, ...dialogTree([modal])];
   const resolve = cascade(nodes, SHARED_SHEETS);
+  const padding = {};
 
   for (const width of [1440, 375]) {
     const env = { width };
@@ -1415,7 +1422,16 @@ test('the dialog is painted as a dialog: over the page, on its own surface, boun
       'the refusal message is not painted in the danger ink' + where);
     assert.notEqual(value(alert, 'color'), value(card, 'color'),
       'the refusal message reads exactly like the prose above it' + where);
+
+    padding[width] = { layer: value(modal, 'padding'), card: value(card, 'padding') };
   }
+
+  /* The breakpoint has to bind, not merely exist: a phone gives up less of a
+     420px card to margin than a desktop does, so both boxes come in. */
+  assert.ok(Number.parseFloat(padding[375].layer) < Number.parseFloat(padding[1440].layer),
+    'the layer keeps its ' + padding[1440].layer + ' gutter at 375px, so the card is narrower than it needs to be');
+  assert.ok(Number.parseFloat(padding[375].card) < Number.parseFloat(padding[1440].card),
+    'the card keeps its ' + padding[1440].card + ' padding at 375px, so less of the phone is the dialog');
 });
 
 test('the dialog reserves no box while its alert is empty, and stays in the document either way', async () => {
@@ -1701,6 +1717,14 @@ test('the page behind the phone drawer goes inert and comes back, and the live r
   assert.ok(expected.indexOf(rail.parentNode.children.filter((el) => el !== rail)[0]) !== -1,
     "the rail's own sibling is not among what went inert, so the walk never left the body's children");
   assert.ok(ancestors.length >= 1, 'the rail is a body child here, so the ancestor case is untested');
+
+  /* Both ends of the walk, not just the near one. The skip link is a body
+     child and the rail is two levels down, so a walk that stops at the rail's
+     own siblings leaves the first thing on the page reachable. */
+  const skip = body.children.filter((el) => el.classList.contains('skip'))[0];
+  assert.ok(skip, 'this page has no skip link, so the far end of the walk is untested');
+  assert.ok(expected.indexOf(skip) !== -1,
+    'the skip link is not among what went inert, so the walk stopped at the rail\'s own level');
 
   for (const el of expected) {
     assert.equal(el.getAttribute('aria-hidden'), 'true', 'the page behind the drawer is still exposed');
