@@ -331,6 +331,14 @@ const stillOnPage = (dom, node) => {
 
 test('picking a severity does not replace the control being picked', async () => {
   const dom = await boot({});
+  /* The bar as it is first drawn, before anything is pressed: the pane starts
+     on "All" and the bar has to say so, or the operator is looking at an
+     unfiltered list with no control claiming it. */
+  assert.equal(severityButton(dom, 'All').getAttribute('aria-pressed'), 'true',
+    'the severity the pane starts on was not marked on first render');
+  assert.equal(severityButton(dom, 'Critical').getAttribute('aria-pressed'), 'false',
+    'a severity the pane is not filtering on was marked on first render');
+
   const pressed = severityButton(dom, 'Critical');
   pressed.focus();
   pressed.dispatch('click');
@@ -383,19 +391,30 @@ test('a control that reloads the pane hands focus back rather than dropping it',
 
 /* ====================== controls that would be refused ================== */
 
+/* On a window the queue carries closed problems as well as open ones, so the
+   same card that offers Close to an open problem is asked to draw one that is
+   already closed. The closed LIST is a different builder and never had these
+   controls; the queue is where the gate has to hold. */
 test('a closed problem is not offered a control the server can only refuse', async () => {
   const dom = await boot({
+    search: '?range=7d',
     open: { problems: [] },
-    closed: { problems: [closedProblem()] },
+    closed: { problems: [closedProblem({ id: 'prb_done', reference: 'AO-901' })] },
   });
-  const row = withClass(dom.doc.body, 'c-row')[0];
-  assert.ok(row, 'the closed list drew no row');
-  assert.equal(buttonNamed(row, /Close/), null,
-    'a problem that is already closed was offered a Close button');
-  assert.equal(buttonNamed(row, /I am on it/), null,
+  const card = problemCards(dom).filter((n) => /AO-901/.test(allText(n)))[0];
+  assert.ok(card, 'the closed problem was not in the queue at all, so nothing was tested');
+  assert.equal(buttonNamed(card, /Close/), null,
+    'a problem that is already closed was offered a Close button the server can only refuse');
+  assert.equal(buttonNamed(card, /I am on it/), null,
     'a problem that is already closed was offered an acknowledge button');
-  assert.ok(buttonNamed(row, /Details/),
-    'the closed row lost the one control it should have');
+  assert.ok(buttonNamed(card, /Details/),
+    'the closed card lost the one control it should have');
+
+  /* The same card for an open problem does carry them, or the assertions
+     above would hold on a pane that draws no controls at all. */
+  const live = await boot({ open: { problems: [problem()] } });
+  assert.ok(buttonNamed(problemCards(live)[0], /Close/),
+    'an open problem was not offered Close, so the gate above proves nothing');
 });
 
 test('the close form labels its fields by an id nothing else on the page can take', async () => {
