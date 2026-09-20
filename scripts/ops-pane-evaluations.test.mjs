@@ -880,9 +880,9 @@ for (const scenario of [
        if the wrong ones are. What is asserted is the PARTITION: every band
        inside the preview carries the invented stamp, every band outside it
        carries the working stamp, neither set is empty, and neither a
-       two-decimal score nor a listed invented phrase reaches the document
-       outside the preview. Move one band across that boundary and seven tests
-       in this file go red.
+       two-decimal score nor a listed invented phrase appears outside the
+       preview in the two render states swept. Move one band across that
+       boundary and seven tests in this file go red.
 
      - Role gating is asserted in BOTH directions: a viewer is refused the
        evidence form and told why, AND an operator gets the real form. A
@@ -911,6 +911,21 @@ for (const scenario of [
        in it — can be printed outside the preview and nothing here will see
        it. Adding invented data to the pane means adding it to an inventory
        by hand; there is no mechanism that notices you did not.
+     - RENDER STATES BEYOND TWO. The outward sweeps read the page as it boots,
+       and again after each of the two working tools has been submitted and
+       answered. The ERROR branches are a third state and nothing reads them:
+       a two-decimal score and a listed phrase appended to the JSON-parse
+       message at pane-evaluations.js:402 leave the whole suite green, while
+       the same string on a boot-state hint at :551 turns three tests red. So
+       the gap is the render state, not the string. Both are published rows of
+       the battery on the PR.
+     - A FIGURE SPLIT MID-TOKEN across two elements. The sweeps read one
+       string built from <body> with the preview subtree removed, joining
+       element boundaries with a single space the way allText does. A phrase
+       or score split across SIBLING elements is found — <b>180</b> inside a
+       sentence is this file's own idiom, and a per-element sweep walked past
+       it until a reviewer demonstrated it. But "0.8" and "2" in two adjacent
+       elements join as "0.8 2" here and as "0.82" in a browser.
      - The dataset and quarantine transports, which the block above owns. */
 
 const OPS = new URL('../ops/', import.meta.url);
@@ -1041,6 +1056,47 @@ const within = (node, ancestor) => {
   return false;
 };
 
+/* Everything a reader meets on the page EXCEPT the preview, as one string.
+   Three things this buys over asking each element for its own text:
+
+   - A phrase split across sibling elements is still found. <b>180</b> inside a
+     sentence is this file's own idiom (u-list-row bolds a score that way), and
+     a per-element sweep walks straight past it.
+   - It starts at <body>, not at #content, so the shell's live region is swept.
+     announce() is how a screen-reader operator receives every success message
+     on this pane, and the stamps are visual chips; an invented figure announced
+     there would reach a blind operator with nothing marking it invented.
+   - There is one string and one place to be wrong, rather than a rule applied
+     per node.
+
+   Element boundaries join with a single space, the way allText does, so a
+   figure split MID-TOKEN across two elements is not found. That is disclosed
+   below rather than chased. */
+function textOutside(node, excluded) {
+  if (!node || node === excluded) return '';
+  const own = node.textContent || '';
+  const kids = (node.childNodes || []).map(kid => textOutside(kid, excluded)).join(' ');
+  return (own + ' ' + kids).replace(/\s+/g, ' ').trim();
+}
+
+/* A readable slice around a hit, so a failure names where to look. */
+const around = (haystack, needle) => {
+  const at = haystack.indexOf(needle);
+  return haystack.slice(Math.max(0, at - 60), at + needle.length + 60);
+};
+
+function scoresOutside(text) {
+  const out = [];
+  const re = new RegExp(SCORE.source, 'g');
+  let hit;
+  while ((hit = re.exec(text))) out.push(around(text, hit[0]));
+  return out;
+}
+
+const phrasesOutside = text => INVENTED_PHRASES
+  .filter(phrase => text.includes(phrase))
+  .map(phrase => `${phrase} — ${around(text, phrase)}`);
+
 function previewOf(dom) {
   return find(dom.content, node => hasClass(node, 'preview'));
 }
@@ -1099,10 +1155,7 @@ test('v2: every band in the preview is stamped invented and every band outside i
 
 test('v2: no score reaches the page outside the preview', async () => {
   const dom = await bootPane();
-  const preview = previewOf(dom);
-  const offenders = findAll(dom.content, node => !within(node, preview) && node !== preview)
-    .filter(node => SCORE.test(node.textContent || ''))
-    .map(node => `<${node.tagName.toLowerCase()}> ${node.textContent}`);
+  const offenders = scoresOutside(textOutside(dom.body, previewOf(dom)));
   assert.deepEqual(offenders, [],
     'a two-decimal figure outside the preview is a made-up number with no stamp over it');
 });
@@ -1301,17 +1354,7 @@ test('v2: every invented phrase the design prints is inside the preview', async 
 
 test('v2: no invented phrase reaches the page outside the preview', async () => {
   const dom = await bootPane();
-  const preview = previewOf(dom);
-  /* Own text, not allText: in this harness textContent is a node's own text,
-     which is what lets an ancestor of the preview be asked the question
-     without the preview's own words answering for it. */
-  const offenders = [];
-  for (const node of findAll(dom.content, n => !within(n, preview) && n !== preview)) {
-    const own = node.textContent || '';
-    for (const phrase of INVENTED_PHRASES) {
-      if (own.includes(phrase)) offenders.push(`${phrase} in <${node.tagName.toLowerCase()}>`);
-    }
-  }
+  const offenders = phrasesOutside(textOutside(dom.body, previewOf(dom)));
   assert.deepEqual(offenders, [],
     'a made-up string outside the preview is an unstamped claim');
 });
@@ -1403,9 +1446,18 @@ async function bootPaneWithReceipts() {
 
   const forms = findAll(dom.content, node => node.tagName.toLowerCase() === 'form');
   assert.equal(forms.length, 2, `expected both working forms, saw ${forms.length}`);
-  for (const form of forms) form.dispatch('submit', { preventDefault() {} });
-  for (let i = 0; i < 24; i += 1) await new Promise(r => setImmediate(r));
-  return dom;
+
+  /* One reading per submit, not one at the end. The shell's live region is a
+     single node that each announce() overwrites, so a figure announced by the
+     first tool is gone by the time the second has answered. Reading only the
+     final DOM would see the last announcement and call the rest covered. */
+  const snapshots = [];
+  for (const form of forms) {
+    form.dispatch('submit', { preventDefault() {} });
+    for (let i = 0; i < 24; i += 1) await new Promise(r => setImmediate(r));
+    snapshots.push(textOutside(dom.body, previewOf(dom)));
+  }
+  return { ...dom, snapshots };
 }
 
 test('v2: the sweeps hold over the cards a submit draws, not only over the boot', async () => {
@@ -1418,28 +1470,19 @@ test('v2: the sweeps hold over the cards a submit draws, not only over the boot'
     node => (node.textContent || '') === 'Quarantined, review required');
   assert.ok(quarantined, 'the quarantine receipt never rendered, so this test sweeps nothing');
 
-  const preview = previewOf(dom);
-  const outside = findAll(dom.content, n => !within(n, preview) && n !== preview);
-
-  const scores = outside
-    .filter(node => SCORE.test(node.textContent || ''))
-    .map(node => `<${node.tagName.toLowerCase()}> ${node.textContent}`);
-  assert.deepEqual(scores, [],
-    'a two-decimal figure reached a card a submit drew, outside the preview');
-
-  const phrases = [];
-  for (const node of outside) {
-    const own = node.textContent || '';
-    for (const phrase of INVENTED_PHRASES) {
-      if (own.includes(phrase)) phrases.push(`${phrase} in <${node.tagName.toLowerCase()}>`);
-    }
+  assert.equal(dom.snapshots.length, 2, 'one reading per submit, or a tool went unread');
+  for (const outside of dom.snapshots) {
+    assert.deepEqual(scoresOutside(outside), [],
+      'a two-decimal figure reached a card a submit drew, outside the preview');
+    assert.deepEqual(phrasesOutside(outside), [],
+      'a made-up string reached a card a submit drew, outside the preview');
   }
-  assert.deepEqual(phrases, [],
-    'a made-up string reached a card a submit drew, outside the preview');
 
   const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
+  /* Eight at boot plus the quarantine receipt's one. The validation receipt
+     carries no chip, so nine is exactly tight rather than a floor with slack. */
   assert.ok(chips.length >= 9,
-    `expected the boot stamps plus both receipt stamps, saw ${chips.length}`);
+    `expected the boot stamps plus the quarantine receipt's stamp, saw ${chips.length}`);
   const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
   assert.deepEqual(numeric, [],
     'a stamp on a card a submit drew carries a figure');

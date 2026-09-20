@@ -802,19 +802,24 @@ in it were invented to draw the layout.
 `scripts/ops-pane-evaluations.test.mjs` holds that partition in both directions: every band
 inside the drawn panel is stamped `Invented figures` and none is stamped `Works now`, every band
 outside it is the reverse, **neither set is empty**, and **neither a two-decimal figure nor any
-string in the file's hand-written invented inventory reaches the page outside the panel**. Moving
-one band across the boundary turns seven tests in that file red. Nothing real on this pane is
-written as a two-decimal figure, which is what makes that sweep a usable rule rather than a
-coincidence: the working half prints digests, byte counts and timestamps. The same sweeps run a
-second time over a page that has submitted both working forms, so the receipt cards the server's
-answer draws are covered too and not only the boot.
+string in the file's hand-written invented inventory appears outside the panel in the two render
+states it sweeps**. Moving one band across the boundary turns seven tests in that file red.
+Nothing real on this pane is written as a two-decimal figure, which is what makes that sweep a
+usable rule rather than a coincidence: the working half prints digests, byte counts and timestamps.
 
-The sweep for scores alone was too narrow, and a review found four made-up strings that could
-leave the panel with the suite green — a duration, a case count, a timestamp and a test-case id.
-The inventory closes those, and a stamp chip may now carry no digit at all, anywhere on the pane.
-**The inventory is hand-written and nothing proves it is complete**: a bare count, or a round
-number in a new sentence, is still invisible to it. Adding invented data to this pane means adding
-it to the inventory by hand, and the test file says so where a reader will meet it.
+The sweep reads one string taken from `<body>` with the panel's subtree removed, so it covers the
+shell's live region — `announce()` is how a screen-reader operator hears every success here, and
+the stamps are visual chips — and it finds a phrase split across sibling elements, which bolding a
+number inside a sentence produces and which a per-element sweep walked past. The two states are
+the booted page and the page after both working forms have been submitted and answered.
+
+Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
+inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in
+a new sentence, is invisible to it. **The error branches are a third render state nothing reads**:
+a score in a validation failure message leaves the suite green, while the same string on a
+boot-state hint turns three tests red. **A figure split mid-token** across two elements joins with
+a space here and without one in a browser. Adding invented data to this pane means adding it to
+the inventory by hand, and the test file says so where a reader will meet it.
 
 **What the two working tools do.** Validation takes an input object containing `datasets` and
 `fixtureDigests`; the page supplies the operation envelope. The server returns manifest digests

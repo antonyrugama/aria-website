@@ -30,12 +30,18 @@
        an expectation derived from the thing under test moves with it.
 
        What the tests prove about that, exactly: every listed figure and
-       phrase is printed inside the preview, no two-decimal score and no
-       listed phrase reaches the page outside it, and no stamp chip anywhere
-       carries a digit. What they do NOT prove is that this object is
-       complete — a made-up string that is in neither inventory, is not a
-       two-decimal score and is not in a stamp can still be added outside the
-       preview and go unseen. The test file names that gap.
+       phrase is printed inside the preview, and in TWO render states — the
+       booted page, and the page after both working tools have been submitted
+       — no two-decimal score and no listed phrase appears anywhere under
+       <body> outside the preview, including in the shell's live region. No
+       stamp chip in those two states carries a digit.
+
+       Two gaps the test file names and measures rather than implies. The
+       inventories are hand-written, so a made-up string in neither of them
+       that is also not a two-decimal score can be added outside the preview
+       and go unseen. And the error branches are a THIRD render state that
+       nothing reads: a score printed into a validation or quarantine failure
+       message is not found.
      - previewBand() is the only way a band gets into the preview, and it
        stamps the band. workingBand() is the only way a band is built outside
        it, and it stamps that. Neither stamp is a colour: each carries a word.
