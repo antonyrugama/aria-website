@@ -342,7 +342,10 @@ function over(fg, bg) {
    refuses that, which means it refuses pure white and fails the run on a
    colour nothing is wrong with. `oklab` and `lab` overshoot the same way; the
    largest seen is 4e-5, a twenty-five-thousandth of the window. Both ends are
-   pinned by literals in part F rather than by this paragraph. */
+   pinned by literals in part F2 rather than by this paragraph — the shape
+   guards there bracket this constant from below and a bound assertion pins it
+   from above, because a slack written in terms of itself is not a slack of
+   half a byte. */
 const GAMUT_SLACK = 0.5 / 255;
 
 /* The two serialisations getComputedStyle actually returns on this page.
@@ -1374,7 +1377,7 @@ async function measureSites(targets, where) {
  *      each and asserts the two shapes still exist before asserting how they
  *      are routed.
  *   G. THE THREE BOUNDARY CENSUSES, which decide whether a site is SEEN at
- *      all and so sit upstream of everything A-F measures. A page carrying
+ *      all and so sit upstream of everything A-F2 measures. A page carrying
  *      six spellings of a nested browsing context must report six, which is
  *      what distinguishes a census of CONTEXTS from a tag-name list; a page
  *      carrying an open author root, a closed author root and a user-agent
@@ -1592,15 +1595,35 @@ async function selfTest() {
     const overIsOvershoot = !!overC && overC.some((v) => v > 1) &&
       overC.every((v) => v >= -GAMUT_SLACK && v <= 1 + GAMUT_SLACK);
     const wideIsOutside = !!wideC && wideC.some((v) => v < -GAMUT_SLACK || v > 1 + GAMUT_SLACK);
+    /* Both guards above are written in terms of GAMUT_SLACK, so they move with
+       it: they bracket the constant rather than pin it. The lower bracket is
+       real — a slack under 4e-5 stops the overshoot fitting inside the window
+       and `overIsOvershoot` goes false — but the upper one only bites at 0.084,
+       where 1.08372 falls inside and the wide span starts being judged. So a
+       slack twenty-five times too wide passed this part. Half a byte is the
+       whole claim the constant makes, and this pins it as one. */
+    const slackIsHalfAByte = GAMUT_SLACK <= 1 / 255;
     const overRead = !!over && !over.unjudgeable && typeof over.ratio === 'number' &&
       !!parseColor(overInk);
     /* Clamped, so the byte a 1.00003 component becomes is 255 and not 255.008. */
     const overParsed = parseColor(overInk);
     const clamped = !!overParsed &&
       ['r', 'g', 'b'].every((k) => overParsed[k] >= 0 && overParsed[k] <= 255);
+    /* The clamp has two halves and the fixture exercises one. Every component
+       of the overshoot is near 1, so nothing above is ever negative and a
+       vanished `Math.max(0, ...)` goes unseen. The lower half is pinned against
+       arithmetic instead of against a rendered colour: a component half a byte
+       below zero is in gamut by GAMUT_SLACK, so it must parse, and -0.0019 x
+       255 is -0.4845, which must come back as the byte 0. That is a statement
+       about Math.max, not about this file's model of colour, so stating it as
+       a literal is not circular the way it would be for the gate. */
+    const lowParsed = parseColor('color(srgb -0.0019 0.5 0.5)');
+    const lowClamped = !!lowParsed && lowParsed.r === 0 &&
+      Math.abs(lowParsed.g - 127.5) < 1e-9;
     const wideRefused = !!wide && wide.unjudgeable === 'unreadable ink syntax' &&
       wide.ratio === undefined && parseColor(wideInk) === null;
-    const ok = overIsOvershoot && wideIsOutside && overRead && clamped && wideRefused;
+    const ok = overIsOvershoot && wideIsOutside && slackIsHalfAByte && overRead &&
+      clamped && lowClamped && wideRefused;
     if (!ok) bad++;
     console.log(`     ${ok ? 'ok  ' : 'FAIL'} <span style="color: color-mix(in srgb, oklch(1 0 0) 50%, white)">` +
       ` ${overInk}\n          ${overIsOvershoot ? 'overshoots 1 and sits inside the slack' : 'is NOT the overshoot this case needs'}` +
@@ -1609,7 +1632,11 @@ async function selfTest() {
       `${overParsed && !clamped ? ' — NOT CLAMPED' : ''}` +
       `\n          <span style="color: color-mix(in srgb, color(display-p3 1 0 0) 90%, white)"> ${wideInk}` +
       `\n          ${wideIsOutside ? 'sits outside the slack' : 'is NOT outside the slack'}` +
-      `; routed as ${wide ? (wide.unjudgeable || `JUDGED at ${wide.ratio?.toFixed(2)}:1`) : 'nothing'}`);
+      `; routed as ${wide ? (wide.unjudgeable || `JUDGED at ${wide.ratio?.toFixed(2)}:1`) : 'nothing'}` +
+      `\n          GAMUT_SLACK is ${GAMUT_SLACK} — ${slackIsHalfAByte ? 'at most half a byte' : 'WIDER THAN A BYTE, so the window is not what it claims'}` +
+      `; color(srgb -0.0019 0.5 0.5) parses to ` +
+      `${lowParsed ? `rgb(${[lowParsed.r, lowParsed.g, lowParsed.b].map((v) => v.toFixed(3)).join(', ')})` : 'nothing'}` +
+      `${lowClamped ? '' : ' — the LOWER clamp is not holding'}`);
   }
 
   console.log('\n  G. boundary censuses — a frame, an author shadow root and unsourced user-agent text');
