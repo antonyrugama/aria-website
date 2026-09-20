@@ -1065,7 +1065,10 @@
       }
 
       series.forEach(function (one) {
-        var group = svgEl('g', { 'class': seriesTone(one.color) });
+        /* The series key on the group, so which app a shape belongs to is a
+           fact in the document rather than a colour: the tones repeat across
+           panes and two apps can share one. */
+        var group = svgEl('g', { 'class': seriesTone(one.color), 'data-series': one.key || one.label || '' });
         var values = list(one.values);
         var x = function (index) {
           return PAD_L + (span > 1 ? (index / (span - 1)) * iw : iw / 2);
