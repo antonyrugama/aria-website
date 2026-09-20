@@ -566,11 +566,16 @@ test('every filter the registry declares is claimed by this file, and every clai
    the weakest true one — a control the operator can move has to move
    SOMETHING, in the read or on the page. It is NOT the assertion that catches
    the defect this file was written for: a refusal card and an apology note are
-   both page changes, so this test passed on the two panes as they stood. What
-   caught them was the coverage lock above, at the declaration level, and —
-   with the lock silenced — the two tests after this one, which say which of
-   the two ways the value was acted on and are the strong forms. This one is
-   the floor under a pane that answers every value identically. */
+   both page changes, so this test passes on the two panes as they stood.
+   Reassembled at its own anchors — main's Happening now pane file and main's
+   jobs registry entry — the only red in this file is the coverage lock above,
+   at the declaration level; silence the lock with a lying HONOURED line and
+   the two that go red are `a filter carried into the read arrives with the
+   value the operator picked` and `every value a pane offers reaches the same
+   state as the one it starts on`, not this one and not the answer test. This
+   one is the floor under a pane that answers every value identically. The two
+   tests after it are the strong forms, and say which of the two ways the value
+   was acted on. */
 test('a filter a pane declares changes the read or the page', async () => {
   const { PANES } = registry();
   let checked = 0;
