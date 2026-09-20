@@ -125,10 +125,11 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
    v2 pages alike and writes v1 class names -- `modal`, `modal-card`,
    `sec-title`, `field-label`, `field-input`, `field-hint`, `form-alert`,
    `spacer` -- which assets/ops.css styles and no sheet a v2 pane loads did.
-   So on all ten v2 panes the dialog rendered as unstyled block content over a
-   dimmed backdrop: no card, no width, no positioning, a browser-default
+   So on all nine v2 pages the dialog rendered as unstyled block content over
+   a dimmed backdrop: no card, no width, no positioning, a browser-default
    password box, and an alert indistinguishable from the prose above it
-   (Stadiora/Aria#10447).
+   (Stadiora/Aria#10447). ops/spend.html is still a v1 page, so it kept the
+   ops.css rules and was never affected.
 
    That is worse than a cosmetic defect for this particular dialog. It is the
    confirmation step in front of a privileged action, so it is the one place

@@ -974,9 +974,10 @@ test('the docblock and the README name exactly what the module exports', async (
 /* assets/session.js raises one dialog over whatever page is open, asking for
    the password again in front of a privileged action, and it writes v1 class
    names that assets/ops.css styles. A v2 pane loads none of ops.css, so the
-   dialog rendered on all ten of them as unstyled block content over a dimmed
+   dialog rendered on all nine of them as unstyled block content over a dimmed
    backdrop until shell-pane-v2.css carried the rules across
-   (Stadiora/Aria#10447). No v2 suite rendered session.js markup at all, which
+   (Stadiora/Aria#10447). ops/spend.html is still a v1 page and was never
+   affected. No v2 suite rendered session.js markup at all, which
    is why nothing said so.
 
    Everything below opens the real dialog, over a real booted pane, and reads
@@ -1396,7 +1397,10 @@ function styledClasses(nodes, sheets) {
         if (!parts) return false;
         const last = parts[parts.length - 1].compound;
         if (!new RegExp('\\.' + cls + '(?![-\\w])').test(last)) return false;
-        return selectorReaches(rule.selector, el);
+        if (!selectorReaches(rule.selector, el)) return false;
+        /* A rule that reaches the class but declares nothing paints nothing,
+           so it must not count as the class being styled. */
+        return declarations(rule).size > 0;
       });
       if (!hit) out.set(cls, el.tagName.toLowerCase());
     }
