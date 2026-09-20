@@ -737,3 +737,58 @@ test('a count that goes away is taken off the rail on the next read', async () =
   assert.match(tileText(dom, /Active people/i), /1,102/,
     'the second read did not happen at all, so this proves nothing');
 });
+
+/* ================== a change pill points where it moved ================= */
+
+/* Direction and valence are different facts and the tiles disagree about
+   them: more people is good news, more spend is not, so the cost tile paints
+   a rise in the falling tone. The chevron has to read the figure's own sign
+   or a rising bill gets a falling arrow beside `+6.4%`, which is what this
+   pane shipped until it was found in review. */
+const UP_PATH = 'M7 14l5-5 5 5';
+const DOWN_PATH = 'M7 10l5 5 5-5';
+
+const pillsOf = (dom, heading) => {
+  const card = findAll(livePanel(dom), (n) => (n.className || '').indexOf('kpi') !== -1)
+    .filter((n) => heading.test(allText(n)))[0];
+  return findAll(card || {}, (n) => /(^|\s)pill(\s|$)/.test(n.className || ''))
+    .map((p) => ({
+      className: p.className,
+      text: allText(p).replace(/\s+/g, ' ').trim(),
+      d: (findAll(p, (n) => n.tagName === 'path')[0] || { getAttribute: () => null }).getAttribute('d'),
+    }));
+};
+
+for (const [name, heading, bp, wantTone] of [
+  ['people', /Active people/i, 1240, 'up'],
+  ['cost', /Cloud spend/i, 640, 'down'],
+]) {
+  test('a rising ' + name + ' figure draws a rising chevron, whatever its tone', async () => {
+    const dom = await boot({
+      summary: summaryFixture((s) => {
+        s.people.platform.previousActive = 500;
+        s.cost.comparison.changeBasisPoints = bp;
+      }),
+    });
+    const pill = pillsOf(dom, heading)[0];
+    assert.ok(pill, 'the ' + name + ' tile drew no change pill at all');
+    assert.match(pill.text, /^\+/, 'the ' + name + ' figure did not rise in this fixture');
+    assert.equal(pill.d, UP_PATH,
+      'a rising figure drew ' + (pill.d === DOWN_PATH ? 'a falling' : 'no') +
+      ' chevron: class=' + pill.className + ' text=' + pill.text);
+    assert.match(pill.className, new RegExp('(^|\\s)' + wantTone + '(\\s|$)'),
+      'the ' + name + ' tile lost the tone that says whether the rise is good news');
+  });
+}
+
+test('a falling figure draws a falling chevron', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => {
+      s.cost.comparison.changeBasisPoints = -320;
+    }),
+  });
+  const pill = pillsOf(dom, /Cloud spend/i)[0];
+  assert.ok(pill, 'the cost tile drew no change pill at all');
+  assert.match(pill.text, /^\u2212|^-/, 'the cost figure did not fall in this fixture');
+  assert.equal(pill.d, DOWN_PATH, 'a falling figure drew the wrong chevron: ' + pill.d);
+});

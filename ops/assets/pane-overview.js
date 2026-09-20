@@ -765,10 +765,18 @@
     }
 
     /* A change, with its direction carried by a glyph and a sign as well as by
-       the pill's colour. */
+       the pill's colour.
+
+       The glyph reads the figure's own sign; the tone is a separate argument
+       because direction and valence are different facts and the tiles disagree
+       about them. More people is good news and more spend is not, so the cost
+       tile passes `down` for a rise — and until this was found in review the
+       glyph was derived from that same word, which drew a falling chevron
+       beside `+6.4%`. */
     function deltaPill(basisPoints, tone) {
       var pill = h('span', { className: 'pill' + (tone ? ' ' + tone : '') });
-      if (tone) pill.appendChild(icon(tone === 'up' ? 'up' : 'down'));
+      var bp = num(basisPoints);
+      if (tone && bp !== null && bp !== 0) pill.appendChild(icon(bp > 0 ? 'up' : 'down'));
       pill.appendChild(h('span', { text: fmt.signedPercent(basisPoints) }));
       return pill;
     }
