@@ -1704,6 +1704,12 @@ async function measureFocusIndicators(where) {
       const before = await focusShot(box);
       const focused = await evaluate(`(() => {
         const el = document.querySelector('[data-focus-site="${c.i}"]');
+        /* Read immediately before focusing, not before the first screenshot:
+           focusShot captures beyond the viewport, which resizes it, and a
+           layout shift caused by the CAPTURE would otherwise be attributed
+           to focus by the box-moved refusal below. */
+        const r1 = el.getBoundingClientRect();
+        const was = { x: r1.x + scrollX, y: r1.y + scrollY, w: r1.width, h: r1.height };
         el.focus({ preventScroll: true });
         const chain = [];
         for (let n = el; n; n = n.parentElement) {
@@ -1720,6 +1726,7 @@ async function measureFocusIndicators(where) {
         return JSON.stringify({
           took: document.activeElement === el,
           focusVisible: el.matches(':focus-visible'),
+          was,
           x: r2.x + scrollX, y: r2.y + scrollY, w: r2.width, h: r2.height,
           sx: scrollX, sy: scrollY, chain
         });
@@ -1759,11 +1766,12 @@ async function measureFocusIndicators(where) {
          slides to top:12px on focus. Judging it on one platform and refusing
          it on the other is the worst of both, so it is named here on both.
          Compared at whole pixels: a subpixel reflow is not a move. */
-      if (Math.abs(focused.x - geom.x) >= 1 || Math.abs(focused.y - geom.y) >= 1 ||
-          Math.abs(focused.w - geom.w) >= 1 || Math.abs(focused.h - geom.h) >= 1) {
-        refusal = `focusing it moved its box from ${Math.round(geom.x)},${Math.round(geom.y)} ` +
-          `${Math.round(geom.w)}×${Math.round(geom.h)} to ${Math.round(focused.x)},` +
-          `${Math.round(focused.y)} ${Math.round(focused.w)}×${Math.round(focused.h)}, so the ` +
+      if (Math.abs(focused.x - focused.was.x) >= 1 || Math.abs(focused.y - focused.was.y) >= 1 ||
+          Math.abs(focused.w - focused.was.w) >= 1 || Math.abs(focused.h - focused.was.h) >= 1) {
+        refusal = `focusing it moved its box from ${Math.round(focused.was.x)},` +
+          `${Math.round(focused.was.y)} ${Math.round(focused.was.w)}×${Math.round(focused.was.h)} ` +
+          `to ${Math.round(focused.x)},${Math.round(focused.y)} ${Math.round(focused.w)}×` +
+          `${Math.round(focused.h)}, so the ` +
           'surface its ring lands on was repainted by the move and there is nothing unchanged ' +
           'beside the ring to measure against';
         break;
@@ -1817,9 +1825,18 @@ async function measureFocusIndicators(where) {
        refusal here. A clip SMALLER than the document can truncate a ring, and
        the escalation above is what handles that: widen and look again. By the
        time a row gets here the clip is either large enough that nothing
-       reached its border, or it is the whole document — whose borders are the
-       document's own. Nothing exists beyond them to photograph, and anything
-       painted out there is not painted for a keyboard user either.
+       reached its border, or it is the whole document — the clip taken at
+       documentElement's full scroll extent, which is the furthest this tool
+       can widen to. Note what that is and is not. At the LEFT and TOP borders
+       it is x=0 and y=0, and a negative offset really can push a ring out of
+       the document there: nothing out there is reachable by scrolling, so
+       nothing out there is painted for a keyboard user either. At the RIGHT
+       and BOTTOM the border is wherever scroll extent ends, and scroll extent
+       does not count every painted pixel — a box-shadow spreading rightwards
+       does not lengthen scrollWidth any more than one spreading leftwards
+       does. So the claim here is the operational one and not the tempting
+       one: escalation is exhausted, not that there is provably nothing out
+       there.
 
        Refusing at the whole-document clip asserted something this tool cannot
        know, and it was not theoretical: ops/assets/aria.css's .skip carries
@@ -1903,6 +1920,21 @@ async function measureFocusIndicators(where) {
       }
     }
     row.adjacentPx = adjacent.length;
+    /* Zero is not "a thin sample". It is a different finding, and conflating
+       the two sends the reader looking for a starved 1px ring when the ring
+       is 2px and perfectly healthy. Every pixel beside the core changed,
+       which means focusing repainted the very surface this tool measures the
+       ring against — ops/assets/aria.css's `.btn-primary:focus-visible {
+       box-shadow: none }` stands the button's cyan halo down at the moment
+       the ring goes up, and the ring at outline-offset: 2px lands exactly
+       where the halo was. The box-moved refusal above names one mechanism
+       for this; this names the condition itself, which is the thing that
+       actually stops the measurement. */
+    if (!adjacent.length) {
+      rows.push({ ...row, refused: 'focusing it repainted every pixel beside its ring, so nothing ' +
+        'is left there that is not part of the indicator to measure the ring against' });
+      continue;
+    }
     if (adjacent.length < FOCUS_MIN_ADJACENT) {
       rows.push({ ...row, refused: `only ${adjacent.length} unchanged pixel(s) sit beside its ring, ` +
         `which is under the ${FOCUS_MIN_ADJACENT} this tool will take a worst-of over` });
@@ -2010,8 +2042,10 @@ async function measureFocusIndicators(where) {
  *      black button reads 1.61:1 against the white card at outline-offset:
  *      8px and 13.08:1 against the button itself at -8px, so a tool that
  *      reads a colour off the focused element or off the page fails one of
- *      them. Beside that: a published ratio to pin the pipeline, the four
- *      indicators this tool declines to model, two rings far enough out that
+ *      them. Beside that: a published ratio to pin the pipeline, one fixture
+ *      per indicator this tool declines to model — the run prints how many
+ *      distinct refusals they drive, so the number lives there rather than
+ *      in this sentence — two rings far enough out that
  *      the clip must widen — one that misses the first photograph entirely
  *      and one that straddles its edge, which are the two halves of the same
  *      condition — a case that repaints a near-ring-coloured strip on focus,
@@ -2041,6 +2075,21 @@ async function measureFocusIndicators(where) {
  * PRINTS the thinnest sample it actually took, every run, so a sample getting
  * thinner is visible in the log before it becomes a refusal. A starved sample
  * is named rather than judged, but "named" is the whole of the claim.
+ *
+ * Also NOT COVERED, and this one has a name: an indicator that repaints the
+ * surface it would be measured against. Adjacency is taken over pixels that
+ * focusing did NOT change, so a ring whose own arrival repaints its surround
+ * — the element moves, or a halo under it stands down as the ring goes up —
+ * leaves nothing beside the ring that is not part of the indicator. The sweep
+ * refuses those by name and enumerates the live ones against issues (a.skip
+ * at Stadiora/Aria#10686, button.btn.btn-primary at #10700); .hmove exercises
+ * the moved-box half. The half NOT demonstrated by any fixture is the near
+ * miss: a surround repainted only in PART, leaving an arbitrary remnant that
+ * happens to clear FOCUS_MIN_ADJACENT, which would be judged on whatever
+ * pixels survived rather than refused. Nothing here says that remnant is
+ * representative of the surface. The worst-bucket rule makes it pessimistic
+ * rather than optimistic, which is the direction to be wrong in, but a
+ * pessimistic answer off an arbitrary sample is still an arbitrary sample.
  *
  * Also NOT COVERED: the scroll refusal. preventScroll is asked for and the
  * two scroll positions are compared, but nothing on this page or the shell
@@ -2605,9 +2654,18 @@ async function selfTest() {
       'after the Tab walk (scripted focus alone matches 0, and every ring here is behind it)');
     /* Derived rather than typed. How many of the sweep's refusals this fixture
        actually drives is a number that moves whenever a case is added, and a
-       moving number in a comment is Stadiora/Aria#10365 again. */
+       moving number in a comment is Stadiora/Aria#10365 again.
+
+       Every run of digits folds, not just the ones named in the first draft
+       of this regex. Two elements refused for the same reason quote their own
+       coordinates, ratios or alphas, and counting those as two distinct
+       refusals would inflate exactly the number this line exists to keep
+       honest. */
     const exercised = [...new Set(rows.filter((r) => r.refused)
-      .map((r) => r.refused.replace(/\b(?:alpha [\d.]+|is \w+;|reads "[^"]*")/g, '…')))];
+      .map((r) => r.refused
+        .replace(/reads "[^"]*"/g, 'reads …')
+        .replace(/\bis \w+;/g, 'is …;')
+        .replace(/[\d.]*\d/g, '…')))];
     console.log(`     ---- ${exercised.length} distinct refusal(s) exercised by this fixture:`);
     for (const e of exercised) console.log(`            ${e.slice(0, 96)}`);
   }
@@ -2685,13 +2743,14 @@ function focusKey(r) {
    real pixels and a renderer that antialiases a rounded corner differently
    moves it a fraction of a level.
 
-   What this does NOT do is tell two surfaces a byte apart from each other.
-   Three pairs in the table below are exactly that close — #BCE0EA/#BDE1EA,
-   #DEE1E7/#DEE1E6, #E1E4E9/#E1E5E9 — and that is fine for the reason the
-   assertion under KNOWN_BELOW_FOCUS states and enforces, not for any reason
-   claimed here: a measured ring is matched to its entry by focusKey FIRST,
-   and no two entries share a focusKey, so an entry is only ever asked about
-   the site it names. Surfaces a byte apart are that site in two different
+   What this does NOT do is tell two surfaces a byte apart from each other. At
+   the time of writing KNOWN_BELOW_FOCUS is empty, so there is no pair to name
+   here — and naming one would be a sentence that goes stale the next time the
+   table does, which is Stadiora/Aria#10365's whole shape. The safety does not
+   come from the table's contents anyway: a measured ring is matched to its
+   entry by focusKey FIRST, and assertFrozenFocusKeysUnique enforces that no
+   two entries share a focusKey, so an entry is only ever asked about the one
+   site it names. Two near-identical surfaces are that site in two different
    preview states, never two candidates for one measurement. */
 function sameSurface(a, b) {
   const rgb = (s) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16));
@@ -2703,189 +2762,22 @@ function sameSurface(a, b) {
    indicators this tool cannot measure at all, frozen one at a time so this
    sweep can land on a page that is not yet clean.
 
-   Every entry here is in ops/assets/aria.css, which is shared by four pane
-   agents and is not this PR's to edit — so each is filed as its own issue and
-   enumerated here, never skipped silently. The reconciler below fails in both
-   directions exactly as KNOWN_BELOW_AA's does: an entry that stops
+   KNOWN_BELOW_FOCUS is EMPTY. It was not always: this guard opened against a
+   shell carrying 32 rings under 3:1 across four issues, and PR #85 landed the
+   stylesheet fixes for all of them (Stadiora/Aria#10649, #10650, #10651)
+   while this branch was in review. The table is kept rather than deleted
+   because the reconciler under it is what makes an empty table mean
+   something: with nothing frozen, EVERY ring the sweep can measure has to
+   clear 3:1 or the run fails. An entry added here that stops reproducing
+   fails too, in the other direction.
+
+   Every entry in either table is in ops/assets/aria.css, which is shared by
+   four pane agents and is not this PR's to edit — so each is filed as its own
+   issue and enumerated here, never skipped silently. The reconciler fails in
+   both directions exactly as KNOWN_BELOW_AA's does: an entry that stops
    reproducing, an entry matching anything other than one site, or a ratio
    that drifts past FREEZE_TOLERANCE. */
 const KNOWN_BELOW_FOCUS = [
-  {
-    theme: 'light',
-    states: ['loading', 'empty'],
-    selector: 'button.btn.btn-primary',
-    text: "Primary",
-    ratio: 2.64,
-    ring: '#0891B2',
-    against: '#BCE0EA',
-    issue: 'https://github.com/Stadiora/Aria/issues/10650',
-    why: 'The primary button paints its own cyan glow, and the focus ring is the same cyan 2px out — so the ring sits on pixels the button tinted itself.'
-  },
-  {
-    theme: 'light',
-    states: ['live', 'degraded'],
-    selector: 'button.btn.btn-primary',
-    text: "Primary",
-    ratio: 2.65,
-    ring: '#0891B2',
-    against: '#BDE1EA',
-    issue: 'https://github.com/Stadiora/Aria/issues/10650',
-    why: 'The primary button paints its own cyan glow, and the focus ring is the same cyan 2px out — so the ring sits on pixels the button tinted itself.'
-  },
-  {
-    theme: 'light',
-    states: ['degraded'],
-    selector: 'button.on',
-    text: "Degraded",
-    ratio: 2.73,
-    ring: '#0891B2',
-    against: '#DBDEE4',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['live'],
-    selector: 'button.on',
-    text: "Live data",
-    ratio: 2.73,
-    ring: '#0891B2',
-    against: '#DBDEE4',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['loading'],
-    selector: 'button.on',
-    text: "Loading",
-    ratio: 2.73,
-    ring: '#0891B2',
-    against: '#DBDEE4',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['empty'],
-    selector: 'button.on',
-    text: "No data",
-    ratio: 2.73,
-    ring: '#0891B2',
-    against: '#DBDEE4',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['empty'],
-    selector: 'button',
-    text: "Mobile",
-    ratio: 2.75,
-    ring: '#0891B2',
-    against: '#D7E0E5',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['empty'],
-    selector: 'button.on',
-    text: "All",
-    ratio: 2.75,
-    ring: '#0891B2',
-    against: '#D7E0E5',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['live', 'loading', 'empty'],
-    selector: 'button',
-    text: "Degraded",
-    ratio: 2.81,
-    ring: '#0891B2',
-    against: '#DEE1E7',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['loading', 'empty', 'degraded'],
-    selector: 'button',
-    text: "Live data",
-    ratio: 2.81,
-    ring: '#0891B2',
-    against: '#DEE1E7',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['live', 'empty', 'degraded'],
-    selector: 'button',
-    text: "Loading",
-    ratio: 2.81,
-    ring: '#0891B2',
-    against: '#DEE1E7',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['live', 'loading', 'degraded'],
-    selector: 'button',
-    text: "No data",
-    ratio: 2.81,
-    ring: '#0891B2',
-    against: '#DEE1E7',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['live', 'loading', 'degraded'],
-    selector: 'button.on',
-    text: "All",
-    ratio: 2.81,
-    ring: '#0891B2',
-    against: '#DEE1E6',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['empty'],
-    selector: 'button',
-    text: "Coaches Web",
-    ratio: 2.89,
-    ring: '#0891B2',
-    against: '#E1E4E9',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['live', 'loading', 'degraded'],
-    selector: 'button',
-    text: "Mobile",
-    ratio: 2.89,
-    ring: '#0891B2',
-    against: '#E1E4E9',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  },
-  {
-    theme: 'light',
-    states: ['live', 'loading', 'degraded'],
-    selector: 'button',
-    text: "Coaches Web",
-    ratio: 2.91,
-    ring: '#0891B2',
-    against: '#E1E5E9',
-    issue: 'https://github.com/Stadiora/Aria/issues/10649',
-    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
-  }
 ];
 
 /* Focus indicators this tool refuses to measure, enumerated for the same
@@ -2897,24 +2789,25 @@ const KNOWN_UNMEASURABLE_FOCUS = [
   {
     theme: 'dark',
     states: ['live', 'loading', 'empty', 'degraded'],
-    selector: 'input',
-    text: 'Search a coded reference',
-    because: 'is not an outline',
-    issue: 'https://github.com/Stadiora/Aria/issues/10651',
-    why: 'The search field indicates focus with .field:focus-within box-shadow, and both of ' +
-      'its layers are translucent color-mix()es of --cyan. There is no outline in the ' +
-      'ancestor chain to find edges from, and an ink this tool cannot resolve exactly is ' +
-      'refused rather than assumed opaque. Nothing here says the indicator fails — only ' +
-      'that this tool will not claim it passes.'
+    selector: 'button.btn.btn-primary',
+    text: 'Primary',
+    because: 'repainted every pixel beside its ring',
+    issue: 'https://github.com/Stadiora/Aria/issues/10700',
+    why: 'ops/assets/aria.css stands .btn-primary\'s cyan halo down while the ring is up ' +
+      '(.btn-primary:focus-visible { box-shadow: none }), and the ring at outline-offset: ' +
+      '2px lands exactly where the halo was. Every pixel beside the ring core therefore ' +
+      'changed, and adjacency is taken over pixels that did not. Nothing here says the ring ' +
+      'fails — scripts/ops-focus-indicator.test.mjs judges the same control by a different ' +
+      'method and passes it; this tool will not claim a number it cannot sample.'
   },
   {
     theme: 'light',
     states: ['live', 'loading', 'empty', 'degraded'],
-    selector: 'input',
-    text: 'Search a coded reference',
-    because: 'is not an outline',
-    issue: 'https://github.com/Stadiora/Aria/issues/10651',
-    why: 'The light-theme half of the same field. Same indicator, same refusal.'
+    selector: 'button.btn.btn-primary',
+    text: 'Primary',
+    because: 'repainted every pixel beside its ring',
+    issue: 'https://github.com/Stadiora/Aria/issues/10700',
+    why: 'The light-theme half of the same button. Same halo, same refusal.'
   },
   {
     theme: 'dark',
@@ -2947,9 +2840,11 @@ const KNOWN_UNMEASURABLE_FOCUS = [
    entry expands to one row per state, and no two rows may share a focusKey.
    A duplicate key would let a measurement reconcile against the wrong entry's
    surface and ratio — which is the one way a ±1 tolerance could hide a real
-   move. Thrown at load, because a freeze table that cannot be trusted is not
-   a thing to start a sweep with. */
-{
+   move. Thrown before anything is measured, because a freeze table that
+   cannot be trusted is not a thing to start a sweep with — but from INSIDE
+   the try/finally that kills Chrome, not at module scope, so the failure
+   path does not orphan a browser and leak its profile directory. */
+function assertFrozenFocusKeysUnique() {
   const seen = new Map();
   for (const list of [KNOWN_BELOW_FOCUS, KNOWN_UNMEASURABLE_FOCUS]) {
     for (const e of list) {
@@ -2977,12 +2872,15 @@ let frozenFocusCount = 0;
    at rather than on how many were judged: a change that turned every ring on
    the page into a refusal would leave "judged" at zero while the run still
    failed for the right reason, and a floor on judged sites alone would fire
-   twice for the same event. Set just under the real census — 26 a pass, 208
-   across the eight — because a floor set far below what the page carries is a
-   floor that never fires. */
+   twice for the same event. Set well under whatever the page carries rather
+   than at it — the exact census is a fact about today's shell and the run
+   prints it every pass, so writing it here would only be one more number to
+   drift — because a floor set far below what the page carries is a floor
+   that never fires. */
 const FOCUS_SITE_FLOOR = 180;
 
 try {
+  assertFrozenFocusKeysUnique();
   const cdpPort = await devtoolsPort(profile);
   const target = await devtools(cdpPort, '/json/new?about:blank', 'PUT');
   cdp = connect(target.webSocketDebuggerUrl);
@@ -3239,8 +3137,9 @@ try {
     if (focusChecked + focusRefused.length < FOCUS_SITE_FLOOR) {
       failures.push(`${SHELL}: only ${focusChecked + focusRefused.length} focus indicator(s) ` +
         `were looked at across ${THEMES.length} themes × ${STATES.length} states, so the ` +
-        'focus sweep measured almost nothing. The shell carries 26 focusable controls a ' +
-        'pass, 208 in total.');
+        `focus sweep measured almost nothing — the floor is ${FOCUS_SITE_FLOOR}. Every pass ` +
+        'above prints how many controls Tab reached; compare them to find the pass that ' +
+        'went quiet.');
     }
 
     const frozenRefusals = new Map();
