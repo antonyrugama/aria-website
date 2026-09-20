@@ -523,13 +523,10 @@
       [legend(series)]
     ));
 
-    var body = h('div', { className: 'card-body' }, [chart(series, daily, data)]);
-    var labels = list(daily.labels).filter(function (one) { return text(one); });
-    if (labels.length) {
-      var axis = h('div', { className: 'sp-xaxis', 'aria-hidden': 'true' });
-      labels.forEach(function (one) { axis.appendChild(h('span', { text: one })); });
-      body.appendChild(axis);
-    }
+    var plot = chart(series, daily, data);
+    var body = h('div', { className: 'card-body' }, [plot.node]);
+    var axis = xAxis(daily, data, plot);
+    if (axis) body.appendChild(axis);
     card.appendChild(body);
 
     /* The route's own note, and only when it sent one. It says either that
@@ -569,6 +566,14 @@
       });
     });
     hi = hi * 1.14 || 1;
+
+    /* The one x scale on this card. Both lines are drawn through it and the
+       date strip under the drawing is positioned through it, because two
+       derivations of the same scale is how a label ends up over the wrong day
+       (Stadiora/Aria#10507). */
+    var xAt = function (index) {
+      return PAD_L + (span > 1 ? (index / (span - 1)) * iw : iw / 2);
+    };
 
     /* Stretched to the box rather than scaled to its own aspect, so the
        drawing is as tall on a phone as it is on a laptop and the gridlines
@@ -622,9 +627,6 @@
       });
       var values = list(one.values);
       var dashed = one.dashed === true;
-      var x = function (index) {
-        return PAD_L + (span > 1 ? (index / (span - 1)) * iw : iw / 2);
-      };
       var y2 = function (v) { return PAD_T + ih - (v / hi) * ih; };
 
       var run = [];
@@ -654,13 +656,120 @@
       values.forEach(function (v, index) {
         var n = num(v);
         if (n === null) { flush(); return; }
-        run.push([x(index), y2(n)]);
+        run.push([xAt(index), y2(n)]);
       });
       flush();
       svg.appendChild(group);
     });
 
-    return h('div', { className: 'sp-chart-wrap' }, [axis, svg]);
+    return {
+      node: h('div', { className: 'sp-chart-wrap' }, [axis, svg]),
+      span: span,
+      /* Where a day sits across the drawing, as a percentage of the drawing's
+         own width. The svg is stretched to its box by
+         preserveAspectRatio="none", so a viewBox x is exactly that fraction
+         of the rendered width however wide the card is. */
+      left: function (index) {
+        return ((xAt(index) / CHART_W) * 100).toFixed(3) + '%';
+      }
+    };
+  }
+
+  /* --------------------------------------------------------- the date strip
+
+     The dates under the drawing, each over the day it names.
+
+     The route strides them -- every Nth day, never every day -- and sends
+     them as bare formatted dates with no index (opsPanesRouter.ts,
+     buildDailySeries). So a label's position is NOT its place in the list:
+     over three months the six labels name days 0, 15, 30, 45, 60 and 75 of
+     89, and the last one belongs three quarters of the way across rather than
+     at the right-hand end. This strip was a `justify-content: space-between`
+     row until Stadiora/Aria#10507, which put every label after the first over
+     a day it does not name, by up to 14.3% of the plot.
+
+     Recovering the stride arithmetically would mean re-deriving the route's
+     own MAX_DAILY_LABELS here, which this file cannot see and which would go
+     wrong SILENTLY the day the route changes it. So each label is matched
+     back to the day it names instead: the window start is in the answer, and
+     formatting every day in the window the way the route formats them says
+     which day each label is. That is a duplication of the route's FORMAT
+     rather than of its striding, and the two fail differently -- a wrong
+     stride draws a label over the wrong day, a wrong format matches nothing
+     and the strip falls back to a plain list of dates that claims no
+     position at all. */
+
+  var DAY_MS = 86400000;
+
+  function dayNamer() {
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        day: 'numeric', month: 'short', timeZone: 'UTC'
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function squash(value) { return String(value).replace(/\s+/g, ' ').trim(); }
+
+  /* The day index each label names, or null when any one of them cannot be
+     placed. All or nothing on purpose: a strip where some dates are over
+     their day and some are wherever they landed is harder to read than one
+     that never claims a position. */
+  function labelDays(labels, data, span) {
+    var start = text((data.period || {}).start);
+    var namer = start ? dayNamer() : null;
+    if (!namer) return null;
+    var base = Date.parse(start + 'T00:00:00.000Z');
+    if (!isFinite(base) || !(span > 0)) return null;
+
+    /* Prefixed so a date can never collide with a property already on a plain
+       object, and -1 for a spelling two days in the window share -- a window
+       longer than a year has two "Sep 6" in it and neither is knowable. */
+    var days = {};
+    var i;
+    var key;
+    for (i = 0; i < span; i++) {
+      key = 'd:' + squash(namer.format(new Date(base + i * DAY_MS)));
+      days[key] = Object.prototype.hasOwnProperty.call(days, key) ? -1 : i;
+    }
+
+    var placed = [];
+    for (i = 0; i < labels.length; i++) {
+      key = 'd:' + squash(labels[i]);
+      var index = Object.prototype.hasOwnProperty.call(days, key) ? days[key] : -1;
+      if (index < 0) return null;
+      placed.push(index);
+    }
+    return placed;
+  }
+
+  function xAxis(daily, data, plot) {
+    var labels = list(daily.labels).filter(function (one) { return text(one); });
+    if (!labels.length) return null;
+
+    var placed = labelDays(labels, data, plot.span);
+    var strip = h('div', {
+      className: placed ? 'sp-xaxis' : 'sp-xaxis sp-xaxis-loose'
+    });
+    labels.forEach(function (one, index) {
+      var cell = h('span', { text: one });
+      /* CSSOM rather than a style attribute: the page's Content-Security-
+         Policy has no 'unsafe-inline', and this is the same route the
+         gridline labels take. */
+      if (placed) cell.style.setProperty('left', plot.left(placed[index]));
+      strip.appendChild(cell);
+    });
+
+    /* The strip is the second cell of a flex row whose first cell is the
+       width of the drawing's own y-axis gutter, so it is exactly as wide as
+       the drawing above it and a percentage inside it is that percentage of
+       the plot -- without measuring either box. */
+    return h('div', { className: 'sp-xaxis-row', 'aria-hidden': 'true' }, [
+      h('div', { className: 'sp-xaxis-gutter' }),
+      strip
+    ]);
   }
 
   /* The chart's accessible name, and the only place its data is announced.

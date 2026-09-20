@@ -1122,8 +1122,236 @@ test('the day chart carries an x axis of the dates the route labelled', async ()
   assert.ok(axis, 'a chart of days with no dates under it is a shape, not a reading');
   assert.deepEqual(runs(axis), sent,
     'every label the route sent, in the order it sent them');
-  assert.equal(axis.getAttribute('aria-hidden'), 'true',
+  const row = byClass(livePanel(dom), 'sp-xaxis-row')[0];
+  assert.ok(row, 'the strip sits in the row that carries the drawing\'s own gutter');
+  assert.ok(findAll(row, (n) => n === axis).length === 1, 'and the dates are inside it');
+  assert.equal(row.getAttribute('aria-hidden'), 'true',
     'and it is hidden from the reader, because the chart\'s own name already carries the dates');
+});
+
+/* --------------------------------------------- the dates under the drawing
+
+   Stadiora/Aria#10507: every date after the first was drawn over a day it
+   does not name.
+
+   The route strides its labels -- every Nth day, never every day -- and sends
+   them as bare formatted dates. So a label's position is not its place in the
+   list: over three months the six dates name days 0, 15, 30, 45, 60 and 75 of
+   89, and the last of them belongs 84.6% of the way across rather than at the
+   right-hand end. The strip was a `justify-content: space-between` row, which
+   put it at 100%: 14.3% of the plot away from its own day, measured in Chrome
+   at 1440px before this change and 0.01% after.
+
+   Why the assertions below are not circular. WHICH DAY a label names is taken
+   from the route's own striding rule, re-derived in the fixture port at the
+   head of this file and never read back off the pane. WHERE THAT DAY IS DRAWN
+   is read out of the `d` attribute of the path the chart drew, which is the
+   geometry a reader actually sees. The percentage the pane writes on each
+   date is then compared against that drawn x, and against the closed form
+   stated below, which is written here rather than imported from the pane.
+
+   NOT COVERED here, and deliberately: that the strip's box is the same box as
+   the drawing. Nothing in this file lays anything out. That half is CSS --
+   one width shared by the money gutter and the empty cell under it, one gap
+   shared by the two rows -- and it is asserted from the stylesheet further
+   down this file and measured in headless Chrome for the pull request. */
+
+const PLOT = { width: 640, padLeft: 6, padRight: 6 };
+
+/* Where a day index is drawn across the plot, in the drawing's own viewBox
+   units. Stated from the drawing's geometry rather than imported from the
+   pane: an expectation computed by the code under test moves with the
+   mutation and proves nothing. */
+function plotX(index, span) {
+  const inner = PLOT.width - PLOT.padLeft - PLOT.padRight;
+  return PLOT.padLeft + (span > 1 ? (index / (span - 1)) * inner : inner / 2);
+}
+
+/* The points the chart actually drew, in viewBox units, read off the path. */
+function drawnPoints(dom, seriesLabel) {
+  const group = findAll(livePanel(dom), (n) => n.getAttribute
+    && n.getAttribute('data-series') === seriesLabel)[0];
+  assert.ok(group, 'the chart drew a group for ' + seriesLabel);
+  const points = [];
+  findAll(group, (n) => n.tagName && n.tagName.toLowerCase() === 'path').forEach((path) => {
+    const d = path.getAttribute('d') || '';
+    const matches = d.match(/[ML]\s*(-?[\d.]+)\s+(-?[\d.]+)/g) || [];
+    matches.forEach((one) => {
+      points.push(Number(/[ML]\s*(-?[\d.]+)/.exec(one)[1]));
+    });
+  });
+  return points;
+}
+
+/* The percentage the pane wrote on each date, as a number. */
+function placedAt(dom) {
+  const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
+  assert.ok(strip, 'the date strip is on the page');
+  return findAll(strip, (n) => n.tagName && n.tagName.toLowerCase() === 'span')
+    .map((cell) => {
+      const left = cell.style && cell.style.left;
+      return {
+        text: String(cell.textContent || '').trim(),
+        left: left === undefined ? null : Number(String(left).replace('%', '')),
+      };
+    });
+}
+
+test('each date is drawn over the day it names, not over its own place in the list',
+  async () => {
+    /* Three months: 89 days billed, strided to six dates, and the stride does
+       not divide the window. So the dates are NOT evenly spread across the
+       plot -- five steps of 15 days and a tail of 13 unlabelled days -- which
+       is the shape `space-between` gets wrong and an evenly spaced fixture
+       would hide. */
+    const data = payload({ range: '3m' });
+    const sent = data.daily.labels.filter(Boolean);
+    const span = Math.max(...data.daily.series.map((one) => one.values.length));
+    const stride = Math.max(1, Math.ceil(data.period.billedDays / MAX_DAILY_LABELS));
+    assert.equal(sent.length, 6, 'six dates, which is what the route strides down to');
+    assert.equal(span, 89);
+    assert.equal(stride, 15);
+    assert.ok((span - 1) % stride !== 0,
+      'the last date is short of the last day, or this fixture cannot fail the old way');
+
+    const dom = await boot({ costs: data });
+    const placed = placedAt(dom);
+    const points = drawnPoints(dom, data.daily.series[0].label);
+    assert.equal(placed.length, sent.length, 'every date the route sent is drawn');
+
+    const errors = placed.map((cell, i) => {
+      const dayIndex = i * stride;          // the route's own rule, not the pane's
+      const drawn = points[dayIndex];       // where the chart put that day
+      const stated = plotX(dayIndex, span);
+      assert.ok(typeof drawn === 'number', 'the chart drew day ' + dayIndex);
+      /* The path is written to two decimal places, so the drawing can differ
+         from the stated geometry by half of that and no more. Anything larger
+         means the two have parted company and every figure below is moot. */
+      assert.ok(Math.abs(drawn - stated) <= 0.005,
+        'the drawing and the stated geometry agree about day ' + dayIndex
+        + ': drawn ' + drawn + ', stated ' + stated.toFixed(4));
+      assert.equal(cell.text, sent[i], 'in the order the route sent them');
+      assert.ok(cell.left !== null, 'date ' + cell.text + ' carries a position');
+      return {
+        text: cell.text,
+        dayIndex,
+        wanted: (stated / PLOT.width) * 100,
+        got: cell.left,
+        off: Math.abs(cell.left - (stated / PLOT.width) * 100),
+      };
+    });
+
+    const worst = Math.max(...errors.map((one) => one.off));
+    assert.ok(worst < 0.002,
+      'every date sits on its own day, within the rounding the percentage is written to. '
+      + 'Worst: ' + JSON.stringify(errors.find((one) => one.off === worst)));
+
+    /* The one the old layout could not get right: the last date names day 75
+       of 89 and belongs at 84.6% of the drawing, not at its right-hand end. */
+    const last = errors[errors.length - 1];
+    assert.equal(last.dayIndex, 75, 'the last date names day 75');
+    assert.equal(last.got.toFixed(1), '84.6', 'and is drawn at 84.6% of the drawing');
+    assert.ok(last.got < 95, 'a date at the right-hand end is the defect in #10507');
+  });
+
+test('dates the route spaced unevenly are placed unevenly, one per day named', async () => {
+  /* A shape the route does not send today: its stride is uniform, so the
+     dates it sends are a constant number of days apart. This fixture names
+     days 0, 1, 7 and 29 of the same window to show that what places a date is
+     the day it names and nothing else -- not the stride, not its place in the
+     list, not an even share of the width. The route-shaped proof is the test
+     above; this one is the rule underneath it. */
+  const data = payload({ range: 'last-month' });
+  const span = Math.max(...data.daily.series.map((one) => one.values.length));
+  const dayNames = new Intl.DateTimeFormat('en-US', {
+    day: 'numeric', month: 'short', timeZone: 'UTC',
+  });
+  const named = [0, 1, 7, 29];
+  assert.ok(named[named.length - 1] < span, 'every day named is inside the window');
+  data.daily.labels = named.map((offset) =>
+    dayNames.format(dayStart(addDays(data.period.start, offset))));
+
+  const dom = await boot({ costs: data });
+  const placed = placedAt(dom);
+  assert.equal(placed.length, named.length);
+  placed.forEach((cell, i) => {
+    assert.equal(cell.left.toFixed(3),
+      ((plotX(named[i], span) / PLOT.width) * 100).toFixed(3),
+      cell.text + ' sits on day ' + named[i]);
+  });
+
+  const steps = placed.slice(1).map((cell, i) => cell.left - placed[i].left);
+  assert.ok(new Set(steps.map((one) => one.toFixed(2))).size === steps.length,
+    'no two gaps are equal, which is what an evenly spread row would produce');
+});
+
+test('a date the pane cannot match to a day is not placed as though it could be',
+  async () => {
+    /* The route changing how it formats a date, or an answer with no window
+       start, leaves the pane unable to say which day any date names. It then
+       draws them as a plain list claiming no position, rather than spreading
+       them over days they were not measured on -- which is exactly the defect
+       in #10507, arrived at by a different road. */
+    const data = payload({ range: 'last-month' });
+    data.daily.labels = data.daily.labels.map((one, i) => 'Week ' + (i + 1));
+
+    const dom = await boot({ costs: data });
+    const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
+    assert.ok(strip, 'the dates are still on the page');
+    assert.match(strip.getAttribute('class'), /\bsp-xaxis-loose\b/,
+      'in the shape that claims no position');
+    assert.deepEqual(runs(strip), data.daily.labels,
+      'and none of them is dropped');
+    placedAt(dom).forEach((cell) => {
+      assert.equal(cell.left, null, cell.text + ' is not positioned');
+    });
+  });
+
+test('a window with no start leaves the dates unplaced rather than placed by guess',
+  async () => {
+    const data = payload({ range: 'last-month' });
+    delete data.period.start;
+
+    const dom = await boot({ costs: data });
+    const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
+    assert.match(strip.getAttribute('class'), /\bsp-xaxis-loose\b/);
+    placedAt(dom).forEach((cell) => assert.equal(cell.left, null));
+  });
+
+test('the date strip is laid out in the same box as the drawing it labels', () => {
+  /* The percentages above are percentages OF THE STRIP. They are percentages
+     of the plot only while the strip is the same width as the drawing, which
+     is a fact about this stylesheet: both rows are flex rows with the same
+     gap, and the money gutter and the empty cell under it take their width
+     from one declaration. Split that declaration in two and every date moves
+     by the difference, at every width, silently. */
+  const widths = RULES.filter((r) => r.targets(/\.sp-xaxis-gutter\b/) && /width:/.test(r.body));
+  assert.ok(widths.length >= 1, 'the cell under the money gutter has a width');
+  widths.forEach((rule) => {
+    assert.ok(rule.selectors.some((s) => /^\.sp-axis$/.test(s.trim())),
+      'and it is the same declaration the money gutter itself takes its width from, '
+      + 'in ' + (rule.media || 'the base sheet'));
+  });
+
+  /* Every width the money gutter is given is given to the cell under it. */
+  const gutterWidths = RULES
+    .filter((r) => r.targets(/\.sp-axis\b/) && /(^|[;{\s])width:/.test(r.body))
+    .map((r) => ({ media: r.media, selectors: r.selectors.map((s) => s.trim()) }));
+  gutterWidths.forEach((rule) => {
+    assert.ok(rule.selectors.includes('.sp-xaxis-gutter'),
+      'the scale column is sized alone in ' + (rule.media || 'the base sheet')
+      + ', so the strip under it no longer starts where the drawing starts');
+  });
+
+  const declared = (selector) => {
+    const rule = RULES.filter((r) => !r.media && r.targets(selector))[0];
+    assert.ok(rule, 'the stylesheet styles ' + selector);
+    const gap = /(?:^|[;{\s])gap:\s*([^;]+)/.exec(rule.body);
+    assert.ok(gap, selector + ' sets the gap between the gutter and what follows it');
+    return gap[1].trim();
+  };
+  assert.equal(declared(/^\.sp-xaxis-row$/), declared(/^\.sp-chart-wrap$/),
+    'the strip and the drawing put the same gap after their gutter cell');
 });
 
 test('both lines on the day chart are named, so the dashed one is not just a texture', async () => {
