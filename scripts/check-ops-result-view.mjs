@@ -836,6 +836,125 @@ for (const page of PAGES) {
   }
 }
 
+/* A sentence appended to a missed floor, naming the fixture key that feeds the
+   state so the failure points at its own cause. Enumerated rather than
+   generated: a hint that guesses is worse than none. */
+/* A sentence appended to a missed floor. Each names the mechanism that draws the
+   state and points at the number in the census above that discriminates between
+   its possible causes — NOT at a cause. Which of the fixture and the pane broke
+   is not decidable from the pair count, and round 1 and round 2 of this PR's
+   review each caught a version of this text asserting it anyway, in opposite
+   directions. Enumerated rather than generated: a hint that guesses is worse
+   than none. */
+const FLOOR_HINTS = {
+  spend: 'The pair comes from the Group-the-bill-by switch, which viewCard draws only ' +
+    'when two or more of the groupings in VIEW_ORDER (ops/assets/pane-spend.js:302) ' +
+    'arrive with rows. PREFLIGHT in this file tested the fixture against that rule ' +
+    'before Chrome started and it passed, since a failure there exits before this point ' +
+    '— so the two groupings did arrive, and whatever removed the pair is downstream of ' +
+    'that one rule rather than of the fixture in general.',
+  users: 'The pairs come from picking a row in Look up a user: aria-current on the row ' +
+    'and aria-pressed on its control, each needing a second, unpicked row to compare ' +
+    'against. The lookup draws one aria-pressed per match, so the aria-pressed count in ' +
+    'the census above says how many rows arrived: one means the fixture narrowed and ' +
+    'there is no unmarked row to compare against, two or more means the rows arrived ' +
+    'and the pane stopped marking them.'
+};
+
+for (const key of Object.keys(FLOOR_HINTS)) {
+  if (!EXPECTED_PAIRS[key]) {
+    console.error(`\nFLOOR_HINTS explains a missed floor for "${key}" and EXPECTED_PAIRS ` +
+      'does not set one, so the hint can never print. Delete it or set the floor.\n');
+    process.exit(1);
+  }
+}
+
+/* Fixture pre-flight.
+ *
+ * Stadiora/Aria#10631's guard merged green and went red on `main` seven minutes
+ * later, because its branch was cut from a `main` older than the Cloud costs v2
+ * remodel: the floor was calibrated against a pane that no longer existed. The
+ * general shape recurs whenever a guard pins a floor while panes are being
+ * remodelled concurrently, and re-reading the branch base by hand is not a fix.
+ *
+ * So each check below reads the PRODUCT source for the rule that decides
+ * whether the state can be drawn at all, and tests this file's fixture against
+ * it before the browser starts. A fixture that cannot produce the state its
+ * floor demands is a fixture bug, and it is named as one here rather than
+ * surfacing 300 lines later as a bare count of 0.
+ *
+ * Enumerated, not generic: only panes whose state depends on fixture SHAPE
+ * rather than mere presence need an entry, and each says how it derives its
+ * rule so a remodel moves the check rather than silently passing it. */
+const PREFLIGHT = [
+  {
+    pane: 'spend',
+    check() {
+      const rel = 'ops/assets/pane-spend.js';
+      const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+      /* Comments stripped — block as well as line, since pane-spend.js is
+         written almost entirely in block comments — and the declaration keyword
+         required, so prose quoting VIEW_ORDER cannot be read as the
+         declaration. Both are failure-OPEN shapes if left out: the check would
+         parse a comment and pass. */
+      const src = raw
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^[ \t]*\/\/.*$/gm, '');
+      const decl = src.match(/(?:var|let|const)\s+VIEW_ORDER\s*=\s*\[([^\]]*)\]/);
+      if (!decl) {
+        return `${rel} no longer declares VIEW_ORDER as a var/let/const array literal, so ` +
+          'this check cannot tell whether the COSTS fixture can draw the Group-the-bill-by ' +
+          'switch. Re-derive it from whatever replaced it rather than deleting this check.';
+      }
+      const order = [...decl[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
+      if (!order.length) {
+        return `${rel} declares VIEW_ORDER but this check could not read any grouping names ` +
+          `out of ${JSON.stringify(decl[1].trim())} — it reads quoted string literals, and ` +
+          'that is not what this is. Teach it the new shape; do not assume the pane lost ' +
+          'its switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
+      }
+      if (order.length < 2) {
+        return `${rel} declares VIEW_ORDER as ${JSON.stringify(order)}, fewer than the two ` +
+          'groupings viewCard needs before it draws the switch at all, so EXPECTED_PAIRS.spend ' +
+          'is asking for a state the pane can no longer draw for any fixture.';
+      }
+      const has = (k) => Boolean(COSTS.views[k]?.rows?.length);
+      const supplied = order.filter(has);
+      if (supplied.length >= 2) return null;
+      const missing = order.filter((k) => !has(k));
+      return `the COSTS fixture supplies ${supplied.length} of the groupings the pane ` +
+        `switches between. ${rel} reads ${JSON.stringify(order)} and viewCard draws the ` +
+        'Group-the-bill-by switch only when two or more of them arrive with rows; this ' +
+        `fixture is missing ${missing.map((k) => `"${k}"`).join(', ')}. Add rows for ` +
+        `${missing.map((k) => `"${k}"`).join(', ')} rather than lowering ` +
+        'EXPECTED_PAIRS.spend — the aria-pressed pair on that switch is the only ARIA ' +
+        'state this pane declares, and a floor of 0 would let the switch vanish unnoticed. ' +
+        'Note that "service" does NOT count: the pane excludes it from the switch on ' +
+        'purpose (ops/assets/pane-spend.js:288-302) and draws it as a table instead.';
+    }
+  }
+];
+
+{
+  const paneKeys = new Set(PAGES.map((p) => p.key));
+  const problems = [];
+  for (const entry of PREFLIGHT) {
+    if (!paneKeys.has(entry.pane)) {
+      problems.push(`PREFLIGHT names pane "${entry.pane}", which ${REGISTRY} does not ` +
+        'declare, so the check it carries runs against nothing.');
+      continue;
+    }
+    const problem = entry.check();
+    if (problem) problems.push(`${entry.pane}: ${problem}`);
+  }
+  if (problems.length) {
+    console.error('\nA fixture in this file cannot produce the state its floor demands, so ' +
+      'the run would fail on a bare count with the cause 300 lines away:\n');
+    for (const p of problems) console.error(`  - ${p}\n`);
+    process.exit(1);
+  }
+}
+
 /* --------------------------------------------------------------- serving */
 
 const server = http.createServer((req, res) => {
@@ -1206,6 +1325,20 @@ const probeFor = (markers) => `(() => {
   };
 
   const pairs = [];
+  /* Every state attribute the result view declares at ALL, positive or not,
+     counted by value. Judgement 2 only keeps the positive ones, so a pane that
+     has stopped drawing a control entirely and a pane that draws it with every
+     state false both arrive at the floor check as a bare zero. This census is
+     what tells those two apart in the failure message. */
+  const stateCensus = {};
+  for (const el of content.querySelectorAll('*')) {
+    for (const attr of STATES) {
+      const value = el.getAttribute(attr);
+      if (value === null) continue;
+      const key = attr + '="' + value + '"';
+      stateCensus[key] = (stateCensus[key] || 0) + 1;
+    }
+  }
   for (const el of content.querySelectorAll('*')) {
     for (const attr of STATES) {
       const value = el.getAttribute(attr);
@@ -1277,6 +1410,7 @@ const probeFor = (markers) => `(() => {
     unpainted,
     unevaluable: [...new Set(unevaluable)],
     pairs,
+    stateCensus,
     /* Nothing should be hovered: every driven step activates a control through
        .click() rather than a pointer, and a hover state left on the page would
        make a :hover-only rule look like paint. */
@@ -1297,6 +1431,9 @@ let resultViews = 0;
 let pairsJudged = 0;
 let classSites = 0;
 const pairsByPane = {};
+/* Per pane, every state attribute its result view declared and how many times,
+   kept so a missed floor can say which of the two things went wrong. */
+const censusByPane = {};
 
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const PORT = server.address().port;
@@ -1454,6 +1591,7 @@ try {
 
       const pairCount = seen.pairs.filter((p) => p.judged).length;
       pairsByPane[page.key] = Math.min(pairsByPane[page.key] ?? Infinity, pairCount);
+      censusByPane[page.key] = seen.stateCensus || {};
       pairsJudged += pairCount;
 
       for (const pair of seen.pairs) {
@@ -1503,9 +1641,35 @@ for (const page of PAGES) {
   const had = pairsByPane[page.key];
   if (had === undefined) continue;
   if (had < due) {
+    /* A bare count of 0 states the symptom and withholds everything needed to
+       act on it. Three cases, not two: the pane drew none of the states and
+       none of the attributes; it drew the attributes but none was judgeable;
+       or it drew SOME and is short of its floor. The third is the one that
+       makes the fixture an innocent party, so it gets no fixture hint. */
+    const census = censusByPane[page.key] || {};
+    const declared = Object.keys(census).sort();
+    const inventory = declared.map((k) => `${k} ×${census[k]}`).join(', ');
+    let saw;
+    if (had > 0) {
+      saw = `It judged ${had} here, so the pane is drawing fewer of them than it was ` +
+        `rather than none — its result view declared ${inventory}. Look for the one state ` +
+        'that stopped being drawn, or stopped having an unmarked peer to compare against; ' +
+        'either the pane stopped writing it or the fixture stopped producing the shape it ' +
+        'needs, and the counts above are what tell those apart.';
+    } else if (declared.length) {
+      saw = `Its result view did declare ${inventory}, so the control is on the page but ` +
+        'no positive state on it had an unmarked peer.';
+    } else {
+      saw = 'Its result view declared no state attribute of any kind, so the control this ' +
+        'check was judging is not being drawn at all rather than being drawn unmarked.';
+    }
+    /* Printed in every case, because every hint now names a mechanism and a
+       discriminator rather than a cause. Gating it on had === 0 suppressed the
+       users hint in exactly the case it was written for. */
+    const hint = FLOOR_HINTS[page.key] ? ` ${FLOOR_HINTS[page.key]}` : '';
     failures.push(`${page.key}: EXPECTED_PAIRS says its result view declares at least ${due} ` +
       `ARIA state${due === 1 ? '' : 's'} to compare and ${had} were found, so the pane has ` +
-      'stopped drawing a state this check was judging.');
+      `stopped drawing a state this check was judging. ${saw}${hint}`);
   }
 }
 
