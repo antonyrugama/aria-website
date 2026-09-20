@@ -16,16 +16,28 @@
    block cannot be added, renamed or dropped without a red run — the failure
    mode a guard that silently judges nothing would otherwise have.
 
-   THE EXPECTATION IS NEVER READ OUT OF THE README. Each derivation below
-   builds its expected block from the repository: `ops/*.html` for what a page
-   loads, `ops/assets/pane-registry.js` executed in a vm for what a pane is,
-   the stylesheets parsed into rules for what a focus ring declares, the guard
+   NO VALUE IS READ OUT OF THE README. Each derivation below builds its
+   expected block from the repository: `ops/*.html` for what a page loads,
+   `ops/assets/pane-registry.js` executed in a vm for what a pane is, the
+   stylesheets parsed into rules for what a focus ring declares, the guard
    scripts and `.github/workflows/*.yml` for what runs where, and
    `scripts/ops-spend-v2.test.mjs`'s own regexes RUN against probe values for
-   what its colour guard can and cannot see. The README is only ever the thing
-   compared. Break the code and the run goes red with the README untouched;
-   that is the property a claims guard has to have and the reason none of these
-   assertions greps the README for a sentence.
+   what its colour guard can and cannot see. Break the code and the run goes
+   red with the README untouched; that is the property a claims guard has to
+   have and the reason none of these assertions greps the README for a
+   sentence.
+
+   TWO BLOCKS TAKE THEIR SUBJECTS FROM THE README, and it is worth being exact
+   about what that does and does not mean. `source-anchors` reads which file
+   and which quoted comment to go looking for, and `deleted-assets` reads which
+   absent path to look for; both then derive every value — the line number, the
+   uniqueness of the anchor, the absence of the file, who loads and reads it.
+   Editing a value in either block is red. What that shape cannot catch on its
+   own is a row DELETED from the README, which shrinks the expectation with it,
+   so both are pinned by a row floor in `ROW_FLOOR` at the foot of this file:
+   dropping a row is red until someone lowers the floor deliberately. The other
+   ten blocks derive their row set as well as their values, so shrinking one is
+   already red without a floor.
 
    NOT COVERED, stated so nobody reads a green run as more than it is:
 
@@ -40,11 +52,15 @@
    - The test-fixture map sees this repo's `read('assets/NAME')` idiom. A test
      that opens an asset another way reads as "nothing loads it".
    - Which pages can DRAW a class is read from the class tokens written in the
-     page and in the scripts that page loads. A class assembled at runtime
-     (`'badge-' + tone`) is invisible to it, and a name that appears in a
-     comment counts as a draw site. It errs towards claiming MORE coverage for
-     a class than the page really has, so a `(no page)` value is the strong
-     direction and a named page is the weak one.
+     page and in the scripts that page loads: `class=` and `class:`,
+     `className`, `classList.add|remove|toggle` and `setAttribute('class', …)`,
+     each with a literal. The error runs BOTH ways and NEITHER value is the
+     strong one. A name in a comment counts as a draw site, so a named page can
+     be an over-report; a class assembled at run time (`'badge-' + tone`) or
+     written through a helper this list does not name is invisible, so a
+     `(no page)` can be an under-report — `ops/assets/icons.js` already spells
+     one of these with `setAttribute`, which is why that spelling is read
+     here.
    - The `painted where drawn` verdict asks only whether SOME rule in a
      stylesheet that page loads carries that class in its selector. It does not
      ask whether the rule applies to the element the page drew, whether another
@@ -86,25 +102,33 @@ const WORKFLOWS = list('.github/workflows').filter((f) => f.endsWith('.yml'));
 
 /* ------------------------------------------------------------ the blocks */
 
-/* Every ```claims id=<id> block in the README, as its raw lines. A block with
-   no id, a duplicate id, or a `claims` fence that never closes is a failure
-   here rather than a block quietly not judged. */
+/* Every ```claims id=<id> block in the README, as its raw lines. Any fence
+   opening with the word `claims` is taken as one, so a fence this reader
+   cannot parse — a capital in the id, a stray word after it, no id at all — is
+   a failure here rather than a block quietly not judged. A duplicate id and a
+   block that never closes are failures too. */
 function claimBlocks(md) {
   const lines = md.split('\n');
   const blocks = new Map();
   for (let i = 0; i < lines.length; i += 1) {
-    const open = /^(\s*)```claims(?:\s+id=([a-z0-9-]+))?\s*$/.exec(lines[i]);
-    if (!open) continue;
-    assert.ok(open[2], `${README_PATH}:${i + 1}: a claims block with no id=`);
-    const indent = open[1];
+    const fence = /^(\s*)```claims\b(.*)$/.exec(lines[i]);
+    if (!fence) continue;
+    const open = /^\s+id=([a-z0-9-]+)\s*$/.exec(fence[2]);
+    assert.ok(
+      open,
+      `${README_PATH}:${i + 1}: a claims fence this file cannot read: \`\`\`claims${fence[2]}` +
+        ' — the info string must be exactly ```claims id=<lower-case-kebab-id>',
+    );
+    const id = open[1];
+    const indent = fence[1];
     const body = [];
     let j = i + 1;
     for (; j < lines.length && lines[j].trim() !== '```'; j += 1) {
       body.push(lines[j].startsWith(indent) ? lines[j].slice(indent.length) : lines[j]);
     }
     assert.ok(j < lines.length, `${README_PATH}:${i + 1}: claims block never closes`);
-    assert.ok(!blocks.has(open[2]), `${README_PATH}:${i + 1}: id=${open[2]} appears twice`);
-    blocks.set(open[2], { line: i + 1, lines: body.filter((l) => l.trim() !== '') });
+    assert.ok(!blocks.has(id), `${README_PATH}:${i + 1}: id=${id} appears twice`);
+    blocks.set(id, { line: i + 1, lines: body.filter((l) => l.trim() !== '') });
     i = j;
   }
   return blocks;
@@ -328,15 +352,23 @@ const V1_STATUS_CLASSES = [
 ];
 
 /* Every class token a file can put on an element: the `class` attributes in a
-   page, and in a script the strings a `className` or a `classList` call is
-   built from. A token assembled at run time (`'badge-' + tone`) is not seen —
-   which is why a `(no page)` here is the strong direction and a named page the
-   weak one. */
+   page, the `class:` and `className` keys and assignments in a script, the
+   literals a `classList` call carries, and `setAttribute('class', …)`, which
+   `ops/assets/icons.js` uses. The error runs BOTH ways, so neither value here
+   is the strong one: a name in a comment counts as a draw site, which
+   over-reports, and a token assembled at run time (`'badge-' + tone`) or
+   spelled any way not listed above is invisible, which under-reports. */
 function classTokens(src) {
   const tokens = new Set();
   const add = (text) => text.split(/\s+/).filter(Boolean).forEach((t) => tokens.add(t));
   for (const m of src.matchAll(/\bclass="([^"]*)"/g)) add(m[1]);
   for (const m of src.matchAll(/\bclassName\s*[:=]\s*(['"`])([^'"`]*)\1/g)) add(m[2]);
+  for (const m of src.matchAll(/\bsetAttribute\(\s*(['"`])class(?:Name)?\1\s*,([^)]*)\)/g)) {
+    for (const lit of m[2].matchAll(/(['"`])([^'"`]*)\1/g)) add(lit[2]);
+  }
+  for (const m of src.matchAll(/(?:^|[{,\s])class\s*:\s*([^,\n}]*)/g)) {
+    for (const lit of m[1].matchAll(/(['"`])([^'"`]*)\1/g)) add(lit[2]);
+  }
   for (const m of src.matchAll(/\bclassList\.(?:add|remove|toggle)\(([^)]*)\)/g)) {
     for (const lit of m[1].matchAll(/(['"`])([^'"`]*)\1/g)) add(lit[2]);
   }
@@ -448,6 +480,85 @@ DERIVED['source-anchors'] = () => {
   });
 };
 
+/* The v1 and v2 layers collide, which is why a page loads one sheet or the
+   other and never both. Which names collide is counted out of the two sheets
+   rather than remembered: a class is "declared" by a sheet when some selector
+   in it carries that class, and the widest eight are the eight with the most
+   selectors in ops.css, ties broken alphabetically. A hand-typed list of these
+   is how `.pill` and `.tbl` came to be claimed for a sheet that never had
+   either. */
+function declaredClasses(file) {
+  const counts = new Map();
+  for (const rule of cssRules(read(file))) {
+    for (const selector of rule.selectors) {
+      for (const hit of selector.matchAll(/\.([A-Za-z][A-Za-z0-9_-]*)/g)) {
+        counts.set(hit[1], (counts.get(hit[1]) || 0) + 1);
+      }
+    }
+  }
+  return counts;
+}
+
+DERIVED['v1-v2-collision'] = () => {
+  const v1 = declaredClasses('ops/assets/ops.css');
+  const v2 = declaredClasses('ops/assets/aria.css');
+  const shared = [...v1.keys()].filter((c) => v2.has(c));
+  const widest = shared.slice()
+    .sort((a, b) => v1.get(b) - v1.get(a) || a.localeCompare(b))
+    .slice(0, 8)
+    .sort();
+  return [
+    `class names declared in both ops.css and aria.css = ${shared.length}`,
+    ...widest.map((c) => `.${c} = ${v1.get(c)} selectors in ops.css, ${v2.get(c)} in aria.css`),
+  ];
+};
+
+/* The dark --text-3 figure that item is read for. sRGB relative luminance and
+   the WCAG 2 contrast ratio, computed over every background token the sheet
+   declares in the same :root the ink is declared in, so the floor is the worst
+   pairing rather than a remembered one. */
+function luminance(hex) {
+  const channel = (n) => (n <= 0.03928 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4);
+  const [r, g, b] = [1, 3, 5].map((i) => channel(parseInt(hex.slice(i, i + 2), 16) / 255));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+const ratio = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+DERIVED['dark-text-3'] = () => {
+  const dark = cssRules(read('ops/assets/ops.css'))
+    .find((rule) => rule.selectors.includes(':root'));
+  assert.ok(dark, 'ops.css declares no :root');
+  const tokens = new Map();
+  for (const decl of declarations(dark.body)) {
+    const m = /^(--[a-z0-9-]+)\s*:\s*(#[0-9A-Fa-f]{6})$/.exec(decl);
+    if (m) tokens.set(m[1], m[2].toUpperCase());
+  }
+  const ink = tokens.get('--text-3');
+  assert.ok(ink, 'ops.css\'s dark :root declares no --text-3');
+  const surfaces = [...tokens.entries()].filter(([name]) => /^--(bg|surface-)/.test(name));
+  assert.ok(surfaces.length > 0, 'ops.css\'s dark :root declares no background tokens');
+  const worst = surfaces
+    .map(([name, hex]) => ({ name, hex, r: ratio(ink, hex) }))
+    .sort((a, b) => a.r - b.r)[0];
+  return [
+    `--text-3 in ops.css's dark :root = ${ink}`,
+    `background tokens it is measured against = ${surfaces.length}`,
+    `worst pairing = ${worst.name} ${worst.hex} at ${worst.r.toFixed(2)}:1`,
+    `clears 4.5:1 on every one of them = ${surfaces.every((s) => ratio(ink, s[1]) >= 4.5)}`,
+  ];
+};
+
+/* The blocks this file derives, listed out of this file rather than typed into
+   the README, because the README's enumeration of them fell three behind. */
+DERIVED['claims-blocks'] = () => [
+  ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
+  'and one sweep over every repository file path the README names in a code span',
+];
+
 /* What the content security policy costs, counted rather than remembered:
    how many pages would need a hash if the theme were inlined, and whether the
    two things the policy forbids are actually absent from the markup. A page
@@ -518,8 +629,9 @@ test('every repository file ops/README.md names is in the tree or declared delet
   for (const file of inTree) byBasename.set(path.basename(file), file);
 
   const deleted = new Set((BLOCKS.get('deleted-assets')?.lines || [])
-    .map((l) => l.trim().split('=')[0].trim())
-    .flatMap((p) => [p, path.basename(p)]));
+    .map((l) => l.trim().split('=')[0].trim()));
+  const deletedByBasename = new Map();
+  for (const file of deleted) deletedByBasename.set(path.basename(file), file);
 
   /* Paths in the Aria monorepo rather than here. They are named with their
      monorepo directory, which is what this recognises them by. */
@@ -535,17 +647,19 @@ test('every repository file ops/README.md names is in the tree or declared delet
       const file = candidate[1];
       if (FOREIGN.test(file)) continue;
       judged += 1;
-      if (deleted.has(file) || deleted.has(path.basename(file))) continue;
       /* The spellings this README uses are resolved to repository paths before
          they are looked up, rather than matched on their last segment: a span
          carrying a directory is held to that directory, or `ops/assets/x.css`
          and `made/up/x.css` both read as right because the leaf matches. A
          bare `x.css` with no directory is the one spelling resolved by leaf,
-         which is how most of this file names an asset. */
-      const candidates = file.includes('/')
+         which is how most of this file names an asset. A path declared DEAD is
+         resolved the same way, so `scripts/operate.css` is wrong even though
+         `operate.css` is a file this repository deleted. */
+      const resolve = (byLeaf) => (file.includes('/')
         ? [file, `ops/${file.replace(/^\/?ops\//, '')}`]
-        : [file, byBasename.get(file)].filter(Boolean);
-      if (candidates.some((c) => inTree.has(c))) continue;
+        : [file, byLeaf.get(file)].filter(Boolean));
+      if (resolve(deletedByBasename).some((c) => deleted.has(c))) continue;
+      if (resolve(byBasename).some((c) => inTree.has(c))) continue;
       missing.push(`${README_PATH}:${i + 1}: names ${file}, which is neither in the tree nor in the deleted-assets block`);
     }
   });
@@ -554,9 +668,20 @@ test('every repository file ops/README.md names is in the tree or declared delet
   JUDGED['file-paths'] = judged;
 });
 
+/* Two blocks take their SUBJECTS from the README — which anchors to locate,
+   which deleted files to look for — because neither set is greppable out of a
+   tree the files are absent from or the comments were chosen by hand. Every
+   VALUE in them is still derived, but a row deleted from the README would
+   shrink the expectation with it and run green. These floors are the pin: a
+   row can be removed only by lowering the number here on purpose, in code, in
+   the diff. Nothing else in this file is allowed a floor — the other ten
+   blocks derive their row set, so shrinking one is already red. */
+const ROW_FLOOR = { 'source-anchors': 6, 'deleted-assets': 2 };
+
 /* A claims guard that judged nothing is the worst outcome this file has, and
    a green run says nothing about how much was compared. So the count goes in
-   the log, per block, and the run is red if any of it is empty. */
+   the log, per block, and the run is red if any of it is empty or if a
+   README-subject block lost a row. */
 test('the run reports what it judged', () => {
   const rows = Object.keys(JUDGED).sort().map((id) => `  ${id}: ${JUDGED[id]}`);
   const total = Object.values(JUDGED).reduce((a, b) => a + b, 0);
@@ -564,4 +689,9 @@ test('the run reports what it judged', () => {
   assert.equal(Object.keys(JUDGED).length, Object.keys(DERIVED).length + 1,
     'a block was not judged in this run');
   assert.ok(total > 0, 'nothing was judged');
+  for (const [id, floor] of Object.entries(ROW_FLOOR)) {
+    assert.ok(JUDGED[id] >= floor,
+      `claims id=${id} judged ${JUDGED[id]} rows and this file pins a floor of ${floor}: ` +
+      'a row was deleted from the README, or the floor has to come down on purpose');
+  }
 });

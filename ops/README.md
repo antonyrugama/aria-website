@@ -363,9 +363,23 @@ ops/assets/settings.css = gone; loaded by no page; named by no script
 
 `aria.css` and `aria.js` are the design system from `docs/mocks/ops-dashboard-v2/` in the Aria
 monorepo, ported here so the panes can be remodelled one at a time. They sit **beside** `ops.css`
-and `shell.js` rather than replacing them: both define `.card`, `.rail`, `.topbar`, `.btn`,
-`.seg`, `.pill`, `.tbl` and `.nav-item` from different token sets, so **a page loads one or the
-other, never both.** **Which layer a pane is on is stated by its own page**, in the stylesheets
+and `shell.js` rather than replacing them: the two sheets declare a great many of the same class
+names from different token sets, so **a page loads one or the other, never both.** How many, and
+which of them reach furthest, is counted out of the sheets — a list typed here once said `ops.css`
+declares `.pill` and `.tbl`, and it declares neither, and never did.
+
+```claims id=v1-v2-collision
+class names declared in both ops.css and aria.css = 47
+.btn = 7 selectors in ops.css, 4 in aria.css
+.budget = 4 selectors in ops.css, 3 in aria.css
+.card-foot = 3 selectors in ops.css, 2 in aria.css
+.card-head = 3 selectors in ops.css, 1 in aria.css
+.content = 3 selectors in ops.css, 2 in aria.css
+.legend = 4 selectors in ops.css, 3 in aria.css
+.nav-item = 9 selectors in ops.css, 6 in aria.css
+.seg = 5 selectors in ops.css, 4 in aria.css
+```
+ **Which layer a pane is on is stated by its own page**, in the stylesheets
 and scripts its `<head>` loads, and nowhere else: a list written here by hand would have to be
 corrected by every change that moves a pane, and the first one that moved while another was in
 review left it saying something untrue. The list below is therefore read out of the pages. All
@@ -1143,8 +1157,16 @@ those panes now.
 4. **Dark `--text-3` moved from `#667484` to `#8593A2`.** The original measured 3.35:1 on
    `--surface-3`, its worst rendered pairing at the time, and 3.93:1 on a card. It
    needs 4.5:1, because it carries metadata, table headers, filter labels and placeholder text,
-   all of which are text. The new value clears 4.71:1 on every surface the stylesheet actually
-   pairs it with.
+   all of which are text. What the new value clears is not typed here — it is measured from the
+   shipped token against every background token declared beside it, which is how the figure in
+   this sentence came to disagree with the comment on the token itself by 0.05:
+
+   ```claims id=dark-text-3
+   --text-3 in ops.css's dark :root = #8593A2
+   background tokens it is measured against = 5
+   worst pairing = --surface-hover #1E2833 at 4.76:1
+   clears 4.5:1 on every one of them = true
+   ```
 5. **A new `--cta-end` token** ends the primary-button gradient. White on the light theme's
    `#0092AE` measured 3.67:1; `#007A93` holds 4.99:1. Splitting it from `--brand` darkens the
    button without darkening every tint derived from the brand. Dark mode is unchanged, because
@@ -2217,25 +2239,56 @@ whose info string is `claims id=<id>`, and `scripts/ops-readme-claims.test.mjs` 
 from the repository — the pages' own `<link>` and `<script>` tags, `pane-registry.js` executed in
 a vm, the stylesheets parsed into rules, the guard scripts and workflows, and
 `ops-spend-v2.test.mjs`'s own regexes run against probe values — then `deepStrictEqual`s the
-block against it. The expectation is never read out of the README, so breaking the code turns the
-run red with this file untouched. Every id it derives must appear exactly once here and every
-block here must be one it derives, so a block cannot be added, renamed or dropped silently, and
-the run prints what it judged, per block, in CI.
+block against it. No value is read out of the README, so breaking the code turns
+the run red with this file untouched. Every id it derives must appear exactly once here and every
+block here must be one it derives — and a `claims` fence it cannot parse is a failure rather than
+a block quietly skipped — so a block cannot be added, renamed or dropped silently, and the run
+prints what it judged, per block, in CI.
 
-Nine blocks: `assets-by-page`, `assets-only-in-tests`, `deleted-assets`, `panes`,
-`table-focus-rings`, `browser-guards`, `shell-v2-pins`, `spend-colour-gate`,
-`v1-status-classes`. A tenth check sweeps every repository file path this README names in a code
-span and requires it to be in the tree or declared in `deleted-assets`, which is what makes a
-file deleted elsewhere red here rather than quietly stale.
+Two blocks take their **subjects** from this file rather than from the code, and the guard says
+so in as many words: `source-anchors` reads which file and which quoted comment to go and find,
+and `deleted-assets` reads which absent path to look for, because neither set is greppable out of
+a tree the files are absent from. Both still derive every **value**. What that shape cannot catch
+by itself is a row deleted from this file, so both carry a row floor in the guard that has to be
+lowered deliberately, in code, before a row can go.
+
+Which blocks those are is itself derived, out of the guard rather than out of a sentence here:
+the enumeration that used to sit in this paragraph said nine and fell three behind, missing two
+blocks added in review and one added by the commit that fixed it. The sweep named on the last
+line requires every repository file path this README spells in a code span to be in the tree or
+declared in `deleted-assets`, which is what makes a file deleted elsewhere red here rather than
+quietly stale.
+
+```claims id=claims-blocks
+claims id=assets-by-page
+claims id=assets-only-in-tests
+claims id=browser-guards
+claims id=claims-blocks
+claims id=csp-pages
+claims id=dark-text-3
+claims id=deleted-assets
+claims id=panes
+claims id=scroll-wrapper-position
+claims id=shell-v2-pins
+claims id=source-anchors
+claims id=spend-colour-gate
+claims id=table-focus-rings
+claims id=v1-status-classes
+claims id=v1-v2-collision
+and one sweep over every repository file path the README names in a code span
+```
 
 **NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
 restating a block in English, or claiming something no block carries, is nobody's red. Only
 statically spelled `assets/…` tags are seen, so a runtime-injected asset is invisible. The
 fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
-are class tokens written in a page and the scripts it loads, so a class assembled at runtime is
-invisible and a name in a comment counts as a draw — a `(no page)` is the strong direction, a
-named page the weak one — and `painted where drawn` asks only whether some rule in a stylesheet
-that page loads names the class, not whether it applies, wins or paints anything. A guard's page
+are the class tokens written in a page and the scripts it loads — `class=` and `class:`,
+`className`, `classList` and `setAttribute('class', …)`, each with a literal — and that error runs
+**both ways**, so neither value is the safe one to trust: a name in a comment counts as a draw, and
+a class assembled at run time or spelled through some other helper is invisible, so a `(no page)`
+can be an under-report exactly as a named page can be an over-report. `painted where drawn` asks
+only whether some rule in a stylesheet that page loads names the class, not whether it applies,
+wins or paints anything. A guard's page
 set is read from `OpsPaneRegistry` and the `/ops/*.html` literals in its source. `OpsUsagePayload`
 is declared in the Aria monorepo, so nothing here can decide whether departure 8's list is a
 complete sweep of it, which is why that departure no longer claims to be one. Contrast ratios are
@@ -2243,7 +2296,8 @@ pixels, not arithmetic over the tree: `check-ops-contrast.mjs` is that oracle. A
 `deleted-assets` list is checked for absence only — the pull request each line names is not
 verifiable from a shallow checkout.
 
-The file's own docblock carries the same list, beside the code it is about.
+The guard's own docblock carries that NOT COVERED list too, beside the code it is about; the
+list of blocks is the `claims-blocks` block above, derived from the guard's own derivations.
 
 ### Measuring contrast where the colour lands
 
