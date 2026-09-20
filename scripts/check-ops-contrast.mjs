@@ -348,15 +348,28 @@ const hex = ({ r, g, b }) =>
 
 /* ----------------------------------------------------------- measurement */
 
-/* WCAG's large-text exemption: 18.66px bold, or 24px at any weight.
+/* Every text site needs 4.5:1. WCAG's large-text allowance -- 3.0:1 at 24px,
+   or at 18.66px bold -- is deliberately NOT implemented.
 
-   Both numbers are read from the DECLARED font-size, which is the rendered
-   size only while nothing scales the element. transform and zoom are refused
-   by name for exactly that reason -- see unmodelled(). */
-function threshold(fontSize, fontWeight) {
-  const big = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
-  return big ? 3.0 : 4.5;
-}
+   Both of its numbers would have to come from getComputedStyle().fontSize,
+   which is the size the stylesheet ASKED for and not the size the glyphs land
+   at. Round 7 of this PR's review bought the weaker threshold with
+   `font-size: 24px; transform: scale(.48)`, which renders glyphs NARROWER
+   than the untouched 11.5px pill; round 8 then reproduced the identical
+   output with `scale: .48` (an independent transform property Chromium keeps
+   out of computed `transform`) and again with `font-size-adjust: .2`, which
+   is not a transform at all. Each spelling was reachable from a stylesheet
+   with no change to this file. Refusing them by name cost one round per
+   spelling and closed nothing.
+
+   So the allowance is gone rather than defended, and nothing here reads the
+   rendered size. The cost is real and runs the safe way for an ink: text that
+   WCAG AA would genuinely let sit at 3.0:1 fails this check. It costs 0 sites
+   today -- with the allowance deleted the sweep still passes at 1632, and the
+   lowest ratio it measures on any unfrozen site is 5.20:1 -- and a site that
+   ever earns it goes in KNOWN_BELOW_AA with an issue, where it is reconciled
+   in both directions rather than granted silently. */
+const AA_RATIO = 4.5;
 
 /* Every backdrop colour inside a rect on the plate, with the share of the box
    each one holds.
@@ -530,33 +543,6 @@ const COLLECT = `(() => {
       const sw = parseFloat(st.webkitTextStrokeWidth);
       if (Number.isFinite(sw) && sw > 0) {
         return '-webkit-text-stroke ' + st.webkitTextStrokeWidth + ' on ' + nameOf(n);
-      }
-      /* transform and zoom decide the size the glyphs RENDER at, and this
-         tool picks its WCAG threshold from the DECLARED font-size. Round 7 of
-         this PR's review showed the gap is exploitable in the flattering
-         direction: font-size: 24px with transform: scale(.48) renders glyphs
-         NARROWER than the untouched 11.5px pill and buys the 3.0:1 large-text
-         allowance, which passed the issue's own 3.03:1 headline defect at
-         exit 0 with nothing dropped, exempted or refused.
-
-         Refused by name rather than resolved. Multiplying an effective scale
-         into fontSize is a few lines and is the analysis this tool has
-         declined five times already: a scale factor is not the only way a
-         transform moves glyphs, the threshold is not the only thing rendered
-         size feeds, and guard code written mid-review is where the defects
-         live. Refusing is fail-closed and, on this page, free — nothing under
-         any text site carries either property in any of the eight passes.
-         This also covers the rotate and skew case the sampling geometry note
-         could only describe. */
-      if (st.transform && st.transform !== 'none') {
-        return 'transform "' + st.transform + '" on ' + nameOf(n) +
-          ' decides the rendered glyph size, and the AA threshold is picked ' +
-          'from the declared ' + st.fontSize;
-      }
-      if (st.zoom && st.zoom !== '1' && parseFloat(st.zoom) !== 1) {
-        return 'zoom ' + st.zoom + ' on ' + nameOf(n) +
-          ' decides the rendered glyph size, and the AA threshold is picked ' +
-          'from the declared ' + st.fontSize;
       }
       /* SVG paint is fill THEN stroke, and stroke is the SVG spelling of the
          property above. This one completes the model the tool already
@@ -897,6 +883,50 @@ async function load(url, { settle = 900 } = {}) {
   await new Promise((r) => setTimeout(r, settle));
 }
 
+/* Every walk in this file — COLLECT, GENERATED_TEXT, PLATE_HOLDS — is a
+   `document.querySelectorAll('*')`, and none of them enters a shadow root.
+   Round 8 of this PR's review put a declarative shadow root on the pill row:
+   eight sites left the sweep with no site row, no refusal and no census
+   entry, the headline 3.03:1 defect among them, and the run still printed
+   that every rendered text site met AA.
+
+   Censused over CDP rather than in the page, because `el.shadowRoot` is null
+   for a CLOSED root: measured here with a closed declarative root on this
+   host, the in-page read reports nothing while DOM.getDocument with
+   pierce: true reports `shadowRootType: "closed"`. An in-page census would
+   cover half the class and read as though it covered all of it.
+
+   This refuses; it does not measure. Piercing the sweep into shadow trees
+   means ranges, plate rules and the `*` selector all crossing the boundary,
+   which is analysis added mid-review. The shell carries no AUTHOR shadow root
+   in any of the eight passes, so refusing them costs 0 sites.
+
+   USER-AGENT roots are a separate matter and are NOT refused here, because
+   the shipped page has four of them — the browser's own rendering of one
+   <select>, its two <option>s and one <input> — and failing on those would
+   make this guard red on code it cannot fix and would say nothing true. What
+   is inside them is not uniformly unreachable either: the <input>'s
+   placeholder IS measured, through ::placeholder with its own ink read. The
+   <select>'s rendered value is NOT, and that is a real uncovered site rather
+   than a handled one; it is in NOT COVERED in
+   ops/README.md and filed as Stadiora/Aria#10422. Do not
+   read this branch as covering the user-agent half. */
+async function shadowHosts() {
+  const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+  const found = [];
+  const walk = (n) => {
+    for (const r of n.shadowRoots || []) {
+      if (r.shadowRootType !== 'user-agent') {
+        found.push(String(n.nodeName || '?').toLowerCase() + ' (' + r.shadowRootType + ')');
+      }
+      walk(r);
+    }
+    for (const c of n.children || []) walk(c);
+  };
+  walk(root);
+  return found;
+}
+
 async function evaluate(expression) {
   const res = await cdp.send('Runtime.evaluate', { expression, returnByValue: true });
   if (res.exceptionDetails) {
@@ -1032,7 +1062,7 @@ async function measureSites(targets, where) {
        multiply into the alpha the glyphs are composited at. */
     const alpha = (parsed.a === undefined ? 1 : parsed.a) *
       (Number.isFinite(t.opacity) ? t.opacity : 1);
-    const need = threshold(t.fontSize, t.fontWeight);
+    const need = AA_RATIO;
 
     /* Judge against the WORST sampled surface, not against the
        average of them and not against the widest.
@@ -1390,6 +1420,15 @@ try {
           continue;
         }
 
+        const shadow = await shadowHosts();
+        if (shadow.length) {
+          failures.push(`${SHELL} (${theme}/${state}): ${shadow.length} author shadow root(s) ` +
+            'on the page. Nothing in this tool enters one, so their text leaves the sweep with ' +
+            'no site, no refusal and no census entry, and the count below would be short by ' +
+            `exactly that much in silence: ${shadow.join('; ')}`);
+          continue;
+        }
+
         const generated = await evaluate(GENERATED_TEXT);
         if (generated.count) {
           failures.push(`${SHELL} (${theme}/${state}): ${generated.count} element(s) paint ` +
@@ -1535,5 +1574,7 @@ if (failures.length) {
 }
 console.log(selfTestOnly
   ? '\nSelf-test only: the tool proved itself and measured no page.\n'
-  : '\nEvery rendered text site on the v2 shell meets WCAG AA, in both themes and all four ' +
-    `states${frozenCount ? `, except the ${frozenCount} frozen in KNOWN_BELOW_AA` : ''}.\n`);
+  : '\nEvery text site this tool reaches on the v2 shell meets WCAG AA, in both themes and ' +
+    `all four states${frozenCount ? `, except the ${frozenCount} frozen in KNOWN_BELOW_AA` : ''}. ` +
+    'What it does not reach is in NOT COVERED in ops/README.md, and the sweep fails rather ' +
+    'than shrinks when it meets something new.\n');

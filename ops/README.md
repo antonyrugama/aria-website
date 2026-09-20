@@ -1168,19 +1168,53 @@ over one would be measured against whatever is underneath rather than against th
 exercises that path and no mutation proves it either way — read it as not covered, not as
 handled.
 
-**The AA threshold is picked from the DECLARED font-size, so `transform` and `zoom` are refused
-by name.** WCAG's large-text allowance drops the requirement from 4.5:1 to 3.0:1 at 24px, or at
-18.66px bold, and `getComputedStyle` reports the size the stylesheet asked for, not the size the
-glyphs land at. Round 7 of this PR's review turned that into a pass for the defect the whole
-guard exists to catch: `font-size: 24px; transform: scale(.48)` on `.pill.acc`, with the headline
-`--cyan-ink` → `--cyan` swap, renders glyphs **narrower** than the untouched 11.5px pill
-(39.22×13 clean versus 36.52×13.44 under the payload, measured outside the tool) and exits **0**
-at 1632, with the summary printing `3.03:1 (needs 3.0)` as a pass. Refused rather than resolved:
-multiplying an effective scale into the font size is a few lines, but it is analysis added
-mid-review, which is where this workstream's defects live, and refusing is fail-closed. It costs
-nothing here — **0** text sites on the shell carry a `transform` or a `zoom` on themselves or any
-ancestor, in all eight passes. This also covers rotation and skew, which the tool previously only
-noted as a sampling-geometry caveat: their axis-aligned bounding box is wider than the glyphs.
+**WCAG's large-text allowance is not implemented: every text site needs 4.5:1.** The allowance
+drops the requirement to 3.0:1 at 24px, or at 18.66px bold, and both numbers can only come from
+`getComputedStyle().fontSize` — the size the stylesheet *asked for*, not the size the glyphs land
+at. Round 7 of this PR's review bought the weaker threshold with `font-size: 24px;
+transform: scale(.48)` on `.pill.acc`, which renders glyphs **narrower** than the untouched
+11.5px pill and passed the issue's own 3.03:1 headline defect at exit 0. That was answered by
+refusing `transform` and `zoom` by name, and round 8 reproduced the identical output twice more
+without touching either: `scale: .48` is an independent transform property Chromium keeps out of
+computed `transform`, and `font-size-adjust: .2` is not a transform at all. Refusing by name cost
+one round per spelling and closed nothing, because the spelling was never the cause — with the
+allowance in place, plain `font-size: 24px` and no scaling of any kind was already enough to pass
+the 3.03:1 defect.
+
+So the allowance is **deleted** rather than defended, and nothing in the tool reads the rendered
+size. The cost is real and runs the safe way for an ink: text WCAG AA would genuinely permit at
+3.0:1 fails this check. It costs **0** sites today — the sweep still passes at 1632 with 4.5:1
+required everywhere, and the lowest ratio measured on any unfrozen site is 5.20:1 — and a site
+that ever earns the allowance goes in `KNOWN_BELOW_AA` with an issue, where it is reconciled in
+both directions instead of granted silently. Rotation and skew are **not** refused and never
+were: `rotate: 20deg` passes, and what a rotated site gets is a sample taken from its
+axis-aligned bounding box, which is wider than the glyphs. Under the worst-surface rule a wider
+box can only add surfaces and so can only lower the ratio, which is the conservative direction.
+
+**Text inside a shadow root is refused, because nothing here enters one.** `COLLECT`,
+`GENERATED_TEXT` and `PLATE_HOLDS` are all `document.querySelectorAll('*')` walks, and none of
+them crosses a shadow boundary. Round 8 of this PR's review put a declarative shadow root on the
+pill row with no JavaScript at all: eight sites left the sweep with no site row, no refusal and
+no census entry — the headline 3.03:1 defect among them — and the run still reported every
+rendered text site meeting AA, eight short. Author shadow roots, open **and** closed, now fail
+the run. The census is taken over CDP with `DOM.getDocument({ pierce: true })` rather than in the
+page, because `el.shadowRoot` is `null` for a closed root: measured here, a closed declarative
+root is invisible to the in-page read and reports `shadowRootType: "closed"` to CDP, so an
+in-page census would have covered half the class while reading as though it covered all of it.
+It refuses rather than measures — piercing the sweep into shadow trees means ranges, plate rules
+and the `*` selector all crossing the boundary — and it costs **0** sites: the shell carries no
+author shadow root in any of the eight passes.
+
+**User-agent shadow roots are excluded from that refusal, and one of them hides a real site.**
+The shipped page has four — the browser's own rendering of one `<select>`, its two `<option>`s
+and one `<input>` — so failing on them would make this guard red on markup it is not able to fix
+and would say nothing true. What is inside them is not uniformly unreachable: the `<input>`'s
+placeholder **is** measured, through `::placeholder` with its own ink read. The `<select>`'s
+rendered value is **not**. Measured: the `<select>` has no text node of its own, so the collector
+skips it; its `<option>` children have a `0 × 0` rect, so the size gate drops them; and the words
+a reader actually sees — `Last 7 days` — are painted inside the user-agent root. That is an
+uncovered site on the shipped page, not a handled one, and it is tracked by
+[Stadiora/Aria#10422](https://github.com/Stadiora/Aria/issues/10422).
 
 And the check answers "is the ink readable against the paint at its own run", which is "can this
 be read" only while nothing paints over the glyphs — not "is this the designed colour". The token
