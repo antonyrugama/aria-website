@@ -235,10 +235,13 @@ const APP_PARTS = {
    only shape that can carry one. The route sends ONE denominator per app
    (`opsUsageView.ts:689`) -- that app's own active people -- so an under-floor
    feature row cannot sit on an app with 1,061 of them, which is what the old
-   fixture's `denominator: 41` beside Mobile's 1,061 claimed. A small app
-   beside a large one still arrives `ready`, because availability is decided on
-   PLATFORM active people (`opsUsageView.ts:863`) and that is its own count
-   rather than a sum of the columns. */
+   fixture's `denominator: 41` beside Mobile's 1,061 claimed. Beside a large
+   app this one still arrives `ready`, because availability is decided on
+   PLATFORM active people (`opsUsageView.ts:863`) and that row is counted over
+   the selected apps rather than summed from the columns. Selected ALONE it
+   does not: 41 is under the floor, so a `coaches` scope holding only this app
+   arrives `insufficient`, which is why `usagePayload` resolves the state
+   instead of asserting it. */
 const YOUNG_COACHES = {
   ...APP_PARTS.coaches,
   counts: { activePeople: 41, sessions: 96, featurePeople: 5 },
@@ -530,7 +533,7 @@ function usagePayload(scope, parts) {
     filters: { app: scope, env: 'production' },
     reportingFloor: 50,
     consent: { enforcedAt: 'ingest', detail: CONSENT_DETAIL },
-    availability: { state: 'ready', detail: '' },
+    availability: resolveAvailability(apps, 30),
     apps,
     cohorts: keys.map((key) => appCohort(key, parts)),
     features: rows.length
@@ -556,6 +559,35 @@ function usagePayload(scope, parts) {
 /* `over` mutates or replaces the composed answer; `options.scope` picks which
    apps the whole answer is built from, and `options.parts` swaps what those
    apps report. */
+/* The availability state the route would resolve for the apps this answer
+   selects, rather than a constant.
+
+   `resolveAvailability` (`opsUsageView.ts:851-877`) reads ONE number: the
+   platform active-people row, which `distinctPeople(window, env, sourceApps)`
+   (`opsUsageRepository.ts:301`) counts over the SELECTED apps only. So a
+   one-app scope narrows the platform count to that app, and an answer scoped
+   to a small app cannot arrive `ready` -- the very shape a hard-coded
+   `{ state: 'ready' }` was claiming for `mobile/mobile 49`,
+   `mobile/mobile 12`, `coaches/coaches 20` and, before this PR,
+   `coaches/young`. Raised in the independent review of PR #91.
+
+   Distinct people are not additive in general, but every app in these fixtures
+   is disjoint from the others -- an account belongs to one app -- so the sum
+   is what the platform row would hold. `not_reporting` is out of reach here
+   because every part carries sessions; the constant this replaces could not
+   express it either. */
+function resolveAvailability(apps, days) {
+  const platformActivePeople = apps.reduce((sum, app) => sum + app.metrics[0].value, 0);
+  if (platformActivePeople >= 50) return { state: 'ready', detail: '' };
+  const people = platformActivePeople === 1 ? 'person was' : 'people were';
+  const unit = days === 1 ? 'day' : 'days';
+  return {
+    state: 'insufficient',
+    detail: `${platformActivePeople} ${people} active in the last ${days} ${unit}, which `
+      + 'is under the 50 we report rates from.',
+  };
+}
+
 function usageFixture(over, options) {
   const opts = options || {};
   const base = usagePayload(opts.scope || 'all', opts.parts || APP_PARTS);
@@ -816,6 +848,18 @@ test('every answer this file builds is a shape the route can send', async () => 
       assert.ok(row.users <= row.denominator,
         name + ': more people used ' + row.label + ' than were active in ' + row.app);
     });
+
+    /* `resolveAvailability` reads the platform active-people row, and
+       `distinctPeople` counts that over the SELECTED apps only
+       (`opsUsageView.ts:851-877`, `opsUsageRepository.ts:301`). So an answer
+       whose whole selection is under the floor cannot also say `ready`: the
+       route would have said `insufficient` and the pane would have drawn the
+       sentence instead of the figures. */
+    const platform = answer.apps.reduce((sum, app) => sum + app.metrics[0].value, 0);
+    assert.equal(answer.availability.state, platform < answer.reportingFloor
+      ? 'insufficient' : 'ready',
+      name + ' says ' + answer.availability.state + ' over ' + platform
+      + ' active people, floor ' + answer.reportingFloor);
   });
 });
 
@@ -1314,7 +1358,16 @@ test('every app figure is in the split, withheld ones with their reason', async 
      person` (`pane-analytics.js:210-218`), and the floor, which needs
      `kind === 'rate'` or a denominator (`:105-107`) -- and a count carries
      neither. Binding it would take the same impossible payload
-     Stadiora/Aria#10667 exists to remove. Reported on Stadiora/Aria#10666. */
+     Stadiora/Aria#10667 exists to remove. Reported on Stadiora/Aria#10666.
+
+     NOT COVERED, second: that the caption is READ from `lead.label` rather
+     than printed as a literal. `metrics[0]` is always
+     `countMetric('Active people', …)` (`opsUsageView.ts:643`), so `lead.label`
+     holds the same string on every answer the route can send, and replacing
+     the expression with `'Active people'` is 48/48 green -- verified in the
+     independent review of PR #91. What the assertion below DOES bind is that
+     the slot carries a caption and that the caption is that text: emptying it,
+     dropping the element, or printing another field all go red. */
   [['Mobile', '1,061'], ['Coaches Web', '20']].forEach(([label, activePeople]) => {
     const slot = leadSlot(splitColumn(dom, label));
     assert.ok(slot, label + ' has no lead slot in the split at all');
