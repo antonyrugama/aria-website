@@ -263,6 +263,7 @@ ops/
     pane-run-history-v2.js   What happened
     pane-run-history-v2.css  What happened's own shapes
     pane-evaluations-v2.css  Aria quality's own shapes
+    pane-analytics-v2.css  People and usage's own shapes
 ```
 
 ### The v2 layer
@@ -582,8 +583,18 @@ The headline label follows the range in the answer rather than saying "Month to 
 the window is. That was invisible while the pane had no endpoint and would have put those words
 over a twelve month bill the day it got one.
 
-**People and usage** expects `asOf`, `window`, `coverage`, `apps`, `cohorts`, `funnel`, and
-`features`. `availability.state` is `ready`, `insufficient`, or `not_reporting`.
+**People and usage** expects `asOf`, `window`, `coverage`, `apps`, `cohorts` and `features`.
+`availability.state` is `ready`, `insufficient`, or `not_reporting`. There is no `funnel`:
+`OpsUsagePayload` has never carried one, and departure 9 below says why the pane stopped
+drawing one.
+
+The age on the band head is read from `window.rollupsComputedAt` and never from `asOf`. They
+look interchangeable and are not: the route sets `asOf` to the window's exclusive end, which is
+the last UTC midnight and is recomputed on every request, so an answer whose rollups last ran a
+week ago still arrives with an `asOf` from this morning. `rollupsComputedAt` is the freshest
+recompute behind the summed figures, and `null` when nothing has been computed at all — a
+different statement from a timestamp that cannot be read, and the pane says each of them
+differently.
 
 `window` carries three separate facts about how much of the chosen span has figures behind it,
 and the pane renders all three as statements about the *window*, never about a column, because
@@ -591,8 +602,17 @@ each is a union across the selected apps:
 
 - `daysCovered` with `reportingStart` is the span that has ever been aggregated. A 90 day window
   opened today reaches back past the pipeline's own lifetime, and those earlier days are outside
-  it rather than missing from it. The pane says which days it covers and, where the covered span
-  is shorter than the window, why.
+  it rather than missing from it. Where the covered span is shorter than the window, the head of
+  the first band says how much of the window that span reaches and from which day — `20 of 90
+  days covered, from 31 Aug 2026` — beside the figures that are summed over it, because the range
+  name alone says 90 days either way. **Covered**, never *stored*: the span is the distance from
+  `reportingStart` to the end of the window, and the days inside it that carry figures are that
+  distance minus `daysMissingRollups`, so on the answer above the pill says 20, the chart's name
+  says `18 of 90 days with a reading` and the trend foot names the two gap days. It does not say *why* the span is short: that the rollups began on a
+  particular day is a fact about the pipeline rather than about this answer, and a sentence
+  explaining it is an argument, which the editorial rule keeps off the pane. Not a warning
+  either — the route is explicit that partial coverage annotates the figures rather than
+  replacing them.
 - `daysMissingRollups` is the real gap: days at or after `reportingStart` that carry no stored
   figures. Those shorten the session and coverage figures and leave the live people figures
   alone, and the callout says so.
@@ -1253,6 +1273,165 @@ It is printed from the problem's own record — the `closed` event's `detail.not
 `GET /api/ops/alerts/problems/:id` — and the closed list says where to find it rather than
 dropping it.
 
+### People and usage on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/analytics.html` in the Aria monorepo is the approved design.
+`ops/analytics.html` follows its structure and the rules its README calls normative, and reads
+`GET /api/ops/usage` unchanged: this is a surface remodel, and no field moved to make it.
+
+The list below is **not a complete diff against the mock**. It names the departures that carry a
+decision — something the mock draws that nothing behind the pane can answer, and a second caption
+for a fact already on screen. Wording and ordering differ in more places than are listed, because
+the mock is a static page with hand-written sample text and the pane writes its words from the
+answer.
+
+1. **No week-over-week pill on a tile.** The response carries one window and no previous one,
+   so a delta drawn from the window the pane already has would be a number nobody measured.
+   **No "New signups this month" tile** for a different reason: not absence but repetition —
+   the response does carry per-app active-people counts, and a signup total on a tile would be
+   the same population the band beneath it already breaks down.
+2. **No "Returning after 7 days" headline.** Retention arrives as a grid of signup groups, each
+   with its own denominator. Collapsing them into one figure means choosing a group and an
+   offset, and the pane would then be publishing a rate the answer never sent.
+3. **No "Where people are" region table.** No region or country field is in the response.
+4. **No per-row ribbon, no `Times` column and no `Week over week` column in the feature table.**
+   The response sends a share of people and the group it was measured over, not an event count
+   and not a daily series per feature.
+5. **The chart's scale is HTML beside the drawing rather than `<text>` inside it.** `role="img"`
+   carries `children-presentational`, so text inside the picture is announced to nobody, and the
+   drawing is stretched to the width of its card, which would render that text at about four
+   pixels on a phone. The picture keeps an accessible name that states what the lines are of and
+   the window they cover, then, for each line, how many of the window's days have a reading, its
+   low and high — or that it is flat — and its last reading. A line with no reading at all says
+   that instead. (`chartName` and `seriesSentence` in `ops/assets/pane-analytics.js`; the
+   sentences are pinned in `scripts/ops-analytics-v2.test.mjs`.)
+6. **No Custom range**, which is the registry's decision, recorded in the comment above the
+   entry at `pane-registry.js:103-110`: the bar carries a range name and no bounds, so a custom
+   window reaches the usage API with no start and no end, and that route answers over the widest
+   window retention allows rather than refusing it. The figures would be confident and for a
+   window nobody chose. Nothing states this **on screen** — `shell-pane-v2.js` renders
+   `pane.filterNote` where a missing control would have been, and the `analytics` entry sets
+   none, unlike `spend`, which sets `scopeNote`. The absence is a decision about the bar, and the
+   bar belongs to a file this pane may not edit; adding the note is `Stadiora/Aria#10449`.
+7. **The retention grid has no legend.** Every cell prints its own percentage, so a key mapping
+   tint to range is the same fact again; the one symbol that is not a number, `·` for a week a
+   group has not reached yet, is named once in the band note and carries its own text for a
+   screen reader.
+8. **The mock's explanatory captions are not reproduced, and neither are four of the route's
+   own sentences nor four of its counts**, under the same rule: the mocks encode one fact per
+   slot, which is what took the approved set from 7,240 words to 4,842. What was dropped, and
+   why, since these are fields the answer carries — read as a sweep of `OpsUsagePayload`, so
+   every non-optional member the pane does not read is on this list:
+   - `coverage.shortfall.detail` was the versions card's footer. It is the complement of the
+     coverage pill — 30.7% did not report *is* 69.3% did — and the `Reporting` column beside it
+     names which versions, which is the part an operator acts on. What makes *already on screen*
+     true is departure 16: the pill is drawn on every answer that carries a figure, not only on
+     the ones with two columns.
+   - `features.coverageNote` was the feature card's footer, twenty words carrying that same
+     coverage figure a third time. The method survives as nine: *Only seen on app versions that
+     report feature use.* The number does not.
+   - `features.note` and `features.hint` both say the shares are of each app's own active people.
+     The card head prints `hint`, seven words; `note` is two sentences of the same thing.
+   - `consent.detail` is four sentences saying the gate is at ingest. The pane prints the route's
+     shorter form of the same statement, the last sentence of `cohorts[].note`, beside the groups
+     it is about. Where no group is drawn the head of the first band carries
+     **Consenting accounts only** instead, so the page never prints headcounts without it.
+   - `metrics[].numerator`, `cohorts[].rows[].cells[].returned` and `features.rows[].users` are
+     each the count a printed rate was computed over — `679 of 1,061`, drawn by the v1 pane
+     beside every rate. One fact per slot: the rate is the fact, and the base it was taken over
+     is not withheld, because `denominator` is read for the reporting floor and a rate is
+     withheld outright when its base is under it. The counts come back in the day a cell grows a
+     hover or a detail view, which is where a second figure belongs.
+   - `apps[].subtitle` is `Athlete app` / `Coach workspace`. The split card already heads each
+     column with the app's own name, and there are two apps; a gloss on which is which is a
+     sentence restating a label.
+   - `apps[].tone` drives the v1 pane's `tag-` class and has no v2 equivalent — the series token
+     the pane needs is `trend.color`, which it reads. `window.grain` and `window.timezone` are
+     literal constants (`'day'`, `'UTC'`); `window.range`, `window.start`, `window.endExclusive`
+     and `filters` belong to the shell's bar, not to the pane.
+9. **No activation funnel card.** `OpsUsagePayload` carries no `funnel` member and the route's
+   own docblock says why: a funnel's second step is read against its first, so it is a rate over
+   people whether or not it says so, and the only counts available for one are not consent
+   gated. The v1 pane drew one anyway, from a field the server never sends — visible only when
+   a local fixture supplied it, and drawn without the reporting floor this pane otherwise
+   applies to every rate. The remodel drops the card rather than carrying dead code that
+   contradicts the pane's own contract; the mock does not draw one either.
+
+10. **No median-session tile.** The mock draws one, and the metric union the route can send is
+    `count`, `rate` or `decimal` — there is no duration in it, and the four figures it names per
+    app are active people, sessions, sessions per person and the share who opened a feature. A
+    tile for a figure the endpoint cannot produce is a tile that would always read "Not
+    reported", so the fourth slot carries the share who opened a feature instead.
+11. **Week columns are headed `Week 1`, from offsets that arrive as `W1`.** The mock's wording,
+    the route's value: `W3` set in a row of percentages reads as a figure rather than as a
+    heading. The cohort card is headed with the question it answers and noted with the route's
+    own definition of a group — `cohorts[].note`, which names its app inside it — never with
+    `app`, which is the value the filter sends and reaches an operator as `mobile`. That note is
+    the one place the pane says what the figures are *of*: `size` counts the accounts created
+    that week which also opened the app that week, not the week's sign-ups, and the population is
+    only people who have usage analytics on. Neither is inferable from a grid of percentages.
+
+12. **The retention grid scrolls sideways inside its card, at every width.** `offsets` is as long
+    as the widest group has aged weeks, so the 90-day range — one of the four the bar offers, and
+    where the insufficient state's own button sends you — sends eleven week columns, which do not
+    fit a half-width desktop card either. The alternative, a fixed table layout, does not overflow
+    when it runs out of room: it *overlaps*, printing each percentage over its neighbour while a
+    page-level measurement reads clean.
+
+13. **A `Which versions report` card, which the mock does not draw.** `coverage.versions` is the
+    only place an operator can see that a figure on this page is missing a slice of the estate,
+    and which build to chase; the split card's coverage pill says how much is missing but not
+    from where. The share column is of each app's own sessions — the route's own denominator — so
+    the card head carries that sentence once rather than repeating it on every row.
+14. **A second pill in the first band's head, which the mock does not draw: how much of the
+    window the stored span reaches.** The mock's bar carries a range name and nothing behind it, and its
+    sample answer is a window covered in full. A real one need not be: the nightly job began
+    writing rollups on a particular day, so a 90 day window reaches back past the pipeline's own
+    lifetime and its session total is a sum over the covered span while the range name still says
+    90. The pill states that span and not the days that carry figures — those are the span minus
+    `daysMissingRollups`, and the chart's name and the trend foot already say both. Drawn only
+    when the covered span is shorter than the window and not empty —
+    `daysCovered: 0` is a different statement, and every stored-day figure already reads
+    **not reported** with its reason attached.
+15. **A third pill in that head wherever no group is drawn: Consenting accounts only.** The
+    consent statement is the route's, and its home is the last sentence of `cohorts[].note`,
+    beside the groups it is about. `buildCohorts` skips an app whose widest admissible signup
+    week has aged into nothing (`opsUsageView.ts:932`), which happens on **7d** always — the
+    only admissible start is the window's own and `floor(7d / 7d) - 1` is zero aged weeks — and
+    on **14d** on every weekday but the one the window ends on, because there the admissible
+    interval is eight days wide and holds two signup weeks only when it ends on one. That is
+    **13 of the 28 range-and-weekday combinations**, not one range: the band does not render and
+    the statement leaves the page while the headcounts stay. Drawn where no group is drawn —
+    gated on `cohorts.length`, which is the fact that decides it, and never on the range, which
+    is not — and read from `consent.enforcedAt` rather than written here. Four words rather than
+    `consent.detail`'s four sentences: the pane does not restate a paragraph it has a shorter
+    true form of, and the gate itself stays at ingest.
+16. **The coverage pill survives the split card refusing to draw.** `scope=mobile` and
+    `scope=coaches` are two of the three values the bar offers and both send one app, so
+    `appColumn` never runs and the card says *No split to draw* instead. The headline tiles carry
+    no coverage figure, so before this the figure was printed **zero** times on those two
+    selections — while the versions and feature cards both drop the route's sentence about it on
+    the ground that it is already on screen, and the feature card still prints *Only seen on app
+    versions that report feature use*, telling the operator the shares are undercounted without
+    the magnitude. `coveragePill` now draws in the one-app state block as well as in a column,
+    which is one printing on every answer that carries a figure. Round 8 finding.
+
+Two invariants on this pane are held by its own `node:test` file and by measurement in review,
+not by a repo guard: no browser guard renders `ops/analytics.html`, because
+`scripts/check-ops-narrow-overflow.mjs` renders the Problems pane and
+`scripts/check-ops-theme-redraw.mjs` renders the shell demo. Tracked as
+[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462).
+
+### Where this pane departs from the shared page furniture
+
+`assets/pane-analytics-v2.css` carries this pane's own shapes. One rule in it resets a shared
+one rather than adding to it: `.u-vers th[scope="row"]` drops the whole `.tbl th` treatment,
+because a row heading here carries a value rather than a column name and `aria.css`'s 9.5px
+uppercase letter-spaced `--ink-3` turns `Coaches Web version not reported` into shouted small
+print. It also sets `overflow-wrap: anywhere`, which is about `app_version` being a 32 character
+free-text column: `Mobile 1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f` holds one break opportunity, and the
+version token alone otherwise sets the column's minimum width and takes the page sideways.
+
 ### Known contrast debt, inherited
 
 Measured across both themes against composited backgrounds. **Every pairing rendered by the
@@ -1452,6 +1631,7 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
 | `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that a selection the record cannot act on is refused rather than answered, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
+| `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px **and 360px** in both themes: that nothing is past the right edge, and that the longest sentence the pane can put in a rule row was actually laid out — the check would otherwise pass on a page that never drew the row it exists for. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
