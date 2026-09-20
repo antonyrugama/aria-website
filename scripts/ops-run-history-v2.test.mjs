@@ -10,8 +10,9 @@
        is still open belongs to today's window however long ago it fired;
      - a full page reads as a floor rather than a total, and says why;
      - a figure nothing records renders words and never a numeral;
-     - a selection the read cannot act on is refused rather than answered:
-       staging has no record at all, and a custom window has no edges;
+     - a selection the record cannot act on is never offered: the bar draws a
+       window and nothing else, says why the other two are missing, and clamps
+       a window it does not offer back to the one it starts on;
      - run content is hidden at every role, the owner included, with no control
        that could never succeed, and no value node in the markup at all;
      - anything address-shaped is masked before it reaches the DOM, on every
@@ -211,6 +212,10 @@ function stateOf(dom) {
   return dom.applied[dom.applied.length - 1] || null;
 }
 
+function hasClass(node, name) {
+  return ((node.getAttribute && node.getAttribute('class')) || '').split(/\s+/).includes(name);
+}
+
 function sectionWithHeading(dom, pattern) {
   return findAll(livePanel(dom), (n) => n.tagName === 'SECTION')
     .filter((n) => pattern.test(allText(n)))[0];
@@ -344,41 +349,46 @@ test('a figure nothing records renders words and never a numeral', async () => {
     'no tile printed a numeral at all, so this proves nothing');
 });
 
-/* ===================== selections the read cannot act on ================ */
+/* ============== the controls and the value that came off =============== */
 
-test('staging is refused rather than answered with production figures', async () => {
-  const dom = await boot({ query: '?env=staging' });
-  assert.equal(stateOf(dom), 'empty', 'a staging selection drew figures');
-  assert.match(emptyText(dom), /no staging record/i,
-    'the refusal did not say what was missing');
-  assert.equal(dom.calls.length, 0,
-    'the pane read production and then hid the answer, rather than not reading it');
+/* The app and environment controls this pane used to draw are gone from the
+   registry, and so is the custom window: the alerting record is kept per
+   request type and covers production only, and a custom window has no start
+   and no end for this bar to give it. The note and the two refusal cards went
+   with them.
+
+   What is asserted here is what is DRAWN. A URL asking for a filter the pane
+   does not declare is pinned by the shell before the pane sees it, so
+   "nothing changed" would be true whatever this pane did with it, and would
+   stay true the day the registry declares it again — green for a reason other
+   than the one it names. The bar is the thing that moves the moment the
+   registry overclaims.
+
+   The window that IS declared is asserted to narrow by `the window is applied
+   to the record that came back` above; this is only the other half. */
+test('the bar offers a window and nothing else, and says why', async () => {
+  const dom = await boot({});
+  const bar = findAll(dom.root, (n) => hasClass(n, 'filters'))[0];
+  assert.ok(bar, 'the pane drew no filter bar at all');
+
+  const labels = findAll(bar, (n) => hasClass(n, 'filter-label')).map((n) => allText(n));
+  assert.deepEqual(labels, ['Range'],
+    'the bar drew ' + labels.join(', ') + '. Only the window narrows anything here, '
+    + 'which is why the registry declares only that.');
+
+  assert.match(allText(bar), /per request type and covers production only/,
+    'the bar dropped two controls and does not say why');
 });
 
-test('a custom window is refused and offers the way back', async () => {
+test('a custom window in the URL is clamped back to the window the pane starts on', async () => {
   const dom = await boot({ query: '?range=custom' });
-  assert.equal(stateOf(dom), 'empty', 'a window with no edges drew figures anyway');
-  assert.match(emptyText(dom), /custom window needs a start and an end/i,
-    'the refusal did not say why');
-  assert.equal(dom.calls.length, 0, 'the pane read the API for a window it cannot express');
-
-  const back = findAll(emptyPanel(dom), (n) => n.tagName === 'BUTTON')[0];
-  assert.ok(back, 'the refusal offered no way out of it');
-  back.dispatch('click');
-  await settle();
-  assert.equal(stateOf(dom), 'live',
-    'pressing the way back did not put a real window on screen');
-  assert.ok(dom.calls.length > 0, 'the way back did not read anything');
-});
-
-test('an app selection says plainly that it narrows nothing', async () => {
-  const dom = await boot({ query: '?scope=mobile' });
-  assert.match(liveText(dom), /per request type, not per app/i,
-    'an app filter was accepted silently over figures it cannot narrow');
-
-  const all = await boot({ query: '?scope=all' });
-  assert.doesNotMatch(liveText(all), /per request type, not per app/i,
-    'the note is unconditional, so it says nothing about the selection');
+  assert.equal(stateOf(dom), 'live', 'a window nothing offers took the page off the screen');
+  assert.match(liveText(dom), /What the record shows the last 7 days/,
+    'a window this pane cannot name was accepted, so its figures are labelled with '
+    + 'a window that was never applied');
+  assert.doesNotMatch(liveText(dom), /What the record shows the window you picked/,
+    'the band fell back to naming no window at all, which is what this pane prints '
+    + 'for a range it has no label for, and the shape of a value nothing is applying');
 });
 
 /* ======================= empty is never just zero ======================= */

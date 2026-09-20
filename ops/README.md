@@ -555,6 +555,33 @@ rule exists:
   in the response varies by it. The control is removed rather than labelled, and a `filterNote`
   says so where it was.
 
+Two more came off later, for the same reason and after a spell of doing the other thing.
+Happening now and What happened each declared an app control and an environment control, and
+each then explained, in prose underneath the bar the registry had made the shell draw, that the
+app control narrowed nothing and that Staging would be refused rather than answered. What
+happened also offered a custom window whose one outcome was a refusal card. The alerting record
+is kept per request type rather than per app, there is no staging alerting record, and no bar on
+this dashboard can supply a start and an end. All of it is now declared `false` — or, for the
+custom window, simply not listed — and one `filterNote` on each pane says why, which is what
+Overview has done since it was built.
+
+That rule now has a guard rather than a reader.
+`scripts/ops-registry-filters.test.mjs` boots every pane on the v2 bootstrap that declares a
+filter, at every value
+the shell will offer for it, and requires the value either to reach that pane's own read in a
+field of the same name or to narrow what the page draws. It reads the call the pane recorded and
+the DOM it wrote, never the pane's source text: a check that greps source pins the spelling
+rather than the behaviour, and stays green the day somebody reinstates the defect in a different
+one. It locks its own coverage as well, so a pane that gains a filter is red there until somebody
+writes down how that filter is acted on. The converse — that a filter a pane does not declare
+cannot be reached through the URL — is deliberately not asserted there: the shell pins every
+undeclared filter before a pane sees one, so no mutation of a pane can turn that claim red. The
+narrower shell-level claim that can fail — that a pane is offered exactly the filters it
+declared and never one more — is held in `scripts/ops-shell-pane-v2.test.mjs`, and what the two
+pane suites hold instead is what their own bar draws. Cloud costs is the single exclusion, because it is
+still on the v1 shell; the lock pins the exact claim it is excused for by name **and by value**,
+so a filter or a window added to it is red as well, and it gets a live proof when it lands on v2.
+
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
 rather than a destination that silently vanishes. The server enforces this independently; the
@@ -1266,13 +1293,15 @@ is not a complete diff: it names the departures that carry a decision.
 3. **No trend chart.** A chart needs a series, and the problems route answers one page ordered
    worst-first — a shape that cannot be turned into a line over time without inventing the
    missing part of it.
-4. **The app control narrows nothing, and says so.** The alerting record is kept per request
-   type, not per app. The registry gives this pane the control; the pane states the absence
-   rather than returning the same figures under a selection somebody made.
-5. **Staging is refused rather than answered.** There is no staging alerting record, so a staging
-   selection gets a named refusal instead of production figures under a staging label.
-6. **A custom window is refused and offers the way back.** Nothing on the page can supply a start
-   and an end for one, and a guessed window is worse than a stated refusal.
+4. **The app control, the environment control and the custom window are not drawn at all.** The
+   alerting record is kept per request type rather than per app; there is no staging alerting
+   record; and nothing on this page can supply a start and an end for a custom window. Each of
+   the three was offered for a while and then explained away underneath itself, which is the
+   same defect as a disabled button by the reasoning under Happening now rule 5 — a control that
+   cannot succeed says the thing is within reach. The registry now declares only the window this
+   pane really applies, and a single `filterNote` says why the other two are absent.
+   `scripts/ops-registry-filters.test.mjs` holds the registry to it, keyed off the call each
+   pane recorded rather than off anything a file says about itself.
 
 `assets/pane-run-history-v2.css` carries this pane's own shapes.
 
@@ -1314,11 +1343,16 @@ sections above, this is not a complete diff: it names the departures that carry 
 5. **Cancel, retry and export are absent.** The mock offers all three. There is no route behind
    any of them; a control that cannot succeed says the thing is within reach, so the pane names
    the three rather than drawing them disabled.
-6. **The app control narrows nothing, and says so.** The alerting record is kept per request
-   type, not per app, exactly as on What happened.
-7. **Staging is refused rather than answered**, for the same reason: there is no staging
-   alerting record, and production figures under a staging label are worse than a refusal.
-8. **The page does not refresh itself.** The mock reads as a feed. What is drawn is one reading
+6. **The app control and the environment control are not drawn at all.** The alerting record is
+   kept per request type rather than per app, exactly as on What happened, and there is no
+   staging alerting record, so production figures under a staging label would be worse than a
+   refusal. Both were drawn for a while and then explained away underneath themselves, which
+   rule 5 above already settles: a control that cannot succeed says the thing is within reach,
+   and a filter that narrows nothing is that same control in a different widget. The registry
+   declares neither, and a `filterNote` says why they are missing.
+   `scripts/ops-registry-filters.test.mjs` holds the registry to it, keyed off the call each
+   pane recorded rather than off anything a file says about itself.
+7. **The page does not refresh itself.** The mock reads as a feed. What is drawn is one reading
    taken when the page loaded, and the page says so rather than implying a live one.
 
 `assets/pane-jobs-live-v2.css` carries this pane's own shapes.
@@ -1719,8 +1753,9 @@ stored reading — which on this pane is most of them.
 | `node --test scripts/*.test.mjs` | The accessible name every chart derives, that preview state is applied in **both** directions, and that the theme button re-resolves each chart's colours. Runs `scripts/ops-aria-shell.test.mjs` alongside the pane tests. |
 | `scripts/ops-shell-pane-v2.test.mjs` | That the rail cannot drift from the registry, that a pane is offered exactly the filters it declared and never one more, that a role without access gets a named refusal rather than a blank pane, that the three gates stay mutually exclusive, and that the v2 formatters still agree with the v1 ones they were ported from. |
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
-| `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that a selection the record cannot act on is refused rather than answered, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
-| `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front is older than the breach reads not clearing and one whose front arrived after it reads moving, that both can be on screen at once and stay different, that a missing unit, a missing or negative observation, a missing breach start or a span of zero produces cannot tell rather than the alarming one, that a problem whose `conditionClearedAt` is set reads stopped in the past tense rather than as a live breach, is excluded from the longest-wait tile and sorts below everything still going, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that staging is refused before the read rather than after it, that an empty page says whether anything was watching, that no `button` or `input` is drawn without a route behind it, and that the read carries its querystring as well as its path. |
+| `scripts/ops-registry-filters.test.mjs` | That every filter the registry declares is one the pane behind it can act on — for every pane on the v2 bootstrap, Cloud costs excepted, where only the declaration is held: the value the operator picked either reaches that pane's own read in a field of the same name, or narrows what the page draws, proved from the call the pane recorded and the DOM it wrote rather than from anything a file says about itself. It locks its own coverage as well, so a pane that gains a filter is red here until somebody writes down how that filter is acted on. |
+| `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that the bar draws a window control and nothing else and says why the other two are gone, that a custom window asked for in the URL is clamped back to the window the pane starts on, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
+| `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front is older than the breach reads not clearing and one whose front arrived after it reads moving, that both can be on screen at once and stay different, that a missing unit, a missing or negative observation, a missing breach start or a span of zero produces cannot tell rather than the alarming one, that a problem whose `conditionClearedAt` is set reads stopped in the past tense rather than as a live breach, is excluded from the longest-wait tile and sorts below everything still going, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that the bar draws no app and no environment control at all and says why instead, that an empty page says whether anything was watching, that no `button` or `input` is drawn without a route behind it, and that the read carries its querystring as well as its path. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |

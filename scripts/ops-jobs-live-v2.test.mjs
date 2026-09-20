@@ -20,7 +20,7 @@
      - work that is flowing and failing is a third fact, not a fourth kind of
        queue;
      - a figure nothing records renders words and never a numeral;
-     - staging is refused before the read, not after it;
+     - the bar draws no app and no environment control, and says why;
      - no control is drawn that could never succeed.
 
    Every test here has a published mutation in the pull request: the exact
@@ -907,24 +907,31 @@ test('the oldest wait is a duration when it is known and words when it is not', 
     'with no queue over the line the tile did not say that is why it has no figure');
 });
 
-/* ===================== selections the read cannot act on ================ */
+/* ================= the two controls that came off ====================== */
 
-test('staging is refused before the read, not after it', async () => {
-  const dom = await boot({ query: '?env=staging' });
-  assert.equal(stateOf(dom), 'empty', 'a staging selection drew production figures');
-  assert.match(emptyText(dom), /no staging record/i, 'the refusal did not say what was missing');
-  assert.equal(dom.calls.length, 0,
-    'the pane read production and then hid the answer, rather than not reading it');
-});
+/* The app and environment controls this pane used to draw are gone from the
+   registry, because neither could narrow the read: the alerting record is
+   kept per request type and covers production only. The note underneath and
+   the staging refusal card are gone with them.
 
-test('an app selection says plainly that it narrows nothing', async () => {
-  const dom = await boot({ query: '?scope=mobile' });
-  assert.match(liveText(dom), /per request type, not per app/i,
-    'an app filter was accepted silently over figures it cannot narrow');
+   The claim worth holding is about the BAR, not about the URL. A URL asking
+   for a filter the pane does not declare is pinned by the shell before the
+   pane sees it, so "nothing changed" there is true whatever the pane does and
+   stays true when the pane starts reading it again — this test would be green
+   for a reason other than the one it names. What is drawn is the thing that
+   moves the moment the registry overclaims again. */
+test('the bar offers no app and no environment, and says why instead', async () => {
+  const dom = await boot({});
+  const bar = findAll(dom.root, (n) => hasClass(n, 'filters'))[0];
+  assert.ok(bar, 'the pane drew no filter bar at all, so the note has nowhere to be');
 
-  const all = await boot({ query: '?scope=all' });
-  assert.doesNotMatch(liveText(all), /per request type, not per app/i,
-    'the note is unconditional, so it says nothing about the selection');
+  const labels = findAll(bar, (n) => hasClass(n, 'filter-label')).map((n) => allText(n));
+  assert.deepEqual(labels, [],
+    'the bar drew a control: ' + labels.join(', ') + '. Every one of them narrows '
+    + 'nothing here, which is why the registry declares none.');
+
+  assert.match(allText(bar), /per request type and covers production only/,
+    'the bar has no controls and does not say why either');
 });
 
 /* ======================= empty is never just zero ======================= */

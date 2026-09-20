@@ -193,22 +193,25 @@ test('every ops page that loads shell.js loads the registry first', () => {
   assert.ok(checked >= 10, 'expected every pane page to load a shell, found ' + checked);
 });
 
-test('the registry keeps the two panes that deliberately offer no custom range', () => {
+test('no pane offers a custom range, because no bar on this dashboard can supply one', () => {
   const { PANES, RANGES } = registryOnly();
-  for (const id of ['analytics', 'spend']) {
-    assert.ok(PANES[id].range, id + ' lost its range control entirely');
-    assert.equal(
-      PANES[id].range.indexOf('custom'), -1,
-      id + ' offers a custom range, which nothing behind it can honour'
-    );
-  }
-  /* The other direction, so this reads as a decision rather than as a range
-     nothing in the dashboard has: What happened does offer a custom window,
-     and these two withhold it because their own reads cannot honour one. */
+  const offering = Object.keys(PANES).filter((id) => Array.isArray(PANES[id].range)
+    && PANES[id].range.indexOf('custom') !== -1);
+  assert.deepEqual(offering, [],
+    'a pane offers a custom range and this bar carries a range name and nothing '
+    + 'else, so the only answer behind it is a refusal: ' + offering.join(', '));
+
+  /* The label outlives the last pane that offered it, deliberately. It is the
+     word a bar with date controls would use, and deleting it would take the
+     only statement of what the value means with it. What happened offered one
+     until the honesty pass; analytics and spend never did. */
   assert.ok(RANGES.custom, 'the label table lost the custom range it still names');
-  assert.ok(PANES.history.range.indexOf('custom') !== -1,
-    'the only pane that offers a custom range stopped offering it, so the two '
-    + 'panes that withhold one are no longer withholding anything');
+
+  /* So this cannot pass by every pane losing its range control. */
+  const windowed = Object.keys(PANES).filter((id) => Array.isArray(PANES[id].range));
+  assert.ok(windowed.length >= 3,
+    'the range control has all but left the dashboard, so the assertion above '
+    + 'is close to vacuous: ' + windowed.join(', '));
 });
 
 /* ============================ registry meets rail ====================== */

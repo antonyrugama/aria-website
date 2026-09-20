@@ -134,14 +134,18 @@
 
    THE FILTER BAR
 
-   The registry gives this pane an app control and an environment control, and
-   no window at all, because the answer is "now". Neither of the two it does
-   give can act on the read:
+   There is none, and the bar says why. The registry used to give this pane an
+   app control and an environment control, and neither could act on the read:
 
      app scope     the record is kept per request type, not per app, so no
-                   selection narrows it. The pane says so
-     environment   there is no staging alerting record. Staging is refused
-                   rather than answered with production figures
+                   selection narrowed it, and the pane printed a note saying so
+     environment   there is no staging alerting record, so a staging selection
+                   was refused rather than answered
+
+   Both are gone from the registry instead. NO CONTROL THAT CANNOT SUCCEED,
+   which is the rule below applied to a filter: a control drawn over a read it
+   cannot narrow says the narrowing is within reach, and a note underneath
+   apologising for it is not the same thing as not drawing it.
 
    NO CONTROL THAT CANNOT SUCCEED. The approved mock draws Cancel, Retry and
    Export buttons. Nothing serves a route behind any of them, and PR #58
@@ -358,27 +362,15 @@
   S.definePane('jobs', function (content) {
     var region = S.region(content);
     var loadToken = 0;
-    var current = S.filters();
 
-    global.addEventListener('ops:filters', function (event) {
-      var next = event.detail;
-      var changed = next.scope !== current.scope || next.env !== current.env;
-      current = next;
-      if (changed) load();
-    });
+    /* No ops:filters listener. This pane declares no filter in the registry,
+       so the shell pins every one of them and the event can never carry a
+       selection this pane could act on. A listener that reloads on a value
+       that cannot change is a reload that never happens, dressed as one that
+       might. */
 
     function load() {
       var token = ++loadToken;
-      var selection = current;
-
-      /* Staging is refused before the read rather than after it. There is one
-         alerting record and it is production's, so a staging selection has no
-         answer at all, and answering it with production figures would be the
-         quietest possible way to mislead somebody. */
-      if (selection.env !== 'production') {
-        region.empty(noStagingRecord(selection.env));
-        return;
-      }
 
       region.loading([
         { type: 'block', height: 62 },
@@ -395,7 +387,7 @@
         })
       ]).then(function (results) {
         if (token !== loadToken) return;
-        render(results[0], results[1], selection);
+        render(results[0], results[1]);
       }).catch(function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
@@ -417,7 +409,7 @@
       }).then(function (result) { return result.data; });
     }
 
-    function render(record, rules, selection) {
+    function render(record, rules) {
       var open = (record && record.problems) || [];
       var capped = model.capped(open);
       var armed = rules.error ? null : model.armedState(rules.data || {});
@@ -437,7 +429,7 @@
 
       var wrap = h('div', { className: 'stack' });
       wrap.appendChild(hero(queues, failing, elsewhere));
-      selectionNotes(selection, capped).forEach(function (note) { wrap.appendChild(note); });
+      selectionNotes(capped).forEach(function (note) { wrap.appendChild(note); });
       wrap.appendChild(rightNow(open, queues, capped));
       wrap.appendChild(watchingCard(armed));
       if (queues.length) wrap.appendChild(queueBand(queues, queueRule));
@@ -449,17 +441,7 @@
       else region.show(wrap);
     }
 
-    /* ---------------------------------------------------------- refusals */
-
-    function noStagingRecord(env) {
-      var box = S.card();
-      box.appendChild(S.stateBlock('layers', 'There is no ' + env + ' record here', [
-        'The alerting watches production and only production, so there is no ' + env +
-          ' queue to report on. Nothing is being withheld: the record does not exist.',
-        'Switch the environment control back to Production to see what is happening there.'
-      ]));
-      return box;
-    }
+    /* --------------------------------------------------------- the empties */
 
     /* Nothing is being reported. Whether that is a quiet system or a system
        nothing is watching is the whole question, so it is what the state
@@ -586,16 +568,10 @@
       return section;
     }
 
-    /* ------------------------------------------------ selection honesty */
+    /* ------------------------------------------- what the record leaves out */
 
-    function selectionNotes(selection, capped) {
+    function selectionNotes(capped) {
       var notes = [];
-
-      if (selection.scope !== 'all') {
-        notes.push(noteLine('info',
-          'The record is kept per request type, not per app, so the app filter does not ' +
-          'narrow anything below. Everything here covers both Mobile and Coaches Web.'));
-      }
 
       if (capped) {
         notes.push(noteLine('warn',

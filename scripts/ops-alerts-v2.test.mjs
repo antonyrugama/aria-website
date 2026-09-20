@@ -1574,9 +1574,21 @@ test('a problem links to the pane the answer named, at the file the registry giv
   assert.equal(href, dom.shell.paneHref('jobs'),
     'the doorway is not the registry\'s own link for that pane, so it does not ' +
     'carry the selection across: ' + href);
-  assert.notEqual(href, 'jobs-live.html',
-    'the link is the bare file, so the filters the operator set do not travel with it');
   assert.equal(allText(links[0]), 'Happening now');
+
+  /* The selection travels only as far as the destination has somewhere to put
+     it. Happening now declares no filter at all, so its link is the bare file
+     and anything appended to it would be a selection that pane cannot apply;
+     What happened keeps its window, so the window goes with the operator. */
+  const windowed = await boot({
+    search: '?range=30d',
+    open: { problems: [problem({ workPane: 'run-history', workPaneLabel: 'What happened' })] },
+  });
+  const across = findAll(problemCards(windowed)[0], (n) => n.tagName === 'A')[0];
+  assert.ok(across, 'the windowed problem offered no way out at all');
+  assert.equal(across.getAttribute('href'), 'run-history.html?range=30d',
+    'the doorway dropped the window the operator had chosen: '
+    + across.getAttribute('href'));
 
   const nowhere = await boot({
     open: { problems: [problem({ workPane: 'a-pane-that-does-not-exist' })] },
