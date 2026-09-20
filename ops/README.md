@@ -814,12 +814,14 @@ shell's live region — `announce()` is how a screen-reader operator hears every
 the stamps are visual chips — and it finds a phrase split across sibling elements, which bolding a
 number inside a sentence produces and which a per-element sweep walked past. It also reads text
 carried on attributes, listed once as `SPOKEN_ATTRS` in that file and nowhere else, because an
-enumeration repeated in prose goes stale the round after the list is widened. Two shapes qualify:
-an attribute painted on screen, like a field's `value` or a placeholder shown until the operator
-types, and one a screen reader substitutes for the element's text, like an `aria-label` — a figure
-in the second is worse than one in the live region, because it suppresses the real words
-underneath it as well. The two states are the booted page and the page after both working forms
-have been submitted and answered.
+enumeration repeated in prose goes stale the round after the list is widened — **and separately
+the live `value` a control is holding**, which is a property rather than an attribute: this pane
+assigns `expiry.value` and `mediaType.value` in JS, where `getAttribute('value')` returns nothing
+and the box on screen is full. Two shapes qualify: text painted on screen, like a field's value or
+a placeholder shown until the operator types, and text a screen reader substitutes for the
+element's own, like an `aria-label` — a figure in the second is worse than one in the live region,
+because it suppresses the real words underneath it as well. The two states are the booted page and
+the page after both working forms have been submitted and answered.
 
 Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
 inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in

@@ -928,6 +928,18 @@ for (const scenario of [
        sentence is this file's own idiom, and a per-element sweep walked past
        it until a reviewer demonstrated it. But "0.8" and "2" in two adjacent
        elements join as "0.8 2" here and as "0.82" in a browser.
+     - THAT THE POST-SUBMIT SWEEP'S WAIT IS FAST ENOUGH, proven locally. It
+       waits for the receipt itself now rather than for a fixed number of
+       microtask turns, and there is no local mutation behind that: the turn
+       budget it replaced was green on every machine it was written on and red
+       on ubuntu-latest for five heads, so the platform that shows the defect
+       is the only one that can show the fix. The evidence is CI's own red at
+       f3a38ff and green after, linked on the PR, not a row of the battery. An
+       attempt to reproduce it locally by settling the receipt on a timer is
+       recorded on the PR as contaminated and was withdrawn rather than
+       published. What IS asserted here is that a wait which ends early cannot
+       pass silently: the two receipts are looked for by name and the failure
+       message says the test swept nothing.
      - The dataset and quarantine transports, which the block above owns. */
 
 const OPS = new URL('../ops/', import.meta.url);
@@ -1068,17 +1080,19 @@ const within = (node, ancestor) => {
      announce() is how a screen-reader operator receives every success message
      on this pane, and the stamps are visual chips; an invented figure announced
      there would reach a blind operator with nothing marking it invented.
-   - It collects text carried on ATTRIBUTES, not only textContent. The list is
-     SPOKEN_ATTRS below and that is the only place it is written down, because
-     an enumeration repeated in prose goes stale the round after the list is
-     widened — which is how `value` came to be missing from one and present in
-     the other. Two shapes justify the class: an attribute PAINTED on screen
-     (a field's value, a placeholder shown until the operator types), and an
-     attribute a screen reader SUBSTITUTES for the element's text (aria-label,
-     title, alt). The second is worse than the live region, because it also
-     suppresses the real words underneath it. This pane already uses all three
-     idioms: input() takes a value, and the page carries placeholders and
-     aria-labels.
+   - It collects text carried on ATTRIBUTES, not only textContent, and the LIVE
+     `value` a control is holding, which is a property and not always an
+     attribute — `expiry.value = ...` and `mediaType.value = ...` in this pane
+     set one without the other, and a sweep that asks getAttribute walks past
+     what is painted in the box. The attribute list is SPOKEN_ATTRS below and
+     that is the only place it is written down, because an enumeration repeated
+     in prose goes stale the round after the list is widened — which is how
+     `value` came to be missing from one and present in the other. Two shapes
+     justify the class: text PAINTED on screen (a field's value, a placeholder
+     shown until the operator types), and text a screen reader SUBSTITUTES for
+     the element's own (aria-label, title, alt). The second is worse than the
+     live region, because it also suppresses the real words underneath it. This
+     pane already uses all three idioms.
    - There is one string and one place to be wrong, rather than a rule applied
      per node.
 
@@ -1094,8 +1108,11 @@ function textOutside(node, excluded) {
   const spoken = node.getAttribute
     ? SPOKEN_ATTRS.map(name => node.getAttribute(name) || '').join(' ')
     : '';
+  /* The property, separately from the attribute of the same name. A control
+     whose value was assigned in JS has no value attribute at all. */
+  const held = typeof node.value === 'string' ? node.value : '';
   const kids = (node.childNodes || []).map(kid => textOutside(kid, excluded)).join(' ');
-  return (own + ' ' + spoken + ' ' + kids).replace(/\s+/g, ' ').trim();
+  return (own + ' ' + spoken + ' ' + held + ' ' + kids).replace(/\s+/g, ' ').trim();
 }
 
 /* A readable slice around a hit, so a failure names where to look. */
@@ -1469,11 +1486,20 @@ async function bootPaneWithReceipts() {
   /* One reading per submit, not one at the end. The shell's live region is a
      single node that each announce() overwrites, so a figure announced by the
      first tool is gone by the time the second has answered. Reading only the
-     final DOM would see the last announcement and call the rest covered. */
+     final DOM would see the last announcement and call the rest covered.
+
+     Each reading waits for the RECEIPT, not for a fixed number of microtask
+     turns. A turn budget is a guess about machine speed: quarantine awaits
+     crypto.subtle.digest, which on a cold CI runner does not settle inside any
+     budget that is comfortable locally, and this test was red on ubuntu-latest
+     for five heads because of it while passing on every developer machine. */
   const snapshots = [];
-  for (const form of forms) {
-    form.dispatch('submit', { preventDefault() {} });
-    for (let i = 0; i < 24; i += 1) await new Promise(r => setImmediate(r));
+  const receipts = ['Declarations valid', 'Quarantined, review required'];
+  for (let i = 0; i < forms.length; i += 1) {
+    forms[i].dispatch('submit', { preventDefault() {} });
+    await waitFor(
+      () => Boolean(find(dom.content, n => (n.textContent || '') === receipts[i])),
+      `the ${receipts[i]} receipt never rendered, so this test sweeps nothing`);
     snapshots.push(textOutside(dom.body, previewOf(dom)));
   }
   return { ...dom, snapshots };

@@ -36,8 +36,10 @@
        outside the preview, in an element's text, in the shell's live region,
        or on an attribute a person receives (the test file's SPOKEN_ATTRS is
        the list; it covers both an attribute painted on screen and one a
-       screen reader substitutes for the element's text). No stamp chip in
-       those two states carries a digit.
+       screen reader substitutes for the element's text), or in the live
+       `value` a control is holding, which this pane assigns as a property
+       and which carries no attribute at all. No stamp chip in those two
+       states carries a digit.
 
        THREE gaps the test file names and measures rather than implies. The
        inventories are hand-written, so a made-up string in neither of them
