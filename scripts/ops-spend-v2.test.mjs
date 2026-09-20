@@ -1143,6 +1143,29 @@ test('a period billed only part way through says how far, in days and a date', a
   assert.equal(runCount(livePanel(dom), /^10 of 30 days billed, through 10 Sep 2026$/), 1,
     'the pill states the part of the period that has a bill behind it, and to which day');
 
+  /* Tone, which the docblock argues for at length and nothing above reads: a
+     billing lag is how billing works, not a fault, so the pill must carry no
+     tone modifier. `pill warn` renders amber and puts the same words in the
+     register the pane uses for something an operator must act on.
+
+     The vocabulary is read out of aria.css rather than listed here, so `warn`
+     is caught as one of a class and not as the one spelling this test happened
+     to think of -- `down` and `rose` are the same mistake in another colour.
+     A non-tone class is not a defect and must pass, which is why this is a
+     vocabulary check rather than an exact match on the class list. */
+  const TONES = (readFileSync(new URL('assets/aria.css', OPS), 'utf8')
+    .match(/^\.pill\.([a-z-]+)/gm) || []).map((s) => s.slice(6));
+  ['warn', 'down', 'up', 'info'].forEach((tone) => assert.ok(TONES.indexOf(tone) !== -1,
+    'the tone vocabulary is read, not empty: aria.css still defines .pill.' + tone));
+
+  const billedPill = byClass(livePanel(dom), 'pill')
+    .filter((n) => /\d+ of \d+ days billed/.test(allText(n)))[0];
+  assert.ok(billedPill, 'the pill is a pill, not a bare run of text');
+  const worn = String(billedPill.className).trim().split(/\s+/)
+    .filter((cls) => TONES.indexOf(cls) !== -1);
+  assert.deepEqual(worn, [],
+    'neutral: a lag is not a warning, so no tone modifier may ride on it');
+
   /* The other direction, which is the half a one-sided test would miss: a
      period billed to its own end must NOT print the pill, because the range
      name already says it and the pill would be that fact twice. */

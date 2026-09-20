@@ -318,10 +318,14 @@
    it to .band-end leaves .band-end's width identical at 320, 375 and 768, and
    `margin-left: 0` leaves every measurement unchanged at 320 to 768 because a
    wrapped .band-end already fills its line. Deleting THIS line alone, in the
-   poller-failure state, reinstates the same ~1036 the figures above report:
-   measured 1035/320, 1035/375 and 1035/768 on a re-run, against 320/320,
-   375/375 and 768/768 with it. (An earlier note here read 436/320; that
-   figure came from a partial mutation and does not reproduce.) */
+   poller-failure state, reinstates the same ~1036 the figures above report.
+   The node measured is .band-end, read as offsetWidth at each viewport:
+   1035/320, 1035/375 and 1035/768 on a re-run, against 320/320, 375/375 and
+   768/768 with the declaration in place. (A re-run reading scrollWidth on the
+   same node gives 1023, and the document 1039; the conclusion is the same
+   either way -- the row is wider than any of these viewports, so the rule is
+   load-bearing at all three. An earlier note here read 436/320; that figure
+   came from a partial mutation and does not reproduce.) */
 .band-end .pill { white-space: normal; }
 
 @media (max-width: 720px) {
@@ -331,8 +335,9 @@
      from the live sheet and the same nodes read again:
 
        700px  title block 127.02px either way, note on one line either way,
-              switch on one row either way -- the head simply grows 52.25px
-              to 100.25px. Two buttons still fit beside the title here, so
+              switch on one row either way -- the head is 100.25px with the
+              rule and 52.25px without it, the same direction as the figures
+              below. Two buttons still fit beside the title here, so
               between 720px and roughly 400px the rule only moves the switch
               onto its own row; it is not rescuing the title yet.
        375px  title block 127.02px -> 125.13px, the note breaks over TWO
