@@ -527,6 +527,8 @@ test('every control that reloads the pane hands focus back rather than dropping 
   const ranged = await boot({ search: '?range=7d' });
   const select = ranged.doc.getElementById('fRange');
   assert.ok(select, 'the shell drew no range control');
+  assert.ok(select.closest('.filters'),
+    'the range control is not in the shell\'s own filter bar');
   assert.equal(select.closest('.filters-pane'), null,
     'the range control is inside the slot this pane owns, so it is not the shell\'s');
   const readsBefore = ranged.calls.length;
@@ -1930,7 +1932,7 @@ test('for a non-owner the scrolling box holds nothing else that can take focus',
 
    NOT COVERED by the reader below: strings and url(), which it does not
    parse -- the first assertion refuses a sheet containing either rather than
-   mis-splitting one. And PAINT_PROPS decides "this property can carry a
+   mis-splitting one. And paints() decides "this property can carry a
    colour" from the property's NAME, so a bare colour keyword set on a
    property carrying none of those stems would walk past; a hex, a colour
    function or an unknown function in the same place would not. */
@@ -2003,7 +2005,8 @@ const NON_TOKEN_PAINT = [
   { selector: '.sw:checked', property: 'box-shadow', atom: 'transparent' },
 ];
 
-test('every colour this sheet paints is a token aria.css declares, bar the six named here',
+test('every colour this sheet paints is a token aria.css declares, bar the '
+  + NON_TOKEN_PAINT.length + ' sites named here',
   () => {
     for (const quoted of PANE_CSS.match(/'[^'\n]*'|"[^"\n]*"/g) || []) {
       assert.ok(!/[;{}]/.test(quoted),
@@ -2035,6 +2038,17 @@ test('every colour this sheet paints is a token aria.css declares, bar the six n
       found.map((f) => ({ selector: f.selector, property: f.property, atom: f.atom })),
       NON_TOKEN_PAINT,
       'the sheet paints with something that is not a token aria.css declares');
+
+    /* And the sheet's own docblock says the same thing in words. It is read
+       out of the comment rather than believed, because a docblock that claims
+       one thing while the rules below it do another is what filed
+       Stadiora/Aria#10460 in the first place. */
+    const claimed = /^\s*NON-TOKEN PAINT:(.*)$/m.exec(PANE_CSS);
+    assert.ok(claimed, 'the sheet\'s docblock no longer names what it paints outside the tokens');
+    assert.deepEqual(
+      claimed[1].split(',').map((s) => s.trim()).filter(Boolean).sort(),
+      [...new Set(NON_TOKEN_PAINT.map((p) => p.atom))].sort(),
+      'the docblock names a different set of non-token paint than the sheet uses');
   });
 
 test('every token this sheet paints with is one aria.css actually declares', () => {

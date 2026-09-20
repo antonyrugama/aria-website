@@ -10,15 +10,20 @@
    already declares is used from there rather than copied.
 
    Every colour here comes from a token aria.css declares — the palette made
-   WCAG AA by construction (monorepo #10042) — with two spellings that do not.
+   WCAG AA by construction (monorepo #10042) — bar the spellings on the line
+   below, which scripts/ops-alerts-v2.test.mjs reads out of this comment and
+   checks against what the sheet actually paints, so the two cannot drift:
+
+   NON-TOKEN PAINT: transparent, black
+
    `transparent` adds no colour of its own: it is what a color-mix() lays a
    token over. And `.av`'s ink mixes var(--cyan) toward `black`, which is the
    one real exception. The avatar tile is an opaque cyan gradient in BOTH
    themes and its ink has to clear AA against both, and no token aria.css
-   declares can do that — scripts/ops-alerts-v2.test.mjs tries every one of
-   them in that mix to say so, rather than leaving it asserted here. Both
-   spellings are pinned there per site (NON_TOKEN_PAINT), so a third fails the
-   suite rather than joining the list quietly.
+   declares can do that — the same test tries every one of them in that mix to
+   say so, rather than leaving it asserted here. Both spellings are pinned
+   there per site (NON_TOKEN_PAINT), so a third fails the suite rather than
+   joining the list quietly.
 
    Status text takes the -ink variant of its tone, because the base colour is
    the tint and the -ink is the text on that tint.
