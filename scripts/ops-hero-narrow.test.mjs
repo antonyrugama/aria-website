@@ -74,6 +74,13 @@
  *    separate defect of this page's own chrome, it is NOT the hero, and this
  *    file neither fixes nor judges it. The hero clips and contributes nothing
  *    to that number, before or after.
+ *  - The `trackKeywords` refusal — the check that no authored keyword (`auto`,
+ *    `minmax`, `1fr`) survives into the value this file reads — is NOT bound by
+ *    any mutation. Mutation G2 rewrote it to compare the value with itself and
+ *    the suite stayed green, because no browser tested here ever returns an
+ *    unresolved value from `gridTemplateColumns` on a laid-out grid. It is a
+ *    fail-closed guard against a browser that stops resolving used track sizes,
+ *    kept deliberately and unproven honestly.
  */
 
 import { after, test } from 'node:test';
@@ -105,8 +112,16 @@ const EPS = 0.01;
 
 /* Every pass must judge at least this many heroes. A layout oracle that
    silently measured nothing — a renamed class, a hero that stopped rendering,
-   a navigation that failed — would otherwise report that everything passes. */
-const SITE_FLOOR = (NARROW.length + WIDE.length) * THEMES.length;
+   a navigation that failed, a width list emptied — would otherwise report that
+   everything passes.
+   
+   Written as a literal rather than `(NARROW.length + WIDE.length) * THEMES.length`,
+   which is what it said first. A floor counted from the same arrays the sweep
+   iterates shrinks with them: emptying NARROW took the floor from 12 to 4 and
+   the suite stayed green while measuring no narrow hero at all. Mutation G1
+   demonstrated that, which is the only reason it is not still written that way.
+   Two themes, four narrow widths, two wide ones. */
+const SITE_FLOOR = 12;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -350,7 +365,32 @@ const px = (n) => `${Math.round(n * 100) / 100}px`;
 
 /* ------------------------------------------------------------------ tests */
 
-/* The instrument first. If `gridTemplateColumns` did not report used pixel
+/* The inputs, before anything is measured with them. Every other test in this
+   file loops over these lists, so a list that lost its widths would make those
+   loops assert nothing and pass. The contract is stated here in literals that
+   do not move when the lists do. */
+test('the sweep declares the widths its contracts are about', () => {
+  for (const w of [360, 375, BREAKPOINT]) {
+    assert.ok(NARROW.includes(w), `NARROW must contain ${w}px; it is [${NARROW.join(', ')}]`);
+  }
+  assert.ok(NARROW.every((w) => w <= BREAKPOINT),
+    `every NARROW width must be at or below the ${BREAKPOINT}px breakpoint; got [${NARROW.join(', ')}]`);
+  assert.ok(WIDE.includes(BREAKPOINT + 1),
+    `WIDE must contain ${BREAKPOINT + 1}px, the first width the media query does not cover; it is [${WIDE.join(', ')}]`);
+  assert.ok(WIDE.every((w) => w > BREAKPOINT),
+    `every WIDE width must be above the breakpoint; got [${WIDE.join(', ')}]`);
+  assert.equal(THEMES.length * (NARROW.length + WIDE.length), SITE_FLOOR,
+    `the declared sweep is ${THEMES.length} x ${NARROW.length + WIDE.length} readings, ` +
+    `which is not the ${SITE_FLOOR} this file contracts to judge`);
+  /* The tolerance is a rounding allowance, not a budget. Mutation G4 inflated it
+     to 1000 and the narrow numeric contract swallowed the real 27.66px defect;
+     only the wide co-location check, which uses EPS as a strict margin, caught
+     it. This states the intended size independently: sub-pixel. */
+  assert.ok(EPS > 0 && EPS < 1,
+    `EPS must be a sub-pixel rounding allowance, not a budget that can absorb a layout defect; it is ${EPS}`);
+});
+
+/* The instrument next. If `gridTemplateColumns` did not report used pixel
    sizes, or the page's own hero were not the shape the contracts assume, every
    assertion below would be measuring something else. */
 test('the hero is a grid whose used track sizes can be read', async () => {
