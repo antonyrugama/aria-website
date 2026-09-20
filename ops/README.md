@@ -245,7 +245,6 @@ ops/
     pane-evaluations.js dataset declaration validation and private quarantine import
     pane-releases.js    App releases
     pane-users.js       Look up a user
-    settings.css        pane styling for Settings
     settings.js         Settings
   shell-v2.html         the v2 design system, rendered — reference page, not a pane
   assets/
@@ -257,6 +256,7 @@ ops/
     shell-pane-v2.css   what a v2 pane page needs and aria.css does not carry:
                         the three gates, the phone drawer, the toast
     pane-overview-v2.css  Overview's own shapes
+    pane-settings-v2.css  Settings' own shapes
 ```
 
 ### The v2 layer
@@ -708,41 +708,90 @@ nothing on its own.
 ## The Settings pane
 
 Settings is owner only and is the one pane that can change something, so it is worth being exact
-about what it does and does not do.
+about what it does and does not do. It runs on the v2 shell: `settings.html` loads `aria.css`,
+`shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
+`settings.css` is gone with it.
 
-**What is real.** The administrator list, each account's role, status, last sign in and current
-session expiry, the ability to revoke another administrator's access, and the access record all
-come from the API. Revoking asks first, requires a written reason, sends that reason, and reports
-what the server answered rather than what was asked for. The record of the change is reloaded
-beside the change, so the audit entry is on screen next to the thing it describes.
+**Six areas, and only three of them are read from anywhere.** Administrators, active sessions and
+the access record come from the API. Retention windows, the cost-category mapping and integration
+state have no endpoint to read or write. Both halves are on the same pane, so the pane has to say
+which is which, and it says so three times over, never once in colour alone:
 
-**What is not, and says so.** Retention windows, the cost category mapping, integration
-connection state, and the session and elevated-access windows are settings in the approved mock
-that no API can yet read or write. Each of those renders a state saying which of "not built" and
-"not reported" applies, rather than a select or a switch that would silently write nothing. A
-control that appears to work and does not is worse than no control, and on this pane it would be
-worse than the whole pane being missing.
+1. **The word.** Every card head carries a source chip reading either `Live` or `No API yet`.
+   Both chips are the same neutral ghost pill, so the distinction survives a reader who cannot
+   tell two tints apart.
+2. **The surface.** A card with nothing behind it is flat, dashed and hatched, with none of the
+   lit top edge that makes a live panel read as a raised object.
+3. **The figures.** A card with nothing behind it prints **no numeral at all** — not a count, not
+   a window length, not a date. It says which of "not built" and "not reported" applies, and what
+   stays true regardless. A number nobody can check is indistinguishable from one that came from
+   somewhere, so there are none.
 
-**The role table is written from the server, not from the design.** Every enforced row traces
-to server code: a `requireOpsRole` call or an ownership branch in the operations routers, or,
-for pane visibility, the shell's registry backed by this pane's owner-only endpoints. A row
-whose endpoint does not exist yet says so on the row, so the table never implies that something
-refuses a capability nothing can yet be asked for. Settings is the only
-pane carrying a role, so "view every pane" is stated with that exception rather than without it:
-a matrix that misreports the permission governing the page it is printed on is worse than no
-matrix, because the person least able to check it is the one reading it.
+A live card also carries `data-endpoint` naming the path it was filled from, and
+`scripts/ops-settings-v2.test.mjs` holds the partition in both directions: every card marked
+`data-source="live"` names an endpoint the pane actually requested on that boot, every card marked
+`data-source="static"` names none and contains no digit, and **neither set is empty**. Moving one
+card across the boundary fails the suite.
+
+`Stadiora/Aria#5442` is the issue that gives the three static cards an API. Until it lands, the
+line stays where it is: this pane restyles all six areas and moves none of them across it.
+
+**What the live half does.** Each account's role, status, last sign in and current session expiry;
+every live session with who holds it, when it started, when it was last used and when it ends; and
+the access record, newest first, with paging and an export. Revoking asks first, requires a
+written reason, sends that reason, and reports what the server answered rather than what was asked
+for. The record is reloaded beside the change, so the entry describing it is on screen next to the
+thing it describes.
+
+**Four facts the restyle is not allowed to lose**, because each one is the difference between a
+settings change and an incident:
+
+- The access record is **append only**. Nothing on the pane can edit or delete an entry, including
+  an owner. Export is the only write path and it writes a copy.
+- Sessions end at a **hard ceiling, not an idle timeout**. Revoking signs that browser out on its
+  next request. The ceiling is **measured** from the widest live session rather than printed from
+  a constant, so a pane that has nothing to measure says nothing instead of repeating a number the
+  server may have changed.
+- Retention windows split into **configurable** and **fixed by policy**, and the fixed ones say
+  why they are locked: they record who looked at an athlete. **Shortening a configurable window
+  deletes rows on the next nightly pass** — it is not a filter on what is read back.
+- **Three fixed roles**, and there is no custom permission set.
 
 **Nothing here is a permission check.** The pane draws what the role in hand can do, and the
 server re-reads the account row on every request and refuses independently. A control drawn for
 somebody who may not use it is a cosmetic bug; the server's answer is the one that counts, and it
-is the one shown.
+is the one shown. The pane is `roles: ['owner']` in the registry, so every other role gets the
+shell's named refusal rather than a blank pane, and the pane module is never asked for a pane at
+all — nothing here reads anything until `definePane`'s callback runs. The test asserts both
+directions, because a gate that refuses everybody passes a test that only checks refusals.
 
 **The export covers what is loaded**, which is what the button says. There is no server-side
 export, and a button labelled "export the record" that quietly sent one page of it would be a lie
 about the record people are meant to be able to check. Cells that begin with a character a
 spreadsheet reads as a formula are prefixed so that opening the file cannot run anything: two
 columns of that export carry text somebody else wrote, including the address submitted on a
-failed sign in.
+refused sign in.
+
+**Where the pane departs from `docs/mocks/ops-dashboard-v2/settings.html`:**
+
+- The mock's band is called *Audit log*; here it is the **Access record**, which is what
+  `pane-users.js` and the rest of this README already call the same thing. One name for one
+  record.
+- The mock's audit band note reads `kept 7 years`. Nothing reports that window, so it is not
+  printed. The retention card says so instead.
+- The mock's twelve-row role matrix is not built. It is an unverifiable claim about server
+  behaviour rendered as a table that looks like data, which is the failure the source chips exist
+  to prevent; the three roles it described are stated once, under the table whose Role column they
+  explain.
+- The mock's disabled **Invite** button is not built. There is no invitation endpoint, and a
+  control that changes nothing is worse than no control. The card foot says where accounts come
+  from instead.
+- Sessions show **no IP address and no user agent**. The mock shows a coarse region, which nothing
+  here can derive; printing the raw address instead would widen what a world-readable pane's
+  screenshots can leak for no operational gain. Both fields stay in the CSV export, where the
+  audience is an owner who asked for them.
+- There is **no filter bar**. The registry gives Settings no scope, range or environment, and the
+  shell draws a bar only for the filters a pane's own reads can honour.
 
 ## Departures from the approved mocks
 
