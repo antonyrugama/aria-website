@@ -321,7 +321,6 @@
     }
 
     function activeSentence(active, needing, capped) {
-      var taken = active.length - needing.length;
       var bits = [];
 
       if (needing.length) bits.push(oldestSentence(needing));
@@ -695,7 +694,7 @@
       var pills = apps.map(function (app) {
         var pill = h('span', { className: 'pill' });
         pill.appendChild(h('span', {
-          className: 'dot ' + (app.tone === 'coaches' ? 'vio' : 'acc'), 'aria-hidden': 'true'
+          className: 'dot ' + seriesTone(app.tone), 'aria-hidden': 'true'
         }));
         pill.appendChild(h('span', { text: app.label || app.app }));
         pill.appendChild(h('span', { className: 'mono', text: fmt.int(app.active) }));

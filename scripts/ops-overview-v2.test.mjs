@@ -555,28 +555,45 @@ test('a comparison over too small a group prints no rate', async () => {
    Family prefixes stay, for classes no compound rule declares (`st-bad`,
    `is-crit`, `tone-rose`).
 
-   Proof pointer: the derivation is bound by the next test, which reinstates a
-   tone class in the sheet and requires the scan to see it. The scan alone
-   does not kill a blanked hero, because the hero element contains the
+   Every **compound** rule in the two sheets, whatever its base: round three
+   found a base allow-list here (`dot|pill|chip|tag|st|bar|ln|seg`) that made
+   the "derived" set NARROWER than the hand list it replaced, because this
+   shell's own badge vocabulary is spelled `.nav-badge.hot`, `.nav-badge.warm`
+   and `.nav-badge.soon`. Three demonstrated false greens. There is no
+   allow-list now, and over-reading (`.card.lift`, `.kpi-val.sm`) costs a
+   false alarm on an element that already carries words.
+
+   Proof pointers: V27 reinstates a coloured marker with its words blanked at
+   the all-quiet footer and this scan goes red; V27b does the same with
+   `nav-badge hot`, which was green before the allow-list came out. The scan
+   alone does not kill a blanked hero, because the hero element contains the
    severity chips and their words satisfy it — that is what the ribbon test
-   further down is for. NOT COVERED: a tone painted by a rule in neither
-   sheet, and a tone class outside every family prefix. */
+   further down is for.
+
+   NOT COVERED: a state painted by a rule in neither of these two sheets; a
+   state painted by a SINGLE-class rule, since the derivation only reads
+   compound selectors, unless its class happens to match a family prefix
+   above; and a state painted by an inline or computed value rather than a
+   class. */
 const SHEETS = ['ops/assets/aria.css', 'ops/assets/pane-overview-v2.css'];
 const TONE_WORDS = [...new Set(SHEETS.flatMap((f) => [
   ...readFileSync(new URL('../' + f, import.meta.url), 'utf8')
-    .matchAll(/\.(?:dot|pill|chip|tag|st|bar|ln|seg)\.([a-z][a-z0-9-]*)/g),
+    .matchAll(/\.[a-z][a-z0-9-]*\.([a-z][a-z0-9-]*)/g),
 ].map((m) => m[1])))].sort();
 const TONE_CLASS = new RegExp(
   '(^|\\s)(st-[a-z]+|is-[a-z]+|acc|acc-[a-z]+|tone-[a-z]+|' +
   TONE_WORDS.join('|') + ')(\\s|$)');
 
 test('the tone vocabulary is read from the sheets, not from a list here', () => {
-  for (const want of ['bad', 'live', 'ok', 'warn', 'vio', 'up', 'down', 'info']) {
+  for (const want of ['bad', 'live', 'ok', 'warn', 'vio', 'up', 'down', 'info',
+    'hot', 'warm', 'soon']) {
     assert.ok(TONE_WORDS.includes(want),
       want + ' is declared as a tone in the sheets but the scan cannot see it');
   }
-  assert.ok(TONE_CLASS.test('dot bad'), 'a tone the sheets declare escaped the scan');
-  assert.ok(TONE_CLASS.test('dot live'), 'a tone the sheets declare escaped the scan');
+  for (const cls of ['dot bad', 'dot live', 'nav-badge hot', 'nav-badge warm',
+    'nav-badge soon']) {
+    assert.ok(TONE_CLASS.test(cls), 'a tone the sheets declare escaped the scan: ' + cls);
+  }
   assert.ok(!TONE_CLASS.test('kpi-label'), 'the scan matches a class that paints no state');
   /* `.pill.ghost` is a shape rather than a state, and the derivation picks it
      up anyway. Kept: over-reading costs a false alarm on an element that
@@ -820,4 +837,45 @@ test('a falling figure draws a falling chevron', async () => {
   assert.ok(pill, 'the cost tile drew no change pill at all');
   assert.match(pill.text, /^\u2212|^-/, 'the cost figure did not fall in this fixture');
   assert.equal(pill.d, DOWN_PATH, 'a falling figure drew the wrong chevron: ' + pill.d);
+});
+
+/* ============== one app, one colour, everywhere on the screen ============ */
+
+/* The tile's dots and the chart's legend key the same two apps forty pixels
+   apart. They reach the DOM by different routes — `people.apps[].tone` and
+   `activity.series[].color` — so nothing but a test stops them disagreeing.
+   Until round three this pane carried a `tone === 'coaches'` test ported from
+   the v1 Mobile/Coaches world, which no value in the current contract can
+   satisfy, so both dots fell through to the default and Aria XII was violet
+   in the chart and cyan in the tile. */
+test('each app keys the same colour in the tile as in the chart legend', async () => {
+  const dom = await boot({});
+  const panel = livePanel(dom);
+
+  const legend = findAll(panel, (n) => (n.className || '') === 'legend')[0];
+  assert.ok(legend, 'the chart drew no legend to compare against');
+  const chart = new Map(findAll(legend, (n) => /^tone-/.test(n.className || ''))
+    .map((k) => [allText(k).trim(), k.className.trim()]));
+  assert.ok(chart.size >= 2, 'the legend named fewer than two apps: ' + [...chart.keys()]);
+
+  const tile = findAll(panel, (n) => (n.className || '').indexOf('kpi') !== -1)
+    .filter((n) => /Active people/i.test(allText(n)))[0];
+  const dots = findAll(tile, (n) => /(^|\s)dot(\s|$)/.test(n.className || ''))
+    .map((d) => ({
+      tone: (d.className.match(/tone-[a-z]+/) || [null])[0],
+      label: allText(d.parentNode).replace(/[\d,\s]+$/, '').trim(),
+    }));
+  assert.equal(dots.length, chart.size, 'the tile and the legend name different app counts');
+
+  for (const dot of dots) {
+    assert.ok(dot.tone, 'an app dot carries no series tone at all: ' + dot.label);
+    assert.equal('dot ' + dot.tone, 'dot ' + (chart.get(dot.label) || '?'),
+      dot.label + ' is ' + dot.tone + ' in the tile and ' +
+      (chart.get(dot.label) || 'absent') + ' in the chart legend');
+  }
+
+  /* The other direction: matching is not enough if everything matches by
+     collapsing to one colour. Two apps, two colours. */
+  assert.equal(new Set(dots.map((d) => d.tone)).size, dots.length,
+    'two apps were drawn in one colour: ' + dots.map((d) => d.label + '=' + d.tone).join(', '));
 });

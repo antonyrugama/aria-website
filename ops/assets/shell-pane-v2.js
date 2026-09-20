@@ -45,10 +45,13 @@
    selection). ops:filters fires again on every change. Both carry the starting
    selection so a pane does not have to read the querystring itself.
 
-   Nothing here uses innerHTML and nothing here writes a style attribute. The
-   pane displays production operational data to an administrator, so no value
-   from the API, the querystring or storage may become markup, and the page's
-   Content-Security-Policy carries no 'unsafe-inline'.
+   Nothing here uses innerHTML, and no style attribute is written into markup.
+   The pane displays production operational data to an administrator, so no
+   value from the API, the querystring or storage may become markup, and the
+   page's Content-Security-Policy carries no 'unsafe-inline'. The one style
+   write, the skeleton height at :621, goes through CSSOM, which CSP does not
+   gate; it materialises a style attribute on the two .skel elements and on
+   nothing else.
 
    Theme is not decided here. assets/theme.js is a blocking script in every
    <head> and owns the pre-paint decision; assets/aria.js reads what it wrote. */
