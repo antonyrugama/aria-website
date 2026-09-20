@@ -1,10 +1,13 @@
 name: Ops narrow viewport
 
-# Guards the operations dashboard's Problems pane against scrolling the whole
-# page sideways on a phone. The pane shipped that way and nothing here could
-# see it: this repository has no build step and no test runner, and the defect
-# only exists once a browser has laid the page out at 375px against a rule
-# that cannot reach a verdict. See scripts/check-ops-narrow-overflow.mjs.
+# Guards every pane of the operations dashboard against scrolling the whole
+# page sideways on a phone. The Problems pane shipped that way and nothing
+# here could see it: this repository has no build step and no test runner, and
+# the defect only exists once a browser has laid the page out at 375px against
+# a rule that cannot reach a verdict. The check swept that one pane until
+# Stadiora/Aria#10492; it now sweeps every pane assets/pane-registry.js
+# declares, and asserts that it swept all of them. See
+# scripts/check-ops-narrow-overflow.mjs.
 #
 # Change-triggered only, unlike the reset-page smoke test. Breaking this needs
 # a commit in this repository, so there is nothing for a schedule to catch.
@@ -32,7 +35,12 @@ permissions:
 jobs:
   narrow-viewport:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Ten panes at two widths in two themes is forty page loads, against one
+    # before Stadiora/Aria#10492. A run takes a couple of minutes; the ceiling
+    # is here so a slow cold start cannot turn the sweep into a red check that
+    # measured nothing, which is how a sweep in this repository once went five
+    # heads without running at all.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       # Node 22 or newer, because the check drives headless Chrome over the
@@ -40,5 +48,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check the Problems pane fits a 375px viewport
+      - name: Check every pane fits a 375px viewport
         run: node scripts/check-ops-narrow-overflow.mjs

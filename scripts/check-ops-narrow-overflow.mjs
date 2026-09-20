@@ -1,50 +1,89 @@
-/* Guards the Problems pane against scrolling the page sideways on a phone.
+/* Guards every pane of the operations dashboard against scrolling the page
+   sideways on a phone.
 
-   The pane lists one row per rule, and a row says why a rule that cannot
-   reach a verdict cannot reach one. That sentence is set in a pill, which
-   never wraps, so the whole of it became the minimum width of a column
-   declared `1fr`, and a `1fr` column will not go under its content's
-   minimum. On a 375px viewport that pushed the threshold and the on/off
-   switch past the right edge of the document, and the whole page scrolled
-   sideways rather than the row wrapping in place.
-
-   The v2 remodel of this pane (Stadiora/Aria#9946) puts those rows in a
-   table that scrolls inside its own card, which is a different answer to the
-   same question and one this check still measures: a row that scrolls in
-   place leaves documentElement.scrollWidth alone, and a row that overflows
-   the page does not. What changed here is only how the widest row is found —
-   by the sentence in the row rather than by the class the sentence used to
-   be spelled with.
+   The defect this was written for was in the Problems pane. That pane lists
+   one row per rule, and a row says why a rule that cannot reach a verdict
+   cannot reach one. That sentence is set in a pill, which never wraps, so the
+   whole of it became the minimum width of a column declared `1fr`, and a `1fr`
+   column will not go under its content's minimum. On a 375px viewport that
+   pushed the threshold and the on/off switch past the right edge of the
+   document, and the whole page scrolled sideways rather than the row wrapping
+   in place.
 
    Nothing in this repository could have caught that. There is no build step
    and no test runner, and a stylesheet compiles to nothing that can be
-   asserted about: the defect only exists once a browser has laid the page
-   out at a particular width against particular data. So this check does what
-   the bug needed doing to it — it serves the real pages, answers the
-   operations API with a stub, lays them out in headless Chrome at phone
-   widths, and reads `documentElement.scrollWidth` back.
+   asserted about: the defect only exists once a browser has laid the page out
+   at a particular width against particular data. So this check does what the
+   bug needed doing to it — it serves the real pages, answers the operations
+   API with a stub, lays them out in headless Chrome at phone widths, and reads
+   `documentElement.scrollWidth` back.
 
-   Trust the CI run over a local one. Font metrics differ per platform, so
-   a sentence that fits on one machine can overflow on another: the first CI
-   run of this check failed at 375px on a second badge that the same commit
-   had passed locally on Windows. Linux is what the check is measured on.
+   What changed with Stadiora/Aria#10492 is only which pages it lays out. It
+   watched one pane out of ten, and the mechanism is not specific to that pane:
+   any pane can put an unbreakable minimum in a `1fr` column. The list of panes
+   is read out of assets/pane-registry.js, which is the table both shells
+   already boot from, so a pane cannot join the app without joining this sweep
+   — and the count that was swept is asserted against the count the registry
+   declares, so the sweep cannot quietly shrink back to one page, or to none.
 
-   Two widths, 375px and 360px. 375px is the acceptance criterion; 360px
-   exists because of the platform split above. The first CI run of the v2
-   Problems pane failed at 375px on Linux on a filter note that fitted 375px
-   on macOS with nothing to spare, so a local run could not see it and a
-   reviewer on a Mac had to find it by hand. 360px reproduces on any platform
-   what CI's wider font metrics produce at 375px. 320px catches a further
-   overflow — the Severity segmented control is wider than the bar there —
-   but that is a different mechanism in a control this change does not touch,
-   so it is filed rather than folded in and this check does not assert it.
+   Trust the CI run over a local one. Font metrics differ per platform, so a
+   sentence that fits on one machine can overflow on another: the first CI run
+   of this check failed at 375px on a second badge that the same commit had
+   passed locally on Windows. Linux is what the check is measured on.
+
+   Two widths, 375px and 360px. 375px is the acceptance criterion; 360px exists
+   because of the platform split above. The first CI run of the v2 Problems
+   pane failed at 375px on Linux on a filter note that fitted 375px on macOS
+   with nothing to spare, so a local run could not see it and a reviewer on a
+   Mac had to find it by hand. 360px reproduces on any platform what CI's wider
+   font metrics produce at 375px.
 
    The stub is deliberately hostile rather than tidy. It sends a rule that
    cannot judge and whose reason is the longest sentence the vocabulary in
-   assets/alerts-model.js can produce, because a fixture of short strings
-   would fit in any layout and the check would pass over the defect it is
-   named for. If the pane stops rendering that row at all, the assertions
-   below fail rather than quietly measuring an empty page.
+   assets/alerts-model.js can produce, because a fixture of short strings would
+   fit in any layout and the check would pass over the defect it is named for.
+   Its clock is the real one rather than a frozen instant, because every age on
+   these panes is computed against `Date.now()`: a fixture pinned to a date in
+   the past reads "50 days ago" this week and "415 days ago" next year, so its
+   strings grow without anybody changing anything.
+
+   An empty page cannot overflow, so every measurement is preceded by evidence
+   that the page under it is the pane it claims to be and drew something: the
+   shell reached its ready gate, the heading and the question in the top bar
+   are the ones the registry declares for that pane, `#content` holds more than
+   a handful of elements, and none of the shell refusals — a pane the role may
+   not open, a pane with no module — is what is on screen. A pane that fails
+   any of those is reported as a failure rather than measured, and is missing
+   from the swept count, which is itself asserted.
+
+   Two shells, so two spellings of everything the sweep reads off the page.
+   assets/shell-pane-v2.js boots from `data-pane` and writes the question into
+   `.page-sub`; the v1 assets/shell.js boots from `data-page` and writes it
+   into `.page-question`. Cloud costs is the one pane still on the v1 shell.
+   Reading only the v2 spelling drops it out of the sweep silently, which is
+   how both of these were found.
+
+   WHAT THIS DOES NOT COVER, in the words of what was actually measured:
+
+   - **People and usage, and Cloud costs, are measured with no figures in
+     them.** The stub answers /api/ops/usage and /api/ops/costs with an empty
+     envelope, so those two panes draw their no-data cards and that is what is
+     laid out. Their shell chrome, filter bar and empty state are swept; their
+     populated state is not. Both panes are mid-remodel onto the v2 design
+     system, and a fixture written against the modules being replaced would
+     measure markup that is about to be deleted.
+   - **Look up a user is measured before any lookup**, and **Aria quality
+     before any operation is submitted**. Both panes start as forms with no
+     result, which is their real loaded state; neither result view is laid out
+     here.
+   - **Sub-pixel overflow.** The verdict is `documentElement.scrollWidth`
+     against `documentElement.clientWidth`, and both are integers, so overflow
+     below about half a pixel is not visible to it. The per-element report
+     underneath uses fractional `getBoundingClientRect()` widths and will name
+     an element the verdict rounded away, but it does not decide anything.
+   - **320px.** A further overflow exists there — the Severity segmented
+     control is wider than the bar — in a control this sweep does not touch, so
+     it is filed rather than folded in and this check does not assert it.
 
    Usage:  node scripts/check-ops-narrow-overflow.mjs
    Chrome: CHROME_PATH, or the usual install locations on Linux and Windows.
@@ -52,14 +91,36 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PAGE = '/ops/alerts.html';
+const REGISTRY = 'ops/assets/pane-registry.js';
 const WIDTHS = [375, 360];
 const HEIGHT = 812;
 const THEMES = ['dark', 'light'];
+
+/* How long the pane is given to finish its reads and lay itself out. Every
+   pane here is a single read or two against a stub on loopback. */
+const SETTLE_MS = 2500;
+
+/* A floor, and only a floor: it says the pane put something on the page
+   rather than nothing. It is not a claim that the pane drew its data — see
+   WHAT THIS DOES NOT COVER above for the two panes where it did not. The
+   thinnest pane in this sweep today is Cloud costs, whose no-data card is ten
+   elements. */
+const MIN_CONTENT_ELEMENTS = 8;
+
+/* The things a shell puts on screen INSTEAD of a pane. Each is a single card
+   of a few short lines, each fits any viewport, and measuring one proves
+   nothing about the pane it stands in for, so any of them is a failure here
+   rather than a pass. The strings are the shells' own — the first is in both
+   assets/shell-pane-v2.js and assets/shell.js, the second is the v2 shell's
+   refusal and the third the v1 shell's — and they are pinned deliberately: if
+   a shell stops saying them this check should stop and say so rather than
+   quietly start measuring a refusal card. */
+const REFUSALS = ['Not built yet', 'You do not have access to this pane', 'Owner access only'];
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -67,16 +128,70 @@ const MIME = {
   '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon'
 };
 
+/* ------------------------------------------------------------- the panes */
+
+/* The pane list, out of the registry rather than out of a second copy of it
+   here. assets/pane-registry.js is a browser file: it hands its table to a
+   `window` it is passed, so running it in a context holding nothing else is
+   the whole of reading it. Anything more — a regex over the source, a literal
+   array kept in step by hand — is a second source of truth, which is the thing
+   the registry exists to stop. */
+function readRegistry() {
+  const src = fs.readFileSync(path.join(ROOT, REGISTRY), 'utf8');
+  const sandbox = { window: {} };
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox, { filename: REGISTRY });
+  const registry = sandbox.window.OpsPaneRegistry;
+  if (!registry || !registry.PANES) {
+    throw new Error(`${REGISTRY} defined no window.OpsPaneRegistry.PANES`);
+  }
+  return registry.PANES;
+}
+
+const DECLARED = readRegistry();
+const PAGES = Object.keys(DECLARED).map((key) => ({
+  key,
+  file: DECLARED[key].file,
+  url: '/ops/' + DECLARED[key].file,
+  label: DECLARED[key].label,
+  question: DECLARED[key].question
+}));
+
+/* Both of these stop the run before a browser is started, because either one
+   means the sweep about to happen would not be the sweep this file claims. */
+if (PAGES.length === 0) {
+  console.error(`\n${REGISTRY} declares no panes, so there is nothing to sweep.\n`);
+  process.exit(1);
+}
+for (const page of PAGES) {
+  if (!page.file || !fs.existsSync(path.join(ROOT, 'ops', page.file))) {
+    console.error(`\n${REGISTRY} declares pane "${page.key}" as ops/${page.file}, ` +
+      `which is not a file in this repository.\n`);
+    process.exit(1);
+  }
+}
+
 /* ------------------------------------------------------------------ stub */
 
-const NOW = Date.parse('2026-08-01T09:00:00.000Z');
+/* The real clock. Every age on these panes — "open for 50 days", "read 2
+   minutes ago", "last ran 3 hours ago" — is computed against Date.now() by
+   the pane itself, so a fixture pinned to a fixed instant writes a different
+   sentence every day it is run and a longer one every year. */
+const NOW = Date.now();
 const ago = (ms) => new Date(NOW - ms).toISOString();
-const ADMIN = { id: 'adm_1', email: 'owner@example.invalid', name: 'Owner', role: 'owner' };
-const SESSION = { id: 'ses_1', createdAt: ago(600000), lastSeenAt: ago(1000), userAgent: 'check' };
+const ahead = (ms) => new Date(NOW + ms).toISOString();
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const utcDay = (ms) => new Date(NOW - ms).toISOString().slice(0, 10);
 
-/* The longest badge the pane can draw: EVALUATION_LABEL.insufficient_data
-   followed by INSUFFICIENT_REASON.below_minimum_samples. This row is the one
-   the check exists for, and NARROW_BADGE below asserts it reached the DOM. */
+const ADMIN = { id: 'adm_1', email: 'owner@example.invalid', name: 'Owner', role: 'owner' };
+const SESSION = { id: 'ses_1', createdAt: ago(10 * MINUTE), lastSeenAt: ago(1000), userAgent: 'check' };
+
+/* The longest badge the Problems pane can draw: EVALUATION_LABEL.insufficient_data
+   followed by INSUFFICIENT_REASON.below_minimum_samples. That row is the one
+   this check was written for, and NARROW_BADGE below asserts it reached the
+   DOM. */
 const NARROW_BADGE = 'Not enough data to judge, too few measurements so far';
 
 const RULES = [
@@ -90,6 +205,155 @@ const RULES = [
   { ruleKey: 'no_telemetry', title: 'No data coming in',
     scopeDescription: 'An app stops sending anything', thresholdLabel: 'over 15m',
     channels: ['teams', 'email'], enabled: true, lastEvaluationStatus: 'error' }
+];
+
+/* Overview, App releases and Settings each read something of their own, and
+   each of them draws a failure card instead of a pane when that read comes
+   back empty. A failure card is three short lines in one column and it fits
+   any viewport, so a sweep that accepted one would be reporting on a pane it
+   never laid out. The shapes below are the ones those panes' own node:test
+   fixtures send — scripts/ops-overview-v2.test.mjs, ops-releases-v2.test.mjs
+   and ops-settings-v2.test.mjs — trimmed to what has to be present for the
+   pane to reach its ready state, and moved onto the real clock. */
+
+const SUMMARY_DAYS = [6, 5, 4, 3, 2, 1, 0].map((n) => utcDay(n * DAY));
+
+const SUMMARY = {
+  generatedAt: ago(5 * MINUTE),
+  consent: { basis: 'operational' },
+  people: {
+    availability: { state: 'ready' },
+    platform: { active: 1102, previousActive: 980 },
+    apps: [
+      { key: 'aria', label: 'Aria', active: 870, tone: 's1' },
+      { key: 'ariaxii', label: 'Aria XII', active: 412, tone: 's2' }
+    ],
+    window: { days: 7 },
+    comparison: { days: 7, label: 'the 7 days before' },
+    reportingFloor: 50,
+    environment: 'production'
+  },
+  aiRuns: {
+    availability: { state: 'ready' },
+    runs: 4820, previous: { runs: 4410 },
+    daysMissing: [], daysReported: 7, window: { days: 7 }
+  },
+  cost: {
+    availability: { state: 'ready' },
+    micros: 412_000_000, currency: 'USD',
+    comparison: { changeBasisPoints: 640, label: 'the same days last month' },
+    window: { dayOfPeriod: 12, daysInPeriod: 31 },
+    basis: 'spend',
+    asOf: ago(DAY)
+  },
+  release: {
+    availability: { state: 'ready' },
+    platforms: [
+      { label: 'iOS', versionName: '2.9.1', versionCode: 291, fetchedAt: ago(3 * HOUR) },
+      { label: 'Android', versionName: '2.9.0', versionCode: 290, fetchedAt: ago(3 * HOUR) }
+    ]
+  },
+  activity: {
+    availability: { state: 'ready' },
+    labels: SUMMARY_DAYS,
+    series: [
+      { key: 'aria', label: 'Aria', color: 's1', values: [910, 940, 1001, 980, 1040, 1077, 1102] },
+      { key: 'ariaxii', label: 'Aria XII', color: 's2', values: [380, 402, 396, 410, 421, 404, 412] }
+    ],
+    daysMissingRollups: [],
+    window: { days: 7 }
+  },
+  omissions: [
+    { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' }
+  ]
+};
+
+const RELEASE_TRACKS = (state) => [
+  { track: 'internal', versionName: '1.1.3', versionCode: '4412', state: 'processing',
+    testerCount: 12, fetchedAt: ago(90_000) },
+  { track: 'external', versionName: '1.1.3', versionCode: '4412', state: 'in_review',
+    testerCount: 240, fetchedAt: ago(90_000) },
+  { track: 'production', versionName: '1.1.2', versionCode: '4398', state: state,
+    rolloutBasisPoints: state === 'live' ? 10_000 : 2000,
+    rolloutObservedSince: ago(6 * DAY), releasedAt: ago(9 * DAY), fetchedAt: ago(90_000) }
+];
+
+const RELEASES = {
+  generatedAt: ago(90_000),
+  platforms: [
+    { platform: 'ios', label: 'iOS', appIdentifier: 'com.example.invalid',
+      sourceKey: 'app_store_connect', tracks: RELEASE_TRACKS('live'), unknownTracks: [] },
+    { platform: 'android', label: 'Android', appIdentifier: 'com.example.invalid',
+      sourceKey: 'google_play', tracks: RELEASE_TRACKS('rolling_out'), unknownTracks: [] }
+  ],
+  sources: [
+    { key: 'app_store_connect', label: 'App Store Connect', status: 'ok',
+      lastSuccessAt: ago(90_000), lastAttemptAt: ago(90_000), pollSeconds: 900, mode: 'poll' },
+    { key: 'google_play', label: 'Google Play', status: 'ok',
+      lastSuccessAt: ago(150_000), lastAttemptAt: ago(150_000), pollSeconds: 900, mode: 'poll' }
+  ],
+  production: { versionName: '1.1.2', builds: [
+    { platform: 'ios', versionCode: '4398' }, { platform: 'android', versionCode: '4398' }] },
+  adoption: {
+    latestVersion: '1.1.2', sampleSessions: 18_422,
+    buckets: [
+      { key: 'latest', label: '1.1.2', basisPoints: 6120 },
+      { key: 'previous', label: '1.1.1', basisPoints: 2740 },
+      { key: 'older', label: 'Older', basisPoints: 1140 }
+    ]
+  },
+  crashFree: { basisPoints: 9962, floorBasisPoints: 9950, windowHours: 24 },
+  health: {
+    platform: 'android', current: '1.1.2', previous: '1.1.1',
+    signals: [
+      { key: 'crash_rate', label: 'Crash rate', unit: 'rate_bp', previous: 52, current: 38,
+        verdict: 'better' },
+      { key: 'cold_start', label: 'Cold start', unit: 'millis', previous: 1840, current: 2130,
+        verdict: 'slightly_worse' },
+      { key: 'anr', label: 'App not responding', unit: 'per_1k', previous: 1.4, current: 1.4,
+        verdict: 'no_change' }
+    ]
+  }
+};
+
+/* Every address here is .invalid and every network address is from RFC 5737's
+   documentation range, on the same terms as the pane's own fixtures: this
+   directory is world-readable. */
+const ADMINS = [
+  { id: 'adm_owner', email: 'owner@ops.invalid', displayName: 'Owner', role: 'owner',
+    status: 'active', mustChangePassword: false,
+    lastLoginAt: ago(2 * HOUR), activeSessionExpiresAt: ahead(30 * DAY - 2 * HOUR) },
+  { id: 'adm_op', email: 'operator@ops.invalid', displayName: 'Operator', role: 'operator',
+    status: 'active', mustChangePassword: false,
+    lastLoginAt: ago(30 * HOUR), activeSessionExpiresAt: ahead(30 * DAY - 30 * HOUR) },
+  { id: 'adm_view', email: 'viewer@ops.invalid', displayName: 'Viewer', role: 'viewer',
+    status: 'disabled', mustChangePassword: false,
+    lastLoginAt: null, activeSessionExpiresAt: null }
+];
+
+const SESSIONS = [
+  { id: 'ses_owner_current', adminId: 'adm_owner', current: true,
+    createdAt: ago(2 * HOUR), lastUsedAt: ago(5 * MINUTE),
+    expiresAt: ahead(30 * DAY - 2 * HOUR), revokedAt: null },
+  { id: 'ses_operator_1', adminId: 'adm_op', current: false,
+    createdAt: ago(30 * HOUR), lastUsedAt: ago(3 * HOUR),
+    expiresAt: ahead(30 * DAY - 30 * HOUR), revokedAt: null },
+  { id: 'ses_expired_9', adminId: 'adm_view', current: false,
+    createdAt: ago(40 * DAY), lastUsedAt: ago(35 * DAY),
+    expiresAt: ago(10 * DAY), revokedAt: null }
+];
+
+const AUDIT = [
+  { id: 'aud_1', occurredAt: ago(5 * MINUTE), actorEmail: 'owner@ops.invalid',
+    actorRole: 'owner', action: 'admin.session_revoke', outcome: 'success',
+    targetType: 'ops_admin_session', targetId: 'ses_retired_4',
+    reason: 'Laptop reported lost', ipAddress: '198.51.100.7' },
+  { id: 'aud_2', occurredAt: ago(40 * MINUTE), actorEmail: 'operator@ops.invalid',
+    actorRole: 'operator', action: 'admin.login', outcome: 'success',
+    targetType: null, targetId: null, reason: null, ipAddress: '198.51.100.9' },
+  { id: 'aud_3', occurredAt: ago(3 * HOUR), actorEmail: 'nobody@ops.invalid',
+    actorRole: null, action: 'admin.login_failed', outcome: 'refused',
+    targetType: null, targetId: null, reason: null, ipAddress: '203.0.113.4' }
 ];
 
 function stub(pathname) {
@@ -110,13 +374,13 @@ function stub(pathname) {
     return { data: {
       rules: RULES.map((r) => Object.assign({
         severity: 'warning', category: 'ai_reliability',
-        lastInsufficientReason: null, lastEvaluatedAt: ago(120000), lastFiredAt: null
+        lastInsufficientReason: null, lastEvaluatedAt: ago(2 * MINUTE), lastFiredAt: null
       }, r)),
       channels: [
         { channel: 'teams', status: 'ok', target: 'Aria operations',
-          lastDeliveredAt: ago(300000), failureReason: null },
+          lastDeliveredAt: ago(5 * MINUTE), failureReason: null },
         { channel: 'email', status: 'failed', target: 'ops@example.invalid',
-          lastDeliveredAt: ago(9000000), failureReason: 'auth' }
+          lastDeliveredAt: ago(2 * HOUR), failureReason: 'auth' }
       ]
     } };
   }
@@ -127,12 +391,17 @@ function stub(pathname) {
       description: 'Worker memory pressure is killing the generation process.',
       ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
       pane: 'jobs-live', paneLabel: 'Happening now',
-      detectedAt: ago(900000), firedAt: ago(800000),
+      detectedAt: ago(15 * MINUTE), firedAt: ago(13 * MINUTE),
       acknowledgedAt: null, acknowledgedBy: null,
       closedAt: null, closeReason: null, closedBy: null,
       notificationsFailed: 0, events: []
     }] } };
   }
+  if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
+  if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
+  if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
+  if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
+  if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
   return { data: {} };
 }
 
@@ -275,9 +544,35 @@ const PROBE = `(() => {
     }
   }
   past.sort((a, b) => b.right - a.right);
+
+  const content = document.getElementById('content');
+  const title = document.querySelector('.page-title');
+  /* Two spellings again, for the same two shells: the v2 shell's top bar calls
+     the pane's question .page-sub and the v1 shell's calls it .page-question.
+     Both render the registry's own sentence, which is what is compared. */
+  const sub = document.querySelector('.page-sub, .page-question');
+  const clean = (node) => (node && node.textContent || '').replace(/\\s+/g, ' ').trim();
+
   return JSON.stringify({
     scrollWidth: de.scrollWidth,
     viewport: viewport,
+    /* Which pane the page says it is, and which theme actually got applied.
+
+       Two spellings because there are two shells: shell-pane-v2.js boots from
+       data-pane and the v1 assets/shell.js from data-page, and Cloud costs is
+       the one page still on the v1 one. Reading only the v2 spelling drops
+       that pane out of the swept count, which is how this was found.
+
+       The theme is set through localStorage before the navigation and read
+       back here because a write that silently failed would leave this sweep
+       laying the same theme out twice and reporting two. */
+    pane: document.body.getAttribute('data-pane') || document.body.getAttribute('data-page'),
+    theme: de.getAttribute('data-theme'),
+    gate: document.body.className,
+    title: clean(title),
+    sub: clean(sub),
+    contentElements: content ? content.querySelectorAll('*').length : -1,
+    contentText: content ? clean(content).slice(0, 4000) : '',
     ruleRows: document.querySelectorAll('.rule-row').length,
     /* The row's own text, not the text of a particular element inside it. A
        probe that reads .rule-row .badge only sees the sentence while the pane
@@ -297,6 +592,12 @@ const PROBE = `(() => {
 /* ------------------------------------------------------------------- run */
 
 const failures = [];
+/* Panes the browser confirmed it had laid out, by the page's own data-pane
+   attribute rather than by the list this file navigated with. A page that
+   404s, names another pane, or never reaches its ready gate is not in here,
+   which is what makes the count at the bottom worth asserting. */
+const measured = new Set();
+let probes = 0;
 
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const PORT = server.address().port;
@@ -331,54 +632,100 @@ try {
   });
 
   for (const WIDTH of WIDTHS) {
-  await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: true
-  });
-
-  for (const theme of THEMES) {
-    await cdp.send('Emulation.setEmulatedMedia', {
-      features: [{ name: 'prefers-color-scheme', value: theme }]
-    });
-    await cdp.send('Runtime.evaluate', {
-      expression: "try { localStorage.setItem('ops-theme', " + JSON.stringify(theme) + "); } catch (e) {}"
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: true
     });
 
-    cdp.reset();
-    await cdp.send('Page.navigate', { url: origin + PAGE });
-    await cdp.once('Page.loadEventFired');
-    await new Promise((r) => setTimeout(r, 2500));
+    for (const theme of THEMES) {
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: theme }]
+      });
+      await cdp.send('Runtime.evaluate', {
+        expression: "try { localStorage.setItem('ops-theme', " + JSON.stringify(theme) + "); } catch (e) {}"
+      });
 
-    const evaluated = await cdp.send('Runtime.evaluate', { expression: PROBE, returnByValue: true });
-    const seen = JSON.parse(evaluated.result.value);
+      for (const page of PAGES) {
+        const where = `${page.key} (${page.file}) at ${WIDTH}px, ${theme} theme`;
 
-    /* An empty page cannot overflow, so the measurement is worthless unless
-       the pane actually drew the rows and the badge that reproduce the
-       defect. These two run first for that reason. */
-    if (seen.ruleRows < RULES.length) {
-      failures.push(`${theme}: expected at least ${RULES.length} rule rows, saw ${seen.ruleRows}`);
-      continue;
-    }
-    if (!seen.rowText.some((text) => text.includes(NARROW_BADGE))) {
-      failures.push(
-        `${theme}: the long "cannot judge" sentence is not in any rule row, so the ` +
-        `widest row was never laid out. Saw rows: ${JSON.stringify(seen.rowText)}`);
-      continue;
-    }
+        cdp.reset();
+        await cdp.send('Page.navigate', { url: origin + page.url });
+        await cdp.once('Page.loadEventFired');
+        await new Promise((r) => setTimeout(r, SETTLE_MS));
 
-    if (seen.scrollWidth > seen.viewport) {
-      const worst = seen.past
-        .map((e) => `      ${e.tag}.${e.cls.split(' ').join('.')} ends at ${e.right}px${e.text ? ` ("${e.text}")` : ''}`)
-        .join('\n');
-      failures.push(
-        `${theme}: the page scrolls sideways at ${WIDTH}px — ` +
-        `documentElement.scrollWidth is ${seen.scrollWidth}, viewport is ${seen.viewport}.\n` +
-        `    Past the right edge:\n${worst}`);
-    } else {
-      console.log(`ok  ${PAGE} at ${WIDTH}px, ${theme} theme: ` +
-        `scrollWidth ${seen.scrollWidth} <= ${seen.viewport}, ` +
-        `${seen.ruleRows} rule rows drawn`);
+        const evaluated = await cdp.send('Runtime.evaluate', { expression: PROBE, returnByValue: true });
+        const seen = JSON.parse(evaluated.result.value);
+        probes += 1;
+
+        /* Everything from here to the scrollWidth comparison is evidence that
+           the thing measured was this pane, drawn. An empty page cannot
+           overflow, and neither can a refusal card, a boot placeholder or a
+           404 — so any of those has to end this page's measurement rather
+           than pass it. */
+        if (seen.theme !== theme) {
+          failures.push(`${where}: the page applied the ${seen.theme} theme, so this ` +
+            `measurement is of ${seen.theme} and the ${theme} run never happened.`);
+          continue;
+        }
+        if (seen.pane !== page.key) {
+          failures.push(`${where}: ${seen.pane
+            ? `the page says it is pane "${seen.pane}", not "${page.key}", so ${REGISTRY} ` +
+              'points this pane at a file that belongs to another one'
+            : `the page names no pane at all, so neither shell booted it and ${REGISTRY} ` +
+              'points this pane at a page that is not one'}.`);
+          continue;
+        }
+        if (seen.gate !== 'is-ready') {
+          failures.push(`${where}: the shell never reached its ready gate — body is ` +
+            `"${seen.gate}". Nothing was laid out to measure.`);
+          continue;
+        }
+        if (seen.title !== page.label || seen.sub !== page.question) {
+          failures.push(`${where}: the top bar reads ${JSON.stringify(seen.title)} / ` +
+            `${JSON.stringify(seen.sub)}, and ${REGISTRY} declares ` +
+            `${JSON.stringify(page.label)} / ${JSON.stringify(page.question)}.`);
+          continue;
+        }
+        const refused = REFUSALS.find((r) => seen.contentText.includes(r));
+        if (refused) {
+          failures.push(`${where}: the shell drew "${refused}" instead of the pane, which ` +
+            `fits any viewport and proves nothing about the pane itself.`);
+          continue;
+        }
+        if (seen.contentElements < MIN_CONTENT_ELEMENTS) {
+          failures.push(`${where}: #content holds ${seen.contentElements} elements, under the ` +
+            `floor of ${MIN_CONTENT_ELEMENTS}. The pane did not draw.`);
+          continue;
+        }
+        if (page.key === 'alerts') {
+          if (seen.ruleRows < RULES.length) {
+            failures.push(`${where}: expected at least ${RULES.length} rule rows, saw ${seen.ruleRows}`);
+            continue;
+          }
+          if (!seen.rowText.some((text) => text.includes(NARROW_BADGE))) {
+            failures.push(
+              `${where}: the long "cannot judge" sentence is not in any rule row, so the ` +
+              `widest row was never laid out. Saw rows: ${JSON.stringify(seen.rowText)}`);
+            continue;
+          }
+        }
+
+        measured.add(seen.pane);
+
+        if (seen.scrollWidth > seen.viewport) {
+          const worst = seen.past
+            .map((e) => `      ${e.tag}.${e.cls.split(' ').join('.')} ends at ${e.right}px${e.text ? ` ("${e.text}")` : ''}`)
+            .join('\n');
+          failures.push(
+            `${where}: the page scrolls sideways — ` +
+            `documentElement.scrollWidth is ${seen.scrollWidth}, viewport is ${seen.viewport}.\n` +
+            `    Past the right edge:\n${worst}`);
+        } else {
+          console.log(`ok  ${page.url} at ${WIDTH}px, ${theme} theme: ` +
+            `scrollWidth ${seen.scrollWidth} <= ${seen.viewport}, ` +
+            `${seen.contentElements} elements drawn`);
+        }
+      }
     }
-  }
   }
 } finally {
   if (cdp) cdp.close();
@@ -387,8 +734,30 @@ try {
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
 }
 
+/* The sweep's own size, asserted rather than printed. A sweep that quietly
+   stopped visiting panes — a registry that failed to load, a loop that threw
+   halfway, a pane list that shrank back to the one page this check started
+   life with — would otherwise report every pane it did reach as fitting and
+   exit 0 on a page count nobody looked at. */
+const expectedProbes = PAGES.length * WIDTHS.length * THEMES.length;
+if (measured.size === 0) {
+  failures.push('no pane was measured at all: every page failed before its width was read.');
+} else if (measured.size !== PAGES.length) {
+  const missing = PAGES.map((p) => p.key).filter((k) => !measured.has(k));
+  failures.push(`${REGISTRY} declares ${PAGES.length} panes and ${measured.size} were measured. ` +
+    `Never measured: ${missing.join(', ')}.`);
+}
+if (probes !== expectedProbes) {
+  failures.push(`${expectedProbes} page loads were due (${PAGES.length} panes x ${WIDTHS.length} ` +
+    `widths x ${THEMES.length} themes) and ${probes} were read.`);
+}
+
+console.log(`\nSwept ${measured.size} of the ${PAGES.length} panes ${REGISTRY} declares, ` +
+  `at ${WIDTHS.join('px and ')}px, in the ${THEMES.join(' and ')} themes: ` +
+  `${probes} page loads measured.`);
+
 if (failures.length) {
-  console.error('\nThe Problems pane overflows a phone-width viewport:\n');
+  console.error('\nThe operations dashboard does not fit a phone-width viewport:\n');
   for (const f of failures) console.error('  - ' + f);
   console.error(
     '\nA row must wrap or scroll inside its own container. The page itself must ' +
@@ -396,5 +765,5 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('\nThe Problems pane fits ' + WIDTHS.join('px and ') + 'px in both themes.');
+console.log('Every pane fits ' + WIDTHS.join('px and ') + 'px in both themes.');
 process.exit(0);
