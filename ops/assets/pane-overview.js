@@ -448,9 +448,13 @@
       var body = h('div', { className: 'card-body' });
 
       if (!problems.length) {
+        /* The ribbon above already carries the reason, and it carries it in
+           these exact words. This block keeps its own heading, because a
+           reader who scrolled to the queue needs to know why it is empty
+           without scrolling back, and adds nothing the ribbon said. */
         body.appendChild(armed.trustworthy
           ? quietBlock(armed)
-          : S.stateBlock('warn', 'The checks are not running', [unarmedSentence(armed)]));
+          : S.stateBlock('warn', 'The checks are not running', []));
         card.appendChild(body);
         return card;
       }
@@ -473,8 +477,11 @@
         foot.appendChild(h('span', {
           className: 'dot ok', 'aria-hidden': 'true'
         }));
+        /* The chip beside the ribbon already counts the rules that are
+           checking. The fact this footer owns is that the rows above are all
+           of them. */
         foot.appendChild(h('span', {
-          text: fmt.plural(armed.checking, 'rule') + ' watching, nothing else tripped'
+          text: 'Nothing else has tripped'
         }));
       }
       card.appendChild(foot);
@@ -484,10 +491,11 @@
     /* A quiet queue has to prove it is quiet for the right reason, exactly as
        the Problems pane's own empty state does. */
     function quietBlock(armed) {
+      /* How many rules are checking is on the chip, and when they last
+         reached a verdict is in the ribbon sub directly above. Neither says
+         when a problem last fired, which is the fact that tells a quiet queue
+         apart from a queue nothing has ever reached. */
       return S.stateBlock('check', 'Nothing needs attention', [
-        fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) +
-          ' rules reached a verdict the last time they ran' +
-          (armed.lastEvaluatedAt ? ', ' + fmt.ago(armed.lastEvaluatedAt) : '') + '.',
         armed.lastFiredAt
           ? 'Last problem fired ' + fmt.ago(armed.lastFiredAt) + '.'
           : 'No problem has ever fired.'

@@ -31,9 +31,9 @@
      roles      roles allowed to open the pane at all, omitted means everyone
      railId     the id this pane answers to in the v2 rail, which assets/aria.js
                 declares and this file cannot edit. It is written out per pane
-                rather than derived because two of them differ from the key
-                here, and a rule with two exceptions is a lookup table wearing a
-                disguise. scripts/ops-shell-pane-v2.test.mjs checks every one of
+                rather than derived because one of them differs from the key
+                here (evals answers to quality), and a rule with an exception is
+                a lookup table wearing a disguise. scripts/ops-shell-pane-v2.test.mjs checks every one of
                 them against aria.js's own list, so the pair cannot drift.
 
      A pane that has been built declares only the filters its own reads can act

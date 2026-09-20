@@ -983,3 +983,94 @@ test('the all-quiet ribbon does not repeat the chip beside it', async () => {
   assert.match(sub, /verdict/,
     'the sentence lost the one fact the chips cannot carry, when the rules last ran');
 });
+
+/* ========== one fact per slot, across the whole pane ========== */
+
+/* Rounds five and six each found the same defect in a different state: a
+   sentence printed twice on one screen, ~200px apart, under two headings
+   arguing the same point. The earlier guard read the ribbon and its chips,
+   so it could only see one of the three sites. This reads every leaf run of
+   text on the rendered page and refuses an exact repeat, in any state, at any
+   site, whether or not anybody thought to write a test for that pair.
+
+   Short runs are exempt: a label, a unit and a status word are data, and
+   'Critical' appearing on four rows is the pane working. The floor is a
+   sentence's worth of words, not a phrase's. Re-spelled duplication of the
+   same fact is NOT COVERED here and nothing in this file covers it; only a
+   verbatim repeat is caught. */
+const FACT_FLOOR = 24;
+
+function leafRuns(root) {
+  return findAll(root, (n) => n.nodeType !== 3 &&
+    (n.childNodes || []).some((c) => c.nodeType === 3 && String(c.text || '').trim()))
+    .map((n) => allText(n).replace(/\s+/g, ' ').trim())
+    .filter((t) => t.length >= FACT_FLOOR);
+}
+
+function assertNoRepeat(panel, state) {
+  const seen = new Map();
+  for (const run of leafRuns(panel)) {
+    if (seen.has(run)) {
+      assert.fail('the ' + state + ' pane prints the same sentence in two slots: ' +
+        JSON.stringify(run));
+    }
+    seen.set(run, true);
+  }
+}
+
+const NEVER_RUN_RULES = {
+  rules: [
+    { key: 'queue', label: 'Queue depth', enabled: true, lastEvaluatedAt: null, lastEvaluationStatus: null, lastFiredAt: null },
+    { key: 'errors', label: 'Error rate', enabled: true, lastEvaluatedAt: null, lastEvaluationStatus: null, lastFiredAt: null },
+  ],
+  channels: [{ key: 'teams', label: 'Teams', configured: true, status: 'ok' }],
+};
+
+test('no state prints the same sentence in two slots', async () => {
+  /* Each render asserts the state it claims to be in first. A fixture that
+     quietly falls back to the live payload would make the rest of this
+     vacuous, and the first draft of this test did exactly that: it passed
+     `rules` inside `problems`, where nothing reads it. */
+  const quiet = livePanel(await boot({ problems: { problems: [], total: 0 } }));
+  assert.match(allText(quiet), /Nothing needs attention/,
+    'the all-quiet fixture did not reach the all-quiet state');
+  assertNoRepeat(quiet, 'all-quiet');
+
+  const unarmed = livePanel(await boot({
+    problems: { problems: [], total: 0 }, rules: NEVER_RUN_RULES,
+  }));
+  assert.match(allText(unarmed), /The checks are not running/,
+    'the unarmed fixture did not reach the unarmed state');
+  assert.match(allText(unarmed), /none has run yet/,
+    'the unarmed fixture reached a different unarmed branch than the one under test');
+  assertNoRepeat(unarmed, 'unarmed');
+
+  const live = livePanel(await boot({}));
+  assert.ok(findAll(live, (n) => /(^|\s)q-row(\s|$)/.test(n.className || '')).length,
+    'the live fixture drew no queue rows, so it is not the state under test');
+  assert.ok(findAll(live, (n) => /(^|\s)card-foot(\s|$)/.test(n.className || '')).length,
+    'the live fixture drew no card footer, so the footer is not under test here');
+  assertNoRepeat(live, 'live');
+});
+
+/* The page-wide guard above catches a sentence repeated character for
+   character. Round six's queue findings were not that shape: the chip said
+   "3 of 5 rules checking" and the footer said "3 rules watching", which is the
+   same fact in two spellings and walks straight past a verbatim test. This
+   binds the two slots the chip already answers for, by refusing a rule COUNT
+   in either of them rather than a particular sentence. */
+test('the queue card never counts rules, because the chip already does', async () => {
+  const COUNTS_RULES = /\d[^.]{0,24}\brules?\b/i;
+
+  const quiet = livePanel(await boot({ problems: { problems: [], total: 0 } }));
+  const block = findAll(quiet, (n) => /(^|\s)state-block(\s|$)/.test(n.className || ''))[0];
+  assert.ok(block, 'the all-quiet queue drew no state block, so nothing here is under test');
+  assert.doesNotMatch(allText(block).replace(/\s+/g, ' '), COUNTS_RULES,
+    'the quiet queue block counts rules, which the chip beside the ribbon already did');
+
+  const live = livePanel(await boot({}));
+  const foot = findAll(live, (n) => /(^|\s)card-foot(\s|$)/.test(n.className || ''))[0];
+  assert.ok(foot, 'the live queue drew no footer, so nothing here is under test');
+  assert.doesNotMatch(allText(foot).replace(/\s+/g, ' '), COUNTS_RULES,
+    'the queue footer counts rules, which the chip beside the ribbon already did');
+});
