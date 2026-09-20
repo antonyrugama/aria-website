@@ -84,6 +84,7 @@ async function bootPane(paneId, options) {
     tokens: TOKENS,
     href: opts.href || 'https://ops.example.invalid/ops/' + (opts.file || 'index.html'),
     matchMedia: opts.matchMedia,
+    readyState: opts.readyState,
   });
   const body = dom.element('body');
   dom.root.appendChild(body);
@@ -108,6 +109,18 @@ async function bootPane(paneId, options) {
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
+
+  /* The rest of the document arriving. A pane module is a later <script> tag,
+     so anything registered here is registered after the bootstrap has already
+     started. */
+  if (opts.lateDefinePane) {
+    shell.definePane(paneId, (content, pane) => opts.lateDefinePane(content, pane, shell));
+  }
+  if (opts.readyState === 'loading') {
+    dom.doc.readyState = 'complete';
+    dom.doc.dispatch('DOMContentLoaded');
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setImmediate(r));
+  }
 
   return { ...dom, body, shell, registry: dom.window.OpsPaneRegistry, Aria: dom.window.Aria };
 }
@@ -478,6 +491,24 @@ test('a pane with no module on the page says it is not built, and names the wave
   assert.match(content, new RegExp(
     registry.PANES.releases.question.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   ));
+});
+
+test('a pane module that loads after the bootstrap still draws, because parsing is waited for', async () => {
+  /* The <script> that registers a pane comes after the one that boots the
+     shell, so on a slow document the shell can reach "which pane is this" with
+     nothing registered yet. Waiting for parsing is what stops script order
+     deciding whether a built pane renders as built. */
+  const { doc } = await bootPane('releases', {
+    file: 'releases.html',
+    readyState: 'loading',
+    lateDefinePane: (content, pane, shell) => {
+      content.appendChild(shell.h('p', { text: 'registered after the shell started' }));
+    },
+  });
+  const text = allText(doc.getElementById('content'));
+  assert.match(text, /registered after the shell started/,
+    'a pane module that loaded after the shell was treated as not built');
+  assert.doesNotMatch(text, /Not built yet/);
 });
 
 test('a pane with a module draws it and never the not-built state', async () => {
