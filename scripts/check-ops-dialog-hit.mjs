@@ -200,6 +200,30 @@ async function evaluate(cdp, expression) {
   return res.result.value;
 }
 
+/* Polls from Node in short evaluations rather than looping inside one long
+   one. A single ten-second evaluation issued before the navigation commits is
+   rejected outright -- `Inspected target navigated or closed` -- when the old
+   execution context is torn down under it, so the guard crashed instead of
+   reporting whatever it was waiting for. Which failure that hid depended on
+   timing: it only showed up on the run where the thing never arrived, which is
+   precisely the run whose message matters. */
+const POLL_MS = 50;
+const POLL_TRIES = 200;
+
+async function waitFor(cdp, expression) {
+  for (let i = 0; i < POLL_TRIES; i += 1) {
+    try {
+      if (await evaluate(cdp, expression)) return true;
+    } catch (err) {
+      /* The context went away mid-navigation; the next poll runs in the new
+         one. Anything else is a real fault and is raised. */
+      if (!/navigated or closed|Cannot find context/i.test(String(err.message))) throw err;
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+  return false;
+}
+
 /* The dialog is centred with a translate, so its border box lands on
    fractional coordinates. A clip rounded outward would take a sliver of the
    page OUTSIDE the dialog -- which is the scrim -- and report every dialog as
@@ -287,13 +311,9 @@ async function measure(cdp, origin, spec, theme) {
   /* Wait for the trigger rather than for a fixed delay: a sleep long enough to
      be safe here would be the slowest thing in the file, and one that is too
      short reports a missing dialog as a stacking failure. */
-  const ready = await evaluate(cdp, `(async () => {
-    for (let i = 0; i < 200; i += 1) {
-      const el = document.querySelector(${JSON.stringify(spec.open)});
-      if (el && el.getClientRects().length) return true;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    return false;
+  const ready = await waitFor(cdp, `(() => {
+    const el = document.querySelector(${JSON.stringify(spec.open)});
+    return !!(el && el.getClientRects().length);
   })()`);
   if (!ready) {
     failures.push(`${spec.name} [${theme}]: the control that opens the dialog `
@@ -301,14 +321,10 @@ async function measure(cdp, origin, spec, theme) {
     return;
   }
 
-  const opened = await evaluate(cdp, `(async () => {
-    document.querySelector(${JSON.stringify(spec.open)}).click();
-    for (let i = 0; i < 100; i += 1) {
-      const d = document.querySelector(${JSON.stringify(spec.dialog)});
-      if (d && d.getClientRects().length) return true;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    return false;
+  await evaluate(cdp, `document.querySelector(${JSON.stringify(spec.open)}).click()`);
+  const opened = await waitFor(cdp, `(() => {
+    const d = document.querySelector(${JSON.stringify(spec.dialog)});
+    return !!(d && d.getClientRects().length);
   })()`);
   if (!opened) {
     failures.push(`${spec.name} [${theme}]: clicking ${spec.open} opened no `
