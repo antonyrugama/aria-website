@@ -1570,10 +1570,11 @@ answer.
     which is one printing on every answer that carries a figure. Round 8 finding.
 
 Two invariants on this pane are held by its own `node:test` file and by measurement in review,
-not by a repo guard: no browser guard renders `ops/analytics.html`, because
-`scripts/check-ops-narrow-overflow.mjs` renders the Problems pane and
-`scripts/check-ops-theme-redraw.mjs` renders the shell demo. Tracked as
-[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462).
+not by a repo guard. Since [Stadiora/Aria#10492](https://github.com/Stadiora/Aria/issues/10492)
+`scripts/check-ops-narrow-overflow.mjs` does render `ops/analytics.html`, at 375px and 360px in
+both themes — but with an empty `/api/ops/usage` envelope, so what it lays out is this pane's
+no-data card and not a populated pane. `scripts/check-ops-theme-redraw.mjs` renders the shell
+demo. Tracked as [Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462).
 
 ### Where this pane departs from the shared page furniture
 
@@ -1760,11 +1761,17 @@ cross-origin API call would be.
 
 `scripts/check-ops-narrow-overflow.mjs` is one such stub, written for a narrow-viewport
 regression and reusable as a starting point. It serves this repository, answers the auth calls
-and the two Problems reads, lays the pane out in headless Chrome at **375px and 360px** in both
-themes, and fails if `documentElement.scrollWidth` exceeds the viewport. Two widths because an
-overflow that reproduced on CI's fonts at 375px reproduced on macOS only at 360px, and a guard
-a reviewer cannot make fail locally is a guard that gets argued with instead of read. Run it with
-`node scripts/check-ops-narrow-overflow.mjs`; it also runs in CI on any change under `ops/`.
+and the reads behind every pane except two — `/api/ops/usage` gets an empty envelope and
+`/api/ops/costs` a period that has not published, so People and usage and Cloud costs are laid
+out with no figures in them — lays **every
+pane the registry declares** out in headless Chrome at **375px and 360px** in both themes, and
+fails if `documentElement.scrollWidth` exceeds the viewport. Two widths because an overflow that
+reproduced on CI's fonts at 375px reproduced on macOS only at 360px, and a guard a reviewer
+cannot make fail locally is a guard that gets argued with instead of read. Before it measures a
+pane it requires that pane to have drawn a string only its loaded state draws, because the panes
+that read something answer an empty read with a failure card of their own, and a failure card
+fits any viewport. Run it with `node scripts/check-ops-narrow-overflow.mjs`; it also runs in CI
+on any change under `ops/`.
 
 `shell-v2.html` needs none of that. It calls no API, so `python3 -m http.server 8000` and
 `http://127.0.0.1:8000/ops/shell-v2.html` is the whole setup.
@@ -1789,7 +1796,7 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
-| `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px **and 360px** in both themes: that nothing is past the right edge, and that the longest sentence the pane can put in a rule row was actually laid out — the check would otherwise pass on a page that never drew the row it exists for. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
+| `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at 375px **and 360px** in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
 
 Charts and icons are swept for paint **separately**, with their own counts and their own
