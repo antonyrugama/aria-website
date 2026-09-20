@@ -664,10 +664,69 @@ test('a bucket too narrow to hold a chip is still in the bar, the legend and the
      segment. The segment's own fill is the data and is never re-toned to make
      ink readable on it, so a bucket that cannot hold a chip carries no ink at
      all and reads off the legend instead. */
-  assert.equal(allText(segments[0]).trim(), '1.1.2 · 61%');
+  assert.equal(allText(segments[0]).trim(), '61%');
   assert.equal(allText(segments[2]).trim(), '');
   assert.match(shareCardText(dom), /Older 11%/);
   assert.match(shareBar(dom).getAttribute('aria-label'), /Older 11%/);
+});
+
+/* The chip clips its own tail, and its width is whatever its text needs. An
+   earlier build of this pane put the bucket name in the chip as well as the
+   share, which made that width unbounded: at a 16/70/14 split with the name
+   `1.1.2` the tail the ellipsis ate WAS the percentage, and between 561px
+   and 650px of viewport the 16% bucket stated its share nowhere on screen.
+
+   The chip carries the share alone, so the widest string it can ever hold is
+   `100%`. That is what turns the threshold below into a claim about pixels
+   that can be checked rather than a guess: 42.4px of chip against a bar no
+   narrower than 497px anywhere chips are drawn at all.
+
+   This pins the BOUND, not the rendering. Node has no layout; the width
+   sweep proving the rule renders is in the PR. */
+test('a chip states the share and nothing else, so no bucket name can widen it', async () => {
+  const fixture = releasesFixture();
+  fixture.adoption.buckets = [
+    { key: 'latest', label: '1.1.2', basisPoints: 2100 },
+    { key: 'previous', label: '1.1.1', basisPoints: 6500 },
+    { key: 'older', label: 'Older', basisPoints: 1400 },
+  ];
+  const dom = await boot({ releases: fixture });
+
+  const chips = shareSegments(dom).map((seg) => allText(seg).trim());
+  assert.deepEqual(chips, ['21%', '65%', ''], 'the chip is the share, exactly');
+
+  /* The shape as well as the value, so nothing longer can creep back in
+     under a different separator. */
+  chips.filter(Boolean).forEach((text) => {
+    assert.match(text, /^\d{1,3}%$/, JSON.stringify(text) + ' is wider than a share');
+  });
+
+  /* The other direction: the names did not vanish with the chips, they are
+     on the keys, tied to their segments by the same tone. */
+  assert.deepEqual(shareKeys(dom).map((k) => allText(k).replace(keyPct(k), '').trim()),
+    ['1.1.2', '1.1.1', 'Older']);
+});
+
+/* The threshold itself, at the boundary and on both sides of it. Without
+   this, moving it is invisible: the everyday fixture's 61/27/11 sits clear
+   of any value between 12% and 26%, so the number could drift a long way
+   before a test noticed. */
+test('a segment holds a chip at 20% of the bar and not one basis point below', async () => {
+  const fixture = releasesFixture();
+  fixture.adoption.buckets = [
+    { key: 'latest', label: '1.1.2', basisPoints: 2000 },
+    { key: 'previous', label: '1.1.1', basisPoints: 6001 },
+    { key: 'older', label: 'Older', basisPoints: 1999 },
+  ];
+  const dom = await boot({ releases: fixture });
+
+  assert.deepEqual(shareSegments(dom).map((seg) => allText(seg).trim()),
+    ['20%', '60%', ''], '2000bp draws a chip, 1999bp does not');
+  assert.deepEqual(
+    shareKeys(dom).map((k) => (k.getAttribute('class') || '').split(/\s+/).includes('has-chip')),
+    [true, true, false], 'and the keys agree with the bar about which is which');
+  assert.deepEqual(shareKeys(dom).map(keyPct), ['20%', '60%', '20%'],
+    'every key still holds its own share, marked or not');
 });
 
 /* The share is one fact and takes one slot at a given width. The bar and the
@@ -684,7 +743,7 @@ test('a bucket that carries a chip is marked so its key can drop the duplicate s
 
   /* Stated as literals rather than read back off the segments: an expectation
      derived from the thing under test moves with the mutation. 61% and 27%
-     clear the 15% a chip needs, 11% does not. */
+     clear the 20% a chip needs, 11% does not. */
   const marked = keys.map((k) => (k.getAttribute('class') || '').split(/\s+/).includes('has-chip'));
   assert.deepEqual(marked, [true, true, false]);
 

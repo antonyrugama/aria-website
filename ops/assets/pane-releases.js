@@ -170,11 +170,23 @@
   var BUCKET_TONE = { latest: 'tone-cyan', previous: 'tone-violet', older: 'tone-older' };
   var BUCKET_ORDER = ['latest', 'previous', 'older'];
 
-  /* A label fits inside a segment at roughly this share and not below it.
-     The same predicate decides the chip in the bar and the `has-chip` marker
-     on the key beside it, so the two can never disagree about which buckets
-     already carry their share. */
-  var LABEL_MIN_BP = 1500;
+  /* The chip carries the share and nothing else, so the widest it can ever
+     be is the four glyphs of "100%" plus its padding. That is 42.4px in
+     either theme, and the narrowest bar that carries chips at all is 497px
+     at 561px of viewport, which puts the fit at 9.7% of the bar. A segment
+     is given a chip at more than twice that, so the chip cannot be clipped
+     by any bucket split or any viewport this pane is reachable at.
+
+     An earlier build put the version label in the chip too. That made the
+     width unbounded, the threshold a guess, and at 16/70/14 it clipped the
+     tail — which was the percentage — and lost the number entirely between
+     561px and 650px. The label lives on the key, the share lives on the
+     bar; neither is in two places at once.
+
+     The same predicate decides the chip in the bar and the `has-chip`
+     marker on the key beside it, so the two can never disagree about which
+     buckets already carry their share. */
+  var LABEL_MIN_BP = 2000;
 
   function segmentBp(bucket) {
     return Math.max(0, Math.min(FULL_ROLLOUT_BP, num(bucket.basisPoints) || 0));
@@ -500,11 +512,11 @@
 
   /* The store's number, on the stage it belongs to. Stage 4 carries the share
      the store is serving and the day it last moved; the pill beside the row
-     carries the verdict word. Neither repeats the other. */
+     carries the verdict word. Neither repeats the other, and the build number
+     is not among them: the row subtitle above already states it. */
   function stageFigure(i, row, active) {
     if (!active) return null;
     var track = row.track;
-    if (i === 0) return track && track.versionCode ? 'build ' + track.versionCode : null;
     if (i === 2) return (track && fmt.utcDay(track.releasedAt)) || null;
     if (i === ROLLED_OUT) {
       if (row.rollout.kind === 'none') return 'share not reported';
@@ -719,9 +731,11 @@
       /* The chip is a reading surface with its own --surface fill: a segment
          fill is data and cannot also carry ink (monorepo #10293). Only where
          the segment is wide enough to hold one; a narrower bucket reads its
-         share off the key instead, which is what `has-chip` below arranges. */
+         share off the key instead, which is what `has-chip` below arranges.
+         The bucket name is NOT repeated here: the key states it, tied to
+         this segment by the same tone. */
       if (hasChip(bucket)) {
-        seg.appendChild(h('b', { text: bucketLabel(bucket) + ' · ' + pct(bp) }));
+        seg.appendChild(h('b', { text: pct(bp) }));
       }
       bar.appendChild(seg);
     });

@@ -154,10 +154,16 @@
    the bar and the legend still read as one colour key. Re-toning the segments
    until an ink fitted would have broken that key in both themes.
 
-   The number stays inside the chip, because the share is the one thing an
-   in-segment label says that the key beside it does not — see .share-key
-   below, which is the other half of that division and drops the number from
-   any key whose bucket already carries a chip. */
+   The chip holds the share and nothing else. That is a width decision as
+   much as an editorial one: this rule clips its own overflow, so whatever
+   sits at the end of the chip is what an ellipsis eats first. With the
+   bucket name in front of it the percentage was that tail, and a 16%
+   bucket beside a 70% one lost its number completely between 561px and
+   650px. A share is at most four glyphs, the pane only draws a chip above
+   20% of the bar, and the narrowest bar that draws one is 497px — so the
+   text cannot reach this max-width. See .share-key below, the other half
+   of the division: it carries the bucket name, and drops the number for
+   any bucket whose segment already carries a chip. */
 .stackbar > i > b {
   padding: 2px 8px;
   border-radius: 20px;
