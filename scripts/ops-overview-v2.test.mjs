@@ -920,9 +920,66 @@ test('the needs-attention head keeps its sentence when nothing needs a person', 
   const panel = livePanel(dom);
   const head = findAll(panel, (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''))
     .filter((n) => /Needs attention/i.test(allText(n)))[0];
-  if (!head) return;
+  assert.ok(head, 'the needs-attention card vanished when nothing needed a person');
   const note = findAll(head.parentNode,
     (n) => /(^|\s)card-note(\s|$)/.test(n.className || ''))[0];
   assert.ok(note && /Nobody is being asked/.test(allText(note)),
     'the empty case lost the one sentence the rows cannot carry');
+  assert.ok(findAll(head.parentNode.parentNode,
+    (n) => /All problems/.test(allText(n)) && n.tagName === 'A')[0],
+    'the empty case lost the way through to the pane that owns the detail');
+});
+
+/* The capped arm of the same branch. A full page where every problem has been
+   taken on is reachable, and the code's own comment says it is the case that
+   most needs qualifying: "nobody is being asked to do anything" is a much
+   weaker claim when it is only true of the hundred rows that could be read. */
+test('the empty sentence says so when it is only true of the page that was read', async () => {
+  const rows = [];
+  for (let i = 0; i < 100; i += 1) {
+    rows.push({
+      id: 'p' + i, reference: 'PRB-' + (200 + i), severity: 'warning', status: 'acknowledged',
+      title: 'Taken on ' + i, firedAt: '2026-09-20T05:20:00.000Z',
+      acknowledgedBy: 'ops', acknowledgedAt: '2026-09-20T05:30:00.000Z',
+    });
+  }
+  const dom = await boot({ problems: { problems: rows, total: 480 } });
+  const head = findAll(livePanel(dom), (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''))
+    .filter((n) => /Needs attention/i.test(allText(n)))[0];
+  assert.ok(head, 'the needs-attention card vanished on a capped read');
+  const note = findAll(head.parentNode,
+    (n) => /(^|\s)card-note(\s|$)/.test(n.className || ''))[0];
+  assert.ok(note, 'a capped read lost the empty sentence entirely');
+  assert.match(allText(note), /could be read/,
+    'the sentence claims nobody is being asked to do anything across the whole ' +
+    'system, when only one page of it was read: ' + JSON.stringify(allText(note)));
+});
+
+/* ========== the ribbon and its chips do not say the same thing ========== */
+
+/* Round five found the all-quiet hero reading "2 of 2 rules checking, last 14
+   minutes ago" beside a chip reading "2 of 2 rules checking" — the same words
+   twice on one row, which is the density the remodel exists to remove. The
+   sub keeps only what the chip cannot carry. */
+test('the all-quiet ribbon does not repeat the chip beside it', async () => {
+  const dom = await boot({ problems: { problems: [], total: 0 } });
+  const panel = livePanel(dom);
+  const sub = allText(findAll(panel, (n) => /(^|\s)hero-sub(\s|$)/.test(n.className || ''))[0] || {})
+    .replace(/\s+/g, ' ').trim();
+  assert.ok(sub, 'the all-quiet ribbon lost its sentence');
+
+  const chips = findAll(panel, (n) => /(^|\s)hero-chips(\s|$)/.test(n.className || ''))[0];
+  assert.ok(chips, 'the ribbon lost its chips');
+  const chipWords = findAll(chips, (n) => !n.childNodes || !n.childNodes.length)
+    .map((n) => allText(n).replace(/\s+/g, ' ').trim()).filter(Boolean);
+
+  for (const words of chipWords) {
+    if (words.length < 6) continue;
+    assert.ok(sub.indexOf(words) === -1,
+      'the ribbon sentence repeats a chip verbatim: ' + JSON.stringify(words) +
+      ' inside ' + JSON.stringify(sub));
+  }
+
+  assert.match(sub, /verdict/,
+    'the sentence lost the one fact the chips cannot carry, when the rules last ran');
 });

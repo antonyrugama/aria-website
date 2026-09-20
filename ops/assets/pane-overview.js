@@ -277,8 +277,13 @@
       } else if (!active.length) {
         tone = 'st-ok';
         title = 'Everything is working';
-        sub = fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking' +
-          (armed.lastEvaluatedAt ? ', last ' + fmt.ago(armed.lastEvaluatedAt) : '');
+        /* The chip beside this one already says how many rules are checking,
+           so the sub carries only the part the chip cannot: when they last
+           reached a verdict. A rule that is armed and has not run in a day is
+           not checking anything, and nothing else on this row says so. */
+        sub = armed.lastEvaluatedAt
+          ? 'Rules last reached a verdict ' + fmt.ago(armed.lastEvaluatedAt)
+          : 'No rule has reached a verdict yet';
       } else {
         /* The ribbon takes its tone from the worst thing that is actually
            open. Painting a single informational problem in warning colours

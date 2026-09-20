@@ -850,13 +850,12 @@ failed sign in.
 follows its structure, its drill-down paths and the rules its README calls normative.
 
 The list below is **not a complete diff against the mock** and does not claim to be. It names
-the **deliberate** departures of two kinds: a thing the mock draws that nothing behind the pane
-can answer, and a second caption for a fact already on screen. Wording, ordering within a card
-and exact copy differ in more places than are listed here, because the mock is a static page
-with hand-written sample text and the pane writes its words from the answer — a figure the mock
-spells one way is spelled by `fmt` here, and a sentence the mock hard-codes is either derived or
-dropped under the one-fact-per-slot rule. Anyone checking this pane against the mock should read
-the list as "these are on purpose and here is why", not as "everything else is identical".
+the departures that carry a decision: a thing the mock draws that nothing behind the pane can
+answer, and a second caption for a fact already on screen. Wording, ordering within a card and
+exact copy differ in more places than are listed here, because the mock is a static page with
+hand-written sample text and the pane writes its words from the answer. Anyone checking this
+pane against the mock should read the list as "these are on purpose and here is why", not as
+"everything else is identical".
 
 1. **No App, Range or Environment control.** The registry gives Overview none, and the filter bar
    states the absence where they would have been. `/api/ops/summary` takes no parameter and
@@ -876,6 +875,22 @@ the list as "these are on purpose and here is why", not as "everything else is i
    omissions footer, and the cost tile's sentence about `basis` each restate something the figure,
    the pill or the omissions card already says. The mocks encode one fact per slot, and that rule
    is what took the approved set from 7,240 words to 4,842.
+
+7. **Five more things the mock draws are absent, all for reason (2) above — no source.** They
+   are listed separately because they are structural, not wording, and a reader diffing the pane
+   against the mock hits them first:
+   - the hero service-health chips (`Main backend 99.98%`, `Aria AI 99.94%`, `Plan builder`,
+     `Database 3ms`). No uptime or latency series is stored per component; `/api/ops/summary`
+     answers for the platform, not for four named services.
+   - the AI-runs quality figures (`98.6% finished cleanly`, `Slowest 5% took 8.4s`). The route
+     returns a run count and its previous-window count, and no outcome or duration distribution.
+   - the version tile's `Adoption 73%` and `Crash free 99.7%` meters. Neither is recorded; a
+     meter drawn against a denominator nothing stores is the budget-bar problem again.
+   - `Auto refresh · 60s`. Nothing here polls, and a label claiming a refresh that does not
+     happen is worse than a page you know is a snapshot.
+   - the **hourly** grain on the activity chart. Nothing behind it aggregates finer than a day,
+     which is rule 1 of this pane: a figure labelled for a window it does not cover is worse
+     than one labelled for the window it does.
 
 Everything the omissions card shows comes **from the answer**, never from a list in the client,
 so a figure that gains a source drops off the card without a code change here.
