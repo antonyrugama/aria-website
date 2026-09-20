@@ -1114,9 +1114,17 @@
     box.appendChild(shell.cardHead('Subscription', null, null));
 
     if (!billing || !(billing.fields || []).length) {
+      /* Which of the two this is turns on the account's own tier. A paid tier
+         with no billing record is a contradiction; on the free tier the same
+         empty answer is correct. The head carried the tier as a pill until the
+         pill was a third copy of it, so the state block names it instead. */
+      var paid = detail.tier && detail.tier.brand;
       box.appendChild(h('div', { className: 'card-body' }, [
         shell.stateBlock('empty', 'No subscription record', [
-          'On the free tier that is the expected answer rather than a missing one.'
+          paid
+            ? 'The account is on ' + (detail.tier.label || detail.tier.key) +
+              ', so a record was expected here.'
+            : 'On the free tier that is the expected answer rather than a missing one.'
         ], 4)
       ]));
       return box;
@@ -1215,7 +1223,7 @@
     } else {
       actions.forEach(function (a) {
         body.appendChild(h('div', { className: 'srow' }, [
-          h('div', {}, [h('div', { className: 's-main', text: a.label || a.key })])
+          h('div', { className: 's-main', text: a.label || a.key })
         ]));
       });
     }

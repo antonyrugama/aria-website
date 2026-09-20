@@ -39,10 +39,23 @@
           behaviour the activity table prints label, time and reference and
                     nothing else from the event
 
-   Every test here had a published mutation in PR antonyrugama/aria-website#58:
-   the exact file, the exact original line, and the payload that makes that one
-   test fail. If you add a test, that claim does not stretch to cover it —
-   prove it and say so, or narrow this paragraph.
+   Every test here has a published mutation — the exact file, the exact
+   original line, and the payload that makes that one test fail. 41 tests, 41
+   rows: 40 in PR antonyrugama/aria-website#58, and the 41st ("an empty
+   subscription card reads as a contradiction...") in the follow-up that added
+   it, with a mutation in each direction because it asserts two branches.
+
+   Seven of the 40 were rewritten by that same follow-up and their #58 rows no
+   longer hold: the danger-zone test changed materially, and six others moved
+   onto the MATCHES and ACTIVITY constants when those two card titles were
+   renamed, so #58's rows for them name lines whose text changed. Live proofs
+   are in the follow-up: its rows 3 and 4 for the danger zone, row 5 breaking
+   the one site ACTIVITY reads, row 6 breaking the one site MATCHES reads.
+
+   **The count in the sentence above is part of the claim.** If you add a test
+   here, neither the number nor the "every" stretches to cover it — prove it
+   and say so, or narrow this paragraph. The sibling releases file had this
+   number go stale twice before it was written down as load-bearing.
 
    NOT COVERED by any published mutation, and stated rather than implied:
 
@@ -710,6 +723,32 @@ test('the matches table shows coded references and the mask the API sent, and no
   assert.match(allText(box), /a•••@example\.invalid/);
   assert.ok(!allText(box).includes(SECRET));
   assert.match(footOf(dom, MATCHES), /masked by the operations API, not by this page/);
+});
+
+/* The tier came off the Subscription head because it was a third copy of it.
+   That head was the only thing naming the tier when there is no billing record,
+   so the empty state names it — and only when naming it says something, which
+   is when the tier is paid and the missing record is therefore a contradiction.
+   Both branches are asserted: one direction alone passes with the sentence
+   hard-coded, which is the defect it would be hiding. */
+test('an empty subscription card reads as a contradiction on a paid tier and as expected on a free one', async () => {
+  const paid = await openAccount({
+    detail: detailFixture((d) => { d.billing = { fields: [] }; }),
+  });
+  const paidBox = card(paid, 'Subscription');
+  assert.match(allText(paidBox), /No subscription record/);
+  assert.match(allText(paidBox), /on Athlete Pro, so a record was expected here/);
+  assert.ok(!allText(paidBox).includes('expected answer'), 'a paid tier was called expected');
+
+  const free = await openAccount({
+    detail: detailFixture((d) => {
+      d.billing = { fields: [] };
+      d.tier = { key: 'free', label: 'Free', brand: false };
+    }),
+  });
+  const freeBox = card(free, 'Subscription');
+  assert.match(allText(freeBox), /On the free tier that is the expected answer/);
+  assert.ok(!allText(freeBox).includes('was expected here'), 'the free tier read as a contradiction');
 });
 
 /* The danger zone. The mock draws four buttons; no route performs one, so the

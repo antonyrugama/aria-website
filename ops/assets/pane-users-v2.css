@@ -158,12 +158,6 @@
 .srow:first-child { border-top: 0; padding-top: 0; }
 .srow:last-child { padding-bottom: 0; }
 .srow .s-main { font-size: 12.5px; font-weight: 540; }
-.srow .s-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; line-height: 1.5; }
-.srow .s-end {
-  margin-left: auto; flex: none;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
-  text-align: right;
-}
 
 /* -------------------------------------------------------------- tick list */
 .list-tick { display: flex; flex-direction: column; gap: 9px; }
@@ -199,7 +193,6 @@
 /* A timestamp is one token; wrapping it mid-date reads as two. */
 .tbl tbody th.num { white-space: nowrap; }
 
-
 /* ------------------------------------------------------------- responsive */
 @media (max-width: 720px) {
   .hunt { padding: 18px 16px 16px; border-radius: var(--r-lg); }
@@ -212,7 +205,6 @@
   .reveal-row { justify-content: flex-start; }
 
   .srow { align-items: flex-start; flex-direction: column; gap: 9px; }
-  .srow .s-end { margin-left: 0; align-items: flex-start; text-align: left; }
 }
 
 /* Two of this pane's card heads carry a title, a note AND a pill, and the

@@ -1080,10 +1080,12 @@ would blend them is not drawn.
    reading is attached to the row it fed.
 9. **A chip inside a version-share segment reads `57%`, not `1.1.1 · 57%`.** The mock's wide
    chip carries the version name as well as the share. A chip is sized by its segment and a
-   store version name has no length limit, so the mock's shape clips its own tail at the width
-   the data decides — the version, which is the part that identifies the bar it is in. The
-   share is the number the chip exists to state, and the version is already on the key beside
-   it. See `assets/pane-releases.js:173-188` and `assets/pane-releases-v2.css:157-166`.
+   store version name has no length limit, so the mock's shape clips whatever it puts last —
+   and last is the percentage, the one number the chip exists to state. Measured, the mock's
+   order loses it entirely between 561px and 650px. Putting the share first is not a fix
+   either: it only moves the clip onto the version. The version is on the key beside the bar,
+   so the chip states the share alone and nothing unbounded goes in it.
+   See `assets/pane-releases.js:173-188` and `assets/pane-releases-v2.css:157-166`.
 
 Two additions the mock does not have, both of which exist because the pane reads a live answer
 where the mock reads its own sample text:
@@ -1150,9 +1152,13 @@ the thing it describes is the worse of the two failures.
    the mask to unlock — and on this pane a mask is the opposite, a value the owner *can* unlock
    with a recorded reason. The account card's foot (`assets/pane-users.js:943`) says that
    plainly, "Hidden for every role, including this one, until a reveal is recorded", and reading
-   it as the mock's sentence in a new place would get it backwards. Where a field genuinely has
-   no value behind it, the API says so in `unavailableNote` and the pane prints what it was sent
-   (`:692`) rather than authoring the claim itself.
+   it as the mock's sentence in a new place would get it backwards. Nothing replaces the mock's
+   sentence, because the pane has no consent input to state it from: the API tells this pane
+   whether a field can be *shown*, never whether it was collected. Both notes it prints are
+   about showability — `neverShownNote` for a field that is never shown here at all
+   (`assets/pane-users.js:692`, health readings and any field the API marks `reveal: 'never'`)
+   and `unavailableNote` for one that cannot be revealed right now (`:702`). Neither claims a
+   value does or does not exist behind the mask, and the pane does not author that claim.
 7. **The mock's `why` blocks are not reproduced.** They argue for the design rather than state a
    fact about the account, and the mocks' own rule is one fact per slot. What they carried that
    is a fact is on screen: the reveal card says what is recorded, the access band says how long
