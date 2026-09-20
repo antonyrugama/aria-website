@@ -1,0 +1,80 @@
+/* Happening now — the shapes this pane needs on top of assets/aria.css and
+   assets/shell-pane-v2.css.
+
+   One stylesheet per pane, holding only what that pane draws. Several panes
+   were remodelled onto the v2 system in parallel and a shared sheet would have
+   been several concurrent branches editing one file; the duplication between
+   them is cheap and a later change can fold it back in. Where a shape already
+   exists on another v2 pane — .kpi-val.words, .omit — the name and the
+   declarations are that pane's rather than a second spelling of the same idea.
+
+   Nothing here introduces a colour. Every value is a token from aria.css,
+   which is WCAG AA by construction, or a color-mix of one. */
+
+/* --------------------------------------------------------------- figures
+
+   A figure that is words rather than a number is still a figure, so it keeps
+   the tile it would have had. It changes typeface instead: the numeric face at
+   tile size reads as a quantity, and "Not recorded" set in it reads as one
+   too. Same rule, same declarations, as the Overview and What happened panes. */
+.kpi-val.words {
+  font-family: var(--sans);
+  font-size: 19px; font-weight: 560; letter-spacing: -.015em;
+  color: var(--ink-2);
+}
+
+/* The one figure on this pane that is a duration rather than a count is two
+   words wide, and a space in the tabular face is a full character advance, so
+   "1h 11m" arrives with a hole in the middle of it. Numerals only: a figure
+   that is words is set in the proportional face, where the space is already
+   the right width. */
+.kpi-val:not(.words) { word-spacing: -.22em; }
+
+/* aria.css lays the meta row out without wrapping, which fits a tile carrying
+   one short pill. These carry a short sentence instead. */
+.kpi-meta { flex-wrap: wrap; row-gap: 4px; }
+
+/* ----------------------------------------------------------- queue rows
+
+   One row per request type: what it is, whether it is clearing, and the two
+   readings that decide the answer. It is a row rather than a table
+   because there are three or four of them at most, and the middle column is a
+   sentence rather than a figure. */
+.queue-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.queue-row:first-child { border-top: 0; padding-top: 2px; }
+
+.queue-words { flex: 1 1 260px; min-width: 0; }
+
+/* aria.css scopes .t-main and .t-sub to .tbl. These rows are the same two
+   lines outside a table, so the declarations are repeated here rather than
+   spelled a second way. */
+.queue-row .t-main { font-weight: 520; }
+.queue-row .t-sub {
+  font-size: 11.5px; color: var(--ink-3); margin-top: 2px; line-height: 1.5;
+}
+
+.queue-facts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.queue-facts svg { width: 12px; height: 12px; flex: none; }
+
+.queue-state { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* At a phone width the three parts stack, and the verdict keeps the left edge
+   rather than sitting under the middle of the sentence above it. */
+@media (max-width: 720px) {
+  .queue-row { align-items: flex-start; gap: 8px; }
+  .queue-facts, .queue-state { width: 100%; }
+}
+
+/* ------------------------------------------------------- not drawn here
+
+   What no route serves yet, named in the same shape the Overview and What
+   happened panes name their omissions in, because it is the same admission. */
+.omit { display: flex; flex-direction: column; gap: 10px; }
+.omit-item { display: flex; align-items: flex-start; gap: 9px; }
+.omit-item svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--ink-3); }
+.omit-title { font-size: 12.5px; font-weight: 560; }
+.omit-desc { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
