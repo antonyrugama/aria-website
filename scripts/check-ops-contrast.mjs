@@ -333,12 +333,36 @@ function over(fg, bg) {
   };
 }
 
+/* Half a byte, in the 0..1 units `color(srgb …)` reports components in.
+
+   The slack has to exist because Chromium's float round-trip through the
+   mixing space overshoots for colours that are unambiguously IN gamut, and
+   white itself does it: `color-mix(in srgb, oklch(1 0 0) 50%, white)` computes
+   here to `color(srgb 0.999935 1.00003 1.00004)`. A gate at exactly 0..1
+   refuses that, which means it refuses pure white and fails the run on a
+   colour nothing is wrong with. `oklab` and `lab` overshoot the same way; the
+   largest seen is 4e-5, a twenty-five-thousandth of the window. Both ends are
+   pinned by literals in part F rather than by this paragraph. */
+const GAMUT_SLACK = 0.5 / 255;
+
 /* The two serialisations getComputedStyle actually returns on this page.
    `color(srgb r g b / a)` is how Chromium writes a color-mix(), and its
    components are 0..1 floats rather than 0..255 bytes (CSS Color 4 §10) —
    reading them as bytes is not a dropped site but a wrong number, which is
    worse. Anything else returns null, and every caller turns null into a
-   refusal by name rather than a skip. */
+   refusal by name rather than a skip.
+
+   `color(srgb …)` is read only when its components are in gamut to within
+   GAMUT_SLACK. Chromium does not clamp this serialisation, so a mix with a
+   wide-gamut term hands back components outside 0..1 —
+   `color-mix(in srgb, color(display-p3 1 0 0) 90%, white)` computes to
+   `color(srgb 1.08372 -0.104021 -0.0350659)`, and scaling that by 255 invents
+   the colour `#114-1B-9` and a confident ratio to go with it. It is refused
+   instead. Chromium does clamp per channel when it PAINTS, so the pixel could
+   be predicted, but that is a property of this rasteriser rather than of the
+   stylesheet, and a predicted ink is the same confidently wrong number the
+   paint-server refusal above exists to prevent. Carried across from the
+   monorepo's oracle (Stadiora/Aria#10293). */
 function parseColor(str) {
   const s = String(str).trim();
   const num = (t) => (/%$/.test(t) ? Number(t.slice(0, -1)) / 100 : Number(t));
@@ -358,7 +382,12 @@ function parseColor(str) {
     const [r, g, b] = parts.slice(0, 3).map(num);
     const a = parts.length > 3 ? num(parts[3]) : 1;
     if ([r, g, b, a].some((v) => Number.isNaN(v))) return null;
-    return { r: r * 255, g: g * 255, b: b * 255, a };
+    if ([r, g, b].some((v) => v < -GAMUT_SLACK || v > 1 + GAMUT_SLACK)) return null;
+    /* Clamping is not the gate's job done twice. The gate lets a component
+       through at 1.00003, and 1.00003 * 255 is 255.008 — a byte that cannot
+       exist, fed to a luminance formula whose domain is 0..255. */
+    const byte = (v) => Math.min(255, Math.max(0, v * 255));
+    return { r: byte(r), g: byte(g), b: byte(b), a };
   }
   return null;
 }
@@ -1306,7 +1335,7 @@ async function measureSites(targets, where) {
 
 /* ------------------------------------------------------------- self-test */
 
-/* Proves the tool before it judges anything, in seven parts that do not share a
+/* Proves the tool before it judges anything, in eight parts that do not share a
    mechanism. Asserting "this pair measures 3.95:1" against a number this same
    file computed would be circular — the expectation would move with the bug —
    so each part binds something a different way:
@@ -1337,6 +1366,13 @@ async function measureSites(targets, where) {
  *      CSS Color 4 (a 50% mix of #FF0000 and #0000FF in sRGB is
  *      `color(srgb 0.5 0 0.5)`, which is rgb(127.5, 0, 127.5)), not computed
  *      here.
+ *  F2. THE GAMUT WINDOW around F, both ends pinned by a browser serialisation
+ *      this file did not compute. Chromium overshoots 1 for colours that are
+ *      plainly in gamut, so a 0..1 gate refuses white; it also serialises a
+ *      wide-gamut mix far outside 0..1, and scaling THAT by 255 invents a
+ *      colour and a confident ratio to go with it. The fixture carries one of
+ *      each and asserts the two shapes still exist before asserting how they
+ *      are routed.
  *   G. THE THREE BOUNDARY CENSUSES, which decide whether a site is SEEN at
  *      all and so sit upstream of everything A-F measures. A page carrying
  *      six spellings of a nested browsing context must report six, which is
@@ -1380,13 +1416,22 @@ function fixture() {
     ' border: 0; outline: 0; font-size: 14px; }' +
     'div.sw input::placeholder { color: #ff00ff; opacity: 1; }' +
     'span.mix { color: color-mix(in srgb, #ff0000 50%, #0000ff); }' +
+    /* The two ends of the GAMUT_SLACK window, as literals. `.over` is white
+       reached through oklch, which Chromium serialises a hair ABOVE 1 and
+       which must still be READ; `.wide` carries a display-p3 term, which
+       lands far outside and must be REFUSED. A gate with no slack fails the
+       first; no gate at all invents a colour for the second. */
+    'span.over { color: color-mix(in srgb, oklch(1 0 0) 50%, white); }' +
+    'span.wide { color: color-mix(in srgb, color(display-p3 1 0 0) 90%, white); }' +
     '</style>' +
     FIXTURE_CASES.map((c, i) =>
       `<div class="sw" id="c${i}" style="background:${c.bg}">swatch ${i} measured here` +
       (c.placeholder ? '<input placeholder="placeholder glyphs must not survive the plate">' : '') +
       (c.svgText ? '<svg width="260" height="20" style="display:block"><text class="axis" x="0" y="14" fill="#ff00ff" style="color:#00ffff">svg text must not survive</text></svg>' : '') +
       (c.psText ? '<svg width="320" height="20" style="display:block"><defs><linearGradient id="psSelfTest"><stop offset="0" stop-color="#000000"/><stop offset="1" stop-color="#000000"/></linearGradient></defs><text class="axis" x="0" y="14" fill="url(#psSelfTest) #eef2f7">paint-server text must not be judged</text></svg>' : '') +
-      (c.mixText ? '<div><span class="mix">a color-mix ink must be read, not refused</span></div>' : '') +
+      (c.mixText ? '<div><span class="mix">a color-mix ink must be read, not refused</span></div>' +
+        '<div><span class="over">an in-gamut overshoot must be read</span></div>' +
+        '<div><span class="wide">a wide-gamut mix must be refused</span></div>' : '') +
       '</div>'
     ).join('');
 }
@@ -1522,6 +1567,51 @@ async function selfTest() {
       `${row ? (row.unjudgeable || `judged at ${row.ratio?.toFixed(2)}:1`) : 'nothing'}`);
   }
 
+  console.log('\n  F2. the gamut window — an in-gamut overshoot is read, a wide-gamut mix is refused');
+  {
+    /* Both ends are asserted on the SERIALISED string first, so a parser that
+       stopped refusing cannot be mistaken for a browser that stopped
+       overshooting. The literals are Chromium's own output, measured: white
+       through oklch overshoots to 1.00004 (inside GAMUT_SLACK, 0.00196), and
+       a display-p3 red mixed 90% with white lands at 1.08372 / -0.104021
+       (outside it by more than fifty times the window). */
+    const over = judged.find((r) => r.text.startsWith('an in-gamut overshoot'));
+    const wide = judged.find((r) => r.text.startsWith('a wide-gamut mix'));
+    const overInk = over ? String(over.ink ?? over.color) : '(not collected)';
+    const wideInk = wide ? String(wide.ink ?? wide.color) : '(not collected)';
+    const comps = (s) => {
+      const m = String(s).match(/^color\(\s*srgb\s+([^)]+)\)$/i);
+      return m ? m[1].split(/[\s/]+/).filter(Boolean).slice(0, 3).map(Number) : null;
+    };
+    const overC = comps(overInk);
+    const wideC = comps(wideInk);
+    /* The fixture only proves something if the browser still produces the two
+       shapes it was built from: one outside 0..1 but inside the slack, one
+       outside the slack. If Chromium ever stops overshooting, this says so
+       rather than passing on a case that no longer exists. */
+    const overIsOvershoot = !!overC && overC.some((v) => v > 1) &&
+      overC.every((v) => v >= -GAMUT_SLACK && v <= 1 + GAMUT_SLACK);
+    const wideIsOutside = !!wideC && wideC.some((v) => v < -GAMUT_SLACK || v > 1 + GAMUT_SLACK);
+    const overRead = !!over && !over.unjudgeable && typeof over.ratio === 'number' &&
+      !!parseColor(overInk);
+    /* Clamped, so the byte a 1.00003 component becomes is 255 and not 255.008. */
+    const overParsed = parseColor(overInk);
+    const clamped = !!overParsed &&
+      ['r', 'g', 'b'].every((k) => overParsed[k] >= 0 && overParsed[k] <= 255);
+    const wideRefused = !!wide && wide.unjudgeable === 'unreadable ink syntax' &&
+      wide.ratio === undefined && parseColor(wideInk) === null;
+    const ok = overIsOvershoot && wideIsOutside && overRead && clamped && wideRefused;
+    if (!ok) bad++;
+    console.log(`     ${ok ? 'ok  ' : 'FAIL'} <span style="color: color-mix(in srgb, oklch(1 0 0) 50%, white)">` +
+      ` ${overInk}\n          ${overIsOvershoot ? 'overshoots 1 and sits inside the slack' : 'is NOT the overshoot this case needs'}` +
+      `; routed as ${over ? (over.unjudgeable || `judged at ${over.ratio?.toFixed(2)}:1`) : 'nothing'}` +
+      `; parsed ${overParsed ? `rgb(${[overParsed.r, overParsed.g, overParsed.b].map((v) => v.toFixed(3)).join(', ')})` : 'nothing'}` +
+      `${overParsed && !clamped ? ' — NOT CLAMPED' : ''}` +
+      `\n          <span style="color: color-mix(in srgb, color(display-p3 1 0 0) 90%, white)"> ${wideInk}` +
+      `\n          ${wideIsOutside ? 'sits outside the slack' : 'is NOT outside the slack'}` +
+      `; routed as ${wide ? (wide.unjudgeable || `JUDGED at ${wide.ratio?.toFixed(2)}:1`) : 'nothing'}`);
+  }
+
   console.log('\n  G. boundary censuses — a frame, an author shadow root and unsourced user-agent text');
   {
     await load(origin + '/__contrast-boundary-test.html', { settle: 300 });
@@ -1569,7 +1659,8 @@ async function selfTest() {
   console.log(bad === 0
     ? '\n  self-test passed — the formula matches published values, pixels survive\n' +
       '  the pipeline, the plate lifts every glyph, inks are read from what paints,\n' +
-      '  an ink that cannot be resolved is refused, color(srgb) is read, and the\n' +
+      '  an ink that cannot be resolved is refused, color(srgb) is read to the\n' +
+      '  edge of gamut and refused past it, and the\n' +
       '  three boundaries this tool refuses are all censused.\n'
     : `\n  self-test FAILED on ${bad} case(s); do not trust this tool's numbers.\n`);
   return bad === 0;
