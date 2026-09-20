@@ -32,7 +32,7 @@
 
      - Layout. Nothing here measures anything, in any browser, at any width.
      - Every reader of the sheet. The line below enumerates the PREFIXED
-       docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the two regex frames
+       docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the regex frames
        over its prose; what is not enumerated anywhere is the rest, the
        twenty-odd places this file reads the sheet's RULES through
        declarations(). Those are read as CSS, not as prose about CSS, so
@@ -150,9 +150,13 @@ const MACHINE_READ_PREFIXES = [
 ];
 /* The OTHER way this file reads the sheet's docblock as data: a regex frame
    over a PROSE sentence, which has no prefix and so cannot go through
-   machineLine(). Two exist, both over the same sentence. Enumerated, because
-   a test named for a class has to say which class -- the fourth review of #75
-   added a third frame and the suite stayed green.
+   machineLine(). Enumerated, because a test named for a class has to say
+   which class. NO COUNT IS TYPED HERE, and that is deliberate: this comment
+   said "two" while the list below held three, and the fifth review of #75
+   showed the count was bound by nothing -- rewriting it to "seventeen" left
+   the suite green, because only the list's LENGTH is ever read, never the
+   word. A count in prose beside the list it counts is the overclaim this
+   file exists to catch; the list is the count.
 
    The shape this catches is the whitespace-collapsing spelling below, which
    every frame needs, because the sheet's docblock is hard-wrapped and no
@@ -465,8 +469,10 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
    was false of a fourth case it was covering: a radio group's one stop IS
    decided by type, name and checked. The fourth review of #75 measured four
    members this helper called tab stops that Chrome gives none to. A NAMED
-   radio is now refused rather than answered, because the group is the owner
-   form's business and not one node's; an unnamed one is answered. */
+   radio is now refused rather than answered -- at any tabindex, a
+   non-negative one included, which the fifth review found still answered --
+   because the group is the owner form's business and not one node's; an
+   unnamed one is answered. */
 const FOCUSABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'];
 const DISABLEABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'FIELDSET', 'OPTGROUP', 'OPTION'];
 const HREF_TAGS = ['A', 'AREA'];
@@ -579,6 +585,29 @@ function focusable(node) {
     throw new Error('focusable() cannot tell: <' + node.tagName.toLowerCase()
       + '> takes a tab stop in some browsers and not others');
   }
+  /* A radio GROUP takes one sequential tab stop between all its members --
+     the checked member, or the first member in tree order when none is
+     checked -- and every other member takes none. Which members are in the
+     group is decided by the owner FORM (two forms are two groups, and a
+     form= attribute can put a radio in a form it does not sit inside), so a
+     single node cannot answer it. This helper said `true` for every member
+     until the fourth review of #75 measured Chrome. An UNNAMED radio, or one
+     with name="", is in no group at all and always takes its own stop --
+     measured, not assumed -- so it is answered rather than refused.
+     ABOVE the non-negative tabindex branch, which is where the fifth review
+     of #75 found it still answering: a tabindex does not take a radio out of
+     its group, it only moves where the group's one stop sits in the order.
+     Measured, same ring walk: name=g unchecked WITH a checked sibling takes
+     no stop at tabindex=1 or 2, while the same markup with NO checked member
+     takes the stop at tabindex=1 or 2. One node's markup is identical across
+     that pair, so no attribute on it can decide the answer. A NEGATIVE
+     tabindex still answers false above this: that one is out of the ring
+     whatever the group does. */
+  if (node.tagName === 'INPUT' && (attr(node, 'type') || '').toLowerCase() === 'radio'
+    && attr(node, 'name')) {
+    throw new Error('focusable() cannot tell: a radio group takes one tab stop between all '
+      + 'its members, and which members are in the group is decided by the owner form');
+  }
   if (index !== null) return index >= 0;
 
   /* Before the href branch: an <a contenteditable> with no href is an editing
@@ -611,20 +640,6 @@ function focusable(node) {
     const parent = node.parentNode;
     if (!parent || parent.tagName !== 'DETAILS') return false;
     return Array.from(parent.children).find((child) => child.tagName === 'SUMMARY') === node;
-  }
-  /* A radio GROUP takes one sequential tab stop between all its members --
-     the checked member, or the first member in tree order when none is
-     checked -- and every other member takes none. Which members are in the
-     group is decided by the owner FORM (two forms are two groups, and a
-     form= attribute can put a radio in a form it does not sit inside), so a
-     single node cannot answer it. This helper said `true` for every member
-     until the fourth review of #75 measured Chrome. An UNNAMED radio, or one
-     with name="", is in no group at all and always takes its own stop --
-     measured, not assumed -- so it is answered rather than refused. */
-  if (node.tagName === 'INPUT' && (attr(node, 'type') || '').toLowerCase() === 'radio'
-    && attr(node, 'name')) {
-    throw new Error('focusable() cannot tell: a radio group takes one tab stop between all '
-      + 'its members, and which members are in the group is decided by the owner form');
   }
   return FOCUSABLE_TAGS.includes(node.tagName);
 }
@@ -760,6 +775,24 @@ const FOCUSABLE_PROBES = [
   { name: '<input type="radio" name="g" tabindex="-1">', tag: 'input',
     attrs: { type: 'radio', name: 'g', tabindex: '-1' }, answer: false,
     why: 'a negative tabindex is out of the ring whatever the group does' },
+  /* Chrome, same ring walk, fifth review of #75: a tabindex does not take a
+     radio out of its group, it only moves where the group's one stop sits.
+     Both rows below were answered `true` by the non-negative branch, which
+     ran above the refusal. The measurement that settles it is a PAIR whose
+     probe markup is character-identical: name=g unchecked at tabindex=2
+     takes the stop when no member is checked, and takes NONE when a sibling
+     is checked. Nothing on the node itself differs between those two. */
+  { name: '<input type="radio" name="g" tabindex="0">', tag: 'input',
+    attrs: { type: 'radio', name: 'g', tabindex: '0' }, answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. measured no stop as the unchecked non-first member of '
+      + 'its group, so a tabindex of 0 does not buy it one' },
+  { name: '<input type="radio" name="g" tabindex="2">', tag: 'input',
+    attrs: { type: 'radio', name: 'g', tabindex: '2' }, answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. measured BOTH ways on identical node markup -- a stop '
+      + 'with no checked member in the group, none with one -- so it is the group again' },
+  { name: '<input type="radio" tabindex="0">', tag: 'input',
+    attrs: { type: 'radio', tabindex: '0' }, answer: true,
+    why: 'unnamed, so no group to refuse for: measured, it takes its own stop' },
   { name: '<area href>', tag: 'area', attrs: { href: '/ops/alerts.html' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. a stop only inside a <map> a rendered <img usemap> uses' },
   { name: '<area> with no href', tag: 'area', answer: false,
@@ -840,7 +873,7 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 72, takesATabStop: 26, doesNot: 37, refused: 9, wereWrongBefore: 7, foundInReview: 21 });
+    { cases: 75, takesATabStop: 27, doesNot: 37, refused: 11, wereWrongBefore: 7, foundInReview: 23 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -2367,7 +2400,13 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
   /* This file's OWN citations, resolved the way the stylesheet's are. The
      marker is the words "The test" before the quote; a citation written
      without it is invisible here, which is the shape this misses and the
-     reason FILE_CITATIONS is pinned by identity rather than by a floor. */
+     reason FILE_CITATIONS is pinned by identity rather than by a floor.
+
+     That gap has a SECOND face, named by the fifth review of #75: an
+     unmarked quotation of a title belonging to NO suite -- an invented one
+     -- falls between both halves. The marked half never sees it for want of
+     the marker, and the foreign half below rejects it because it is in no
+     sibling's title set. Only a real foreign title is caught unmarked. */
   /* Built from parts rather than written as one literal, or the pattern
      matches its own source text and this file cites `([^`. */
   const marker = new RegExp('The' + ' test "([^"]+)"', 'g');

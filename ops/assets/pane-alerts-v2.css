@@ -301,7 +301,7 @@
    Both lines are read by the same test, which finds each named sheet's
    sideways-scrolling box by its overflow rather than by a class name and
    compares the focus rule declaration for declaration: the first two must
-   match this one exactly, and pane-releases-v2.css .tbl-scroll must differ by
+   match this one exactly, and pane-releases-v2.css's must differ by
    exactly the declaration named on the line above, value included, which this
    sheet does not make at all. */
 .scrollx:focus-visible { outline-offset: -2px; }
