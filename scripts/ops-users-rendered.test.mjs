@@ -52,6 +52,25 @@
  * much as a colour one. The pressed control is additionally asserted to differ
  * from the unpressed one in font-weight, which carries no colour at all.
  *
+ * EVERY GRAPHIC RATIO IS A WORST PIXEL, NOT A PIXEL. The first version of this
+ * file sampled each surface at ONE point, and that is not a measurement of a
+ * surface — it is a measurement of a point that may or may not be on it.
+ * `.locked`'s background is a 135° repeating-linear-gradient, so the mask
+ * chip's interior is two alternating colours; the single sample landed in a
+ * gap, came back holding the CARD showing through, and this file published
+ * 3.55:1 for an edge whose true worst-case neighbour was 2.97:1 — under the
+ * 3:1 it was asserting. It stayed green through a mutation that made the hatch
+ * loud enough to drop the real figure to 1.44:1.
+ *
+ * So `stripProbe` walks the whole edge instead. For a given side it collects
+ * three bands — the border line itself, four pixels of interior inboard of it,
+ * three pixels of the surface outboard — skipping ceil(border-radius)+3 at
+ * each end so the corner arc is never sampled, and every ratio reported is the
+ * MINIMUM over each band. The sample counts are asserted, because a band that
+ * silently collapses to one pixel is the original defect returning, and the
+ * interior and outside worst pixels are asserted to differ, because their
+ * being byte-identical is the tell that one band is not where it is named.
+ *
  * NOT COVERED, stated rather than implied:
  *
  *   - forced-colours / prefers-contrast. The mask's dashed border is chosen
@@ -66,6 +85,10 @@
  *     sweeps /ops/shell-v2.html only and does not reach this pane at all.
  *   - hover and focus. The pressed control's hover step and the :focus-visible
  *     outline it must not be mistaken for are both unmeasured here.
+ *   - the hatch on the mask chip, as a texture. Nothing asserts the chip is
+ *     hatched RATHER than flat; what is asserted is that its interior is not
+ *     the card surface. Removing the hatch raises every figure here, so it is
+ *     the loud direction the band scan exists to catch, not the quiet one.
  *   - any width but 1280 and 375. The narrow pass resizes to 375 and asserts
  *     two things: that the "Selected" mark is still on the reference's line,
  *     and that the cell the floor sets is not wider than the viewport.
@@ -341,10 +364,77 @@ const loadPlate = (b64) => `(async () => {
   return img.width + 'x' + img.height;
 })()`;
 
-const samplePoints = (points) => `JSON.stringify(${JSON.stringify(points)}.map((p) => {
-  const d = globalThis.__plate.getImageData(Math.round(p.x), Math.round(p.y), 1, 1).data;
-  return { name: p.name, rgb: [d[0], d[1], d[2]] };
-}))`;
+/* A 1px edge and the two surfaces it sits between, read as BANDS rather than
+   as points.
+ *
+ * A point is not enough, and the reason is specific rather than theoretical.
+ * .locked's background is a 135deg repeating-linear-gradient — a hatch — so
+ * "the mask chip interior" is two colours alternating every 5px, not one.
+ * Sampling it at one coordinate lands in whichever stripe that coordinate
+ * happens to fall in; landing in the quiet one reported the mask's edge at
+ * 3.55:1 against an interior whose loud stripe put it at 2.98:1, under the
+ * floor the check was asserting. It also, tellingly, returned a value
+ * byte-identical to the surface OUTSIDE the chip, because the gap it sampled
+ * was the card showing through. An oracle that reports the same number for
+ * two different surfaces has measured one of them twice.
+ *
+ * So: walk the edge, take every pixel of both neighbouring bands, and claim
+ * the WORST of them. The corner arc is skipped — border-radius curves the
+ * edge away from the straight line being walked, and a naive full-width band
+ * picks up the arc's antialiasing as if it were the surface.
+ */
+const stripProbe = (selector, side) => `(() => {
+  const el = document.querySelector(${JSON.stringify(selector)});
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const cs = getComputedStyle(el);
+  const radius = parseFloat(cs.borderTopLeftRadius) || 0;
+  const ctx = globalThis.__plate;
+  const px = (x, y) => { const d = ctx.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2]]; };
+  const along = ${JSON.stringify(side)} === 'top'
+    ? { from: Math.round(r.x), to: Math.round(r.right), fixed: Math.round(r.y) }
+    : { from: Math.round(r.y), to: Math.round(r.bottom), fixed: Math.round(r.x) };
+  const span = along.to - along.from;
+  const skip = Math.min(Math.ceil(radius) + 3, Math.floor(span / 3));
+  const out = { edgeLine: [], interior: [], outside: [], radius, skip,
+    box: { w: r.width, h: r.height } };
+  for (let t = along.from + skip; t < along.to - skip; t++) {
+    const at = (d) => (${JSON.stringify(side)} === 'top'
+      ? px(t, along.fixed + d) : px(along.fixed + d, t));
+    out.edgeLine.push(at(0));
+    for (let d = 2; d <= 5; d++) out.interior.push(at(d));
+    for (let d = -4; d <= -2; d++) out.outside.push(at(d));
+  }
+  if (!out.edgeLine.length) throw new Error('the edge band was empty for ${selector}');
+  return JSON.stringify(out);
+})()`;
+
+/* The edge's own colour, read as the pixel of the walked line that is furthest
+   in luminance from what the interior typically is. A 1px hairline sampled at
+   a fixed coordinate lands beside itself as often as on itself — read that way
+   the pressed ring once reported 1.00:1 against the fill it encloses, which is
+   a measurement saying "there is no ring" about a ring that is there. */
+function readStrip(raw, where) {
+  if (!raw) throw new Error('nothing matched ' + where + ' on the drawn page');
+  const strip = JSON.parse(raw);
+  const interiorLum = strip.interior.map(luminance).sort((a, b) => a - b);
+  const median = interiorLum[Math.floor(interiorLum.length / 2)];
+  const edge = strip.edgeLine.slice()
+    .sort((a, b) => Math.abs(luminance(b) - median) - Math.abs(luminance(a) - median))[0];
+  const worst = (band) => band.reduce((lo, p) => Math.min(lo, contrast(edge, p)), Infinity);
+  const distinct = (band) => new Set(band.map((p) => p.join(','))).size;
+  return { edge,
+    vsInterior: round(worst(strip.interior)), vsOutside: round(worst(strip.outside)),
+    worstInterior: strip.interior.reduce((w, p) =>
+      contrast(edge, p) < contrast(edge, w) ? p : w, strip.interior[0]),
+    worstOutside: strip.outside.reduce((w, p) =>
+      contrast(edge, p) < contrast(edge, w) ? p : w, strip.outside[0]),
+    samples: { edge: strip.edgeLine.length,
+      interior: strip.interior.length, outside: strip.outside.length },
+    colours: { interior: distinct(strip.interior), outside: distinct(strip.outside) },
+    radius: strip.radius, skip: strip.skip, box: strip.box,
+    edgeLine: strip.edgeLine };
+}
 
 /* The rects an element's own TEXT occupies, not its box: a chip that is part
    lock glyph has its words on none of the glyph. */
@@ -509,57 +599,8 @@ try {
     const styles = {};
     for (const [key, selector] of Object.entries(PAIRS)) styles[key] = await styleOf(selector);
 
-    /* Geometry of the two non-text graphics, read before anything is lifted. */
-    const geo = JSON.parse(await evaluate(`(() => {
-      const b = document.querySelector('tr.is-selected .match-row-btn').getBoundingClientRect();
-      const u = document.querySelector('tr:not(.is-selected) .match-row-btn').getBoundingClientRect();
-      const m = document.querySelector('.locked.masked').getBoundingClientRect();
-      return JSON.stringify({
-        ringY: b.y + b.height / 2, ringX: b.x,
-        fill: { name: 'the pressed control fill', x: b.x + 4, y: b.y + b.height / 2 },
-        cell: { name: 'the picked row cell beside the control', x: b.x - 5, y: b.y + b.height / 2 },
-        unpressedEdge: { name: 'the unpressed control at the same offset', x: u.x, y: u.y + u.height / 2 },
-        maskY: m.y, maskX: m.x + m.width / 2, maskW: m.width,
-        maskIn: { name: 'the mask chip interior', x: m.x + m.width / 2, y: m.y + 6 },
-        maskOut: { name: 'the card surface outside the mask', x: m.x + m.width / 2, y: m.y - 5 },
-      });
-    })()`));
-
-    const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
-    await evaluate(loadPlate(shot.data));
-
-    /* A 1px hairline and a single coordinate can land beside it rather than on
-       it — read that way the ring reported 1.00:1 against the fill it
-       encloses, which is the measurement saying "there is no ring" about a
-       ring that is there. Scan across the edge and keep the pixel furthest
-       from the interior. A mutation that deletes the ring leaves every pixel
-       in the scan equal to the interior and the figure collapses. */
-    const flat = JSON.parse(await evaluate(samplePoints(
-      [geo.fill, geo.cell, geo.unpressedEdge, geo.maskIn, geo.maskOut])));
-    const at = Object.fromEntries(flat.map((p) => [p.name, p.rgb]));
-
-    const ringScan = JSON.parse(await evaluate(samplePoints(
-      [-1, 0, 1, 2].map((d, i) => ({ name: 'ring' + i, x: geo.ringX + d, y: geo.ringY })))));
-    const ring = ringScan
-      .map((p) => ({ rgb: p.rgb, d: contrast(p.rgb, at['the pressed control fill']) }))
-      .sort((a, b) => b.d - a.d)[0].rgb;
-
-    const edgeScan = JSON.parse(await evaluate(samplePoints(
-      Array.from({ length: 40 }, (_, i) => ({
-        name: 'edge' + i, x: geo.maskX - 20 + i, y: geo.maskY + 0.5 })))));
-    const maskEdge = edgeScan
-      .map((p) => ({ rgb: p.rgb, d: contrast(p.rgb, at['the mask chip interior']) }))
-      .sort((a, b) => b.d - a.d)[0].rgb;
-
-    /* The same offset into the unpressed control, so "pressed and unpressed
-       differ" is a statement about the same pixel of the same shape. */
-    const unpressedScan = JSON.parse(await evaluate(samplePoints(
-      [-1, 0, 1, 2].map((d, i) => ({
-        name: 'un' + i, x: geo.unpressedEdge.x + d, y: geo.unpressedEdge.y })))));
-    const unpressedEdge = unpressedScan
-      .map((p) => ({ rgb: p.rgb, d: contrast(p.rgb, ring) }))
-      .sort((a, b) => a.d - b.d)[0].rgb;
-
+    /* Text-run geometry is read from the DOM before the glyphs go, because
+       afterwards there is nothing left to measure the extent of. */
     const texts = [];
     for (const [selector, where] of TEXT_SITES) {
       const raw = await evaluate(textRuns(selector));
@@ -567,10 +608,31 @@ try {
       texts.push({ ...JSON.parse(raw), selector, where });
     }
 
+    /* One plate, with the glyphs lifted, and both kinds of measurement taken
+       off it. Text wants the paint UNDER it. The graphics want the same
+       thing: a mask chip's interior is the surface its dashed edge sits on,
+       and the letters of the masked value standing on that surface are not
+       the surface — sampling them would make the edge's contrast against its
+       own background depend on how tall the address happens to be. */
     await evaluate(LIFT_GLYPHS);
     await new Promise((r) => setTimeout(r, 250));
     const plate = await cdp.send('Page.captureScreenshot', { format: 'png' });
     await evaluate(loadPlate(plate.data));
+
+    /* The pressed ring's left edge, the mask's top edge, and — for the claim
+       that the two controls do not look alike with colour taken out — the same
+       left edge of the unpressed control. */
+    const ring = readStrip(await evaluate(stripProbe(PAIRS.pressedBtn, 'left')),
+      'the pressed control');
+    const mask = readStrip(await evaluate(stripProbe(PAIRS.maskedChip, 'top')),
+      'the mask chip');
+    const unpressed = readStrip(await evaluate(stripProbe(PAIRS.unpressedBtn, 'left')),
+      'the unpressed control');
+    /* Worst case, not corresponding case: every pixel of the unpressed
+       control's edge line, and the one that reads closest to the pressed
+       ring wins. */
+    const ringVsUnpressed = round(unpressed.edgeLine
+      .reduce((lo, p) => Math.min(lo, contrast(ring.edge, p)), Infinity));
 
     const textContrast = [];
     for (const t of texts) {
@@ -599,12 +661,7 @@ try {
     })()`));
 
     census[theme] = { styles, textContrast, narrow,
-      graphics: {
-        ring, fill: at['the pressed control fill'],
-        cell: at['the picked row cell beside the control'],
-        unpressedEdge,
-        maskEdge, maskIn: at['the mask chip interior'], maskOut: at['the card surface outside the mask'],
-      } };
+      graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
   await shutdown();
@@ -687,25 +744,25 @@ for (const theme of THEMES) {
       `${unpressedWeight}: weight is not carrying the state`);
 
     /* Luminance discards hue, so a ratio here is what a greyscale screen sees.
-       The ring against the same pixel of the unpressed control is the "these
-       two controls do not look alike" claim with colour taken out of it. */
-    const { ring, unpressedEdge } = c.graphics;
-    const ratio = contrast(ring, unpressedEdge);
-    assert.ok(ratio >= AA_GRAPHIC,
-      `the pressed control's edge reads at ${round(ratio)}:1 in luminance against the ` +
-      `same edge of the unpressed control (${ring} vs ${unpressedEdge}), under ${AA_GRAPHIC}:1`);
+       The ring against the unpressed control's own edge line is the "these two
+       controls do not look alike" claim with colour taken out of it, and it is
+       the WORST pixel of that line rather than a corresponding one. */
+    const { ring, unpressed, ringVsUnpressed } = c.graphics;
+    assert.ok(ringVsUnpressed >= AA_GRAPHIC,
+      `the pressed control's edge reads at ${ringVsUnpressed}:1 in luminance against the ` +
+      `closest pixel of the unpressed control's edge (${ring.edge} vs ${unpressed.edge}), ` +
+      `under ${AA_GRAPHIC}:1`);
   });
 
   test(`[${theme}] the pressed ring clears 3:1 against both surfaces it sits between`, () => {
-    const { ring, fill, cell } = census[theme].graphics;
-    const inner = contrast(ring, fill);
-    const outer = contrast(ring, cell);
-    assert.ok(inner >= AA_GRAPHIC,
-      `the ring reads ${round(inner)}:1 against the pressed control fill it encloses ` +
-      `(${ring} vs ${fill})`);
-    assert.ok(outer >= AA_GRAPHIC,
-      `the ring reads ${round(outer)}:1 against the picked row cell beside it ` +
-      `(${ring} vs ${cell})`);
+    const { ring } = census[theme].graphics;
+    assert.ok(ring.vsInterior >= AA_GRAPHIC,
+      `the ring reads ${ring.vsInterior}:1 against the worst pixel of the pressed control ` +
+      `fill it encloses (${ring.edge} vs ${ring.worstInterior}), over ` +
+      `${ring.samples.interior} samples`);
+    assert.ok(ring.vsOutside >= AA_GRAPHIC,
+      `the ring reads ${ring.vsOutside}:1 against the worst pixel of the picked row cell ` +
+      `beside it (${ring.edge} vs ${ring.worstOutside}), over ${ring.samples.outside} samples`);
   });
 }
 
@@ -723,8 +780,14 @@ for (const theme of THEMES) {
       'the mask is not set in the monospace the value it stands for uses');
     assert.doesNotMatch(plainLockedChip['font-family'], /mono/i,
       'every locked chip is now mono, so the mask is no longer distinguishable from one');
-    assert.notEqual(maskedChip['letter-spacing'], 'normal',
-      'the mask is not tracked out, so its dots run together as a word');
+    /* Magnitude, not just presence: `letter-spacing: .0005em` is not 'normal'
+       and separates nothing, so the old shape of this check passed on tracking
+       a reader cannot see. The floor is a third of a pixel at this type size,
+       which is the smallest step Chrome will actually lay out differently. */
+    const tracking = parseFloat(maskedChip['letter-spacing']);
+    assert.ok(tracking >= 0.3,
+      `the mask is tracked out by only ${maskedChip['letter-spacing']}, which does not ` +
+      'separate its dots enough to stop them running together as a word');
     assert.equal(plainLockedChip['letter-spacing'], 'normal',
       'every locked chip is now tracked, so tracking no longer marks the mask');
 
@@ -760,15 +823,26 @@ for (const theme of THEMES) {
   });
 
   test(`[${theme}] the mask's dashed edge clears 3:1 against both surfaces`, () => {
-    const { maskEdge, maskIn, maskOut } = census[theme].graphics;
-    const inner = contrast(maskEdge, maskIn);
-    const outer = contrast(maskEdge, maskOut);
-    assert.ok(inner >= AA_GRAPHIC,
-      `the dashed edge reads ${round(inner)}:1 against the mask chip interior ` +
-      `(${maskEdge} vs ${maskIn})`);
-    assert.ok(outer >= AA_GRAPHIC,
-      `the dashed edge reads ${round(outer)}:1 against the card surface outside it ` +
-      `(${maskEdge} vs ${maskOut})`);
+    const { mask } = census[theme].graphics;
+    /* .locked's background is a hatch, so the interior is two alternating
+       colours and the claim is about the LOUD one. The sample counts are
+       asserted because a band that collapses to one pixel is how this check
+       reported 3.55:1 for a surface that measured 2.98:1. */
+    assert.ok(mask.samples.interior >= 40 && mask.samples.outside >= 30,
+      `the mask's neighbouring bands were read at ${mask.samples.interior} interior and ` +
+      `${mask.samples.outside} outside samples, which is too few to have walked the edge`);
+    assert.notEqual(mask.worstInterior.join(), mask.worstOutside.join(),
+      `the worst pixel inside the mask chip and the worst pixel outside it both resolve to ` +
+      `${mask.worstInterior}. Either the chip has lost the surface that distinguishes it ` +
+      'from the card it sits on, or one of the two bands is not where it is named — and ' +
+      'that identity is precisely how a single-pixel sample of a hatched interior came ' +
+      'back holding the card surface and published it as the interior');
+    assert.ok(mask.vsInterior >= AA_GRAPHIC,
+      `the dashed edge reads ${mask.vsInterior}:1 against the worst pixel of the mask chip ` +
+      `interior (${mask.edge} vs ${mask.worstInterior}), over ${mask.samples.interior} samples`);
+    assert.ok(mask.vsOutside >= AA_GRAPHIC,
+      `the dashed edge reads ${mask.vsOutside}:1 against the worst pixel of the card surface ` +
+      `outside it (${mask.edge} vs ${mask.worstOutside}), over ${mask.samples.outside} samples`);
   });
 }
 

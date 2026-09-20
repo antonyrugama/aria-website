@@ -119,6 +119,18 @@
                mode keeps, and box-shadow is not, so this is the channel that
                survives the display setting that flattens the hatching.
 
+   The edge is the full --ink-3 token rather than a faded mix of it, and that
+   is measured rather than chosen. .locked's own background is a 135deg
+   repeating-linear-gradient, so the surface the dash sits on is not one
+   colour but two alternating every 5px, and the loud stripe is the one a 3:1
+   claim has to clear. A 70% mix of --ink-3 reads 2.98:1 dark and 2.90:1 light
+   against that stripe — under the floor, while measuring 3.53:1 against the
+   quiet one, which is how a single-pixel sample of a hatched surface reports
+   a number that is not true. The whole token reads 4.57:1 dark and 5.14:1
+   light against the loud stripe and 5.42:1 / 5.97:1 against the card outside.
+   scripts/ops-users-rendered.test.mjs scans the band for its worst pixel, so
+   the hatch cannot hide under an average again.
+
    The border REPLACES .locked's ring rather than joining it, and the padding
    gives back the pixel the border takes, so the chip is the size it was and
    nothing around it moves. Written as .locked.masked rather than .masked so
@@ -129,7 +141,7 @@
    already masked, unchanged; this only draws it as the redaction it is. */
 .locked.masked {
   padding: 2px 8px;
-  border: 1px dashed color-mix(in srgb, var(--ink-3) 70%, transparent);
+  border: 1px dashed var(--ink-3);
   box-shadow: none;
   font-family: var(--mono);
   letter-spacing: .04em;
