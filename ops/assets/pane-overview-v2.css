@@ -101,6 +101,16 @@
 .kpi-row .spacer { flex: 1; }
 .kpi-plat { font-size: 11.5px; color: var(--ink-3); }
 
+/* aria.css lays the meta row and the footer out without wrapping, which fits
+   the reference page because every tile there carries one short pill and one
+   short link. These tiles carry a sentence the answer wrote and, on Active
+   people, one pill per app, so both rows are allowed a second line and the
+   doorway is kept whole rather than broken across one. */
+.kpi-meta { flex-wrap: wrap; row-gap: 5px; }
+.kpi-foot { flex-wrap: wrap; row-gap: 7px; }
+.kpi-foot a { white-space: nowrap; }
+.kpi-foot .spacer { flex: 1; }
+
 /* -------------------------------------------------------------- footnotes */
 
 .notes { display: flex; flex-direction: column; gap: 6px; }

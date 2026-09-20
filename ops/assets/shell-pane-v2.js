@@ -1072,9 +1072,8 @@
 
   /* Pane pages carry no script of their own. Loading this file on a page whose
      body names a pane is the whole contract. data-pane rather than data-page,
-     so the two shells cannot both claim the same document. */
-  if (document.body && PANES[document.body.getAttribute('data-pane')]) init();
-
+     so the two shells cannot both claim the same document. Exported first, so
+     the surface exists before anything init() reaches can call back into it. */
   global.OpsPaneShell = {
     init: init,
     definePane: definePane,
@@ -1100,4 +1099,6 @@
     toast: toast,
     fmt: fmt
   };
+
+  if (document.body && PANES[document.body.getAttribute('data-pane')]) init();
 })(window);

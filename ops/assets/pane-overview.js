@@ -560,6 +560,18 @@
       return (typeof value === 'number' && isFinite(value)) ? value : null;
     }
 
+    /* A list the answer actually sent, or an empty one.
+
+       `value || []` is not this. It rescues null and undefined and then hands
+       a number, a string or an object straight through to .filter or .length,
+       which either throws or, worse, reads undefined and draws the state for
+       "there were none". Every list on this pane decides whether something is
+       said at all, so a shape the route did not promise has to land on
+       "nothing to say" rather than on a silent zero. */
+    function list(value) {
+      return Array.isArray(value) ? value : [];
+    }
+
     function stateOf(block) {
       var state = block && block.availability && block.availability.state;
       return typeof state === 'string' ? state : null;
@@ -624,8 +636,9 @@
        owns the question behind it. */
     function doorway(card, owner, extra) {
       var foot = h('div', { className: 'kpi-foot' });
-      (extra || []).forEach(function (node) { foot.appendChild(node); });
-      if (extra && extra.length) foot.appendChild(h('div', { className: 'spacer' }));
+      var before = list(extra);
+      before.forEach(function (node) { foot.appendChild(node); });
+      if (before.length) foot.appendChild(h('div', { className: 'spacer' }));
       foot.appendChild(h('a', { href: owner.href, text: owner.label }));
       card.appendChild(foot);
     }
@@ -681,7 +694,7 @@
          the platform's own distinct count rather than their sum, so a reader
          who adds the two by eye and gets a larger number is looking at the one
          person who used both. */
-      var apps = (people.apps || []).filter(function (app) {
+      var apps = list(people.apps).filter(function (app) {
         return num(app && app.active) !== null;
       });
       var pills = apps.map(function (app) {
@@ -736,12 +749,17 @@
       }
 
       var basisPoints = Math.round(((active - before) / before) * 10000);
+      /* The comparison window is the window before this one, and the route
+         says how long it was. A missing `days` is the length of that window
+         being unreported, so it is left unsaid: "in the 0 days before" is a
+         number this pane invented, on the one tile whose rule is that a
+         figure it did not read is never drawn. */
+      var days = num(people.comparison.days);
       return [
         deltaPill(basisPoints, basisPoints > 0 ? 'up' : basisPoints < 0 ? 'down' : ''),
         h('span', {
           text: 'against ' + fmt.int(before) + ' in the ' +
-            fmt.plural(num(people.comparison.days) === null ? 0 : people.comparison.days, 'day') +
-            ' before'
+            (days === null ? 'window' : fmt.plural(days, 'day')) + ' before'
         })
       ];
     }
@@ -784,10 +802,11 @@
       /* A day with no reconciliation row has no reading, which is not a day
          with no runs. Saying how many days are behind the total is what lets a
          reader tell a quiet week from a stalled nightly job. */
-      var missing = (aiRuns.daysMissing || []).length;
+      var missing = list(aiRuns.daysMissing).length;
       var reported = num(aiRuns.daysReported);
       if (missing > 0) {
-        why(card, 'Counted from ' + fmt.plural(reported === null ? 0 : reported, 'day') +
+        why(card, 'Counted from ' +
+          (reported === null ? 'the days that reconciled' : fmt.plural(reported, 'day')) +
           ', ' + fmt.plural(missing, 'day') + ' not reconciled yet.', 'warn');
       }
 
@@ -818,34 +837,49 @@
       value(card, fmt.money(micros, cost.currency));
 
       var change = num(cost.comparison && cost.comparison.changeBasisPoints);
-      var period = cost.window || {};
-      var dayOf = num(period.dayOfPeriod);
-      var daysIn = num(period.daysInPeriod);
-      var when = dayOf !== null && daysIn !== null
-        ? 'day ' + fmt.int(dayOf) + ' of ' + fmt.int(daysIn)
-        : 'month to date';
+      var against = textOf(cost.comparison && cost.comparison.label);
 
       if (change === null) {
-        meta(card, [h('span', { text: 'No comparison available' }), h('span', { text: when })]);
+        meta(card, [h('span', { text: 'No comparison available' })]);
       } else {
         /* Sent, not computed. The comparison window is clamped inside the
            previous period by the route that owns the cost arithmetic, and a
            second implementation of it here would be a second figure with
            nothing on screen saying which one an operator is reading. Spending
            more is the direction that costs money, so a rise takes the falling
-           tone the Cloud costs pane gives it. */
+           tone the Cloud costs pane gives it.
+
+           The pill is the size and the direction; what the figure is measured
+           against is a different fact and appears nowhere else, so it is said
+           beside it in the route's own words. */
         meta(card, [
           deltaPill(change, change > 0 ? 'down' : change < 0 ? 'up' : ''),
-          h('span', { text: when })
+          h('span', { text: against || 'against the same stretch of the period before' })
         ]);
       }
 
-      if (cost.basis === 'spend') why(card, 'Spend so far, not spend against a target.');
-
+      /* Where in the billing period this total stops, and when it was read.
+         One line, because "day 12 of 31" on its own invites the reading that
+         the rest of the month is already known. */
+      var period = cost.window || {};
+      var dayOf = num(period.dayOfPeriod);
+      var daysIn = num(period.daysInPeriod);
       var asOf = fmt.utcStamp(cost.asOf);
-      why(card, asOf ? 'Billed usage as of ' + asOf + '.'
-        : 'The time of this reading was not reported.',
+      var where = dayOf !== null && daysIn !== null
+        ? 'Day ' + fmt.int(dayOf) + ' of ' + fmt.int(daysIn)
+        : 'Month to date';
+      why(card, asOf ? where + ', billed usage as of ' + asOf + '.'
+        : where + '. The time of this reading was not reported.',
         asOf ? null : 'warn');
+
+      /* `basis` says what was measured, and "Cloud spend" above the figure
+         already says it is money spent rather than a share of a budget, so a
+         basis this tile is labelled for adds no sentence. The gap where a
+         budget would be is named once, in the omissions card, in the route's
+         words. A basis this pane has no label for is stated rather than
+         quietly drawn under the wrong one. */
+      var basis = textOf(cost.basis);
+      if (basis && basis !== 'spend') why(card, 'Measured as ' + basis + '.', 'warn');
 
       doorway(card, OWNER_PANE.cost);
       return card;
@@ -858,7 +892,7 @@
        would be true of at most one store. */
     function releaseTile(release) {
       var card = tile('App version in production');
-      var platforms = ((release && release.platforms) || []).filter(function (platform) {
+      var platforms = list(release && release.platforms).filter(function (platform) {
         return textOf(platform && platform.versionName);
       });
 
@@ -898,12 +932,12 @@
 
     function finiteCount(values) {
       var n = 0;
-      (values || []).forEach(function (v) { if (num(v) !== null) n += 1; });
+      list(values).forEach(function (v) { if (num(v) !== null) n += 1; });
       return n;
     }
 
     function activityCard(activity) {
-      var series = (activity && activity.series) || [];
+      var series = list(activity && activity.series);
       var card = S.card();
 
       var legend = h('div', { className: 'legend' });
@@ -931,7 +965,7 @@
         return card;
       }
 
-      var labels = (activity.labels || []).slice();
+      var labels = list(activity.labels).slice();
       var drawable = series.filter(function (one) { return finiteCount(one.values) > 1; });
 
       if (drawable.length) {
@@ -960,15 +994,14 @@
 
       card.appendChild(body);
 
-      var missing = (activity.daysMissingRollups || []).filter(function (day) {
+      var missing = list(activity.daysMissingRollups).filter(function (day) {
         return typeof day === 'string';
       });
       if (missing.length) {
         card.appendChild(h('div', { className: 'card-foot' }, [
           icon('info'),
           h('span', {
-            text: (missing.length === 1 ? 'No stored figures on ' : 'No stored figures on ') +
-              listDays(missing) + '. Drawn as breaks, not zeroes.'
+            text: 'No stored figures on ' + listDays(missing) + '. Drawn as breaks, not zeroes.'
           })
         ]));
       }
@@ -999,7 +1032,7 @@
       var hi = 0;
       var span = 0;
       series.forEach(function (one) {
-        var values = one.values || [];
+        var values = list(one.values);
         if (values.length > span) span = values.length;
         values.forEach(function (v) {
           var n = num(v);
@@ -1033,7 +1066,7 @@
 
       series.forEach(function (one) {
         var group = svgEl('g', { 'class': seriesTone(one.color) });
-        var values = one.values || [];
+        var values = list(one.values);
         var x = function (index) {
           return PAD_L + (span > 1 ? (index / (span - 1)) * iw : iw / 2);
         };
@@ -1092,7 +1125,7 @@
 
     function seriesSentence(one, labels) {
       var name = one.label || one.key;
-      var values = one.values || [];
+      var values = list(one.values);
       var reported = [];
       var lastIndex = -1;
       values.forEach(function (v, index) {
@@ -1117,7 +1150,7 @@
     /* One app's line, said in words: how much of the window it has a reading
        for, and its last reading with the day it was taken. */
     function seriesRow(one, labels) {
-      var values = one.values || [];
+      var values = list(one.values);
       var reported = finiteCount(values);
       var lastIndex = -1;
       values.forEach(function (v, index) { if (num(v) !== null) lastIndex = index; });
@@ -1167,7 +1200,7 @@
        figure that loses or gains a source moves here by itself rather than
        when somebody remembers to edit the client. */
     function omissionsCard(omissions) {
-      var entries = (omissions || []).filter(function (entry) {
+      var entries = list(omissions).filter(function (entry) {
         return entry && (textOf(entry.title) || textOf(entry.key));
       });
       if (!entries.length) return null;
