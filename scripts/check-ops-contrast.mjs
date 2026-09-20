@@ -172,6 +172,9 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
   .caseflush { margin: 150px 150px 150px 0; background: #FFFFFF; }
   .hedge { background: #000000; }
   .hedge:focus-visible { outline: 4px solid #CCCCCC; outline-offset: 6px; }
+  .hmove { position: relative; top: -40px; background: #FFFFFF;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.9); }
+  .hmove:focus-visible { top: 0; outline: 4px solid #767676; outline-offset: 6px; }
   .h9wrap { position: relative; width: 140px; height: 60px; background: #CCCCCC; }
   .h9half { position: absolute; left: 0; top: 0; width: 70px; height: 60px; background: #FFFFFF; }
   .h9 { position: absolute; left: 50px; top: 18px; width: 40px; height: 24px; background: #FFFFFF; }
@@ -189,6 +192,7 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
 <div class="case"><div class="wrap"><button class="h8"></button></div></div>
 <div class="case"><div class="wrap"><div class="h7wrap"><button class="h7"></button><div class="h7far"></div></div></div></div>
 <div class="case"><div class="wrap"><div class="h9wrap"><div class="h9half"></div><button class="h9"></button></div></div></div>
+<div class="case"><div class="wrap"><button class="hmove"></button></div></div>
 <div class="caseflush"><button class="hedge"></button></div>
 </body></html>`;
 
@@ -1712,9 +1716,11 @@ async function measureFocusIndicators(where) {
           });
           if (n === document.documentElement) break;
         }
+        const r2 = el.getBoundingClientRect();
         return JSON.stringify({
           took: document.activeElement === el,
           focusVisible: el.matches(':focus-visible'),
+          x: r2.x + scrollX, y: r2.y + scrollY, w: r2.width, h: r2.height,
           sx: scrollX, sy: scrollY, chain
         });
       })()`);
@@ -1726,6 +1732,13 @@ async function measureFocusIndicators(where) {
         return JSON.stringify({ ok: 1 });
       })()`);
 
+      /* Recorded before any refusal can break out of this loop, because
+         whether :focus-visible matched is a fact about the Tab walk and not
+         about whether the ring turned out to be measurable. A refused row
+         that reported no modality would make the census below read as a
+         broken Tab walk. */
+      row.focusVisible = focused.focusVisible;
+
       /* The rail is position:sticky, so a scroll between the two shots moves
          it and every pixel under it reads as changed. preventScroll should
          stop that; this says so rather than assuming it. */
@@ -1735,6 +1748,26 @@ async function measureFocusIndicators(where) {
         break;
       }
       if (!focused.took) { refusal = 'the element refused focus, so nothing could be photographed'; break; }
+      /* An element that MOVES when it is focused has no measurable
+         surroundings, and this is the deterministic statement of that rather
+         than a renderer-dependent one. Adjacency is taken over pixels that
+         did NOT change, so when the element arrives somewhere it was not
+         before, everything it now covers — and everything its shadow now
+         covers — changed. What is left beside the ring is whatever the
+         renderer's shadow happened to miss: 18 pixels on macOS and 0 on
+         Linux for ops/assets/aria.css's .skip, which parks at top:-60px and
+         slides to top:12px on focus. Judging it on one platform and refusing
+         it on the other is the worst of both, so it is named here on both.
+         Compared at whole pixels: a subpixel reflow is not a move. */
+      if (Math.abs(focused.x - geom.x) >= 1 || Math.abs(focused.y - geom.y) >= 1 ||
+          Math.abs(focused.w - geom.w) >= 1 || Math.abs(focused.h - geom.h) >= 1) {
+        refusal = `focusing it moved its box from ${Math.round(geom.x)},${Math.round(geom.y)} ` +
+          `${Math.round(geom.w)}×${Math.round(geom.h)} to ${Math.round(focused.x)},` +
+          `${Math.round(focused.y)} ${Math.round(focused.w)}×${Math.round(focused.h)}, so the ` +
+          'surface its ring lands on was repainted by the move and there is nothing unchanged ' +
+          'beside the ring to measure against';
+        break;
+      }
       if (before.width !== after.width || before.height !== after.height) {
         refusal = 'the two photographs came back different sizes';
         break;
@@ -2464,6 +2497,14 @@ async function selfTest() {
     refuses('h4', 'is not an outline', 'indicates focus with a box-shadow');
     refuses('h5', 'translucent', 'has a 50% alpha outline-color');
     refuses('hdash', 'outline-style is dashed', 'draws a dashed outline, whose gaps are not ring');
+    /* An element that arrives somewhere new when it is focused repaints its
+       own surroundings, so the unchanged pixels adjacency is taken over are
+       whatever its shadow missed — 18 of them on macOS and 0 on Linux for
+       ops/assets/aria.css's .skip. This says so on both platforms instead,
+       and .hmove is that element: parked 40px up, sliding into place on
+       focus, under a shadow wide enough to cover what it lands on. */
+    refuses('hmove', 'focusing it moved its box',
+      'slides 40px into place when focused, repainting what its ring lands on');
 
     /* H6 — the clip escalates rather than measuring a truncated ring. At the
        first pad this ring is entirely outside the photograph's edge. */
@@ -2547,20 +2588,20 @@ async function selfTest() {
       `document and then measured: pad ${edge ? edge.pad : '?'}, expected whole document ` +
       '(every narrower clip has the ring on its border, and so does this one)');
 
-    /* The census itself: thirteen buttons on the page, thirteen reached by
+    /* The census itself: fourteen buttons on the page, fourteen reached by
        Tab, and every one of them carrying a row. A focus sweep that quietly
-       measured six of thirteen would print six ok lines and nothing else. */
-    const okCensus = census.candidates === 13 && census.reached === 13 && rows.length === 13;
+       measured six of fourteen would print six ok lines and nothing else. */
+    const okCensus = census.candidates === 14 && census.reached === 14 && rows.length === 14;
     if (!okCensus) bad++;
-    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 13 focusable buttons → ${census.candidates} ` +
+    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 14 focusable buttons → ${census.candidates} ` +
       `censused, ${census.reached} reached by real Tab presses, ${rows.length} judged or refused`);
     /* And that the Tab presses did their other job. Without keyboard modality
        every :focus-visible rule on this page is dead and the lot look like
-       h3 — thirteen missing indicators and no ring measured anywhere. */
+       h3 — fourteen missing indicators and no ring measured anywhere. */
     const modality = rows.filter((r) => r.focusVisible).length;
-    const okModality = modality === 13;
+    const okModality = modality === 14;
     if (!okModality) bad++;
-    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 13 ` +
+    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 14 ` +
       'after the Tab walk (scripted focus alone matches 0, and every ring here is behind it)');
     /* Derived rather than typed. How many of the sweep's refusals this fixture
        actually drives is a number that moves whenever a case is added, and a
@@ -2874,6 +2915,28 @@ const KNOWN_UNMEASURABLE_FOCUS = [
     because: 'is not an outline',
     issue: 'https://github.com/Stadiora/Aria/issues/10651',
     why: 'The light-theme half of the same field. Same indicator, same refusal.'
+  },
+  {
+    theme: 'dark',
+    states: ['live', 'loading', 'empty', 'degraded'],
+    selector: 'a.skip',
+    text: 'Skip to content',
+    because: 'moved its box',
+    issue: 'https://github.com/Stadiora/Aria/issues/10686',
+    why: 'ops/assets/aria.css parks the skip link at top:-60px and slides it to top:12px on ' +
+      'focus, so the surface its ring lands on is repainted by the arrival and there are no ' +
+      'unchanged pixels beside the ring to measure against. What survives is whatever the ' +
+      'element\'s drop shadow missed: 18 pixels on macOS and 0 on Linux, which is a renderer ' +
+      'difference rather than an accessibility one. Named on both rather than judged on one.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'loading', 'empty', 'degraded'],
+    selector: 'a.skip',
+    text: 'Skip to content',
+    because: 'moved its box',
+    issue: 'https://github.com/Stadiora/Aria/issues/10686',
+    why: 'The light-theme half of the same link. Same movement, same refusal.'
   }
 ];
 
