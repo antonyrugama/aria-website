@@ -1,0 +1,244 @@
+/* Look up a user — the shapes this pane needs on top of assets/aria.css and
+   assets/shell-pane-v2.css.
+
+   One stylesheet per pane, holding only what that pane draws. Three panes were
+   remodelled onto the v2 system at the same time and a shared sheet would have
+   been three concurrent branches editing one file; the duplication between
+   them is cheap and a later change can fold it back in.
+
+   Nothing here introduces a colour. Every value is a token from aria.css,
+   which is WCAG AA by construction, or a color-mix of one. */
+
+/* ------------------------------------------------------------ the search
+
+   The one control this pane is built around, so it is a panel rather than a
+   row in a card. */
+.hunt {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-xl);
+  padding: 22px 24px 20px;
+  background:
+    radial-gradient(620px 220px at 10% 0%, color-mix(in srgb, var(--cyan) 14%, transparent), transparent 70%),
+    linear-gradient(168deg, var(--surface-2), var(--surface) 60%);
+  box-shadow: inset 0 0 0 1px var(--line), var(--shadow-2);
+}
+.hunt::before {
+  content: '';
+  position: absolute; inset: 0 0 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--edge) 20%, var(--edge) 80%, transparent);
+}
+.hunt-title { font-size: 17px; font-weight: 600; letter-spacing: -.018em; }
+.hunt-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+
+.hunt-form { display: flex; flex-direction: column; gap: 11px; margin-top: 16px; }
+.hunt-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hunt-line > .field { flex: 1 1 260px; min-width: 0; }
+.hunt-line > .sel { flex: 0 0 auto; }
+
+.field-lg { padding: 13px 16px; border-radius: var(--r-lg); }
+.field-lg svg { width: 18px; height: 18px; }
+.field-lg input { font-size: 15.5px; font-weight: 500; }
+
+/* Multi-line variant of .field, for a written reason. */
+.field.area { align-items: stretch; padding: 10px 12px; }
+.field.area textarea {
+  flex: 1; min-width: 0;
+  border: 0; background: transparent; outline: 0; resize: vertical;
+  font-family: var(--sans); font-size: 13px; line-height: 1.55; color: inherit;
+  min-height: 72px;
+}
+.field.area textarea::placeholder { color: var(--ink-3); }
+
+.field-label { font-size: 11.5px; font-weight: 540; color: var(--ink-3); }
+
+/* A form-level complaint. Never colour alone: the caller puts a glyph in it. */
+.field-error {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--rose-ink);
+}
+.field-error:empty { display: none; }
+.field-error svg { width: 13px; height: 13px; flex: none; }
+
+/* aria.css gives .note one tone, the informational blue. A note that reports
+   something unconfirmed is not information, so it takes the amber the rest of
+   the system warns in — and it always carries a glyph, so the tone is never
+   the only thing saying so. */
+.note-warn {
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 22%, transparent);
+}
+.note-warn svg { color: var(--amber-ink); }
+
+/* ----------------------------------------------------------- the privilege
+   strip
+
+   What the signed-in role may do here, and the two standing promises, as one
+   fact per pill. */
+.privilege { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ----------------------------------------------------------- locked value
+
+   A personal field that exists and is not shown. Hatched rather than blank, so
+   it reads as withheld rather than as missing, and carrying the word "Hidden"
+   or the API's own mask so it is never the hatching alone that says so. */
+.locked {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 11.5px; font-weight: 520;
+  color: var(--ink-2);
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--ink) 7%, transparent) 0 5px,
+    transparent 5px 10px);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.locked svg { width: 12px; height: 12px; flex: none; color: var(--ink-3); }
+
+.code-lg { font-size: 14.5px; padding: 3px 9px; letter-spacing: -.01em; }
+
+/* -------------------------------------------------------------- key/value */
+.kv { display: flex; flex-direction: column; }
+.kv > div {
+  display: flex; align-items: center; gap: 14px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.kv > div:first-child { border-top: 0; padding-top: 0; }
+.kv > div:last-child { padding-bottom: 0; }
+.kv .k { color: var(--ink-3); flex: none; }
+.kv .v {
+  margin-left: auto; text-align: right;
+  display: flex; align-items: center; gap: 8px;
+  justify-content: flex-end; flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------ inset panel */
+.inset {
+  border-radius: var(--r);
+  padding: 12px 13px;
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.inset-title { font-size: 12.5px; font-weight: 560; }
+
+/* -------------------------------------------------------------- the reveal
+
+   The row a masked field draws. Everything in it is inline so that the mask,
+   the value that replaces it, the countdown note and the controls read as one
+   line rather than as a stack of separate facts. */
+.reveal-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.reveal-value {
+  font-family: var(--mono); font-size: 12px;
+  color: var(--ink);
+  word-break: break-word;
+}
+.reveal-note { font-size: 11px; color: var(--amber-ink); }
+.reveal-never {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--ink-3);
+}
+.reveal-never svg { width: 12px; height: 12px; flex: none; }
+
+/* The reason a reveal needs before it happens. Full width under the row it
+   belongs to, because a one-line box invites one word. */
+.reveal-form {
+  display: flex; flex-direction: column; gap: 7px;
+  width: 100%;
+  padding: 10px 11px;
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+  text-align: left;
+}
+.reveal-form .row { flex-wrap: wrap; }
+
+.hidden { display: none; }
+
+/* ------------------------------------------------------------- danger zone */
+.srow {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.srow:first-child { border-top: 0; padding-top: 0; }
+.srow:last-child { padding-bottom: 0; }
+.srow .s-main { font-size: 12.5px; font-weight: 540; }
+.srow .s-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; line-height: 1.5; }
+.srow .s-end {
+  margin-left: auto; flex: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
+  text-align: right;
+}
+
+/* -------------------------------------------------------------- tick list */
+.list-tick { display: flex; flex-direction: column; gap: 9px; }
+.list-tick li {
+  display: flex; gap: 9px; align-items: flex-start;
+  list-style: none;
+  font-size: 12.5px; line-height: 1.55;
+  color: var(--ink-2);
+}
+.list-tick li svg { width: 13px; height: 13px; margin-top: 3px; flex: none; color: var(--ink-3); }
+
+/* A table that follows a card head needs the top padding the head does not
+   give it; a table flush at the top of a card does not. */
+.card-head + .tbl th { padding-top: 14px; }
+
+/* A table narrower than its card scrolls rather than pushing the page wide.
+   scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
+.tbl-wrap { overflow-x: auto; }
+
+/* aria.css styles .tbl th as a column header: uppercase, 9.5px, tracked out.
+   A row header is a row's NAME, and on this pane one of those names is a
+   masked email. Uppercasing it changes what the API sent into something else
+   and then shows that to an administrator as the record, which is the one
+   thing a masked value must not do. So a body header reads as the cell it is. */
+.tbl tbody th {
+  text-align: left;
+  padding: 11px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 13px; font-weight: 520; letter-spacing: 0;
+  text-transform: none; color: var(--ink);
+  white-space: normal;
+}
+/* A timestamp is one token; wrapping it mid-date reads as two. */
+.tbl tbody th.num { white-space: nowrap; }
+
+/* ------------------------------------------------------------- recent list
+   Coded references only: these are the accounts this browser has opened, and
+   the reference is the whole of what is kept. */
+.recent { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+
+/* ------------------------------------------------------------- responsive */
+@media (max-width: 720px) {
+  .hunt { padding: 18px 16px 16px; border-radius: var(--r-lg); }
+  .hunt-line > .sel, .hunt-line > .field { flex: 1 1 100%; }
+
+  /* A key and its value stop competing for one line once the line is this
+     short: the value wraps under its own key rather than squeezing it. */
+  .kv > div { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .kv .v { margin-left: 0; text-align: left; justify-content: flex-start; }
+  .reveal-row { justify-content: flex-start; }
+
+  .srow { align-items: flex-start; flex-direction: column; gap: 9px; }
+  .srow .s-end { margin-left: 0; align-items: flex-start; text-align: left; }
+}
+
+/* Two of this pane's card heads carry a title, a note AND a pill, and the
+   pills are sentences rather than words: "Shown to the athlete on request" is
+   promise 4 and "Re-authentication required" is the whole point of the danger
+   zone, so neither can be shortened to fit. Below this width the row cannot
+   hold both, and a flex row that cannot hold both squeezes the TITLE, which
+   at 320px wrapped "Who has looked at this account" to five lines beside an
+   intact pill. The head stacks instead, and the pill keeps its sentence. */
+@media (max-width: 460px) {
+  .card-head { align-items: flex-start; flex-direction: column; gap: 7px; }
+  .card-end { margin-left: 0; flex-wrap: wrap; }
+}

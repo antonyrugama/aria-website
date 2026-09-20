@@ -256,7 +256,9 @@ ops/
     shell-pane-v2.css   what a v2 pane page needs and aria.css does not carry:
                         the three gates, the phone drawer, the toast
     pane-overview-v2.css  Overview's own shapes
+    pane-releases-v2.css  App releases' own shapes
     pane-settings-v2.css  Settings' own shapes
+    pane-users-v2.css     Look up a user's own shapes
     pane-evaluations-v2.css  Aria quality's own shapes
 ```
 
@@ -1027,6 +1029,139 @@ pane against the mock should read the list as "these are on purpose and here is 
 
 Everything the omissions card shows comes **from the answer**, never from a list in the client,
 so a figure that gains a source drops off the card without a code change here.
+
+### App releases on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/releases.html` in the Aria monorepo is the approved design. The
+pane follows its structure — the four-rung pipeline, the version-share band, the store card with
+its age attached, the health comparison — and the rules its README calls normative.
+
+As with Overview above, this is **not a complete diff** and does not claim to be. It names the
+departures that carry a decision.
+
+The pane's one claim comes first, because most of the list follows from it. A version sitting at
+20% of the field **because the Play rollout is staged at 20%** is a different fact from a version
+stalled at 20% **because nobody is updating**, and the two are answered by two different figures
+that are never merged: `track.rolloutBasisPoints` is what the store is releasing to, per
+platform; `adoption.buckets` is what the field actually ran, across all platforms. Anything that
+would blend them is not drawn.
+
+1. **No Range, App or Environment control.** The release snapshot is upserted per track, so the
+   table holds what is on that track now and no history to window. The registry gives this pane
+   no control and the filter bar states the absence where one would have been.
+2. **Version share is one bar, not one per platform.** The mock splits it iOS/Android. The
+   reading behind it is dimensioned by app version only — `adoption.buckets` is a share of all
+   sessions that reported a version — so two bars would be one number drawn twice under two
+   labels it does not have. The per-platform fact the split was carrying is the store's ceiling,
+   and that is on the pipeline row and in the one sentence under the bar.
+3. **No adoption curve.** The mock draws "adoption since release" as an area chart over nine
+   points. Nothing stores a series: the snapshot holds the current share and overwrites it. A
+   curve drawn from one point is a straight line pretending to be a history.
+4. **The fourth rung is "Rolled out", not "Adopted".** The pipeline is the store's ladder, and
+   its last rung is the store finishing — which is exactly the fact a staged rollout has not
+   reached. Calling it "Adopted" would put the field's answer on the store's ladder and merge
+   the two figures rule 0 keeps apart.
+5. **The health table is one comparison, not a release history.** The mock draws six rows of
+   version × platform with sessions, crash free, median start and AI failure rate. `health`
+   carries one platform, a current build, a previous build and a list of named signals, and
+   nothing stores a per-release history to widen it to. The table drawn is the comparison the
+   contract describes.
+6. **No "What is in 1.1.2" band.** Release notes, build metadata, languages, minimum OS,
+   download sizes, the rollback build and the support-ticket reference are none of them stored
+   anywhere in this platform. The whole band is eight fields with no source.
+7. **No Export or Failed runs actions on the health band.** Nothing generates that export, and a
+   button that does nothing is the filter problem in another costume.
+8. **The mock's three `why` blocks are not reproduced.** "Merging these into one score would
+   hide exactly the case this pane is looking at" is an argument for the design, not a fact
+   about the release, and the mocks' own rule is one fact per slot. The facts those blocks
+   carried are on screen: the store ceiling is named beside the share, and the age of a store
+   reading is attached to the row it fed.
+
+Two additions the mock does not have, both of which exist because the pane reads a live answer
+where the mock reads its own sample text:
+
+- **A failing poller ages the row it fed.** The mock's store card carries freshness; a real
+  answer can carry a poller that has been refused for two days, and "6 days unchanged" read two
+  days ago is a claim about last Thursday. The row says how old its figures are, once, where
+  they are read. The store card then says why and exactly when.
+- **The empty state is derived from the source statuses, not from the ladder.** An empty ladder
+  means "there are no builds" only when both stores were asked and both answered. A store that
+  was never connected, or polled and refused, makes the same empty ladder mean nothing at all,
+  and the headline says which of the three it is.
+
+`assets/pane-releases-v2.css` carries this pane's own shapes. Two rules in it are scoped
+overrides of shared stylesheets that this change is not allowed to edit; both name
+`Stadiora/Aria#10397`, which is filed to move them.
+
+### Look up a user on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/users.html` in the Aria monorepo is the approved design. The pane
+follows its structure — the lookup panel, the match list, the account card, the reveal card, the
+activity table, subscription and devices, the access record, the danger zone.
+
+As above, this is **not a complete diff**. It names the departures that carry a decision.
+
+Six promises are made to the athlete on this pane, and each is a sentence on screen rather than
+a property of the code. They are the constraint every departure below is measured against:
+personal fields are hidden for every role including the owner until a reveal is recorded; a
+reveal is owner only and needs a written reason; it is recorded by field name, never by value;
+the athlete can see that it happened and who did it; the record outlives the reveal and a reveal
+cannot erase one; and request and reply content is not shown here at any role.
+`assets/pane-users.js` names where each one is drawn, and `scripts/ops-users-v2.test.mjs`
+asserts the sentence and the mechanism behind it separately, because a sentence that outlives
+the thing it describes is the worse of the two failures.
+
+1. **The drawer is gone.** The mock holds the fuller field list, the devices, the billing record
+   and the access record behind a "Full record" button with four tabs. They are bands on the page
+   now. The access record is the one thing on this pane that makes the rest of it defensible, and
+   a promise the athlete is given should not be one click further away than the reveal it covers.
+2. **The danger zone is stated and not drawn as controls.** The mock carries account actions
+   behind re-authentication with live buttons. `GET`/`POST /api/ops/users/*` is unchanged by this
+   remodel and answers no action route, so the pane names each action the response reports, keeps
+   "Re-authentication required" on the head, and draws no button. A control that cannot succeed
+   is the filter problem in another costume; hiding the band would only make people ask whether
+   the actions exist.
+3. **The privilege strip is in the pane body, not the filter bar.** The mock puts "Owner",
+   "Personal fields hidden until revealed" and "Every reveal is visible to the athlete" among the
+   filters. `assets/pane-registry.js` is the one table both shells read and is not this change's
+   to edit; it gives this pane a scope control and no room for three pills. Two of the six
+   promises are carried there, so they went into the pane rather than nowhere.
+4. **No support-context card.** The mock shows an open ticket with its subject, its state, its
+   age and the run behind it. `supportActions.available[]` is what the contract carries and it is
+   a list of action names; nothing in the response holds a ticket. Drawing the card would also
+   put a request's subject line on a pane whose sixth promise is that request content is not
+   shown here.
+5. **No consent card.** Four consent rows with their grant dates are the clearest thing in the
+   mock and there is no field behind any of them: the detail response carries state, tier,
+   memberSince, summary, record, activity, devices, billing, access and supportActions, and
+   nothing about consent. A consent grid invented on the page is worse than none, because it
+   would be read as the record.
+6. **One adoption of the mock's wording, not its shape, for "Not granted means not collected".**
+   The sentence is true and load-bearing, but it belongs to the card in 5 that has no source. The
+   fact it protects — that a mask is not a hidden value waiting to be unlocked — is in the
+   account card's foot, where the masks actually are.
+7. **The mock's `why` blocks are not reproduced.** They argue for the design rather than state a
+   fact about the account, and the mocks' own rule is one fact per slot. What they carried that
+   is a fact is on screen: the reveal card says what is recorded, the access band says how long
+   it is kept, the activity card says what is not shown.
+
+Two additions the mock does not have, both because the pane reads a live answer where the mock
+reads its own sample text:
+
+- **A lookup that wrote no access record says so.** "Every lookup is recorded" is a promise, and
+  a response whose `recorded` is missing has not kept it. The pane runs degraded and names it
+  rather than drawing a clean page over it.
+- **A `matchCount` larger than `matches[]` is reported.** A capped list beside an uncapped count
+  would have the header naming accounts the operator cannot see, which is bulk listing with the
+  listing removed. The pane says the two disagree rather than believing one of them.
+
+`assets/pane-users-v2.css` carries this pane's own shapes.
+
+One inherited leftover is worth naming here rather than fixing: the light-theme badge block at
+the end of `ops.css` is scoped `[data-theme="light"] body:is([data-page="releases"],
+[data-page="users"])`, and neither page carries `data-page` any more — releases lost it in #55
+and this change takes the last one. The block now matches nothing. `ops.css` is not this change's
+to edit, so it is filed rather than deleted here.
 
 ### Known contrast debt, inherited
 
