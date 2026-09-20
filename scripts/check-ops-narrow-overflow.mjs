@@ -200,11 +200,19 @@ const utcDay = (ms) => new Date(NOW - ms).toISOString().slice(0, 10);
 const ADMIN = { id: 'adm_1', email: 'owner@example.invalid', name: 'Owner', role: 'owner' };
 const SESSION = { id: 'ses_1', createdAt: ago(10 * MINUTE), lastSeenAt: ago(1000), userAgent: 'check' };
 
-/* The longest badge the Problems pane can draw: EVALUATION_LABEL.insufficient_data
-   followed by INSUFFICIENT_REASON.below_minimum_samples. That row is the one
-   this check was written for, and NARROW_BADGE below asserts it reached the
-   DOM. */
-const NARROW_BADGE = 'Not enough data to judge, too few measurements so far';
+/* The longest badge the Problems pane can draw: EVALUATION_LABEL.insufficient_data,
+   the longest of the five labels, followed by INSUFFICIENT_REASON.no_baseline,
+   the longest of the four reasons — 'there is no history to compare against'
+   at 38 characters against below_minimum_samples' 27. Both lists are in
+   assets/alerts-model.js:50-68, and assets/pane-alerts.js:1406-1408 composes
+   the pill by joining them with ', '. That row is the one this check was
+   written for, and NARROW_BADGE below asserts it reached the DOM.
+
+   no_baseline is sent for cost_anomaly, whose scope is "Against the last 7
+   days": a rule with a window is exactly the kind that has no history to
+   compare against, so this is a combination the real API produces and not a
+   shape invented to be long. */
+const NARROW_BADGE = 'Not enough data to judge, there is no history to compare against';
 
 const RULES = [
   { ruleKey: 'ai_success_rate', title: 'AI success rate', scopeDescription: 'Per request type',
@@ -213,7 +221,7 @@ const RULES = [
   { ruleKey: 'cost_anomaly', title: 'Unusual cost for a service',
     scopeDescription: 'Against the last 7 days', thresholdLabel: 'over 25%',
     channels: ['email'], enabled: true,
-    lastEvaluationStatus: 'insufficient_data', lastInsufficientReason: 'below_minimum_samples' },
+    lastEvaluationStatus: 'insufficient_data', lastInsufficientReason: 'no_baseline' },
   { ruleKey: 'no_telemetry', title: 'No data coming in',
     scopeDescription: 'An app stops sending anything', thresholdLabel: 'over 15m',
     channels: ['teams', 'email'], enabled: true, lastEvaluationStatus: 'error' }
@@ -373,7 +381,14 @@ const PROBLEM = {
   category: 'ai_reliability', title: 'Nutrition plans are failing to generate',
   description: 'Worker memory pressure is killing the generation process.',
   ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
-  pane: 'jobs-live', paneLabel: 'Happening now',
+  /* workPane, not pane: assets/pane-alerts.js:928-931,
+     assets/pane-overview.js:539-544 and assets/pane-jobs-live-v2.js:921-924
+     all read problem.workPane / problem.workPaneLabel, and so does the panes'
+     own fixture at scripts/ops-alerts-v2.test.mjs:124. Spelled `pane` this
+     stub drew an action row with the drill-down link missing, so the widest
+     row the sweep laid out was one button narrower than the real one
+     (Stadiora/Aria#10461). */
+  workPane: 'jobs-live', workPaneLabel: 'Happening now',
   detectedAt: ago(15 * MINUTE), firedAt: ago(13 * MINUTE),
   acknowledgedAt: null, acknowledgedBy: null,
   closedAt: null, closeReason: null, closedBy: null,
@@ -413,7 +428,7 @@ const PROOF = {
   history: [RULES[0].title, PROBLEM.category],
   /* The drill-down link the workPane rename restored, and the problem's own
      reference. Both sit in the action row this check measures. */
-  alerts: [PROBLEM.paneLabel, PROBLEM.reference],
+  alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
   analytics: ['No app reported over this window'],
   spend: ['This answer carried no billed total'],
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
