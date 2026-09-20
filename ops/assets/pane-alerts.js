@@ -632,11 +632,15 @@
        indistinguishable from one that has stopped working. */
     function rulesFoot(armed) {
       if (!armed.total) return null;
-      var bits = [fmt.plural(armed.checking, 'rule') + ' watching'];
+      /* How many are watching and when they last ran are already in the hero,
+         directly above this, so they are not repeated here in a second
+         arithmetic. What is left is the dot's own meaning -- which may never
+         be carried by the colour alone -- and the rules that are switched
+         off, which nothing above the queue says. */
+      var bits = [armed.trustworthy ? 'Watching' : 'Not watching'];
       if (armed.total > armed.enabled) {
         bits.push(fmt.int(armed.total - armed.enabled) + ' turned off');
       }
-      if (armed.lastEvaluatedAt) bits.push('last check ' + fmt.ago(armed.lastEvaluatedAt));
 
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(h('span', {
@@ -956,7 +960,10 @@
       }));
       button.addEventListener('click', function () {
         button.disabled = true;
-        acknowledge(problem).catch(function () { button.disabled = false; });
+        acknowledge(problem).catch(function () {
+          button.disabled = false;
+          handBack(button);
+        });
       });
       return button;
     }
@@ -1148,7 +1155,12 @@
       cancel.addEventListener('click', function () { onCancel(); });
       box.appendChild(h('div', { className: 'row wrap gap-sm' }, [confirm, cancel]));
 
-      var failure = h('p', { className: 'tiny is-warn' });
+      /* role="alert" because this is the ONLY place a refused close is
+         reported: the form stays open and the message belongs beside it, not
+         in a toast that would state the same refusal a second time. v1 said
+         this through op.confirmAction's role="alert" paragraph; the inline
+         form has to say it for itself. */
+      var failure = h('p', { className: 'tiny is-warn', role: 'alert' });
       box.appendChild(failure);
 
       box.addEventListener('submit', function (e) {
@@ -1160,6 +1172,7 @@
           confirm.disabled = false;
           cancel.disabled = false;
           failure.textContent = S.failureMessage(err);
+          handBack(confirm);
         });
       });
 
@@ -1168,8 +1181,9 @@
 
     /* ------------------------------------------------------------ actions */
 
-    /* Every change re-reads the pane, which throws away the control that was
-       just used and with it whatever had focus. The content region is the one
+    /* A change that lands re-reads the pane, which throws away the control
+       that was just used and with it whatever had focus. (A change the server
+       REFUSES re-reads nothing and is handled by handBack() below.) The content region is the one
        element that survives a re-render, so focus goes there and the change
        is announced, rather than being dropped on the body where a keyboard
        user would have to tab back in from the top of the page.
@@ -1183,7 +1197,26 @@
        bottom of this file, which is not a re-read and must not move focus off
        whatever the page loaded with. Every other call is a re-read and comes
        through here, because a read control destroys itself exactly as a write
-       control does: both sit inside the region the re-read replaces. */
+       control does: both sit inside the region the re-read replaces.
+
+       This covers the RE-READS only. The class is every control that is
+       disabled or destroyed by being used, and a refused write is disabled
+       without re-reading anything: handBack() below is that half. */
+    /* The other half of reload(), for the changes that never re-read.
+       Disabling the focused control blurs it to <body> exactly as removing it
+       does, and a REFUSED write re-reads nothing, so nothing else would put
+       focus back: the operator is told the write did not go through and is
+       left at the top of the document to tab back to the button they pressed.
+
+       Guarded the same way reload() is. A close submitted with Enter from the
+       note field never blurred -- the textarea is not the control that was
+       disabled -- so the operator is left in the field they were typing in,
+       and role="alert" on the failure line carries the refusal instead. */
+    function handBack(node) {
+      var live = document.activeElement;
+      if (node && (!live || live === document.body)) node.focus();
+    }
+
     function reload() {
       return load().then(function () {
         var host = document.getElementById('content');
@@ -1388,6 +1421,7 @@
              a switch left in a position the server refused is a lie. */
           input.checked = !next;
           input.disabled = false;
+          handBack(input);
           S.toast('warn', S.failureMessage(err));
         });
       });

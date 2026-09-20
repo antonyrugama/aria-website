@@ -39,15 +39,25 @@
      - That no value becomes markup. The last test here pins three spellings
        and nothing more; it is a prohibition, not a proof.
      - That a browser moves focus to <body> when the focused element is
-       removed. The harness has no focus model to lose, so the focus tests
-       below bind what this file CAN decide -- that the severity control is
-       still the same node after it is pressed, and that a reload started with
-       nothing focused ends with the content region focused. The removal half
-       was measured on the real page in rounds 4 and 5 of this pull request's
-       independent review, which is also where three re-read sites were found
-       still dropping focus over a green suite: the tests below therefore name
-       every site rather than one per shape, and that enumeration is the part
-       a reader should distrust first. */
+       REMOVED, or when it is DISABLED. Both are true in Chrome and neither is
+       true in this harness, which has no focus model to lose. Both halves
+       were measured on the real page, in rounds 4 and 5 (removal) and round 6
+       (disabling) of this pull request's independent review.
+
+       What the tests below CAN decide, and do: that the severity control is
+       still the same node after it is pressed; that a reload started with
+       nothing focused ends with the content region focused; and that a
+       refused write started with nothing focused ends with the control
+       focused. The second and third work because the harness leaves focus
+       where it was, so "started at nothing, ended at the right place" is the
+       same discriminating signal there as in a browser -- what differs is
+       only whether the start state is null or <body>.
+
+       The class is every control that is DISABLED OR DESTROYED by being used,
+       which is not the same as every re-read: rounds 4, 5 and 6 each found
+       members the round before had missed, in that order -- three re-reads,
+       three more re-reads, three refused writes. The enumeration below is the
+       part of this file a reader should distrust first. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -449,6 +459,91 @@ test('the first read does not move focus', async () => {
   const dom = await boot({});
   assert.equal(dom.doc.activeElement, null,
     'loading the page moved focus, so the operator was carried past the rail');
+});
+
+/* The other half of the class, and the half that is NOT about re-reading: a
+   write the server refuses disables its control, fails, and re-enables it,
+   re-reading nothing. In Chrome the disable blurs the control to <body> and
+   nothing puts it back; in this harness disabling does not move focus at all,
+   so the discriminating signal is the same in both -- start with focus on
+   NOTHING, and end with it on the control. Without the handback the pane
+   leaves it where it was, which here is null and in Chrome is <body>; neither
+   is the control. */
+test('a write the server refuses hands the control back rather than dropping it', async () => {
+  const refused = new Error('The operations API did not answer.');
+
+  const ack = await boot({ acknowledge: refused });
+  const take = buttonNamed(problemCards(ack)[0], /I am on it/);
+  assert.ok(take, 'the open problem was offered no acknowledge button');
+  assert.equal(await focusAfter(ack, () => take.dispatch('click')), take,
+    'a refused acknowledge left the operator nowhere, at the top of the document');
+  assert.equal(take.disabled, false, 'the refused acknowledge button was left unusable');
+
+  const rule = await boot({ patch: refused });
+  const sw = withClass(rule.doc.body, 'sw')[0];
+  assert.ok(sw, 'the rules table drew no switch');
+  assert.equal(await focusAfter(rule, () => { sw.checked = false; sw.dispatch('change'); }), sw,
+    'a refused rule change left the operator nowhere');
+
+  const closing = await boot({ close: refused });
+  buttonNamed(problemCards(closing)[0], /Close/).dispatch('click');
+  await settle();
+  const form = withClass(problemCards(closing)[0], 'close-form')[0]
+    || findAll(problemCards(closing)[0], (n) => n.tagName === 'FORM')[0];
+  assert.ok(form, 'pressing Close opened no form');
+  const confirm = buttonNamed(form, /Close it/);
+  assert.ok(confirm, 'the close form drew no confirm button');
+  assert.equal(await focusAfter(closing, () => form.dispatch('submit')), confirm,
+    'a refused close left the operator nowhere');
+  assert.equal(confirm.disabled, false, 'the refused close button was left unusable');
+
+  /* The refusal is also SAID. The other two writes toast; the close form does
+     not, because the form stays open and the message belongs beside it -- so
+     that message is the only report a screen reader can get, and it has to
+     carry a live role or it is announced to nobody. v1 said this through
+     op.confirmAction's role="alert" paragraph. */
+  const said = findAll(form, (n) => n.getAttribute && n.getAttribute('role') === 'alert');
+  assert.equal(said.length, 1, 'the close form has ' + said.length + ' live regions, not one');
+  assert.equal(allText(said[0]), 'The operations API did not answer.',
+    'the refusal was written somewhere other than the live region, so nobody is told');
+
+  /* And the handback is conditional, or it becomes its own defect: a close
+     submitted with Enter from the note field never blurred the field, so
+     moving the operator to the button would take them out of what they were
+     typing to tell them it did not send. The live region above is what tells
+     them. */
+  const typing = await boot({ close: refused });
+  buttonNamed(problemCards(typing)[0], /Close/).dispatch('click');
+  await settle();
+  const openForm = findAll(problemCards(typing)[0], (n) => n.tagName === 'FORM')[0];
+  const note = findAll(openForm, (n) => n.tagName === 'TEXTAREA')[0];
+  assert.ok(note, 'the close form drew no note field');
+  note.focus();
+  openForm.dispatch('submit');
+  await settle();
+  assert.equal(typing.doc.activeElement, note,
+    'a refused close took the operator out of the note they were writing');
+});
+
+/* One fact, one slot: the queue's footer answers "would we know", and the
+   hero above it already says how many rules are watching and when they last
+   ran. Stating them again under the queue is the shape the whole remodel
+   exists to remove, and it costs more than a literal repeat because "rules
+   last ran" and "last check" are the same clock in two phrasings. */
+test('the rules inventory is stated once, not in two arithmetics', async () => {
+  const text = liveText(await boot({}));
+
+  /* Asserted present first: if the hero stopped saying these, the counts
+     below would be satisfied by their absence. */
+  const watching = /(\d+ rules? watching)/.exec(text);
+  assert.ok(watching, 'nothing on the page says how many rules are watching');
+  assert.equal(text.split(watching[1]).length - 1, 1,
+    'how many rules are watching is on the page more than once: ' + watching[1]);
+
+  const ran = /rules last ran ((?:an?|\d+) [a-z]+ ago)/.exec(text);
+  assert.ok(ran, 'nothing on the page says when the rules last ran');
+  assert.equal(text.split(ran[1]).length - 1, 1,
+    'when the rules last ran is on the page more than once: ' + ran[1]);
 });
 
 /* ====================== controls that would be refused ================== */
