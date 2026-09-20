@@ -12,23 +12,27 @@
 
    THE CONTRACT, stated here rather than read out of the registry
 
-     1. A filter a pane declares must be ACTED ON, in one of exactly two ways,
-        and the table below names which for every declared filter:
+     1. A filter a pane declares must MOVE something. Every control the
+        operator can move has to change the read or the page for at least one
+        of the values it offers. This is the weakest of the three and the one
+        that catches the defect above, because a pane that cannot act on a
+        filter answers every value identically.
+
+     2. It must move it in one of exactly two ways, and the table below names
+        which for every declared filter:
 
           'read'    the value the operator picked reaches the pane's own API
                     call, in a field of the same name, in the querystring or
                     in the request body
-          'answer'  the value is applied to the answer after it comes back,
-                    and a narrower value leaves fewer records on the page
+          'answer'  the value is applied to the answer after it comes back:
+                    a narrower value leaves fewer records on the page, and no
+                    value reaches a record that lies outside all of them
 
-     2. No value a pane offers may COST it its answer. Every value reaches the
+     3. No value a pane offers may COST it its answer. Every value reaches the
         same pane state as the value the pane starts on. A selection that
         empties a pane which was otherwise live is a refusal wearing a
         filter's clothes, and the registry's own comment settles that a
         control whose one outcome is a refusal is an option in name only.
-
-     3. A filter a pane does NOT declare must be unreachable. The shell pins
-        it, so a URL asking for one changes neither the read nor the page.
 
    Every assertion here is keyed off the call the pane recorded and the DOM it
    drew. None of it reads pane source text: a source-grep assertion pins the
@@ -46,12 +50,20 @@
      - whether the API acts on a filter the pane sends it. A client can
        promise that the operator's selection reached the request; what the
        route does with it is the route's own test.
+     - the converse, that a filter a pane does NOT declare cannot be reached
+       through the URL. It was written here and then taken out, because no
+       mutation could turn it red: the shell pins every undeclared filter in
+       readFilters(), and removing that pin — for `scope` and for `env`, run
+       separately — left all of these tests green, since a pane that does not
+       declare a filter does not read one either. It was green for a reason
+       other than the one it named. The shell-level claim, that a pane is
+       offered exactly the filters it declared and never one more, is held
+       where it can fail: scripts/ops-shell-pane-v2.test.mjs.
      - `overview`, `evals`, `releases` and `settings`. They declare no filter,
-       so rule 1 has nothing to check on them and rule 3 is enforced against
-       the four bootable panes that do declare one. A regression that gives
-       one of them a filter is caught by the coverage lock, which is a
-       declaration-level failure rather than a recorded-call one; it says so
-       in its own message.
+       so there is nothing on them for rules 1 to 3 to check. A regression
+       that gives one of them a filter is caught by the coverage lock, which
+       is a declaration-level failure rather than a recorded-call one; it says
+       so in its own message.
      - layout, width and contrast. Nothing here measures anything. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -518,7 +530,53 @@ test('every filter the registry declares is claimed by this file, and every clai
   }
 });
 
-/* ===================== 2. a filter reaches the read ==================== */
+/* ============ 2. a declared filter changes what the pane does ========== */
+
+/* Driven off the registry rather than off the table above, because the table
+   above is where a new overclaim would be missing. The contract this checks is
+   the weakest true one — a control the operator can move has to move
+   SOMETHING, in the read or on the page — and it is the one that catches the
+   defect this file was written for: a pane declaring a filter it cannot act on
+   answers every value identically. The two tests after it are the strong
+   forms, and say which of the two ways the value was acted on. */
+test('a filter a pane declares changes the read or the page', async () => {
+  const { PANES } = registry();
+  let checked = 0;
+
+  for (const id of Object.keys(PAGES)) {
+    const pane = PANES[id];
+    for (const filter of declaredBy(pane)) {
+      const start = startsOn(pane, filter);
+      const base = await bootPane(id, searchFor(filter, start));
+      const baseCalls = JSON.stringify(recorded(base));
+      const baseText = shownText(base);
+
+      const others = valuesFor(registry(), pane, filter).filter((v) => v !== start);
+      assert.ok(others.length,
+        id + ' offers exactly one value for ' + filter + ', which is a control that '
+        + 'cannot be moved');
+
+      let moved = false;
+      for (const value of others) {
+        const dom = await bootPane(id, searchFor(filter, value));
+        if (JSON.stringify(recorded(dom)) !== baseCalls || shownText(dom) !== baseText) {
+          moved = true;
+        }
+      }
+
+      assert.ok(moved,
+        id + ' declares ' + filter + ', and every value it offers produces the same read '
+        + 'and the same page as ' + filter + '=' + start + '. The control moves and '
+        + 'nothing behind it does. It asked for: ' + baseCalls);
+      checked += 1;
+    }
+  }
+
+  assert.ok(checked >= 4,
+    'only ' + checked + ' declared filters were swept, so this proves less than it reads');
+});
+
+/* ===================== 3. a filter reaches the read ==================== */
 
 /* The assertion this file exists for. A pane that declares a filter and never
    sends it is a control the operator can move over figures that ignore it. */
@@ -561,7 +619,7 @@ test('a filter carried into the read arrives with the value the operator picked'
     'only ' + proved + ' pane-and-value pairs were proved to carry their selection');
 });
 
-/* ================= 3. a filter applied to the answer =================== */
+/* ================= 4. a filter applied to the answer =================== */
 
 /* The other way a filter can be real. These two panes read a route that takes
    no window, so the window is applied to what came back — which narrows the
@@ -673,7 +731,100 @@ test('a filter applied to the answer narrows what is on the page', async () => {
     'a probe was written and never run, so it proves nothing');
 });
 
-/* ================== 4. no value costs the pane its answer ============== */
+/* =========== 5. no value reaches past every value the pane offers ===== */
+
+/* The value-level defect, which the coverage lock cannot see: it compares
+   filter NAMES, so a window added to a list it already declares walks past it.
+   What happened offered 'custom' for a while, and the pane answered it with a
+   refusal card; delete the refusal and leave the value, and the pane finds no
+   entry for it in its own window table, falls through to no window at all, and
+   draws every record it was given under a control that says Custom. That is
+   the same overclaim one level down.
+
+   The reading that catches it without knowing what any window means: one
+   record placed far outside every window any pane here offers, and closed. It
+   has to be closed for two separate reasons — What happened keeps a problem
+   that is STILL OPEN inside today's window however long ago it fired, and
+   Problems answers its own "Open now" on status rather than on age — so an
+   open record would be drawn correctly by both and prove nothing. A value that
+   alone puts a closed four-hundred-day-old record on the page is a value
+   nothing is applying. Each value is then asked the same question about a
+   record from an hour ago, which must be on the page, or the absence above
+   would prove only that the fixture never drew. */
+const MARKED = { scopeKey: 'coach_invites', scopeLabel: 'Coach invites' };
+const MARKER = /Coach invites/;
+
+/* Where the records live on each pane. Problems reads a second, closed list on
+   a fourteen-day window of its own that the shell's range does not touch, so
+   whole-page text there would answer a question nobody asked. */
+const RECORDS_SHOWN = {
+  history: (dom) => shownText(dom),
+  alerts: (dom) => withClass(dom, 'p-item').map(allText).join(' '),
+};
+
+function markedRecord(ageMs, closed) {
+  const extra = closed
+    ? { status: 'closed', closedAt: at(ageMs), closeReason: 'fixed' }
+    : { status: 'open' };
+  return problem(Object.assign({
+    id: 'prb_marked', reference: 'AO-777', title: 'The marked record',
+    firstBreachedAt: at(ageMs), firedAt: at(ageMs), lastObservedAt: at(ageMs),
+  }, MARKED, extra));
+}
+
+test('no value a pane offers reaches a record that lies outside all of them', async () => {
+  const { PANES } = registry();
+  let checked = 0;
+
+  for (const id of Object.keys(HONOURED)) {
+    for (const filter of Object.keys(HONOURED[id])) {
+      if (HONOURED[id][filter] !== 'answer') continue;
+      const readRecords = RECORDS_SHOWN[id];
+      assert.ok(readRecords, id + ' applies ' + filter + ' to its answer and this file does '
+        + 'not know where to read its records');
+
+      const previous = PAGES[id].answer;
+      /* The record is served to whichever read asks for its status, the way
+         the route would: What happened asks for `all`, Problems asks twice,
+         once for `open` and once for `closed`. */
+      const serve = (record) => (endpoint, o) => {
+        if (endpoint === '/api/ops/alerts/rules') return rules();
+        if (endpoint === '/api/ops/alerts/problems') {
+          const want = (o && o.query && o.query.status) || 'open';
+          const matches = want === 'all'
+            || (want === 'closed') === (record.status === 'closed');
+          return { problems: matches ? [record] : [] };
+        }
+        return undefined;
+      };
+
+      try {
+        for (const value of valuesFor(registry(), PANES[id], filter)) {
+          PAGES[id].answer = serve(markedRecord(400 * DAY, true));
+          const far = await bootPane(id, searchFor(filter, value));
+          assert.doesNotMatch(readRecords(far), MARKER,
+            id + ' put a record from four hundred days ago on the page under ' + filter
+            + '=' + value + ', which no window it offers reaches. That value is not being '
+            + 'applied to the answer.');
+
+          PAGES[id].answer = serve(markedRecord(HOUR, false));
+          const near = await bootPane(id, searchFor(filter, value));
+          assert.match(readRecords(near), MARKER,
+            id + ' left a record from an hour ago off the page under ' + filter + '='
+            + value + ', so the check above proves nothing: this fixture never draws.');
+          checked += 1;
+        }
+      } finally {
+        PAGES[id].answer = previous;
+      }
+    }
+  }
+
+  assert.ok(checked >= 6,
+    'only ' + checked + ' values were reached, so this proves less than it reads');
+});
+
+/* ================== 6. no value costs the pane its answer ============== */
 
 test('every value a pane offers reaches the same state as the one it starts on', async () => {
   const { PANES } = registry();
@@ -699,36 +850,4 @@ test('every value a pane offers reaches the same state as the one it starts on',
 
   assert.ok(checked >= 12,
     'only ' + checked + ' values were reached, so this proves less than it reads');
-});
-
-/* ============ 5. a filter a pane does not declare is unreachable ======= */
-
-/* The converse, and the replacement for the refusals two panes used to draw.
-   Nothing has to refuse a selection the operator cannot make. */
-test('a filter a pane does not declare cannot be reached through the URL', async () => {
-  const { PANES } = registry();
-  let checked = 0;
-
-  for (const id of Object.keys(PAGES)) {
-    const undeclared = FILTERS.filter((name) => !PANES[id][name]);
-    if (!undeclared.length) continue;
-
-    const asked = undeclared.map((name) => name + '='
-      + (name === 'scope' ? 'mobile' : name === 'env' ? 'staging' : 'custom')).join('&');
-
-    const plain = await bootPane(id, '');
-    const loud = await bootPane(id, '?' + asked);
-
-    assert.equal(stateOf(loud), stateOf(plain),
-      id + ' changed state for ' + asked + ', which it does not declare');
-    assert.deepEqual(recorded(loud), recorded(plain),
-      id + ' let ' + asked + ' reach a read it does not declare: '
-      + JSON.stringify(recorded(loud)));
-    assert.equal(shownText(loud), shownText(plain),
-      id + ' drew something different for ' + asked + ', which it does not declare');
-    checked += 1;
-  }
-
-  assert.ok(checked >= 4,
-    'only ' + checked + ' panes were checked for filters they do not declare');
 });

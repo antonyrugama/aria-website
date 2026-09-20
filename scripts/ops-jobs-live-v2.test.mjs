@@ -20,8 +20,7 @@
      - work that is flowing and failing is a third fact, not a fourth kind of
        queue;
      - a figure nothing records renders words and never a numeral;
-     - an app or an environment asked for in the URL changes nothing, because
-       this pane offers neither;
+     - the bar draws no app and no environment control, and says why;
      - no control is drawn that could never succeed.
 
    Every test here has a published mutation in the pull request: the exact
@@ -908,30 +907,31 @@ test('the oldest wait is a duration when it is known and words when it is not', 
     'with no queue over the line the tile did not say that is why it has no figure');
 });
 
-/* ============ selections the shell can no longer hand over ============= */
+/* ================= the two controls that came off ====================== */
 
 /* The app and environment controls this pane used to draw are gone from the
    registry, because neither could narrow the read: the alerting record is
-   kept per request type and covers production only. What replaced the note
-   and the refusal is stronger than either, and this is it — the shell pins a
-   filter the pane does not declare, so a URL asking for one is not a
-   selection at all and the pane answers exactly as it does without it. */
-test('an app or environment in the URL changes nothing, because neither is offered', async () => {
-  const asked = await boot({ query: '?scope=mobile&env=staging' });
-  const plain = await boot({});
+   kept per request type and covers production only. The note underneath and
+   the staging refusal card are gone with them.
 
-  /* Each boot runs in its own vm context, so its recorded calls carry that
-     context's Object prototype and a strict deep comparison fails on two
-     identical readings. JSON is the one shape both realms agree on. */
-  const recorded = (dom) => JSON.parse(JSON.stringify(dom.calls));
+   The claim worth holding is about the BAR, not about the URL. A URL asking
+   for a filter the pane does not declare is pinned by the shell before the
+   pane sees it, so "nothing changed" there is true whatever the pane does and
+   stays true when the pane starts reading it again — this test would be green
+   for a reason other than the one it names. What is drawn is the thing that
+   moves the moment the registry overclaims again. */
+test('the bar offers no app and no environment, and says why instead', async () => {
+  const dom = await boot({});
+  const bar = findAll(dom.root, (n) => hasClass(n, 'filters'))[0];
+  assert.ok(bar, 'the pane drew no filter bar at all, so the note has nowhere to be');
 
-  assert.equal(stateOf(asked), 'live',
-    'a filter the pane does not declare took the page off the screen');
-  assert.deepEqual(recorded(asked), recorded(plain),
-    'a filter the pane does not declare reached the read: '
-    + JSON.stringify(asked.calls));
-  assert.equal(liveText(asked), liveText(plain),
-    'a filter the pane does not declare changed what the page says');
+  const labels = findAll(bar, (n) => hasClass(n, 'filter-label')).map((n) => allText(n));
+  assert.deepEqual(labels, [],
+    'the bar drew a control: ' + labels.join(', ') + '. Every one of them narrows '
+    + 'nothing here, which is why the registry declares none.');
+
+  assert.match(allText(bar), /per request type and covers production only/,
+    'the bar has no controls and does not say why either');
 });
 
 /* ======================= empty is never just zero ======================= */
