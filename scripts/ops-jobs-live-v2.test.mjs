@@ -557,8 +557,47 @@ test('a queue that has stopped is not the longest wait, because nobody is waitin
   const tile = tileText(dom, /Oldest job waiting/);
   assert.match(tile, /Not over the line/, 'the tile quoted a wait from a queue that recovered');
   assert.equal(numerals(tile), 0, 'the tile drew a frozen figure as a live numeral: ' + tile);
-  assert.match(tile, /nothing is over the line now/,
+  assert.match(tile, /no queue is over the line now/,
     'the tile did not say why the figure is absent');
+});
+
+test('the longest-wait tile speaks only for the queues it is built from', async () => {
+  /* Round 4 of review: the tile is built from the queue rows alone and cannot
+     see the failing or elsewhere groups, so a note about what is "open below"
+     is false whenever one of those is still going — and on the elsewhere
+     fixture the hero says "One problem is going" on the same screen. Both
+     mixes are ordinary: one incident recovers while another is still live. */
+  const withFailing = await boot({
+    problems: {
+      problems: [
+        queueProblem({ conditionClearedAt: at(40 * MINUTE) }),
+        failingProblem(),
+      ],
+      summary: {},
+    },
+  });
+  const failingTile = tileText(withFailing, /Oldest job waiting/);
+  assert.match(failingTile, /no queue is over the line now; the queues below have stopped/,
+    'the tile note was not the queue-scoped one');
+  assert.doesNotMatch(failingTile, /what is open below|nothing is over the line/,
+    'the tile spoke for problems it cannot see: ' + failingTile);
+  assert.match(liveText(withFailing), /the answers are coming back wrong/,
+    'the fixture did not reach the live failing row the tile must not speak for');
+
+  const withElsewhere = await boot({
+    problems: {
+      problems: [
+        queueProblem({ conditionClearedAt: at(40 * MINUTE) }),
+        elsewhereProblem(),
+      ],
+      summary: {},
+    },
+  });
+  assert.match(heroText(withElsewhere), /One problem is going/,
+    'the fixture did not reach the live elsewhere hero');
+  assert.doesNotMatch(tileText(withElsewhere, /Oldest job waiting/),
+    /what is open below|nothing is over the line/,
+    'the tile contradicted the hero on the same screen');
 });
 
 test('the hero of a page where everything stopped says so, and does not sound the alarm', async () => {
@@ -618,7 +657,7 @@ test('a queue that is still going outranks one that stopped, in the hero and in 
     'the tile skipped the queue that is still over the line');
 });
 
-test('work that stopped failing says so, and keeps no severity pill', async () => {
+test('work that stopped failing says so beside its severity, not instead of it', async () => {
   const dom = await boot({
     problems: {
       problems: [failingProblem({ conditionClearedAt: at(12 * MINUTE) })],
@@ -634,8 +673,14 @@ test('work that stopped failing says so, and keeps no severity pill', async () =
   assert.match(allText(row), /was finishing cleanly 88\.0%/,
     'the frozen rate was labelled as a live one');
   assert.match(allText(row), /stopped 12 minutes ago/, 'the row did not say when it stopped');
-  assert.doesNotMatch(allText(row), /Critical/,
-    'a recovered failure kept its severity pill, which reads as still burning');
+  /* Severity survives, and the condition is stated separately beside it. The
+     Problems pane draws this same record that way — a severity pill and a
+     Condition of "Stopped <ago>" — and the elsewhere band below does too. Two
+     panes disagreeing about one record is worse than either presentation. */
+  assert.match(allText(row), /Critical/,
+    'a recovered failure lost the severity it is still rated at');
+  assert.match(allText(row), /Stopped/,
+    'a recovered failure did not say its condition had stopped');
 });
 
 test('a problem on another pane that stopped is marked, not quietly listed', async () => {

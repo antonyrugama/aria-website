@@ -669,8 +669,13 @@
           label: 'Oldest job waiting',
           availability: 'unrecorded',
           words: 'Not over the line',
+          /* Queue-scoped, deliberately: this figure is built from the queue
+             rows alone and cannot see the failing or elsewhere groups, so a
+             note about what is "open below" would be false whenever one of
+             those is still going. The hero is the thing that speaks for the
+             whole page. */
           note: queues.length
-            ? 'nothing is over the line now; what is open below has stopped'
+            ? 'no queue is over the line now; the queues below have stopped'
             : 'the wait is only recorded while a queue is breaching'
         };
       }
@@ -842,15 +847,20 @@
         }
         line.appendChild(facts);
 
+        /* Severity keeps its own tone whether or not the condition has
+           stopped, and the condition is stated separately beside it. That is
+           how the Problems pane draws the same record — a severity pill at
+           pane-alerts.js:1031 and a Condition of "Stopped <ago>" or "Still
+           happening" at :1080 — and how the elsewhere band below draws it.
+           Severity is how bad it is rated, not a claim about the present. */
         var state = h('div', { className: 'queue-state' });
         state.appendChild(h('span', {
-          className: 'pill ' + (cleared !== null
-            ? 'ghost'
-            : (model.SEVERITY_TONE[problem.severity] === 'crit' ? 'down' : 'warn')),
-          text: cleared !== null
-            ? 'Stopped'
-            : (model.SEVERITY_LABEL[problem.severity] || 'Unrated')
+          className: 'pill ' + (model.SEVERITY_TONE[problem.severity] === 'crit' ? 'down' : 'warn'),
+          text: model.SEVERITY_LABEL[problem.severity] || 'Unrated'
         }));
+        if (cleared !== null) {
+          state.appendChild(h('span', { className: 'pill ghost', text: 'Stopped' }));
+        }
         line.appendChild(state);
 
         body.appendChild(line);
