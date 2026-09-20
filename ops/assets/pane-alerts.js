@@ -168,22 +168,38 @@
        disclosure under the list says so rather than leaving the operator to
        assume the number is a total. */
 
+    /* Marked in place, never rebuilt. The operator is standing on one of
+       these buttons when they press it, so replacing the control replaces the
+       element that has focus and the browser drops focus on <body> -- back to
+       the top of the document, past the skip link and the rail, on every
+       press. The v2 shell's own segmented control does the same thing for the
+       same reason. Clearing the filters is the one case that still rebuilds,
+       because it changes the category select as well and its own button is
+       inside the region the re-read replaces either way. */
     function severityControl() {
       var seg = h('div', { className: 'seg', role: 'group', 'aria-label': 'Severity' });
+      var options = [];
       SEVERITIES.forEach(function (option) {
-        var on = option.value === picked.severity;
-        var button = h('button', {
-          type: 'button', text: option.label,
-          className: on ? 'on' : '', 'aria-pressed': String(on)
-        });
+        var button = h('button', { type: 'button', text: option.label });
+        options.push({ node: button, value: option.value });
         button.addEventListener('click', function () {
           if (picked.severity === option.value) return;
           picked.severity = option.value;
-          renderFilterControls();
-          load();
+          mark();
+          reload();
         });
         seg.appendChild(button);
       });
+      /* Read off `picked` rather than set from the click, so the pressed
+         button is the one the pane is filtering on however it got there. */
+      function mark() {
+        options.forEach(function (option) {
+          var on = option.value === picked.severity;
+          option.node.className = on ? 'on' : '';
+          option.node.setAttribute('aria-pressed', String(on));
+        });
+      }
+      mark();
       return seg;
     }
 
@@ -196,14 +212,15 @@
       });
       select.addEventListener('change', function () {
         picked.category = select.value;
-        load();
+        reload();
       });
       return h('div', { className: 'sel' }, [select, icon('chev')]);
     }
 
-    /* Rebuilt whole rather than mutated, so the bar always shows the
-       selection this pane is actually filtering on — including after the
-       empty state's "Clear the filters" puts both back. */
+    /* Rebuilt whole, so the bar always shows the selection this pane is
+       actually filtering on — including after the empty state's "Clear the
+       filters" puts both back. Called from that button and from first render,
+       not from picking a severity: see severityControl() above for why. */
     function renderFilterControls() {
       S.paneFilters([
         h('span', { className: 'filter-label', text: 'Severity' }),
@@ -428,7 +445,7 @@
         'Nothing here is a zero. This part is unread, not empty.'
       ]);
       var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
-      again.addEventListener('click', function () { load(); });
+      again.addEventListener('click', function () { reload(); });
       block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
       box.appendChild(block);
       section.appendChild(box);
@@ -1160,14 +1177,23 @@
        It waits for the re-read to land first: moving focus to a control the
        re-render is about to remove drops it on the body a moment later, which
        is the thing this is here to prevent. If the operator has already put
-       focus somewhere themselves by then, it is left where they put it. */
-    function afterChange(message) {
-      S.announce(message);
+       focus somewhere themselves by then, it is left where they put it.
+
+       Every re-read goes through here, not only the ones a write asked for.
+       "Try again" and "Clear the filters" are both inside the region the
+       re-read replaces, so they destroy themselves exactly as an acknowledge
+       button does, and for three rounds only the write paths were covered. */
+    function reload() {
       return load().then(function () {
         var host = document.getElementById('content');
         var live = document.activeElement;
         if (host && (!live || live === document.body)) host.focus();
       });
+    }
+
+    function afterChange(message) {
+      S.announce(message);
+      return reload();
     }
 
     function acknowledge(problem) {
@@ -1688,7 +1714,7 @@
              which puts it back and announces the change; the pane hears that
              announcement and re-reads, so this only reloads itself when the
              window was already the one the pane starts on. */
-          if (!S.resetRange()) load();
+          if (!S.resetRange()) reload();
         });
         block.appendChild(h('div', { className: 'row mt-sm' }, [clearButton]));
       } else if (rulesFailed) {

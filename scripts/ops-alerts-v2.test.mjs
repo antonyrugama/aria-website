@@ -37,7 +37,14 @@
        server enforces the same rules independently and is tested in the Aria
        monorepo.
      - That no value becomes markup. The last test here pins three spellings
-       and nothing more; it is a prohibition, not a proof. */
+       and nothing more; it is a prohibition, not a proof.
+     - That a browser moves focus to <body> when the focused element is
+       removed. The harness has no focus model to lose, so the focus tests
+       below bind what this file CAN decide -- that the severity control is
+       still the same node after it is pressed, and that a reload started with
+       nothing focused ends with the content region focused. The removal half
+       was measured on the real page in round 4 of this pull request's
+       independent review. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -307,6 +314,119 @@ function buttonNamed(root, re) {
 }
 
 const numerals = (text) => (text.match(/\d/g) || []).length;
+
+/* ================================ focus ================================ */
+
+const severityButton = (dom, label) => findAll(dom.doc.querySelector('.filters-pane'),
+  (n) => n.tagName === 'BUTTON' && allText(n) === label)[0];
+
+/* Is this node still the one on the page, or a replacement standing where it
+   stood? Identity, not shape: two buttons reading "Critical" are the same to
+   every assertion in this file except this one, and the difference between
+   them is whether the operator still has focus. */
+const stillOnPage = (dom, node) => {
+  for (let at = node; at; at = at.parentNode) if (at === dom.doc.body) return true;
+  return false;
+};
+
+test('picking a severity does not replace the control being picked', async () => {
+  const dom = await boot({});
+  const pressed = severityButton(dom, 'Critical');
+  pressed.focus();
+  pressed.dispatch('click');
+  await settle();
+
+  /* Node identity is the whole argument: a browser cannot move focus off an
+     element that is still there. What this cannot see is the other half --
+     that removing it WOULD move focus -- because the harness has no focus
+     model to lose. That half is browser behaviour, measured on the real page
+     in round 4 of the review (BUTTON "Critical" before, BODY after), and it
+     is named in NOT COVERED at the top of this file rather than implied. */
+  assert.ok(stillOnPage(dom, pressed),
+    'the severity button was replaced by the pick, so the browser drops focus on <body> ' +
+    'and the operator is returned to the top of the document on every press');
+  assert.equal(pressed.getAttribute('aria-pressed'), 'true',
+    'the surviving button did not take the pressed state, so the bar shows a selection ' +
+    'the pane is not filtering on');
+  assert.equal(severityButton(dom, 'All').getAttribute('aria-pressed'), 'false',
+    'the button that was pressed before stayed pressed');
+});
+
+/* The read controls are INSIDE the region the re-read replaces, so unlike the
+   severity control they cannot survive; what they can do is put focus back.
+   The write paths had this from v1 and the read paths did not. */
+test('a control that reloads the pane hands focus back rather than dropping it', async () => {
+  const failed = await boot({ open: new Error('upstream timed out') });
+  const again = buttonNamed(failed.doc.body, /Try again/);
+  assert.ok(again, 'the failed read drew no Try again button');
+  /* Asserted before as well as after: nothing may already hold focus, or the
+     assertion below is satisfied by the state the test started in. */
+  assert.equal(failed.doc.activeElement, null, 'something already held focus');
+  again.dispatch('click');
+  await settle();
+  assert.equal(failed.doc.activeElement, failed.doc.getElementById('content'),
+    'pressing Try again left nothing holding focus, so the operator is on <body>');
+
+  const empty = await boot({ open: { problems: [problem({ severity: 'warning' })] } });
+  empty.answers.open = { problems: [] };
+  severityButton(empty, 'Critical').dispatch('click');
+  await settle();
+  const clear = buttonNamed(empty.doc.body, /Clear the filters/);
+  assert.ok(clear, 'the filtered empty state drew no Clear the filters button');
+  if (empty.doc.activeElement) empty.doc.activeElement.blur();
+  assert.equal(empty.doc.activeElement, null, 'something already held focus');
+  clear.dispatch('click');
+  await settle();
+  assert.equal(empty.doc.activeElement, empty.doc.getElementById('content'),
+    'pressing Clear the filters left nothing holding focus');
+});
+
+/* ====================== controls that would be refused ================== */
+
+test('a closed problem is not offered a control the server can only refuse', async () => {
+  const dom = await boot({
+    open: { problems: [] },
+    closed: { problems: [closedProblem()] },
+  });
+  const row = withClass(dom.doc.body, 'c-row')[0];
+  assert.ok(row, 'the closed list drew no row');
+  assert.equal(buttonNamed(row, /Close/), null,
+    'a problem that is already closed was offered a Close button');
+  assert.equal(buttonNamed(row, /I am on it/), null,
+    'a problem that is already closed was offered an acknowledge button');
+  assert.ok(buttonNamed(row, /Details/),
+    'the closed row lost the one control it should have');
+});
+
+test('the close form labels its fields by an id nothing else on the page can take', async () => {
+  const dom = await boot({
+    open: { problems: [problem({ id: 'prb_dup' })] },
+    closed: { problems: [] },
+  });
+  buttonNamed(problemCards(dom)[0], /Close/).dispatch('click');
+  await settle();
+
+  const ids = findAll(dom.doc.body, (n) => n.getAttribute && n.getAttribute('id'))
+    .map((n) => n.getAttribute('id'));
+  assert.equal(ids.length, new Set(ids).size,
+    'two elements on the page carry the same id: ' + JSON.stringify(repeatedIds(dom)));
+
+  const labels = findAll(dom.doc.body, (n) => n.tagName === 'LABEL' && n.getAttribute('for'));
+  const formLabels = labels.filter((n) => /^close-(reason|note)-/.test(n.getAttribute('for')));
+  assert.equal(formLabels.length, 2,
+    'the close form did not label both of its fields');
+  formLabels.forEach((label) => {
+    const target = label.getAttribute('for');
+    assert.ok(dom.doc.getElementById(target),
+      'a close-form label points at ' + target + ', which is on no element');
+    /* The counter, not the problem id. An id built from the record has to
+       answer what characters a record id can contain; this one never asks. */
+    assert.match(target, /-\d+$/,
+      'a close-form id is not the counter\'s: ' + target);
+    assert.doesNotMatch(target, /prb_dup/,
+      'a close-form id is built from the record: ' + target);
+  });
+});
 
 /* =========================== acknowledge vs close ====================== */
 
