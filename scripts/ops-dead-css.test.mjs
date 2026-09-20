@@ -148,7 +148,15 @@
      - a reflected IDL property write is     className deleted from
        a write                               REFLECTED_MEMBER
      - a member this check does not          the unrecognised-member push
-       recognise refuses everything          deleted
+       recognise refuses everything,         deleted / the own-property
+       including an Object.prototype key     check on REFLECTED_MEMBER
+                                             replaced by a bare index
+     - an optional chain and a bracket       the `\??` and the bracket
+       index are member access too           spellings removed from
+                                             MEMBER_ON_DOCUMENT
+     - a comment that opens and closes       the script-body clause in
+       inside one <script> body is a         comment-swallows-markup's
+       refusal, though it swallows no tag    detect() deleted
 
    NOT COVERED, on purpose
 
@@ -202,22 +210,28 @@
 
    Round 1 of review on the change that added this block found four more
    wrong-DEAD shapes anyway, three of them in the code that change had just
-   written. Three became refusals and one became a wider gate; the count below
-   moved in both directions as a result. Read it as the current state of an
-   estimate that has never yet been final, not as a bound.
+   written. Round 2 found three more, all three in the two detectors round 1
+   had rewritten: a comment wholly inside one <script> body swallowed a write
+   while swallowing no tag, and five spellings of a reach onto document.body —
+   `?.`, a bracketed string, a computed bracket, setAttributeNode and
+   getAttributeNode().value — walked past a check that only knew `.name`.
+   Three counts have moved in both directions as a result. Read the block
+   below as the current state of an estimate that has never yet been final,
+   not as a bound; the file's own history says the next reader finds one more.
 
    None of the refuses-to-read shapes and none of the wrong-dead-not-covered
    shapes exists in ops/ today.
 
    ```counts
    refuses-to-read: 4
-   - comment-swallows-markup: A comment, as this guard delimits one,
-     containing a <link, <body or <script. stripHtmlComments is a single
-     lazy regex over the whole page, and every way of opening or closing a
-     comment that it reads differently from a browser ends the same way:
-     markup this analysis depends on is blanked. A `<!--` written inside a
-     script, a <style>, RCDATA or a quoted attribute value; a `<!-->`, which
-     is a complete comment for a browser and unterminated for the regex; a
+   - comment-swallows-markup: A comment, as this guard delimits one, that
+     swallows something this analysis reads: a <link, a <body, a <script, or
+     the text inside a <script>. stripHtmlComments is a single lazy regex
+     over the whole page, and every way of opening or closing a comment that
+     it reads differently from a browser ends the same way: something the
+     analysis depends on is blanked. A `<!--` written inside a script, a
+     <style>, RCDATA or a quoted attribute value; a `<!-->`, which is a
+     complete comment for a browser and unterminated for the regex; a
      `--!>`, which closes one for a browser and not for the regex; or a
      comment never closed at all. Rather than ask where the comment came
      from, this asks what the blanking ate, so it needs no opinion about the
@@ -240,14 +254,24 @@
      guard and its body is never scanned, while a browser closes the element
      there and runs it.
    wrong-dead-not-covered: 6
-   - aliased-body-write: The refusal check reads text, so a write through a
-     reference to <body> that is not textually document.body or
-     document.documentElement — an alias, a closest("body"), an argument —
-     is invisible unless it also names the attribute in quotes.
+   - aliased-body-write: A write that does not go through a member access on
+     a textual document.body or document.documentElement is invisible unless
+     it also names the attribute in quotes: an alias, a closest("body"), or
+     the element itself handed to a function — fn(document.body) or
+     Object.assign(document.body, ...). Catching the argument position by
+     text would refuse every attribute on every page in this repository,
+     because two scripts pass document.documentElement to
+     MutationObserver.observe and a third names document.body in a comment,
+     so this is disclosed rather than refused: refusing it switches the
+     whole arm off.
    - character-reference: An HTML character reference in an attribute value
      is read as the characters it is written with, so `data-page="a&amp;b"`
      is compared against the selector as seven characters rather than the
-     three the browser resolves it to.
+     three the browser resolves it to, and href="assets&#47;x.css" resolves
+     to a path that is not the one the browser fetches. The href direction
+     is always accompanied by a dangling-link naming the mis-resolved path,
+     so the guard discloses that failure in the same run; the attribute
+     direction is silent.
    - css-escape: A CSS escape in a selector value is compared as the
      characters it is written with, so `[data-page="lo\67 in"]`, which
      matches login, is not read as login.
@@ -693,19 +717,35 @@ export function commentSpans(html) {
   return spans;
 }
 
+/* The bodies of <script> elements as WRITTEN, before any blanking. The
+   analysis reads script text as well as tags, so a comment span that begins
+   and ends inside one script body erases a write while swallowing none of
+   the three tag names — round 2 of review demonstrated three ordinary shapes
+   that way, including `<script>` `<!--` … `// -->` `</script>`, which is the
+   canonical legacy idiom and the reason `<!--` is a JavaScript line comment. */
+export function scriptBodiesAsWritten(html) {
+  const out = [];
+  const re = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) out.push(m[1]);
+  return out;
+}
+
 export const MARKUP_REFUSALS = [
   {
     id: 'comment-swallows-markup',
-    why: 'A comment, as this guard delimits one, containing a <link, <body or <script. '
+    why: 'A comment, as this guard delimits one, that swallows something this analysis '
+      + 'reads: a <link, a <body, a <script, or the text inside a <script>. '
       + 'stripHtmlComments is a single lazy regex over the whole page, and every way of '
       + 'opening or closing a comment that it reads differently from a browser ends the '
-      + 'same way: markup this analysis depends on is blanked. A `<!--` written inside a '
-      + 'script, a <style>, RCDATA or a quoted attribute value; a `<!-->`, which is a '
+      + 'same way: something the analysis depends on is blanked. A `<!--` written inside '
+      + 'a script, a <style>, RCDATA or a quoted attribute value; a `<!-->`, which is a '
       + 'complete comment for a browser and unterminated for the regex; a `--!>`, which '
       + 'closes one for a browser and not for the regex; or a comment never closed at '
       + 'all. Rather than ask where the comment came from, this asks what the blanking '
       + 'ate, so it needs no opinion about the parser it is standing in for.',
-    detect: (html) => commentSpans(html).some((s) => /<(?:link|body|script)\b/i.test(s)),
+    detect: (html) => commentSpans(html).some((s) => /<(?:link|body|script)\b/i.test(s))
+      || scriptBodiesAsWritten(html).some((b) => /<!--|-->/.test(b)),
   },
   {
     id: 'quoted-gt-in-tag',
@@ -763,10 +803,10 @@ const DOCUMENT_REPLACERS = [
    Anything else — node.setAttribute(key, v) on a freshly built child — is not
    a way to reach <body> and is not matched. */
 const COMPUTED_ON_DOCUMENT =
-  /\bdocument\s*\.\s*(?:body|documentElement)\s*\.\s*(?:set|remove|toggle)Attribute\s*\(\s*[^'"`\s)]/;
+  /\bdocument\s*\??\s*\.\s*(?:body|documentElement)\s*\??\s*\.\s*(?:set|remove|toggle)Attribute\s*\(\s*[^'"`\s)]/;
 
 const DATASET_ON_DOCUMENT =
-  /\bdocument\s*\.\s*(?:body|documentElement)\s*\.\s*dataset\b/;
+  /\bdocument\s*\??\s*\.\s*(?:body|documentElement)\s*\??\s*\.\s*dataset\b/;
 
 const READ_CALL = /(?:get|has)Attribute\s*\(\s*$/;
 
@@ -785,7 +825,7 @@ const READ_CALL = /(?:get|has)Attribute\s*\(\s*$/;
    whatever the platform adds next, refuses EVERY attribute rather than being
    quietly trusted. That is the inversion the MIME gate above needed too. */
 const READ_ONLY_ON_DOCUMENT = new Set([
-  'getAttribute', 'hasAttribute', 'getAttributeNames', 'getAttributeNode',
+  'getAttribute', 'hasAttribute', 'getAttributeNames',
   'querySelector', 'querySelectorAll', 'closest', 'matches', 'contains', 'compareDocumentPosition',
   'appendChild', 'removeChild', 'insertBefore', 'replaceChild', 'replaceChildren',
   'append', 'prepend', 'innerHTML', 'innerText', 'textContent',
@@ -802,9 +842,15 @@ const READ_ONLY_ON_DOCUMENT = new Set([
 /* Handled precisely elsewhere in this function: a quoted name through the
    literal scan, a computed one through COMPUTED_ON_DOCUMENT, dataset through
    DATASET_ON_DOCUMENT. Re-reporting them here would refuse every attribute on
-   every page that loads theme.js, which would switch the whole arm off. */
+   every page that loads theme.js, which would switch the whole arm off.
+   Membership is earned by being handled, not by looking like a read:
+   setAttributeNode was on this list in round 2 under a comment claiming
+   COMPUTED_ON_DOCUMENT covered it, which was false — that regex matches
+   `setAttribute(`, `removeAttribute(` and `toggleAttribute(` only — and
+   getAttributeNode was on the read-only list above although it returns a live
+   Attr whose .value is a setter. Both are off both lists, so both are loud. */
 const ATTRIBUTE_API_ON_DOCUMENT = new Set([
-  'setAttribute', 'removeAttribute', 'toggleAttribute', 'setAttributeNode', 'dataset',
+  'setAttribute', 'removeAttribute', 'toggleAttribute', 'dataset',
 ]);
 
 const REFLECTED_MEMBER = {
@@ -816,10 +862,39 @@ const REFLECTED_MEMBER = {
   style: 'style', popover: 'popover',
 };
 
-const MEMBER_ON_DOCUMENT = /\bdocument\s*\.\s*(body|documentElement)\s*\.\s*([A-Za-z_$][\w$]*)/g;
+/* Two spellings of the same reach. The second exists because `?.` and a
+   bracket index are member access too, and round 2 of review demonstrated
+   four wrong DEADs that walked straight past a regex that only knew `.name`:
+   document.body?.classList.replace(...), document.body?.setAttribute(N, v),
+   document.body["className"] = ... and a computed document.body[K] = ....
+   A bracket whose key is not a plain quoted string is not resolvable here, so
+   it is a risk for EVERY attribute rather than for a guessed one. */
+const MEMBER_ON_DOCUMENT =
+  /\bdocument\s*\??\s*\.\s*(body|documentElement)\s*\??\s*\.\s*([A-Za-z_$][\w$]*)/g;
+const BRACKET_ON_DOCUMENT =
+  /\bdocument\s*\??\s*\.\s*(body|documentElement)\s*\??\s*\[\s*(?:(['"`])([A-Za-z_$][\w$]*)\2\s*\])?/g;
 
 function camel(attrName) {
   return attrName.replace(/^data-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+/* null when reaching `member` on document.body cannot write `attrName`;
+   otherwise the clause that says why it might. `undefined` means the member
+   name is not resolvable from the source — a computed bracket key — which is
+   a risk for every attribute rather than for a guessed one.
+   REFLECTED_MEMBER is read with an own-property check because a bare index
+   resolves constructor, toString, valueOf, hasOwnProperty and __proto__ off
+   Object.prototype, and each of those truthy hits took the skip. */
+function memberReachRisk(member, attrName) {
+  if (member === undefined) return 'reaches a member this check cannot resolve';
+  if (READ_ONLY_ON_DOCUMENT.has(member) || ATTRIBUTE_API_ON_DOCUMENT.has(member)) return null;
+  const reflects = Object.prototype.hasOwnProperty.call(REFLECTED_MEMBER, member)
+    ? REFLECTED_MEMBER[member]
+    : undefined;
+  if (reflects && reflects !== attrName) return null;
+  return reflects
+    ? `writes the ${reflects} attribute`
+    : 'this check cannot show is not an attribute write';
 }
 
 /* Every reason this run must refuse to judge `attrName` rather than call a
@@ -845,14 +920,18 @@ export function attributeWriteRisks(attrName, scripts) {
     if (DATASET_ON_DOCUMENT.test(source)) risks.push(`${name} touches document.body.dataset`);
     MEMBER_ON_DOCUMENT.lastIndex = 0;
     while ((m = MEMBER_ON_DOCUMENT.exec(source)) !== null) {
-      const member = m[2];
-      if (READ_ONLY_ON_DOCUMENT.has(member) || ATTRIBUTE_API_ON_DOCUMENT.has(member)) continue;
-      const reflects = REFLECTED_MEMBER[member];
-      if (reflects && reflects !== attrName) continue;
+      const why = memberReachRisk(m[2], attrName);
+      if (why === null) continue;
       const line = source.slice(0, m.index).split('\n').length;
-      risks.push(`${name}:${line} reaches document.${m[1]}.${member}, which ${reflects
-        ? `writes the ${reflects} attribute`
-        : 'this check cannot show is not an attribute write'}`);
+      risks.push(`${name}:${line} reaches document.${m[1]}.${m[2]}, which ${why}`);
+    }
+    BRACKET_ON_DOCUMENT.lastIndex = 0;
+    while ((m = BRACKET_ON_DOCUMENT.exec(source)) !== null) {
+      const why = memberReachRisk(m[3], attrName);
+      if (why === null) continue;
+      const line = source.slice(0, m.index).split('\n').length;
+      const key = m[3] === undefined ? '\u2026' : m[3];
+      risks.push(`${name}:${line} indexes document.${m[1]}[${key}], which ${why}`);
     }
     if (COMPUTED_ON_DOCUMENT.test(source)) {
       risks.push(`${name} sets an attribute on document.body under a computed name`);
@@ -1378,6 +1457,28 @@ test('the pieces the analysis is built from behave', () => {
     [{ name: 'ops/assets/s.js', source: "var p = document.body.getAttribute('data-pane');" }]), [],
   'a read is not a write, or theme.js would switch the whole arm off');
 
+  /* Five spellings that reached <body> straight past this check in round 2,
+     each one verified in Chromium to write the attribute the guard was about
+     to call dead, plus the prototype-key skip that let the sixth through. */
+  const reach = (src, attr = 'data-page') => attributeWriteRisks(attr,
+    [{ name: 's.js', source: src }]).length;
+  assert.equal(reach("document.body?.classList.replace('a', 'b');", 'class'), 1,
+    'an optional chain is a member access, and classList writes class');
+  assert.equal(reach('document.body?.setAttribute(K, v);'), 1,
+    'an optional chain in front of a computed setAttribute still sets the attribute');
+  assert.equal(reach('document.body["className"] = v;', 'class'), 1,
+    'a bracketed string is a member access by another spelling');
+  assert.equal(reach('document.body[K] = v;'), 1,
+    'a bracket key this check cannot resolve is a risk for every attribute');
+  assert.equal(reach('document.body.setAttributeNode(a);'), 1,
+    'setAttributeNode is not covered by COMPUTED_ON_DOCUMENT, which reads setAttribute(');
+  assert.equal(reach('document.body.getAttributeNode(K).value = v;'), 1,
+    'getAttributeNode returns a live Attr whose .value is a setter, so it is not a read');
+  assert.equal(reach('document.body.constructor;'), 1,
+    'an Object.prototype key is not a known reflected member');
+  assert.equal(reach('document.body.appendChild(n);'), 0,
+    'and the read-only list still keeps the arm alive');
+
   assert.deepEqual(parseAttrSelector('[data-page="x"]'), { name: 'data-page', op: '=', value: 'x' });
   assert.deepEqual(parseAttrSelector('[data-page]'), { name: 'data-page', op: 'exists', value: null });
   assert.deepEqual(parseAttrSelector('[data-page~="x"]'), { name: 'data-page', op: '~=', value: null });
@@ -1430,27 +1531,57 @@ const wantsLogin = [sheet('ops/assets/x.css', 'body[data-page="login"] { color: 
 export const WRONG_DEAD_NOT_COVERED = [
   {
     id: 'aliased-body-write',
-    why: 'The refusal check reads text, so a write through a reference to <body> that is '
-      + 'not textually document.body or document.documentElement — an alias, a '
-      + 'closest("body"), an argument — is invisible unless it also names the attribute '
-      + 'in quotes.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
-        + '<body data-page="login">x</body></html>')],
-      wantsUsers,
-      [{ name: 'ops/assets/s.js', source: 'var b = document.body; b.setAttribute(k, val);' }]),
-    expected: ['dead-body-scope ops/assets/x.css:1'],
+    why: 'A write that does not go through a member access on a textual document.body or '
+      + 'document.documentElement is invisible unless it also names the attribute in '
+      + 'quotes: an alias, a closest("body"), or the element itself handed to a function '
+      + '— fn(document.body) or Object.assign(document.body, ...). Catching the argument '
+      + 'position by text would refuse every attribute on every page in this repository, '
+      + 'because two scripts pass document.documentElement to MutationObserver.observe '
+      + 'and a third names document.body in a comment, so this is disclosed rather than '
+      + 'refused: refusing it switches the whole arm off.',
+    wrongAnswer: () => [
+      ...verdicts(
+        [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+          + '<body data-page="login">x</body></html>')],
+        wantsUsers,
+        [{ name: 'ops/assets/s.js', source: 'var b = document.body; b.setAttribute(k, val);' }]),
+      ...verdicts(
+        [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+          + '<body data-page="login">x</body></html>')],
+        wantsUsers,
+        [{
+          name: 'ops/assets/t.js',
+          source: 'var K = "data-" + "page";\nfunction w(el, k, v) { el.setAttribute(k, v); }\n'
+            + 'w(document.body, K, "users");',
+        }]),
+    ],
+    expected: ['dead-body-scope ops/assets/x.css:1', 'dead-body-scope ops/assets/x.css:1'],
   },
   {
     id: 'character-reference',
     why: 'An HTML character reference in an attribute value is read as the characters it '
       + 'is written with, so `data-page="a&amp;b"` is compared against the selector as '
-      + 'seven characters rather than the three the browser resolves it to.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
-        + '<body data-page="a&amp;b">x</body></html>')],
-      [sheet('ops/assets/x.css', 'body[data-page="a&b"] { color: red; }')]),
-    expected: ['dead-body-scope ops/assets/x.css:1'],
+      + 'seven characters rather than the three the browser resolves it to, and '
+      + 'href="assets&#47;x.css" resolves to a path that is not the one the browser '
+      + 'fetches. The href direction is always accompanied by a dangling-link naming the '
+      + 'mis-resolved path, so the guard discloses that failure in the same run; the '
+      + 'attribute direction is silent.',
+    wrongAnswer: () => [
+      ...verdicts(
+        [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+          + '<body data-page="a&amp;b">x</body></html>')],
+        [sheet('ops/assets/x.css', 'body[data-page="a&b"] { color: red; }')]),
+      ...verdicts(
+        [page('ops/login.html', '<!doctype html><html><head>'
+          + '<link rel="stylesheet" href="assets&#47;x.css"></head>'
+          + '<body data-page="login">x</body></html>')],
+        [sheet('ops/assets/x.css', 'body[data-page="login"] { color: red; }')]),
+    ],
+    expected: [
+      'dead-body-scope ops/assets/x.css:1',
+      'dangling-link ops/login.html -> ops/assets&',
+      'orphan-sheet ops/assets/x.css',
+    ],
   },
   {
     id: 'css-escape',
@@ -1533,6 +1664,22 @@ const REFUSAL_DEMOS = {
     /* the `<!--` is inside a quoted attribute value of another tag */
     '<!doctype html><html><head><meta name="note" content="use <!-- with care">'
     + `${LINK}<!-- ordinary comment --></head><body data-page="login">x</body></html>`,
+    /* the span swallows a <body> start tag and NOTHING else: the <link> is
+       before it, so a detector that looked only for <link and <script would
+       judge these pages on a body attribute map read from a blanked tag —
+       and both really do carry the value the sheet asks for, so the refusal
+       is the only thing between them and a wrong DEAD. Two natural
+       spellings, RCDATA and a quoted attribute value. */
+    `<!doctype html><html><head>${LINK}<title>a <!-- b</title></head>`
+    + '<body data-page="users">x</body><!-- ordinary comment --></html>',
+    `<!doctype html><html><head>${LINK}<meta name="n" content="use <!-- care"></head>`
+    + '<body data-page="users">x</body><!-- ordinary comment --></html>',
+    /* a comment opened and closed inside ONE <script> body swallows no tag at
+       all, so a detector that only enumerates tag names is blind to it — and
+       this is the canonical legacy idiom, which is why `<!--` is a JavaScript
+       line comment. The write below is blanked; every tag survives. */
+    `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
+    + `<script>\n<!--\n${WRITE}\n// -->\n</script></body></html>`,
     /* <!--> is a complete empty comment for a browser, unterminated for the regex */
     `<!doctype html><html><head><!-->${LINK}<!-- ordinary comment -->`
     + '</head><body data-page="login">x</body></html>',
@@ -1548,6 +1695,12 @@ const REFUSAL_DEMOS = {
     + '<body data-x="a>b" data-page="login">x</body></html>',
     '<!doctype html><html><head><link rel="stylesheet" title="a>b" href="assets/x.css">'
     + '</head><body data-page="login">x</body></html>',
+    /* the third tag name in that detector's list, so none of the three is
+       carried by prose alone: the truncated <script> tag hides its src, and
+       parseTagAttributes reads a type out of what a browser reads as one
+       quoted value, which is how a script that writes the attribute vanishes */
+    '<!doctype html><html><head><script src="a.js" data-x="a>b"></script>'
+    + `${LINK}</head><body data-page="login">x</body></html>`,
   ],
   'repeated-body-tag': [
     /* a browser merges the second start tag's attributes onto the first body */
