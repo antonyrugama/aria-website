@@ -210,6 +210,70 @@ async function main() {
     report(error, result);
     return;
   }
+  if (operationId.startsWith('ciel.approval.')) {
+    const result = byId('approval-result');
+    assert.ok(result, 'approval result did not render');
+    if (operationId === 'ciel.approval.request') {
+      const form = byId('approval-request-form');
+      const error = findNode(form, node => node.className === 'field-error');
+      const submit = findNode(form, node => node.tag === 'button');
+      assert.ok(form && error && submit, 'approval request form did not render');
+      byId('approval-artifact-id').value = required('CIEL_PARITY_APPROVAL_ARTIFACT_ID');
+      byId('approval-artifact-revision').value =
+        required('CIEL_PARITY_APPROVAL_ARTIFACT_REVISION');
+      byId('approval-source-digest').value =
+        required('CIEL_PARITY_APPROVAL_SOURCE_DIGEST');
+      byId('approval-retained-digest').value =
+        required('CIEL_PARITY_APPROVAL_RETAINED_DIGEST');
+      byId('approval-target-digest').value =
+        required('CIEL_PARITY_APPROVAL_TARGET_DIGEST');
+      byId('approval-purpose').value = required('CIEL_PARITY_APPROVAL_PURPOSE');
+      byId('approval-policy-revision').value =
+        required('CIEL_PARITY_APPROVAL_POLICY_REVISION');
+      byId('approval-expiry').value = required('CIEL_PARITY_APPROVAL_EXPIRES_AT');
+      byId('approval-request-key').value = required('CIEL_PARITY_IDEMPOTENCY_KEY');
+      form.dispatch('submit');
+      await waitFor(
+        () => transactions.length === 1 && !submit.disabled,
+        'dashboard approval request did not complete',
+      );
+      report(error, result);
+      return;
+    }
+    if (operationId === 'ciel.approval.get') {
+      const form = byId('approval-get-form');
+      const error = findNode(form, node => node.className === 'field-error');
+      const submit = findNode(form, node => node.tag === 'button');
+      assert.ok(form && error && submit, 'approval lookup form did not render');
+      byId('approval-get-id').value = required('CIEL_PARITY_APPROVAL_REQUEST_ID');
+      form.dispatch('submit');
+      await waitFor(
+        () => transactions.length === 1 && !submit.disabled,
+        'dashboard approval lookup did not complete',
+      );
+      report(error, result);
+      return;
+    }
+    if (operationId === 'ciel.approval.decide') {
+      const form = byId('approval-decision-form');
+      const error = findNode(form, node => node.className === 'field-error');
+      const submit = findNode(form, node => node.tag === 'button');
+      assert.ok(form && error && submit, 'approval decision form did not render');
+      byId('approval-decision-id').value = required('CIEL_PARITY_APPROVAL_REQUEST_ID');
+      byId('approval-expected-revision').value =
+        required('CIEL_PARITY_APPROVAL_EXPECTED_REVISION');
+      byId('approval-decision').value = required('CIEL_PARITY_APPROVAL_DECISION');
+      byId('approval-reason').value = required('CIEL_PARITY_APPROVAL_REASON');
+      byId('approval-decision-key').value = required('CIEL_PARITY_IDEMPOTENCY_KEY');
+      form.dispatch('submit');
+      await waitFor(
+        () => transactions.length === 1 && !submit.disabled,
+        'dashboard approval decision did not complete',
+      );
+      report(error, result);
+      return;
+    }
+  }
   assert.equal(operationId, 'ciel.artifact.quarantine', 'unsupported form operation');
   const form = findNode(root, node => node.className === 'card evidence-form');
   assert.ok(form, 'quarantine form did not render');
