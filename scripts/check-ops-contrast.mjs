@@ -2647,6 +2647,23 @@ async function selfTest() {
       `document and then measured: pad ${edge ? edge.pad : '?'}, expected whole document ` +
       '(every narrower clip has the ring on its border, and so does this one)');
 
+    /* The branch that turns a measured ring into a FINDING, run over this
+       fixture's rows through the very function the shell's run loop calls.
+
+       The shell cannot exercise it any more: every ring it carries clears
+       3:1, which is the point of the work and also means a disabled
+       focusFindings would be invisible there. Here it can never go quiet —
+       .h2out and .hedge are #CCCCCC on white by construction and .h9 lands on
+       #CCCCCC, so three rings are under 3:1 no matter what the stylesheet
+       does. Named by class rather than counted, and the expectation is the
+       three classes rather than "however many focusFindings returns". */
+    const findings = focusFindings(rows).map((r) => r.cls).sort();
+    const okFindings = findings.join(',') === 'h2out,h9,hedge';
+    if (!okFindings) bad++;
+    console.log(`     ${okFindings ? 'ok  ' : 'FAIL'} the rings under ${FOCUS_RATIO}:1 that this ` +
+      `fixture builds on purpose are exactly the ones reported as findings: ${findings.join(', ') || '(none)'}` +
+      ', expected h2out, h9, hedge — 1.61:1, 2.83:1 and 1.61:1, the other 6 measured rings clear it');
+
     /* The census itself: fourteen buttons on the page, fourteen reached by
        Tab, and every one of them carrying a row. A focus sweep that quietly
        measured six of fourteen would print six ok lines and nothing else. */
@@ -2746,6 +2763,25 @@ const KNOWN_BELOW_AA = [
 function focusKey(r) {
   return `${r.theme}/${r.state} ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}` +
     ` "${r.text}"`;
+}
+
+/* The one place a measured focus ring becomes a finding, extracted so it has
+   a caller that is not the shell.
+
+   KNOWN_BELOW_FOCUS is empty and every ring the shipped page carries now
+   clears 3:1, which is the good outcome and also a hole: with no failing ring
+   to produce, the branch that TURNS a failing ring into a failure has nothing
+   exercising it, and could be disabled without any run going red. The
+   mutation battery caught exactly that — two payloads that used to be killed
+   by 32 frozen rings stopped being killed the moment those rings were fixed
+   upstream.
+
+   So the predicate lives here and part H calls it too, over fixture rings
+   that are genuinely under 3:1 by construction (1.61:1 twice, 2.83:1 once)
+   and always will be. The shell can go as clean as it likes; this branch
+   stays proven. */
+function focusFindings(rows) {
+  return rows.filter((r) => !r.refused && r.ratio + 0.005 < r.need);
 }
 
 /* Two frozen surface hexes are the same surface if no channel differs by more
@@ -3052,8 +3088,8 @@ try {
           const key = `${r.cls || r.tag}|${theme}`;
           const prev = focusWorst.get(key);
           if (!prev || r.ratio < prev.ratio) focusWorst.set(key, { ...r, theme, state });
-          if (r.ratio + 0.005 < r.need) focusBelow.push({ ...r, theme, state });
         }
+        for (const r of focusFindings(focus.rows)) focusBelow.push({ ...r, theme, state });
         if (verbose) {
           console.log(`  focused ${SHELL} [${theme}/${state}] — ${focus.rows.length} controls, ` +
             `${focus.census.reached} reached by Tab`);
