@@ -31,21 +31,25 @@
    NOT COVERED, deliberately and named rather than implied:
 
      - Layout. Nothing here measures anything, in any browser, at any width.
-     - What the stylesheet LOOKS like. Nothing here renders it. What the last
-       section DOES read out of ops/assets/pane-alerts-v2.css is its text: the
-       three machine-read docblock lines and the claims around them, the two
-       rules the rules table's scrolling box depends on, the .is- tone rules,
-       the sheet's own custom properties, and every test title the sheet
-       cites, each against the file it names. No rule below is rendered to
-       decide any of it, and nothing here can see a colour as a pixel --
-       scripts/check-ops-contrast.mjs is the tool that judges contrast, and it
-       is not run from here.
+     - What the stylesheet LOOKS like. Nothing here renders it. The lines it
+       reads as data are NON-TOKEN PAINT, AVATAR INK TOKEN, SAME FOCUS RING
+       AS and DIFFERENT FOCUS RING; the rest of what THREE sections of this
+       file read out of ops/assets/pane-alerts-v2.css is its text -- the
+       claims around those lines, the two rules the rules table's scrolling
+       box depends on, the .is- tone rules, the sheet's own custom
+       properties, and every test title the sheet cites, each against the
+       file it names. No rule below is rendered to decide any of it, and
+       nothing here can see a colour as a pixel --
+       scripts/check-ops-contrast.mjs is the tool that judges contrast, and
+       it is not run from here.
      - Anything the operations API decides. The role checks below prove the
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
        monorepo.
-     - That no value becomes markup. The last test here pins three spellings
-       and nothing more; it is a prohibition, not a proof.
+     - That no value becomes markup. "the pane module writes no markup and no
+       style attribute" pins three spellings and nothing more; it is a
+       prohibition, not a proof. It is not the last test in the file, which
+       is what this line said until the third review of #75 read it.
      - That a browser moves focus to <body> when the focused element is
        REMOVED, or when it is DISABLED. Both are true in Chrome and neither is
        true in this harness, which has no focus model to lose. Both halves
@@ -117,6 +121,22 @@ const MODEL_SRC = read('assets/alerts-model.js');
 const PANE_SRC = read('assets/pane-alerts.js');
 const PANE_CSS = read('assets/pane-alerts-v2.css');
 const ARIA_CSS = read('assets/aria.css');
+const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
+
+/* The docblock lines this file reads as DATA rather than as prose. Every
+   reader goes through machineLine(), which refuses a prefix that is not
+   listed, and the NOT COVERED bullet at the top of this file is checked
+   against the list rather than counting them by hand -- it said "three"
+   while four were read, and the fourth arrived in the same commit as the
+   word three (found in the third review of antonyrugama/aria-website#75). */
+const MACHINE_READ_PREFIXES = [
+  'NON-TOKEN PAINT', 'AVATAR INK TOKEN', 'SAME FOCUS RING AS', 'DIFFERENT FOCUS RING',
+];
+const machineLine = (prefix, tail = '(.*)') => {
+  assert.ok(MACHINE_READ_PREFIXES.includes(prefix),
+    prefix + ' is read as data but is not on MACHINE_READ_PREFIXES');
+  return new RegExp('^\\s*' + prefix + ':' + tail + '$', 'm');
+};
 
 const TOKENS = {
   '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
@@ -378,9 +398,11 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
    `tabindex="-1"` asks to be OUT of the tab order, and a tabindex whose value
    has no leading digits is IGNORED by the parser.
 
-   Independent review of that fix found five more, and a SECOND review found
-   six more still; all of them are rows of FOCUSABLE_PROBES marked FOUND IN
-   REVIEW, and the count is printed beside the table rather than typed here.
+   Two independent reviews have found more since, and a third more again; all
+   of them are rows of FOCUSABLE_PROBES marked FOUND IN REVIEW, and how many
+   is printed beside the table rather than typed here -- typing it here is
+   how this sentence came to say five and six while the table said six and
+   eight.
    What the two rounds between them corrected: tabindex is fed through HTML's
    rules for parsing INTEGERS rather than validated, and a parsed value
    outside the range of a long is an error just as a missing digit is; only
@@ -409,7 +431,10 @@ const HREF_TAGS = ['A', 'AREA'];
 const MEDIA_TAGS = ['AUDIO', 'VIDEO'];
 /* Whether these take a tab stop depends on the resource they load, their
    fallback content and the browser, so the helper says it cannot tell
-   instead of answering. */
+   instead of answering -- but only where that is still what decides it.
+   hidden, inert and a negative tabindex take the element out whatever it
+   loads and are answered above the refusal; a NON-negative tabindex does not
+   put it back and is answered below it. */
 const UNDECIDABLE_TAGS = ['OBJECT', 'EMBED'];
 
 const attr = (node, name) =>
@@ -487,10 +512,6 @@ const hiddenInput = (node) =>
 
 function focusable(node) {
   if (node.nodeType !== 1) return false;
-  if (UNDECIDABLE_TAGS.includes(node.tagName)) {
-    throw new Error('focusable() cannot tell: <' + node.tagName.toLowerCase()
-      + '> takes a tab stop in some browsers and not others');
-  }
   const suppressed = suppressedBy(node);
   if (suppressed === 'fieldset') {
     throw new Error('focusable() cannot tell: a descendant of a disabled <fieldset> is '
@@ -501,6 +522,21 @@ function focusable(node) {
   if (hiddenInput(node)) return false;
 
   const index = tabIndexOf(node);
+  /* A NEGATIVE tabindex is an answer for any tag, so it is taken before the
+     <object>/<embed> refusal below: hidden, inert, disabled and tabindex="-1"
+     all take the element out whatever it loads, and refusing them was this
+     helper saying "cannot tell" about cases the document settles (found in
+     the third review of antonyrugama/aria-website#75). A NON-negative one is
+     NOT an answer for those two tags, so it stays below. Measured: bare
+     <object tabindex="0"> takes no stop, the SAME element with a loaded
+     data= takes one, and empty <div tabindex="0"> takes one -- so answering
+     the non-negative case from the attribute would be wrong half the time,
+     which is worse than refusing it. */
+  if (index !== null && index < 0) return false;
+  if (UNDECIDABLE_TAGS.includes(node.tagName)) {
+    throw new Error('focusable() cannot tell: <' + node.tagName.toLowerCase()
+      + '> takes a tab stop in some browsers and not others');
+  }
   if (index !== null) return index >= 0;
 
   /* Before the href branch: an <a contenteditable> with no href is an editing
@@ -634,6 +670,19 @@ const FOCUSABLE_PROBES = [
   { name: '<embed>', tag: 'embed', answer: 'cannot tell',
     why: 'same, and its tabIndex reads -1 where <object> reads 0, so even the IDL the two '
       + 'expose disagrees on elements this helper cannot distinguish' },
+  { name: '<object hidden>', tag: 'object', attrs: { hidden: '' }, answer: false,
+    note: 'FOUND IN REVIEW: true. hidden takes it out whatever it loads, so the refusal '
+      + 'below does not get to answer this one' },
+  { name: '<object> inside <div inert>', tag: 'object', wrap: 'div', wrapAttrs: { inert: '' },
+    answer: false, note: 'FOUND IN REVIEW: true. same, from an ancestor' },
+  { name: '<object tabindex="-1">', tag: 'object', attrs: { tabindex: '-1' }, answer: false,
+    note: 'FOUND IN REVIEW: true. asking to be out of the order is an answer for any tag' },
+  { name: '<embed tabindex="-1">', tag: 'embed', attrs: { tabindex: '-1' }, answer: false,
+    note: 'FOUND IN REVIEW: true. same' },
+  { name: '<object tabindex="0">', tag: 'object', attrs: { tabindex: '0' }, answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. and this is why the refusal stays BELOW the non-negative '
+      + 'case: measured, bare it takes no stop and with a loaded data= it does, so the '
+      + 'attribute alone does not decide it' },
   { name: '<area href>', tag: 'area', attrs: { href: '/ops/alerts.html' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. a stop only inside a <map> a rendered <img usemap> uses' },
   { name: '<area> with no href', tag: 'area', answer: false,
@@ -714,7 +763,7 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 61, takesATabStop: 24, doesNot: 31, refused: 6, wereWrongBefore: 7, foundInReview: 14 });
+    { cases: 66, takesATabStop: 24, doesNot: 35, refused: 7, wereWrongBefore: 7, foundInReview: 19 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -2159,6 +2208,62 @@ test('clearing the filters puts the window back as well as the pane\'s own contr
    its quotes with the prose either side and every run after it is garbage. */
 const SHEET_QUOTES_THAT_ARE_NOT_CITATIONS = ['Still happening'];
 
+/* Which tests the sheet cites, pinned by IDENTITY rather than by a floor:
+   a floor of eight against fourteen leaves six deletable in silence, and a
+   citation going AWAY unbinds its sentence exactly as a citation going stale
+   does. Pinned as a set, so citing one test from two places and then dropping
+   one of the two is not a change here -- the claim is which tests hold the
+   sheet up, not how many sentences say so. One entry is generated rather
+   than typed, because the title it names is generated: it counts the sites
+   on the NON-TOKEN PAINT line, so the sheet's own citation of it goes red
+   when that line changes size, and typing it here would have taken that
+   property away. */
+const SHEET_CITATIONS = [
+  'a problem card carries one severity, in the accent and both inks alike',
+  'every rule switch is a real checkbox, reachable, stateful and named',
+  'every severity on the page is a word, not only a colour',
+  'every status tone here paints the -ink of a tint aria.css also declares',
+  'every test the stylesheet cites by name is a test this file registers',
+  'every token this sheet paints with is one aria.css actually declares',
+  'the accent this sheet adds is the one aria.css leaves out',
+  'the avatar ink is the one paint no aria.css token could have made',
+  'the page loads one design system and one theme decision',
+  'the reader refuses what READER_PROBES says it refuses, and walks past what it says it misses',
+  'the rules table scrolls inside a box a keyboard can reach and a screen reader can name',
+  'the rules the sheet justifies by what the page draws name what it draws',
+];
+
+/* The NOT COVERED bullet at the top of this file used to count the
+   machine-read lines by hand, and it was one short from the commit that
+   added the fourth. The count is gone: the bullet NAMES them, and the names
+   are matched both ways against MACHINE_READ_PREFIXES, which machineLine()
+   holds every reader to. A fifth reader cannot be added without listing it,
+   and a fifth line cannot be written in the sheet without being read.
+
+   What it does not see: a machine-read line that does not LOOK like a
+   heading. The sheet scan matches an upper-case run, hyphens included,
+   before a colon at the start of a line -- so a data line spelled in lower
+   case, or one carrying a digit or an underscore, would be invisible to it.
+   The hyphen is in that class because leaving it out made the scan blind to
+   NON-TOKEN PAINT, which is the FIRST of the four; a character class is a
+   shape, and a guard that anchors on one shape cannot see the others. */
+test('the NOT COVERED bullet names every docblock line this file reads as data', () => {
+  const bullet = /reads as data are ([\s\S]*?);/.exec(THIS_FILE);
+  assert.ok(bullet, 'the NOT COVERED bullet no longer names the lines read as data');
+  const namedThere = bullet[1].replace(/\s+/g, ' ').split(/, | and /);
+  assert.deepEqual(namedThere, MACHINE_READ_PREFIXES,
+    'the bullet and machineLine() disagree about which lines are read as data: '
+    + namedThere.join(' / '));
+
+  /* And from the sheet's side: no OTHER line in it is shaped like data. */
+  const headings = [...PANE_CSS.matchAll(/^ *([A-Z][A-Z-]+(?: [A-Z-]+)*):/gm)].map((m) => m[1]);
+  assert.deepEqual([...new Set(headings)].sort(), [...MACHINE_READ_PREFIXES].sort(),
+    'the sheet carries a line shaped like a machine-read one that nothing reads: '
+    + headings.join(' / '));
+  console.log('machine-read docblock lines judged: '
+    + JSON.stringify({ read: MACHINE_READ_PREFIXES.length, inSheet: headings.length }));
+});
+
 test('every test the stylesheet cites by name is a test this file registers', () => {
   const prose = PANE_CSS.replace(/\s+/g, ' ').replace(/[a-zA-Z-]+="[^"]*"/g, '');
   const quoted = [...prose.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
@@ -2176,10 +2281,14 @@ test('every test the stylesheet cites by name is a test this file registers', ()
 
   /* The EXTENT, not only the verdict: an empty citation list passes the line
      above, and the sheet would then be entirely unbound while this test went
-     on saying its citations were fine. */
-  assert.ok(cited.length >= 8,
-    'the sheet is down to ' + cited.length + ' citations, so most of its cross-file prose is '
-    + 'now unbound whatever this test says');
+     on saying its citations were fine. A FLOOR is not enough either -- at
+     >= 8 against 14 real ones, six could be deleted in silence (found in the
+     third review of #75) -- so the list itself is pinned and losing one is a
+     deliberate edit here. */
+  assert.deepEqual([...new Set(cited)].sort(),
+    [...SHEET_CITATIONS, NON_TOKEN_PAINT_TITLE].sort(),
+    'the sheet cites a different set of tests than SHEET_CITATIONS lists, so a claim has '
+    + 'either gained or quietly LOST its proof pointer');
   console.log('stylesheet citations judged: '
     + JSON.stringify({ quoted: quoted.length, cited: cited.length, resolved: cited.length }));
 });
@@ -2302,40 +2411,50 @@ test('the rules table scrolls inside a box a keyboard can reach and a screen rea
        global OFFSET alone left the suite green while aria.css grew a 6px ring
        that a -2px offset leaves 4px of outside the box (Stadiora/Aria#10633).
        Both quantities are read out of aria.css here, and neither is typed. */
+    /* WHICH declaration paints is a cascade question, not a document-order
+       one: within one origin the last !important wins where there is one,
+       and the last declaration otherwise. Reading document order alone took
+       2px off a rule painting a 6px !important ring -- 4px of it outside the
+       box, suite green -- and aria.css already uses !important four times
+       (found in the third review of antonyrugama/aria-website#75). What this
+       does NOT model is named in the NOT BOUND list at the top of the sheet:
+       one origin, and the :focus-visible selector exactly as spelled. */
+    const wins = (decls, what) => {
+      assert.ok(decls.length > 0, 'nothing declares ' + what + ' at all');
+      const forced = decls.filter((d) => IMPORTANT.test(d.value));
+      const kept = forced.length ? forced : decls;
+      return kept[kept.length - 1].value.replace(IMPORTANT, '').trim();
+    };
     const globalRing = (property) => declarations(ARIA_CSS)
-      .filter((d) => d.selector === ':focus-visible' && d.property === property)
-      .map((d) => d.value);
-    const px = (values, what) => {
-      assert.equal(values.length, 1, 'aria.css declares ' + values.length + ' global ' + what);
-      const n = Number(/^(-?[\d.]+)px$/.exec(values[0])?.[1]);
-      assert.ok(Number.isFinite(n), 'aria.css\'s global ' + what + ' is not a px length: '
-        + values[0]);
+      .filter((d) => d.selector === ':focus-visible' && d.property === property);
+    const px = (value, what) => {
+      const n = Number(/^(-?[\d.]+)px$/.exec(value)?.[1]);
+      assert.ok(Number.isFinite(n), what + ' is not a px length: ' + value);
       return n;
     };
 
-    /* The width is whichever of the shorthand and the longhand the cascade
-       lands on LAST inside :focus-visible -- an outline-width ABOVE a later
-       outline shorthand is overridden by it, so preferring the longhand
-       wherever it sits reads a 1px ring off a rule that paints 6px. */
-    const widthDecls = declarations(ARIA_CSS).filter((d) => d.selector === ':focus-visible'
-      && (d.property === 'outline' || d.property === 'outline-width'));
-    assert.ok(widthDecls.length > 0, 'aria.css declares no global outline width at all');
-    const wins = widthDecls[widthDecls.length - 1];
-    const width = px(
-      [wins.property === 'outline-width'
-        ? wins.value
-        : (/(^|\s)(-?[\d.]+px)(\s|$)/.exec(wins.value) || [])[2] || wins.value],
-      'outline width');
+    /* The width comes from the shorthand and the longhand together -- an
+       outline-width ABOVE a later outline shorthand is overridden by it, so
+       preferring the longhand wherever it sits reads a 1px ring off a rule
+       that paints 6px, and preferring document order reads 2px off a 6px
+       !important one. Both go through wins(). */
+    const widthDecl = wins(declarations(ARIA_CSS).filter((d) => d.selector === ':focus-visible'
+      && (d.property === 'outline' || d.property === 'outline-width')),
+    'a global outline width');
+    const width = px((/(^|\s)(-?[\d.]+px)(\s|$)/.exec(widthDecl) || [])[2] || widthDecl,
+      'aria.css\'s global outline width');
     assert.ok(width > 0, 'aria.css\'s global focus ring has no width, so there is no ring');
 
-    const outside = px(globalRing('outline-offset'), 'outline-offset');
+    const outside = px(wins(globalRing('outline-offset'), 'a global outline-offset'),
+      'aria.css\'s global outline-offset');
     assert.ok(outside > -width,
       'aria.css\'s global ring already lands wholly inside the element, so this override has '
       + 'nothing to pull in and the reason written beside it is false');
 
     const offsets = declarations(PANE_CSS).filter(
       (d) => d.selector === '.' + classes[0] + ':focus-visible' && d.property === 'outline-offset');
-    const pulled = px(offsets.map((d) => d.value), 'offset on ' + classes[0]);
+    const pulled = px(wins(offsets, 'an offset on ' + classes[0]),
+      'the offset on ' + classes[0]);
     assert.ok(pulled + width <= 0,
       'the focus ring on the scrolling box is ' + (pulled + width) + 'px wide outside the box: '
       + 'a ' + width + 'px ring at ' + pulled + 'px needs an offset of at most ' + (-width) + 'px '
@@ -2346,7 +2465,7 @@ test('the rules table scrolls inside a box a keyboard can reach and a screen rea
        for declaration, because citing a sibling that differs is the same
        defect class as a docblock that describes paint it does not use
        (Stadiora/Aria#10632). */
-    const cited = /^\s*SAME FOCUS RING AS:(.*)$/m.exec(PANE_CSS);
+    const cited = machineLine('SAME FOCUS RING AS').exec(PANE_CSS);
     assert.ok(cited, 'the sheet no longer names the siblings it says it matches');
     const siblings = cited[1].split(',').map((s) => s.trim()).filter(Boolean);
     assert.ok(siblings.length > 0, 'the sheet cites no sibling at all');
@@ -2367,8 +2486,8 @@ test('the rules table scrolls inside a box a keyboard can reach and a screen rea
        property alone left "it resets border-radius: 0" half bound: the
        sibling growing a border-radius: 4px kept the suite green while the
        sentence went on saying 0 (found in the second review of #75). */
-    const apart = /^\s*DIFFERENT FOCUS RING:\s*(\S+)\s+adds\s+([\w-]+):\s*(\S.*?)\s*$/m
-      .exec(PANE_CSS);
+    const apart = machineLine('DIFFERENT FOCUS RING',
+      '\\s*(\\S+)\\s+adds\\s+([\\w-]+):\\s*(\\S.*?)\\s*').exec(PANE_CSS);
     assert.ok(apart, 'the sheet no longer names the sibling it says it differs from');
     const [, excluded, extra, extraValue] = apart;
     assert.ok(!siblings.includes(excluded),
@@ -2442,6 +2561,11 @@ test('for a non-owner the scrolling box holds nothing else that can take focus',
    rather than a regex over the source: `white-space` contains the word
    "white", `--acc` is a custom property holding a colour, and a rule nested
    in @media is still a rule. */
+/* A declaration's importance decides the cascade before its position does.
+   declarations() keeps the flag in the value, so anything resolving a
+   winner has to read it and anything reading a length has to strip it. */
+const IMPORTANT = /\s*!\s*important\s*$/i;
+
 function declarations(css) {
   const src = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
   const out = [];
@@ -2561,6 +2685,19 @@ const READER_PROBES = [
     why: 'a custom property can carry a colour, so every one of them is read' },
   { css: '.probe { column-rule: 1px solid magenta; }', refused: false,
     why: 'BLIND SPOT: a bare colour keyword on a property with no paint stem in its name' },
+  /* The sheet NAMES five stemless properties. Probing one of them and
+     writing the other four into prose is the claim this file exists to stop
+     making, so each is run (found in the third review of #75). */
+  { css: '.probe { text-decoration: underline magenta; }', refused: false,
+    why: 'BLIND SPOT: text-decoration, named by the sheet, carries no paint stem' },
+  { css: '.probe { mask-image: linear-gradient(magenta, white); }', refused: false,
+    why: 'BLIND SPOT: mask-image, named by the sheet, carries no paint stem' },
+  { css: '.probe { list-style: square inside magenta; }', refused: false,
+    why: 'BLIND SPOT: list-style, named by the sheet, carries no paint stem' },
+  { css: '.probe { filter: drop-shadow(0 0 1px magenta); }', refused: true,
+    why: 'NOT a blind spot, though paints("filter") is false: the only syntax that carries a '
+      + 'colour to filter is drop-shadow(), which is unclassified and refused everywhere. The '
+      + 'sheet named filter alongside the four real ones until this row was run' },
   { css: '.probe { column-rule: 1px solid color-mix(in srgb, black 50%, white); }', refused: false,
     why: 'BLIND SPOT: the same, inside a classified colour function -- the exact payload of '
       + 'Stadiora/Aria#10632 finding 1' },
@@ -2586,7 +2723,7 @@ test('the reader refuses what READER_PROBES says it refuses, and walks past what
       refused: got.filter((g) => g.refused).length,
       blindSpots: READER_PROBES.filter((p) => /^BLIND SPOT/.test(p.why)).length,
     };
-    assert.deepEqual(counts, { probes: 11, refused: 7, blindSpots: 2 });
+    assert.deepEqual(counts, { probes: 15, refused: 8, blindSpots: 5 });
     assert.deepEqual(
       READER_PROBES.filter((p) => /^BLIND SPOT/.test(p.why) && p.refused).map((p) => p.css), [],
       'a row is written down as a blind spot while the reader catches it, so the disclosure '
@@ -2613,8 +2750,13 @@ const NON_TOKEN_PAINT = [
    sheet's `transparent` lives cannot drift from the sheet. */
 const spell = (site) => (site.inside ? site.atom + ' in ' + site.inside + '()' : site.atom);
 
-test('every colour this sheet paints is a token aria.css declares, bar the '
-  + NON_TOKEN_PAINT.length + ' sites named here',
+/* Generated, and the sheet cites it by this exact text, so the sheet's
+   citation goes red when NON_TOKEN_PAINT changes size. SHEET_CITATIONS adds
+   this one in rather than typing it, to keep that property. */
+const NON_TOKEN_PAINT_TITLE = 'every colour this sheet paints is a token aria.css declares, '
+  + 'bar the ' + NON_TOKEN_PAINT.length + ' sites named here';
+
+test(NON_TOKEN_PAINT_TITLE,
   () => {
     for (const quoted of PANE_CSS.match(/'[^'\n]*'|"[^"\n]*"/g) || []) {
       assert.ok(!/[;{}]/.test(quoted),
@@ -2639,7 +2781,7 @@ test('every colour this sheet paints is a token aria.css declares, bar the '
        out of the comment rather than believed, because a docblock that claims
        one thing while the rules below it do another is what filed
        Stadiora/Aria#10460 in the first place. */
-    const claimed = /^\s*NON-TOKEN PAINT:(.*)$/m.exec(PANE_CSS);
+    const claimed = machineLine('NON-TOKEN PAINT').exec(PANE_CSS);
     assert.ok(claimed, 'the sheet\'s docblock no longer names what it paints outside the tokens');
     assert.deepEqual(
       claimed[1].split(',').map((s) => s.trim()).filter(Boolean).sort(),
@@ -2891,7 +3033,7 @@ test('the avatar ink is the one paint no aria.css token could have made', () => 
   /* The docblock names the token this ink mixes. It named `var(--cyan)` while
      nothing checked it, so swapping the sheet to another token left the
      sentence standing and green (Stadiora/Aria#10632). */
-  const named = /^\s*AVATAR INK TOKEN:(.*)$/m.exec(PANE_CSS);
+  const named = machineLine('AVATAR INK TOKEN').exec(PANE_CSS);
   assert.ok(named, 'the sheet\'s docblock no longer names the token .av\'s ink mixes');
   assert.equal(named[1].trim(), inkToken,
     'the docblock says .av\'s ink mixes ' + named[1].trim() + ' and the sheet mixes ' + inkToken);

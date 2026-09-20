@@ -6,7 +6,8 @@
    theme decision").
 
    HOW TO READ THIS COMMENT. Anything this sheet says about another file is
-   bound by a test ONLY where the sentence saying it names that test. The
+   bound by a test ONLY where the sentence saying it, or the paragraph that
+   sentence sits in, names that test. The
    NOT BOUND list at the bottom of this block enumerates the ones that name
    none, so a cross-file claim with neither a test name nor a line in that
    list is a defect (Stadiora/Aria#10632). Every title quoted below is
@@ -34,11 +35,15 @@
    The reader behind the first line refuses a hex and an unclassified function
    on EVERY property. A colour KEYWORD it looks for only where the property's
    own NAME carries a paint stem (color, background, shadow, outline, border,
-   fill, stroke), so a keyword on column-rule, text-decoration, mask-image,
-   list-style or filter walks past it — inside a color-mix() or not. A -color
-   longhand, where one exists, is caught: the stem is in its name.
-   scripts/ops-alerts-v2.test.mjs states exactly that in READER_PROBES and is
-   RUN against each case, rather than asserting it in prose.
+   fill, stroke), so a keyword on column-rule, text-decoration, mask-image or
+   list-style walks past it — inside a color-mix() or not. A -color longhand,
+   where one exists, is caught: the stem is in its name. `filter` is not on
+   that list although its name carries no stem either, because the only
+   syntax that brings a colour to it is drop-shadow(), which is unclassified
+   and so refused everywhere. Every one of those is a case that gets RUN
+   rather than asserted ("the reader refuses what READER_PROBES says it
+   refuses, and walks past what it says it misses") — and `filter` is off the
+   list because running it is what showed the sheet had it wrong.
 
    So qualified: `transparent` adds no colour of its own, it is what a
    color-mix() lays a token over, which is why every entry on that line says
@@ -83,6 +88,11 @@
        pixel measurements quoted at .scrollx:focus-visible, which came off
        screenshots in antonyrugama/aria-website#72 and which no check
        re-measures;
+     - that :focus-visible, spelled exactly so and in one origin, is where
+       aria.css's global ring comes from. The width and offset read below are
+       resolved by importance and then by order within that; a ring painted
+       by some other selector, or by a user or agent sheet, is not modelled
+       and would not be noticed;
      - every layout rule below, bar three: .scrollx's own overflow-x, which
        the focus-ring test reads to find the box it belongs to, and the two
        justified by what the page draws — six columns and the words in the
