@@ -2091,6 +2091,16 @@ async function measureFocusIndicators(where) {
  * rather than optimistic, which is the direction to be wrong in, but a
  * pessimistic answer off an arbitrary sample is still an arbitrary sample.
  *
+ * Also NOT COVERED, and named because KNOWN_BELOW_FOCUS is empty: the focus
+ * freeze reconciler has four branches, and only two of them have a live entry
+ * to exercise. An entry that stops reproducing, and a refusal frozen for one
+ * reason that starts happening for another, are both proven by mutation. The
+ * RATIO-DRIFT and SURFACE-DRIFT branches need an entry that still reproduces
+ * — a ring genuinely under 3:1 — and there is not one on this shell any more.
+ * They are fail-closed and unproven, not proven. Raising FOCUS_RATIO to
+ * manufacture one would fail the run for a different reason and prove
+ * nothing, so it was not done.
+ *
  * Also NOT COVERED: the scroll refusal. preventScroll is asked for and the
  * two scroll positions are compared, but nothing on this page or the shell
  * scrolls on focus, so deleting that comparison changes no answer. It is
@@ -3216,8 +3226,9 @@ try {
         /* The adjacent surface is half the measurement, so a ring that is
            still 2.73:1 against a DIFFERENT colour is a different fact and the
            entry no longer describes it. One byte per channel of slack, which
-           is renderer noise in the mean over a bucket, and far under the
-           three-byte gap between the two greys this page actually produces. */
+           is renderer noise in the mean over a bucket. No live entry
+           exercises this branch while KNOWN_BELOW_FOCUS is empty; see NOT
+           COVERED. */
         failures.push(`${SHELL}: the frozen below-3:1 focus ring ${key} now lands on ` +
           `${got.bg}, not the ${e.against} it was frozen against. The ratio is unchanged, so ` +
           'this is the ring moving to another surface rather than the surface changing ' +
