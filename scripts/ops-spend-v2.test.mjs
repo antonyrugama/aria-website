@@ -1183,17 +1183,30 @@ function drawnPoints(dom, seriesLabel) {
   return points;
 }
 
-/* The percentage the pane wrote on each date, as a number. */
+/* What the pane wrote on each date, unit and all.
+
+   The unit is not decoration: `left: 84.567` is not a length, so a browser
+   drops the whole declaration and the date falls back into static flow --
+   the defect of #10507, arrived at by deleting three characters. So the raw
+   string is kept and checked against the one shape a percentage can take
+   BEFORE anything parses it. Normalising the value first threw that away:
+   `Number('84.567%')` and `Number('84.567')` are the same number, so the
+   suite caught the WRONG unit (`Number('84.567px')` is NaN) and not the
+   MISSING one, which is the likelier mistake. */
+const PERCENT = /^-?\d+(?:\.\d+)?%$/;
+
 function placedAt(dom) {
   const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
   assert.ok(strip, 'the date strip is on the page');
   return findAll(strip, (n) => n.tagName && n.tagName.toLowerCase() === 'span')
     .map((cell) => {
       const left = cell.style && cell.style.left;
-      return {
-        text: String(cell.textContent || '').trim(),
-        left: left === undefined ? null : Number(String(left).replace('%', '')),
-      };
+      const text = String(cell.textContent || '').trim();
+      if (left === undefined) return { text, raw: null, left: null };
+      assert.match(String(left), PERCENT,
+        'the position written on ' + text + ' is a percentage, unit included -- '
+        + 'a bare number is not a length and a browser drops the declaration');
+      return { text, raw: String(left), left: Number(String(left).replace('%', '')) };
     });
 }
 
@@ -1351,6 +1364,56 @@ test('the narrow layout drops every other date to a line of its own, clear of th
       'the strip is ' + min[1] + 'em tall, which does not hold a second line at '
       + top[1] + 'em');
   });
+
+test('a percentage on a date is a position at all only because of five declarations', () => {
+  /* The test above reads the number the pane wrote. A number in `left` is
+     only a position because of the shape it is written into, and that shape
+     is five declarations in this stylesheet. Delete any one of them and the
+     number is still computed, still correct, and still written -- and the
+     date lands somewhere else on the screen. Measured in Chrome on the
+     route's own three-month fixture, each deleted alone:
+
+       display: flex on the row          the gutter cell stops reserving the
+                                         scale column's width: -30.91% at 320px
+       position: relative on the strip   percentages resolve against a further
+                                         out positioned ancestor: -39.07% at 320px
+       flex: 1 on the strip              the strip shrinks to its content, so
+                                         100% is no longer the plot: -86.18%
+       position: absolute on a date      every date collapses into one line of
+                                         static flow: -69.86%
+       translateX(-50%) on a date        every date is left-aligned to its day
+                                         instead of centred: +8.45% at 320px
+
+     Nothing in this file can see any of that -- the harness does not lay out.
+     What it can do is refuse to let the five leave silently. */
+  const REQUIRED = [
+    ['.sp-xaxis-row', /^\.sp-xaxis-row$/, /(?:^|[;{\s])display:\s*flex\b/,
+      'the row is a flex row, so its first cell can reserve the scale column'],
+    ['.sp-xaxis', /^\.sp-xaxis$/, /(?:^|[;{\s])position:\s*relative\b/,
+      'the strip is what a percentage inside it resolves against'],
+    ['.sp-xaxis', /^\.sp-xaxis$/, /(?:^|[;{\s])flex:\s*1\b/,
+      'the strip fills the rest of the row, which is what makes it the plot\'s width'],
+    ['.sp-xaxis span', /^\.sp-xaxis span$/, /(?:^|[;{\s])position:\s*absolute\b/,
+      'a date is placed by its own left, not by the date before it'],
+    ['.sp-xaxis span', /^\.sp-xaxis span$/, /transform:\s*translateX\(-50%\)/,
+      'and sits centred on its day rather than starting at it'],
+  ];
+
+  REQUIRED.forEach(([name, selector, declaration, why]) => {
+    const rules = RULES.filter((r) => !r.media && r.targets(selector));
+    assert.ok(rules.length > 0, 'the base stylesheet styles ' + name);
+    assert.ok(rules.some((r) => declaration.test(r.body)),
+      name + ' has lost ' + declaration.source + ': ' + why);
+  });
+
+  /* And the fallback strip, which claims no position, must undo exactly the
+     two that would otherwise place its dates -- no more, or it would be
+     undoing the shape the positioned strip needs. */
+  const loose = RULES.filter((r) => !r.media && r.targets(/^\.sp-xaxis-loose span$/))[0];
+  assert.ok(loose, 'the unpositioned strip restyles its dates');
+  assert.match(loose.body, /position:\s*static/);
+  assert.match(loose.body, /transform:\s*none/);
+});
 
 test('the date strip is laid out in the same box as the drawing it labels', () => {
   /* The percentages above are percentages OF THE STRIP. They are percentages
