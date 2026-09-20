@@ -1,0 +1,56 @@
+name: Ops result views
+
+# Drives every pane of the operations dashboard past its landing state to a
+# RESULT — a populated table, a picked row, an answered form — and judges what
+# is painted there. The dashboard's other three rendered checks all stop at the
+# empty state, which is the hole Stadiora/Aria#10456 shipped through: the Look
+# up a user pane wrote `is-selected` onto a picked row and no stylesheet the
+# page loads had a rule for it, so the selection existed in the DOM and was
+# invisible on screen. Every check was green. It was found by hand.
+#
+# This one fails on a class drawn where no loaded sheet can paint it, and on a
+# state announced to a screen reader that is painted exactly like its unmarked
+# peer. Known failures are enumerated with their issue numbers and must still
+# reproduce. See scripts/check-ops-result-view.mjs and Stadiora/Aria#10631.
+#
+# Change-triggered only: breaking this needs a commit in this repository, so
+# there is nothing for a schedule to catch.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
+
+on:
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-result-view.mjs'
+      - '.github/workflows/ops-result-view.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-result-view.mjs'
+      - '.github/workflows/ops-result-view.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  result-views:
+    runs-on: ubuntu-latest
+    # Ten panes in two themes is twenty page loads, two of which fill in a form
+    # and wait for an answer. A run takes a couple of minutes; the ceiling is
+    # here so a slow cold start cannot turn the sweep into a red check that
+    # measured nothing, which reads the same as a red check that found
+    # something.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # Node 22 or newer, because the check drives headless Chrome over the
+      # DevTools Protocol through the global WebSocket rather than a package.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check what every pane paints in its result view
+        run: node scripts/check-ops-result-view.mjs
