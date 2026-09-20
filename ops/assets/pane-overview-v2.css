@@ -1,0 +1,133 @@
+/* =========================================================================
+   Aria Operations — Overview pane (v2)
+   Loaded after assets/aria.css and assets/shell-pane-v2.css, on ops/index.html
+   and nowhere else.
+
+   Adapted from docs/mocks/ops-dashboard-v2/assets/pane-operate.css in the Aria
+   monorepo, narrowed to the shapes this one pane uses. The mock groups pane
+   CSS by workflow band; four panes are being remodelled at once, so each takes
+   its own file instead and a later issue can consolidate. Anything aria.css
+   already declares is used from there rather than copied.
+
+   No new colour value. Every rule here paints in a token aria.css declares,
+   which is the palette that was made WCAG AA by construction (monorepo
+   #10042). Status text takes the -ink variant of its tone, because the base
+   colour is the tint and the -ink is the text on that tint.
+   ========================================================================= */
+
+/* --------------------------------------------------------------- the hero */
+
+/* aria.css drops the hero to two columns below 980px and moves its third
+   child to a row of its own — written against the mock, where that child is a
+   .row. Here it is the chip strip. */
+@media (max-width: 980px) {
+  .hero > .hero-chips { grid-column: 1 / -1; }
+}
+
+/* ----------------------------------------------------------- series tones */
+
+/* The response names a series colour from a closed set, and the set is the v1
+   design system's: s1 to s6, plus "muted" for a comparison line. Mapped to the
+   v2 tokens here rather than passed through, so an unrecognised name falls
+   back to a drawn line in the first series colour instead of an invisible one.
+   Everything that reads a tone — the line, the legend key, the text row —
+   reads it through the same class, so the key and the picture cannot disagree
+   about which line is which. */
+.tone-muted { --c: var(--ink-3); }
+
+/* ------------------------------------------------------ the activity line */
+
+/* Drawn here rather than through aria.js's area renderer, which joins its path
+   straight across a missing point. A day an app has no stored reading for
+   arrives as null, and both alternatives are a lie about a real quantity:
+   joining across it draws people who were never counted, and plotting it as
+   zero draws a day the app was open and nobody used it.
+
+   The colour is a CSS declaration rather than a value resolved in JS at draw
+   time, so the theme attribute repaints it and nothing has to call redraw.
+   Measured in Chrome, both directions: dark rgb(34,211,238)/rgb(52,211,153)
+   becomes light rgb(8,145,178)/rgb(5,150,105) on pressing the theme button,
+   and back. scripts/check-ops-theme-redraw.mjs guards aria.js's charts, which
+   do resolve at draw time; it does not cover this file, and the measurement
+   above is a one-off, not a standing check. */
+.ln {
+  fill: none;
+  stroke: var(--c, var(--cyan));
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ln-pt { fill: var(--c, var(--cyan)); }
+
+.axis-x {
+  display: flex; justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+}
+
+.series-rows { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
+.series-row {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  font-size: 12px; color: var(--ink-2);
+}
+.series-row .spacer { flex: 1; min-width: 12px; }
+.series-row .series-read { color: var(--ink); }
+.series-row .series-cover { font-size: 11.5px; color: var(--ink-3); }
+
+/* ------------------------------------------------- the attention queue */
+
+.q-list { display: flex; flex-direction: column; gap: 10px; }
+
+.q-item .card-body { padding: 12px 14px 12px 16px; }
+.q-row { display: flex; align-items: flex-start; gap: 9px; }
+.q-ico { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.q-title { font-size: 12.5px; font-weight: 600; }
+.q-desc { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+.q-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+.q-who { font-size: 11.5px; color: var(--ink-3); }
+
+/* Severity, in ink. Never carried by the colour alone: every item also shows
+   a glyph and names its severity in the strip beside the title. */
+.is-crit { color: var(--rose-ink); }
+.is-warn { color: var(--amber-ink); }
+.is-info { color: var(--blue-ink); }
+
+.q-ico.is-crit { color: var(--rose-ink); }
+.q-ico.is-warn { color: var(--amber-ink); }
+.q-ico.is-info { color: var(--blue-ink); }
+
+.acc-blue { --acc: var(--blue); }
+
+/* -------------------------------------------------------------- the tiles */
+
+.kpi-val.sm { font-size: 21px; letter-spacing: -.02em; }
+.kpi-val.words { font-family: var(--sans); font-size: 19px; font-weight: 560; letter-spacing: -.015em; color: var(--ink-2); }
+.kpi-why { margin-top: 7px; font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+.kpi-why.is-warn { color: var(--amber-ink); }
+.kpi-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.kpi-row { display: flex; align-items: baseline; gap: 8px; }
+.kpi-row .spacer { flex: 1; }
+.kpi-plat { font-size: 11.5px; color: var(--ink-3); }
+
+/* aria.css lays the meta row and the footer out without wrapping, which fits
+   the reference page because every tile there carries one short pill and one
+   short link. These tiles carry a sentence the answer wrote and, on Active
+   people, one pill per app, so both rows are allowed a second line and the
+   doorway is kept whole rather than broken across one. */
+.kpi-meta { flex-wrap: wrap; row-gap: 5px; }
+.kpi-foot { flex-wrap: wrap; row-gap: 7px; }
+.kpi-foot a { white-space: nowrap; }
+.kpi-foot .spacer { flex: 1; }
+
+/* -------------------------------------------------------------- footnotes */
+
+.notes { display: flex; flex-direction: column; gap: 6px; }
+.note-line { font-size: 11.5px; color: var(--ink-3); line-height: 1.55; }
+
+/* ----------------------------------------------------- not drawn here */
+
+.omit { display: flex; flex-direction: column; gap: 10px; }
+.omit-item { display: flex; align-items: flex-start; gap: 9px; }
+.omit-item svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--ink-3); }
+.omit-title { font-size: 12.5px; font-weight: 560; }
+.omit-desc { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }

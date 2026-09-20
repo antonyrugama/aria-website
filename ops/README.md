@@ -227,7 +227,9 @@ ops/
     icons.js            inline SVG icon set
     api.js              transport: one request function, one error shape
     session.js          session policy: tokens, refresh, recovery, re-auth
-    shell.js            pane registry, rail, top bar, filter bar, boot gate
+    pane-registry.js    what every pane is called, asks, filters on and allows —
+                        the one table both shells read
+    shell.js            v1 rail, top bar, filter bar, boot gate
     login.js            the sign-in page controller
     setup.js            the first-time setup page controller
     operate.css         pane styling for the operate panes
@@ -250,6 +252,11 @@ ops/
     aria.css            v2 design system: tokens, rail, top bar, components
     aria.js             v2 runtime: rail, icons, charts, preview states
     shell-v2.js         the controller for shell-v2.html
+    shell-pane-v2.js    the v2 pane bootstrap: session gate, rail, top bar,
+                        filter bar, roles, definePane, the four states
+    shell-pane-v2.css   what a v2 pane page needs and aria.css does not carry:
+                        the three gates, the phone drawer, the toast
+    pane-overview-v2.css  Overview's own shapes
 ```
 
 ### The v2 layer
@@ -288,14 +295,74 @@ its own display type, so `data-state` works on a `<tr>`, a `.pill` and a `.card`
 `display: block` on the shown case instead would flatten all three.
 
 A pane page carries the shell, and where the pane has been built, its own module. Everything a
-pane *is* lives in the `PANES` registry in `shell.js`, so the rail cannot drift from the pages;
-everything a pane *shows* is registered by that module through `OpsShell.definePane`, and a pane
+pane *is* lives in the `PANES` registry in `pane-registry.js`, so the rail cannot drift from the
+pages; everything a pane *shows* is registered by that module through `definePane`, and a pane
 with no module renders the not-built state. The shell waits for the document to finish parsing
 before it asks for a pane's contents, so which script finishes first cannot change what renders.
 
 Registration rather than a flag in the registry, because the thing that knows whether a pane is
 built is the pane's own module being on the page; a boolean in the registry could claim "built"
 on a page that loads nothing to build it.
+
+### One registry, two shells
+
+`assets/pane-registry.js` holds `PANES`, `GROUPS`, `WAVES`, `RANGES`, `SCOPES` and `ENVS` — what
+each pane is called, the question it owns, which filters its own reads can honour, which roles
+may open it, and the id it answers to in the v2 rail. It used to live inside `shell.js`. It was
+lifted out unchanged so that a v1 page and a v2 page cannot disagree about what a pane is: the
+rail on every page is drawn from this table, and a second copy of it would drift the first time
+somebody renamed a pane.
+
+It is loaded **before** whichever shell a page uses. A page that loads a shell without it throws
+at boot rather than rendering a rail with no panes in it, which would look exactly like a pane
+nobody has built yet. `scripts/ops-shell-pane-v2.test.mjs` checks the pairing on every page in
+`ops/`, so a missing tag fails here rather than in production.
+
+### Building a v2 pane page
+
+A v2 pane page loads, in this order:
+
+```html
+<script src="assets/theme.js"></script>          <!-- in <head>, blocking, pre-paint -->
+...
+<link rel="stylesheet" href="assets/aria.css">
+<link rel="stylesheet" href="assets/shell-pane-v2.css">
+<link rel="stylesheet" href="assets/pane-<name>-v2.css">
+...
+<body data-pane="<registry key>" class="is-booting">
+<script src="assets/pane-registry.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/session.js"></script>
+<script src="assets/aria.js"></script>
+<script src="assets/shell-pane-v2.js"></script>
+<script src="assets/pane-<name>.js"></script>
+```
+
+and none of `ops.css`, `operate.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
+`data-page`, so the two shells can never both claim one document.
+
+`window.OpsPaneShell` is the whole surface, and a test holds this table to it in both directions:
+
+| | |
+|---|---|
+| `definePane(id, render)` | register what a pane draws. `render(content, pane)` gets the pane's `<main>` and its registry entry, after parsing and after the session is confirmed |
+| `init()` | boot this page. Automatic on a page whose `<body data-pane>` names a registered pane |
+| `filters()` / `resetRange()` | the current selection; put the range back to the pane's default |
+| `paneHref(paneId)` | a link to another pane, carrying only the filters that pane has |
+| `setBadge(railId, badge)` | a count beside a rail item, or `null` to remove it |
+| `region(content)` | the four preview states, as a region the pane owns |
+| `read(source)` | the pane's own read, through the local fixture hook |
+| `h` / `icon` / `card` / `cardHead` / `band` / `bandHead` / `stateBlock` / `link` | DOM builders, never `innerHTML` |
+| `announce` / `toast` / `fmt` / `safeHref` / `isLoopback` / `failureMessage` / `panes` | the rest |
+
+Two events fire on `window` once the shell is in the document: `ops:ready` and then `ops:filters`,
+which fires again on every change. Both carry the starting selection, so a pane never reads the
+querystring itself.
+
+Rail badges and the account footer are passed through `Aria.boot({ badges, account })` and render
+nothing when absent. Wire them from a real read or pass nothing: a dashboard that invents a count
+is worse than one that shows nothing. Overview's Problems badge is the count from
+`/api/ops/alerts/problems`, and it is removed when that read comes back empty.
 
 ## What this release does and does not do
 
@@ -777,6 +844,57 @@ failed sign in.
     narrow enough to fit. It was found by the check in `scripts/check-ops-narrow-overflow.mjs`
     running in CI, after a local run of the same commit had passed.
 
+### Overview on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/index.html` in the Aria monorepo is the approved design. The pane
+follows its structure, its drill-down paths and the rules its README calls normative.
+
+The list below is **not a complete diff against the mock** and does not claim to be. It names
+the departures that carry a decision: a thing the mock draws that nothing behind the pane can
+answer, and a second caption for a fact already on screen. Wording, ordering within a card and
+exact copy differ in more places than are listed here, because the mock is a static page with
+hand-written sample text and the pane writes its words from the answer. Anyone checking this
+pane against the mock should read the list as "these are on purpose and here is why", not as
+"everything else is identical".
+
+1. **No App, Range or Environment control.** The registry gives Overview none, and the filter bar
+   states the absence where they would have been. `/api/ops/summary` takes no parameter and
+   reports the environment it answered for; a control that changes nothing is worse than no
+   control, because the selection sits in the bar looking applied.
+2. **No budget bar on the cost tile.** Nothing in the platform records a cloud budget. The route
+   marks the figure `basis: 'spend'` and names the gap in `omissions`, and the pane prints the
+   omission with its reason. An empty track reads as a budget with nothing spent against it and
+   a full one as a budget already gone.
+3. **No month-end forecast**, for the same reason: only billed usage to date is stored.
+4. **No sparkline in the tiles.** The daily series exists for active people only. A sparkline on
+   three tiles out of four, with one of them drawn from a different shape, invites a comparison
+   between lines that are not comparable.
+5. **No severity stack bar in the ribbon.** The chips beside it already carry each count with its
+   own glyph and word; the bar is the same fact a second time, in colour.
+6. **The mock's explanatory captions are not reproduced.** "Not the sum of the two apps", the
+   omissions footer, and the cost tile's sentence about `basis` each restate something the figure,
+   the pill or the omissions card already says. The mocks encode one fact per slot, and that rule
+   is what took the approved set from 7,240 words to 4,842.
+
+7. **Five more things the mock draws are absent, all for reason (2) above — no source.** They
+   are listed separately because they are structural, not wording, and a reader diffing the pane
+   against the mock hits them first:
+   - the hero service-health chips (`Main backend 99.98%`, `Aria AI 99.94%`, `Plan builder`,
+     `Database 3ms`). No uptime or latency series is stored per component; `/api/ops/summary`
+     answers for the platform, not for four named services.
+   - the AI-runs quality figures (`98.6% finished cleanly`, `Slowest 5% took 8.4s`). The route
+     returns a run count and its previous-window count, and no outcome or duration distribution.
+   - the version tile's `Adoption 73%` and `Crash free 99.7%` meters. Neither is recorded; a
+     meter drawn against a denominator nothing stores is the budget-bar problem again.
+   - `Auto refresh · 60s`. Nothing here polls, and a label claiming a refresh that does not
+     happen is worse than a page you know is a snapshot.
+   - the **hourly** grain on the activity chart. Nothing behind it aggregates finer than a day,
+     which is rule 1 of this pane: a figure labelled for a window it does not cover is worse
+     than one labelled for the window it does.
+
+Everything the omissions card shows comes **from the answer**, never from a list in the client,
+so a figure that gains a source drops off the card without a code change here.
+
 ### Known contrast debt, inherited
 
 Measured across both themes against composited backgrounds. **Every pairing rendered by the
@@ -959,11 +1077,19 @@ fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
 `shell-v2.html` needs none of that. It calls no API, so `python3 -m http.server 8000` and
 `http://127.0.0.1:8000/ops/shell-v2.html` is the whole setup.
 
+Overview reads `ops-pane-fixture-overview` on the same terms as the two understand panes: a
+relative path to a same-origin JSON document holding one `{ "data": ... }` envelope, honoured only
+on loopback. It is the only practical way to see the states the live API will not produce on
+demand — a window nothing reported, a comparison the retention horizon refused, a day with no
+stored reading — which on this pane is most of them.
+
 ### What checks this
 
 | Check | What it can see that nothing else can |
 |---|---|
 | `node --test scripts/*.test.mjs` | The accessible name every chart derives, that preview state is applied in **both** directions, and that the theme button re-resolves each chart's colours. Runs `scripts/ops-aria-shell.test.mjs` alongside the pane tests. |
+| `scripts/ops-shell-pane-v2.test.mjs` | That the rail cannot drift from the registry, that a pane is offered exactly the filters it declared and never one more, that a role without access gets a named refusal rather than a blank pane, that the three gates stay mutually exclusive, and that the v2 formatters still agree with the v1 ones they were ported from. |
+| `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |

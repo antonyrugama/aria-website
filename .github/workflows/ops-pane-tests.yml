@@ -17,13 +17,19 @@ on:
   pull_request:
     paths:
       - 'ops/assets/**'
+      - 'ops/*.html'
+      - 'ops/README.md'
       - 'scripts/*.test.mjs'
+      - 'scripts/ops-dom-harness.mjs'
       - '.github/workflows/ops-pane-tests.yml'
   push:
     branches: [main]
     paths:
       - 'ops/assets/**'
+      - 'ops/*.html'
+      - 'ops/README.md'
       - 'scripts/*.test.mjs'
+      - 'scripts/ops-dom-harness.mjs'
       - '.github/workflows/ops-pane-tests.yml'
   workflow_dispatch:
 

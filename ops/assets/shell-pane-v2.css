@@ -1,0 +1,165 @@
+/* =========================================================================
+   Aria Operations — v2 pane shell chrome
+   Loaded after assets/aria.css on a v2 pane page, and only there.
+
+   aria.css is the design system: tokens, rail, top bar, cards, states. It was
+   ported from a reference page that reads no API, so it carries none of the
+   furniture a real pane needs around that system — the three boot gates, a
+   rail that can be opened on a phone, a confirmation toast. That furniture is
+   here, in the pane shell's own file, so the shared stylesheet stays the thing
+   four pane remodels can all read without any of them editing it.
+
+   No :root custom property is declared in this file. scripts/
+   check-ops-shell-v2.mjs pins the 33 the design system has and fails on a
+   thirty-fourth, which is what keeps the palette from growing a private token
+   nobody chose. Where a value is needed per theme it is declared on the
+   element that uses it and overridden under [data-theme="light"].
+
+   No colour value here is new except two, and they are named rather than left
+   implied: `--scrim-paint` below declares rgba(3, 6, 10, .62) and its light
+   override rgba(24, 34, 46, .38), both carried over from v1's `ops.css`
+   `--scrim`. They are declared on the element, not on :root, because a
+   thirty-fourth root property would trip check-ops-shell-v2.mjs, and the scrim
+   is a decorative overlay with no text on it so no contrast pair depends on
+   them. Everything else paints in the tokens aria.css declares, which are
+   WCAG AA by construction (monorepo #10042).
+   ========================================================================= */
+
+/* ------------------------------------------------------------- the gates */
+
+/* Mutually exclusive, so there is no state in which a half-built shell is on
+   screen: the boot placeholder, the failure card, or the real pane. The body
+   class is the whole switch. */
+.gate { display: none; }
+body.is-booting .gate-boot { display: grid; }
+body.is-failed .gate-failed { display: grid; }
+body.is-ready .gate-app { display: block; }
+
+/* Nothing to skip past while a gate is a single centred card, and a skip link
+   pointing at a #content that does not exist yet is worse than none. */
+body.is-booting .skip, body.is-failed .skip { display: none; }
+
+.gate-center {
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+.gate-center > div { max-width: 560px; }
+.gate-center .card { text-align: left; }
+.gate-center .state-block { text-align: left; }
+
+.boot-mark {
+  width: 34px; height: 34px;
+  margin: 0 auto 14px;
+  border-radius: var(--r-sm);
+  display: grid; place-items: center;
+  background: linear-gradient(140deg, var(--cyan), var(--violet));
+  box-shadow: var(--shadow-2);
+}
+.boot-mark img { display: block; width: 22px; height: 22px; }
+
+.boot-line { font-size: 13px; color: var(--ink-2); }
+.skel-boot { height: 10px; width: 160px; margin: 12px auto 0; }
+
+.noscript-wrap { display: grid; place-items: center; padding: 40px 24px; }
+.noscript-wrap .card { max-width: 560px; padding: 20px 22px; font-size: 13.5px; color: var(--ink-2); }
+
+/* --------------------------------------------------- the rail on a phone */
+
+/* aria.css hides the rail below 980px, which on a phone leaves a pane page
+   with no navigation at all. Below that width it becomes an overlay.
+
+   Hidden, not merely moved off screen. A rail that is only translated keeps
+   its ten pane links in the tab order and in the accessibility tree, and
+   because it comes before the main column in the document a keyboard user at
+   this width would walk the whole invisible drawer, with no visible focus
+   anywhere, before reaching the page. visibility takes it out of both. The
+   change to hidden is deferred until the slide has finished so the drawer does
+   not disappear halfway out; the change to visible is immediate, so it is
+   there to be focused the moment it opens. */
+.rail-toggle { flex: none; }
+@media (min-width: 981px) { .rail-toggle { display: none; } }
+
+@media (max-width: 980px) {
+  .rail {
+    display: flex;
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: 244px; height: 100%;
+    z-index: 100;
+    background: var(--surface);
+    transform: translateX(-100%);
+    visibility: hidden;
+    overflow-y: auto;
+    transition: transform 220ms cubic-bezier(.32, .72, 0, 1), visibility 0s linear 220ms;
+  }
+  .rail.is-open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 220ms cubic-bezier(.32, .72, 0, 1), visibility 0s;
+  }
+
+  /* Touch targets. The dense control scale is a mouse affordance; on a phone
+     every control has to be reachable with a thumb. */
+  .nav-item { min-height: 44px; }
+  .btn { min-height: 38px; }
+  .btn-icon { width: 38px; height: 38px; }
+  .seg button { min-height: 34px; }
+  .sel select { min-height: 38px; }
+}
+
+.scrim {
+  --scrim-paint: rgba(3, 6, 10, .62);
+  position: fixed; inset: 0;
+  z-index: 90;
+  background: var(--scrim-paint);
+  backdrop-filter: blur(2px);
+}
+[data-theme="light"] .scrim { --scrim-paint: rgba(24, 34, 46, .38); }
+
+/* ------------------------------------------------------------- the toast */
+
+.toast-host {
+  position: fixed; right: 20px; bottom: 20px;
+  z-index: 120;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  display: flex; align-items: center; gap: 10px;
+  max-width: 380px;
+  padding: 11px 14px;
+  border-radius: var(--r);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--shadow-2);
+}
+.toast svg { width: 15px; height: 15px; flex: none; }
+@media (max-width: 560px) {
+  .toast-host { left: 14px; right: 14px; bottom: 14px; }
+  .toast { max-width: none; }
+}
+
+/* ------------------------------------------------------- the filter note */
+
+/* Where the approved design has a control nothing can carry yet, the note
+   stands where the control would have been. It is a sentence, not a chip
+   label, so it does not inherit the pill's uppercase letter-spacing. */
+.filter-note {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 450;
+  max-width: 62ch;
+}
+
+/* --------------------------------------------------------------- spacing */
+
+.mt-xs { margin-top: 6px; }
+.mt-sm { margin-top: 10px; }
+.mt { margin-top: 16px; }
+.row-wrap { flex-wrap: wrap; }
+.gap-sm { gap: 8px; }
+
+/* A skeleton block the pane sizes itself. */
+.skel-block { height: 80px; }
