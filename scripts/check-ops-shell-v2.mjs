@@ -34,7 +34,8 @@
         why the chart sweep excluded them, and why deleting stroke from icon()
         left sixty invisible icons and a green build (#10308). They get their
         own sweep, with their own count and their own message, over the same
-        paint helpers so the two cannot drift.
+        paint helpers so the two cannot drift, and each sweep marks what it
+        swept so that an <svg> claimed by neither is itself a failure.
 
    Usage:  node scripts/check-ops-shell-v2.mjs
    Chrome: CHROME_PATH, or the usual install locations.
@@ -450,6 +451,24 @@ const PAINT_HELPERS = `
     }
     if (paint.kind === 'none') return { kind: 'no-paint', why: prop + ' is ' + (v || 'empty') };
     if (paint.a === 0) return { kind: 'no-paint', why: prop + ' is ' + v + ', which is fully transparent' };
+    /* A stroke of zero width is a colour that draws nothing. This is the one
+       geometry property read here, and only for the stroke channel: it is the
+       channel every icon paints through, so a rule that zeroes it blanks the
+       icon while every colour still resolves. Nothing else about geometry —
+       opacity, visibility, display, size, viewBox — is read at all. */
+    if (prop === 'stroke') {
+      const w = getComputedStyle(el).strokeWidth;
+      const n = parseFloat(w);
+      if (Number.isNaN(n)) {
+        return { kind: 'unreadable', why: 'stroke resolves to ' + v + ' but stroke-width is ' +
+          w + ', a width this check cannot read. Teach dead() the syntax; do not let the ' +
+          'sweep skip the shape.' };
+      }
+      if (n === 0) {
+        return { kind: 'no-paint', why: 'stroke is ' + v + ' but stroke-width is ' + w +
+          ', so the stroke draws nothing' };
+      }
+    }
     return null;
   };
 
@@ -499,6 +518,12 @@ const SHELL_PROBE = `(() => {
      All three now live in PAINT_HELPERS, which the icon sweep shares. */
   const chartSvgs = [...document.querySelectorAll(SVG_SET)]
     .filter((s) => !s.classList.contains('ico'));
+  /* Marked, not counted. The icon sweep asserts that the two sweeps partition
+     every <svg> on the page, and an assertion that re-runs this selector to
+     learn what this sweep saw is a second copy that drifts the moment this one
+     narrows — the partition would then be computed from a set nobody swept.
+     The mark IS the swept set, so narrowing here shows up there. */
+  for (const s of chartSvgs) s.__sweptAsChart = true;
   const shapes = chartSvgs
     .flatMap((s) => [...s.querySelectorAll(PAINTABLE)].map((el) => ({ svg: s, el })));
   const unpainted = [];
@@ -515,6 +540,7 @@ const SHELL_PROBE = `(() => {
   return JSON.stringify({
     groups: [...document.querySelectorAll('.nav-group')].map((n) => n.textContent.trim()),
     navItems: document.querySelectorAll('.nav-item').length,
+    navItemsWithIcon: document.querySelectorAll('.nav-item > svg.ico').length,
     account: !!document.querySelector('.rail-foot .who-name'),
     unexpandedIcons: document.querySelectorAll('[data-i]').length,
     expandedIcons: document.querySelectorAll('#iconGallery svg.ico').length,
@@ -558,10 +584,21 @@ const SHELL_PROBE = `(() => {
    close to what is painted behind it to see. That needs the effective
    background, which on this page is layered gradients and colour-mix alpha
    rather than any one ancestor's background-color, and it is the contrast
-   oracle's job (Stadiora/Aria#10287), not this sweep's. */
+   oracle's job (Stadiora/Aria#10287), not this sweep's.
+
+   Nor does it measure most of geometry. The one geometry property it reads is
+   stroke-width, and only on the stroke channel, because that is the channel
+   every icon paints through. An icon hidden by opacity, visibility, display,
+   a zero size or a broken viewBox still passes this sweep: those are paint
+   that exists and is not shown, which is a different question from paint that
+   was never resolved. */
 const ICON_PROBE = `(() => {
   ${PAINT_HELPERS}
   const icons = [...document.querySelectorAll('svg.ico')];
+  const allSvgs = [...document.querySelectorAll('svg')];
+  /* Marked for the same reason the chart sweep marks: the partition below has
+     to be the two sets that were actually swept, not two selectors re-run. */
+  for (const s of icons) s.__sweptAsIcon = true;
 
   /* Icons carry no name of their own — the <i data-i="..."> placeholder they
      replaced is gone by the time this runs — so they are located by what
@@ -574,6 +611,12 @@ const ICON_PROBE = `(() => {
     return p.tagName.toLowerCase() + (cls ? '.' + cls.split(/\\s+/).join('.') : '') +
       (text ? ' "' + text + '"' : '');
   };
+
+  /* Charts do carry a name, so a graphic that fell out of both sweeps is
+     reported by its own identity as well as by what holds it. */
+  const graphic = (s) => (s.getAttribute('aria-label') || (s.getAttribute('class') || '').trim() ||
+    (s.hasAttribute('aria-hidden') ? 'a decorative graphic' : 'an unnamed graphic')) +
+    ' in ' + label(s);
 
   const unpainted = [];
   const unreadable = [];
@@ -608,8 +651,12 @@ const ICON_PROBE = `(() => {
   return JSON.stringify({
     icons: icons.length,
     iconShapes: shapes,
-    allSvgs: document.querySelectorAll('svg').length,
-    chartSvgs: [...document.querySelectorAll(SVG_SET)].filter((s) => !s.classList.contains('ico')).length,
+    allSvgs: allSvgs.length,
+    /* What the chart sweep marked as it swept, rather than what this file
+       thinks the chart sweep selects. */
+    chartSvgs: allSvgs.filter((s) => s.__sweptAsChart).length,
+    unswept: allSvgs.filter((s) => !s.__sweptAsChart && !s.__sweptAsIcon).map(graphic),
+    sweptTwice: allSvgs.filter((s) => s.__sweptAsChart && s.__sweptAsIcon).map(graphic),
     unpainted: unpainted,
     resolvedToNothing: resolvedToNothing,
     unreadablePaint: unreadable,
@@ -868,14 +915,32 @@ try {
       failures.push(`${SHELL} (${theme}): those icons hold ${icons.iconShapes} paintable ` +
         'shapes, so the sweep below measured almost nothing. The shell draws 111.');
     }
+    /* Those two numbers are a tripwire for a sweep that measured almost
+       nothing, not a census: 61 icons with a floor of 50 absorbs ten icons
+       that stopped being drawn at all. The rail is the one place a count is
+       pinned to a structure rather than to a total, because every nav item
+       carries an icon and the number of nav items is already asserted. */
+    if (shell.navItemsWithIcon !== shell.navItems) {
+      failures.push(`${SHELL} (${theme}): ${shell.navItems} nav item(s) hold ` +
+        `${shell.navItemsWithIcon} icon(s). A nav item whose icon is gone is not an icon that ` +
+        'fails to paint, so no sweep below can see it: the element is simply not there.');
+    }
     /* The two sweeps partition every <svg> on the page between them. This is
        the assertion the excluded-icons gap itself would have failed: a third
-       kind of graphic that belongs to neither is a category nothing checks. */
-    if (icons.allSvgs !== icons.icons + icons.chartSvgs) {
-      failures.push(`${SHELL} (${theme}): the page holds ${icons.allSvgs} <svg> elements but ` +
-        `the two sweeps see ${icons.icons} icons and ${icons.chartSvgs} charts. ` +
-        `${icons.allSvgs - icons.icons - icons.chartSvgs} graphic(s) belong to neither sweep, ` +
-        'so nothing checks whether they paint.');
+       kind of graphic that belongs to neither is a category nothing checks.
+       Both halves are read off each sweep's own mark, so narrowing either
+       sweep's selector — the mistake this file already made once — moves
+       graphics into `unswept` rather than quietly out of the comparison. */
+    if (icons.unswept.length) {
+      failures.push(`${SHELL} (${theme}): ${icons.unswept.length} of the page's ` +
+        `${icons.allSvgs} <svg> element(s) were swept by neither sweep — ` +
+        `${icons.unswept.join('; ')}. The chart sweep marked ${icons.chartSvgs} and the icon ` +
+        `sweep took ${icons.icons}; nothing checks whether the rest paint.`);
+    }
+    if (icons.sweptTwice.length) {
+      failures.push(`${SHELL} (${theme}): ${icons.sweptTwice.length} <svg> element(s) were ` +
+        `swept by both sweeps — ${icons.sweptTwice.join('; ')}. The counts and the messages ` +
+        'each assume one sweep owns each graphic.');
     }
     if (icons.shapeless.length) {
       failures.push(`${SHELL} (${theme}): ${icons.shapeless.length} icon(s) hold no paintable ` +
