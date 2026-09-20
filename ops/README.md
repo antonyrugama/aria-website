@@ -965,7 +965,7 @@ fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
 |---|---|
 | `node --test scripts/*.test.mjs` | The accessible name every chart derives, that preview state is applied in **both** directions, and that the theme button re-resolves each chart's colours. Runs `scripts/ops-aria-shell.test.mjs` alongside the pane tests. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
-| `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the surface behind each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
+| `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
 
@@ -997,8 +997,10 @@ So `check-ops-contrast.mjs` measures pixels instead of parsing CSS. Backdrops on
 layered gradients under `color-mix` surfaces, and no ancestor's `background-color` is the colour
 a reader sees, so the check hides every glyph with a constructable stylesheet — `<style>` is
 blocked by the page's `style-src 'self'`, CSSOM is not — screenshots the full page, and samples
-the surface behind each **run of text**. Runs, not element boxes: a row that contains a chip is
-12% chip, and the row's own words sit on none of it.
+the **topmost paint at each run of text** with the glyphs lifted. Runs, not element boxes: a row
+that contains a chip is 12% chip, and the row's own words sit on none of it. That paint is the
+surface *behind* the glyphs only while nothing paints *above* them — lifting the text cannot tell
+the two apart, and the error runs the flattering way, so over-paint is in NOT COVERED below.
 
 Four things decide the answer, and each is chosen for the **role** the colour plays — an ink,
 not a fill. Three of the four end in a refusal rather than a number, because a refusal fails
@@ -1077,7 +1079,10 @@ pass unmeasured** — nothing more.
 
 **Three other pseudo-elements are handled by two other mechanisms, and the list is still open.**
 `::placeholder` is collected and **read** from its own computed style, because it carries its own
-colour. `::first-line` and `::first-letter` repaint the element's **own** text — no new text node,
+colour. (`PLATE_CSS` also lifts it explicitly. That rule is **proven on the self-test fixture
+only** — the shell sets no placeholder colour, so deleting the rule leaves the real page's plate
+band byte-identical; it is fail-closed for a page that does set one, and `PLATE_HOLDS` cannot
+speak for it because a placeholder has no text node to iterate.) `::first-line` and `::first-letter` repaint the element's **own** text — no new text node,
 no new box, no change to the site count, and the plate lifts them correctly — so nothing in the
 census or the plate check can see them; they are **refused by name** instead, detected by
 comparing the pseudo-element's resolved ink against the element's own on the element and on every
@@ -1100,6 +1105,26 @@ keep clean — clearing it is right for the plate and wrong for the reader, who 
 five-deep `text-shadow` on `.tbl th` changes 259 of 4608 pixels in the sampled band on the real
 page and **0** on the plate, and the run stays green. No claim is made about which direction that
 error runs: WCAG 2.x does not model a halo and this tool does not invent one.
+
+**Paint that lands ON TOP of the glyphs is sampled as though it were behind them, and the error
+runs in the flattering direction.** The plate is the whole page screenshotted with the glyphs
+made transparent; lifting the text cannot distinguish paint under it from paint over it, so a
+positioned sibling, child or pseudo-element covering a text run is read as that run's backdrop.
+`unmodelled()` walks the element and its ancestors, and an over-painting box is neither, so there
+is no property to refuse by name. A `::after` with `position: absolute; inset: -2px;
+background: rgba(255,255,255,.94)` over `span.card-note` exits **0** with the site count
+unmoved, and — forcing the AA threshold to 99 so every judged site prints its ratio — the number
+this tool reports goes **UP**, from `5.85:1 … #55637A on #F8FBFD` to `6.08:1 … #55637A on
+#FFFFFF`: it has sampled the overlay and called it the backdrop. The round-6 reviewer's
+independent pixel probe puts the best contrast available anywhere in that band, on the real
+page, at **1.08:1**. The same pixels spelled `opacity: .06` on the element are caught at 1.08:1.
+A second shape with no pseudo-element and no `content` — an absolutely positioned child `i` over
+`.legend span` — behaves identically: exit 0, with the reviewer measuring the real page at
+6.95:1 to 1.09:1 while the tool moves 6.94:1 to 6.95:1.
+Closing it would mean a geometric overlap analysis over positioned boxes rather than a named
+refusal, so it is named here instead. The shell does not do this today: neutralising every
+shipped positioned overlay that paints in the content layer changes **0 of 113,083** sampled band
+pixels in dark/degraded and **0 of 114,670** in light/live.
 
 **A paint-affecting property outside those four is neither modelled nor refused**, and text
 under one is measured as though it were painted in full. `mask-image` and `clip-path` are the
@@ -1135,8 +1160,9 @@ exercises that path and no mutation proves it either way — read it as not cove
 handled. Text that a transform rotates or skews is sampled from its axis-aligned bounding box,
 which is wider than the glyphs.
 
-And the check answers "can this be read", not "is this the designed colour" — the token pins in
-`check-ops-shell-v2.mjs` answer that, and the two are complementary.
+And the check answers "is the ink readable against the paint at its own run", which is "can this
+be read" only while nothing paints over the glyphs — not "is this the designed colour". The token
+pins in `check-ops-shell-v2.mjs` answer the second, and the three are complementary.
 
 Sites that are below AA on the page today are frozen one at a time in `KNOWN_BELOW_AA`, keyed
 per site — theme, state, selector and the words — with the issue that tracks each. The freeze is

@@ -11,8 +11,9 @@
  * So this measures rendered pixels instead of names. For every visible
  * text-bearing element on the shell, in both themes and all four preview
  * states, it computes the contrast between the element's resolved text colour
- * and the colour actually painted behind it, and fails under the WCAG AA
- * threshold for that text's size.
+ * and the topmost paint at that text with the glyphs lifted, and fails under
+ * the WCAG AA threshold for that text's size. That is the colour behind the
+ * glyphs only while nothing paints ABOVE them; see NOT COVERED in ops/README.md.
  *
  * Ported from the monorepo's docs/mocks/ops-dashboard-v2/scripts/
  * contrast-check.mjs, which took its own review rounds to become trustworthy.
@@ -29,9 +30,12 @@
  *      a value. Instead this takes a PLATE — a second screenshot of the same page
  *      with every glyph made transparent — and samples the rects of the
  *      element's own TEXT RUNS on it, not its box: a row that contains a chip
- *      is 12% chip and its words sit on none of it. That is the real painted
- *      backdrop, gradients and all, with no text pixels left to pull the
- *      average.
+ *      is 12% chip and its words sit on none of it. That is the painted stack
+ *      at the run, gradients and all, with no text pixels left to pull the
+ *      average. It is the BACKDROP only while nothing paints over the glyphs:
+ *      lifting the text cannot distinguish paint under it from paint on top of
+ *      it, and over-paint moves the reported ratio the FLATTERING way. Not
+ *      modelled, not refused, named in NOT COVERED.
  *
  *   3. A PARSER THAT CANNOT READ A COLOUR MUST SAY SO, NEVER SKIP. Chromium
  *      serialises color-mix() as `color(srgb r g b / a)`. The monorepo's parser
@@ -709,7 +713,9 @@ const GENERATED_TEXT = `(() => {
   return JSON.stringify({ found: found.slice(0, 8), count: found.length });
 })()`;
 
-/* Hide every glyph so a screenshot shows only what is painted behind them.
+/* Hide every glyph so a screenshot shows the paint at each text run without
+   the text itself -- what is behind the glyphs, plus anything painted over
+   them, which this cannot tell apart. See NOT COVERED in ops/README.md.
    Colour and visibility do not affect layout, so the plate lines up with the
    real page pixel for pixel. */
 const PLATE_CSS = `
@@ -725,8 +731,14 @@ const PLATE_CSS = `
   }
   /* ::placeholder is matched by none of the selectors above, and its own
      colour declaration beats the originating element's inherited transparent.
-     Without this line placeholder glyphs paint ON the plate, which is exactly
-     the contamination the plate exists to prevent. */
+     Where a page sets that colour, placeholder glyphs paint ON the plate
+     without this line -- the contamination the plate exists to prevent.
+     PROVEN ON THE FIXTURE ONLY: self-test part C sets the colour explicitly,
+     and deleting this line leaves the real shell's plate band byte-identical,
+     because the shell sets no ::placeholder colour and the * rule's inherited
+     transparent text-fill already lifts those glyphs. Fail-closed for a page
+     that does set one. PLATE_HOLDS cannot speak for it either: it iterates
+     elements with their own text nodes, and a placeholder has none. */
   ::placeholder { color: transparent !important; }
   /* An SVG that contains text is a SURFACE that text sits on — its bars and
      areas are the backdrop for those labels — so hiding it wholesale would
@@ -916,9 +928,11 @@ async function measureSites(targets, where) {
       results.push({ ...t, unjudgeable: 'no backdrop sampled', ink: String(t.color) });
       continue;
     }
-    /* A backdrop role. The conservative direction for a backdrop is NOT
-       "assume opaque": a see-through surface means the real backdrop is
-       whatever is behind the page, which this tool cannot see. */
+    /* A backdrop role -- strictly, the topmost paint at the run with the
+       glyphs lifted, which is the backdrop only while nothing paints above
+       them. The conservative direction for a backdrop is NOT "assume opaque":
+       a see-through surface means the real backdrop is whatever is behind the
+       page, which this tool cannot see. */
     /* UNEXERCISED on this page: the screenshot decodes as PNG colour type 2,
        which carries no alpha, so translucent is structurally 0 and no
        mutation in this PR's battery drives this branch. Kept as a fail-closed
@@ -977,7 +991,7 @@ async function measureSites(targets, where) {
       (Number.isFinite(t.opacity) ? t.opacity : 1);
     const need = threshold(t.fontSize, t.fontWeight);
 
-    /* Judge against the WORST surface behind the glyphs, not against the
+    /* Judge against the WORST sampled surface, not against the
        average of them and not against the widest.
 
        Averaging a two-tone backdrop invents a colour painted nowhere, and
@@ -1412,7 +1426,7 @@ try {
       }
       failures.push(`${SHELL} (${r.theme}/${r.state}): ${r.ratio.toFixed(2)}:1 needs ` +
         `${r.need.toFixed(1)}:1 — ${r.fg} on ${r.bg}` +
-        `${r.surfaces > 1 ? ` (worst of ${r.surfaces} surfaces behind the glyphs; ` +
+        `${r.surfaces > 1 ? ` (worst of ${r.surfaces} surfaces at the glyphs; ` +
           `best ${r.best.toFixed(2)}:1 on ${r.bestBg})` : ''}` +
         `, ${r.fontSize}px ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''} "${r.text}"`);
     }
