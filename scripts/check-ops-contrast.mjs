@@ -163,7 +163,13 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
   .h7 { background: #000000; }
   .h7:focus-visible { outline: 4px solid #999999; outline-offset: -8px; }
   .h7far { width: 60px; height: 12px; background: #B0B0B0; margin-top: 4px; }
-  .h7:focus-visible ~ .h7far { background: #123456; }
+  .h7:focus-visible ~ .h7far { background: #A5A5A5; }
+  .hdash { background: #FFFFFF; }
+  .hdash:focus-visible { outline: 4px dashed #767676; outline-offset: 6px; }
+  .h9wrap { position: relative; width: 140px; height: 60px; background: #CCCCCC; }
+  .h9half { position: absolute; left: 0; top: 0; width: 70px; height: 60px; background: #FFFFFF; }
+  .h9 { position: absolute; left: 50px; top: 18px; width: 40px; height: 24px; background: #FFFFFF; }
+  .h9:focus-visible { outline: 4px solid #767676; outline-offset: 8px; }
 </style></head><body>
 <div class="case"><div class="wrap"><button class="h1"></button></div></div>
 <div class="case"><div class="wrap"><button class="h2out"></button></div></div>
@@ -171,9 +177,11 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
 <div class="case"><div class="wrap"><button class="h3"></button></div></div>
 <div class="case"><div class="wrap"><button class="h4"></button></div></div>
 <div class="case"><div class="wrap"><button class="h5"></button></div></div>
+<div class="case"><div class="wrap"><button class="hdash"></button></div></div>
 <div class="case"><div class="wrap"><button class="h6"></button></div></div>
 <div class="case"><div class="wrap"><button class="h8"></button></div></div>
 <div class="case"><div class="wrap"><div class="h7wrap"><button class="h7"></button><div class="h7far"></div></div></div></div>
+<div class="case"><div class="wrap"><div class="h9wrap"><div class="h9half"></div><button class="h9"></button></div></div></div>
 </body></html>`;
 
 const server = http.createServer((req, res) => {
@@ -1948,11 +1956,15 @@ async function measureFocusIndicators(where) {
  *      black button reads 1.61:1 against the white card at outline-offset:
  *      8px and 13.08:1 against the button itself at -8px, so a tool that
  *      reads a colour off the focused element or off the page fails one of
- *      them. Beside that: a published ratio to pin the pipeline, the three
- *      indicators this tool declines to model, a ring far enough out that the
- *      clip must widen to see it at all, and a case that repaints a distant
- *      strip on focus to prove the adjacency is anchored on the ring and not
- *      on everything that moved (Stadiora/Aria#10634).
+ *      them. Beside that: a published ratio to pin the pipeline, the four
+ *      indicators this tool declines to model, two rings far enough out that
+ *      the clip must widen — one that misses the first photograph entirely
+ *      and one that straddles its edge, which are the two halves of the same
+ *      condition — a case that repaints a near-ring-coloured strip on focus,
+ *      to prove the adjacency is anchored on the ring and on the ring
+ *      exactly, and a button straddling a colour seam, whose one ring lands
+ *      on two surfaces at 2.83:1 and 4.54:1, to prove the worse of them
+ *      decides (Stadiora/Aria#10634).
  *
  * NOT COVERED, on purpose — this is the list of exclusions decided, not an
  * inventory of every blind spot, because one nobody has thought of is by
@@ -2366,13 +2378,15 @@ async function selfTest() {
     /* Every expectation on this page is stated from the WCAG formula and the
        fixture's own declared hexes, not from anything this file measured:
          #767676 on #FFFFFF  4.54:1   (WebAIM's published figure)
+         #767676 on #CCCCCC  2.83:1   (L 0.18116, 0.60383)
          #CCCCCC on #FFFFFF  1.61:1   (L 0.60383, 1.00000)
          #CCCCCC on #000000 13.08:1   (L 0.60383, 0.00000)
          #999999 on #000000  7.37:1   (L 0.31855, 0.00000)
          #999999 on #B0B0B0  1.31:1   (L 0.31855, 0.43415) — the WRONG answer
                                        for h7, and what it measures if the
                                        adjacency is anchored on the changed
-                                       region instead of on the ring core. */
+                                       region, or if the ring core is matched
+                                       by nearness instead of by equality. */
     const near = (r, want) => !!r && !r.refused && Math.abs(r.ratio - want) < 0.02;
     const shows = (cls, want, note) => {
       const r = at(cls);
@@ -2411,11 +2425,12 @@ async function selfTest() {
       `${out && !out.refused ? out.bg : '?'} outside, ${inn && !inn.refused ? inn.bg : '?'} inside` +
       '\n          (a tool that reports the same surface for both has not measured offset at all)');
 
-    /* H3-H5 — the three ways this tool declines, each by name. An indicator
-       it cannot model must never be silently absent from the count. */
+    /* H3-H5 — the ways this tool declines, each by name. An indicator it
+       cannot model must never be silently absent from the count. */
     refuses('h3', 'no visible focus indicator', 'has outline:none and changes nothing on focus');
     refuses('h4', 'is not an outline', 'indicates focus with a box-shadow');
     refuses('h5', 'translucent', 'has a 50% alpha outline-color');
+    refuses('hdash', 'outline-style is dashed', 'draws a dashed outline, whose gaps are not ring');
 
     /* H6 — the clip escalates rather than measuring a truncated ring. At the
        first pad this ring is entirely outside the photograph's edge. */
@@ -2425,17 +2440,20 @@ async function selfTest() {
     console.log(`     ${escalated ? 'ok  ' : 'FAIL'} and it escalated the clip to see it: pad ` +
       `${six ? six.pad : '?'}, expected 120px (the ring lands 64px out, past the 28px first try)`);
 
-    /* H7 — the adjacency is anchored on the RING, not on everything that
-       moved. Focusing .h7 also repaints a strip below it, whose own
-       neighbours are #B0B0B0; anchor on the changed region and that strip
-       drags the answer down to 1.31:1 against a colour no ring touches. */
+    /* H7 — the adjacency is anchored on the RING, and on the ring EXACTLY.
+       Focusing .h7 also repaints a strip below it to #A5A5A5, a colour 12
+       levels off the #999999 ring, on its own #B0B0B0 surround. Two separate
+       mistakes both drag the answer to 1.31:1 against a colour no ring
+       touches: anchoring on everything that changed, and matching the ring
+       core by nearness instead of equality — 12 levels is inside any
+       tolerance loose enough to swallow an antialiased edge. */
     const seven = shows('h7', 7.3713,
-      'draws its ring inside a black button while ALSO repainting a strip below it');
+      'draws its ring inside a black button while ALSO repainting a near-ring-coloured strip below it');
     const notDragged = !!seven && !seven.refused && seven.bg === '#000000';
     if (!notDragged) bad++;
     console.log(`     ${notDragged ? 'ok  ' : 'FAIL'} and the surface it named is ` +
       `${seven && !seven.refused ? seven.bg : '?'}, expected #000000 — not the #B0B0B0 beside ` +
-      'the strip, which is what anchoring on the changed region reports (1.31:1)');
+      'the strip, which is what both of those mistakes report (1.31:1)');
 
     /* H8 — the OTHER reason a clip is too small, and it needs its own case.
        H6's ring misses the first photograph entirely, so it escalates on
@@ -2450,20 +2468,35 @@ async function selfTest() {
     console.log(`     ${straddle ? 'ok  ' : 'FAIL'} and it widened rather than measuring a ` +
       `truncated ring: pad ${eight ? eight.pad : '?'}, expected 120px`);
 
-    /* The census itself: nine buttons on the page, nine reached by Tab, and
-       every one of them carrying a row. A focus sweep that quietly measured
-       six of nine would print six ok lines and nothing else. */
-    const okCensus = census.candidates === 9 && census.reached === 9 && rows.length === 9;
+    /* H9 — the fill role's direction, which needs TWO surfaces beside one
+       ring to have a direction at all. Every other case on this page has one,
+       so the worst-of and the best-of agree and the choice is invisible. This
+       button straddles a white/#CCCCCC seam, so its ring lands on both:
+       2.83:1 one side, 4.54:1 the other. Take the best and a ring that fails
+       WCAG down one edge reports as passing. */
+    const nine = shows('h9', 2.8285,
+      'straddles a white/#CCCCCC seam, so one ring lands on two surfaces at once');
+    const worstOf = !!nine && !nine.refused && nine.bg === '#CCCCCC' && nine.surfaces >= 2;
+    if (!worstOf) bad++;
+    console.log(`     ${worstOf ? 'ok  ' : 'FAIL'} and it named the WORSE of the ` +
+      `${nine && !nine.refused ? nine.surfaces : '?'} surfaces beside it: ` +
+      `${nine && !nine.refused ? nine.bg : '?'}, expected #CCCCCC — ` +
+      'the white side of the same ring measures 4.54:1 and clears AA on its own');
+
+    /* The census itself: eleven buttons on the page, eleven reached by Tab,
+       and every one of them carrying a row. A focus sweep that quietly
+       measured six of eleven would print six ok lines and nothing else. */
+    const okCensus = census.candidates === 11 && census.reached === 11 && rows.length === 11;
     if (!okCensus) bad++;
-    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 9 focusable buttons → ${census.candidates} ` +
+    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 11 focusable buttons → ${census.candidates} ` +
       `censused, ${census.reached} reached by real Tab presses, ${rows.length} judged or refused`);
     /* And that the Tab presses did their other job. Without keyboard modality
        every :focus-visible rule on this page is dead and the lot look like
-       h3 — nine missing indicators and no ring measured anywhere. */
+       h3 — eleven missing indicators and no ring measured anywhere. */
     const modality = rows.filter((r) => r.focusVisible).length;
-    const okModality = modality === 9;
+    const okModality = modality === 11;
     if (!okModality) bad++;
-    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 9 ` +
+    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 11 ` +
       'after the Tab walk (scripted focus alone matches 0, and every ring here is behind it)');
   }
 
@@ -2472,8 +2505,10 @@ async function selfTest() {
       '  the pipeline, the plate lifts every glyph, inks are read from what paints,\n' +
       '  an ink that cannot be resolved is refused, color(srgb) is read to the\n' +
       '  edge of gamut and refused past it, the three boundaries this tool\n' +
-      '  refuses are all censused, and one focus ring is judged against two\n' +
-      '  different surfaces according to which side of the box it lands on.\n'
+      '  refuses are all censused, one focus ring is judged against two\n' +
+      '  refuses are all censused, one focus ring is judged against two\n' +
+      '  different surfaces according to which side of the box it lands on,\n' +
+      '  and where one ring lands on two surfaces at once the worse decides.\n'
     : `\n  self-test FAILED on ${bad} case(s); do not trust this tool's numbers.\n`);
   return bad === 0;
 }
