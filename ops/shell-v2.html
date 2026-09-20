@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.runwitharia.com; base-uri 'none'; form-action 'none'">
+<title>Design system v2 | Aria Operations</title>
+<script src="assets/theme.js"></script>
+<link rel="stylesheet" href="assets/aria.css">
+</head>
+<body>
+
+<a class="skip" href="#content">Skip to content</a>
+
+<!-- This page reads no API and holds no operational data. Every figure on it
+     is a fixed sample, chosen to exercise a shape rather than to report
+     anything, which is why it needs no session: there is nothing here to
+     protect. It is the surface the pane remodels are built against, so the
+     rail, the top bar, the charts, the icons, both themes and all four states
+     can be looked at and measured in one place. -->
+
+<div class="app">
+  <nav class="rail" id="rail" aria-label="Dashboard panes"></nav>
+
+  <main class="main" id="content">
+    <header class="topbar" id="topbar"></header>
+
+    <div class="content">
+
+      <!-- ------------------------------------------------ preview states -->
+      <section class="band">
+        <div class="band-head">
+          <h2 class="band-title">Preview states</h2>
+          <span class="band-note">Every pane handles four. The switcher in the top bar swaps them.</span>
+        </div>
+
+        <!-- Visibility is keyed on an attribute rather than forced to
+             display:block, so a shown element keeps its own display type. The
+             four below are deliberately four different ones: a grid hero, a
+             flex column .stack, a flex .card, and below them a table row and
+             an inline-flex chip. Forcing display:block works for the .stack
+             and silently breaks the other four. -->
+        <div class="hero st-ok" data-state="live">
+          <div class="hero-orb" aria-hidden="true"><i></i><i></i><b></b></div>
+          <div>
+            <div class="hero-title">Everything is running</div>
+            <div class="hero-sub">A hero states the pane's own answer before any detail.</div>
+          </div>
+          <div class="hero-chips">
+            <span class="pill up"><i data-i="check"></i>Sample</span>
+          </div>
+        </div>
+
+        <div data-state="loading" class="stack">
+          <div class="card">
+            <div class="card-body">
+              <div class="skel skel-row"></div>
+              <div class="skel skel-row"></div>
+              <div class="skel skel-row"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" data-state="empty">
+          <div class="state-block">
+            <div class="state-icon" aria-hidden="true"><i data-i="empty"></i></div>
+            <div class="state-title">Nothing came in</div>
+            <p class="state-desc">Empty never means zero. A quiet night and a dead pipeline
+              produce identical numbers, so an empty state says which one it is.</p>
+          </div>
+        </div>
+
+        <div class="card accent acc-warn" data-state="degraded">
+          <div class="card-body row">
+            <i data-i="warn" aria-hidden="true"></i>
+            <span>One source is stale, so the figures below are older than they look.</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3 class="card-title">The same attribute, five display types</h3></div>
+          <div class="card-body">
+            <table class="tbl" id="stateTable">
+              <thead>
+                <tr><th>State</th><th>Element</th><th class="r">Sample</th></tr>
+              </thead>
+              <tbody>
+                <tr data-state="live"><td>Live data</td><td>table row</td><td class="r num">1,284</td></tr>
+                <tr data-state="loading"><td>Loading</td><td>table row</td><td class="r num">—</td></tr>
+                <tr data-state="empty"><td>No data</td><td>table row</td><td class="r num">0</td></tr>
+                <tr data-state="degraded"><td>Degraded</td><td>table row</td><td class="r num">stale</td></tr>
+              </tbody>
+            </table>
+            <div class="divider"></div>
+            <div id="statePills">
+              <span class="pill up" data-state="live"><i data-i="check"></i>Live chip</span>
+              <span class="pill" data-state="loading"><i data-i="clock"></i>Loading chip</span>
+              <span class="pill ghost" data-state="empty"><i data-i="empty"></i>Empty chip</span>
+              <span class="pill warn" data-state="degraded"><i data-i="warn"></i>Degraded chip</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------------------- charts -->
+      <section class="band">
+        <div class="band-head">
+          <h2 class="band-title">Charts</h2>
+          <span class="band-note">Inline SVG from data attributes. No charting dependency.</span>
+        </div>
+
+        <div class="grid g-main">
+          <div class="card">
+            <div class="card-head">
+              <h3 class="card-title">Area, two series</h3>
+              <span class="card-note">data-area</span>
+            </div>
+            <div class="card-body">
+              <div data-h="240" data-xaxis="00,06,12,18,24"
+                   data-area="Mobile:cyan:58,44,32,49,61,52;Coaches Web:violet:14,9,6,11,15,12"></div>
+              <div class="legend">
+                <span><i class="tone-cyan"></i>Mobile</span>
+                <span><i class="tone-violet"></i>Coaches Web</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3 class="card-title">Bars</h3>
+              <span class="card-note">data-bars</span>
+            </div>
+            <div class="card-body">
+              <div data-h="200" data-label="Sample runs per day"
+                   data-bars="Mon:cyan:42;Tue:cyan:51;Wed:cyan:37;Thu:cyan:64;Fri:cyan:48"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid g3">
+          <div class="card kpi">
+            <div class="card-body">
+              <div class="kpi-label">Sparkline in a KPI</div>
+              <div class="kpi-val">788</div>
+              <div class="kpi-meta"><span class="pill up"><i data-i="up"></i>4.1%</span>sample</div>
+              <div class="kpi-spark tone-cyan" data-tone="cyan" data-spark="742,760,735,788,771,802"></div>
+            </div>
+            <div class="kpi-foot">The chart is decorative here: the number above it says the same thing.</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3 class="card-title">Sparkline on its own</h3></div>
+            <div class="card-body fill">
+              <div class="chart-fill" data-tone="emerald" data-label="Sample daily spend"
+                   data-h="fill" data-spark="12,19,14,22,26,21,28"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3 class="card-title">Gauge and ribbon</h3></div>
+            <div class="card-body col">
+              <div class="row">
+                <div class="gauge" data-gauge="88" data-tone="amber" data-val="88%" data-cap="of sample"></div>
+                <div class="ribbon tone-cyan grow" data-label="Sample activity"
+                     data-ribbon="12,8,5,4,6,14,19,11,7,3,2,9"></div>
+              </div>
+              <div class="meter warn" id="sampleMeter"><i></i></div>
+              <div class="budget" id="sampleBudget">
+                <div class="fill">62%</div>
+                <div class="fore">+26%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------ elements -->
+      <section class="band">
+        <div class="band-head">
+          <h2 class="band-title">Elements</h2>
+          <span class="band-note">Every tint derives from a token with color-mix, so both themes stay correct.</span>
+        </div>
+
+        <div class="grid g2">
+          <div class="card">
+            <div class="card-head"><h3 class="card-title">Status</h3></div>
+            <div class="card-body col">
+              <div class="row wrap">
+                <span class="pill up"><i data-i="up"></i>Up</span>
+                <span class="pill down"><i data-i="down"></i>Down</span>
+                <span class="pill warn"><i data-i="warn"></i>Warn</span>
+                <span class="pill info"><i data-i="info"></i>Info</span>
+                <span class="pill acc"><i data-i="spark"></i>Accent</span>
+                <span class="pill vio"><i data-i="layers"></i>Violet</span>
+                <span class="pill ghost">Ghost</span>
+              </div>
+              <div class="row wrap">
+                <span class="row"><span class="dot ok live"></span>Healthy</span>
+                <span class="row"><span class="dot warn"></span>Degraded</span>
+                <span class="row"><span class="dot bad"></span>Failing</span>
+                <span class="row"><span class="dot acc"></span>Running</span>
+                <span class="row"><span class="dot vio"></span>Queued</span>
+              </div>
+              <p class="note"><i data-i="info"></i><span><b>Status is never colour alone.</b>
+                Every dot above is paired with a word.</span></p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3 class="card-title">Controls</h3></div>
+            <div class="card-body col">
+              <div class="row wrap">
+                <button class="btn btn-primary" type="button"><i data-i="refresh"></i>Primary</button>
+                <button class="btn" type="button">Default</button>
+                <button class="btn btn-ghost" type="button">Ghost</button>
+                <button class="btn btn-sm" type="button">Small</button>
+                <button class="btn btn-icon btn-ghost" type="button" aria-label="Download sample"><i data-i="dl"></i></button>
+              </div>
+              <div class="row wrap">
+                <div class="seg" role="group" aria-label="Sample segmented control">
+                  <button type="button" class="on" aria-pressed="true">All</button>
+                  <button type="button" aria-pressed="false">Mobile</button>
+                  <button type="button" aria-pressed="false">Coaches Web</button>
+                </div>
+                <div class="sel">
+                  <label class="sr" for="sampleRange">Sample range</label>
+                  <select id="sampleRange">
+                    <option>Last 7 days</option>
+                    <option>Last 30 days</option>
+                  </select>
+                  <i data-i="chev"></i>
+                </div>
+              </div>
+              <div class="field">
+                <i data-i="search"></i>
+                <label class="sr" for="sampleSearch">Sample search</label>
+                <input id="sampleSearch" type="search" placeholder="Search a coded reference">
+              </div>
+              <div class="row wrap tiny muted">
+                <span class="code">ath_2277</span>
+                <span class="divider"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------- icons -->
+      <section class="band">
+        <div class="band-head">
+          <h2 class="band-title">Icons</h2>
+          <span class="band-note">Write <span class="code">&lt;i data-i="warn"&gt;</span>; boot swaps it for inline SVG.</span>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div class="row wrap" id="iconGallery">
+              <span class="row"><i data-i="pulse"></i><span class="tiny muted">pulse</span></span>
+              <span class="row"><i data-i="radio"></i><span class="tiny muted">radio</span></span>
+              <span class="row"><i data-i="history"></i><span class="tiny muted">history</span></span>
+              <span class="row"><i data-i="bell"></i><span class="tiny muted">bell</span></span>
+              <span class="row"><i data-i="chart"></i><span class="tiny muted">chart</span></span>
+              <span class="row"><i data-i="coin"></i><span class="tiny muted">coin</span></span>
+              <span class="row"><i data-i="spark"></i><span class="tiny muted">spark</span></span>
+              <span class="row"><i data-i="ship"></i><span class="tiny muted">ship</span></span>
+              <span class="row"><i data-i="person"></i><span class="tiny muted">person</span></span>
+              <span class="row"><i data-i="gear"></i><span class="tiny muted">gear</span></span>
+              <span class="row"><i data-i="up"></i><span class="tiny muted">up</span></span>
+              <span class="row"><i data-i="down"></i><span class="tiny muted">down</span></span>
+              <span class="row"><i data-i="chev"></i><span class="tiny muted">chev</span></span>
+              <span class="row"><i data-i="check"></i><span class="tiny muted">check</span></span>
+              <span class="row"><i data-i="x"></i><span class="tiny muted">x</span></span>
+              <span class="row"><i data-i="warn"></i><span class="tiny muted">warn</span></span>
+              <span class="row"><i data-i="info"></i><span class="tiny muted">info</span></span>
+              <span class="row"><i data-i="search"></i><span class="tiny muted">search</span></span>
+              <span class="row"><i data-i="external"></i><span class="tiny muted">external</span></span>
+              <span class="row"><i data-i="refresh"></i><span class="tiny muted">refresh</span></span>
+              <span class="row"><i data-i="sun"></i><span class="tiny muted">sun</span></span>
+              <span class="row"><i data-i="moon"></i><span class="tiny muted">moon</span></span>
+              <span class="row"><i data-i="dl"></i><span class="tiny muted">dl</span></span>
+              <span class="row"><i data-i="clock"></i><span class="tiny muted">clock</span></span>
+              <span class="row"><i data-i="empty"></i><span class="tiny muted">empty</span></span>
+              <span class="row"><i data-i="plug"></i><span class="tiny muted">plug</span></span>
+              <span class="row"><i data-i="lock"></i><span class="tiny muted">lock</span></span>
+              <span class="row"><i data-i="eye"></i><span class="tiny muted">eye</span></span>
+              <span class="row"><i data-i="flame"></i><span class="tiny muted">flame</span></span>
+              <span class="row"><i data-i="layers"></i><span class="tiny muted">layers</span></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------------------- tokens -->
+      <section class="band">
+        <div class="band-head">
+          <h2 class="band-title">Tokens</h2>
+          <span class="band-note">Resolved live from the stylesheet, so a name that does not exist shows as blank.</span>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <table class="tbl" id="tokenTable">
+              <thead>
+                <tr><th>Token</th><th>Value in this theme</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<noscript>
+  <p class="note">This page assembles itself from assets/aria.js, so with scripting
+    switched off the rail, the top bar and every chart are missing. The theme
+    is not: assets/theme.js applies it before first paint.</p>
+</noscript>
+
+<script src="assets/aria.js"></script>
+<script src="assets/shell-v2.js"></script>
+</body>
+</html>

@@ -34,6 +34,7 @@ function element(tag, opts = {}, children = []) {
     children: [],
     attributes: {},
     listeners: {},
+    style: {},
     className: opts.className || '',
     value: opts.value || '',
     hidden: false,
@@ -137,11 +138,30 @@ async function main() {
     btoa(value) {
       return Buffer.from(value, 'binary').toString('base64');
     },
-    OpsShell: {
+    OpsPaneShell: {
       h: element,
       icon: () => element('svg'),
       definePane: () => {},
       announce: () => {},
+      card: className => element('div', { className: `card${className ? ` ${className}` : ''}` }),
+      cardHead: (title, note, end = []) => element('div', { className: 'card-head' }, [
+        element('h3', { className: 'card-title', text: title }),
+        element('div', { className: 'card-note', text: note || '' }),
+        ...end,
+      ]),
+      band: (title, note, end = []) => element('section', { className: 'band' }, [
+        element('div', { className: 'band-head' }, [
+          element('h2', { className: 'band-title', text: title }),
+          element('span', { className: 'band-note', text: note || '' }),
+          element('div', { className: 'band-end' }, end),
+        ]),
+      ]),
+      stateBlock: (iconName, title, lines = []) => element('div', { className: 'state-block' }, [
+        element('h2', { className: 'state-title', text: title }),
+        ...lines.map(text => element('p', { className: 'state-desc', text })),
+      ]),
+      link: (href, label, className) => element('a', { href, className, text: label }),
+      paneHref: paneId => `${paneId}.html`,
     },
     OpsSession: {
       hasRole(roles) {

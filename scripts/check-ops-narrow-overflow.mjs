@@ -1,12 +1,20 @@
 /* Guards the Problems pane against scrolling the page sideways on a phone.
 
-   The pane is a grid of rows whose first column holds a rule's name and,
-   when the rule cannot reach a verdict, a badge saying why. A badge never
-   wraps, so the whole sentence in one became the minimum width of a column
+   The pane lists one row per rule, and a row says why a rule that cannot
+   reach a verdict cannot reach one. That sentence is set in a pill, which
+   never wraps, so the whole of it became the minimum width of a column
    declared `1fr`, and a `1fr` column will not go under its content's
    minimum. On a 375px viewport that pushed the threshold and the on/off
    switch past the right edge of the document, and the whole page scrolled
    sideways rather than the row wrapping in place.
+
+   The v2 remodel of this pane (Stadiora/Aria#9946) puts those rows in a
+   table that scrolls inside its own card, which is a different answer to the
+   same question and one this check still measures: a row that scrolls in
+   place leaves documentElement.scrollWidth alone, and a row that overflows
+   the page does not. What changed here is only how the widest row is found —
+   by the sentence in the row rather than by the class the sentence used to
+   be spelled with.
 
    Nothing in this repository could have caught that. There is no build step
    and no test runner, and a stylesheet compiles to nothing that can be
@@ -21,10 +29,15 @@
    run of this check failed at 375px on a second badge that the same commit
    had passed locally on Windows. Linux is what the check is measured on.
 
-   375px only, deliberately. 320px catches a further overflow — the Severity
-   segmented control is wider than the bar there — but that is a different
-   mechanism in a control this change does not touch, so it is filed rather
-   than folded in and this check does not yet assert it.
+   Two widths, 375px and 360px. 375px is the acceptance criterion; 360px
+   exists because of the platform split above. The first CI run of the v2
+   Problems pane failed at 375px on Linux on a filter note that fitted 375px
+   on macOS with nothing to spare, so a local run could not see it and a
+   reviewer on a Mac had to find it by hand. 360px reproduces on any platform
+   what CI's wider font metrics produce at 375px. 320px catches a further
+   overflow — the Severity segmented control is wider than the bar there —
+   but that is a different mechanism in a control this change does not touch,
+   so it is filed rather than folded in and this check does not assert it.
 
    The stub is deliberately hostile rather than tidy. It sends a rule that
    cannot judge and whose reason is the longest sentence the vocabulary in
@@ -44,7 +57,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = '/ops/alerts.html';
-const WIDTHS = [375];
+const WIDTHS = [375, 360];
 const HEIGHT = 812;
 const THEMES = ['dark', 'light'];
 
@@ -230,11 +243,29 @@ function connect(url) {
 const PROBE = `(() => {
   const de = document.documentElement;
   const viewport = de.clientWidth;
+
+  /* A designed horizontal scroller and everything inside it. The rules table
+     is 760px wide inside a 375px card ON PURPOSE, so its cells all report
+     right edges far past the viewport while scrolling in place and leaving
+     documentElement alone. Left in, they fill the report and the element that
+     actually set the document width never appears -- which is how a CI
+     failure came to name a table that was not the cause. */
+  const scrolls = (el) => {
+    const x = getComputedStyle(el).overflowX;
+    return x === 'auto' || x === 'scroll' || x === 'hidden' || x === 'clip';
+  };
+  const inScroller = (el) => {
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      if (scrolls(n)) return true;
+    }
+    return false;
+  };
+
   const past = [];
   for (const el of document.querySelectorAll('body *')) {
     const box = el.getBoundingClientRect();
     if (box.width === 0 && box.height === 0) continue;
-    if (box.right > viewport + 0.5) {
+    if (box.right > viewport + 0.5 && !inScroller(el)) {
       past.push({
         tag: el.tagName.toLowerCase(),
         cls: el.getAttribute('class') || '',
@@ -248,8 +279,16 @@ const PROBE = `(() => {
     scrollWidth: de.scrollWidth,
     viewport: viewport,
     ruleRows: document.querySelectorAll('.rule-row').length,
-    badges: [...document.querySelectorAll('.rule-row .badge')].map(function (b) {
-      return b.textContent.trim();
+    /* The row's own text, not the text of a particular element inside it. A
+       probe that reads .rule-row .badge only sees the sentence while the pane
+       spells it that way, and the v2 remodel spells it .pill; a guard that
+       anchors on one syntactic shape lets the defect it is named for walk
+       through in any other spelling. */
+    rowText: [...document.querySelectorAll('.rule-row')].map(function (row) {
+      /* Doubled backslash on purpose: this probe is a template literal, so a
+         lone \\s here reaches Chrome as a plain "s" and the regex quietly
+         becomes /s+/g, which strips every letter s out of the row. */
+      return (row.textContent || '').replace(/\\s+/g, ' ').trim();
     }),
     past: past.slice(0, 10)
   });
@@ -319,10 +358,10 @@ try {
       failures.push(`${theme}: expected at least ${RULES.length} rule rows, saw ${seen.ruleRows}`);
       continue;
     }
-    if (!seen.badges.includes(NARROW_BADGE)) {
+    if (!seen.rowText.some((text) => text.includes(NARROW_BADGE))) {
       failures.push(
-        `${theme}: the long "cannot judge" badge is not on the page, so the widest ` +
-        `row was never laid out. Saw badges: ${JSON.stringify(seen.badges)}`);
+        `${theme}: the long "cannot judge" sentence is not in any rule row, so the ` +
+        `widest row was never laid out. Saw rows: ${JSON.stringify(seen.rowText)}`);
       continue;
     }
 

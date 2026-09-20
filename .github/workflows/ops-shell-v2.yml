@@ -1,0 +1,55 @@
+name: Ops v2 shell
+
+# Guards the v2 design system in ops/assets/aria.css and ops/assets/aria.js.
+# Three of the things it checks cannot be answered anywhere but a laid-out
+# page, and one of them cannot be answered by a check that runs after boot:
+#
+#   - A custom property that does not exist resolves to the empty string and
+#     the rule referencing it is dropped. Nothing throws, nothing logs, the
+#     colour is simply absent. Only getComputedStyle can see it.
+#   - Preview-state visibility is keyed on an attribute so a shown element
+#     keeps its own display type. Whether a <tr> is still table-row is a
+#     question about layout, not about markup.
+#   - The theme default is written in the stylesheet and in assets/theme.js.
+#     If those two disagree the page paints one theme and switches after the
+#     script runs. By the time any assertion runs, the switch has happened and
+#     the page looks correct — so the check blocks aria.js, and then blocks
+#     scripting entirely, and reads what is left.
+#
+# It also loads every existing pane in both themes and fails on a console
+# error, because this change adds a parallel stylesheet and runtime and the
+# claim it makes is that no pane was touched.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
+
+on:
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-shell-v2.mjs'
+      - '.github/workflows/ops-shell-v2.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-shell-v2.mjs'
+      - '.github/workflows/ops-shell-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # Node 22 or newer, because the check drives headless Chrome over the
+      # DevTools Protocol through the global WebSocket rather than a package.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check the v2 shell in both themes and before first paint
+        run: node scripts/check-ops-shell-v2.mjs

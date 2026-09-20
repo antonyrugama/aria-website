@@ -6,6 +6,8 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 import vm from 'node:vm';
 
+import { makeDom, allText, find, findAll } from './ops-dom-harness.mjs';
+
 const SOURCE = new URL('../ops/assets/pane-evaluations.js', import.meta.url);
 const WRAPPER_OPEN = '(function (global) {';
 const WRAPPER_CLOSE = '})(window);';
@@ -27,6 +29,7 @@ function loadPane(call = () => Promise.reject(new Error('unexpected request')), 
       children: [],
       attributes: {},
       listeners: {},
+      style: {},
       className: opts.className || '',
       value: opts.value || '',
       hidden: false,
@@ -66,16 +69,47 @@ function loadPane(call = () => Promise.reject(new Error('unexpected request')), 
     node.options = tag === 'select' ? node.children : [];
     return node;
   }
+  /* The panel shapes assets/shell-pane-v2.js hands a pane, stubbed to the same
+     class names and heading levels. These reproduce the shell rather than run
+     it, so nothing that depends on their exact output is asserted here: the
+     structural assertions — the stamp partition, the preview, the role gate —
+     run against the real shell on the real page in the OpsPaneShell block at
+     the end of this file. */
+  function cardHead(title, note, end = []) {
+    const words = element('div', {}, [element('h3', { className: 'card-title', text: title })]);
+    if (note) words.appendChild(element('div', { className: 'card-note', text: note }));
+    const head = element('div', { className: 'card-head' }, [words]);
+    if (end.length) head.appendChild(element('div', { className: 'card-end' }, end));
+    return head;
+  }
+  function band(title, note, end = []) {
+    const head = element('div', { className: 'band-head' }, [
+      element('h2', { className: 'band-title', text: title }),
+    ]);
+    if (note) head.appendChild(element('span', { className: 'band-note', text: note }));
+    if (end.length) head.appendChild(element('div', { className: 'band-end' }, end));
+    return element('section', { className: 'band' }, [head]);
+  }
   const window = {
     crypto: webcrypto,
     btoa(value) {
       return Buffer.from(value, 'binary').toString('base64');
     },
-    OpsShell: {
+    OpsPaneShell: {
       h: element,
       icon: () => element('svg'),
       definePane: () => {},
       announce: () => {},
+      card: className => element('div', { className: `card${className ? ` ${className}` : ''}` }),
+      cardHead,
+      band,
+      stateBlock: (iconName, title, lines = []) => element('div', { className: 'state-block' }, [
+        element('div', { className: 'state-icon' }, [element('svg')]),
+        element('h2', { className: 'state-title', text: title }),
+        ...lines.map(line => element('p', { className: 'state-desc', text: line })),
+      ]),
+      link: (href, label, className) => element('a', { className: className || 'btn btn-sm', href, text: label }),
+      paneHref: paneId => `${paneId}.html`,
     },
     OpsSession: {
       call,
@@ -184,7 +218,7 @@ test('dataset form sends declarations and clears its result when the input chang
   assert.deepEqual(observed.options.body.input, input);
   const result = findNode(view.root, node => node.className === 'dataset-result');
   const text = node => [node.textContent || '', ...(node.children || []).map(text)].join(' ');
-  assert.match(text(result), /Dataset declarations valid/);
+  assert.match(text(result), /Declarations valid/);
   assert.match(text(result), /dataset.example/);
   assert.ok(text(result).includes('b'.repeat(64)));
   view.byId('dataset-input').dispatch('input');
@@ -233,13 +267,15 @@ test('dataset form shows field errors received through the operations API transp
 
 test('viewers can validate declarations without being offered evidence import', () => {
   const pane = loadPane(undefined, Date, 'viewer');
-  const shell = { OpsSession: pane.window.OpsSession };
+  const registry = {};
+  /* The registry moved out of shell.js so the v2 pane bootstrap can read the
+     same table; both shells now refuse to load without it. */
   vm.runInNewContext(
-    readFileSync(new URL('../ops/assets/shell.js', import.meta.url), 'utf8'),
-    { window: shell, document: {} },
+    readFileSync(new URL('../ops/assets/pane-registry.js', import.meta.url), 'utf8'),
+    { window: registry, document: {} },
   );
-  assert.equal(shell.OpsSession.hasRole(shell.OpsShell.panes.evals.roles), true,
-    'the shell must allow a viewer to enter Aria quality');
+  assert.equal(pane.window.OpsSession.hasRole(registry.OpsPaneRegistry.PANES.evals.roles), true,
+    'the registry must allow a viewer into Aria quality');
   const root = { children: [], appendChild(child) { this.children.push(child); } };
   pane.render(root);
   assert.ok(findNode(root, node => node.className === 'card dataset-form'));
@@ -1031,3 +1067,678 @@ for (const scenario of [
     }
   });
 }
+
+/* ===================================================================== v2
+
+   The block above exercises what the two working tools send, out of a
+   hand-written stub. This one boots ops/evaluations.html the way a browser
+   does — the registry, aria.js, assets/shell-pane-v2.js, then the pane — and
+   asserts the one thing this pane can get wrong in a way that matters:
+   whether a reader can tell the two figures that were measured from the
+   hundred that were made up.
+
+   Two of these are the shapes this repository has shipped false greens in
+   before, so they are built deliberately:
+
+     - "Nothing invented looks real" is NOT asserted by looking for a stamp.
+       A stamp assertion stays green if every band is stamped, if none is, or
+       if the wrong ones are. What is asserted is the PARTITION: every band
+       inside the preview carries the invented stamp, every band outside it
+       carries the working stamp, neither set is empty, and neither a
+       two-decimal score nor a listed invented phrase appears outside the
+       preview in the two render states swept. Move one band across that
+       boundary and seven tests in this file go red.
+
+     - Role gating is asserted in BOTH directions: a viewer is refused the
+       evidence form and told why, AND an operator gets the real form. A
+       one-directional assertion stays green against code that refuses
+       everybody.
+
+   NOT COVERED here, deliberately, and not implied to be:
+
+     - Laid-out geometry, and it has NO automated guard anywhere. The stub has
+       no layout, so nothing about the dashed hairline, the hatch, the contrast
+       of the preview or its behaviour at a phone width is asserted here. Nor
+       is it asserted elsewhere: check-ops-shell-v2.mjs loads this page and
+       asserts it renders with no console error, which stays true when the
+       preview is widened past the viewport, and check-ops-narrow-overflow.mjs
+       sweeps the Problems pane, not this one. The 390px and 375px numbers on
+       the PR are MEASUREMENTS taken once by hand, not regression tests: a
+       later change can break this pane's narrow layout and every check in
+       this repository will stay green.
+     - The CSS that draws the stamp. These assert the word and the class the
+       pane writes, not what pane-evaluations-v2.css paints them.
+     - That INVENTED_FIGURES and INVENTED_PHRASES are COMPLETE. They are two
+       hand-written inventories, and the sweeps can only look for what is in
+       them plus any two-decimal score plus a digit inside a stamp. A made-up
+       string outside all three of those shapes — a bare count like the "3"
+       and "11" in the comparison panel, a new sentence with a round number
+       in it — can be printed outside the preview and nothing here will see
+       it. Adding invented data to the pane means adding it to an inventory
+       by hand; there is no mechanism that notices you did not.
+     - RENDER STATES BEYOND TWO. The outward sweeps read the page as it boots,
+       and again after each of the two working tools has been submitted and
+       answered. The ERROR branches are a third state and nothing reads them:
+       a two-decimal score and a listed phrase appended to the JSON-parse
+       catch in datasetValidationSection leave the whole suite green, while the
+       same string on a boot-state hint in evidenceQuarantineSection turns
+       three tests red. So the gap is the render state, not the string. Both
+       are published rows of the battery on the PR. Named by function rather
+       than by line, because a line number is the one citation that rots on
+       every edit above it, and this one already went stale once.
+     - A FIGURE SPLIT MID-TOKEN across two elements. The sweeps read one
+       string built from <body> with the preview subtree removed, joining
+       element boundaries with a single space the way allText does. A phrase
+       or score split across SIBLING elements is found — <b>180</b> inside a
+       sentence is this file's own idiom, and a per-element sweep walked past
+       it until a reviewer demonstrated it. But "0.8" and "2" in two adjacent
+       elements join as "0.8 2" here and as "0.82" in a browser.
+     - THAT THE POST-SUBMIT SWEEP'S WAIT IS FAST ENOUGH, proven locally. It
+       waits for the receipt itself now rather than for a fixed number of
+       microtask turns, and there is no local mutation behind that: the turn
+       budget it replaced was green on every machine it was written on and red
+       on ubuntu-latest for five heads, so the platform that shows the defect
+       is the only one that can show the fix. The evidence is CI's own red at
+       f3a38ff and green after, linked on the PR, not a row of the battery. An
+       attempt to reproduce it locally by settling the receipt on a timer is
+       recorded on the PR as contaminated and was withdrawn rather than
+       published. What IS asserted here is that a wait which ends early cannot
+       pass silently: the two receipts are looked for by name and the failure
+       message says the test swept nothing.
+     - The dataset and quarantine transports, which the block above owns. */
+
+const OPS = new URL('../ops/', import.meta.url);
+const readOps = rel => readFileSync(new URL(rel, OPS), 'utf8');
+
+const REGISTRY_SRC = readOps('assets/pane-registry.js');
+const ARIA_SRC = readOps('assets/aria.js');
+const SHELL_SRC = readOps('assets/shell-pane-v2.js');
+const PANE_SRC = readOps('assets/pane-evaluations.js');
+
+const TOKENS = {
+  '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
+  '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
+  '--line-2': '#1F2A36', '--ink': '#E6EDF3',
+};
+
+/* Written out here rather than read back off the pane. An expectation derived
+   from the thing under test moves with the mutation, which is the "the mock
+   ignores the query" failure wearing a different hat. If the pane's INVENTED
+   table changes, this list has to be changed by hand to match — which is the
+   point, because adding a made-up figure should be a deliberate act. */
+const INVENTED_FIGURES = [
+  '0.82', '0.88', '0.90', '0.87', '0.86', '0.79', '0.96', '0.84', '0.83',
+  '0.74', '0.91', '0.62', '0.71', '0.70', '0.81', '0.68', '0.78', '0.89',
+  '0.85',
+  /* A movement carries its direction as a sign, because a glyph nobody
+     announces and a tint are not a direction. */
+  '-0.29', '-0.17', '-0.14', '-0.13', '-0.08', '-0.06', '-0.02', '-0.03',
+  '-0.01', '-0.09', '+0.03', '+0.02',
+  /* Two more that live inside a sentence rather than in a cell: the
+     regressions threshold, and the safety floor. Dropping either went
+     unnoticed until a reviewer looked for them. */
+  '0.05', '0.95',
+];
+
+/* Made-up strings that are NOT two-decimal scores. The sweep below sees a
+   score and nothing else, so a duration, a case count, a timestamp or a
+   made-up case id walks straight past it — which is how a banner chip reading
+   "Last scored 29 Jul, 180 cases, 41 minutes" could sit above the boundary
+   with this whole file green.
+
+   Written out by hand, like the figures, and deliberately restricted to
+   strings distinctive enough that a real value from the working half cannot
+   collide with one. Bare counts the design prints in the comparison panel
+   ("3" and "11" cases below 0.70) are NOT here for that reason, and are named
+   in the NOT COVERED block above. */
+const INVENTED_PHRASES = [
+  '180 cases', '41 minutes', '02:14 UTC', '$3.18', '73% of sessions',
+  'Held since 29 Jul', 'first scored', 'Cases below 0.70',
+  'tc_0147', 'tc_0312', 'tc_0208', 'tc_0455', 'tc_0091',
+  '14 Jul', '30 Jun', '12 Jun', '28 May', '14 May', '2 May',
+];
+
+/* A score is written to two decimals everywhere on this pane, so this is the
+   shape of "a figure somebody could quote". It is asserted to appear only
+   inside the preview. Nothing real on this pane is written this way: the two
+   working tools print a 64-character digest, a byte count and a timestamp. */
+const SCORE = /\d\.\d\d(?!\d)/;
+
+function buildEvalsPage(dom, body) {
+  const el = (parent, tag, attrs = {}) => {
+    const node = dom.element(tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    parent.appendChild(node);
+    return node;
+  };
+  body.setAttribute('data-pane', 'evals');
+  body.className = 'is-booting';
+  const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
+  el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
+  el(body, 'main', { class: 'gate gate-failed gate-center', id: 'gateFailed', tabindex: '-1' });
+  const appGate = el(body, 'div', { class: 'gate gate-app' });
+  el(appGate, 'div', { id: 'app' });
+}
+
+/* Loads the page the way ops/evaluations.html loads it.
+
+   The session stub's hasRole() is session.js's own implementation rather than
+   a constant, so what the gating assertions exercise is the registry entry and
+   the branch on it, not an answer written into the stub. */
+async function bootPane(options = {}) {
+  const role = options.role || 'operator';
+  const calls = [];
+  const dom = makeDom({
+    tokens: TOKENS,
+    href: 'https://ops.example.invalid/ops/evaluations.html',
+  });
+  const body = dom.element('body');
+  dom.root.appendChild(body);
+  dom.doc.body = body;
+  buildEvalsPage(dom, body);
+
+  dom.window.crypto = webcrypto;
+  dom.window.btoa = value => Buffer.from(value, 'binary').toString('base64');
+  dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
+  dom.window.OpsSession = {
+    state: {
+      admin: { id: 'adm_1', displayName: 'Operator', email: 'operator@ops.invalid', role },
+      session: { expiresAt: new Date(Date.now() + 86_400_000).toISOString() },
+    },
+    boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
+    call: (endpoint, o) => {
+      calls.push({ endpoint, method: o && o.method });
+      if (options.call) return options.call(endpoint, o);
+      return Promise.reject(new Error('the pane must not read an API on boot'));
+    },
+    signOut: () => Promise.resolve(),
+    role: () => role,
+    hasRole: required => (!required || !required.length ? true : required.indexOf(role) !== -1),
+    daysLeft: () => 28,
+  };
+
+  vm.createContext(dom.window);
+  vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
+  vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
+  vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
+  vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-evaluations.js' });
+
+  for (let i = 0; i < 12; i += 1) await new Promise(r => setImmediate(r));
+
+  return { ...dom, body, calls, content: dom.doc.getElementById('content') };
+}
+
+const hasClass = (node, cls) => (node.getAttribute('class') || '').split(/\s+/).includes(cls);
+const isBand = node => node.tagName === 'SECTION' && hasClass(node, 'band');
+const within = (node, ancestor) => {
+  for (let n = node.parentNode; n; n = n.parentNode) if (n === ancestor) return true;
+  return false;
+};
+
+/* Everything a reader meets on the page EXCEPT the preview, as one string.
+   Four things this buys over asking each element for its own text:
+
+   - A phrase split across sibling elements is still found. <b>180</b> inside a
+     sentence is this file's own idiom (u-list-row bolds a score that way), and
+     a per-element sweep walks straight past it.
+   - It starts at <body>, not at #content, so the shell's live region is swept.
+     announce() is how a screen-reader operator receives every success message
+     on this pane, and the stamps are visual chips; an invented figure announced
+     there would reach a blind operator with nothing marking it invented.
+   - It collects text carried on ATTRIBUTES, not only textContent, and the LIVE
+     `value` a control is holding, which is a property and not always an
+     attribute — `expiry.value = ...` and `mediaType.value = ...` in this pane
+     set one without the other, and a sweep that asks getAttribute walks past
+     what is painted in the box. The attribute list is SPOKEN_ATTRS below and
+     that is the only place it is written down, because an enumeration repeated
+     in prose goes stale the round after the list is widened — which is how
+     `value` came to be missing from one and present in the other. Two shapes
+     justify the class: text PAINTED on screen (a field's value, a placeholder
+     shown until the operator types), and text a screen reader SUBSTITUTES for
+     the element's own (aria-label, title, alt). The second is worse than the
+     live region, because it also suppresses the real words underneath it. This
+     pane already uses all three idioms.
+   - There is one string and one place to be wrong, rather than a rule applied
+     per node.
+
+   Element boundaries join with a single space, the way allText does, so a
+   figure split MID-TOKEN across two elements is not found. That is disclosed
+   below rather than chased. */
+const SPOKEN_ATTRS = ['value', 'placeholder', 'title', 'aria-label',
+  'aria-description', 'aria-valuetext', 'alt', 'aria-roledescription'];
+
+function textOutside(node, excluded) {
+  if (!node || node === excluded) return '';
+  const own = node.textContent || '';
+  const spoken = node.getAttribute
+    ? SPOKEN_ATTRS.map(name => node.getAttribute(name) || '').join(' ')
+    : '';
+  /* The property, separately from the attribute of the same name. A control
+     whose value was assigned in JS has no value attribute at all. */
+  const held = typeof node.value === 'string' ? node.value : '';
+  const kids = (node.childNodes || []).map(kid => textOutside(kid, excluded)).join(' ');
+  return (own + ' ' + spoken + ' ' + held + ' ' + kids).replace(/\s+/g, ' ').trim();
+}
+
+/* A readable slice around a hit, so a failure names where to look. */
+const around = (haystack, needle) => {
+  const at = haystack.indexOf(needle);
+  return haystack.slice(Math.max(0, at - 60), at + needle.length + 60);
+};
+
+function scoresOutside(text) {
+  const out = [];
+  const re = new RegExp(SCORE.source, 'g');
+  let hit;
+  while ((hit = re.exec(text))) out.push(around(text, hit[0]));
+  return out;
+}
+
+const phrasesOutside = text => INVENTED_PHRASES
+  .filter(phrase => text.includes(phrase))
+  .map(phrase => `${phrase} — ${around(text, phrase)}`);
+
+function previewOf(dom) {
+  return find(dom.content, node => hasClass(node, 'preview'));
+}
+
+/* The stamp a band carries, as the word a reader sees plus whether it is the
+   working variant. Read off .band-end so a chip sitting somewhere else in the
+   band cannot stand in for the one in the status slot. */
+function bandStamp(section) {
+  const end = find(section, node => hasClass(node, 'band-end'));
+  if (!end) return null;
+  const chip = find(end, node => hasClass(node, 'u-tag'));
+  if (!chip) return null;
+  return { word: allText(chip), works: hasClass(chip, 'works') };
+}
+
+const bandTitle = section => allText(find(section, node => hasClass(node, 'band-title')));
+
+test('v2: the pane reads no API on boot', async () => {
+  const dom = await bootPane();
+  assert.deepEqual(dom.calls, [],
+    'both tools act on what the operator supplies and the scoring half has no API');
+});
+
+test('v2: every band in the preview is stamped invented and every band outside it is stamped working', async () => {
+  const dom = await bootPane();
+  const preview = previewOf(dom);
+  assert.ok(preview, 'the deferred scoring preview is missing');
+
+  const bands = findAll(dom.content, isBand);
+  const inside = bands.filter(b => within(b, preview));
+  const outside = bands.filter(b => !within(b, preview));
+
+  /* Neither half may be empty. A partition with one side empty is the shape
+     that stays green when every card is marked, or none is. */
+  assert.ok(inside.length >= 3, `the preview must hold the drawn bands, saw ${inside.length}`);
+  assert.ok(outside.length >= 2, `the working tools must be bands too, saw ${outside.length}`);
+  assert.equal(inside.length + outside.length, bands.length);
+
+  for (const section of inside) {
+    const stamp = bandStamp(section);
+    assert.ok(stamp, `preview band "${bandTitle(section)}" carries no stamp`);
+    assert.equal(stamp.word, 'Invented figures',
+      `preview band "${bandTitle(section)}" is stamped "${stamp.word}"`);
+    assert.equal(stamp.works, false,
+      `preview band "${bandTitle(section)}" carries the working stamp`);
+  }
+  for (const section of outside) {
+    const stamp = bandStamp(section);
+    assert.ok(stamp, `working band "${bandTitle(section)}" carries no stamp`);
+    assert.equal(stamp.word, 'Works now',
+      `working band "${bandTitle(section)}" is stamped "${stamp.word}"`);
+    assert.equal(stamp.works, true,
+      `working band "${bandTitle(section)}" carries the invented stamp`);
+  }
+});
+
+test('v2: no score reaches the page outside the preview', async () => {
+  const dom = await bootPane();
+  const offenders = scoresOutside(textOutside(dom.body, previewOf(dom)));
+  assert.deepEqual(offenders, [],
+    'a two-decimal figure outside the preview is a made-up number with no stamp over it');
+});
+
+test('v2: every invented figure the design prints is inside the preview', async () => {
+  const dom = await bootPane();
+  const preview = previewOf(dom);
+  /* Tokens rather than whole node text, because a figure is allowed to sit in
+     a sentence — the regressions threshold does. Trailing punctuation is
+     trimmed back to the last digit, so "0.85." matches and "ships." cannot. */
+  const printed = new Set(allText(preview).split(/\s+/)
+    .map(word => word.replace(/^[^0-9+-]+/, '').replace(/[^0-9]+$/, ''))
+    .filter(Boolean));
+  const missing = INVENTED_FIGURES.filter(figure => !printed.has(figure));
+  assert.deepEqual(missing, [],
+    'the drawn design lost a figure, or printed one somewhere this test cannot see it');
+});
+
+test('v2: the banner says the harness is not built and that the figures below are invented', async () => {
+  const dom = await bootPane();
+  const banner = find(dom.content, node => hasClass(node, 'soon'));
+  assert.ok(banner, 'the not-built banner is missing');
+  assert.equal(within(banner, previewOf(dom)), false, 'the banner must not be inside what it warns about');
+
+  const words = allText(banner);
+  assert.match(words, /not built yet/, 'the banner must say the harness is not built');
+  assert.match(words, /figures somebody made up/, 'the banner must say the figures are invented');
+  assert.match(words, /No harness/);
+  assert.match(words, /No stored scores/);
+
+  /* Order matters: a warning a reader meets after the thing it warns about has
+     already been read is not a warning. */
+  const flat = findAll(dom.content, () => true);
+  assert.ok(flat.indexOf(banner) < flat.indexOf(previewOf(dom)),
+    'the banner must come before the preview in reading order');
+});
+
+test('v2: the preview holds no control and the working bands do', async () => {
+  const dom = await bootPane();
+  const preview = previewOf(dom);
+  const CONTROL = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA']);
+
+  const dead = findAll(preview, node => CONTROL.has(node.tagName))
+    .map(node => `${node.tagName.toLowerCase()} "${allText(node)}"`);
+  assert.deepEqual(dead, [],
+    'a drawing of a pane must not put a control that changes nothing into the tab order');
+
+  /* Everything else the preview puts in the tab order, enumerated rather than
+     assumed absent: a table that scrolls sideways has to be reachable from a
+     keyboard, and that is the one thing in here allowed to take focus. It
+     changes nothing — it moves the view — and it carries a name. */
+  const focusable = findAll(preview, node => node.getAttribute('tabindex') === '0');
+  assert.equal(focusable.length, 1, 'the preview should hold exactly one focus stop');
+  assert.equal(hasClass(focusable[0], 'tbl-wrap'), true);
+  assert.equal(focusable[0].getAttribute('role'), 'region');
+  assert.match(focusable[0].getAttribute('aria-label') || '', /invented/i,
+    'the scroll region must carry a name, and the name must repeat the warning');
+
+  const working = findAll(dom.content, isBand).filter(b => !within(b, preview));
+  for (const section of working) {
+    assert.ok(findAll(section, node => CONTROL.has(node.tagName)).length > 0,
+      `working band "${bandTitle(section)}" has nothing to operate`);
+  }
+});
+
+test('v2: every meter in the preview is decoration beside a printed number', async () => {
+  const dom = await bootPane();
+  const preview = previewOf(dom);
+  const meters = findAll(preview, node => hasClass(node, 'meter'));
+  assert.ok(meters.length >= 5, `expected the drawn bars, saw ${meters.length}`);
+  for (const bar of meters) {
+    assert.equal(bar.getAttribute('aria-hidden'), 'true',
+      'a bar with no accessible name must not be announced as an unnamed thing');
+    assert.match(allText(bar.parentNode), /\d/,
+      'a bar is only decoration when its value is printed next to it');
+  }
+});
+
+test('v2: an operator is given the evidence form', async () => {
+  const dom = await bootPane({ role: 'operator' });
+  assert.ok(find(dom.content, node => hasClass(node, 'evidence-form')),
+    'an operator must get the real import form');
+  assert.equal(find(dom.content, node => hasClass(node, 'state-block')), null,
+    'an operator must not be shown a refusal');
+  assert.ok(find(dom.content, node => hasClass(node, 'dataset-form')));
+});
+
+test('v2: a viewer is refused the evidence form, told why, and keeps the rest of the pane', async () => {
+  const dom = await bootPane({ role: 'viewer' });
+  assert.equal(find(dom.content, node => hasClass(node, 'evidence-form')), null,
+    'a viewer must not be given the import form');
+
+  const refusal = find(dom.content, node => hasClass(node, 'state-block'));
+  assert.ok(refusal, 'a viewer must be told why the form is not there, not shown a gap');
+  assert.match(allText(refusal), /operator/i);
+
+  assert.ok(find(dom.content, node => hasClass(node, 'dataset-form')),
+    'a viewer keeps the tool their role can use');
+  assert.ok(previewOf(dom), 'a viewer sees the same deferred design');
+});
+
+test('v2: the pane keeps the registry note saying why it has no filters', async () => {
+  const dom = await bootPane();
+  const bar = find(dom.doc.body, node => hasClass(node, 'filters'));
+  assert.ok(bar, 'the filter bar carrying the note is missing');
+  assert.match(allText(bar),
+    /These actions use supplied declarations or evidence, not app, date or environment filters/);
+});
+
+test('v2: the consent boundary survives the restyle for every role', async () => {
+  for (const role of ['operator', 'viewer']) {
+    const dom = await bootPane({ role });
+    const callout = find(dom.content, node => hasClass(node, 'callout'));
+    assert.ok(callout, `the quarantine consent boundary is missing for ${role}`);
+    assert.match(allText(callout), /Quarantine is not permission to use evidence/);
+    assert.match(allText(callout), /do not create evaluation or training consent/);
+  }
+});
+
+/* Two facts a reader of this pane has to be able to trust, each found by a
+   reviewer as a green suite hiding a live defect.
+
+   The banner draws the boundary between the half that runs and the half that
+   is drawn, so nothing above that boundary may make a claim a reader could
+   quote. A chip there reading "Design agreed 12 Jul 2026" wearing the marker
+   this pane uses for "this really runs" shipped past every other test in this
+   file, because the sweep below only looks for a two-decimal score. */
+test('v2: the banner states no figure and claims nothing that runs', async () => {
+  const dom = await bootPane();
+  const banner = find(dom.content, node => hasClass(node, 'soon'));
+  assert.ok(banner, 'the coming-soon banner is gone');
+  const text = allText(banner);
+  assert.ok(!/\d/.test(text),
+    `the banner prints a figure, and a figure above the boundary is a claim: ${text}`);
+
+  /* And no stamp chip anywhere on the pane carries a figure. A stamp is a
+     status marker, so a digit inside one is a claim wearing a status. Every
+     chip the pane draws is a word: "Works now", "Invented figures",
+     "No access granted", "No harness", "No stored scores", "No alerting". */
+  const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
+  assert.ok(chips.length >= 6, `expected the drawn stamps, saw ${chips.length}`);
+  const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
+  assert.deepEqual(numeric, [],
+    'a stamp carries a figure, which is a claim wearing a status marker');
+
+  const preview = previewOf(dom);
+  const bands = findAll(dom.content, isBand);
+  const working = bands.filter(section => !within(section, preview));
+  assert.ok(working.length >= 2, `expected the working bands, saw ${working.length}`);
+  const marked = findAll(dom.content,
+    node => hasClass(node, 'u-tag') && hasClass(node, 'works'));
+  assert.ok(marked.length >= 2,
+    `nothing wears the working marker, so this test proves nothing: ${marked.length}`);
+  const stray = marked
+    .filter(node => !working.some(section => within(node, section)))
+    .map(node => allText(node));
+  assert.deepEqual(stray, [],
+    'the marker for "this really runs" is worn by something outside a working band');
+});
+
+/* A rise and a fall reached a screen reader as the same three characters,
+   because the direction lived only in an aria-hidden glyph and a tint.
+   assets/pane-overview.js:796 carries the same repair. */
+test('v2: a rise and a fall do not announce the same thing', async () => {
+  const dom = await bootPane();
+  const preview = previewOf(dom);
+  const pills = findAll(preview, node => hasClass(node, 'u-move'));
+  assert.ok(pills.length >= 10, `expected the drawn change pills, saw ${pills.length}`);
+  const rises = pills.filter(node => hasClass(node, 'up')).map(node => allText(node).trim());
+  const falls = pills.filter(node => hasClass(node, 'down')).map(node => allText(node).trim());
+  assert.ok(rises.length >= 1, `the design draws no rise, so this test proves nothing`);
+  assert.ok(falls.length >= 2, `the design draws ${falls.length} falls, expected the drawn set`);
+
+  const shared = rises.filter(text => falls.includes(text));
+  assert.deepEqual(shared, [],
+    'a rise and a fall announce the same text, so direction is carried by colour alone');
+  assert.deepEqual(rises.filter(text => !text.startsWith('+')), [],
+    'a rising change does not announce its sign');
+  assert.deepEqual(falls.filter(text => !text.startsWith('-')), [],
+    'a falling change does not announce its sign');
+});
+
+/* The sweep for two-decimal scores is the narrowest possible reading of "no
+   invented figure escapes the preview". A reviewer showed four made-up strings
+   leaving it with the suite green: a duration, a case count, a timestamp and a
+   made-up case id. These two tests widen it to the inventory, in both
+   directions, and the NOT COVERED block above states what is still outside
+   them. */
+test('v2: every invented phrase the design prints is inside the preview', async () => {
+  const dom = await bootPane();
+  const text = allText(previewOf(dom));
+  const missing = INVENTED_PHRASES.filter(phrase => !text.includes(phrase));
+  assert.deepEqual(missing, [],
+    'the drawn design stopped printing a made-up string, or moved it out of the preview');
+});
+
+test('v2: no invented phrase reaches the page outside the preview', async () => {
+  const dom = await bootPane();
+  const offenders = phrasesOutside(textOutside(dom.body, previewOf(dom)));
+  assert.deepEqual(offenders, [],
+    'a made-up string outside the preview is an unstamped claim');
+});
+
+/* Every sweep above reads the page as it boots, and the two working tools each
+   draw a card only AFTER a submit — a validation receipt and a quarantine
+   receipt. A reviewer printed round one's dated chip onto the receipt and the
+   whole suite stayed green: the partition was asserted over a DOM that does
+   not contain the half most likely to grow a claim, because that is where the
+   server's answer lands.
+
+   This boots the pane with a working transport, submits both forms, and runs
+   the three outward-facing sweeps again over the page that results. */
+async function bootPaneWithReceipts() {
+  const digest = 'b'.repeat(64);
+  const dom = await bootPane({
+    role: 'operator',
+    call: (endpoint, o) => {
+      const body = o && o.body;
+      const requestId = (body && body.requestId) || 'req_1';
+      if (body && body.operationId === 'ciel.dataset.validate') {
+        return Promise.resolve({
+          schemaVersion: 'ciel.operation.response.v1',
+          requestId,
+          operationId: 'ciel.dataset.validate',
+          status: 'success',
+          exitCode: 0,
+          resource: {
+            type: 'ciel.dataset-validation',
+            id: requestId,
+            revision: 1,
+            value: {
+              valid: true,
+              issues: [],
+              digests: [{ datasetId: 'dataset.example', revision: 1, sha256: digest }],
+            },
+          },
+        });
+      }
+      return Promise.resolve({
+        schemaVersion: 'ciel.operation.response.v1',
+        requestId,
+        operationId: 'ciel.evidence.quarantine',
+        status: 'success',
+        exitCode: 0,
+        resource: {
+          type: 'ciel.evidence',
+          id: 'evd_1',
+          revision: 2,
+          value: { artifactId: 'evd_1', state: 'quarantined', revision: 2 },
+        },
+      });
+    },
+  });
+
+  const input = dom.doc.getElementById('dataset-input');
+  assert.ok(input, 'the dataset input is gone');
+  input.value = JSON.stringify({
+    schemaVersion: 'ciel.dataset.declaration.v1',
+    datasets: [{
+      datasetId: 'dataset.example',
+      revision: 1,
+      purpose: 'evaluation',
+      minimization: 'aggregate',
+      retention: { policyId: 'ret.default', expiresAt: '2031-01-01T00:00:00.000Z' },
+    }],
+    fixtureDigests: [{ datasetId: 'dataset.example', revision: 1, sha256: digest }],
+  });
+  const bytes = new TextEncoder().encode('example');
+  const set = (id, value) => {
+    const node = dom.doc.getElementById(id);
+    assert.ok(node, `the ${id} control is gone`);
+    node.value = value;
+    return node;
+  };
+  set('evidence-source', 'synthetic');
+  set('evidence-profile', 'trace');
+  set('evidence-type', 'text/plain');
+  set('evidence-purpose', 'quality_review');
+  /* Inside the 90-day ceiling the form enforces, expressed in local wall-clock
+     fields the way the control does. */
+  const soon = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  set('evidence-expiry', `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-` +
+    `${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`);
+  const file = dom.doc.getElementById('evidence-file');
+  assert.ok(file, 'the evidence file control is gone');
+  file.files = [{ name: 'example.txt', async arrayBuffer() { return bytes.slice().buffer; } }];
+
+  const forms = findAll(dom.content, node => node.tagName.toLowerCase() === 'form' &&
+    (hasClass(node, 'dataset-form') || hasClass(node, 'evidence-form')));
+  assert.equal(forms.length, 2, `expected dataset and quarantine forms, saw ${forms.length}`);
+
+  /* One reading per submit, not one at the end. The shell's live region is a
+     single node that each announce() overwrites, so a figure announced by the
+     first tool is gone by the time the second has answered. Reading only the
+     final DOM would see the last announcement and call the rest covered.
+
+     Each reading waits for the RECEIPT, not for a fixed number of microtask
+     turns. A turn budget is a guess about machine speed: quarantine awaits
+     crypto.subtle.digest, which on a cold CI runner does not settle inside any
+     budget that is comfortable locally, and this test was red on ubuntu-latest
+     for five heads because of it while passing on every developer machine. */
+  const snapshots = [];
+  const receipts = ['Declarations valid', 'Quarantined, review required'];
+  for (let i = 0; i < forms.length; i += 1) {
+    forms[i].dispatch('submit', { preventDefault() {} });
+    await waitFor(
+      () => Boolean(find(dom.content, n => (n.textContent || '') === receipts[i])),
+      `the ${receipts[i]} receipt never rendered, so this test sweeps nothing`);
+    snapshots.push(textOutside(dom.body, previewOf(dom)));
+  }
+  return { ...dom, snapshots };
+}
+
+test('v2: the sweeps hold over the cards a submit draws, not only over the boot', async () => {
+  const dom = await bootPaneWithReceipts();
+  /* The receipt has to actually be on the page, or every assertion below is
+     about a DOM that never grew the thing it is sweeping for. */
+  const receipt = find(dom.content, node => (node.textContent || '') === 'Declarations valid');
+  assert.ok(receipt, 'the validation receipt never rendered, so this test sweeps nothing');
+  const quarantined = find(dom.content,
+    node => (node.textContent || '') === 'Quarantined, review required');
+  assert.ok(quarantined, 'the quarantine receipt never rendered, so this test sweeps nothing');
+
+  /* True by construction today: bootPaneWithReceipts asserts the dataset and quarantine forms and
+     pushes one reading each, and THAT assertion is what catches an unread
+     tool. This one holds the shape if a future edit makes the push
+     conditional. */
+  assert.equal(dom.snapshots.length, 2, 'one reading per submit');
+  for (const outside of dom.snapshots) {
+    assert.deepEqual(scoresOutside(outside), [],
+      'a two-decimal figure reached a card a submit drew, outside the preview');
+    assert.deepEqual(phrasesOutside(outside), [],
+      'a made-up string reached a card a submit drew, outside the preview');
+  }
+
+  const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
+  /* Nine at boot, including approval, plus the quarantine receipt's one.
+     The validation receipt carries no chip. */
+  assert.ok(chips.length >= 10,
+    `expected the boot stamps plus the quarantine receipt's stamp, saw ${chips.length}`);
+  const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
+  assert.deepEqual(numeric, [],
+    'a stamp on a card a submit drew carries a figure');
+});

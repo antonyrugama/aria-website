@@ -1,0 +1,57 @@
+name: Ops theme redraw
+
+# Guards one runtime edge in ops/assets/aria.js: switching the theme has to
+# repaint the charts.
+#
+# Chart colours are resolved at draw time out of the CSS custom properties, and
+# the tokens move with the theme, so a chart is only correct for the theme it
+# was drawn in. syncTheme() closes the gap with one call to redrawCharts().
+# Delete that call and every chart keeps the previous theme's palette — bright
+# dark-ramp strokes left on a white surface, which is the WCAG AA failure the
+# light palette exists to prevent (monorepo Stadiora/Aria#10042). Nothing
+# throws, no token is missing, no shape is unpainted, and the other browser
+# guard, scripts/check-ops-shell-v2.mjs, stays green: it reloads instead of
+# toggling. The unit suite is the other half of the coverage —
+# scripts/ops-aria-shell.test.mjs goes red on that deletion too, reading back
+# the attributes the renderer wrote against a hand-written DOM. This job is the
+# half that measures the resolved colour on a laid-out page, against the
+# palette aria.css really declares.
+#
+# A separate job from "Ops v2 shell" on purpose. That check stores a theme,
+# RELOADS, and measures a fresh page, which is correct in either theme because
+# the charts were drawn after theme.js had already decided. It never toggles, so
+# the edge is structurally invisible to it. See scripts/check-ops-theme-redraw.mjs.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
+
+on:
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-theme-redraw.mjs'
+      - '.github/workflows/ops-theme-redraw.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-theme-redraw.mjs'
+      - '.github/workflows/ops-theme-redraw.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  theme-redraw:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # Node 22 or newer, because the check drives headless Chrome over the
+      # DevTools Protocol through the global WebSocket rather than a package.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check every chart follows the theme button, both directions
+        run: node scripts/check-ops-theme-redraw.mjs
