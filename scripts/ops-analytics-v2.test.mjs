@@ -206,21 +206,40 @@ function usageFixture(over) {
         },
       },
     ],
+    /* Route-faithful for THIS window, re-derived from `buildCohorts`
+       (`opsUsageView.ts:897-943`) rather than drawn to suit the grid. Over
+       `2026-08-21` to `2026-09-20` exclusive, a signup Monday is admissible
+       iff `weekStart >= start && weekStart + 7d <= endExclusive`, so 24 Aug,
+       31 Aug and 7 Sep qualify and 14 Sep does not; `aged` is
+       `floor((endExclusive - weekStart) / 7d) - 1`, so they have 2, 1 and 0
+       whole later weeks inside the window; `widest` is 2, which is the length
+       of `offsets`; and a group is dropped only when its own size is zero,
+       which is why 7 Sep is present with every cell `not_aged`.
+
+       Round 8 raised this as an advisory: the earlier shape sent four offsets
+       and two rows, which no 30 day window can produce. Nothing was hiding
+       behind it, but a fixture the route cannot send is the thing rounds 4
+       and 5 both blocked on, so it is the route's shape now. `wideFixture`
+       below carries the 90 day shape, 11 offsets and 12 groups. */
     cohorts: [
       {
-        app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2', 'W3', 'W4'],
+        app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2'],
         rows: [
           {
             label: '24 Aug', size: 214,
             cells: [
               { basisPoints: 7103, returned: 152 }, { basisPoints: 5234, returned: 112 },
-              { basisPoints: 4112, returned: 88 }, { state: 'not_aged' },
             ],
           },
           {
             label: '31 Aug', size: 31,
             cells: [
-              { basisPoints: 8065, returned: 25 }, { basisPoints: 6129, returned: 19 },
+              { basisPoints: 8065, returned: 25 }, { state: 'not_aged' },
+            ],
+          },
+          {
+            label: '7 Sep', size: 58,
+            cells: [
               { state: 'not_aged' }, { state: 'not_aged' },
             ],
           },
@@ -228,13 +247,18 @@ function usageFixture(over) {
         note: cohortNote('Mobile'),
       },
       {
-        app: 'coaches', label: 'Coaches Web', offsets: ['W1', 'W2', 'W3', 'W4'],
+        app: 'coaches', label: 'Coaches Web', offsets: ['W1', 'W2'],
         rows: [
           {
             label: '24 Aug', size: 96,
             cells: [
               { basisPoints: 6667, returned: 64 }, { basisPoints: 5313, returned: 51 },
-              { basisPoints: 4479, returned: 43 }, { state: 'not_aged' },
+            ],
+          },
+          {
+            label: '31 Aug', size: 72,
+            cells: [
+              { basisPoints: 5694, returned: 41 }, { state: 'not_aged' },
             ],
           },
         ],
@@ -412,6 +436,28 @@ function tileText(dom, heading) {
   return found ? allText(found) : '';
 }
 
+/* Every text run under a node, once each. In the browser an element's text is
+   a child text node; in this harness `h()`'s `textContent` write lands on the
+   element itself, so a run is "an element that carries text of its own" either
+   way. What this is NOT is a count of matches in `allText`: that helper
+   returns `textContent + ' ' + each child's allText`, so a string under an
+   ancestor that also carries text is counted twice, and a phrase can be
+   fabricated across two adjacent nodes that never say it on their own.
+   Round 8's finding was a missing count, so the instrument has to be one. */
+function runs(node) {
+  const out = [];
+  (function walk(n) {
+    for (const child of (n && n.childNodes) || []) {
+      const own = String(child.textContent || '').replace(/\s+/g, ' ').trim();
+      if (own) out.push(own);
+      if (child.tagName) walk(child);
+    }
+  })(node);
+  return out;
+}
+
+const runCount = (node, re) => runs(node).filter((run) => re.test(run)).length;
+
 /* A card, by the text of its head. */
 function card(dom, heading) {
   return findAll(livePanel(dom), (n) => (n.className || '').split(' ').indexOf('card') !== -1)
@@ -538,7 +584,7 @@ test('a signup group under the floor is withheld as a whole row, never cell by c
   assert.ok(small, 'the small signup group left the table entirely');
   assert.match(allText(small), /Not reported, 31 people in the group, floor is 50/,
     'a group of 31 was reported: ' + allText(small));
-  assert.doesNotMatch(allText(small), /80\.0%|60\.0%/,
+  assert.doesNotMatch(allText(small), /80\.7%/,
     'the cells of a withheld row were drawn anyway');
   assert.equal(findAll(small, (n) => isTag(n, 'td')).length, 2,
     'the withheld row still drew one cell per week, so the rest can be read as a trend');
@@ -959,14 +1005,47 @@ test('a window with nothing stored says that once, not twice', async () => {
 test('a week a group has not reached is not a zero', async () => {
   const dom = await boot({});
   const cohort = card(dom, /Who comes back/);
-  const row = findAll(cohort, (n) => isTag(n, 'tr'))
-    .filter((r) => /^24 Aug/m.test(allText(r)))[0];
-  const cells = findAll(row, (n) => isTag(n, 'td'));
-  const last = cells[cells.length - 1];
+  const pick = (label) => findAll(cohort, (n) => isTag(n, 'tr'))
+    .filter((r) => new RegExp('^' + label).test(allText(r).trim()))[0];
 
-  assert.match(allText(last), /Not aged into this week yet/,
-    'a week the group has not reached was not named: ' + allText(last));
-  assert.equal(numerals(allText(last)), 0, 'a week nobody has reached printed a figure');
+  /* Three groups, three different amounts of aging, which is what the route
+     sends for this window: 24 Aug has reached both weeks, 31 Aug has reached
+     one, 7 Sep has reached neither.
+
+     The mixed row is read off the Coaches Web card, because Mobile's 31 Aug
+     group is 31 people against a floor of 50 and is withheld as a whole row
+     -- that is a different rule and its own test. Coaches Web's 31 Aug group
+     is 72, so its one reached week is drawn and its one unreached week is
+     named, side by side. */
+  const web = findAll(livePanel(dom),
+    (n) => (n.className || '').split(' ').indexOf('card') !== -1)
+    .filter((n) => /Who comes back/.test(allText(n)) && /Coaches Web/.test(allText(n)))[0];
+  assert.ok(web, 'the second app lost its retention card');
+  const partly = findAll(findAll(web, (n) => isTag(n, 'tr'))
+    .filter((r) => /^31 Aug/.test(allText(r).trim()))[0], (n) => isTag(n, 'td'));
+  /* Row shape, stated rather than assumed: the label is the row heading, the
+     first cell is the group's size, and one cell per offset follows. The
+     header row above asserts the same shape in words. */
+  assert.equal(partly.length, 3,
+    'the row is not size plus one cell per offset: ' + partly.map(allText).join(' | '));
+  assert.match(allText(partly[1]), /%/,
+    'a week the group HAS reached printed no figure: ' + allText(partly[1]));
+  assert.match(allText(partly[2]), /Not aged into this week yet/,
+    'a week the group has not reached was not named: ' + allText(partly[2]));
+  assert.equal(numerals(allText(partly[2])), 0,
+    'a week nobody has reached printed a figure');
+
+  /* And a group that has reached none of them is still a row, because the
+     route sends it: `buildCohorts` drops a group for a size of zero, never
+     for having aged into nothing. */
+  const fresh = findAll(pick('7 Sep'), (n) => isTag(n, 'td')).slice(1);
+  assert.equal(fresh.length, 2, 'the newest group lost its offset cells');
+  assert.equal(fresh.filter((c) => /Not aged into this week yet/.test(allText(c))).length, 2,
+    'a group that has reached no later week lost a cell to something else: '
+    + fresh.map(allText).join(' | '));
+  assert.equal(numerals(fresh.map(allText).join(' ')), 0,
+    'a group that has reached no later week printed a figure anyway');
+
   assert.doesNotMatch(allText(cohort), /n\/a/, 'an unreported cell printed a formatter fallback');
 });
 
@@ -991,7 +1070,7 @@ test('a week column is headed in words, from the offset the route sends', async 
   const heads = findAll(cohort, (n) => isTag(n, 'th') && n.getAttribute('scope') === 'col')
     .map((n) => allText(n).trim());
 
-  assert.deepEqual(heads, ['Week joined', 'People', 'Week 1', 'Week 2', 'Week 3', 'Week 4'],
+  assert.deepEqual(heads, ['Week joined', 'People', 'Week 1', 'Week 2'],
     'the offsets the route sends were not headed in words: ' + heads.join(' | '));
 });
 
@@ -1036,12 +1115,28 @@ test('the tiles are the answer figures, in its order, and never more than four',
 
 /* ========================== the widest answer ========================= */
 
-/* `offsets` is as long as the widest group has aged weeks, so the 90 day range
-   -- one of the four the bar offers, and where the insufficient state's own
-   button navigates to -- sends `W1` to `W11`. The 30 day fixture above sends
-   four, which is why four review rounds ran over a grid that was unreadable at
-   eleven. */
+/* The 90 day answer, re-derived from `buildCohorts` rather than drawn: over
+   `2026-06-22` to `2026-09-20` exclusive, twelve signup Mondays are admissible
+   -- 22 Jun through 7 Sep, because 14 Sep would end a day past the window --
+   and the earliest has `floor(90d / 7d) - 1 = 11` whole later weeks inside it,
+   so `offsets` runs `W1` to `W11` and the grid is twelve rows deep. Each
+   group's own `aged` falls by one down the list, which is why the staircase of
+   `not_aged` cells is a diagonal and the last row is entirely unreached.
+
+   90d is one of the four ranges the bar offers, and the one the insufficient
+   state's own button navigates to, so this is a shape an operator reaches in
+   two clicks. It is also the shape four review rounds ran over while the
+   fixture said four offsets: a grid that is legible at four and unreadable at
+   eleven looks identical in a test that never sends eleven.
+
+   Round 8 raised the group count as an advisory -- eleven offsets with four
+   groups is not a shape the route can produce, because `widest` is taken from
+   the same list the rows come from. Twelve now. */
 function wideFixture(over) {
+  const WEEKS = [
+    '22 Jun', '29 Jun', '6 Jul', '13 Jul', '20 Jul', '27 Jul',
+    '3 Aug', '10 Aug', '17 Aug', '24 Aug', '31 Aug', '7 Sep',
+  ];
   return usageFixture((u) => {
     u.window.range = '90d';
     u.window.days = 90;
@@ -1052,11 +1147,18 @@ function wideFixture(over) {
       return {
         ...cohort,
         offsets,
-        rows: ['22 Jun', '29 Jun', '6 Jul', '13 Jul'].map((label, row) => ({
+        rows: WEEKS.map((label, row) => ({
           label,
+          /* Above the 50 floor on every row: this fixture is about the width
+             of the grid, and a withheld row draws one wide cell instead of
+             eleven narrow ones. */
           size: 180 + row * 7 + index,
           cells: offsets.map((_, i) => (
-            i > 10 - row ? { state: 'not_aged' } : { basisPoints: 7200 - i * 430, returned: 100 - i }
+            /* `aged` is 11 for the first group and falls by one per week, and
+               a cell is drawn only at an offset the group has aged into. */
+            i + 1 > 11 - row
+              ? { state: 'not_aged' }
+              : { basisPoints: 7200 - i * 430, returned: 100 - i }
           )),
         })),
       };
@@ -1066,7 +1168,8 @@ function wideFixture(over) {
 }
 
 test('the widest window draws every week it sends', async () => {
-  const dom = await boot({ usage: wideFixture() });
+  const payload = wideFixture();
+  const dom = await boot({ usage: payload });
   const cohort = card(dom, /Who comes back/);
   const heads = findAll(cohort, (n) => isTag(n, 'th'))
     .map(allText)
@@ -1081,7 +1184,14 @@ test('the widest window draws every week it sends', async () => {
      "it fits now". */
   const bodyRows = findAll(cohort, (n) => isTag(n, 'tr'))
     .filter((r) => /^\d+ \w+/m.test(allText(r)));
-  assert.equal(bodyRows.length, 4, 'not every group was drawn');
+  /* Twelve is the count `buildCohorts` produces for this window, derived in
+     `wideFixture`'s docblock from the route's own admissibility rule. It is
+     stated here as well as read off the answer so that a fixture edit cannot
+     quietly move both sides together. */
+  assert.equal(payload.cohorts[0].rows.length, 12,
+    'the 90 day fixture stopped sending the twelve groups the route sends');
+  assert.equal(bodyRows.length, payload.cohorts[0].rows.length,
+    'not every group the answer sent was drawn');
   for (const row of bodyRows) {
     const cells = findAll(row, (n) => isTag(n, 'td') &&
       /\bu-(cell|na)\b/.test(n.className || ''));
@@ -1310,12 +1420,18 @@ test('a group is defined by the answer, not by the pane', async () => {
 test('the page never counts people without saying which people', async () => {
   /* The consent statement rides on `cohorts[].note`, which is right -- it is
      the route's own sentence, beside the groups it is about -- and it leaves
-     the page entirely when no group is drawn. `buildCohorts` skips an app with
-     no admissible week (`opsUsageView.ts:932`), and on a 7 day window no week
-     is ever admissible: the only start inside the window is the window's own,
-     and `floor(7d / 7d) - 1` is zero aged weeks. So one of the four ranges the
-     bar offers prints headcounts, session totals and per-feature shares of
-     people with nothing on screen saying they are consenting accounts only. */
+     the page entirely when no group is drawn. `buildCohorts` skips an app
+     whose widest admissible signup week has aged into nothing
+     (`opsUsageView.ts:932`): on 7d always, because the only admissible start
+     is the window's own and `floor(7d / 7d) - 1` is zero aged weeks, and on
+     14d on six weekdays in seven, because its eight-day admissible interval
+     holds two signup weeks only when the window ends on one. 13 of the 28
+     range-and-weekday combinations print headcounts, session totals and
+     per-feature shares of people with nothing on screen saying they are
+     consenting accounts only.
+
+     The gate is `cohorts.length` and never the range, which is why the three
+     directions below are driven by the groups rather than by `window.range`. */
   const week = await boot({
     usage: usageFixture((u) => {
       u.window.range = '7d';
@@ -1332,6 +1448,23 @@ test('the page never counts people without saying which people', async () => {
   assert.match(weekText, /1,061/, 'the page stopped counting people, so there is nothing to say');
   assert.match(weekText, /Consenting accounts only/,
     'a range with no groups counted people and never said which people: ' + weekText);
+
+  /* A fourth direction, added at round 8: the gate is the groups, so a 14 day
+     answer with no groups -- which is what the route sends on six weekdays in
+     seven -- gets the pill too. A pill written against `range === '7d'` passes
+     the three directions above and fails this one. */
+  const fortnight = await boot({
+    usage: usageFixture((u) => {
+      u.window.range = '14d';
+      u.window.days = 14;
+      u.window.start = '2026-09-06T00:00:00.000Z';
+      u.window.reportingStart = '2026-09-06';
+      u.window.daysCovered = 14;
+      u.cohorts = [];
+    }),
+  });
+  assert.match(liveText(fortnight), /Consenting accounts only/,
+    'a 14 day answer with no groups counted people and never said which people');
 
   /* Read from the answer, not written here: an answer that does not report the
      gate at ingest does not get the pane asserting it. */
@@ -1402,22 +1535,78 @@ test('the versions table says whose sessions the share is of', async () => {
     'the card head printed a row-level sentence as the column-level one');
 });
 
-test('the coverage figure is printed once', async () => {
+test('the coverage figure is printed once, on every answer that carries one', async () => {
   /* 69.3% report, 30.7% do not, and coverage is 92.0% are the same reading of
-     the same thing. The split card prints it as a pill; the two card footers
-     that restated it are gone, and what survives of the feature footer is the
-     method with no number in it. */
-  const dom = await boot({});
-  const live = livePanel(dom);
-  const feet = findAll(live, (n) => (n.className || '').includes('card-foot'));
-  const footText = feet.map(allText).join(' | ');
+     the same thing, so the pane prints it in exactly one slot and drops the
+     route's two sentences that restate it.
 
-  assert.doesNotMatch(footText, /\d/,
-    'a card footer carries a figure that is already drawn elsewhere: ' + footText);
-  assert.doesNotMatch(allText(live), /does not\s+report feature use/,
-    'the shortfall sentence is back, restating the coverage pill as its complement');
-  assert.match(footText, /Only seen on app versions that report feature use/,
-    'the method behind the feature figures is not stated anywhere: ' + footText);
+     Round 8's finding was that "exactly one" was tested in one direction only:
+     every assertion here was satisfied by ZERO printings, so deleting the pill
+     left the suite green. Both directions now, and on both shapes of answer
+     the bar can ask for -- `scope=all` sends two apps, `scope=mobile` and
+     `scope=coaches` send one, which is two of the three values it offers, and
+     on those the split card has no column to hang a pill on.
+
+     Counted as text RUNS, not as matches in `allText`: that helper repeats a
+     node's text once per ancestor, so a count taken from it measures nesting
+     depth. */
+  const both = await boot({});
+  const bothLive = livePanel(both);
+
+  assert.equal(runCount(bothLive, /^92\.0% of sessions report$/), 1,
+    'Mobile\'s coverage figure is printed ' + runCount(bothLive, /^92\.0% of sessions report$/)
+    + ' times on a two app answer, not once: ' + runs(bothLive).join(' | '));
+  assert.equal(runCount(bothLive, /^Every session reports$/), 1,
+    "Coaches Web's coverage is not printed exactly once: " + runs(bothLive).join(' | '));
+
+  /* One app: the answer the figure used to vanish from entirely. The tiles are
+     platform figures and carry no coverage, and `appColumn` never runs. */
+  const one = await boot({
+    search: '?scope=mobile',
+    usage: usageFixture((u) => {
+      u.apps = u.apps.slice(0, 1);
+      u.filters.app = 'mobile';
+    }),
+  });
+  const oneLive = livePanel(one);
+  assert.equal(runCount(oneLive, /^92\.0% of sessions report$/), 1,
+    'a one app answer printed the coverage figure '
+    + runCount(oneLive, /^92\.0% of sessions report$/)
+    + ' times, while the version and feature cards drop the route\'s two sentences about '
+    + 'it on the ground that it is already on screen: ' + runs(oneLive).join(' | '));
+
+  /* Null is a reading too, and it is the reading that says there is no
+     shortfall rather than a shortfall of everything. */
+  const none = await boot({
+    search: '?scope=mobile',
+    usage: usageFixture((u) => {
+      u.apps = u.apps.slice(0, 1);
+      u.apps[0].coverageBasisPoints = null;
+    }),
+  });
+  const noneLive = livePanel(none);
+  assert.equal(runCount(noneLive, /^Coverage not reported$/), 1,
+    'an unmeasured coverage on a one app answer said nothing at all: '
+    + runs(noneLive).join(' | '));
+  assert.equal(runCount(noneLive, /of sessions report$/), 0,
+    'an unmeasured coverage was drawn as a figure anyway');
+
+  /* And the other half of "once": the two sentences the route sends carrying
+     the same figure stay dropped, on both shapes of answer. */
+  [['two apps', bothLive], ['one app', oneLive]].forEach(function (pair) {
+    const shape = pair[0];
+    const live = pair[1];
+    const feet = findAll(live, (n) => (n.className || '').includes('card-foot'));
+    const footText = feet.map(allText).join(' | ');
+    assert.doesNotMatch(footText, /\d/,
+      'a card footer carries a figure that is already drawn elsewhere, on ' + shape
+      + ': ' + footText);
+    assert.doesNotMatch(allText(live), /does not\s+report feature use/,
+      'the shortfall sentence is back on ' + shape + ', restating the pill as its complement');
+    assert.match(footText, /Only seen on app versions that report feature use/,
+      'the method behind the feature figures is not stated anywhere on ' + shape
+      + ': ' + footText);
+  });
 
   /* The method line is conditional on the answer carrying one, not written
      unconditionally: an answer whose versions all report has no caveat to

@@ -603,12 +603,23 @@
      The statement lives in `cohorts[].note` -- the route's own sentence,
      printed beside the groups it is about -- and that is where it belongs. But
      `buildCohorts` drops every group whose week is not wholly inside the window
-     and then skips the app when none survives (`opsUsageView.ts:908`, `:932`),
-     and on a 7 day window no week ever survives: the only admissible start is
-     the window's own, and `floor(7d / 7d) - 1` is zero aged weeks. `7d` is one
-     of the four ranges the bar offers, so on that range the band does not
-     render and the page prints headcounts and per-feature shares of people with
-     nothing saying which people.
+     and then skips the app when the widest survivor has aged into nothing
+     (`opsUsageView.ts:908-909`, `:932`), and two of the bar's four ranges hit
+     that:
+
+       7d  -- the only admissible signup week is the window's own, and
+              `floor(7d / 7d) - 1` is zero aged weeks. No groups, every day.
+       14d -- the admissible interval is eight days wide, so it holds two
+              signup weeks only when the window ends ON one. On the other six
+              weekdays it holds one, aged zero, and the app is skipped.
+
+     So the band is missing on 13 of the 28 range-and-weekday combinations, not
+     on one range, and the gate below is `cohorts.length`, which is the fact
+     that decides it, rather than the range, which is not. Round 8 raised this
+     comment: the code was right and the sentence was not.
+
+     Where it happens, the page prints headcounts and per-feature shares of
+     people with nothing saying which people.
 
      Four words rather than the route's four sentences (`consent.detail`),
      because this is the slot's second job and not its own card, and the pane
@@ -740,10 +751,32 @@
 
   /* ------------------------------------------------------------ the split */
 
+  /* Coverage is a share of sessions on a reporting app version rather than a
+     rate over people, so the reporting floor does not apply to it. What does
+     apply is that an unreported coverage is not a shortfall: it says so.
+
+     This pill is the pane's ONLY printing of the figure -- the version card's
+     footer and the feature card's coverage sentence are both dropped on the
+     ground that it is already on screen -- so it has to appear on every answer
+     that carries one, including the answers that have no columns to hang it
+     on. `scope=mobile` and `scope=coaches` are two of the three values the
+     bar offers and both send one app. */
+  function coveragePill(app) {
+    var coverage = num(app.coverageBasisPoints);
+    return h('span', {
+      className: 'pill' + (coverage !== null && coverage < 10000 ? ' warn' : ''),
+      text: coverage === null ? 'Coverage not reported'
+        : coverage === 10000 ? 'Every session reports'
+        : fmt.percent(coverage) + ' of sessions report'
+    });
+  }
+
   /* One column per app: independent columns with no row that adds them.
      A single app is not an empty comparison, it is a comparison that cannot
      exist, so it says that rather than drawing one column and calling it a
-     split. */
+     split. The app's own figures are not repeated here because the headline
+     tiles are that one app when it is the whole selection -- except its
+     coverage, which the tiles do not carry and nothing else prints. */
   function splitCard(data) {
     var apps = list(data.apps);
     var noStored = hasNoStoredDays(data);
@@ -755,10 +788,13 @@
           ? 'Only ' + apps[0].label + ' is in this selection, so there is nothing to compare it with.'
           : 'No app reported over this window.'
       ], 3);
-      if (apps.length === 1 && S.filters().scope !== 'all') {
-        block.appendChild(h('div', { className: 'row mt-sm' }, [
-          S.link(hrefWith('scope', 'all'), 'Show every app')
-        ]));
+      if (apps.length === 1) {
+        block.appendChild(h('div', { className: 'row mt-sm' }, [coveragePill(apps[0])]));
+        if (S.filters().scope !== 'all') {
+          block.appendChild(h('div', { className: 'row mt-sm' }, [
+            S.link(hrefWith('scope', 'all'), 'Show every app')
+          ]));
+        }
       }
       card.appendChild(block);
       return card;
@@ -787,16 +823,9 @@
       ])
     ]);
 
-    /* Coverage is a share of sessions on a reporting app version rather than a
-       rate over people, so the reporting floor does not apply to it. What does
-       apply is that an unreported coverage is not a shortfall: it says so. */
-    var coverage = num(app.coverageBasisPoints);
-    head.appendChild(h('span', {
-      className: 'pill' + (coverage !== null && coverage < 10000 ? ' warn' : ''),
-      text: coverage === null ? 'Coverage not reported'
-        : coverage === 10000 ? 'Every session reports'
-        : fmt.percent(coverage) + ' of sessions report'
-    }));
+    /* Coverage: drawn by `coveragePill`, whose docblock carries the reason
+       this is the figure's only slot. */
+    head.appendChild(coveragePill(app));
 
     var column = h('div', { className: 'u-vs-side' }, [head]);
 
@@ -1003,9 +1032,10 @@
     ]));
 
     /* `features.coverageNote` carries two facts: that feature use is only
-       observed on app versions that report it, and this window's coverage
-       figure. The figure is already a pill in the split card, so only the
-       method survives, and it survives in nine words rather than twenty. */
+       observed on app versions that report it, and the worst app's coverage
+       figure. The figure is `coveragePill`, which draws on every answer that
+       carries one, so only the method survives here, and it survives in nine
+       words rather than twenty. */
     if (features.coverageNote) {
       card.appendChild(h('div', { className: 'card-foot' }, [
         S.icon('info'),
@@ -1074,11 +1104,14 @@
       h('table', { className: 'tbl u-vers' }, [h('thead', {}, [headRow]), body])
     ]));
 
-    /* No footer. `coverage.shortfall.detail` is the complement of the
-       coverage pill the split card already prints - 30.7% did not report is
-       69.3% did - and the Reporting column beside it names which versions,
-       which is the part an operator acts on. A fact already on screen does not
-       also get a sentence. */
+    /* No footer. `coverage.shortfall.detail` is the complement of the figure
+       `coveragePill` prints - 30.7% did not report is 69.3% did - and the
+       Reporting column beside it names which versions, which is the part an
+       operator acts on. A fact already on screen does not also get a
+       sentence. The pill is what makes "already on screen" true here: the
+       route sends `shortfall` for the worst app whether or not there are two
+       apps to compare, so before the pill moved out of the column head this
+       drop left one-app answers with the caveat and not the magnitude. */
     return card;
   }
 

@@ -1231,6 +1231,48 @@ is not a complete diff: it names the departures that carry a decision.
    and an end for one, and a guessed window is worse than a stated refusal.
 
 `assets/pane-run-history-v2.css` carries this pane's own shapes.
+
+### Problems on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/alerts.html` in the Aria monorepo is the approved design. The pane
+follows its structure, its drill-down paths and the rules its README calls normative.
+
+As with Overview, the list below is **not a complete diff against the mock**. It names the
+departures that carry a decision. Wording and ordering differ in more places than are listed,
+because the mock is a static page with hand-written sample text and the pane writes its words
+from the answer.
+
+1. **No drawer and no modal.** The mock opens a problem in a side drawer and closes one in a
+   dialog. The detail expands in place under the card instead, with `aria-expanded` and
+   `aria-controls`, and Close is an inline form. At 375px a modal is a focus trap over a page
+   the operator still needs to read, and a second thing that can overflow sideways; the v1
+   drawer also lived in `operate.css`, which a v2 page cannot load.
+2. **No meter on a problem card.** The answer carries an observed value and a threshold and no
+   scale to put them on. A bar between two numbers with no axis is the budget-bar problem from
+   Overview in another shape.
+3. **No "right now" column in the rules table.** `GET /api/ops/alerts/rules` sends each rule's
+   threshold and the verdict of its last evaluation, and no current reading. The table's foot
+   says that rather than leaving a reader to wonder where the column went.
+4. **No volume chart.** The mock draws problems per day over 30 days. The problems read is capped
+   at 100 with no second page, so a chart drawn from it would be short by exactly the recent days
+   it is about. The card in that slot states what the sample can and cannot answer.
+5. **Six facts the mock shows are absent, for the same reason — no source.** People affected by a
+   problem; snooze and mute; how many times a reminder has been sent; an "Add a rule" control;
+   the share of problems found by a rule rather than by a person; and a note attached to taking a
+   problem on. None is in any of the three answers, and the API is unchanged by this work.
+6. **The routing card is v1's, not the mock's.** Delivery is a real operational fact — the rules
+   answer carries each channel's last delivery status, its last failure reason and its
+   consecutive-failure count — and a page that claims alerting is armed without saying whether
+   anything can be delivered is claiming the wrong thing.
+7. **The rule switch is a checkbox.** The mock draws a `<button>` with a styled child. A real
+   `<input type="checkbox" role="switch">` is what a screen reader and a keyboard already know,
+   so the knob is a `::after` on the input.
+
+The close note is the one piece of the mock's sample text that is **content rather than filler**.
+It is printed from the problem's own record — the `closed` event's `detail.note` in
+`GET /api/ops/alerts/problems/:id` — and the closed list says where to find it rather than
+dropping it.
+
 ### People and usage on v2: where the pane departs from the mock
 
 `docs/mocks/ops-dashboard-v2/analytics.html` in the Aria monorepo is the approved design.
@@ -1281,8 +1323,10 @@ answer.
    why, since these are fields the answer carries — read as a sweep of `OpsUsagePayload`, so
    every non-optional member the pane does not read is on this list:
    - `coverage.shortfall.detail` was the versions card's footer. It is the complement of the
-     coverage pill the split card already prints — 30.7% did not report *is* 69.3% did — and the
-     `Reporting` column beside it names which versions, which is the part an operator acts on.
+     coverage pill — 30.7% did not report *is* 69.3% did — and the `Reporting` column beside it
+     names which versions, which is the part an operator acts on. What makes *already on screen*
+     true is departure 16: the pill is drawn on every answer that carries a figure, not only on
+     the ones with two columns.
    - `features.coverageNote` was the feature card's footer, twenty words carrying that same
      coverage figure a third time. The method survives as nine: *Only seen on app versions that
      report feature use.* The number does not.
@@ -1313,46 +1357,6 @@ answer.
    applies to every rate. The remodel drops the card rather than carrying dead code that
    contradicts the pane's own contract; the mock does not draw one either.
 
-### Problems on v2: where the pane departs from the mock
-
-`docs/mocks/ops-dashboard-v2/alerts.html` in the Aria monorepo is the approved design. The pane
-follows its structure, its drill-down paths and the rules its README calls normative.
-
-As with Overview, the list below is **not a complete diff against the mock**. It names the
-departures that carry a decision. Wording and ordering differ in more places than are listed,
-because the mock is a static page with hand-written sample text and the pane writes its words
-from the answer.
-
-1. **No drawer and no modal.** The mock opens a problem in a side drawer and closes one in a
-   dialog. The detail expands in place under the card instead, with `aria-expanded` and
-   `aria-controls`, and Close is an inline form. At 375px a modal is a focus trap over a page
-   the operator still needs to read, and a second thing that can overflow sideways; the v1
-   drawer also lived in `operate.css`, which a v2 page cannot load.
-2. **No meter on a problem card.** The answer carries an observed value and a threshold and no
-   scale to put them on. A bar between two numbers with no axis is the budget-bar problem from
-   Overview in another shape.
-3. **No "right now" column in the rules table.** `GET /api/ops/alerts/rules` sends each rule's
-   threshold and the verdict of its last evaluation, and no current reading. The table's foot
-   says that rather than leaving a reader to wonder where the column went.
-4. **No volume chart.** The mock draws problems per day over 30 days. The problems read is capped
-   at 100 with no second page, so a chart drawn from it would be short by exactly the recent days
-   it is about. The card in that slot states what the sample can and cannot answer.
-5. **Six facts the mock shows are absent, for the same reason — no source.** People affected by a
-   problem; snooze and mute; how many times a reminder has been sent; an "Add a rule" control;
-   the share of problems found by a rule rather than by a person; and a note attached to taking a
-   problem on. None is in any of the three answers, and the API is unchanged by this work.
-6. **The routing card is v1's, not the mock's.** Delivery is a real operational fact — the rules
-   answer carries each channel's last delivery status, its last failure reason and its
-   consecutive-failure count — and a page that claims alerting is armed without saying whether
-   anything can be delivered is claiming the wrong thing.
-7. **The rule switch is a checkbox.** The mock draws a `<button>` with a styled child. A real
-   `<input type="checkbox" role="switch">` is what a screen reader and a keyboard already know,
-   so the knob is a `::after` on the input.
-
-The close note is the one piece of the mock's sample text that is **content rather than filler**.
-It is printed from the problem's own record — the `closed` event's `detail.note` in
-`GET /api/ops/alerts/problems/:id` — and the closed list says where to find it rather than
-dropping it.
 10. **No median-session tile.** The mock draws one, and the metric union the route can send is
     `count`, `rate` or `decimal` — there is no duration in it, and the four figures it names per
     app are active people, sessions, sessions per person and the share who opened a feature. A
@@ -1389,16 +1393,34 @@ dropping it.
     when the covered span is shorter than the window and not empty —
     `daysCovered: 0` is a different statement, and every stored-day figure already reads
     **not reported** with its reason attached.
-15. **A third pill in that head on one range only: Consenting accounts only.** The consent
-    statement is the route's, and its home is the last sentence of `cohorts[].note`, beside the
-    groups it is about. `buildCohorts` skips an app with no admissible signup week
-    (`opsUsageView.ts:932`), and on a **7 day** window none is ever admissible — the only start
-    inside the window is the window's own, and `floor(7d / 7d) - 1` is zero aged weeks — so on
-    one of the four ranges the bar offers the band does not render and the statement leaves the
-    page while the headcounts stay. Drawn only where no group is drawn, and read from
-    `consent.enforcedAt` rather than written here. Four words rather than `consent.detail`'s
-    four sentences: the pane does not restate a paragraph it has a shorter true form of, and the
-    gate itself stays at ingest.
+15. **A third pill in that head wherever no group is drawn: Consenting accounts only.** The
+    consent statement is the route's, and its home is the last sentence of `cohorts[].note`,
+    beside the groups it is about. `buildCohorts` skips an app whose widest admissible signup
+    week has aged into nothing (`opsUsageView.ts:932`), which happens on **7d** always — the
+    only admissible start is the window's own and `floor(7d / 7d) - 1` is zero aged weeks — and
+    on **14d** on every weekday but the one the window ends on, because there the admissible
+    interval is eight days wide and holds two signup weeks only when it ends on one. That is
+    **13 of the 28 range-and-weekday combinations**, not one range: the band does not render and
+    the statement leaves the page while the headcounts stay. Drawn where no group is drawn —
+    gated on `cohorts.length`, which is the fact that decides it, and never on the range, which
+    is not — and read from `consent.enforcedAt` rather than written here. Four words rather than
+    `consent.detail`'s four sentences: the pane does not restate a paragraph it has a shorter
+    true form of, and the gate itself stays at ingest.
+16. **The coverage pill survives the split card refusing to draw.** `scope=mobile` and
+    `scope=coaches` are two of the three values the bar offers and both send one app, so
+    `appColumn` never runs and the card says *No split to draw* instead. The headline tiles carry
+    no coverage figure, so before this the figure was printed **zero** times on those two
+    selections — while the versions and feature cards both drop the route's sentence about it on
+    the ground that it is already on screen, and the feature card still prints *Only seen on app
+    versions that report feature use*, telling the operator the shares are undercounted without
+    the magnitude. `coveragePill` now draws in the one-app state block as well as in a column,
+    which is one printing on every answer that carries a figure. Round 8 finding.
+
+Two invariants on this pane are held by its own `node:test` file and by measurement in review,
+not by a repo guard: no browser guard renders `ops/analytics.html`, because
+`scripts/check-ops-narrow-overflow.mjs` renders the Problems pane and
+`scripts/check-ops-theme-redraw.mjs` renders the shell demo. Tracked as
+[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462).
 
 ### Where this pane departs from the shared page furniture
 
