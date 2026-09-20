@@ -169,6 +169,9 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
   .hmot { background: #FFFFFF; outline: 4px solid #FFFFFF; outline-offset: 6px;
     transition: outline-color 3s linear; }
   .hmot:focus-visible { outline-color: #767676; }
+  .caseflush { margin: 150px 150px 150px 0; background: #FFFFFF; }
+  .hedge { background: #000000; }
+  .hedge:focus-visible { outline: 4px solid #CCCCCC; outline-offset: 6px; }
   .h9wrap { position: relative; width: 140px; height: 60px; background: #CCCCCC; }
   .h9half { position: absolute; left: 0; top: 0; width: 70px; height: 60px; background: #FFFFFF; }
   .h9 { position: absolute; left: 50px; top: 18px; width: 40px; height: 24px; background: #FFFFFF; }
@@ -186,6 +189,7 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
 <div class="case"><div class="wrap"><button class="h8"></button></div></div>
 <div class="case"><div class="wrap"><div class="h7wrap"><button class="h7"></button><div class="h7far"></div></div></div></div>
 <div class="case"><div class="wrap"><div class="h9wrap"><div class="h9half"></div><button class="h9"></button></div></div></div>
+<div class="caseflush"><button class="hedge"></button></div>
 </body></html>`;
 
 const server = http.createServer((req, res) => {
@@ -411,9 +415,11 @@ function over(fg, bg) {
    white itself does it: `color-mix(in srgb, oklch(1 0 0) 50%, white)` computes
    here to `color(srgb 0.999935 1.00003 1.00004)`. A gate at exactly 0..1
    refuses that, which means it refuses pure white and fails the run on a
-   colour nothing is wrong with. `oklab` and `lab` overshoot the same way; the
-   largest seen is 4e-5, a twenty-five-thousandth of the window. Both ends are
-   pinned in part F2 rather than by this paragraph — the shape guards there
+   colour nothing is wrong with. `oklab` and `lab` overshoot the same way. How
+   FAR they overshoot is not stated here; part F2 computes it from the
+   browser's own serialisation and prints it as `overshootFloor`, because a
+   magnitude typed into a comment is what Stadiora/Aria#10365 was. Both ends
+   are pinned in part F2 rather than by this paragraph — the shape guards there
    bracket this constant from below, and a bound assertion caps it at one byte
    from above, because a window written in terms of itself is not a rounding
    allowance. The cap is a byte and not this half-byte on purpose: asserting
@@ -630,8 +636,9 @@ const FOCUS_ADJACENT_RADIUS = 1;
 
 /* Below this many unchanged pixels beside the ring there is nothing to take a
    worst-of over, so the site is refused instead of judged on a handful of
-   corner pixels. Fail-closed for a shape this page does not currently
-   produce: the thinnest ring it paints carries 119. */
+   corner pixels. How much headroom the shell actually has over this floor is
+   not stated here — a number typed in a comment is exactly what
+   Stadiora/Aria#10365 was. The run prints the thinnest sample it took. */
 const FOCUS_MIN_ADJACENT = 8;
 
 /* Group a list of [r,g,b] pixels into surfaces the same way sampleBackdrops
@@ -1773,11 +1780,24 @@ async function measureFocusIndicators(where) {
       rows.push({ ...row, refused: 'focusing it changes no pixel, so it has no visible focus indicator' });
       continue;
     }
-    if (measured.onEdge) {
-      rows.push({ ...row, refused: `its focus indicator reaches the edge of a whole-document photograph, ` +
-        'so part of it could not be seen' });
-      continue;
-    }
+    /* There is deliberately no "the ring touched the edge of the photograph"
+       refusal here. A clip SMALLER than the document can truncate a ring, and
+       the escalation above is what handles that: widen and look again. By the
+       time a row gets here the clip is either large enough that nothing
+       reached its border, or it is the whole document — whose borders are the
+       document's own. Nothing exists beyond them to photograph, and anything
+       painted out there is not painted for a keyboard user either.
+
+       Refusing at the whole-document clip asserted something this tool cannot
+       know, and it was not theoretical: ops/assets/aria.css's .skip carries
+       `box-shadow: ..., var(--shadow-2)` and moves to top: 12px when focused,
+       so its shadow reaches y=0 on Linux and does not on macOS. Four
+       dark-theme measurements were refused on one platform and taken on the
+       other, over a ring nowhere near the edge of anything.
+
+       What protects the measurement at this clip is what protects it at every
+       other: no changed pixel is a refusal, no core pixel is a refusal, and
+       fewer than FOCUS_MIN_ADJACENT neighbours is a refusal. */
 
     /* Innermost ancestor-or-self carrying an outline. Ancestor-or-self
        because `:focus-within` on a wrapper is a legitimate way to indicate
@@ -1845,7 +1865,8 @@ async function measureFocusIndicators(where) {
             if (core[yy * W + xx]) near = true;
           }
         }
-        if (near) adjacent.push([after.data[p * 4], after.data[p * 4 + 1], after.data[p * 4 + 2]]);
+        if (near) adjacent.push([after.data[p * 4], after.data[p * 4 + 1], after.data[p * 4 + 2],
+          after.data[p * 4 + 3]]);
       }
     }
     row.adjacentPx = adjacent.length;
@@ -1858,14 +1879,10 @@ async function measureFocusIndicators(where) {
        as PNG colour type 2 here, which has no alpha channel at all, so this
        cannot fire today. It is here because a decoder change that started
        handing back type 6 would otherwise let a translucent surface through
-       as though it were the colour it is composited over. */
-    let translucent = 0;
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const p = y * W + x;
-        if (!changed[p] && after.data[p * 4 + 3] !== 255) translucent++;
-      }
-    }
+       as though it were the colour it is composited over. Counted over the
+       adjacency set, not over the clip, so if it ever does fire the number in
+       the message is the number of pixels the message is about. */
+    const translucent = adjacent.filter((px) => px[3] !== 255).length;
     if (translucent) {
       rows.push({ ...row, refused: `${translucent} pixel(s) beside its ring are translucent, so their ` +
         'colour depends on something this photograph does not contain' });
@@ -1968,8 +1985,10 @@ async function measureFocusIndicators(where) {
  *      to prove the adjacency is anchored on the ring and on the ring
  *      exactly, a button straddling a colour seam, whose one ring lands on
  *      two surfaces at 2.83:1 and 4.54:1, to prove the worse of them decides,
- *      and a ring three seconds into a colour transition, to prove the two
- *      photographs are of the same page (Stadiora/Aria#10634).
+ *      a ring three seconds into a colour transition, to prove the two
+ *      photographs are of the same page, and a button flush against x=0
+ *      whose ring runs off the document, to prove the document's own edge is
+ *      not a truncation (Stadiora/Aria#10634).
  *
  * NOT COVERED, on purpose — this is the list of exclusions decided, not an
  * inventory of every blind spot, because one nobody has thought of is by
@@ -1984,9 +2003,18 @@ async function measureFocusIndicators(where) {
  * sweep specifically, that a ring is judged against a surface it only touches
  * round a CURVED corner — every fixture ring here is square, the adjacency
  * radius is one pixel, and a surface reachable only across a corner blend
- * could go unsampled. The page's thinnest measured ring carries 119 adjacent
- * pixels and the sweep refuses anything under 8, so a starved sample is named
- * rather than judged, but "named" is the whole of the claim.
+ * could go unsampled. What the sweep does instead of claiming headroom it
+ * would have to type out: it refuses anything under FOCUS_MIN_ADJACENT and
+ * PRINTS the thinnest sample it actually took, every run, so a sample getting
+ * thinner is visible in the log before it becomes a refusal. A starved sample
+ * is named rather than judged, but "named" is the whole of the claim.
+ *
+ * Also NOT COVERED: the scroll refusal. preventScroll is asked for and the
+ * two scroll positions are compared, but nothing on this page or the shell
+ * scrolls on focus, so deleting that comparison changes no answer. It is
+ * fail-closed against a future :focus rule that scrolls, and unexercised —
+ * as is the translucent-neighbour refusal, which cannot fire while Chromium
+ * hands back PNG colour type 2.
  */
 const FIXTURE_CASES = [
   { bg: '#ffffff', expect: [255, 255, 255] },
@@ -2502,21 +2530,45 @@ async function selfTest() {
       `transition against ${mot && !mot.refused ? mot.bg : '?'}, expected #FFFFFF — measured ` +
       'live, the ring is a near-white grey the stylesheet never names');
 
-    /* The census itself: twelve buttons on the page, twelve reached by Tab,
-       and every one of them carrying a row. A focus sweep that quietly
-       measured six of twelve would print six ok lines and nothing else. */
-    const okCensus = census.candidates === 12 && census.reached === 12 && rows.length === 12;
+    /* HEDGE — the document's own edge is not a truncation. This button sits
+       flush against x=0, so its ring is painted from x=-10 and the left
+       quarter of it is outside the document entirely. Every clip this tool
+       can take, including the whole-document one, has changed pixels on its
+       border. There is nothing beyond that border to widen into, and nothing
+       out there is painted for a keyboard user either, so the three sides
+       that exist are the measurement. Refusing here cost four real dark-theme
+       measurements of ops/assets/aria.css's .skip on Linux and none on macOS,
+       because a box-shadow — not the ring — reached y=0 on one renderer. */
+    const edge = shows('hedge', 1.6060,
+      'sits flush against x=0, so a quarter of its ring is off the document');
+    const measuredAnyway = !!edge && !edge.refused && edge.pad === 'whole document';
+    if (!measuredAnyway) bad++;
+    console.log(`     ${measuredAnyway ? 'ok  ' : 'FAIL'} and it ran the clip out to the whole ` +
+      `document and then measured: pad ${edge ? edge.pad : '?'}, expected whole document ` +
+      '(every narrower clip has the ring on its border, and so does this one)');
+
+    /* The census itself: thirteen buttons on the page, thirteen reached by
+       Tab, and every one of them carrying a row. A focus sweep that quietly
+       measured six of thirteen would print six ok lines and nothing else. */
+    const okCensus = census.candidates === 13 && census.reached === 13 && rows.length === 13;
     if (!okCensus) bad++;
-    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 12 focusable buttons → ${census.candidates} ` +
+    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 13 focusable buttons → ${census.candidates} ` +
       `censused, ${census.reached} reached by real Tab presses, ${rows.length} judged or refused`);
     /* And that the Tab presses did their other job. Without keyboard modality
        every :focus-visible rule on this page is dead and the lot look like
-       h3 — twelve missing indicators and no ring measured anywhere. */
+       h3 — thirteen missing indicators and no ring measured anywhere. */
     const modality = rows.filter((r) => r.focusVisible).length;
-    const okModality = modality === 12;
+    const okModality = modality === 13;
     if (!okModality) bad++;
-    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 12 ` +
+    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 13 ` +
       'after the Tab walk (scripted focus alone matches 0, and every ring here is behind it)');
+    /* Derived rather than typed. How many of the sweep's refusals this fixture
+       actually drives is a number that moves whenever a case is added, and a
+       moving number in a comment is Stadiora/Aria#10365 again. */
+    const exercised = [...new Set(rows.filter((r) => r.refused)
+      .map((r) => r.refused.replace(/\b(?:alpha [\d.]+|is \w+;|reads "[^"]*")/g, '…')))];
+    console.log(`     ---- ${exercised.length} distinct refusal(s) exercised by this fixture:`);
+    for (const e of exercised) console.log(`            ${e.slice(0, 96)}`);
   }
 
   console.log(bad === 0
@@ -2524,7 +2576,6 @@ async function selfTest() {
       '  the pipeline, the plate lifts every glyph, inks are read from what paints,\n' +
       '  an ink that cannot be resolved is refused, color(srgb) is read to the\n' +
       '  edge of gamut and refused past it, the three boundaries this tool\n' +
-      '  refuses are all censused, one focus ring is judged against two\n' +
       '  refuses are all censused, one focus ring is judged against two\n' +
       '  different surfaces according to which side of the box it lands on,\n' +
       '  and where one ring lands on two surfaces at once the worse decides.\n'
@@ -2591,9 +2642,16 @@ function focusKey(r) {
 /* Two frozen surface hexes are the same surface if no channel differs by more
    than a byte. Not an equality test, because a bucket's mean is taken over
    real pixels and a renderer that antialiases a rounded corner differently
-   moves it a fraction of a level — and not a loose one either: the greys this
-   page's rings actually land between are three bytes apart, so a genuine move
-   from one to another is still caught. */
+   moves it a fraction of a level.
+
+   What this does NOT do is tell two surfaces a byte apart from each other.
+   Three pairs in the table below are exactly that close — #BCE0EA/#BDE1EA,
+   #DEE1E7/#DEE1E6, #E1E4E9/#E1E5E9 — and that is fine for the reason the
+   assertion under KNOWN_BELOW_FOCUS states and enforces, not for any reason
+   claimed here: a measured ring is matched to its entry by focusKey FIRST,
+   and no two entries share a focusKey, so an entry is only ever asked about
+   the site it names. Surfaces a byte apart are that site in two different
+   preview states, never two candidates for one measurement. */
 function sameSurface(a, b) {
   const rgb = (s) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16));
   const [x, y] = [rgb(a), rgb(b)];
@@ -2818,6 +2876,33 @@ const KNOWN_UNMEASURABLE_FOCUS = [
     why: 'The light-theme half of the same field. Same indicator, same refusal.'
   }
 ];
+
+/* sameSurface's ±1 byte cannot distinguish two surfaces a byte apart, and
+   three pairs in the tables above are exactly that close. That is only safe
+   while an entry is asked about one site and one site only, so this asserts
+   it rather than trusting the tables to stay that way: every frozen focus
+   entry expands to one row per state, and no two rows may share a focusKey.
+   A duplicate key would let a measurement reconcile against the wrong entry's
+   surface and ratio — which is the one way a ±1 tolerance could hide a real
+   move. Thrown at load, because a freeze table that cannot be trusted is not
+   a thing to start a sweep with. */
+{
+  const seen = new Map();
+  for (const list of [KNOWN_BELOW_FOCUS, KNOWN_UNMEASURABLE_FOCUS]) {
+    for (const e of list) {
+      for (const state of e.states) {
+        const key = `${e.theme}/${state} ${e.selector} "${e.text}"`;
+        if (seen.has(key)) {
+          throw new Error(`two frozen focus entries claim the same site: ${key}. ` +
+            'Surfaces a byte apart are only safe because each entry answers for one site; ' +
+            'a duplicate key breaks that.');
+        }
+        seen.set(key, e);
+      }
+    }
+  }
+}
+
 /* How many measured sites were below AA and exempted by KNOWN_BELOW_AA. Held
    out of the passing count and named in the closing line, so a page carrying
    known failures never reports itself clean. */
@@ -2859,6 +2944,7 @@ try {
     const worst = new Map();
     const belowAA = [];
     let focusChecked = 0;
+    let focusThinnest = null;
     const focusWorst = new Map();
     const focusBelow = [];
     const focusRefused = [];
@@ -2989,6 +3075,9 @@ try {
         for (const r of focus.rows) {
           if (r.refused) { focusRefused.push({ ...r, theme, state }); continue; }
           focusChecked++;
+          if (!focusThinnest || r.adjacentPx < focusThinnest.adjacentPx) {
+            focusThinnest = { ...r, theme, state };
+          }
           const key = `${r.cls || r.tag}|${theme}`;
           const prev = focusWorst.get(key);
           if (!prev || r.ratio < prev.ratio) focusWorst.set(key, { ...r, theme, state });
@@ -3205,6 +3294,18 @@ try {
           ` ${r.ringHex} beside ${r.bg}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}` +
           `  "${r.text}"  offset ${r.offset}` +
           `${frozenFocus.has(focusKey(r)) ? '   [frozen, below 3:1]' : ''}`);
+      }
+      /* Derived, never typed. How much room the shell has over
+         FOCUS_MIN_ADJACENT is a fact about today's page, and a fact about
+         today's page written into a comment is what Stadiora/Aria#10365 was.
+         This prints it from the run instead, so it cannot drift: it is either
+         right or absent. */
+      if (focusThinnest) {
+        console.log(`    thinnest sample any of those worst-ofs was taken over: ` +
+          `${focusThinnest.adjacentPx} unchanged pixel(s) beside ` +
+          `${focusThinnest.tag}${focusThinnest.cls ? '.' + focusThinnest.cls.split(/\s+/).join('.') : ''}` +
+          ` "${focusThinnest.text}" (${focusThinnest.theme}/${focusThinnest.state}), ` +
+          `against a floor of ${FOCUS_MIN_ADJACENT}`);
       }
     }
   }
