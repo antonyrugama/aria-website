@@ -802,7 +802,7 @@ in it were invented to draw the layout.
 `scripts/ops-pane-evaluations.test.mjs` holds that partition in both directions: every band
 inside the drawn panel is stamped `Invented figures` and none is stamped `Works now`, every band
 outside it is the reverse, **neither set is empty**, and **no two-decimal figure reaches the page
-outside the panel at all**. Moving one band across the boundary fails three of those assertions.
+outside the panel at all**. Moving one band across the boundary turns four tests in that file red.
 Nothing real on this pane is written as a two-decimal figure, which is what makes that last sweep
 a usable rule rather than a coincidence: the working half prints digests, byte counts and
 timestamps.
