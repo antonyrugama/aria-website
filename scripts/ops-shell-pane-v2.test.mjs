@@ -26,6 +26,17 @@ const REGISTRY_SRC = read('assets/pane-registry.js');
 const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
 const V1_SHELL_SRC = read('assets/shell.js');
+/* The re-authentication dialog is raised by assets/session.js over whatever
+   page is open, so on a v2 pane it is this shell's furniture even though this
+   file does not build it. */
+const SESSION_SRC = read('assets/session.js');
+/* The two stylesheets EVERY v2 pane page loads, in load order. A pane's own
+   sheet is deliberately not in this list: a dialog styled by one of those is
+   styled on one pane out of ten, which is the defect, not the fix. */
+const SHARED_SHEETS = [
+  ['assets/aria.css', read('assets/aria.css')],
+  ['assets/shell-pane-v2.css', read('assets/shell-pane-v2.css')],
+];
 
 const TOKENS = {
   '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
@@ -99,6 +110,10 @@ async function bootPane(paneId, options) {
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   const shell = dom.window.OpsPaneShell;
+  /* The moment a pane's own module executes: after the bootstrap's script tag,
+     before its asynchronous boot has finished. It is the only place a pane can
+     add a listener and still be certain of hearing ops:ready. */
+  if (opts.onLoad) opts.onLoad(dom.window, shell);
   /* A pane module registers itself with OpsPaneShell.definePane and builds its
      nodes with OpsPaneShell.h, so the test callbacks are handed the shell
      rather than reaching for a document they cannot see yet. */
@@ -946,6 +961,866 @@ test('the docblock and the README name exactly what the module exports', async (
     assert.deepEqual(invented, [], where + ' names ' + invented.join(', ') +
       ', which the module does not export');
   }
+});
+
+/* ================= the re-authentication dialog, on a v2 pane =========== */
+
+/* assets/session.js raises one dialog over whatever page is open, asking for
+   the password again in front of a privileged action, and it writes v1 class
+   names that assets/ops.css styles. A v2 pane loads none of ops.css, so the
+   dialog rendered on all ten of them as unstyled block content over a dimmed
+   backdrop until shell-pane-v2.css carried the rules across
+   (Stadiora/Aria#10447). No v2 suite rendered session.js markup at all, which
+   is why nothing said so.
+
+   Everything below opens the real dialog, over a real booted pane, and reads
+   the real sheets. */
+
+/* Opens the dialog the way the shell's own code would: over a booted pane,
+   with both live-region hosts already created, from a control that had focus.
+   session.js is loaded after the shell so the shell keeps the fake session it
+   captured at module scope and the real promptReauth is still the one on
+   test. */
+async function openReauth(options) {
+  const opts = options || {};
+  const dom = await bootPane(opts.pane || 'overview', {
+    definePane: (content, pane, shell) => {
+      content.appendChild(shell.h('button', { type: 'button', id: 'act', text: 'Suspend' }));
+    },
+    ...opts,
+  });
+
+  /* Created before the dialog opens, because the exclusion they exist for
+     cannot be tested against hosts that were never created. */
+  dom.shell.announce('ready');
+  dom.shell.toast('check', 'saved');
+
+  dom.window.OpsApi = {
+    OpsApiError: function OpsApiError(message) { this.message = message; },
+    call: () => Promise.resolve({ data: {} }),
+  };
+  dom.window.navigator = { userAgent: 'node' };
+  dom.window.crypto = globalThis.crypto;
+  vm.runInContext(SESSION_SRC, dom.window, { filename: 'session.js' });
+  const session = dom.window.OpsSession;
+
+  /* The stub has no `inert`, so `'inert' in el` is false on it and only the
+     aria-hidden half of the backdrop would be exercised. Seeding the property
+     is what a browser presents, and it puts the other half on test. */
+  const seedInert = (el) => { el.inert = false; };
+  dom.body.children.forEach(seedInert);
+  const appWrap = dom.doc.getElementById('app');
+  if (appWrap) appWrap.children.forEach(seedInert);
+
+  const invoker = dom.doc.getElementById('act');
+  if (invoker) invoker.focus();
+
+  const pending = session.promptReauth(opts.maxAgeSeconds || 300);
+  const modal = dom.body.children.filter((el) => el.classList.contains('modal'))[0];
+  const scrim = dom.body.children.filter((el) => el.classList.contains('scrim'))[0];
+  assert.ok(modal, 'session.js raised no dialog');
+  return {
+    ...dom, session, pending, invoker, modal, scrim,
+    card: modal.querySelector('.modal-card'),
+    input: modal.querySelector('.field-input'),
+    alert: modal.querySelector('.form-alert'),
+  };
+}
+
+/* --------------------- the sheets a v2 pane loads, as a cascade --------- */
+
+/* Enough CSS to answer one question: given the two sheets every v2 pane page
+   loads, in that order, which declaration wins on THIS element of the dialog
+   that session.js actually built. Asserting that a selector string is present
+   in a file would pin the string; this resolves the cascade over the real
+   element tree, so a rule that exists but cannot reach the dialog counts for
+   nothing.
+
+   What it reads: class, type and attribute selectors, `:empty`, descendant
+   combinators, and `@media` width queries.
+
+   What it REFUSES BY NAME rather than skipping: an `!important` declaration,
+   a media feature it cannot evaluate, and any selector it cannot read that
+   COULD still reach the dialog — reachability judged by the loosest possible
+   reading, every combinator relaxed to a descendant and every unreadable
+   pseudo taken as matching, so a rule is only dismissed when no reading of it
+   applies here. A guard that silently drops what it cannot parse reports a
+   clean sweep over the half of the sheet it understood.
+
+   NOT COVERED: interaction and structural state — `:hover`, `:focus-visible`,
+   `:disabled`, `::before` and the like are excluded from the resting cascade
+   by design, so nothing here says what the dialog looks like while a control
+   is hovered or focused. NOT COVERED: a declaration that reaches the dialog
+   through a type or universal selector carrying none of its classes; the
+   candidate filter below never considers those rules. NOT COVERED: anything
+   only a layout engine can answer — computed size, wrapping, overlap. The
+   pixels are measured in a browser and reported on the pull request. */
+
+const STATE_PSEUDO = /^:(hover|focus|focus-visible|focus-within|active|disabled|checked|visited|target|placeholder)$/;
+
+function tokenise(compound) {
+  const tokens = [];
+  let i = 0;
+  while (i < compound.length) {
+    const rest = compound.slice(i);
+    const m = /^(\*|[a-zA-Z][-\w]*|\.[-\w]+|#[-\w]+|\[[^\]]*\]|::?[-\w]+(?:\([^)]*\))?)/.exec(rest);
+    if (!m) return null;
+    tokens.push(m[1]);
+    i += m[1].length;
+  }
+  return tokens.length ? tokens : null;
+}
+
+function classesOf(el) { return (el.getAttribute('class') || '').split(/\s+/).filter(Boolean); }
+
+/* `:has(> .x)` and `:has(.x)` only — one compound, one optional child
+   combinator. Anything richer is refused by name rather than guessed at. */
+const HAS_ARG = /^:has\(\s*(>\s*)?([^\s()>+~,]+)\s*\)$/;
+
+function descendants(el, out = []) {
+  for (const child of el.children || []) { out.push(child); descendants(child, out); }
+  return out;
+}
+
+function matchToken(token, el, loose) {
+  if (token[0] === '.') return classesOf(el).indexOf(token.slice(1)) !== -1;
+  if (token[0] === '#') return (el.getAttribute('id') || el.id || null) === token.slice(1);
+  if (token[0] === '[') {
+    const m = /^\[([^\]=~]+)(?:([~]?)=(?:"([^"]*)"|'([^']*)'|([^\]]*)))?\]$/.exec(token);
+    if (!m) return !!loose;
+    const [, name, fuzzy, dq, sq, bare] = m;
+    if (!el.hasAttribute(name)) return false;
+    const want = dq !== undefined ? dq : sq !== undefined ? sq : bare;
+    if (want === undefined) return true;
+    const got = el.getAttribute(name);
+    return fuzzy === '~' ? got.split(/\s+/).indexOf(want) !== -1 : got === want;
+  }
+  if (token[0] === ':') {
+    if (token === ':empty') return (el.childNodes || []).length === 0;
+    const has = HAS_ARG.exec(token);
+    if (has) {
+      const pool = has[1] ? (el.children || []) : descendants(el);
+      return pool.some((d) => matchCompound(has[2], d, false));
+    }
+    if (token.startsWith(':has(')) throw new Error('REFUSED, unreadable :has() argument: ' + token);
+    return !!loose;
+  }
+  if (token === '*') return true;
+  return el.tagName.toLowerCase() === token.toLowerCase();
+}
+
+function matchCompound(compound, el, loose) {
+  const tokens = tokenise(compound);
+  if (!tokens) return !!loose;
+  return tokens.every((t) => matchToken(t, el, loose));
+}
+
+/* Backtracking, not nearest-ancestor: `.a .b .c` can need a farther `.b`. */
+function matchChain(compounds, index, node, loose) {
+  if (index < 0) return true;
+  let at = node;
+  while (at && at.tagName) {
+    if (matchCompound(compounds[index], at, loose)
+      && matchChain(compounds, index - 1, at.parentNode, loose)) return true;
+    at = at.parentNode;
+  }
+  return false;
+}
+
+function selectorMatches(compounds, el, loose) {
+  if (!matchCompound(compounds[compounds.length - 1], el, loose)) return false;
+  return matchChain(compounds, compounds.length - 2, el.parentNode, loose);
+}
+
+/* Splitting and combinator detection happen at bracket depth zero, so a `>`
+   inside `:has(> .x)` or a space inside `[a="b c"]` is not read as structure. */
+function maskGroups(selector) {
+  let depth = 0; let out = '';
+  for (const ch of selector) {
+    if (ch === '(' || ch === '[') { depth += 1; out += ch; continue; }
+    if (ch === ')' || ch === ']') { depth -= 1; out += ch; continue; }
+    out += depth > 0 ? '\u0000' : ch;
+  }
+  return out;
+}
+
+function splitSelector(selector, pattern) {
+  const masked = maskGroups(selector);
+  const parts = []; let at = 0;
+  const re = new RegExp(pattern, 'g');
+  let m;
+  while ((m = re.exec(masked))) { parts.push(selector.slice(at, m.index)); at = m.index + m[0].length; }
+  parts.push(selector.slice(at));
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+function hasCombinator(selector) { return /[>+~]/.test(maskGroups(selector)); }
+
+function specificity(compounds) {
+  let ids = 0; let classes = 0; let types = 0;
+  for (const compound of compounds) {
+    for (const t of tokenise(compound) || []) {
+      if (t[0] === '#') ids += 1;
+      else if (t[0] === '.' || t[0] === '[') classes += 1;
+      else if (t.startsWith('::')) types += 1;
+      /* `:has()` contributes the specificity of its argument, not its own. */
+      else if (HAS_ARG.test(t)) { const s = specificity([HAS_ARG.exec(t)[2]]); ids += Math.floor(s / 10000); classes += Math.floor((s % 10000) / 100); types += s % 100; }
+      else if (t[0] === ':') classes += 1;
+      else if (t !== '*') types += 1;
+    }
+  }
+  return ids * 10000 + classes * 100 + types;
+}
+
+function cssRules(src, sheet) {
+  const out = [];
+  (function walk(text, media) {
+    let i = 0;
+    while (i < text.length) {
+      const brace = text.indexOf('{', i);
+      if (brace < 0) break;
+      const prelude = text.slice(i, brace).trim();
+      let depth = 1;
+      let j = brace + 1;
+      while (j < text.length && depth > 0) {
+        if (text[j] === '{') depth += 1;
+        else if (text[j] === '}') depth -= 1;
+        j += 1;
+      }
+      const body = text.slice(brace + 1, j - 1);
+      if (prelude[0] === '@') {
+        if (/^@media\b/.test(prelude)) {
+          walk(body, (media || []).concat(prelude.slice(6).trim().split(/\s+and\s+/)));
+        } else if (!/^@(keyframes|font-face)\b/.test(prelude)) {
+          throw new Error('REFUSED, unreadable at-rule in ' + sheet + ': ' + prelude);
+        }
+      } else {
+        for (const one of prelude.split(',')) {
+          const selector = one.trim();
+          if (selector) out.push({ sheet, selector, body, media: media || [], order: out.length });
+        }
+      }
+      i = j;
+    }
+  })(src.replace(/\/\*[\s\S]*?\*\//g, ''), null);
+  return out;
+}
+
+function declarations(rule) {
+  const map = new Map();
+  let depth = 0;
+  let start = 0;
+  const parts = [];
+  for (let i = 0; i < rule.body.length; i += 1) {
+    const c = rule.body[i];
+    if (c === '(') depth += 1;
+    else if (c === ')') depth -= 1;
+    else if (c === ';' && depth === 0) { parts.push(rule.body.slice(start, i)); start = i + 1; }
+  }
+  parts.push(rule.body.slice(start));
+  for (const part of parts) {
+    if (!part.trim()) continue;
+    const at = part.indexOf(':');
+    assert.ok(at > 0, 'REFUSED, unreadable declaration in ' + rule.sheet + ' ' + rule.selector + ': ' + part.trim());
+    const value = part.slice(at + 1).trim();
+    assert.ok(!/!important/.test(value),
+      'REFUSED, !important reaches the dialog from ' + rule.sheet + ' ' + rule.selector +
+      ' and this resolver does not order importance');
+    map.set(part.slice(0, at).trim(), value);
+  }
+  return map;
+}
+
+function mediaMatches(queries, env) {
+  return queries.every((q) => {
+    const m = /^\((max|min)-width:\s*(\d+)px\)$/.exec(q);
+    if (m) return m[1] === 'max' ? env.width <= Number(m[2]) : env.width >= Number(m[2]);
+    if (q === '(prefers-reduced-motion: reduce)') return !!env.reducedMotion;
+    throw new Error('REFUSED, unreadable media query: ' + q);
+  });
+}
+
+/* Every element of the dialog, with the sheets' rules already narrowed to the
+   ones that could possibly touch it. */
+function dialogTree(root) {
+  const out = [];
+  (function walk(node) {
+    for (const child of node.childNodes || []) {
+      if (!child.tagName) continue;
+      out.push(child);
+      walk(child);
+    }
+  })({ childNodes: root });
+  return out;
+}
+
+function cascade(nodes, sheets) {
+  const onTree = new Set();
+  for (const el of nodes) for (const c of classesOf(el)) onTree.add(c);
+
+  const rules = [];
+  let order = 0;
+  for (const [sheet, src] of sheets) {
+    for (const rule of cssRules(src, sheet)) {
+      const mentions = [...onTree].some((c) => new RegExp('\\.' + c + '(?![-\\w])').test(rule.selector));
+      if (!mentions) continue;
+      rule.order = order;
+      order += 1;
+
+      /* The loosest possible reading: every combinator relaxed to a
+         descendant, every unreadable pseudo taken as matching. A rule no
+         element here matches even under that reading cannot apply here under
+         any reading, so it is dismissed rather than refused. */
+      const loose = splitSelector(rule.selector, '\\s*[>+~]\\s*|\\s+');
+      const reaches = nodes.some((el) => selectorMatches(loose, el, true));
+      if (!reaches) continue;
+
+      if (hasCombinator(rule.selector)) {
+        throw new Error('REFUSED, a combinator this resolver cannot read reaches the dialog: ' +
+          sheet + ' ' + rule.selector);
+      }
+      const compounds = splitSelector(rule.selector, '\\s+');
+      for (const compound of compounds) {
+        const tokens = tokenise(compound);
+        if (!tokens) throw new Error('REFUSED, unreadable selector reaches the dialog: ' + rule.selector);
+        for (const t of tokens) {
+          if (t[0] !== ':' || t === ':empty' || HAS_ARG.test(t)) continue;
+          if (t.startsWith('::') || STATE_PSEUDO.test(t)) { rule.state = true; continue; }
+          throw new Error('REFUSED, unreadable pseudo reaches the dialog: ' + rule.selector);
+        }
+      }
+      rule.compounds = compounds;
+      rule.specificity = specificity(compounds);
+      rule.decls = declarations(rule);
+      rules.push(rule);
+    }
+  }
+  assert.ok(rules.length >= 6, 'only ' + rules.length + ' rules reach the dialog, so this is not reading the sheets');
+
+  return function resolve(el, env) {
+    const won = new Map();
+    for (const rule of rules) {
+      if (rule.state) continue;
+      if (!mediaMatches(rule.media, env)) continue;
+      if (!selectorMatches(rule.compounds, el, false)) continue;
+      for (const [name, value] of rule.decls) {
+        const prev = won.get(name);
+        if (!prev || prev.specificity < rule.specificity
+          || (prev.specificity === rule.specificity && prev.order < rule.order)) {
+          won.set(name, { value, specificity: rule.specificity, order: rule.order, from: rule.sheet + ' { ' + rule.selector + ' }' });
+        }
+      }
+    }
+    return won;
+  };
+}
+
+/* The declared class rules that reach an element, whichever of the two shared
+   sheets they came from. */
+function styledClasses(nodes, sheets) {
+  const rules = [];
+  for (const [sheet, src] of sheets) for (const rule of cssRules(src, sheet)) rules.push({ ...rule, sheet });
+  const out = new Map();
+  for (const el of nodes) {
+    for (const cls of classesOf(el)) {
+      const hit = rules.some((rule) => {
+        if (!new RegExp('\\.' + cls + '(?![-\\w])').test(rule.selector)) return false;
+        const compounds = splitSelector(rule.selector, '\\s*[>+~]\\s*|\\s+');
+        const last = compounds[compounds.length - 1];
+        if (!new RegExp('\\.' + cls + '(?![-\\w])').test(last)) return false;
+        return selectorMatches(compounds, el, true);
+      });
+      if (!hit) out.set(cls, el.tagName.toLowerCase());
+    }
+  }
+  return out;
+}
+
+test('every class the re-authentication dialog writes is styled by a sheet every v2 pane loads', async () => {
+  const { modal, scrim } = await openReauth();
+  const nodes = [scrim, modal, ...dialogTree([modal])];
+  assert.ok(nodes.length >= 10,
+    'only ' + nodes.length + ' elements in the dialog, so this is not reading session.js');
+
+  const written = new Set();
+  for (const el of nodes) for (const c of classesOf(el)) written.add(c);
+  for (const want of ['scrim', 'modal', 'modal-card', 'sec-title', 'field-hint',
+    'form-alert', 'field-label', 'field-input', 'btn', 'spacer']) {
+    assert.ok(written.has(want), 'the dialog no longer writes ' + want +
+      ', so this sweep is aimed at markup that has moved');
+  }
+
+  const unstyled = styledClasses(nodes, SHARED_SHEETS);
+
+  /* One class the dialog writes carries no rule on a v2 pane, and is listed
+     here with its reason rather than given a rule that would do nothing.
+     `is-open` is v1's visibility toggle: ops.css starts `.scrim` at opacity 0
+     with pointer-events off and `.scrim.is-open` turns both back on. The v2
+     scrim has no hidden default — the drawer appends one and removes it — so
+     there is nothing for the modifier to turn on, and `.scrim` alone paints
+     the backdrop. Asserted in both directions, so a second inert class cannot
+     join it quietly and this one cannot be silently given a rule either. */
+  assert.deepEqual([...unstyled.keys()].sort(), ['is-open'],
+    'a v2 pane loads no rule for ' + [...unstyled].map(([c, tag]) => '.' + c + ' (on <' + tag + '>)').join(', ') +
+    ', so the re-authentication dialog paints as unstyled block content on every v2 pane');
+  assert.equal(unstyled.get('is-open'), 'div', 'is-open moved off the scrim, so its exemption no longer describes it');
+});
+
+test('the dialog is painted as a dialog: over the page, on its own surface, bounded, at both widths', async () => {
+  const { modal, scrim, card, input, alert } = await openReauth();
+  const nodes = [scrim, modal, ...dialogTree([modal])];
+  const resolve = cascade(nodes, SHARED_SHEETS);
+
+  for (const width of [1440, 375]) {
+    const env = { width };
+    const at = (el) => resolve(el, env);
+    const value = (el, prop) => { const d = at(el).get(prop); return d ? d.value : null; };
+    const where = ' at ' + width + 'px';
+
+    assert.equal(value(modal, 'position'), 'fixed', 'the dialog does not sit over the page' + where);
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      assert.equal(value(modal, side), '0', 'the dialog does not reach the ' + side + ' of the viewport' + where);
+    }
+
+    /* Both directions. Asserting only that the dialog names a z-index would
+       stay green if the scrim were raised above it. */
+    const above = Number(value(modal, 'z-index'));
+    const below = Number(value(scrim, 'z-index'));
+    assert.ok(isFinite(above) && isFinite(below), 'the dialog or the scrim stopped naming a z-index' + where);
+    assert.ok(above > below,
+      'the scrim paints at ' + below + ' and the dialog at ' + above + where +
+      ', so the dialog is behind its own backdrop');
+
+    /* A dimmed page with no card on it is the defect this fixes, so the card
+       has to carry its own paint, its own edge and a width that stops. */
+    assert.match(value(card, 'background') || '', /var\(--surface/,
+      'the dialog card has no surface of its own' + where);
+    assert.match(value(card, 'box-shadow') || '', /var\(--/,
+      'the dialog card has no edge or elevation of its own' + where);
+    assert.match(value(card, 'width') || '', /^min\(\d+px, 100%\)$/,
+      'the dialog card is unbounded' + where + ', so it fills whatever it is opened over');
+    assert.ok(Number.parseFloat(value(card, 'padding')) > 0,
+      'the dialog card has no padding' + where);
+
+    /* iOS zooms the page for any input under 16px, and this one is typed. */
+    assert.ok(Number.parseFloat(value(input, 'font-size')) >= 16,
+      'the password field is ' + value(input, 'font-size') + where + ', which makes iOS zoom the page');
+    assert.equal(value(input, 'width'), '100%', 'the password field is not a field-width box' + where);
+    assert.match(value(input, 'background') || '', /var\(--surface/,
+      'the password field has no surface, so it is a browser default box' + where);
+
+    /* role="alert" and the same ink as the prose above it is a message that is
+       announced and invisible. */
+    assert.equal(value(alert, 'color'), 'var(--rose-ink)',
+      'the refusal message is not painted in the danger ink' + where);
+    assert.notEqual(value(alert, 'color'), value(card, 'color'),
+      'the refusal message reads exactly like the prose above it' + where);
+  }
+});
+
+test('the dialog reserves no box while its alert is empty, and stays in the document either way', async () => {
+  const { modal, scrim, alert, text } = await openReauth();
+  const nodes = [scrim, modal, ...dialogTree([modal])];
+  const resolve = cascade(nodes, SHARED_SHEETS);
+  const value = (el, prop) => { const d = resolve(el, { width: 1440 }).get(prop); return d ? d.value : null; };
+
+  assert.equal(alert.childNodes.length, 0, 'session.js stopped opening the dialog with an empty alert');
+  assert.equal(value(alert, 'padding'), '0', 'the empty alert reserves a padded box above the password field');
+  assert.equal(value(alert, 'background'), 'none', 'the empty alert paints a danger tint with nothing in it');
+  assert.equal(value(alert, 'margin-top'), '0', 'the empty alert reserves the .mt gap above itself');
+
+  /* A live region that is not rendered is not in the accessibility tree, so
+     the empty state must collapse by losing its paint rather than its box. */
+  assert.notEqual(value(alert, 'display'), 'none',
+    'the empty alert is display:none, so revealing it with its text is the unreliable half of how role="alert" announces');
+
+  /* And the other direction: the collapse must not survive the message. */
+  alert.appendChild(text('That password did not match.'));
+  assert.equal(value(alert, 'padding'), '10px 12px',
+    'the alert does not take its box back once it carries a message');
+  assert.match(value(alert, 'background') || '', /color-mix/,
+    'the alert does not take its danger tint back once it carries a message');
+});
+
+test('the dialog outranks every pane sheet that declares a field class of its own', async () => {
+  const { modal, scrim } = await openReauth();
+  const nodes = [scrim, modal, ...dialogTree([modal])];
+  const shared = cascade(nodes, SHARED_SHEETS);
+
+  const dir = new URL('assets/', OPS);
+  const paneSheets = readdirSync(dir).filter((f) => /^pane-.*-v2\.css$/.test(f));
+  assert.ok(paneSheets.length >= 5, 'only ' + paneSheets.length + ' pane sheets found');
+
+  let contested = 0;
+  for (const file of paneSheets) {
+    const src = readFileSync(new URL(file, dir), 'utf8');
+    for (const rule of cssRules(src, 'assets/' + file)) {
+      const compounds = splitSelector(rule.selector, '\\s*[>+~]\\s*|\\s+');
+      if (!selectorMatches(compounds, nodes[nodes.length - 1], true)
+        && !nodes.some((el) => selectorMatches(compounds, el, true))) continue;
+      const el = nodes.filter((n) => selectorMatches(compounds, n, true))[0];
+      if (/:/.test(rule.selector)) continue;
+      const theirs = specificity(compounds);
+      for (const name of declarations(rule).keys()) {
+        const ours = shared(el, { width: 1440 }).get(name);
+        assert.ok(ours, 'assets/' + file + ' { ' + rule.selector + ' } declares ' + name +
+          ' on the dialog and no shared sheet does, so the dialog looks different on that pane');
+        assert.ok(ours.specificity > theirs,
+          'assets/' + file + ' { ' + rule.selector + ' } outranks ' + ours.from + ' for ' + name +
+          ', so the dialog is styled by whichever pane you happen to be on');
+        contested += 1;
+      }
+    }
+  }
+  assert.ok(contested >= 5,
+    'only ' + contested + ' pane declarations contest the dialog, so this is not reading the pane sheets');
+});
+
+test('every page that boots the v2 pane shell also loads the sheet that styles the dialog', () => {
+  const dir = new URL('./', OPS);
+  const pages = readdirSync(dir).filter((f) => f.endsWith('.html'));
+  let checked = 0;
+  for (const page of pages) {
+    const html = readFileSync(new URL(page, dir), 'utf8');
+    if (html.indexOf('assets/shell-pane-v2.js') < 0) continue;
+    checked += 1;
+    assert.ok(html.indexOf('assets/shell-pane-v2.css') >= 0,
+      page + ' boots the v2 pane shell without the stylesheet that styles its dialog');
+    assert.ok(html.indexOf('assets/session.js') >= 0,
+      page + ' boots the v2 pane shell without the module that raises the dialog');
+    assert.ok(html.indexOf('assets/ops.css') < 0,
+      page + ' loads both design systems, which is the collision the v2 split exists to avoid');
+  }
+  assert.ok(checked >= 9, 'only ' + checked + ' v2 pane pages found, so this is not reading the pages');
+});
+
+/* ---------------- what the dialog does, not what it looks like ---------- */
+
+test('the dialog names itself, is modal, and moves focus to the field it is asking about', async () => {
+  const { doc, modal, input, invoker } = await openReauth();
+
+  assert.equal(modal.getAttribute('role'), 'dialog', 'the dialog is not a dialog');
+  assert.equal(modal.getAttribute('aria-modal'), 'true', 'the dialog does not claim modality');
+
+  const labelledBy = modal.getAttribute('aria-labelledby');
+  assert.ok(labelledBy, 'the dialog carries no accessible name');
+  const namer = dialogTree([modal]).filter((el) => (el.getAttribute('id') || el.id) === labelledBy)[0];
+  assert.ok(namer, 'aria-labelledby points at ' + labelledBy + ', which is not in the dialog');
+  assert.match(allText(namer) || namer.textContent, /password/i,
+    'the dialog is named "' + namer.textContent + '", which does not say what is being asked for');
+
+  assert.equal(doc.activeElement, input, 'the dialog opened without moving focus into itself');
+  assert.notEqual(doc.activeElement, invoker, 'focus stayed on the page behind the dialog');
+  assert.equal(input.type, 'password', 'the field being focused is not a password field');
+});
+
+test('Escape closes the dialog, refuses the action, and gives focus back to what opened it', async () => {
+  const { doc, body, pending, invoker } = await openReauth();
+  assert.equal(doc.activeElement === invoker, false, 'the dialog never took focus, so returning it proves nothing');
+
+  doc.dispatch('keydown', { key: 'Escape' });
+  assert.equal(await pending, false, 'Escape resolved the dialog as a confirmation');
+  assert.equal(doc.activeElement, invoker, 'focus was dropped instead of returned to the control that opened it');
+  assert.equal(body.children.filter((el) => el.classList.contains('modal')).length, 0,
+    'the dialog is still in the document after it closed');
+  assert.equal(body.children.filter((el) => el.classList.contains('scrim')).length, 0,
+    'the backdrop is still in the document after the dialog closed');
+  assert.equal(doc.listenerCount('keydown'), 0, 'the dialog left its key handler on the document');
+  assert.equal(doc.listenerCount('focusin'), 0, 'the dialog left its focus handler on the document');
+});
+
+test('focus cannot walk out of the open dialog, in either direction', async () => {
+  const { doc, modal, invoker } = await openReauth();
+  const items = modal.querySelectorAll('button, input');
+  assert.ok(items.length >= 3, 'the dialog has too few controls to trap anything');
+  const first = items[0];
+  const last = items[items.length - 1];
+
+  /* Tab off the end wraps to the start, and shift+Tab off the start wraps to
+     the end. One direction on its own would pass on a trap that leaks
+     backwards into the page behind it. */
+  last.focus();
+  doc.dispatch('keydown', { key: 'Tab' });
+  assert.equal(doc.activeElement, first, 'Tab off the last control left the dialog');
+  first.focus();
+  doc.dispatch('keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(doc.activeElement, last, 'shift+Tab off the first control left the dialog');
+
+  /* Focus reset to the page, which matches neither wrap branch: browser
+     chrome hands it back to <body>, and a virtual cursor can put it anywhere. */
+  invoker.focus();
+  doc.dispatch('focusin', { target: invoker });
+  assert.equal(doc.activeElement, first,
+    'focus landing outside the dialog was left there, so the trap only holds for Tab');
+});
+
+test('the page behind the dialog goes inert and comes back, and the live regions never do', async () => {
+  const { doc, body, modal, scrim, pending } = await openReauth();
+  const live = body.children.filter((el) => el.getAttribute('aria-live'))[0];
+  const toasts = body.children.filter((el) => el.classList.contains('toast-host'))[0];
+  assert.ok(live && toasts, 'neither live-region host was created, so the exclusion is untested');
+
+  const backdrop = body.children.filter((el) => el !== modal && el !== scrim && el !== live && el !== toasts);
+  assert.ok(backdrop.length >= 1, 'nothing is behind the dialog, so inerting it proves nothing');
+  for (const el of backdrop) {
+    assert.equal(el.getAttribute('aria-hidden'), 'true', 'the page behind the dialog is still exposed');
+    assert.equal(el.inert, true, 'the page behind the dialog is still reachable by a pointer');
+  }
+
+  /* A live region carrying aria-hidden announces nothing, so inerting one
+     would silence exactly the messages a dialog is most likely to produce. */
+  for (const el of [live, toasts]) {
+    assert.equal(el.getAttribute('aria-hidden'), null,
+      'a live region was hidden from assistive tech while the dialog was open');
+    assert.equal(el.inert, false, 'a live region was inerted while the dialog was open');
+  }
+  assert.equal(modal.getAttribute('aria-hidden'), null, 'the dialog hid itself');
+  assert.equal(scrim.getAttribute('aria-hidden'), null, 'the backdrop was inerted, so clicking it does nothing');
+
+  /* The other direction. A test that only checks inert goes ON passes on a
+     shell that never takes it off, which leaves the page permanently dead. */
+  doc.dispatch('keydown', { key: 'Escape' });
+  await pending;
+  for (const el of backdrop) {
+    assert.equal(el.getAttribute('aria-hidden'), null,
+      'the page stayed hidden from assistive tech after the dialog closed');
+    assert.equal(el.inert, false, 'the page stayed inert after the dialog closed, so nothing on it can be used');
+  }
+});
+
+/* ======================== the rail as a phone drawer ==================== */
+
+/* Below 980px the rail is an overlay, and an overlay is a dialog: it traps
+   focus, closes on Escape, hands focus back to the control that opened it,
+   and takes the rest of the page out of the accessibility tree while it is
+   open. None of that had an assertion (Stadiora/Aria#10352). */
+
+const PHONE = { '(max-width: 980px)': true };
+
+async function openDrawer(options) {
+  const opts = options || {};
+  const dom = await bootPane('overview', {
+    matchMedia: PHONE,
+    definePane: (content, pane, shell) => {
+      content.appendChild(shell.h('button', { type: 'button', id: 'act', text: 'Suspend' }));
+    },
+    ...opts,
+  });
+  dom.shell.announce('ready');
+  dom.shell.toast('check', 'saved');
+
+  const rail = dom.doc.getElementById('rail');
+  const toggle = dom.doc.getElementById('railToggle');
+  assert.ok(rail && toggle, 'the pane shell drew no rail or no toggle for it');
+
+  const seedInert = (el) => { el.inert = false; };
+  dom.body.children.forEach(seedInert);
+  let node = rail;
+  while (node && node !== dom.body && node.parentNode) {
+    node.parentNode.children.forEach(seedInert);
+    node = node.parentNode;
+  }
+
+  if (!opts.leaveClosed) toggle.dispatch('click');
+  return { ...dom, rail, toggle };
+}
+
+test('the phone drawer opens, says so, and puts focus on the first thing in it', async () => {
+  const { doc, body, rail, toggle } = await openDrawer();
+
+  assert.equal(rail.classList.contains('is-open'), true, 'the drawer did not open');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true', 'the toggle still reads as collapsed');
+  assert.match(toggle.getAttribute('aria-label'), /close/i,
+    'the toggle still offers to open the drawer that is already open');
+  assert.equal(body.children.filter((el) => el.classList.contains('scrim')).length, 1,
+    'the drawer opened without a backdrop');
+  assert.equal(doc.activeElement, rail.querySelector('a'),
+    'the drawer opened without moving focus into itself');
+});
+
+test('the phone drawer closes on Escape and on its own toggle, both times handing focus back', async () => {
+  for (const [how, close] of [
+    ['Escape', ({ doc }) => doc.dispatch('keydown', { key: 'Escape' })],
+    ['the toggle', ({ toggle }) => toggle.dispatch('click')],
+  ]) {
+    const open = await openDrawer();
+    close(open);
+    assert.equal(open.rail.classList.contains('is-open'), false, how + ' left the drawer open');
+    assert.equal(open.toggle.getAttribute('aria-expanded'), 'false', how + ' left the toggle reading as expanded');
+    assert.match(open.toggle.getAttribute('aria-label'), /open/i,
+      how + ' left the toggle offering to close a drawer that is shut');
+    assert.equal(open.body.children.filter((el) => el.classList.contains('scrim')).length, 0,
+      how + ' left the backdrop over the page');
+    assert.equal(open.doc.activeElement, open.toggle,
+      how + ' dropped focus instead of returning it to the toggle');
+    assert.equal(open.doc.listenerCount('keydown'), 0, how + ' left the drawer key handler on the document');
+    assert.equal(open.doc.listenerCount('focusin'), 0, how + ' left the drawer focus handler on the document');
+  }
+});
+
+test('focus cannot walk out of the open phone drawer, in either direction', async () => {
+  const { doc, rail, toggle } = await openDrawer();
+  const items = rail.querySelectorAll('a, button');
+  assert.ok(items.length >= 3, 'the rail has too few items to trap anything');
+  const first = items[0];
+  const last = items[items.length - 1];
+
+  last.focus();
+  doc.dispatch('keydown', { key: 'Tab' });
+  assert.equal(doc.activeElement, first, 'Tab off the last rail item left the drawer');
+  first.focus();
+  doc.dispatch('keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(doc.activeElement, last, 'shift+Tab off the first rail item left the drawer');
+
+  toggle.focus();
+  doc.dispatch('focusin', { target: toggle });
+  assert.equal(doc.activeElement, first,
+    'focus landing outside the drawer was left there, so the trap only holds for Tab');
+});
+
+test('the page behind the phone drawer goes inert and comes back, and the live regions never do', async () => {
+  const { doc, body, rail } = await openDrawer();
+  const live = body.children.filter((el) => el.getAttribute('aria-live'))[0];
+  const toasts = body.children.filter((el) => el.classList.contains('toast-host'))[0];
+  const scrim = body.children.filter((el) => el.classList.contains('scrim'))[0];
+  assert.ok(live && toasts && scrim, 'the drawer opened without the hosts this exclusion is about');
+
+  /* Everything that is not the rail, at every level up to the body — the rail
+     is inside the app wrapper, so a list of body children would inert the
+     rail's own ancestor and take the drawer with it. */
+  const hidden = [];
+  const ancestors = [];
+  let node = rail;
+  while (node && node !== body && node.parentNode) {
+    for (const sib of node.parentNode.children) if (sib !== node) hidden.push(sib);
+    node = node.parentNode;
+    if (node !== body) ancestors.push(node);
+  }
+  const expected = hidden.filter((el) => el !== scrim && el !== live && el !== toasts);
+  assert.ok(expected.length >= 1, 'nothing sits behind the drawer, so inerting it proves nothing');
+  assert.ok(expected.indexOf(rail.parentNode.children.filter((el) => el !== rail)[0]) !== -1,
+    "the rail's own sibling is not among what went inert, so the walk never left the body's children");
+  assert.ok(ancestors.length >= 1, 'the rail is a body child here, so the ancestor case is untested');
+
+  for (const el of expected) {
+    assert.equal(el.getAttribute('aria-hidden'), 'true', 'the page behind the drawer is still exposed');
+    assert.equal(el.inert, true, 'the page behind the drawer is still reachable by a pointer');
+  }
+  assert.equal(rail.getAttribute('aria-hidden'), null, 'the drawer inerted itself');
+  /* The other half of the same walk: inerting an ancestor of the rail would
+     inert the rail with it, and the drawer would open already dead. */
+  for (const el of ancestors) {
+    assert.equal(el.getAttribute('aria-hidden'), null, 'an ancestor of the rail was hidden, taking the drawer with it');
+    assert.equal(el.inert, false, 'an ancestor of the rail was inerted, taking the drawer with it');
+  }
+  for (const el of [live, toasts, scrim]) {
+    assert.equal(el.getAttribute('aria-hidden'), null,
+      'a live region or the backdrop was hidden from assistive tech while the drawer was open');
+    assert.notEqual(el.inert, true, 'a live region or the backdrop was inerted while the drawer was open');
+  }
+
+  doc.dispatch('keydown', { key: 'Escape' });
+  for (const el of expected) {
+    assert.equal(el.getAttribute('aria-hidden'), null, 'the page stayed hidden after the drawer closed');
+    assert.equal(el.inert, false, 'the page stayed inert after the drawer closed');
+  }
+});
+
+test('growing past the breakpoint closes the drawer, and does not snatch focus to do it', async () => {
+  const { doc, body, window, rail, toggle } = await openDrawer();
+  const inside = rail.querySelector('a');
+  assert.equal(doc.activeElement, inside, 'the drawer did not open onto its first item');
+
+  /* The overlay becomes a permanent column again, at which point trapping
+     focus in it would be the bug. Nothing about that is a reason to move the
+     operator's focus to the toggle. */
+  const mq = window.media.filter((m) => m.media === '(max-width: 980px)')[0];
+  assert.ok(mq, 'the drawer stopped listening to the breakpoint it is keyed on');
+  mq.set(false);
+
+  assert.equal(rail.classList.contains('is-open'), false, 'the drawer stayed open on a desktop width');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false', 'the toggle still reads as expanded');
+  assert.equal(body.children.filter((el) => el.classList.contains('scrim')).length, 0,
+    'the backdrop stayed over a page with no drawer on it');
+  assert.notEqual(doc.activeElement, toggle,
+    'widening the window moved focus to a control the operator never used, which on a desktop width is hidden');
+});
+
+/* ========================= the two lifecycle events ===================== */
+
+/* A pane module is a later <script> on the page, so it adds its listeners
+   after this file has executed and before its asynchronous boot finishes.
+   Both events have to fire after that, and in this order, or a pane has to
+   read the querystring itself — which is the duplication the shared filter
+   bar exists to remove. */
+
+function listenFor(win, log) {
+  for (const name of ['ops:ready', 'ops:filters']) {
+    win.addEventListener(name, (e) => log.push({ name, detail: e.detail }));
+  }
+}
+
+test('a pane hears ops:ready before ops:filters, and both carry the starting selection', async () => {
+  const log = [];
+  const { doc, shell } = await bootPane('analytics', {
+    file: 'analytics.html',
+    href: 'https://ops.example.invalid/ops/analytics.html?range=90d',
+    onLoad: (win) => listenFor(win, log),
+    definePane: () => {},
+  });
+
+  assert.deepEqual(log.map((e) => e.name), ['ops:ready', 'ops:filters'],
+    'the shell fired ' + log.map((e) => e.name).join(' then ') + ' instead of ops:ready then ops:filters');
+
+  const [ready, filters] = log;
+  assert.equal(ready.detail.pane, 'analytics', 'ops:ready did not say which pane it is');
+  assert.deepEqual(ready.detail.filters, shell.filters(), 'ops:ready carried a selection nobody is showing');
+  assert.deepEqual(filters.detail, shell.filters(), 'ops:filters carried a selection nobody is showing');
+  assert.equal(filters.detail.range, '90d', 'the starting selection lost the range the URL asked for');
+
+  /* The docblock's own claim: ops:ready is the signal that #content exists. */
+  assert.ok(doc.getElementById('content'), 'ops:ready fired on a page with no #content to draw into');
+
+  /* A copy, not the shell's own object: a pane that stores the detail and a
+     shell that mutates it in place disagree about what is on screen. */
+  ready.detail.filters.range = 'tampered';
+  filters.detail.range = 'tampered';
+  assert.equal(shell.filters().range, '90d', 'a pane can rewrite the shell selection through the event detail');
+});
+
+test('ops:filters fires again on every change, and ops:ready never does', async () => {
+  const log = [];
+  const { doc, shell } = await bootPane('analytics', {
+    file: 'analytics.html',
+    onLoad: (win) => listenFor(win, log),
+    definePane: () => {},
+  });
+  const started = shell.filters().range;
+
+  const select = doc.querySelector('.filters').querySelectorAll('select')[0];
+  assert.ok(select, 'the analytics bar drew no control to change');
+  const other = findAll(select, (el) => el.tagName === 'OPTION')
+    .map((el) => el.getAttribute('value'))
+    .filter((v) => v && v !== started)[0];
+  assert.ok(other, 'the range control offers nothing but the value it started on');
+
+  select.value = other;
+  select.dispatch('change');
+
+  assert.equal(log.filter((e) => e.name === 'ops:ready').length, 1,
+    'ops:ready fired again for a filter change, so a pane rebuilds itself from scratch on every pick');
+  const emitted = log.filter((e) => e.name === 'ops:filters');
+  assert.equal(emitted.length, 2, 'a filter change emitted ' + (emitted.length - 1) + ' ops:filters events');
+  assert.equal(emitted[1].detail.range, other, 'ops:filters carried the old selection after a change');
+  assert.deepEqual(emitted[1].detail, shell.filters(), 'ops:filters and the shell disagree about the selection');
+
+  /* The other direction: resetting back to the default is a change too, and a
+     shell that only emitted on the way out would leave every pane showing the
+     window the operator just cleared. */
+  assert.equal(shell.resetRange(), true, 'the shell does not consider the reset a change');
+  const after = log.filter((e) => e.name === 'ops:filters');
+  assert.equal(after.length, 3, 'resetting the range emitted no ops:filters');
+  assert.equal(after[2].detail.range, started, 'the reset emitted something other than the pane default');
 });
 
 /* Round nine: this PR made ops/README.md a test input (the surface-parity test

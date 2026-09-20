@@ -846,11 +846,15 @@
       }
       /* The rail sits inside the app wrapper, so "everything else" is not a
          list of body children: it is the rail's siblings at every level up to
-         the body. Inerting an ancestor of the rail would inert the rail. */
+         the body. Inerting an ancestor of the rail would inert the rail.
+         Walked through parentNode rather than parentElement: identical for
+         every element the guard can reach -- the two differ only at <html>,
+         which the body check stops short of -- and the walk is then something
+         a test can actually run. */
       inerted = [];
       var node = rail;
-      while (node && node !== document.body && node.parentElement) {
-        var parent = node.parentElement;
+      while (node && node !== document.body && node.parentNode && node.parentNode.children) {
+        var parent = node.parentNode;
         var self = node;
         Array.prototype.forEach.call(parent.children, function (sib) {
           if (sib !== self && sib !== scrim && !isLiveRegion(sib)) inerted.push(sib);
