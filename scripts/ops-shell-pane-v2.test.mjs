@@ -1512,6 +1512,26 @@ test('the dialog is painted as a dialog: over the page, on its own surface, boun
     const value = (el, prop) => { const d = at(el).get(prop); return d ? d.value : null; };
     const where = ' at ' + width + 'px in the ' + theme + ' theme';
 
+    /* Before anything about HOW it is painted: that it is painted at all.
+       Every earlier assertion here reads a specific property on a specific
+       element, so a rule that simply removes the dialog from the page --
+       `[data-theme="light"] .modal-card { display: none; }` is the shape,
+       and it only has to outrank `.modal-card` to win -- satisfies all of
+       them and hides the feature in half the product. Asserted over the
+       whole tree, because the layer, the card and the field each take it
+       away on their own. */
+    for (const el of nodes) {
+      const what = el.tagName.toLowerCase() + (classesOf(el).length ? '.' + classesOf(el).join('.') : '');
+      assert.notEqual(value(el, 'display'), 'none',
+        what + ' is display:none' + where + ', so the dialog is not on the page at all');
+      assert.notEqual(value(el, 'visibility'), 'hidden',
+        what + ' is visibility:hidden' + where + ', so the dialog is on the page and invisible');
+      assert.notEqual(String(value(el, 'opacity')), '0',
+        what + ' is opacity:0' + where + ', so the dialog is on the page and invisible');
+      assert.notEqual(value(el, 'content-visibility'), 'hidden',
+        what + ' is content-visibility:hidden' + where + ', so the dialog renders nothing');
+    }
+
     assert.equal(value(modal, 'position'), 'fixed', 'the dialog does not sit over the page' + where);
     for (const side of ['top', 'right', 'bottom', 'left']) {
       assert.equal(value(modal, side), '0', 'the dialog does not reach the ' + side + ' of the viewport' + where);
