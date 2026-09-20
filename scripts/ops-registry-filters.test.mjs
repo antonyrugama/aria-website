@@ -57,7 +57,7 @@
      - whether `alerts` acts on a window ADDED to its list. Rule 5 reaches
        Problems, but its reading only catches a pane whose fallback for an
        unrecognised window is too wide; Problems answers one on status instead
-       (pane-alerts.js:303), so the reading passes for a reason that has
+       (pane-alerts.js:304), so the reading passes for a reason that has
        nothing to do with the window. Its three windows are pinned by value in
        ALSO_PINNED for that reason, so a fourth is red at the lock rather than
        proved here — the same trade spend gets, arrived at differently.
@@ -131,7 +131,7 @@ const NOT_BOOTED = {
    record that lies outside every window a pane offers, which catches a
    fallback that is too WIDE: What happened finds no entry for an unrecognised
    window in its own table, falls through to no window at all, and draws the
-   far record. Problems falls the other way — pane-alerts.js:303 is
+   far record. Problems falls the other way — pane-alerts.js:304 is
    `if (!days) return problem.status !== 'closed';`, the same branch its own
    'open' value uses — so the far record is dropped for a reason that has
    nothing to do with the window, and rule 5 passes on a value nothing is
@@ -562,22 +562,41 @@ test('every filter the registry declares is claimed by this file, and every clai
     assert.ok(PAGES[id], id + ' is claimed in HONOURED with no boot recipe behind it');
   }
 
-  /* The lists nothing below is watching, pinned down to the values. Everywhere
-     else this is rule 5's job, and rule 5 needs a page to read and a fallback
-     it can see; the two tables above say which pane fails which of those. */
+  /* Two tables, pinned down to the values, and two messages: one claim is not
+     true of both. Everywhere else watching values is rule 5's job, and rule 5
+     needs a page to read and a fallback it can see.
+
+     Read separately rather than merged, so that neither table can quietly
+     replace the other's entry for the same pane. Array.from throughout,
+     because the registry is read in its own realm and a bare deepEqual
+     compares prototypes as well as contents. */
   const reg = registry();
-  const pinned = Object.assign({}, NOT_BOOTED, ALSO_PINNED);
-  for (const id of Object.keys(pinned)) {
-    for (const filter of Object.keys(pinned[id])) {
-      /* Array.from, because the registry is read in its own realm and a bare
-         deepEqual compares prototypes as well as contents. */
+
+  /* Nothing here boots spend, so nothing here proves any of its windows. */
+  for (const id of Object.keys(NOT_BOOTED)) {
+    for (const filter of Object.keys(NOT_BOOTED[id])) {
       const offered = Array.from(valuesFor(reg, PANES[id], filter));
       assert.deepEqual(
-        offered, pinned[id][filter],
+        offered, NOT_BOOTED[id][filter],
         id + ' offers ' + offered.join(', ') + ' for ' + filter
-        + ' and this file is proved only for ' + pinned[id][filter].join(', ')
-        + '. A value added to this list is watched by nobody, for the reason '
-        + 'written above the table it is pinned in.'
+        + ' and this file is excused only for ' + NOT_BOOTED[id][filter].join(', ')
+        + '. Nothing here boots it, so no value on that list is proved here and '
+        + 'an added one would not be either.'
+      );
+    }
+  }
+
+  /* alerts IS booted, and rules 2 and 4 to 6 reach every value on this list.
+     What none of them can see is a value ADDED to it, so the list is pinned. */
+  for (const id of Object.keys(ALSO_PINNED)) {
+    for (const filter of Object.keys(ALSO_PINNED[id])) {
+      const offered = Array.from(valuesFor(reg, PANES[id], filter));
+      assert.deepEqual(
+        offered, ALSO_PINNED[id][filter],
+        id + ' offers ' + offered.join(', ') + ' for ' + filter
+        + ' and this file pins ' + ALSO_PINNED[id][filter].join(', ')
+        + '. Rule 5 cannot see a value added to this pane\'s list, which is why '
+        + 'it is pinned; the reason is written above the table.'
       );
     }
   }
@@ -819,7 +838,7 @@ test('a filter applied to the answer narrows what is on the page', async () => {
    What this reading CANNOT catch is the other fallback: a pane that answers an
    unrecognised window on some dimension of its own rather than on age drops
    the far record for a reason that has nothing to do with the window, and
-   reads as clean. Problems is that pane — pane-alerts.js:303,
+   reads as clean. Problems is that pane — pane-alerts.js:304,
    `if (!days) return problem.status !== 'closed';` — so a window added to its
    list walks past this test as well as past the lock's name comparison. Its
    windows are pinned by value in ALSO_PINNED instead, which is why the
