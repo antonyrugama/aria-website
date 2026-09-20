@@ -30,15 +30,15 @@
 
    NOT COVERED, deliberately and named rather than implied:
 
-     - Layout. Nothing here measures anything; scripts/check-ops-narrow-overflow.mjs
-       lays this page out in Chrome at 375px and is the only check that can see
-       an overflow.
-     - What the stylesheet LOOKS like. Nothing here renders it. The last
-       section does read two things OUT of ops/assets/pane-alerts-v2.css --
-       what its docblock claims about its own paint, and the two rules the
-       rules table's scrolling box depends on -- but it measures no layout,
-       and the tone words the sheet maps are declared by ops/assets/aria.css,
-       which this pull request does not edit.
+     - Layout. Nothing here measures anything, in any browser, at any width.
+     - What the stylesheet LOOKS like. Nothing here renders it. What the last
+       section DOES read out of ops/assets/pane-alerts-v2.css is its text: the
+       three machine-read docblock lines and the claims around them, the two
+       rules the rules table's scrolling box depends on, the .is- tone rules
+       and the sheet's own custom properties, each against the file it names.
+       No rule below is rendered to decide any of it, and nothing here can see
+       a colour as a pixel -- scripts/check-ops-contrast.mjs is the tool that
+       judges contrast, and it is not run from here.
      - Anything the operations API decides. The role checks below prove the
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
@@ -360,10 +360,16 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
 
    This helper answered seven cases wrong (Stadiora/Aria#10633) because the
    tabindex branch ran ahead of both the disabled check and the tag check and
-   because Number('') is 0. Order is the whole of it: `disabled` beats
-   tabindex, `tabindex="-1"` asks to be OUT of the tab order, and a tabindex
-   whose value is not a valid integer is IGNORED by the parser rather than
-   read as 0.
+   because Number('') is 0. Order is most of it: `disabled` beats tabindex,
+   `tabindex="-1"` asks to be OUT of the tab order, and a tabindex whose value
+   has no leading digits is IGNORED by the parser.
+
+   Independent review of that fix found five more, all in FOCUSABLE_PROBES
+   marked FOUND IN REVIEW: tabindex is fed through HTML's rules for parsing
+   INTEGERS rather than validated, only the editing HOST takes a stop and not
+   its descendants, that host is decided before href rather than after, an
+   <input type="hidden"> takes none, and a <details> takes its first <summary>
+   CHILD rather than its first child.
 
    Every answer below is a row of FOCUSABLE_PROBES, which runs this helper
    against the case and compares it with a typed expectation. What it cannot
@@ -390,13 +396,20 @@ const attr = (node, name) =>
 const isDisabled = (node) =>
   DISABLEABLE_TAGS.includes(node.tagName) && (node.disabled === true || attr(node, 'disabled') !== null);
 
-/* The parser's own reading of tabindex: a valid integer, or nothing at all.
-   '', '  ', '1.5' and 'yes' are all invalid, and an invalid value leaves the
-   element where it would have been without the attribute. */
+/* The parser's own reading of tabindex, which is HTML's RULES FOR PARSING
+   INTEGERS and not the attribute's conformance requirement: skip ASCII
+   whitespace, take an optional sign, collect the LEADING digits and ignore
+   whatever follows. Only a value with no leading digits is an error, and only
+   then does the element sit where it would have without the attribute.
+
+   So '' and '  ' and 'yes' are ignored, but '1.5' is 1 and '12abc' is 12 --
+   both real tab stops, which /^[+-]?\d+$/ called invalid. */
 const tabIndexOf = (node) => {
   const raw = attr(node, 'tabindex');
   if (raw === null) return null;
-  return /^[+-]?\d+$/.test(raw.trim()) ? Number(raw.trim()) : null;
+  const body = raw.replace(/^[ \t\n\f\r]+/, '');
+  if (!/^[+-]?\d/.test(body)) return null;
+  return Number.parseInt(body, 10);
 };
 
 /* hidden and inert take a whole subtree out of the tab order, so an ancestor
@@ -412,18 +425,23 @@ const suppressedBy = (node) => {
   return null;
 };
 
-/* contenteditable is inherited: the nearest ancestor that states it decides,
-   and `inherit` states nothing. */
+/* An EDITING HOST is an element whose OWN contenteditable is in the true or
+   plaintext-only state. That is the element the standard gives the tabindex
+   focus flag to -- its descendants are editable CONTENT, not focusable
+   elements, and Chrome's tab ring agrees: in <div contenteditable><div>, the
+   stop is the outer one. 'inherit', 'false' and any unrecognised value leave
+   the element a non-host. */
 const editable = (node) => {
-  for (let at = node; at && at.nodeType === 1; at = at.parentNode) {
-    const value = attr(at, 'contenteditable');
-    if (value === null) continue;
-    const word = value.trim().toLowerCase();
-    if (word === 'false') return false;
-    if (word === '' || word === 'true' || word === 'plaintext-only') return true;
-  }
-  return false;
+  const value = attr(node, 'contenteditable');
+  if (value === null) return false;
+  const word = value.trim().toLowerCase();
+  return word === '' || word === 'true' || word === 'plaintext-only';
 };
+
+/* An <input type="hidden"> is not rendered at all, so it takes no tab stop
+   even carrying tabindex="0". Markup decides this one, not the sheet. */
+const hiddenInput = (node) =>
+  node.tagName === 'INPUT' && (attr(node, 'type') || '').trim().toLowerCase() === 'hidden';
 
 function focusable(node) {
   if (node.nodeType !== 1) return false;
@@ -438,19 +456,24 @@ function focusable(node) {
   }
   if (suppressed) return false;
   if (isDisabled(node)) return false;
+  if (hiddenInput(node)) return false;
 
   const index = tabIndexOf(node);
   if (index !== null) return index >= 0;
 
-  if (HREF_TAGS.includes(node.tagName)) return attr(node, 'href') !== null;
+  /* Before the href branch: an <a contenteditable> with no href is an editing
+     host and a real tab stop, which asking about href first answers wrong. */
   if (editable(node)) return true;
+  if (HREF_TAGS.includes(node.tagName)) return attr(node, 'href') !== null;
   if (node.tagName === 'IFRAME') return true;
   if (MEDIA_TAGS.includes(node.tagName)) return attr(node, 'controls') !== null;
-  /* A <summary> is the disclosure control of the <details> it is the first
-     child of; anywhere else it is ordinary text. */
+  /* A <details> takes its FIRST <summary> CHILD as its disclosure control --
+     not its first child, and not a <summary> nested deeper. Any other
+     <summary> is ordinary text. */
   if (node.tagName === 'SUMMARY') {
     const parent = node.parentNode;
-    return !!(parent && parent.tagName === 'DETAILS' && parent.children[0] === node);
+    if (!parent || parent.tagName !== 'DETAILS') return false;
+    return Array.from(parent.children).find((child) => child.tagName === 'SUMMARY') === node;
   }
   return FOCUSABLE_TAGS.includes(node.tagName);
 }
@@ -458,9 +481,18 @@ function focusable(node) {
 /* ====================== focusable(), against cases ===================== */
 
 /* Guard code is code. Every row is a case a browser has a definite answer
-   for, or -- for the last two -- one it does not; `answer` is typed here from
-   the HTML standard's own rules, never read back out of the helper. The seven
-   marked WAS WRONG are the seven Stadiora/Aria#10633 enumerated. */
+   for, or -- for the four marked `cannot tell` -- one this helper will not
+   guess at. `answer` is typed here from the HTML standard's own rules and
+   never read back out of the helper, and every row was then enumerated
+   against Chrome's real sequential focus ring, walked to completion rather
+   than by one Tab press, because a positive tabindex forms its own group
+   ahead of document order. That enumeration is published on
+   antonyrugama/aria-website#75 and is NOT re-run by this suite: what runs
+   here is the typed column.
+
+   The seven marked WAS WRONG are the seven Stadiora/Aria#10633 enumerated.
+   The five marked FOUND IN REVIEW are the ones the independent review of the
+   fix for those seven found still wrong. */
 const FOCUSABLE_PROBES = [
   { name: '<button>', tag: 'button', answer: true },
   { name: '<button disabled>', tag: 'button', props: { disabled: true }, answer: false },
@@ -471,6 +503,11 @@ const FOCUSABLE_PROBES = [
   { name: '<input disabled tabindex="0">', tag: 'input', props: { disabled: true },
     attrs: { tabindex: '0' }, answer: false,
     note: 'WAS WRONG: true. disabled beats tabindex' },
+  { name: '<input type="hidden">', tag: 'input', attrs: { type: 'hidden' }, answer: false,
+    note: 'FOUND IN REVIEW: true. it is not rendered, so it is not in the ring' },
+  { name: '<input type="hidden" tabindex="0">', tag: 'input',
+    attrs: { type: 'hidden', tabindex: '0' }, answer: false,
+    note: 'FOUND IN REVIEW: true. not rendered beats an explicit tabindex' },
   { name: '<select>', tag: 'select', answer: true },
   { name: '<textarea>', tag: 'textarea', answer: true },
   { name: '<div>', tag: 'div', answer: false },
@@ -481,16 +518,32 @@ const FOCUSABLE_PROBES = [
     note: 'WAS WRONG: true. Number(\'\') is 0; the parser reads an invalid value as absent' },
   { name: '<div tabindex="  ">', tag: 'div', attrs: { tabindex: '  ' }, answer: false,
     note: 'WAS WRONG: true. same' },
-  { name: '<div tabindex="1.5">', tag: 'div', attrs: { tabindex: '1.5' }, answer: false },
+  { name: '<div tabindex=" 0 ">', tag: 'div', attrs: { tabindex: ' 0 ' }, answer: true },
+  { name: '<div tabindex="+0">', tag: 'div', attrs: { tabindex: '+0' }, answer: true },
+  { name: '<div tabindex="1.5">', tag: 'div', attrs: { tabindex: '1.5' }, answer: true,
+    note: 'FOUND IN REVIEW: false. parsing integers takes the leading digits: this is 1' },
+  { name: '<div tabindex="12abc">', tag: 'div', attrs: { tabindex: '12abc' }, answer: true,
+    note: 'the shape that shows the parse is not a validity test: this is 12' },
   { name: '<div tabindex="yes">', tag: 'div', attrs: { tabindex: 'yes' }, answer: false },
   { name: '<a>', tag: 'a', answer: false },
   { name: '<a href>', tag: 'a', attrs: { href: '/ops/alerts.html' }, answer: true },
+  { name: '<a contenteditable>', tag: 'a', attrs: { contenteditable: '' }, answer: true,
+    note: 'FOUND IN REVIEW: false. asking about href first answered before editing host' },
   { name: '<div contenteditable>', tag: 'div', attrs: { contenteditable: '' }, answer: true,
     note: 'WAS WRONG: false. the unsafe direction: an editable box reported unreachable' },
   { name: '<div contenteditable="true">', tag: 'div', attrs: { contenteditable: 'true' },
     answer: true },
+  { name: '<div contenteditable="plaintext-only">', tag: 'div',
+    attrs: { contenteditable: 'plaintext-only' }, answer: true },
   { name: '<div contenteditable="false">', tag: 'div', attrs: { contenteditable: 'false' },
     answer: false },
+  { name: '<div contenteditable="inherit">', tag: 'div', attrs: { contenteditable: 'inherit' },
+    answer: false },
+  { name: '<div contenteditable="wat">', tag: 'div', attrs: { contenteditable: 'wat' },
+    answer: false, note: 'an unrecognised value is the inherit state, not the true state' },
+  { name: '<div contenteditable tabindex="-1">', tag: 'div',
+    attrs: { contenteditable: '', tabindex: '-1' }, answer: false,
+    note: 'an editing host can still ask to be out of the tab order' },
   { name: '<iframe>', tag: 'iframe', answer: true, note: 'WAS WRONG: false' },
   { name: '<audio controls>', tag: 'audio', attrs: { controls: '' }, answer: true,
     note: 'WAS WRONG: false' },
@@ -500,14 +553,28 @@ const FOCUSABLE_PROBES = [
   { name: '<button inert>', tag: 'button', attrs: { inert: '' }, answer: false },
   { name: '<summary> outside <details>', tag: 'summary', answer: false },
   { name: '<summary> first in <details>', tag: 'summary', wrap: 'details', answer: true },
+  { name: '<summary> after a <div> in <details>', tag: 'summary', wrap: 'details',
+    wrapBefore: ['div'], answer: true,
+    note: 'FOUND IN REVIEW: false. the rule is first <summary> child, not first child' },
+  { name: '<summary> after a <summary> in <details>', tag: 'summary', wrap: 'details',
+    wrapBefore: ['summary'], answer: false },
+  { name: '<summary> nested in <details>', tag: 'summary', wrap: 'div', outerWrap: 'details',
+    answer: false, note: 'a <summary> deeper than a child is ordinary text' },
   { name: '<button> inside <div inert>', tag: 'button', wrap: 'div', wrapAttrs: { inert: '' },
     answer: false },
   { name: '<div> inside <div contenteditable>', tag: 'div', wrap: 'div',
-    wrapAttrs: { contenteditable: '' }, answer: true },
+    wrapAttrs: { contenteditable: '' }, answer: false,
+    note: 'FOUND IN REVIEW: true. the stop is the editing HOST; this is its content' },
+  { name: '<div contenteditable="false"> inside <div contenteditable>', tag: 'div',
+    attrs: { contenteditable: 'false' }, wrap: 'div', wrapAttrs: { contenteditable: '' },
+    answer: false },
   { name: '<object>', tag: 'object', answer: 'cannot tell' },
   { name: '<embed>', tag: 'embed', answer: 'cannot tell' },
   { name: '<button> inside <fieldset disabled>', tag: 'button', wrap: 'fieldset',
     wrapProps: { disabled: true }, answer: 'cannot tell' },
+  { name: '<button> inside a <legend> of <fieldset disabled>', tag: 'button', wrap: 'legend',
+    outerWrap: 'fieldset', outerWrapProps: { disabled: true }, answer: 'cannot tell',
+    note: 'refused for a reason: Chrome gives THIS one a stop and the row above none' },
 ];
 
 test('focusable() answers the tab order the document can decide, and refuses the rest', () => {
@@ -520,7 +587,12 @@ test('focusable() answers the tab order the document can decide, and refuses the
     const parent = make(probe.wrap);
     for (const [name, value] of Object.entries(probe.wrapAttrs || {})) parent.setAttribute(name, value);
     Object.assign(parent, probe.wrapProps || {});
+    for (const tag of probe.wrapBefore || []) parent.appendChild(make(tag));
     parent.appendChild(node);
+    if (!probe.outerWrap) return node;
+    const outer = make(probe.outerWrap);
+    Object.assign(outer, probe.outerWrapProps || {});
+    outer.appendChild(parent);
     return node;
   };
 
@@ -541,9 +613,10 @@ test('focusable() answers the tab order the document can decide, and refuses the
     doesNot: got.filter((g) => g.answer === false).length,
     refused: got.filter((g) => g.answer === 'cannot tell').length,
     wereWrongBefore: FOCUSABLE_PROBES.filter((p) => /^WAS WRONG/.test(p.note || '')).length,
+    foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 34, takesATabStop: 14, doesNot: 17, refused: 3, wereWrongBefore: 7 });
+    { cases: 49, takesATabStop: 20, doesNot: 25, refused: 4, wereWrongBefore: 7, foundInReview: 6 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -2103,13 +2176,19 @@ test('the rules table scrolls inside a box a keyboard can reach and a screen rea
       return n;
     };
 
-    /* outline: 2px solid var(--cyan) -- the width is the shorthand's own
-       first length unless a longhand overrides it later. */
-    const shorthand = globalRing('outline');
-    const longhandWidth = globalRing('outline-width');
-    const width = longhandWidth.length
-      ? px(longhandWidth, 'outline-width')
-      : px(shorthand.map((v) => (/(^|\s)(-?[\d.]+px)(\s|$)/.exec(v) || [])[2] || v), 'outline width');
+    /* The width is whichever of the shorthand and the longhand the cascade
+       lands on LAST inside :focus-visible -- an outline-width ABOVE a later
+       outline shorthand is overridden by it, so preferring the longhand
+       wherever it sits reads a 1px ring off a rule that paints 6px. */
+    const widthDecls = declarations(ARIA_CSS).filter((d) => d.selector === ':focus-visible'
+      && (d.property === 'outline' || d.property === 'outline-width'));
+    assert.ok(widthDecls.length > 0, 'aria.css declares no global outline width at all');
+    const wins = widthDecls[widthDecls.length - 1];
+    const width = px(
+      [wins.property === 'outline-width'
+        ? wins.value
+        : (/(^|\s)(-?[\d.]+px)(\s|$)/.exec(wins.value) || [])[2] || wins.value],
+      'outline width');
     assert.ok(width > 0, 'aria.css\'s global focus ring has no width, so there is no ring');
 
     const outside = px(globalRing('outline-offset'), 'outline-offset');
@@ -2142,6 +2221,25 @@ test('the rules table scrolls inside a box a keyboard can reach and a screen rea
         name + ' does not draw the same focus ring on its own scrolling box, so the line '
         + 'citing it is false');
     }
+
+    /* And the sibling the sheet says is deliberately NOT on that line really
+       differs, by exactly the property it says: naming an excluded sibling is
+       a positive claim too, and it was the false half of
+       Stadiora/Aria#10632's finding 4. */
+    const apart = /^\s*DIFFERENT FOCUS RING:\s*(\S+)\s+adds\s+(\S+)\s*$/m.exec(PANE_CSS);
+    assert.ok(apart, 'the sheet no longer names the sibling it says it differs from');
+    const [, excluded, extra] = apart;
+    assert.ok(!siblings.includes(excluded),
+      excluded + ' is cited as both the same ring and a different one');
+    const theirs = scrollBoxFocusRule(read('assets/' + excluded));
+    assert.deepEqual(
+      theirs.filter((d) => !mine.some((m) => m.property === d.property && m.value === d.value))
+        .map((d) => d.property),
+      [extra],
+      excluded + ' no longer differs from this sheet by exactly ' + extra
+      + ', so the reason it is held apart is false');
+    assert.ok(!mine.some((d) => d.property === extra),
+      'this sheet declares ' + extra + ' on its own focus rule after all');
   });
 
 /* The focus rule of whichever box a sheet scrolls sideways, found by its
@@ -2191,8 +2289,12 @@ test('for a non-owner the scrolling box holds nothing else that can take focus',
    that closes or opens fails the suite instead of going stale in a comment.
 
    Still NOT COVERED, and not probeable: strings and url(), which the reader
-   does not parse -- the first assertion refuses a sheet containing either
-   rather than mis-splitting one. */
+   does not parse. A url( is refused outright, in any case. A quoted STRING is
+   refused only when it carries a brace or a semicolon -- what declarations()
+   splits on -- so a colour word inside one reaches the reader as an ordinary
+   value and is then judged, or walked past, by the paint stem in its
+   property's name like anything else. This sheet's only string is
+   content: ''. */
 
 /* Every declaration in a sheet, as { selector, property, value }. A reader
    rather than a regex over the source: `white-space` contains the word
@@ -2320,6 +2422,8 @@ const READER_PROBES = [
   { css: '.probe { column-rule: 1px solid color-mix(in srgb, black 50%, white); }', refused: false,
     why: 'BLIND SPOT: the same, inside a classified colour function -- the exact payload of '
       + 'Stadiora/Aria#10632 finding 1' },
+  { css: '.probe { column-rule-color: magenta; }', refused: true,
+    why: 'the -color longhand of a stemless shorthand IS caught: the stem is in its name' },
   { css: '.probe { color: var(--cyan); }', refused: false, why: 'a token is what it is for' },
   { css: '.probe { white-space: nowrap; }', refused: false,
     why: 'the reader splits declarations rather than grepping: "white-space" is not white' },
@@ -2340,7 +2444,7 @@ test('the reader refuses what READER_PROBES says it refuses, and walks past what
       refused: got.filter((g) => g.refused).length,
       blindSpots: READER_PROBES.filter((p) => /^BLIND SPOT/.test(p.why)).length,
     };
-    assert.deepEqual(counts, { probes: 10, refused: 6, blindSpots: 2 });
+    assert.deepEqual(counts, { probes: 11, refused: 7, blindSpots: 2 });
     assert.deepEqual(
       READER_PROBES.filter((p) => /^BLIND SPOT/.test(p.why) && p.refused).map((p) => p.css), [],
       'a row is written down as a blind spot while the reader catches it, so the disclosure '
@@ -2375,7 +2479,7 @@ test('every colour this sheet paints is a token aria.css declares, bar the '
         'a quoted string carries a brace or a semicolon, which declarations() splits on: '
         + quoted);
     }
-    assert.ok(!/\burl\(/.test(PANE_CSS), 'the sheet grew a url(), which declarations() cannot read');
+    assert.ok(!/\burl\(/i.test(PANE_CSS), 'the sheet grew a url(), which declarations() cannot read');
 
     const decls = declarations(PANE_CSS);
     assert.ok(decls.length > 150, 'the reader found only ' + decls.length + ' declarations');
@@ -2425,6 +2529,98 @@ test('every token this sheet paints with is one aria.css actually declares', () 
    rule is paired here with the tint aria.css declares beside its ink, so a
    tone painted in its own tint -- the failure the sentence warns about -- is
    a failure rather than a sentence. */
+/* The sheet says its three status-ink rules exist because aria.css declares
+   .acc-bad and .acc-warn but no blue, so info problems need one declared
+   here. Every clause of that is checkable, and none of it was checked
+   (independent review of antonyrugama/aria-website#75). */
+test('the accent this sheet adds is the one aria.css leaves out', () => {
+  const accents = (css) => new Set(declarations(css)
+    .filter((d) => /^\.acc-[\w-]+$/.test(d.selector) && d.property === '--acc')
+    .map((d) => d.selector));
+
+  const fromAria = accents(ARIA_CSS);
+  const fromHere = accents(PANE_CSS);
+  for (const named of ['.acc-bad', '.acc-warn']) {
+    assert.ok(fromAria.has(named),
+      'the comment says aria.css declares ' + named + ' and it does not');
+    assert.ok(!fromHere.has(named), named + ' is declared here as well as in aria.css');
+  }
+  assert.deepEqual([...fromHere], ['.acc-blue'],
+    'this sheet declares accents other than the blue it says it adds');
+  assert.ok(!fromAria.has('.acc-blue'),
+    'aria.css declares .acc-blue after all, so this sheet is copying it rather than adding it');
+});
+
+/* "The accent down a problem card, the ink on its title and the glyph beside
+   it are three sightings of one fact." Asserted on the drawn page rather than
+   on the JS that draws it: whatever severity a card carries, its accent class
+   and both of its ink classes have to name the SAME tone. */
+test('a problem card carries one severity, in the accent and both inks alike', async () => {
+  /* Three severities at once: one tone agreeing with itself proves nothing
+     about a mapping, and the fixture's default is a single card. */
+  const dom = await boot({
+    open: { problems: [
+      problem({ id: 'prb_c', reference: 'AO-801', severity: 'critical' }),
+      problem({ id: 'prb_w', reference: 'AO-802', severity: 'warning' }),
+      problem({ id: 'prb_i', reference: 'AO-803', severity: 'info' }),
+    ] },
+  });
+  const accentOf = { 'acc-bad': 'crit', 'acc-warn': 'warn', 'acc-blue': 'info' };
+  const inkOf = { 'is-crit': 'crit', 'is-warn': 'warn', 'is-info': 'info' };
+  const named = (node, map) => ((node.getAttribute && node.getAttribute('class')) || '')
+    .split(/\s+/).map((c) => map[c]).filter(Boolean);
+
+  const cards = problemCards(dom);
+  assert.ok(cards.length >= 2, 'the fixture draws ' + cards.length + ' problem cards, so this '
+    + 'cannot see whether different severities agree with themselves');
+
+  const seen = cards.map((card) => {
+    const inks = findAll(card, (n) => named(n, inkOf).length).flatMap((n) => named(n, inkOf));
+    return {
+      accent: named(card, accentOf),
+      inkSightings: inks.length,
+      tones: [...new Set([...named(card, accentOf), ...inks])],
+    };
+  });
+  assert.deepEqual(seen.filter((s) => s.accent.length !== 1).map((s) => s.accent), [],
+    'a problem card carries no accent tone, or more than one');
+  assert.deepEqual(seen.filter((s) => s.inkSightings < 2).map((s) => s.inkSightings), [],
+    'a problem card shows fewer than the two inks the sheet says it draws');
+  assert.deepEqual(seen.filter((s) => s.tones.length !== 1).map((s) => s.tones), [],
+    'a problem card shows more than one severity between its accent and its inks');
+  assert.ok(new Set(seen.map((s) => s.tones[0])).size >= 2,
+    'every card on the fixture is the same severity, so agreeing proves nothing');
+});
+
+/* "A real checkbox carrying role=\"switch\", so it is focusable, announced
+   with its state and named by the rule it belongs to." Three separate facts
+   about a control this sheet styles, and the whole set could be deleted from
+   the JS with the suite green (independent review of
+   antonyrugama/aria-website#75). */
+test('every rule switch is a real checkbox, reachable, stateful and named', async () => {
+  const dom = await boot({ role: 'owner' });
+  const rows = ruleRows(dom).filter((row) => withClass(row, 'sw').length);
+  assert.ok(rows.length >= 2, 'the fixture draws ' + rows.length + ' rule switches');
+
+  for (const row of rows) {
+    const sw = withClass(row, 'sw')[0];
+    assert.equal(sw.tagName, 'INPUT', 'the switch is not an input');
+    assert.equal(sw.getAttribute('type'), 'checkbox', 'the switch is not a checkbox');
+    assert.equal(sw.getAttribute('role'), 'switch', 'the checkbox is not exposed as a switch');
+    assert.ok(focusable(sw), 'an owner cannot tab to a rule switch');
+    assert.equal(typeof sw.checked, 'boolean',
+      'the switch carries no state for a screen reader to announce');
+
+    /* Named by the rule it belongs to: the label has to contain the rule's
+       own title, which is the .t-main of the row it sits in. */
+    const name = sw.getAttribute('aria-label');
+    assert.ok(name && name.trim(), 'a rule switch has no accessible name');
+    const title = allText(withClass(row, 't-main')[0] || row).trim();
+    assert.ok(title.length > 0 && name.includes(title),
+      'the switch is named "' + name + '", which does not name the rule "' + title + '"');
+  }
+});
+
 test('every status tone here paints the -ink of a tint aria.css also declares', () => {
   const declared = new Set(
     declarations(ARIA_CSS).filter((d) => d.property.startsWith('--')).map((d) => d.property));
@@ -2577,6 +2773,15 @@ test('the avatar ink is the one paint no aria.css token could have made', () => 
   /* And the reason the exception exists: every token aria.css declares, tried
      in the same mix, in both themes. The tile is opaque in both, so what is
      behind the card cannot rescue any of them. */
+  /* The sweep's EXTENT, not only its verdict: "the same test tries every one
+     of them" is green over an empty list too, so the candidate set is pinned
+     before it is filtered. aria.css declares 33 custom properties; the ones
+     dropped here are radii, fonts, the rail width and the translucent
+     hairlines, which are not colours a mix could take. */
+  assert.ok(tokens.names.length > 20,
+    'the AA sweep is down to ' + tokens.names.length + ' candidate tokens, so passing it '
+    + 'no longer means what the sheet says it means');
+
   const couldStandIn = tokens.names.filter((name) => ['dark', 'light'].every((theme) => {
     const toward = tokens[theme](name);
     const base = tokens[theme](inkToken);
