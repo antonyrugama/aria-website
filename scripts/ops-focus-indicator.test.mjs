@@ -953,7 +953,16 @@ test('the three controls the issues name are still in the swept set', async () =
   const want = [
     { label: 'the primary button (#10650)', match: (s) => s.cls.split(/\s+/).includes('btn-primary') },
     { label: 'the segmented control (#10649)', match: (s) => s.tag === 'button' && s.text === 'Coaches Web' },
-    { label: 'the search field (#10651)', match: (s) => s.tag === 'input' && s.text === 'Search a coded reference' }
+    { label: 'the search field (#10651)', match: (s) => s.tag === 'input' && s.text === 'Search a coded reference',
+      /* Where the ring lands is part of the fix, not a detail of it: this
+         field sits flush inside its card, so a positive offset paints the
+         ring outside the card, against the card's surroundings rather than
+         against the field it marks. Stated here as a contract because the
+         contrast sweep cannot see it — at +2px the ring still clears 3:1,
+         on the wrong surface. */
+      place: (r) => (r.on === 'div.field' && r.offset <= 0 ? null
+        : `its ring is carried by ${r.on} at offset ${r.offset}px, so it is painted outside the ` +
+          'field it marks and judged against whatever the card sits on') }
   ];
   const results = [];
   for (const w of want) {
@@ -963,6 +972,7 @@ test('the three controls the issues name are still in the swept set', async () =
     assert.equal(r.refused, undefined, `${w.label}: REFUSED — ${r.refused}`);
     assert.ok(r.ratio + EPS >= FOCUS_RATIO,
       `${w.label}: ${r.ratio.toFixed(2)}:1 against ${r.surface}, needs ${FOCUS_RATIO.toFixed(1)}:1`);
+    if (w.place) assert.equal(w.place(r), null, `${w.label}: ${w.place(r)}`);
     results.push(`    ${w.label}: ring ${r.ring} at offset ${r.offset}px on ${r.on} — ` +
       `${r.ratio.toFixed(2)}:1 against ${r.surface}`);
   }
