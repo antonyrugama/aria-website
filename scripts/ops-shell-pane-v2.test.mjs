@@ -1416,7 +1416,12 @@ function declarations(rule) {
     assert.ok(!/!\s*important/i.test(bare),
       'REFUSED, !important reaches the dialog from ' + rule.sheet + ' ' + rule.selector +
       ' and this resolver does not order importance');
-    map.set(part.slice(0, at).trim(), value);
+    /* Position WITHIN the rule. Two rules are ordered by `rule.order`, but a
+       shorthand and the longhand it resets can sit in the SAME rule, where
+       they tie on specificity AND order and the later declaration wins. Round
+       seven: `{ font-size: 16px; font: inherit; }` tied, so the shorthand pass
+       could not see the shorthand win and answered the stale 16px. */
+    map.set(part.slice(0, at).trim(), { value, di: map.size });
   }
   return map;
 }
@@ -1544,6 +1549,13 @@ function candidateFilter(nodes) {
     for (let el = start; el && el.tagName; el = el.parentNode) {
       if (seen.has(el)) break;
       seen.add(el);
+      /* A BARE TYPE selector names nothing else, so a filter built only from
+         classes, ids and attributes dropped `input { … }` before the
+         reachability and refusal gates could see it -- and aria.css:165 ships
+         exactly that shape at the field. Round seven. The lookbehind keeps it
+         from matching inside a class, id or another type name; over-matching
+         here is harmless, since this only decides what to CONSIDER. */
+      named.add('(?<![-\\w.#])' + esc(el.tagName.toLowerCase()) + '(?![-\\w])');
       for (const c of classesOf(el)) named.add('\\.' + esc(c) + '(?![-\\w])');
       const id = attrOf(el, 'id');
       if (id) named.add('#' + esc(id) + '(?![-\\w])');
@@ -1631,11 +1643,11 @@ function cascade(nodes, sheets, theme) {
       if (rule.state) continue;
       if (!mediaMatches(rule.media, env)) continue;
       if (!selectorMatches(rule.compounds, el, false)) continue;
-      for (const [name, value] of rule.decls) {
+      for (const [name, { value, di }] of rule.decls) {
         const prev = won.get(name);
         if (!prev || prev.specificity < rule.specificity
           || (prev.specificity === rule.specificity && prev.order < rule.order)) {
-          won.set(name, { value, specificity: rule.specificity, order: rule.order, from: rule.sheet + ' { ' + rule.selector + ' }' });
+          won.set(name, { value, specificity: rule.specificity, order: rule.order, di, from: rule.sheet + ' { ' + rule.selector + ' }' });
         }
       }
     }
@@ -1648,7 +1660,8 @@ function cascade(nodes, sheets, theme) {
       for (const [short, beat] of won) {
         if (short === long || !resets(short, long)) continue;
         if (beat.specificity > got.specificity
-          || (beat.specificity === got.specificity && beat.order > got.order)) {
+          || (beat.specificity === got.specificity
+            && (beat.order > got.order || (beat.order === got.order && beat.di > got.di)))) {
           throw new Error('REFUSED, the shorthand `' + short + '` in ' + beat.from +
             ' outranks `' + long + '` from ' + got.from +
             ', and this resolver does not expand shorthands');
