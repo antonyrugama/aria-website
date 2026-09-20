@@ -1141,7 +1141,7 @@ those panes now.
    and the `--note-bg` token that only they used.
 3. **`--mono` gains `Consolas`** before the generic `monospace`, so Windows has a real fallback.
 4. **Dark `--text-3` moved from `#667484` to `#8593A2`.** The original measured 3.35:1 on
-   `--surface-3`, its worst rendered pairing, which `.masked` draws, and 3.93:1 on a card. It
+   `--surface-3`, its worst rendered pairing at the time, and 3.93:1 on a card. It
    needs 4.5:1, because it carries metadata, table headers, filter labels and placeholder text,
    all of which are text. The new value clears 4.71:1 on every surface the stylesheet actually
    pairs it with.
@@ -1906,7 +1906,7 @@ Which of these classes any page can still draw is therefore derived rather than 
 .tag-coaches = declared in ops.css; drawn by (no page)
 .tag-backend = declared in ops.css; drawn by (no page)
 .build = declared in ops.css; drawn by (no page)
-.masked = declared in ops.css; drawn by users.html; no sheet declares it on users.html
+.masked = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .verdict-better = declared in ops.css; drawn by (no page)
 .verdict-worse = declared in ops.css; drawn by (no page)
 .verdict-slightly-worse = declared in ops.css; drawn by (no page)
@@ -1924,13 +1924,14 @@ Three lines in that block are worth reading twice:
   under "drawn by nothing built so far", and said in as many words that Settings draws none. The
   4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
   paints it now; the live figure is whatever `check-ops-contrast.mjs` measures on the page.
-- **`.masked` and `.callout-warn` are written with nothing behind them on the page that writes
-  them.** `pane-users.js` spells the mask `masked locked`, and only `.locked` is declared in
-  `pane-users-v2.css`, which is what gives the row its look; `pane-evaluations.js` spells the
-  warning callout `callout callout-warn`, and `pane-evaluations-v2.css` declares `.callout` and
-  not the variant. Neither is a contrast defect — an element with no rule takes the ink around it
-  — but both are a token whose rule was left behind in `ops.css` when the pane moved, and the
-  block above is where that now shows up.
+- **`.callout-warn` is written with nothing behind it on the page that writes it.**
+  `pane-evaluations.js` spells the warning callout `callout callout-warn`, and
+  `pane-evaluations-v2.css` declares `.callout` and not the variant. That is not a contrast defect
+  — an element with no rule takes the ink around it — but it is a token whose rule was left behind
+  in `ops.css` when the pane moved, and the block above is where that shows up. `.masked` was the
+  same story and no longer is: `aria-website#83` gave `pane-users-v2.css` a `.locked.masked` rule,
+  which is why the block now reads `painted where drawn` for it. Nothing in this section was
+  edited to say so — the block is derived, so the sibling merge moved the line itself.
 - **Everything else is drawn by no page at all.** The whole badge, flagchip, platform-tag and
   verdict vocabulary below is declared in `ops.css` and assembled by nothing the scan can see.
 
@@ -2200,7 +2201,7 @@ ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 136
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 173
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 157
-ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1008
+ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
 ```
 
