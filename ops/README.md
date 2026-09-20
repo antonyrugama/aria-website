@@ -1709,7 +1709,17 @@ the run and a wrong number does not:
   direction for an ink: a faded ink read as solid clears AA. `color(srgb …)` — how Chromium
   serialises `color-mix()` — is read as the 0..1 floats CSS Color 4 says it is, because the
   parser this one was ported from understood only `rgb()` and silently dropped 40 sites with 10
-  real failures among them (monorepo #10255). Anything it cannot read fails the run.
+  real failures among them (monorepo #10255). It is read **only within gamut, to half a byte of
+  slack**, because that serialisation is not clamped at either end and both ends bite:
+  `color-mix(in srgb, oklch(1 0 0) 50%, white)` is plain white and computes to
+  `color(srgb 0.999935 1.00003 1.00004)`, so a gate at exactly 0..1 refuses white, while
+  `color-mix(in srgb, color(display-p3 1 0 0) 90%, white)` computes to
+  `color(srgb 1.08372 -0.104021 -0.0350659)`, which scaled by 255 is a colour that does not
+  exist and a ratio to match. The first is read, the second is refused, and both are pinned by
+  Chromium's own serialisation in **self-test part F2** rather than by this paragraph.
+  Anything it cannot read fails the run. The shell carries 775 `color(srgb …)` values today and
+  every component of every one of them is inside the window, so the gate costs no coverage
+  here — it is there for the mix that has not been written yet.
 - **The fade does not have to be on the text.** `opacity` does not inherit, so a faded ancestor
   leaves the text element reading `opacity: 1` while its glyphs composite at the ancestor's
   alpha. The ink's alpha is the product of every `opacity` in the chain, plus `fill-opacity` on
@@ -1743,10 +1753,12 @@ the run and a wrong number does not:
   paragraph below — and likewise match nothing on the shell today.
 
 The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
---self-test` runs seven parts against synthetic fixtures — the formula against published WebAIM
+--self-test` runs eight parts against synthetic fixtures — the formula against published WebAIM
 values, the decode/plate/sample pipeline against declared swatch colours, plate integrity pixel
 by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
-read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), and the three boundary
+read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), both ends of the
+gamut window pinned against Chromium's own serialisation of an in-gamut overshoot and a
+wide-gamut mix, and the three boundary
 censuses counted on a page that carries six spellings of a nested browsing context, an open
 author shadow root, a closed one, and seven user-agent roots carrying text of which exactly one
 paints words no source reaches — that one named in full, so a census that catches the wrong host
