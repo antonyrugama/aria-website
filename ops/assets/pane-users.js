@@ -513,7 +513,7 @@
     var short = claimed !== null && claimed > rows;
 
     box.appendChild(shell.cardHead(
-      'Matches',
+      'Accounts matching that reference',
       short
         ? rows + ' of ' + plural(claimed, 'account') + ' shown'
         : plural(rows, 'account'),
@@ -1004,7 +1004,7 @@
     var events = (activity && activity.events) || [];
 
     box.appendChild(shell.cardHead(
-      'Recent activity',
+      'What this account has done',
       activity && activity.windowDays ? 'Last ' + plural(activity.windowDays, 'day') : null,
       null
     ));
@@ -1111,12 +1111,24 @@
   function billingCard(detail) {
     var box = shell.card();
     var billing = detail.billing;
-    box.appendChild(shell.cardHead('Subscription', null, [tierPill(detail.tier)]));
+    box.appendChild(shell.cardHead('Subscription', null, null));
 
     if (!billing || !(billing.fields || []).length) {
+      /* An empty billing record means different things on different tiers and
+         this pane cannot tell which: the API sends tier { key, label, brand }
+         and defines no paid-or-free semantics for any of them — `brand` picks
+         a pill tone (see tierPill). So name the tier beside the absence and
+         leave the reading to the operator, which is what the head pill did
+         before it became a third copy of the same fact. Three shapes, because
+         a tier can arrive with no name at all and "on Unknown" reads as a
+         tier called Unknown — which is a claim the API never made. */
+      var tier = detail.tier;
+      var tierName = tier && (tier.label || tier.key);
       box.appendChild(h('div', { className: 'card-body' }, [
         shell.stateBlock('empty', 'No subscription record', [
-          'On the free tier that is the expected answer rather than a missing one.'
+          tierName ? 'The account is on ' + tierName + '.'
+            : tier ? 'The tier it reported has no name.'
+            : 'No tier was reported for this account either.'
         ], 4)
       ]));
       return box;
@@ -1202,7 +1214,7 @@
 
     box.appendChild(shell.cardHead(
       'Account actions',
-      'Audited, and the athlete is told',
+      'Named here, not performed here. Audited, and the athlete is told.',
       [pill('ghost', 'Re-authentication required', 'lock')]
     ));
 
@@ -1215,11 +1227,7 @@
     } else {
       actions.forEach(function (a) {
         body.appendChild(h('div', { className: 'srow' }, [
-          h('div', {}, [
-            h('div', { className: 's-main', text: a.label || a.key }),
-            h('div', { className: 's-sub', text: 'Not reachable from this pane.' })
-          ]),
-          h('div', { className: 's-end' }, [pill('ghost', 'Re-authentication required', 'lock')])
+          h('div', { className: 's-main', text: a.label || a.key })
         ]));
       });
     }

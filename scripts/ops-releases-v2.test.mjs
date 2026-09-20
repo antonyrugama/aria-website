@@ -25,13 +25,22 @@
    role="img", which is children-presentational, so its accessible NAME has to
    carry the reading. Nothing inside it is announced to anybody.
 
-   Every test here had a published mutation in PR antonyrugama/aria-website#55
-   — the exact file, the exact original line, and the payload that makes that
-   one test fail. 41 tests, 41 rows, checked by counting `test(` names against
-   row names rather than by eye: the first round of that review found the
-   claim was 38 of 39, because one test had been added without a row. If you
-   add a test here, that claim does not stretch to cover it. Prove it and say
-   so, or narrow this paragraph.
+   Every test here has a published mutation — the exact file, the exact
+   original line, and the payload that makes that one test fail. 44 tests, 45
+   rows: 43 in PR antonyrugama/aria-website#55, and 2 for the 44th ("a
+   pipeline row states the build number once") in the follow-up that added it,
+   one mutation in each direction because the invariant is a count and a count
+   has two ways to be wrong. Rows exceed tests whenever a test has more than
+   one way to fail; they are not the same number and the breakdown is the
+   check on both.
+
+   That claim is checked by counting `test(` names against row names rather
+   than by eye: the first round of #55's review found the claim was 38 of 39,
+   because one test had been added without a row, and round 3 found the number
+   itself had gone stale at 41 while the file declared 43. **The count in the
+   sentence above is part of the claim.** If you add a test here, neither the
+   number nor the "every" stretches to cover it. Prove it and say so, or
+   narrow this paragraph.
 
    Both directions are published for every invariant that has two — "stays
    masked" and "does show once it should" are two tests, not one.
@@ -420,6 +429,36 @@ test('the share sentence names the ceiling on the platform that has one, not on 
   assert.match(shareCardText(dom),
     /Android at 20%: a ceiling the store set, so that part of the share is not take-up\./);
   assert.doesNotMatch(shareCardText(dom), /iOS at/);
+});
+
+/* The editorial rule this whole remodel is for, in the one place it had no
+   guard: one fact, one slot. A count is the right instrument and a `match` is
+   not — "the build number is on the row" is true whether it is there once or
+   twice, which is how it came to be there twice.
+
+   The expectation is the fixture's own build number, read out of the payload
+   rather than off the rendered row, so the assertion cannot move with the code
+   it is checking. It is asserted per row, because both platforms carry the
+   same build and a count over the whole pane would read 2 when each row is
+   right and 2 when one row is wrong. */
+test('a pipeline row states the build number once, not once in the subtitle and again on a stage', async () => {
+  const fixture = releasesFixture();
+  const build = fixture.platforms
+    .find((p) => p.platform === 'android').tracks
+    .find((t) => t.track === 'production').versionCode;
+  const dom = await boot({ releases: fixture });
+
+  const occurrences = (text) => text.split(new RegExp('\\b' + build + '\\b')).length - 1;
+
+  assert.strictEqual(occurrences(rowText(dom, 'Android')), 1,
+    'the Android row should carry build ' + build + ' exactly once');
+  assert.strictEqual(occurrences(rowText(dom, 'iOS')), 1,
+    'the iOS row should carry build ' + build + ' exactly once');
+
+  /* And it is the subtitle that carries it, not some other slot that happens
+     to hold one copy. Without this the test passes if the subtitle drops the
+     build and a stage figure picks it up. */
+  assert.match(rowText(dom, 'Android'), /1\.1\.2 · build 4398/);
 });
 
 /* ============================== the hero ================================= */

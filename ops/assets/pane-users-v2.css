@@ -40,16 +40,12 @@
 .field-lg svg { width: 18px; height: 18px; }
 .field-lg input { font-size: 15.5px; font-weight: 500; }
 
-/* Multi-line variant of .field, for a written reason. */
-.field.area { align-items: stretch; padding: 10px 12px; }
-.field.area textarea {
-  flex: 1; min-width: 0;
-  border: 0; background: transparent; outline: 0; resize: vertical;
-  font-family: var(--sans); font-size: 13px; line-height: 1.55; color: inherit;
-  min-height: 72px;
-}
-.field.area textarea::placeholder { color: var(--ink-3); }
-
+/* Not this pane's markup and deliberately not deleted with the rest of the
+   mock's unused form rules: session.js writes `field-label` into the
+   re-authentication modal it can raise over any ops page, and a v2 page loads
+   no ops.css, so on THIS page this sheet is the only thing styling it.
+   Stadiora/Aria#10447 covers the rest of that modal on v2 pages; it needs
+   shell-pane-v2.css and so cannot be fixed from a pane. */
 .field-label { font-size: 11.5px; font-weight: 540; color: var(--ink-3); }
 
 /* A form-level complaint. Never colour alone: the caller puts a glyph in it. */
@@ -94,8 +90,6 @@
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
 .locked svg { width: 12px; height: 12px; flex: none; color: var(--ink-3); }
-
-.code-lg { font-size: 14.5px; padding: 3px 9px; letter-spacing: -.01em; }
 
 /* -------------------------------------------------------------- key/value */
 .kv { display: flex; flex-direction: column; }
@@ -170,12 +164,6 @@
 .srow:first-child { border-top: 0; padding-top: 0; }
 .srow:last-child { padding-bottom: 0; }
 .srow .s-main { font-size: 12.5px; font-weight: 540; }
-.srow .s-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; line-height: 1.5; }
-.srow .s-end {
-  margin-left: auto; flex: none;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
-  text-align: right;
-}
 
 /* -------------------------------------------------------------- tick list */
 .list-tick { display: flex; flex-direction: column; gap: 9px; }
@@ -211,11 +199,6 @@
 /* A timestamp is one token; wrapping it mid-date reads as two. */
 .tbl tbody th.num { white-space: nowrap; }
 
-/* ------------------------------------------------------------- recent list
-   Coded references only: these are the accounts this browser has opened, and
-   the reference is the whole of what is kept. */
-.recent { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-
 /* ------------------------------------------------------------- responsive */
 @media (max-width: 720px) {
   .hunt { padding: 18px 16px 16px; border-radius: var(--r-lg); }
@@ -228,7 +211,6 @@
   .reveal-row { justify-content: flex-start; }
 
   .srow { align-items: flex-start; flex-direction: column; gap: 9px; }
-  .srow .s-end { margin-left: 0; align-items: flex-start; text-align: left; }
 }
 
 /* Two of this pane's card heads carry a title, a note AND a pill, and the

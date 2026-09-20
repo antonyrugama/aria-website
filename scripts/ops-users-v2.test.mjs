@@ -39,10 +39,39 @@
           behaviour the activity table prints label, time and reference and
                     nothing else from the event
 
-   Every test here had a published mutation in PR antonyrugama/aria-website#58:
-   the exact file, the exact original line, and the payload that makes that one
-   test fail. If you add a test, that claim does not stretch to cover it —
-   prove it and say so, or narrow this paragraph.
+   Every test here has a published mutation — the exact file, the exact
+   original line, and the payload that makes that one test fail. 41 tests, 46
+   rows: 40 in PR antonyrugama/aria-website#58, and 6 for the 41st ("an empty
+   subscription card names the tier it was sent and classifies nothing") in
+   the follow-up that added it. Six because that test's name makes two
+   promises — it names the tier, and it classifies nothing — and the API can
+   send a tier three ways, so each promise has to be broken on each shape.
+   Rows exceed tests whenever a test has more than one way to fail; they are
+   not the same number and the breakdown is the check on both.
+
+   ONE of the 40 no longer holds: #58's row 33 replaces a line in the
+   danger-zone action row, and this follow-up took the second child off that
+   row, so the line that row's payload rewrites is not there any more. Its
+   live replacements are the follow-up's rows 3 and 4.
+
+   The other 39 were re-applied at this head, one at a time, and every one
+   still turns its own named test red on its own. Many of the line numbers
+   #58 published are stale — this follow-up deleted lines above them in both
+   files — so read #58's anchors by their quoted text, not by their number.
+
+   That paragraph was wrong before this follow-up's fourth review round, which
+   is the reason it is now a measured count and not a recollection. It said
+   seven no longer held, on the theory that renaming the two card titles broke
+   the six tests that look those cards up. It did not: the rename moved the
+   lookup key in this file and the constants that hold it, while #58's rows
+   break sites in pane-users.js that the rename never touched. The sentence
+   voided six live proofs, one of them the only published evidence for
+   `promise 6 is on screen`.
+
+   **The count in the sentence above is part of the claim.** If you add a test
+   here, neither the number nor the "every" stretches to cover it — prove it
+   and say so, or narrow this paragraph. The sibling releases file had this
+   number go stale twice before it was written down as load-bearing.
 
    NOT COVERED by any published mutation, and stated rather than implied:
 
@@ -51,9 +80,15 @@
        it is pinned to /ops/alerts.html and does not visit this page. The
        narrow-width readings for this pane are in the pull request as hand-run
        numbers, not as a guard.
-     - whether a CSS rule RENDERS. Node has no layout engine, so the hatched
-       mask, the accent rail on the danger card and the 720px stack are shape
-       assertions here and screenshots in the pull request.
+     - whether a CSS rule RENDERS. Node has no layout engine, so nothing here
+       can tell a rule that applies from one that is overridden, and no
+       assertion in this file reads a computed style. What the pane draws is
+       evidenced by the screenshots and the width measurements in the pull
+       request, not here. (Until round 5 this bullet named three specific
+       shapes -- the hatched mask, an accent rail, the 720px stack -- as
+       "shape assertions here". Two of the three appear nowhere in this file.
+       A NOT COVERED bullet that overclaims in the covered direction is the
+       same defect as one that overclaims anywhere else.)
      - focus movement. The stub's focus() sets document.activeElement and
        nothing computes offsetParent, so the re-mask focus fallback is
        exercised but its CHOICE of destination is not asserted.
@@ -340,6 +375,11 @@ function byClass(root, cls) {
 /* One card, found by the text of its head. Whole-pane text is the wrong
    instrument for a claim about one card: the pane has five of them and an
    assertion over all of it passes without the right one being right. */
+/* Two card titles the pane deliberately does not share with the band above
+   them, named once here so a rename is one edit and cannot half-land. */
+const MATCHES = 'Accounts matching that reference';
+const ACTIVITY = 'What this account has done';
+
 function card(dom, title) {
   return byClass(panel(dom, 'live'), 'card').find((box) => {
     const head = byClass(box, 'card-title')[0];
@@ -626,7 +666,7 @@ test('promise 5 holds: a reveal that has re-masked itself is still in the access
 
 test('promise 6 is on screen: request and reply content is not shown, for any role', async () => {
   const dom = await openAccount();
-  assert.match(footOf(dom, 'Recent activity'), /Request and reply content is not shown, for any role\./);
+  assert.match(footOf(dom, ACTIVITY), /Request and reply content is not shown, for any role\./);
 });
 
 test('promise 6 holds: an event prints its label, time and reference and nothing else it carries', async () => {
@@ -636,7 +676,7 @@ test('promise 6 holds: an event prints its label, time and reference and nothing
       d.activity.events[0].reply = 'what Aria actually answered';
     }),
   });
-  const box = card(dom, 'Recent activity');
+  const box = card(dom, ACTIVITY);
   const text = allText(box);
   assert.match(text, /Chat reply/);
   assert.match(text, /run_88214/);
@@ -661,7 +701,7 @@ test('a health field carries no control and is never printed, whatever the paylo
 
 test('an off-origin activity href renders as plain text; a same-origin one is a link', async () => {
   const dom = await openAccount();
-  const box = card(dom, 'Recent activity');
+  const box = card(dom, ACTIVITY);
   const links = findAll(box, (n) => n.tagName === 'A');
   assert.equal(links.length, 1, 'expected exactly one link');
   assert.equal(links[0].getAttribute('href'), '/ops/run-history.html');
@@ -683,7 +723,7 @@ test('a match count larger than the rows sent is reported, not silently believed
     }, { match: /\/users\//, data: detailFixture() }],
   });
   await lookUp(dom);
-  const box = card(dom, 'Matches');
+  const box = card(dom, MATCHES);
   assert.match(allText(box), /2 of 9 accounts shown/);
   assert.match(allText(box), /says 9 accounts matched but sent 2/);
   assert.match(allText(box), /Narrow the identifier/);
@@ -691,7 +731,7 @@ test('a match count larger than the rows sent is reported, not silently believed
 
 test('a match list that agrees with its count draws no warning', async () => {
   const dom = await openAccount();
-  const box = card(dom, 'Matches');
+  const box = card(dom, MATCHES);
   assert.match(allText(box), /1 account/);
   assert.ok(!allText(box).includes('but sent'));
 });
@@ -700,11 +740,59 @@ test('the matches table shows coded references and the mask the API sent, and no
   const dom = await openAccount({
     lookup: lookupFixture((d) => { d.matches[0].email = SECRET; }),
   });
-  const box = card(dom, 'Matches');
+  const box = card(dom, MATCHES);
   assert.match(allText(box), /ath_2277/);
   assert.match(allText(box), /a•••@example\.invalid/);
   assert.ok(!allText(box).includes(SECRET));
-  assert.match(footOf(dom, 'Matches'), /masked by the operations API, not by this page/);
+  assert.match(footOf(dom, MATCHES), /masked by the operations API, not by this page/);
+});
+
+/* The tier came off the Subscription head because it was a third copy of it.
+   That head was the only thing naming the tier when there is no billing
+   record, so the empty state names it — and only names it. Round 2 of this
+   pane's review caught the first attempt classifying the tier as paid or free
+   from `tier.brand`, which is a pill tone with no billing meaning: a Coach
+   team account, one of the pane's own three tier filters, carries no `brand`
+   and was told it was on the free tier. The pane is not sent that fact, so it
+   states none. All three shapes the API can send are asserted, because each
+   one is a different way to be wrong. */
+test('an empty subscription card names the tier it was sent and classifies nothing', async () => {
+  /* "Classifies nothing" is half this test's name, so every shape the API can
+     send gets the negative, and the negative covers BOTH words. Round 2's
+     defect read `tier.brand` -- a pill tone with no documented meaning -- and
+     called a `coach_team` account free; the same field would have called
+     `{brand: true}` paid. Round 5 found the nameless shape carrying no
+     negative at all, which is the branch that field's defect lived on, and
+     the two negatives that did exist only said "free". */
+  const classifies = (t) => /\b(free|paid)\b/i.test(t);
+
+  const unbranded = await openAccount({
+    detail: detailFixture((d) => {
+      d.billing = { fields: [] };
+      d.tier = { key: 'coach_team', label: 'Coach team' };
+    }),
+  });
+  const box1 = card(unbranded, 'Subscription');
+  assert.match(allText(box1), /No subscription record/);
+  assert.match(allText(box1), /The account is on Coach team\./);
+  assert.ok(!classifies(allText(box1)), 'a tier with no brand key was classified');
+
+  const none = await openAccount({
+    detail: detailFixture((d) => { d.billing = { fields: [] }; delete d.tier; }),
+  });
+  const box2 = card(none, 'Subscription');
+  assert.match(allText(box2), /No tier was reported for this account either\./);
+  assert.ok(!/The account is on/.test(allText(box2)), 'a tier was named that was never sent');
+  assert.ok(!classifies(allText(box2)), 'an unreported tier was classified');
+
+  const nameless = await openAccount({
+    detail: detailFixture((d) => { d.billing = { fields: [] }; d.tier = { brand: true }; }),
+  });
+  const box3 = card(nameless, 'Subscription');
+  assert.ok(!allText(box3).includes('undefined'), 'the pane printed undefined to an operator');
+  assert.ok(!/The account is on/.test(allText(box3)), 'a nameless tier was given a name');
+  assert.ok(!classifies(allText(box3)), 'a nameless tier was classified from its brand flag');
+  assert.match(allText(box3), /The tier it reported has no name\./);
 });
 
 /* The danger zone. The mock draws four buttons; no route performs one, so the
@@ -729,10 +817,16 @@ test('an action the API does report is named, still with no control and still be
   });
   const box = card(dom, 'Account actions');
   assert.match(allText(box), /Reset the password/);
-  assert.match(allText(box), /Not reachable from this pane/);
   assert.equal(buttons(box).length, 0, 'a reported action became a control');
   assert.equal(byClass(box, 'srow').length, 1);
-  assert.match(allText(byClass(box, 'srow')[0]), /Re-authentication required/);
+
+  /* Both facts are the band's, not the row's, so they are asserted on the head
+     and the row is asserted to carry nothing but the name. Checking only the
+     card would pass with them back on every row, which is what this says. */
+  const head = byClass(box, 'card-head')[0];
+  assert.match(allText(head), /Named here, not performed here/);
+  assert.match(allText(head), /Re-authentication required/);
+  assert.equal(allText(byClass(box, 'srow')[0]).trim(), 'Reset the password');
 });
 
 /* ================================================= re-masking, in three ways */
