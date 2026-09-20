@@ -20,7 +20,8 @@
      - work that is flowing and failing is a third fact, not a fourth kind of
        queue;
      - a figure nothing records renders words and never a numeral;
-     - staging is refused before the read, not after it;
+     - an app or an environment asked for in the URL changes nothing, because
+       this pane offers neither;
      - no control is drawn that could never succeed.
 
    Every test here has a published mutation in the pull request: the exact
@@ -907,24 +908,30 @@ test('the oldest wait is a duration when it is known and words when it is not', 
     'with no queue over the line the tile did not say that is why it has no figure');
 });
 
-/* ===================== selections the read cannot act on ================ */
+/* ============ selections the shell can no longer hand over ============= */
 
-test('staging is refused before the read, not after it', async () => {
-  const dom = await boot({ query: '?env=staging' });
-  assert.equal(stateOf(dom), 'empty', 'a staging selection drew production figures');
-  assert.match(emptyText(dom), /no staging record/i, 'the refusal did not say what was missing');
-  assert.equal(dom.calls.length, 0,
-    'the pane read production and then hid the answer, rather than not reading it');
-});
+/* The app and environment controls this pane used to draw are gone from the
+   registry, because neither could narrow the read: the alerting record is
+   kept per request type and covers production only. What replaced the note
+   and the refusal is stronger than either, and this is it — the shell pins a
+   filter the pane does not declare, so a URL asking for one is not a
+   selection at all and the pane answers exactly as it does without it. */
+test('an app or environment in the URL changes nothing, because neither is offered', async () => {
+  const asked = await boot({ query: '?scope=mobile&env=staging' });
+  const plain = await boot({});
 
-test('an app selection says plainly that it narrows nothing', async () => {
-  const dom = await boot({ query: '?scope=mobile' });
-  assert.match(liveText(dom), /per request type, not per app/i,
-    'an app filter was accepted silently over figures it cannot narrow');
+  /* Each boot runs in its own vm context, so its recorded calls carry that
+     context's Object prototype and a strict deep comparison fails on two
+     identical readings. JSON is the one shape both realms agree on. */
+  const recorded = (dom) => JSON.parse(JSON.stringify(dom.calls));
 
-  const all = await boot({ query: '?scope=all' });
-  assert.doesNotMatch(liveText(all), /per request type, not per app/i,
-    'the note is unconditional, so it says nothing about the selection');
+  assert.equal(stateOf(asked), 'live',
+    'a filter the pane does not declare took the page off the screen');
+  assert.deepEqual(recorded(asked), recorded(plain),
+    'a filter the pane does not declare reached the read: '
+    + JSON.stringify(asked.calls));
+  assert.equal(liveText(asked), liveText(plain),
+    'a filter the pane does not declare changed what the page says');
 });
 
 /* ======================= empty is never just zero ======================= */

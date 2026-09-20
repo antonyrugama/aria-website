@@ -76,18 +76,24 @@
 
    THE FILTER BAR
 
-   The registry gives this pane a scope control, a window control and an
-   environment control. Only the window acts on the read:
+   The registry gives this pane a window control and nothing else. The window
+   is real: it is applied here, to the problems that came back, and every
+   figure on the page is labelled with it.
 
-     window        applied here, to the problems that came back
+   The app and environment controls used to be declared too, and neither could
+   act on the read:
+
      app scope     the record is kept per request type, not per app, so no
-                   selection narrows it. The pane says so rather than quietly
-                   returning the same figures for a choice somebody made
-     environment   there is no staging alerting record. Staging is refused
-                   rather than answered with production figures
+                   selection narrowed it, and the pane printed a note saying so
+     environment   there is no staging alerting record, so a staging selection
+                   was refused rather than answered
 
-   Refusing is the point. A pane that answers a selection it cannot act on has
-   the operator's own choice sitting above figures that ignore it. */
+   Both are gone from the registry rather than explained underneath, and so is
+   the custom window, which had no start and no end to be given and could only
+   ever reach a refusal card. A pane that answers a selection it cannot act on
+   has the operator's own choice sitting above figures that ignore it; a pane
+   that draws a control it can only refuse has said the narrowing is within
+   reach. Not drawing either is the answer to both. */
 
 (function (global) {
   'use strict';
@@ -105,9 +111,11 @@
   var HOUR_MS = 3600000;
   var DAY_MS = 24 * HOUR_MS;
 
-  /* The registry's window values, in milliseconds. 'custom' is deliberately
-     absent: it names a window nothing on this page can supply a start and an
-     end for, and it is refused rather than guessed at. */
+  /* The registry's window values, in milliseconds. Every value the registry
+     offers has an entry here, and the guard in
+     scripts/ops-registry-filters.test.mjs turns red on one that does not:
+     a window this table cannot answer is a control that refuses rather than
+     narrows, which is why 'custom' is no longer offered. */
   var WINDOW_MS = { '24h': DAY_MS, '7d': 7 * DAY_MS, '30d': 30 * DAY_MS };
   var WINDOW_LABEL = { '24h': 'the last 24 hours', '7d': 'the last 7 days', '30d': 'the last 30 days' };
 
@@ -295,8 +303,7 @@
 
     global.addEventListener('ops:filters', function (event) {
       var next = event.detail;
-      var changed = next.scope !== current.scope || next.range !== current.range ||
-        next.env !== current.env;
+      var changed = next.range !== current.range;
       current = next;
       if (changed) load();
     });
@@ -304,23 +311,6 @@
     function load() {
       var token = ++loadToken;
       var selection = current;
-
-      /* Staging is refused before the read rather than after it. There is one
-         alerting record and it is production's, so a staging selection has no
-         answer at all — and answering it with production figures would be the
-         quietest possible way to mislead somebody. */
-      if (selection.env !== 'production') {
-        region.empty(noStagingRecord(selection.env));
-        return;
-      }
-
-      /* A custom window with no start and no end is not a window. The control
-         that offers it belongs to the shell, so the way back to a real one is
-         the shell's too. */
-      if (selection.range === 'custom') {
-        region.empty(noCustomWindow());
-        return;
-      }
 
       region.loading([
         { type: 'tiles', count: 4 },
@@ -375,7 +365,7 @@
       }
 
       var wrap = h('div', { className: 'stack' });
-      selectionNotes(selection, capped).forEach(function (note) { wrap.appendChild(note); });
+      selectionNotes(capped).forEach(function (note) { wrap.appendChild(note); });
       wrap.appendChild(summaryBand(inside, groups, armed, selection, capped));
       wrap.appendChild(failureBand(groups, capped));
       wrap.appendChild(privacyBand());
@@ -385,34 +375,7 @@
       else region.show(wrap);
     }
 
-    /* ------------------------------------------------------- refusals */
-
-    function noStagingRecord(env) {
-      var box = S.card();
-      box.appendChild(S.stateBlock('layers', 'There is no ' + env + ' record here', [
-        'The alerting watches production and only production, so there is no ' + env +
-          ' history to show. Nothing is being withheld: the record does not exist.',
-        'Switch the environment control back to Production to read what happened there.'
-      ]));
-      return box;
-    }
-
-    function noCustomWindow() {
-      var box = S.card();
-      var block = S.stateBlock('clock', 'A custom window needs a start and an end', [
-        'Nothing on this page collects them yet, so a custom range would be a window ' +
-          'with no edges and figures counted over whatever the record happened to hold.',
-        'The three fixed windows are real: each one is applied to the record that came back.'
-      ]);
-
-      var back = h('button', { className: 'btn btn-primary', type: 'button', text: 'Back to the last 7 days' });
-      back.addEventListener('click', function () {
-        if (S.resetRange()) S.announce('Window set to the last 7 days');
-      });
-      block.appendChild(h('div', { className: 'row mt-sm' }, [back]));
-      box.appendChild(block);
-      return box;
-    }
+    /* ------------------------------------------------------ the empties */
 
     /* The window came back readable and empty. Which of the two empties it is
        depends entirely on whether anything was watching, so that is what the
@@ -450,16 +413,10 @@
       return box;
     }
 
-    /* ------------------------------------------------ selection honesty */
+    /* ------------------------------------------- what the record leaves out */
 
-    function selectionNotes(selection, capped) {
+    function selectionNotes(capped) {
       var notes = [];
-
-      if (selection.scope !== 'all') {
-        notes.push(noteLine('info',
-          'The record is kept per request type, not per app, so the app filter does not ' +
-          'narrow anything below. Every figure here covers both Mobile and Coaches Web.'));
-      }
 
       if (capped) {
         notes.push(noteLine('warn',

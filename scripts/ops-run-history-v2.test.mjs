@@ -10,8 +10,9 @@
        is still open belongs to today's window however long ago it fired;
      - a full page reads as a floor rather than a total, and says why;
      - a figure nothing records renders words and never a numeral;
-     - a selection the read cannot act on is refused rather than answered:
-       staging has no record at all, and a custom window has no edges;
+     - a selection the record cannot act on is never offered: no app, no
+       environment and no custom window, so one asked for in the URL changes
+       nothing rather than being refused underneath its own control;
      - run content is hidden at every role, the owner included, with no control
        that could never succeed, and no value node in the markup at all;
      - anything address-shaped is masked before it reaches the DOM, on every
@@ -344,41 +345,36 @@ test('a figure nothing records renders words and never a numeral', async () => {
     'no tile printed a numeral at all, so this proves nothing');
 });
 
-/* ===================== selections the read cannot act on ================ */
+/* ============ selections the shell can no longer hand over ============= */
 
-test('staging is refused rather than answered with production figures', async () => {
-  const dom = await boot({ query: '?env=staging' });
-  assert.equal(stateOf(dom), 'empty', 'a staging selection drew figures');
-  assert.match(emptyText(dom), /no staging record/i,
-    'the refusal did not say what was missing');
-  assert.equal(dom.calls.length, 0,
-    'the pane read production and then hid the answer, rather than not reading it');
-});
+/* The app and environment controls this pane used to draw are gone from the
+   registry, and so is the custom window: the alerting record is kept per
+   request type and covers production only, and a custom window has no start
+   and no end for this bar to give it. The note, the staging refusal and the
+   custom-window refusal are all replaced by the same stronger guarantee —
+   the shell pins a filter the pane does not declare and clamps a window it
+   does not offer, so none of the three is a selection the operator can reach.
 
-test('a custom window is refused and offers the way back', async () => {
-  const dom = await boot({ query: '?range=custom' });
-  assert.equal(stateOf(dom), 'empty', 'a window with no edges drew figures anyway');
-  assert.match(emptyText(dom), /custom window needs a start and an end/i,
-    'the refusal did not say why');
-  assert.equal(dom.calls.length, 0, 'the pane read the API for a window it cannot express');
+   The window that IS declared is asserted to narrow by `the window is applied
+   to the record that came back` above; this is only the other half. */
+test('an app, an environment or a custom window in the URL changes nothing', async () => {
+  const asked = await boot({ query: '?scope=mobile&env=staging&range=custom' });
+  const plain = await boot({});
 
-  const back = findAll(emptyPanel(dom), (n) => n.tagName === 'BUTTON')[0];
-  assert.ok(back, 'the refusal offered no way out of it');
-  back.dispatch('click');
-  await settle();
-  assert.equal(stateOf(dom), 'live',
-    'pressing the way back did not put a real window on screen');
-  assert.ok(dom.calls.length > 0, 'the way back did not read anything');
-});
+  /* Each boot runs in its own vm context, so its recorded calls carry that
+     context's Object prototype and a strict deep comparison fails on two
+     identical readings. JSON is the one shape both realms agree on. */
+  const recorded = (dom) => JSON.parse(JSON.stringify(dom.calls));
 
-test('an app selection says plainly that it narrows nothing', async () => {
-  const dom = await boot({ query: '?scope=mobile' });
-  assert.match(liveText(dom), /per request type, not per app/i,
-    'an app filter was accepted silently over figures it cannot narrow');
-
-  const all = await boot({ query: '?scope=all' });
-  assert.doesNotMatch(liveText(all), /per request type, not per app/i,
-    'the note is unconditional, so it says nothing about the selection');
+  assert.equal(stateOf(asked), 'live',
+    'a filter the pane does not declare took the page off the screen');
+  assert.deepEqual(recorded(asked), recorded(plain),
+    'a filter the pane does not declare reached the read: '
+    + JSON.stringify(asked.calls));
+  assert.equal(liveText(asked), liveText(plain),
+    'a filter the pane does not declare changed what the page says');
+  assert.match(liveText(asked), /last 7 days/i,
+    'a window nothing offers was not clamped back to the one the pane starts on');
 });
 
 /* ======================= empty is never just zero ======================= */

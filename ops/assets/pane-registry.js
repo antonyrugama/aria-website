@@ -40,8 +40,18 @@
      on. A control that changes nothing is worse than no control: picking
      Staging and being left looking at production, with the selection sitting
      in the bar as though it had been applied, is the failure mode that matters
-     here. Where a filter is in the approved design but nothing can carry it
-     yet, filterNote says so where the control would have been. */
+     here. The same goes for one value inside a list: a window whose only
+     outcome is a refusal card is an option in name only, which is why no pane
+     below offers 'custom' even though RANGES still names it.
+
+     Where a filter is in the approved design but nothing can carry it yet,
+     filterNote says so where the control would have been.
+
+     scripts/ops-registry-filters.test.mjs holds this to the panes themselves.
+     It boots each pane once per value the registry offers and reads back the
+     call the pane made, so a filter declared here that never reaches a read,
+     and a value whose only answer is a refusal, both turn it red. Declaring
+     one is therefore a claim about behaviour rather than a line in a table. */
   var WAVES = {
     W2: 'Operate panes',
     W3: 'Understand panes',
@@ -78,13 +88,32 @@
       file: 'jobs-live.html', icon: 'live', label: 'Happening now', group: 'Right now',
       railId: 'jobs',
       question: 'What is Aria working on, and is anything stuck?',
-      wave: 'W2', scope: true, range: false, env: true
+      /* Neither control this pane used to draw could act on its read. The
+         alerting record is kept per request type, so no app narrows it, and
+         the pane said so underneath in a note; the alerting watches production
+         and only production, so staging was refused rather than answered. Two
+         controls and an apology are the same defect as a button with no route
+         behind it: they say the narrowing is within reach. The note below is
+         the whole of what was true about them. */
+      wave: 'W2', scope: false, range: false, env: false,
+      filterNote: 'The alerting record is kept per request type and covers production only, ' +
+        'so there is no app or environment filter'
     },
     history: {
       file: 'run-history.html', icon: 'history', label: 'What happened', group: 'Right now',
       railId: 'history',
       question: 'Why did this fail, and is it happening to other people?',
-      wave: 'W2', scope: true, range: ['24h', '7d', '30d', 'custom'], rangeDefault: '7d', env: true
+      /* The window is real: the pane applies it to the problems that came
+         back, and every figure is labelled with it. The app and environment
+         controls were not, for the same two reasons as Happening now above.
+         Custom is gone from the window list for the reason it is absent from
+         the two panes below: this bar carries a range name and nothing else,
+         so a custom window has no start and no end, and the only outcome it
+         could reach was a refusal card. A value whose one answer is a refusal
+         is an option in name only. */
+      wave: 'W2', scope: false, range: ['24h', '7d', '30d'], rangeDefault: '7d', env: false,
+      filterNote: 'The alerting record is kept per request type and covers production only, ' +
+        'so there is no app or environment filter'
     },
     alerts: {
       file: 'alerts.html', icon: 'alerts', label: 'Problems', group: 'Right now',

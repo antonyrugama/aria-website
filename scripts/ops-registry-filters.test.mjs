@@ -1,0 +1,734 @@
+/* The registry's filter claims, held against what the panes actually do.
+
+   ops/assets/pane-registry.js declares per-pane filter applicability as
+   `scope`, `range` and `env`, and both shells draw a control for every one
+   that is truthy. Nothing until this file checked that the pane behind the
+   control could act on it, and two panes could not: Happening now and What
+   happened each declared an app filter the alerting record cannot be narrowed
+   by, and an environment filter whose staging value they refused rather than
+   answered, and each then explained that in prose underneath the controls the
+   registry had made the shell draw. What happened also offered a custom
+   window whose only outcome was a refusal card.
+
+   THE CONTRACT, stated here rather than read out of the registry
+
+     1. A filter a pane declares must be ACTED ON, in one of exactly two ways,
+        and the table below names which for every declared filter:
+
+          'read'    the value the operator picked reaches the pane's own API
+                    call, in a field of the same name, in the querystring or
+                    in the request body
+          'answer'  the value is applied to the answer after it comes back,
+                    and a narrower value leaves fewer records on the page
+
+     2. No value a pane offers may COST it its answer. Every value reaches the
+        same pane state as the value the pane starts on. A selection that
+        empties a pane which was otherwise live is a refusal wearing a
+        filter's clothes, and the registry's own comment settles that a
+        control whose one outcome is a refusal is an option in name only.
+
+     3. A filter a pane does NOT declare must be unreachable. The shell pins
+        it, so a URL asking for one changes neither the read nor the page.
+
+   Every assertion here is keyed off the call the pane recorded and the DOM it
+   drew. None of it reads pane source text: a source-grep assertion pins the
+   string and stays green when the defect is reinstated in another spelling.
+
+   NOT COVERED by this file, stated rather than implied:
+
+     - `spend`. It is the one pane with a declared filter that this file does
+       not boot: it is the last pane on the v1 shell (assets/shell.js) rather
+       than the v2 bootstrap every pane here loads, and it is mid-conversion
+       in antonyrugama/aria-website#65. The coverage lock below pins the exact
+       claim it is excused for — a range filter and nothing else — so any
+       change to what spend declares turns this file red rather than widening
+       the hole quietly. It gets a live proof when it lands on v2.
+     - whether the API acts on a filter the pane sends it. A client can
+       promise that the operator's selection reached the request; what the
+       route does with it is the route's own test.
+     - `overview`, `evals`, `releases` and `settings`. They declare no filter,
+       so rule 1 has nothing to check on them and rule 3 is enforced against
+       the four bootable panes that do declare one. A regression that gives
+       one of them a filter is caught by the coverage lock, which is a
+       declaration-level failure rather than a recorded-call one; it says so
+       in its own message.
+     - layout, width and contrast. Nothing here measures anything. */
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import vm from 'node:vm';
+
+import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+
+const OPS = new URL('../ops/', import.meta.url);
+const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
+
+const REGISTRY_SRC = read('assets/pane-registry.js');
+const ARIA_SRC = read('assets/aria.js');
+const SHELL_SRC = read('assets/shell-pane-v2.js');
+
+const TOKENS = {
+  '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
+  '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
+  '--line-2': '#1F2A36', '--ink': '#E6EDF3',
+};
+
+const MINUTE = 60000;
+const HOUR = 3600000;
+const DAY = 86400000;
+const at = (ms) => new Date(Date.now() - ms).toISOString();
+
+/* ========================== the contract table ========================= */
+
+/* How each declared filter is acted on. Written out rather than derived from
+   anything the panes or the registry say, so that a pane which stops acting
+   on a filter cannot bring this table with it. */
+const HONOURED = {
+  history: { range: 'answer' },
+  alerts: { range: 'answer' },
+  analytics: { scope: 'read', range: 'read', env: 'read' },
+  users: { scope: 'read' },
+};
+
+/* The single pane this file cannot boot, and the exact claim it is excused
+   for. Any other filter appearing on it turns the coverage lock red. */
+const NOT_BOOTED = {
+  spend: ['range'],
+};
+
+/* ============================== fixtures =============================== */
+
+/* One problem from the alerting record, in the shape the route sends. Three
+   panes read this route and all three are given the same shape, because a
+   fixture per pane is three chances to disagree with the route. */
+function problem(over) {
+  return Object.assign({
+    id: 'prb_1', reference: 'AO-118',
+    ruleKey: 'queue_backlog_age', ruleTitle: 'Queue backlog',
+    ruleThreshold: 'over 10 minutes, held for 5 minutes',
+    severity: 'critical', category: 'infrastructure', categoryLabel: 'Infrastructure',
+    status: 'open',
+    title: 'Jobs are waiting',
+    summary: 'The oldest queued job is over the line.',
+    scopeKey: 'video_analysis', scopeLabel: 'Sprint video',
+    observedValue: 3600, thresholdValue: 600, durationSeconds: 300,
+    detail: null,
+    workPane: 'jobs-live', workPaneLabel: 'Happening now',
+    firstBreachedAt: at(60 * MINUTE), firedAt: at(55 * MINUTE),
+    lastObservedAt: at(MINUTE), conditionClearedAt: null,
+    acknowledgedAt: null, acknowledgedByEmail: null,
+    closedAt: null, closedByEmail: null, closeReason: null,
+  }, over || {});
+}
+
+function rules() {
+  return {
+    rules: [
+      {
+        ruleKey: 'queue_backlog_age', title: 'Queue backlog', enabled: true,
+        thresholdUnit: 'seconds', thresholdValue: 600, durationSeconds: 300,
+        thresholdLabel: 'over 10 minutes, held for 5 minutes',
+        lastEvaluatedAt: at(3 * MINUTE), lastEvaluationStatus: 'firing',
+        lastFiredAt: at(55 * MINUTE),
+      },
+      {
+        ruleKey: 'ai_success_rate', title: 'AI success rate', enabled: true,
+        thresholdUnit: 'basis_points', thresholdValue: 9500, durationSeconds: 600,
+        thresholdLabel: 'below 95%, over 10 minutes',
+        lastEvaluatedAt: at(3 * MINUTE), lastEvaluationStatus: 'ok',
+        lastFiredAt: at(20 * MINUTE),
+      },
+    ],
+    channels: [],
+  };
+}
+
+const CONSENT_DETAIL =
+  'Counts come from people whose analytics consent was on at the time.';
+
+function usage() {
+  return {
+    asOf: at(HOUR),
+    window: {
+      range: '30d', start: at(30 * DAY), endExclusive: at(0),
+      days: 30, grain: 'day', timezone: 'UTC',
+      rollupsComputedAt: at(5 * HOUR),
+      reportingStart: '2026-08-21', daysCovered: 30, daysMissingRollups: [],
+    },
+    filters: { app: 'all', env: 'production' },
+    reportingFloor: 50,
+    consent: { enforcedAt: 'ingest', detail: CONSENT_DETAIL },
+    availability: { state: 'ready', detail: '' },
+    apps: [
+      {
+        app: 'mobile', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
+        coverageBasisPoints: 9200,
+        metrics: [
+          { label: 'Active people', kind: 'count', value: 1061 },
+          { label: 'Sessions', kind: 'count', value: 8430 },
+        ],
+        trend: {
+          label: 'Active people per day, Mobile', color: 's1',
+          values: [980, 1001, 1040, 1077, 1061],
+        },
+      },
+    ],
+    cohorts: [],
+    features: { hint: '', rows: [], note: '', coverageNote: '' },
+    coverage: { shortfall: null, versions: [] },
+  };
+}
+
+function lookupResult() {
+  return {
+    recorded: { at: at(1000), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
+    matchCount: 1,
+    matches: [
+      {
+        reference: 'ath_2277',
+        maskedEmail: 'a•••@example.invalid',
+        state: { key: 'active', label: 'Active', tone: 'ok' },
+        tier: { key: 'pro', label: 'Athlete Pro', brand: true },
+        platforms: [{ key: 'mobile', label: 'Mobile' }],
+        lastActiveAt: at(3 * HOUR),
+        flags: [],
+      },
+    ],
+  };
+}
+
+function accountDetail() {
+  return {
+    reference: 'ath_2277',
+    kind: 'athlete',
+    state: { key: 'active', label: 'Active', tone: 'ok' },
+    tier: { key: 'pro', label: 'Athlete Pro', brand: true },
+    memberSince: at(400 * DAY),
+    recorded: { at: at(500), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
+    summary: {
+      fields: [
+        { key: 'locale', label: 'Locale', masked: false, value: 'es-ES' },
+      ],
+    },
+    activity: { windowDays: 7, events: [] },
+    devices: [],
+    billing: { fields: [] },
+    access: { windowDays: 90, entries: [] },
+    supportActions: { available: [] },
+  };
+}
+
+/* ============================ booting a pane =========================== */
+
+/* What each pane needs on the page, which scripts it loads after the
+   bootstrap, and what its reads answer with. The shape is lifted from the
+   per-pane test files, which all boot the same way; nothing here is pane
+   knowledge beyond the script list and the endpoints. */
+const PAGES = {
+  jobs: {
+    file: 'jobs-live.html',
+    scripts: ['assets/alerts-model.js', 'assets/pane-jobs-live-v2.js'],
+    answer: (endpoint) => {
+      if (endpoint === '/api/ops/alerts/problems') return { problems: [problem()], summary: {} };
+      if (endpoint === '/api/ops/alerts/rules') return rules();
+      return undefined;
+    },
+  },
+  history: {
+    file: 'run-history.html',
+    scripts: ['assets/alerts-model.js', 'assets/pane-run-history-v2.js'],
+    answer: (endpoint) => {
+      if (endpoint === '/api/ops/alerts/problems') return { problems: [problem()], summary: {} };
+      if (endpoint === '/api/ops/alerts/rules') return rules();
+      return undefined;
+    },
+  },
+  alerts: {
+    file: 'alerts.html',
+    scripts: ['assets/alerts-model.js', 'assets/pane-alerts.js'],
+    answer: (endpoint, o) => {
+      if (endpoint === '/api/ops/alerts/rules') return rules();
+      if (endpoint === '/api/ops/alerts/problems') {
+        return (o && o.query && o.query.status === 'closed')
+          ? { problems: [] }
+          : { problems: [problem()] };
+      }
+      return undefined;
+    },
+  },
+  analytics: {
+    file: 'analytics.html',
+    scripts: ['assets/pane-analytics.js'],
+    answer: (endpoint) => (endpoint === '/api/ops/usage' ? usage() : undefined),
+  },
+  users: {
+    file: 'users.html',
+    scripts: ['assets/pane-users.js'],
+    answer: (endpoint) => {
+      if (/\/api\/ops\/users\/lookup$/.test(endpoint)) return lookupResult();
+      /* One match is not a choice, so the pane opens the account itself. That
+         second read has to answer or the pane lands in its degraded state,
+         which would still carry the filter but would be reading a filter off
+         an error path. */
+      if (/\/api\/ops\/users\//.test(endpoint)) return accountDetail();
+      return undefined;
+    },
+    /* The only pane here that reads nothing until it is asked to. Its filter
+       travels on the lookup, so the lookup has to be run for there to be a
+       recorded call to read. */
+    act: async (dom) => {
+      dom.doc.getElementById('lookupIdentifier').value = 'ath_2277';
+      dom.doc.getElementById('lookupReason').value = 'SUP-4471';
+      dom.doc.querySelector('.hunt-form').dispatch('submit');
+      await settle();
+    },
+  },
+};
+
+async function settle() {
+  for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r));
+}
+
+function buildPage(dom, body, paneId) {
+  const el = (parent, tag, attrs = {}) => {
+    const node = dom.element(tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    parent.appendChild(node);
+    return node;
+  };
+  body.setAttribute('data-pane', paneId);
+  body.className = 'is-booting';
+  const gate = el(body, 'main', { class: 'gate gate-boot gate-center' });
+  el(gate, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
+  el(body, 'main', { class: 'gate gate-failed gate-center', id: 'gateFailed', tabindex: '-1' });
+  const appGate = el(body, 'div', { class: 'gate gate-app' });
+  el(appGate, 'div', { id: 'app' });
+}
+
+/* One pane, booted the way its own page boots it, at the querystring given.
+   Returns what the pane asked the API for and which state it ended in. */
+async function bootPane(paneId, search) {
+  const page = PAGES[paneId];
+  assert.ok(page, 'no boot recipe for ' + paneId);
+
+  const calls = [];
+  const dom = makeDom({
+    tokens: TOKENS,
+    href: 'https://ops.example.invalid/ops/' + page.file + (search || ''),
+  });
+  const body = dom.element('body');
+  dom.root.appendChild(body);
+  dom.doc.body = body;
+  dom.doc.contains = (node) => dom.root.contains(node);
+  buildPage(dom, body, paneId);
+
+  dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
+  dom.window.OpsSession = {
+    state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role: 'owner' } },
+    boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
+    call: (endpoint, o) => {
+      calls.push({
+        endpoint,
+        method: (o && o.method) || 'GET',
+        query: (o && o.query) || null,
+        body: (o && o.body) || null,
+      });
+      const data = page.answer(endpoint, o);
+      if (data === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
+      return Promise.resolve({ data });
+    },
+    signOut: () => Promise.resolve(),
+    role: () => 'owner',
+    hasRole: () => true,
+    daysLeft: () => 12,
+  };
+
+  vm.createContext(dom.window);
+  vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
+  vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
+  vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
+
+  /* Recorded before the pane module runs, so the first state it asks for is
+     caught. The live and degraded panels are one element, so the DOM alone
+     cannot tell them apart and the pane's own request is the only reading. */
+  const applied = [];
+  const realApply = dom.window.Aria.applyState;
+  dom.window.Aria.applyState = function (state) {
+    applied.push(String(state));
+    return realApply.apply(this, arguments);
+  };
+
+  for (const rel of page.scripts) {
+    vm.runInContext(read(rel), dom.window, { filename: rel });
+  }
+
+  await settle();
+  if (page.act) await page.act(dom);
+
+  return { ...dom, body, calls, applied, paneId };
+}
+
+/* The state the pane last asked for: 'loading', 'live', 'degraded' or
+   'empty'. */
+const stateOf = (dom) => dom.applied[dom.applied.length - 1] || null;
+
+function panel(dom, state) {
+  const content = dom.doc.getElementById('content');
+  if (!content) return null;
+  return content.querySelectorAll('[data-state]')
+    .filter((n) => (n.getAttribute('data-state') || '').split(' ').indexOf(state) !== -1)[0] || null;
+}
+
+/* Everything on screen, whichever panel is showing it. */
+function shownText(dom) {
+  const node = panel(dom, stateOf(dom) === 'empty' ? 'empty' : 'live');
+  return node ? allText(node) : '';
+}
+
+/* The shown panel's elements carrying one class, for a reading narrower than
+   the whole page. */
+function withClass(dom, name) {
+  const node = panel(dom, stateOf(dom) === 'empty' ? 'empty' : 'live');
+  if (!node) return [];
+  return findAll(node, (n) => (n.getAttribute && (n.getAttribute('class') || '').split(/\s+/)
+    .indexOf(name) !== -1));
+}
+
+/* Each boot runs in its own vm context, so a recorded call carries that
+   context's Object prototype and a strict deep comparison of two identical
+   readings fails on the prototype alone. JSON is the shape both realms
+   agree on. */
+const recorded = (dom) => JSON.parse(JSON.stringify(dom.calls));
+
+/* Every value a recorded call carried, querystring and body together, as
+   strings. What the pane sent, with no opinion about which field it sent it
+   in. */
+function valuesSent(dom) {
+  const out = [];
+  for (const call of dom.calls) {
+    for (const bag of [call.query, call.body]) {
+      if (!bag) continue;
+      for (const key of Object.keys(bag)) {
+        const value = bag[key];
+        if (value !== undefined && value !== null) out.push(String(value));
+      }
+    }
+  }
+  return out;
+}
+
+/* The values a recorded call carried under one field name, querystring and
+   body alike. Narrower than valuesSent on purpose: a pane that sent the app
+   the operator picked in the environment field would satisfy "the value
+   travelled" while sending it somewhere the route will not read it. Both
+   panes proved below name the field after the filter, and a pane that renames
+   one is red here until somebody says so out loud. */
+function sentAs(dom, field) {
+  const out = [];
+  for (const call of dom.calls) {
+    for (const bag of [call.query, call.body]) {
+      if (!bag || !Object.prototype.hasOwnProperty.call(bag, field)) continue;
+      const value = bag[field];
+      if (value !== undefined && value !== null) out.push(String(value));
+    }
+  }
+  return out;
+}
+
+/* ============================ the registry ============================= */
+
+function registry() {
+  const dom = makeDom({ tokens: TOKENS });
+  vm.createContext(dom.window);
+  vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
+  return dom.window.OpsPaneRegistry;
+}
+
+const FILTERS = ['scope', 'range', 'env'];
+
+/* The filters one pane declares, in a fixed order so two lists can be
+   compared. `range` is a list of values rather than a boolean, so truthiness
+   is the one test that reads all three. */
+function declaredBy(pane) {
+  return FILTERS.filter((name) => Boolean(pane[name]));
+}
+
+/* The values the shell will offer for one declared filter, taken from the
+   same tables the shell draws its controls from. */
+function valuesFor(reg, pane, filter) {
+  if (filter === 'scope') return reg.SCOPES.map((s) => s.v);
+  if (filter === 'env') return reg.ENVS.map((e) => e.v);
+  return pane.range.slice();
+}
+
+/* The value the pane starts on, which is what a selection is compared
+   against. */
+function startsOn(pane, filter) {
+  if (filter === 'scope') return 'all';
+  if (filter === 'env') return 'production';
+  return pane.rangeDefault || pane.range[0];
+}
+
+const searchFor = (filter, value) => '?' + filter + '=' + encodeURIComponent(value);
+
+/* ======================== 1. the coverage lock ========================= */
+
+/* Nothing below can check a claim this file does not know about, so this is
+   the assertion that keeps the rest of the file from going quiet. A pane that
+   gains a filter is red here until somebody writes down how that filter is
+   acted on and this file proves it. */
+test('every filter the registry declares is claimed by this file, and every claim is a pane\'s', () => {
+  const { PANES } = registry();
+
+  const declared = {};
+  for (const id of Object.keys(PANES)) {
+    const filters = declaredBy(PANES[id]);
+    if (filters.length) declared[id] = filters;
+  }
+
+  const claimed = {};
+  for (const id of Object.keys(HONOURED)) claimed[id] = Object.keys(HONOURED[id]).sort();
+  for (const id of Object.keys(NOT_BOOTED)) claimed[id] = NOT_BOOTED[id].slice().sort();
+
+  assert.deepEqual(
+    Object.keys(declared).sort(), Object.keys(claimed).sort(),
+    'the registry and this file disagree about which panes declare a filter. A pane '
+    + 'that gained one needs a recipe in PAGES and a line in HONOURED saying how it '
+    + 'is acted on; a pane that lost one needs its line removed.'
+  );
+
+  for (const id of Object.keys(declared)) {
+    assert.deepEqual(
+      declared[id].slice().sort(), claimed[id],
+      id + ' declares ' + declared[id].join(', ') + ' and this file claims '
+      + claimed[id].join(', ') + ', so one of them is unproven'
+    );
+  }
+
+  /* So the lock cannot pass by the dashboard losing its filters. */
+  const total = Object.keys(declared).reduce((n, id) => n + declared[id].length, 0);
+  assert.ok(total >= 6,
+    'only ' + total + ' filters are declared across the whole dashboard, so the '
+    + 'proofs below have almost nothing to bind');
+
+  /* Every pane this file claims to prove has to be bootable, or the proof is
+     a line in a table. */
+  for (const id of Object.keys(HONOURED)) {
+    assert.ok(PAGES[id], id + ' is claimed in HONOURED with no boot recipe behind it');
+  }
+});
+
+/* ===================== 2. a filter reaches the read ==================== */
+
+/* The assertion this file exists for. A pane that declares a filter and never
+   sends it is a control the operator can move over figures that ignore it. */
+test('a filter carried into the read arrives with the value the operator picked', async () => {
+  const { PANES } = registry();
+  let proved = 0;
+
+  for (const id of Object.keys(HONOURED)) {
+    for (const filter of Object.keys(HONOURED[id])) {
+      if (HONOURED[id][filter] !== 'read') continue;
+      const pane = PANES[id];
+      const seen = new Map();
+
+      for (const value of valuesFor(registry(), pane, filter)) {
+        const dom = await bootPane(id, searchFor(filter, value));
+        assert.ok(dom.calls.length,
+          id + ' read nothing at all under ' + filter + '=' + value
+          + ', so nothing can carry the selection');
+        assert.ok(valuesSent(dom).indexOf(String(value)) !== -1,
+          id + ' declares ' + filter + ' and did not send ' + value + ' to any read. '
+          + 'It asked for: ' + JSON.stringify(recorded(dom)));
+        assert.ok(sentAs(dom, filter).indexOf(String(value)) !== -1,
+          id + ' sent ' + value + ' somewhere, but not in a field called ' + filter
+          + '. It asked for: ' + JSON.stringify(recorded(dom)));
+        seen.set(value, JSON.stringify(recorded(dom)));
+        proved += 1;
+      }
+
+      /* Sending the value is not enough on its own: a pane that hard-coded
+         the value the operator happens to start on would satisfy the check
+         above for that one value. Two selections have to produce two
+         different reads. */
+      assert.ok(new Set(seen.values()).size === seen.size,
+        id + ' sent the same read for two different values of ' + filter
+        + ', so the value it carried was not the selection');
+    }
+  }
+
+  assert.ok(proved >= 8,
+    'only ' + proved + ' pane-and-value pairs were proved to carry their selection');
+});
+
+/* ================= 3. a filter applied to the answer =================== */
+
+/* The other way a filter can be real. These two panes read a route that takes
+   no window, so the window is applied to what came back — which narrows the
+   page just as honestly, and is why neither is required to send it. Each
+   probe straddles the boundary in both directions, so a pane that simply drew
+   nothing, or drew everything, fails it. */
+const ANSWER_PROBES = {
+  'history.range': async () => {
+    /* The pane groups failures by rule and request type rather than printing
+       a reference, so the two are told apart by the rule and the request type
+       they carry, and by the count of failures the page reports. */
+    const recent = problem({ id: 'prb_recent', title: 'Raised this morning' });
+    const old = problem({
+      id: 'prb_old', title: 'Raised last month',
+      ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
+      scopeKey: 'coach_invites', scopeLabel: 'Coach invites',
+      status: 'closed',
+      firstBreachedAt: at(20 * DAY), firedAt: at(20 * DAY),
+      lastObservedAt: at(20 * DAY), closedAt: at(20 * DAY),
+    });
+    const both = { problems: [recent, old], summary: {} };
+    const previous = PAGES.history.answer;
+    PAGES.history.answer = (endpoint) => {
+      if (endpoint === '/api/ops/alerts/problems') return both;
+      if (endpoint === '/api/ops/alerts/rules') return rules();
+      return undefined;
+    };
+    try {
+      const narrow = await bootPane('history', '?range=24h');
+      const wide = await bootPane('history', '?range=30d');
+      assert.equal(stateOf(narrow), 'live', 'the narrow window took the page off the screen');
+      assert.equal(stateOf(wide), 'live', 'the wide window took the page off the screen');
+
+      assert.match(shownText(narrow), /Sprint video/,
+        'the narrow window dropped a failure raised inside it');
+      assert.doesNotMatch(shownText(narrow), /Coach invites/,
+        'a failure from twenty days ago is on the page under a twenty-four hour window');
+      assert.match(shownText(wide), /Coach invites/,
+        'the wide window did not reach a failure from twenty days ago, so the narrow '
+        + 'one proves nothing');
+
+      assert.match(shownText(narrow), /Failures raised 1\b/,
+        'the narrow window counted something other than the one failure inside it');
+      assert.match(shownText(wide), /Failures raised 2\b/,
+        'the wide window counted something other than both failures');
+    } finally {
+      PAGES.history.answer = previous;
+    }
+  },
+
+  'alerts.range': async () => {
+    const stale = problem({
+      id: 'prb_stale', reference: 'AO-301', title: 'Open since last month',
+      firstBreachedAt: at(40 * DAY), firedAt: at(40 * DAY), lastObservedAt: at(40 * DAY),
+    });
+    const closed = problem({
+      id: 'prb_closed', reference: 'AO-302', title: 'Closed two days ago',
+      status: 'closed',
+      firstBreachedAt: at(2 * DAY), firedAt: at(2 * DAY),
+      lastObservedAt: at(2 * DAY), closedAt: at(2 * DAY), closeReason: 'fixed',
+    });
+    const previous = PAGES.alerts.answer;
+    PAGES.alerts.answer = (endpoint, o) => {
+      if (endpoint === '/api/ops/alerts/rules') return rules();
+      if (endpoint === '/api/ops/alerts/problems') {
+        return (o && o.query && o.query.status === 'closed')
+          ? { problems: [closed] }
+          : { problems: [stale] };
+      }
+      return undefined;
+    };
+    try {
+      const open = await bootPane('alerts', '?range=open');
+      const month = await bootPane('alerts', '?range=30d');
+
+      /* The queue only. This pane also draws a "recently closed" band on a
+         fourteen-day window of its own, which the shell's range deliberately
+         does not touch, so whole-page text would report that band as if the
+         range had reached it. */
+      const queue = (dom) => withClass(dom, 'p-item').map(allText).join(' ');
+
+      assert.match(queue(open), /Open since last month/,
+        'open now dropped a problem that is open now');
+      assert.doesNotMatch(queue(open), /Closed two days ago/,
+        'open now is showing a problem somebody closed');
+      assert.match(queue(month), /Closed two days ago/,
+        'the thirty day window dropped a problem closed two days ago');
+      assert.doesNotMatch(queue(month), /Open since last month/,
+        'the thirty day window reached a problem that fired forty days ago');
+    } finally {
+      PAGES.alerts.answer = previous;
+    }
+  },
+};
+
+test('a filter applied to the answer narrows what is on the page', async () => {
+  let ran = 0;
+  for (const id of Object.keys(HONOURED)) {
+    for (const filter of Object.keys(HONOURED[id])) {
+      if (HONOURED[id][filter] !== 'answer') continue;
+      const probe = ANSWER_PROBES[id + '.' + filter];
+      assert.ok(probe,
+        id + ' claims to apply ' + filter + ' to the answer and has no probe proving it');
+      await probe();
+      ran += 1;
+    }
+  }
+  assert.equal(ran, Object.keys(ANSWER_PROBES).length,
+    'a probe was written and never run, so it proves nothing');
+});
+
+/* ================== 4. no value costs the pane its answer ============== */
+
+test('every value a pane offers reaches the same state as the one it starts on', async () => {
+  const { PANES } = registry();
+  let checked = 0;
+
+  for (const id of Object.keys(HONOURED)) {
+    const pane = PANES[id];
+    for (const filter of Object.keys(HONOURED[id])) {
+      const base = await bootPane(id, searchFor(filter, startsOn(pane, filter)));
+      const baseState = stateOf(base);
+      assert.ok(baseState, id + ' asked for no state at all');
+
+      for (const value of valuesFor(registry(), pane, filter)) {
+        const dom = await bootPane(id, searchFor(filter, value));
+        assert.equal(stateOf(dom), baseState,
+          id + ' answers ' + filter + '=' + startsOn(pane, filter) + ' with "' + baseState
+          + '" and ' + filter + '=' + value + ' with "' + stateOf(dom)
+          + '". A value that costs the pane its answer is a refusal, not a filter.');
+        checked += 1;
+      }
+    }
+  }
+
+  assert.ok(checked >= 12,
+    'only ' + checked + ' values were reached, so this proves less than it reads');
+});
+
+/* ============ 5. a filter a pane does not declare is unreachable ======= */
+
+/* The converse, and the replacement for the refusals two panes used to draw.
+   Nothing has to refuse a selection the operator cannot make. */
+test('a filter a pane does not declare cannot be reached through the URL', async () => {
+  const { PANES } = registry();
+  let checked = 0;
+
+  for (const id of Object.keys(PAGES)) {
+    const undeclared = FILTERS.filter((name) => !PANES[id][name]);
+    if (!undeclared.length) continue;
+
+    const asked = undeclared.map((name) => name + '='
+      + (name === 'scope' ? 'mobile' : name === 'env' ? 'staging' : 'custom')).join('&');
+
+    const plain = await bootPane(id, '');
+    const loud = await bootPane(id, '?' + asked);
+
+    assert.equal(stateOf(loud), stateOf(plain),
+      id + ' changed state for ' + asked + ', which it does not declare');
+    assert.deepEqual(recorded(loud), recorded(plain),
+      id + ' let ' + asked + ' reach a read it does not declare: '
+      + JSON.stringify(recorded(loud)));
+    assert.equal(shownText(loud), shownText(plain),
+      id + ' drew something different for ' + asked + ', which it does not declare');
+    checked += 1;
+  }
+
+  assert.ok(checked >= 4,
+    'only ' + checked + ' panes were checked for filters they do not declare');
+});
