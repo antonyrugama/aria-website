@@ -909,9 +909,14 @@
        those people is a different number from the one the heading promises. */
     card.appendChild(S.cardHead('Who comes back', cohort.note || cohort.label || null, []));
 
+    /* Neither heading carries a name of its own. They used to say `u-when` and
+       `u-size`, which no stylesheet in the repository ever defined: the whole
+       treatment comes from `.tbl th` (aria.css), `.u-cohort th:first-child`,
+       and `.r` for the right-aligned one, all of which reach these cells
+       positionally. `r` is load-bearing and stays. */
     var headRow = h('tr', {}, [
-      h('th', { scope: 'col', className: 'u-when', text: 'Week joined' }),
-      h('th', { scope: 'col', className: 'r u-size', text: 'People' })
+      h('th', { scope: 'col', text: 'Week joined' }),
+      h('th', { scope: 'col', className: 'r', text: 'People' })
     ]);
     offsets.forEach(function (offset) {
       headRow.appendChild(h('th', {
