@@ -192,7 +192,7 @@ async function boot(options) {
 
   for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
 
-  return { ...dom, body, calls, content: dom.doc.getElementById('content') };
+  return { ...dom, body, calls, answers, content: dom.doc.getElementById('content') };
 }
 
 /* The live panel only. The loading, empty and degraded panels are siblings of
@@ -713,4 +713,27 @@ test('a quiet system leaves no count beside Problems at all', async () => {
   assert.equal(railBadge(dom).label, null,
     'the rail kept a count on a system with no problems on it');
   assert.match(allText(dom.body), /Overview/, 'the rail did not render, so this proves nothing');
+});
+
+/* A first render has no badge to clear, so the clearing branch is unobservable
+   on one boot — which is how the first version of this passed with the clear
+   deleted. The page can render twice: a summary that failed leaves a Try again
+   button that re-reads everything. That is the second render, and the one
+   where a count from the first can go stale. */
+test('a count that goes away is taken off the rail on the next read', async () => {
+  const dom = await boot({ summary: new Error('summary is down') });
+  assert.equal(railBadge(dom).label, '1', 'the first read left no count to go stale');
+
+  const again = findAll(dom.body, (n) => n.tagName === 'BUTTON' && allText(n).trim() === 'Try again')[0];
+  assert.ok(again, 'the failed figures offered no way to read them again');
+
+  dom.answers['/api/ops/alerts/problems'] = { problems: [], total: 0 };
+  dom.answers['/api/ops/summary'] = summaryFixture();
+  again.dispatch('click', { type: 'click' });
+  for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
+
+  assert.equal(railBadge(dom).label, null,
+    'the rail kept a count from the previous render after the problems cleared');
+  assert.match(tileText(dom, /Active people/i), /1,102/,
+    'the second read did not happen at all, so this proves nothing');
 });
