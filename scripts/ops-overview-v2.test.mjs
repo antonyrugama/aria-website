@@ -874,10 +874,19 @@ test('a severity that names an object built-in does not put JavaScript on the sc
   assert.doesNotMatch(allText(panel), /native code|function \w*\s*\(/,
     'a function reached the page as text');
   /* The doorway is left off rather than pointed at a function: an href is not
-     text, so no sweep of what is written on the page would see it. */
-  for (const link of findAll(panel, (n) => n.tagName === 'a')) {
-    assert.doesNotMatch(link.getAttribute('href') || '', /native code|function/,
-      'a link was built from a lookup that found an object built-in');
+     text, so no sweep of what is written on the page would see it.
+
+     `A`, not `a`: the harness stores an HTML tag name upper-cased, and the
+     lower-case spelling matched nothing, so this loop ran zero times and
+     passed while the defect it names was on the page. Caught by the mutation
+     battery, which is what a control exists for. The count below is what
+     stops it going quiet again. */
+  const hrefs = findAll(panel, (n) => n.tagName === 'A').map((n) => n.getAttribute('href') || '');
+  assert.ok(hrefs.length >= 2,
+    'only ' + hrefs.length + ' links in the queue render, so this sweep reads nothing');
+  for (const href of hrefs) {
+    assert.doesNotMatch(href, /native code|function/,
+      'a link was built from a lookup that found an object built-in: ' + JSON.stringify(hrefs));
   }
 });
 
