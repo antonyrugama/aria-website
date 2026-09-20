@@ -221,6 +221,33 @@ test('every pane the registry names is on the rail, at the href and label it gav
   }
 });
 
+test('every railId the registry gives is an id aria.js actually has', async () => {
+  const registry = registryOnly();
+  const railed = Object.keys(registry.PANES).filter((id) => registry.PANES[id].railId);
+
+  /* aria.js keeps its own list of rail items and this file cannot edit it, so
+     the pairing is checked through the one thing aria.js does with an id:
+     it marks that item as the current page. An id aria.js does not have marks
+     nothing, which is a rail with no "you are here" on it. */
+  for (const id of railed) {
+    const { doc } = await bootPane(id, {
+      file: registry.PANES[id].file, definePane: () => {},
+    });
+    const current = doc.getElementById('rail').querySelectorAll('[aria-current]');
+    assert.equal(current.length, 1,
+      id + ' has railId "' + registry.PANES[id].railId
+      + '", which aria.js does not know: ' + current.length + ' items marked current');
+  }
+
+  /* The other direction, so the check above cannot pass by aria.js marking
+     everything. */
+  const { doc } = await bootPane('overview', { definePane: () => {} });
+  const rail = doc.getElementById('rail');
+  assert.equal(rail.querySelectorAll('[aria-current]').length, 1);
+  assert.ok(rail.querySelectorAll('.nav-item').length > 1,
+    'the rail has one item, so "marked once" says nothing');
+});
+
 test('the pane being viewed is the one marked current, and it is marked once', async () => {
   const { doc, registry } = await bootPane('spend', {
     file: 'spend.html', definePane: () => {},
