@@ -79,11 +79,14 @@
    - **Sub-pixel overflow.** The verdict is `documentElement.scrollWidth`
      against `documentElement.clientWidth`, and both are integers, so overflow
      below about half a pixel is not visible to it. The per-element report
-     underneath uses fractional `getBoundingClientRect()` widths and will name
-     an element the verdict rounded away, but it does not decide anything.
-   - **320px.** A further overflow exists there — the Severity segmented
-     control is wider than the bar — in a control this sweep does not touch, so
-     it is filed rather than folded in and this check does not assert it.
+     underneath reads fractional `getBoundingClientRect()` widths, but it lists
+     only elements more than half a pixel past the edge and it decides nothing,
+     so it does not close that gap either. Nothing here catches a margin that
+     small.
+   - **320px.** Only 375px and 360px are laid out. A further overflow exists at
+     320px — the Severity segmented control is wider than the bar — and it is
+     filed rather than folded in, so an overflow that appears only below 360px
+     is invisible to this check on every pane, not just that one.
 
    Usage:  node scripts/check-ops-narrow-overflow.mjs
    Chrome: CHROME_PATH, or the usual install locations on Linux and Windows.

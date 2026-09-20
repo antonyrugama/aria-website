@@ -38,8 +38,8 @@ jobs:
     # Ten panes at two widths in two themes is forty page loads, against one
     # before Stadiora/Aria#10492. A run takes a couple of minutes; the ceiling
     # is here so a slow cold start cannot turn the sweep into a red check that
-    # measured nothing, which is how a sweep in this repository once went five
-    # heads without running at all.
+    # measured nothing, which reads the same as a red check that found
+    # something.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
