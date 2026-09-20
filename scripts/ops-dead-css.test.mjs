@@ -267,11 +267,12 @@
    - character-reference: An HTML character reference in an attribute value
      is read as the characters it is written with, so `data-page="a&amp;b"`
      is compared against the selector as seven characters rather than the
-     three the browser resolves it to, and href="assets&#47;x.css" resolves
-     to a path that is not the one the browser fetches. The href direction
-     is always accompanied by a dangling-link naming the mis-resolved path,
-     so the guard discloses that failure in the same run; the attribute
-     direction is silent.
+     three the browser resolves it to. The same holds for an href: a
+     character reference, a backslash, and any other spelling the URL parser
+     normalises and this resolver does not, resolve to a path that is not
+     the one the browser fetches. The href direction is always accompanied
+     by a dangling-link naming the mis-resolved path, so the guard discloses
+     that failure in the same run; the attribute direction is silent.
    - css-escape: A CSS escape in a selector value is compared as the
      characters it is written with, so `[data-page="lo\67 in"]`, which
      matches login, is not read as login.
@@ -799,11 +800,33 @@ const DOCUMENT_REPLACERS = [
   /\bdocument\s*\.\s*documentElement\s*\.\s*innerHTML\s*=[^=]/,
 ];
 
-/* A computed attribute name written onto the document's own two elements.
-   Anything else — node.setAttribute(key, v) on a freshly built child — is not
-   a way to reach <body> and is not matched. */
-const COMPUTED_ON_DOCUMENT =
-  /\bdocument\s*\??\s*\.\s*(?:body|documentElement)\s*\??\s*\.\s*(?:set|remove|toggle)Attribute\s*\(\s*[^'"`\s)]/;
+/* The first argument to a set/remove/toggleAttribute call on the document's
+   own two elements, as written, up to the first `)`. Anything else —
+   node.setAttribute(key, v) on a freshly built child — is not a way to reach
+   <body> and is not matched.
+
+   The name is COMPUTED, and so a risk for every attribute, unless that
+   argument is ONE CLOSED STRING LITERAL, which is the case the literal scan
+   in attributeWriteRisks owns and reports precisely. Round 3 of review found
+   the old spelling of this — a trailing [^'"`\s)] that declined any leading
+   quote — handing `setAttribute("data-" + "page", v)` and
+   `setAttribute(\`data-${k}\`, v)` to a literal scan that never fires on
+   either, so setAttribute took the ATTRIBUTE_API_ON_DOCUMENT skip and was
+   handled by nobody. A quote that opens a concatenation and a backtick that
+   opens a substitution are not literals; they are computed. */
+const ATTRIBUTE_CALL_ON_DOCUMENT =
+  /\bdocument\s*\??\s*\.\s*(?:body|documentElement)\s*\??\s*\.\s*(?:set|remove|toggle)Attribute\s*\(([^)]*)/g;
+const WHOLE_STRING_LITERAL =
+  /^\s*(?:(['"])[^'"\\]*\1|`[^`$\\]*`)\s*(?:[,)]|$)/;
+
+function writesAttributeUnderAComputedName(source) {
+  ATTRIBUTE_CALL_ON_DOCUMENT.lastIndex = 0;
+  let m;
+  while ((m = ATTRIBUTE_CALL_ON_DOCUMENT.exec(source)) !== null) {
+    if (!WHOLE_STRING_LITERAL.test(m[1])) return true;
+  }
+  return false;
+}
 
 const DATASET_ON_DOCUMENT =
   /\bdocument\s*\??\s*\.\s*(?:body|documentElement)\s*\??\s*\.\s*dataset\b/;
@@ -839,16 +862,23 @@ const READ_ONLY_ON_DOCUMENT = new Set([
   'scrollTop', 'scrollLeft', 'scrollWidth', 'scrollHeight',
 ]);
 
-/* Handled precisely elsewhere in this function: a quoted name through the
-   literal scan, a computed one through COMPUTED_ON_DOCUMENT, dataset through
-   DATASET_ON_DOCUMENT. Re-reporting them here would refuse every attribute on
-   every page that loads theme.js, which would switch the whole arm off.
+/* Handled precisely elsewhere in this function, AND ONLY IN THE DOT SPELLING:
+   a quoted name through the literal scan, a computed one through
+   ATTRIBUTE_CALL_ON_DOCUMENT, dataset through DATASET_ON_DOCUMENT. All three
+   of those readers require a `.`, so the skip below is restricted to the dot
+   path; a bracketed `document.body["setAttribute"]` or `["dataset"]` is a
+   RISK, because no reader here covers it. Re-reporting the dot spelling here
+   would refuse every attribute on every page that loads theme.js, which would
+   switch the whole arm off; refusing the bracket spelling costs nothing,
+   because no script under ops/assets contains `document.body[` at all.
    Membership is earned by being handled, not by looking like a read:
-   setAttributeNode was on this list in round 2 under a comment claiming
-   COMPUTED_ON_DOCUMENT covered it, which was false — that regex matches
+   setAttributeNode was on this list in round 2 under a comment claiming the
+   computed-name regex covered it, which was false — that regex matches
    `setAttribute(`, `removeAttribute(` and `toggleAttribute(` only — and
    getAttributeNode was on the read-only list above although it returns a live
-   Attr whose .value is a setter. Both are off both lists, so both are loud. */
+   Attr whose .value is a setter. Both are off both lists, so both are loud.
+   Round 3 of review then found the same defect one spelling over, which is
+   why the skip now depends on how the member was reached. */
 const ATTRIBUTE_API_ON_DOCUMENT = new Set([
   'setAttribute', 'removeAttribute', 'toggleAttribute', 'dataset',
 ]);
@@ -868,11 +898,17 @@ const REFLECTED_MEMBER = {
    document.body?.classList.replace(...), document.body?.setAttribute(N, v),
    document.body["className"] = ... and a computed document.body[K] = ....
    A bracket whose key is not a plain quoted string is not resolvable here, so
-   it is a risk for EVERY attribute rather than for a guessed one. */
+   it is a risk for EVERY attribute rather than for a guessed one.
+
+   Optional chaining is spelled `?.` before a dot AND before a bracket, so the
+   bracket form needs `?\.` rather than `\??` in front of the `[`. Round 3 of
+   review found that written as `\s*\??\s*\[`, which cannot match `?.[` at all
+   — the `.` has nowhere to go — and instead matched a TERNARY, refusing
+   `document.body?[1]:[2]` while passing `document.body?.["setAttribute"]`. */
 const MEMBER_ON_DOCUMENT =
   /\bdocument\s*\??\s*\.\s*(body|documentElement)\s*\??\s*\.\s*([A-Za-z_$][\w$]*)/g;
 const BRACKET_ON_DOCUMENT =
-  /\bdocument\s*\??\s*\.\s*(body|documentElement)\s*\??\s*\[\s*(?:(['"`])([A-Za-z_$][\w$]*)\2\s*\])?/g;
+  /\bdocument\s*\??\s*\.\s*(body|documentElement)\s*(?:\?\.)?\s*\[\s*(?:(['"`])([A-Za-z_$][\w$]*)\2\s*\])?/g;
 
 function camel(attrName) {
   return attrName.replace(/^data-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -881,13 +917,19 @@ function camel(attrName) {
 /* null when reaching `member` on document.body cannot write `attrName`;
    otherwise the clause that says why it might. `undefined` means the member
    name is not resolvable from the source — a computed bracket key — which is
-   a risk for every attribute rather than for a guessed one.
+   a risk for every attribute rather than for a guessed one. `spelling` is
+   'dot' or 'bracket': the attribute-API skip is only honoured on the dot
+   path, because the three readers that earn it all require a dot.
    REFLECTED_MEMBER is read with an own-property check because a bare index
    resolves constructor, toString, valueOf, hasOwnProperty and __proto__ off
    Object.prototype, and each of those truthy hits took the skip. */
-function memberReachRisk(member, attrName) {
+function memberReachRisk(member, attrName, spelling) {
   if (member === undefined) return 'reaches a member this check cannot resolve';
-  if (READ_ONLY_ON_DOCUMENT.has(member) || ATTRIBUTE_API_ON_DOCUMENT.has(member)) return null;
+  if (READ_ONLY_ON_DOCUMENT.has(member)) return null;
+  if (spelling === 'dot' && ATTRIBUTE_API_ON_DOCUMENT.has(member)) return null;
+  if (ATTRIBUTE_API_ON_DOCUMENT.has(member)) {
+    return 'is an attribute API reached under a spelling no other check here reads';
+  }
   const reflects = Object.prototype.hasOwnProperty.call(REFLECTED_MEMBER, member)
     ? REFLECTED_MEMBER[member]
     : undefined;
@@ -920,20 +962,20 @@ export function attributeWriteRisks(attrName, scripts) {
     if (DATASET_ON_DOCUMENT.test(source)) risks.push(`${name} touches document.body.dataset`);
     MEMBER_ON_DOCUMENT.lastIndex = 0;
     while ((m = MEMBER_ON_DOCUMENT.exec(source)) !== null) {
-      const why = memberReachRisk(m[2], attrName);
+      const why = memberReachRisk(m[2], attrName, 'dot');
       if (why === null) continue;
       const line = source.slice(0, m.index).split('\n').length;
       risks.push(`${name}:${line} reaches document.${m[1]}.${m[2]}, which ${why}`);
     }
     BRACKET_ON_DOCUMENT.lastIndex = 0;
     while ((m = BRACKET_ON_DOCUMENT.exec(source)) !== null) {
-      const why = memberReachRisk(m[3], attrName);
+      const why = memberReachRisk(m[3], attrName, 'bracket');
       if (why === null) continue;
       const line = source.slice(0, m.index).split('\n').length;
       const key = m[3] === undefined ? '\u2026' : m[3];
       risks.push(`${name}:${line} indexes document.${m[1]}[${key}], which ${why}`);
     }
-    if (COMPUTED_ON_DOCUMENT.test(source)) {
+    if (writesAttributeUnderAComputedName(source)) {
       risks.push(`${name} sets an attribute on document.body under a computed name`);
     }
     for (const re of DOCUMENT_REPLACERS) {
@@ -1471,13 +1513,43 @@ test('the pieces the analysis is built from behave', () => {
   assert.equal(reach('document.body[K] = v;'), 1,
     'a bracket key this check cannot resolve is a risk for every attribute');
   assert.equal(reach('document.body.setAttributeNode(a);'), 1,
-    'setAttributeNode is not covered by COMPUTED_ON_DOCUMENT, which reads setAttribute(');
+    'setAttributeNode is not covered by the computed-name reader, which reads setAttribute(');
   assert.equal(reach('document.body.getAttributeNode(K).value = v;'), 1,
     'getAttributeNode returns a live Attr whose .value is a setter, so it is not a read');
   assert.equal(reach('document.body.constructor;'), 1,
     'an Object.prototype key is not a known reflected member');
   assert.equal(reach('var v = document.body?.dataset;'), 1,
     'an optional chain in front of a bare dataset read still stops the judgement');
+
+  /* Round 3 of review found four more, three of them in round 3's own code.
+     An optional chain before a BRACKET is `?.[`, not `? [`, so the bracket
+     scan needed `?\.` rather than `\??`; the attribute-API skip was being
+     honoured for a bracket spelling none of its three readers can see; and a
+     computed name whose first token is a quote or a backtick was in nobody's
+     jurisdiction, because the literal scan only fires on a whole token. */
+  assert.equal(reach('document.body?.["classList"].add("users");', 'class'), 1,
+    'an optional chain before a bracket is ?.[ , which \\?? cannot match');
+  assert.equal(reach('var v = document.body?[1]:[2];'), 0,
+    'and a ternary is a read, not a member access, so it must not be refused');
+  assert.equal(reach('document.body["setAttribute"]("data-" + "page", "users");'), 1,
+    'the attribute-API skip is only earned on the dot path its readers require');
+  assert.equal(reach('document.body["dataset"].page = "users";'), 1,
+    'and the same is true of dataset');
+  assert.equal(reach('document.body.setAttribute("data-" + "page", v);'), 1,
+    'a quote that opens a concatenation is not a whole literal, so the name is computed');
+  assert.equal(reach('document.body.setAttribute(`data-${k}`, v);'), 1,
+    'nor is a backtick that opens a substitution');
+  assert.equal(reach('document.body.setAttribute("data-".concat("page"), v);'), 1,
+    'nor is a literal that is only the receiver of a call');
+  assert.equal(reach('document.body.setAttribute("data-pane", "x");'), 0,
+    'but a whole literal naming ANOTHER attribute stays precise, or theme.js '
+    + 'switches the whole arm off');
+  assert.equal(reach('document?.body.className = "users";', 'class'), 1,
+    'document itself can be optional-chained too');
+  assert.equal(reach('document?.body.setAttribute(K, v);'), 1, 'in the computed-name reader');
+  assert.equal(reach('var v = document?.body.dataset;'), 1, 'and in the dataset reader');
+  assert.deepEqual(scriptBodiesAsWritten('<script>a<!--b</script >'), ['a<!--b'],
+    'an end tag with space before the > closes the element for a browser, so it must here');
   assert.equal(reach('document.body.appendChild(n);'), 0,
     'and the read-only list still keeps the arm alive');
 
@@ -1563,11 +1635,12 @@ export const WRONG_DEAD_NOT_COVERED = [
     id: 'character-reference',
     why: 'An HTML character reference in an attribute value is read as the characters it '
       + 'is written with, so `data-page="a&amp;b"` is compared against the selector as '
-      + 'seven characters rather than the three the browser resolves it to, and '
-      + 'href="assets&#47;x.css" resolves to a path that is not the one the browser '
-      + 'fetches. The href direction is always accompanied by a dangling-link naming the '
-      + 'mis-resolved path, so the guard discloses that failure in the same run; the '
-      + 'attribute direction is silent.',
+      + 'seven characters rather than the three the browser resolves it to. The same '
+      + 'holds for an href: a character reference, a backslash, and any other spelling '
+      + 'the URL parser normalises and this resolver does not, resolve to a path that is '
+      + 'not the one the browser fetches. The href direction is always accompanied by a '
+      + 'dangling-link naming the mis-resolved path, so the guard discloses that failure '
+      + 'in the same run; the attribute direction is silent.',
     wrongAnswer: () => [
       ...verdicts(
         [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
@@ -1578,10 +1651,17 @@ export const WRONG_DEAD_NOT_COVERED = [
           + '<link rel="stylesheet" href="assets&#47;x.css"></head>'
           + '<body data-page="login">x</body></html>')],
         [sheet('ops/assets/x.css', 'body[data-page="login"] { color: red; }')]),
+      ...verdicts(
+        [page('ops/login.html', '<!doctype html><html><head>'
+          + '<link rel="stylesheet" href="assets\\x.css"></head>'
+          + '<body data-page="login">x</body></html>')],
+        [sheet('ops/assets/x.css', 'body[data-page="login"] { color: red; }')]),
     ],
     expected: [
       'dead-body-scope ops/assets/x.css:1',
       'dangling-link ops/login.html -> ops/assets&',
+      'orphan-sheet ops/assets/x.css',
+      'dangling-link ops/login.html -> ops/assets\\x.css',
       'orphan-sheet ops/assets/x.css',
     ],
   },
@@ -1688,6 +1768,18 @@ const REFUSAL_DEMOS = {
        line comment. The write below is blanked; every tag survives. */
     `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
     + `<script>\n<!--\n${WRITE}\n// -->\n</script></body></html>`,
+    /* the two halves of that clause, each on its own. Here only the `<!--` is
+       in a script body and the span ends at an ORDINARY comment's `-->`, so
+       the span contains no tag (`</script>` is not `<script`) and the other
+       half of the predicate never fires. */
+    `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
+    + `<script>var s = "<!--"; ${WRITE}</script>`
+    + '<!-- ordinary comment --></body></html>',
+    /* and here only the `-->` is in a script body: the `<!--` is inside the
+       <script> tag's own attribute value, which starts BEFORE the span, so
+       again no tag name is swallowed — but the write is */
+    `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
+    + `<script data-x="<!--">${WRITE} // -->\n</script></body></html>`,
     /* <!--> is a complete empty comment for a browser, unterminated for the regex */
     `<!doctype html><html><head><!-->${LINK}<!-- ordinary comment -->`
     + '</head><body data-page="login">x</body></html>',
