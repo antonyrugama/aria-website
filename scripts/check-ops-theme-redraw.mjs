@@ -62,11 +62,11 @@
         attribute or a gradient stop, which is what lets it cover panes that
         paint from CSS classes and aria.js's charts in the same pass.
      3. On the pages that draw aria.js's charts, every chart shape aria.js
-        paints from a token holds the OTHER theme's PINNED value afterwards.
-        That is assertion 2's job too, by a different route, and it is kept
-        because it is the only one that would notice aria.css drifting away
-        from the palette this file pins: a page compared against itself agrees
-        with itself whatever the palette says.
+        paints from a token holds the pinned value for the theme the button
+        switched to. That is assertion 2's job too, by a different route, and
+        it is kept because it is the only one that would notice aria.css
+        drifting away from the palette this file pins: a page compared against
+        itself agrees with itself whatever the palette says.
 
    Deliberately NOT asserted: that redrawCharts() was called. A spy passes
    while the redraw paints nothing. The only thing that matters is the colour
@@ -240,6 +240,12 @@ const PANE_PAGES = Object.keys(DECLARED).map((key) => ({
   label: DECLARED[key].label,
   question: DECLARED[key].question,
   proof: PROOF[key],
+  /* No pane carries an aria.js chart host today; they draw their own SVG and
+     colour it with CSS classes, which repaints on the attribute change without
+     anyone calling anything. This is a declaration and not a belief: the
+     counts block at the end compares it against the hosts the census actually
+     found, so a pane that grows charts turns the sweep red rather than
+     quietly opting out of assertion 3. */
   charts: false,
 }));
 const PAGES = [...PANE_PAGES, ...SHOWCASES];
