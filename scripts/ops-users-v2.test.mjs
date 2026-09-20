@@ -212,6 +212,10 @@ async function boot(options) {
       const hit = answers.find((a) => a.match.test(endpoint));
       if (!hit) throw new Error('no fixture for ' + endpoint);
       if (hit.pending) return new Promise(() => {});
+      /* A call that is still out when the next thing happens. `pending` never
+         resolves, which cannot test what a late response does; this hands the
+         test the resolve function so it can land one deliberately. */
+      if (hit.defer) return new Promise((resolve) => { hit.defer.release = () => resolve({ data: hit.data }); });
       if (hit.error) return Promise.reject(hit.error);
       return Promise.resolve({ data: hit.data });
     },
@@ -733,16 +737,78 @@ test('an action the API does report is named, still with no control and still be
 
 /* ================================================= re-masking, in three ways */
 
-test('a new lookup re-masks everything revealed under the old one', async () => {
-  const dom = await openAccount({
-    runTimers: false,
-    reveal: { data: { field: 'email', value: SECRET, expiresAt: new Date(NOW + 600_000).toISOString(), recorded: {} } },
+/* Three mechanisms keep one promise between them — the repaint that replaces
+   the old result, clearReveals() hiding what is on screen, and clearReveals()
+   cancelling what is still in flight — and they are tested apart because a
+   test covering all three is pinned by whichever one happens to act first and
+   says nothing about the other two. The first mutation battery for this file
+   proved that twice over: deleting clearReveals() from runLookup left a
+   combined test green because the repaint had already detached the node, and
+   then deleting the repaint left it green too because opening the single match
+   had cleared the same column.
+
+   Both tests below therefore make the SECOND lookup return two matches. One
+   match is opened for you, and that open is a third clearReveals() which
+   would stand in for whichever one the mutation removed. Two matches is the
+   case where the mechanism under test is the only one left holding. */
+function twoMatches() {
+  return lookupFixture((d) => {
+    d.matchCount = 2;
+    d.matches = [d.matches[0], { ...d.matches[0], reference: 'ath_9001' }];
   });
+}
+
+test('a new lookup replaces what is on screen, so a value revealed under the old account goes with it', async () => {
+  const lookup = { match: /\/lookup$/, data: lookupFixture() };
+  const dom = await boot({
+    runTimers: false,
+    answers: [
+      { match: /\/reveal$/, data: { field: 'email', value: SECRET, expiresAt: new Date(NOW + 600_000).toISOString(), recorded: {} } },
+      lookup,
+      { match: /\/users\//, data: detailFixture() },
+    ],
+  });
+  await lookUp(dom);
   const row = await reveal(dom, 'Email');
   assert.ok(visibleText(row).includes(SECRET), 'the reveal never landed, so this proves nothing');
 
-  await lookUp(dom, 'ath_2277', 'SUP-4471 second look');
+  lookup.data = twoMatches();
+  await lookUp(dom, 'ath_22', 'SUP-4471 second look');
   assert.ok(!liveText(dom).includes(SECRET), 'a revealed value survived a new lookup');
+  assert.ok(!dom.root.contains(row), 'the account opened under the old lookup is still in the document');
+});
+
+test('a reveal still out when a new lookup starts is cancelled: nothing lands, nothing is announced', async () => {
+  const defer = {};
+  const lookup = { match: /\/lookup$/, data: lookupFixture() };
+  const answers = [
+    { match: /\/reveal$/, defer, data: { field: 'email', value: SECRET, expiresAt: new Date(NOW + 600_000).toISOString(), recorded: {} } },
+    lookup,
+    { match: /\/users\//, data: detailFixture() },
+  ];
+  const dom = await boot({ answers });
+  await lookUp(dom);
+  const row = await reveal(dom, 'Email');
+  assert.equal(typeof defer.release, 'function', 'the reveal request was never made');
+  assert.ok(!visibleText(row).includes(SECRET), 'the response landed before it was meant to');
+
+  /* A new search, with the reveal still out. */
+  lookup.data = twoMatches();
+  await lookUp(dom, 'ath_22', 'SUP-4471 second look');
+  defer.release();
+  await flush();
+
+  assert.ok(!liveText(dom).includes(SECRET), 'a late reveal put a value on the new screen');
+  assert.deepEqual(dom.announced.filter((m) => /revealed/.test(m)), [],
+    'a reveal abandoned by a new lookup announced itself anyway');
+  /* The harness's setTimeout is fire-or-drop and records nothing, so the timer
+     is observed through the only thing it does: with runTimers left on, an
+     armed re-mask runs immediately and announces itself. The sibling test
+     above runs with runTimers off and asserts the value; this one runs with
+     them on and asserts the silence, so between them both halves of a landed
+     late reveal are bound. */
+  assert.deepEqual(dom.announced.filter((m) => /hidden again/.test(m)), [],
+    'a reveal abandoned by a new lookup armed a re-mask timer');
 });
 
 test('a scope change re-masks everything revealed, and does not re-run the lookup', async () => {
