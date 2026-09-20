@@ -758,6 +758,129 @@ test('a critical problem says critical in the queue row itself', async () => {
     'severity reached the queue row as a colour and nothing else: ' + allText(row));
 });
 
+/* ============ a severity this pane has never heard of ================== */
+
+/* Stadiora/Aria#10393. The queue row read the severity straight out of
+   alerts-model.js's label map with nothing behind it, so a problem whose
+   severity was not one of the three the map knows rendered the literal words
+   "undefined: Plan generation failing for Aria XII" on the operator's first
+   screen. The route emits only the three today, which is why this was filed
+   rather than fixed on an approved head, and why nothing here asserts the
+   route's shape: the pane has to hold on its own.
+
+   Two different absences, because they degrade to two different words. A
+   severity the pane does not recognise is shown VERBATIM — that is the same
+   word the Problems pane prints for it (pane-alerts.js:741), so the two panes
+   describe one state the same way, and neither pretends to have translated a
+   word it has never seen. A severity that did not arrive at all has no word
+   to show, so it falls to "Unknown" rather than to a blank: a row whose
+   prefix is silently dropped tells the operator nothing arrived, which is the
+   other way to get this wrong. */
+const ODD_SEVERITY_ROWS = [
+  {
+    id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open',
+    title: 'Generation queue is backing up',
+    summary: 'Nothing has drained for 40 minutes.',
+    firedAt: minutesAgo(40), workPane: 'jobs', workPaneLabel: 'Jobs running now',
+  },
+  {
+    id: 'p2', reference: 'PRB-105', severity: 'notice', status: 'open',
+    title: 'Plan generation failing for Aria XII',
+    summary: 'Three in a row.',
+    firedAt: minutesAgo(30), workPane: 'jobs', workPaneLabel: 'Jobs running now',
+  },
+  {
+    id: 'p3', reference: 'PRB-106', status: 'open',
+    title: 'A rule fired with no severity on it',
+    summary: 'The field did not arrive.',
+    firedAt: minutesAgo(20), workPane: 'jobs', workPaneLabel: 'Jobs running now',
+  },
+];
+
+const qTitles = (dom) =>
+  findAll(livePanel(dom), (n) => (n.className || '').indexOf('q-title') !== -1)
+    .map((n) => allText(n));
+
+test('a severity this pane does not know reaches the row as the word that arrived', async () => {
+  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
+
+  /* Read off the rows, not off whole-pane text: the chips beside the ribbon
+     count severities too, so a sweep of the panel passes while the row an
+     operator actually reads is the thing that is wrong. */
+  assert.deepEqual(qTitles(dom), [
+    'Critical: Generation queue is backing up',
+    'notice: Plan generation failing for Aria XII',
+    'Unknown: A rule fired with no severity on it',
+  ], 'a severity outside the three known ones did not reach the row intact');
+});
+
+test('nothing on the pane says "undefined" when a severity is not one of the three', async () => {
+  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
+  /* The panel, not the rows: the defect is a class, and the same unguarded
+     lookup in the ribbon, a chip or a link title would land here too. */
+  const text = allText(livePanel(dom));
+  assert.match(text, /Plan generation failing for Aria XII/,
+    'the odd-severity problem never reached the page, so this sweep covers nothing');
+  assert.doesNotMatch(text, /undefined|\bnull\b|\[object/,
+    'a value the pane could not translate was printed as a JavaScript word: ' +
+    JSON.stringify(text.replace(/\s+/g, ' ').slice(0, 400)));
+});
+
+/* The other half of degrading honestly: the ribbon counts every problem that
+   is still open, and the chips under it break that same set down by severity.
+   The breakdown counted the three known severities and dropped everything
+   else on the floor, so a ribbon reading "3 problems need a person" sat over
+   chips adding up to one, and the two problems the pane did not understand
+   vanished from the count rather than from the label. */
+test('a severity this pane does not know is still counted beside the ribbon', async () => {
+  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
+  const chips = HERO(dom, 'hero-chips').replace(/\s+/g, ' ');
+
+  assert.match(HERO(dom, 'hero-title'), /^3 problems need a person$/,
+    'the ribbon counted something other than the three problems it was given');
+  assert.match(chips, /(^|\s)1 critical(\s|$)/,
+    'the known severity left the chip row: ' + JSON.stringify(chips));
+  assert.match(chips, /(^|\s)2 of unknown severity(\s|$)/,
+    'the two problems the pane could not name were dropped from the breakdown: ' +
+    JSON.stringify(chips));
+});
+
+/* The same lookup, keyed by a word every plain object in JavaScript already
+   answers to. `SEVERITY_LABEL['constructor']` is not undefined — it is
+   Object's constructor — so a guard written as a truthiness test on the map
+   hands a FUNCTION to the row, and `'' + fn` is that function's source code.
+   The same is true of the map from a problem's work pane to a file name, one
+   line below the severity, whose `if (file && ...)` guard reads as though it
+   has covered the absent case.
+
+   Not a realistic payload, and not the reachability argument: it is why the
+   two guards are written against the words the pane knows and against the
+   type it needs, rather than against "the lookup found something". */
+test('a severity that names an object built-in does not put JavaScript on the screen', async () => {
+  const dom = await boot({
+    problems: problemsFixture([{
+      id: 'p9', reference: 'PRB-109', severity: 'constructor', status: 'open',
+      title: 'A severity that is a word Object answers to',
+      summary: 'Arrived from the route.',
+      firedAt: minutesAgo(10), workPane: 'constructor', workPaneLabel: 'Nowhere',
+    }]),
+  });
+
+  assert.deepEqual(qTitles(dom),
+    ['constructor: A severity that is a word Object answers to'],
+    'a severity naming an object built-in was not shown as the word that arrived');
+
+  const panel = livePanel(dom);
+  assert.doesNotMatch(allText(panel), /native code|function \w*\s*\(/,
+    'a function reached the page as text');
+  /* The doorway is left off rather than pointed at a function: an href is not
+     text, so no sweep of what is written on the page would see it. */
+  for (const link of findAll(panel, (n) => n.tagName === 'a')) {
+    assert.doesNotMatch(link.getAttribute('href') || '', /native code|function/,
+      'a link was built from a lookup that found an object built-in');
+  }
+});
+
 /* ============================== the states ============================= */
 
 test('empty needs both halves to be empty, not one quiet window', async () => {
