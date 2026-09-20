@@ -1052,8 +1052,10 @@ async function openReauth(options) {  const opts = options || {};
    element tree, so a rule that exists but cannot reach the dialog counts for
    nothing.
 
-   What it reads: class, id, type and attribute selectors, `:empty`,
-   descendant combinators, and `@media` width queries. `[data-theme]` is read
+   What it reads: class, id, type and attribute selectors — all six attribute
+   operators (`=`, `~=`, `|=`, `^=`, `$=`, `*=`) with the case-insensitivity
+   flag, and the attribute NAME matched case-insensitively as HTML does —
+   plus `:empty`, descendant combinators, and `@media` width queries. `[data-theme]` is read
    the way a browser reads it, against the attribute on <html> — so `cascade()`
    TAKES the theme, seeds that root itself, and refuses to run without one.
    Three rounds of review found the same defect in three token types, each
@@ -1063,8 +1065,13 @@ async function openReauth(options) {  const opts = options || {};
    (round two), and that round-two fix landing in one of three callers, with
    the other two resolving against a root carrying no theme at all (round
    three) — which dismisses a BARE `[data-theme]` too, and a bare one matches
-   in both themes. Hence the seeding lives in `cascade()` and not in a caller:
-   the caller is the part that was wrong twice.
+   in both themes — and an attribute selector carrying any operator other than
+   `=` or `~=` mis-parsed into an attribute name nothing carries, answered
+   `false` from a line the loose reading never reached (round four). Hence the
+   theme seeding lives in `cascade()` and not in a caller, and an attribute
+   token outside the grammar above is REFUSED where it reaches the dialog
+   rather than answered: every one of the four was a NEGATIVE answer given
+   where the honest answer was "I cannot read this".
 
    What it REFUSES BY NAME rather than skipping: an `!important` declaration,
    a media feature it cannot evaluate, and any selector it cannot read that
@@ -1081,8 +1088,11 @@ async function openReauth(options) {  const opts = options || {};
    NOT COVERED: interaction and structural state — `:hover`, `:focus-visible`,
    `:disabled`, `::before` and the like are excluded from the resting cascade
    by design, so nothing here says what the dialog looks like while a control
-   is hovered or focused, and the outranking sweep below skips every rule
-   carrying a `:` for the same reason.
+   is hovered or focused. The outranking sweep below skips rules carrying one
+   of THOSE and refuses every other pseudo by name, which is what the shared
+   path does; it used to skip any selector containing a `:` at all, and
+   `:root`, `:is()`, `:where()` and `:not()` are not interaction state — they
+   match at rest, and went past in silence.
 
    NOT COVERED: a declaration that reaches the dialog through a selector
    naming NONE of the classes, ids or attribute names this tree carries — a
@@ -1127,12 +1137,29 @@ function classesOf(el) { return (el.getAttribute('class') || '').split(/\s+/).fi
    and `:1041`), which is the element this suite asserts a font size on. */
 const REFLECTED = { id: 'id', class: 'className', type: 'type', for: 'htmlFor' };
 
-function attrOf(el, name) {
+function attrOf(el, el_name) {
+  /* HTML attribute selectors match the NAME case-insensitively, so
+     `[DATA-THEME="light"]` is the same selector as `[data-theme="light"]`
+     and a case-sensitive lookup here reads a live rule as reaching nothing. */
+  const name = String(el_name).toLowerCase();
   if (el.hasAttribute && el.hasAttribute(name)) return el.getAttribute(name);
   const prop = REFLECTED[name];
   const got = prop ? el[prop] : undefined;
   return got === undefined || got === null || got === '' ? null : String(got);
 }
+
+/* The whole attribute-selector grammar this resolver reads: a name, and
+   optionally one of the six match operators, a quoted or bare value, and the
+   ASCII case-sensitivity flag. Whitespace is allowed where CSS allows it.
+
+   Round four found the previous expression absorbing the OPERATOR into the
+   name -- `[data-theme^="li"]` parsed as the attribute `data-theme^`, which
+   nothing carries -- and then answering `false` from the `got === null` line
+   below rather than falling through to the loose escape hatch. So a pane
+   sheet could take the dialog off the page and the sweep never saw the rule.
+   Anything outside this grammar is REFUSED by name where it reaches the
+   dialog, never answered `false`. */
+const ATTR_RE = /^\[\s*([-\w]+)\s*(?:([~|^$*]?)=\s*(?:"([^"]*)"|'([^']*)'|([-\w]+))\s*([isIS])?\s*)?\]$/;
 
 /* `:has(> .x)` and `:has(.x)` only — one compound, one optional child
    combinator. Anything richer is refused by name rather than guessed at. */
@@ -1147,14 +1174,23 @@ function matchToken(token, el, loose) {
   if (token[0] === '.') return classesOf(el).indexOf(token.slice(1)) !== -1;
   if (token[0] === '#') return attrOf(el, 'id') === token.slice(1);
   if (token[0] === '[') {
-    const m = /^\[([^\]=~]+)(?:([~]?)=(?:"([^"]*)"|'([^']*)'|([^\]]*)))?\]$/.exec(token);
+    const m = ATTR_RE.exec(token);
     if (!m) return !!loose;
-    const [, name, fuzzy, dq, sq, bare] = m;
+    const [, name, op, dq, sq, bare, flag] = m;
     const got = attrOf(el, name);
     if (got === null) return false;
-    const want = dq !== undefined ? dq : sq !== undefined ? sq : bare;
+    let want = dq !== undefined ? dq : sq !== undefined ? sq : bare;
     if (want === undefined) return true;
-    return fuzzy === '~' ? got.split(/\s+/).indexOf(want) !== -1 : got === want;
+    let have = got;
+    if (flag && flag.toLowerCase() === 'i') { have = have.toLowerCase(); want = want.toLowerCase(); }
+    switch (op) {
+      case '~': return have.split(/\s+/).indexOf(want) !== -1;
+      case '|': return have === want || have.startsWith(want + '-');
+      case '^': return want !== '' && have.startsWith(want);
+      case '$': return want !== '' && have.endsWith(want);
+      case '*': return want !== '' && have.indexOf(want) !== -1;
+      default: return have === want;
+    }
   }
   if (token[0] === ':') {
     if (token === ':empty') return (el.childNodes || []).length === 0;
@@ -1440,6 +1476,19 @@ function cascade(nodes, sheets, theme) {
         const tokens = tokenise(compound);
         if (!tokens) throw new Error('REFUSED, unreadable selector reaches the dialog: ' + rule.selector);
         for (const t of tokens) {
+          /* An attribute token is refused HERE rather than answered `false`
+             in matchToken, because by this line the rule is already known to
+             reach the dialog. Refusing in the matcher instead would fire on
+             every pane rule aimed elsewhere; refusing here stays gated on
+             reachability, which is the half round four's own trial fix got
+             wrong in the other direction. */
+          if (t[0] === '[') {
+            if (!ATTR_RE.test(t)) {
+              throw new Error('REFUSED, unreadable attribute selector reaches the dialog: ' +
+                sheet + ' ' + rule.selector);
+            }
+            continue;
+          }
           if (t[0] !== ':' || t === ':empty' || HAS_ARG.test(t)) continue;
           if (t.startsWith('::') || STATE_PSEUDO.test(t)) { rule.state = true; continue; }
           throw new Error('REFUSED, unreadable pseudo reaches the dialog: ' + rule.selector);
@@ -1709,13 +1758,41 @@ test('the dialog outranks every pane sheet that declares a field class of its ow
     for (const rule of cssRules(src, 'assets/' + file)) {
       const hits = nodes.filter((el) => selectorReaches(rule.selector, el));
       if (!hits.length) continue;
-      if (/:/.test(rule.selector)) continue;
-      const parts = parseSelector(rule.selector);
-      if (!parts) continue;
       if (hasCombinator(rule.selector)) {
         throw new Error('REFUSED, a pane sheet aims a combinator at the dialog: ' +
           'assets/' + file + ' ' + rule.selector);
       }
+      /* The same token inspection the shared-sheet path runs, so the two
+         paths agree on what is unreadable. This used to be a blanket skip of
+         every selector carrying a `:`, justified as interaction state -- but
+         `:root`, `:is()`, `:where()` and `:not()` are not interaction state,
+         they match at rest, and the shared path refuses them by name while
+         this one dropped them in silence. Round four's F6, F7 and F9. */
+      let state = false;
+      for (const part of parseSelector(rule.selector) ||
+        [{ compound: null }]) {
+        const tokens = part.compound === null ? null : tokenise(part.compound);
+        if (!tokens) {
+          throw new Error('REFUSED, unreadable selector reaches the dialog: ' +
+            'assets/' + file + ' ' + rule.selector);
+        }
+        for (const t of tokens) {
+          if (t[0] === '[') {
+            if (!ATTR_RE.test(t)) {
+              throw new Error('REFUSED, unreadable attribute selector reaches the dialog: ' +
+                'assets/' + file + ' ' + rule.selector);
+            }
+            continue;
+          }
+          if (t[0] !== ':' || t === ':empty' || HAS_ARG.test(t)) continue;
+          if (t.startsWith('::') || STATE_PSEUDO.test(t)) { state = true; continue; }
+          throw new Error('REFUSED, unreadable pseudo reaches the dialog: ' +
+            'assets/' + file + ' ' + rule.selector);
+        }
+      }
+      /* Interaction and structural state only: the resting cascade this
+         compares against says nothing about a hovered or focused control. */
+      if (state) continue;
       const theirs = specificity(splitSelector(rule.selector, '\\s+'));
       /* Every node the rule reaches, not just the first: the same selector can
          land on the label and the field, and only one of them may be answered. */

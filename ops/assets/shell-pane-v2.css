@@ -242,11 +242,14 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
 }
 .modal-card .field-input:hover { box-shadow: inset 0 0 0 1px var(--cyan); }
 /* A real outline, not only a box-shadow ring: a shadow is dropped entirely in
-   forced-colors mode, and two pane sheets declare a `.field-input:focus-visible`
-   that turns the document outline off. This outranks both — verified by hand
-   and in a browser, NOT by the suite: the outranking sweep in
-   scripts/ops-shell-pane-v2.test.mjs skips every rule carrying a `:`, so no
-   test fails if this stops winning. */
+   forced-colors mode, and ONE pane sheet — pane-evaluations-v2.css:57 —
+   declares a bare `.field-input:focus-visible` that turns the document
+   outline off. This outranks it. (pane-settings-v2.css:153 is a different
+   class, `.modal-input`, and turns the outline ON; it was miscounted here
+   until review round four checked.) Verified by hand and in a browser, NOT
+   by the suite: the outranking sweep in scripts/ops-shell-pane-v2.test.mjs
+   skips rules carrying an interaction pseudo, so no test fails if this stops
+   winning. */
 .modal-card .field-input:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
