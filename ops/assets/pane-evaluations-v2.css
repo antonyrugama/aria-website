@@ -18,6 +18,8 @@
        by .55 walks it straight out of that. Nothing here changes an ink.
      - The drawing contains no control at all. A faded button is still in the
        tab order, and a control that changes nothing is worse than no control.
+       Its one focus stop is the table that scrolls sideways on a phone, which
+       moves the view rather than changing anything.
 
    Everything the pane draws otherwise is aria.css's: .card, .band, .pill,
    .meter, .tbl, .kpi. Only the shapes aria.css has no name for are here.
@@ -29,6 +31,15 @@
    The two working tools are forms, and aria.css is a reading system: it has
    panels, figures and tables, and no text input a person types a paragraph
    into. This is that gap, scoped to this pane. */
+
+/* This pane's registry note is the longest of the four, and .filter-note is
+   built on .pill, which sets white-space: nowrap so a chip label cannot break
+   mid-word. A 95-character sentence in a chip that will not wrap is 498px
+   wide, which pushes a 390px document to a measured scrollWidth of 514 and
+   makes the whole page scroll sideways on a phone. It is a sentence, so it
+   wraps. Scoped to this stylesheet, which no other pane loads. */
+.filters .filter-note { white-space: normal; }
+
 .q-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field-label { font-size: 12px; font-weight: 540; color: var(--ink-2); }
 
@@ -176,6 +187,7 @@ select.field-input { appearance: none; padding-right: 26px; }
 /* A table has a minimum width its columns cannot go under, so on a phone it
    scrolls inside its own panel rather than taking the document with it. */
 .tbl-wrap { overflow-x: auto; }
+.tbl-wrap:focus-visible { outline-offset: -2px; }
 .tbl-wrap .tbl { min-width: 560px; }
 
 /* ------------------------------------------------- scores by dimension

@@ -1104,6 +1104,17 @@ test('v2: the preview holds no control and the working bands do', async () => {
   assert.deepEqual(dead, [],
     'a drawing of a pane must not put a control that changes nothing into the tab order');
 
+  /* Everything else the preview puts in the tab order, enumerated rather than
+     assumed absent: a table that scrolls sideways has to be reachable from a
+     keyboard, and that is the one thing in here allowed to take focus. It
+     changes nothing — it moves the view — and it carries a name. */
+  const focusable = findAll(preview, node => node.getAttribute('tabindex') === '0');
+  assert.equal(focusable.length, 1, 'the preview should hold exactly one focus stop');
+  assert.equal(hasClass(focusable[0], 'tbl-wrap'), true);
+  assert.equal(focusable[0].getAttribute('role'), 'region');
+  assert.match(focusable[0].getAttribute('aria-label') || '', /invented/i,
+    'the scroll region must carry a name, and the name must repeat the warning');
+
   const working = findAll(dom.content, isBand).filter(b => !within(b, preview));
   for (const section of working) {
     assert.ok(findAll(section, node => CONTROL.has(node.tagName)).length > 0,

@@ -30,7 +30,9 @@
        it, and it stamps that. Neither stamp is a colour: each carries a word.
      - The preview holds no control of any kind. A disabled or faded button is
        still in the tab order, and a control that changes nothing is worse than
-       no control.
+       no control. It holds exactly one focus stop, the table that scrolls
+       sideways on a phone, because a scroll region a keyboard cannot reach
+       fails WCAG 2.1.1; it moves the view and changes nothing.
 
    The preview is marked as a drawing by a dashed hairline and a hatch rather
    than by fading it: see assets/pane-evaluations-v2.css for why 55% opacity is
@@ -353,8 +355,9 @@
     });
     var generation = 0;
     var pending = false;
+    /* No card head: the band above already names this, and the submit button
+       already says what pressing it does. */
     var form = h('form', { className: 'card dataset-form' }, [
-      shell.cardHead('Validate declarations', 'No dataset is stored'),
       h('div', { className: 'card-body' }, [
         declarationField,
         h('p', {
@@ -460,7 +463,7 @@
       }
     });
 
-    var section = workingBand('Check a dataset declaration', 'Any signed-in role');
+    var section = workingBand('Check a dataset declaration', 'Any signed-in role, and no dataset is stored');
     section.appendChild(form);
     section.appendChild(result);
     return section;
@@ -793,7 +796,14 @@
       ]));
     });
     var card = shell.card();
-    card.appendChild(h('div', { className: 'tbl-wrap' }, [
+    /* Focusable and named, because a region that scrolls sideways and cannot
+       be reached from a keyboard fails WCAG 2.1.1. This is the one focusable
+       thing in the preview and it is not a control: it changes nothing, it
+       moves the view. */
+    card.appendChild(h('div', {
+      className: 'tbl-wrap', tabindex: '0', role: 'region',
+      'aria-label': 'What regressed, invented figures'
+    }, [
       h('table', { className: 'tbl' }, [
         h('thead', {}, [h('tr', {}, [
           h('th', { text: 'Test case' }),
@@ -886,8 +896,8 @@
     return section;
   }
 
-  /* Nothing in here is focusable, so it is a drawing a keyboard runs past
-     rather than a row of dead controls it has to tab through. */
+  /* A keyboard runs past this in one stop, the scrolling table, rather than
+     tabbing through a row of dead controls. */
   function scoringPreview() {
     return h('div', { className: 'preview' }, [scoresBand(), regressionsBand(), shipBand()]);
   }

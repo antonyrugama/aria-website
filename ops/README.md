@@ -844,8 +844,10 @@ and the future-date and 90-day retention bounds are unchanged.
   and a screen reader user has the same problem.
 - **The drawn half holds no control.** The mock keeps `Open run` buttons in it under
   `pointer-events: none`, which leaves them in the tab order inside a hidden subtree. A control
-  that changes nothing is worse than no control; they are gone, and the test asserts the panel
-  contains no focusable element while every working band contains at least one.
+  that changes nothing is worse than no control; they are gone. The test asserts the panel holds
+  no control at all and exactly one focus stop — the table that scrolls sideways on a phone,
+  which is named and reachable because a scroll region a keyboard cannot get to fails WCAG
+  2.1.1 — while every working band contains at least one control.
 - **No sparkline over the version list.** Both draw the same seven figures; that is one fact
   captioned twice.
 - **No `including the 0.82 on Overview`.** Overview prints no quality figure, so the sentence
