@@ -14,9 +14,15 @@
 
      1. A filter a pane declares must MOVE something. Every control the
         operator can move has to change the read or the page for at least one
-        of the values it offers. This is the weakest of the three and the one
-        that catches the defect above, because a pane that cannot act on a
-        filter answers every value identically.
+        of the values it offers. This is the weakest of the three, and it is
+        NOT what catches the defect above: the two panes answered a staging
+        environment with a refusal card and an app with an apology note, and
+        both of those are page changes, so this rule passed on the defect as
+        it stood. Reassembled at its own anchors it is the coverage lock that
+        goes red, at the declaration level; silence the lock and it is rules
+        2 and 3 below — the read arriving without the operator's value, and a
+        value costing the pane its answer — that catch it behaviourally.
+        Rule 1 is the floor under panes that answer every value identically.
 
      2. It must move it in one of exactly two ways, and the table below names
         which for every declared filter:
@@ -44,9 +50,10 @@
        not boot: it is the last pane on the v1 shell (assets/shell.js) rather
        than the v2 bootstrap every pane here loads, and it is mid-conversion
        in antonyrugama/aria-website#65. The coverage lock below pins the exact
-       claim it is excused for — a range filter and nothing else — so any
-       change to what spend declares turns this file red rather than widening
-       the hole quietly. It gets a live proof when it lands on v2.
+       claim it is excused for — a range filter, and the four windows in it —
+       by name and by value, so a filter or a window added to spend turns this
+       file red rather than widening the hole quietly. What the lock cannot
+       see is whether the pane acts on any of them; that waits on v2.
      - whether the API acts on a filter the pane sends it. A client can
        promise that the operator's selection reached the request; what the
        route does with it is the route's own test.
@@ -105,9 +112,11 @@ const HONOURED = {
 };
 
 /* The single pane this file cannot boot, and the exact claim it is excused
-   for. Any other filter appearing on it turns the coverage lock red. */
+   for: which filters, and — because the lock otherwise compares only names —
+   which values inside them. Anything else appearing on it turns the coverage
+   lock red. */
 const NOT_BOOTED = {
-  spend: ['range'],
+  spend: { range: ['month', 'last-month', '3m', '12m'] },
 };
 
 /* ============================== fixtures =============================== */
@@ -502,7 +511,7 @@ test('every filter the registry declares is claimed by this file, and every clai
 
   const claimed = {};
   for (const id of Object.keys(HONOURED)) claimed[id] = Object.keys(HONOURED[id]).sort();
-  for (const id of Object.keys(NOT_BOOTED)) claimed[id] = NOT_BOOTED[id].slice().sort();
+  for (const id of Object.keys(NOT_BOOTED)) claimed[id] = Object.keys(NOT_BOOTED[id]).sort();
 
   assert.deepEqual(
     Object.keys(declared).sort(), Object.keys(claimed).sort(),
@@ -530,6 +539,24 @@ test('every filter the registry declares is claimed by this file, and every clai
   for (const id of Object.keys(HONOURED)) {
     assert.ok(PAGES[id], id + ' is claimed in HONOURED with no boot recipe behind it');
   }
+
+  /* A pane nothing here boots has nothing else watching it, so the excuse is
+     pinned down to the values as well. Everywhere else this is rule 5's job,
+     and rule 5 needs a page to read. */
+  const reg = registry();
+  for (const id of Object.keys(NOT_BOOTED)) {
+    for (const filter of Object.keys(NOT_BOOTED[id])) {
+      /* Array.from, because the registry is read in its own realm and a bare
+         deepEqual compares prototypes as well as contents. */
+      const offered = Array.from(valuesFor(reg, PANES[id], filter));
+      assert.deepEqual(
+        offered, NOT_BOOTED[id][filter],
+        id + ' offers ' + offered.join(', ') + ' for ' + filter
+        + ' and this file is excused only for ' + NOT_BOOTED[id][filter].join(', ')
+        + '. Nothing here can boot it, so a value added to it is proved by nobody.'
+      );
+    }
+  }
 });
 
 /* ============ 2. a declared filter changes what the pane does ========== */
@@ -537,10 +564,13 @@ test('every filter the registry declares is claimed by this file, and every clai
 /* Driven off the registry rather than off the table above, because the table
    above is where a new overclaim would be missing. The contract this checks is
    the weakest true one — a control the operator can move has to move
-   SOMETHING, in the read or on the page — and it is the one that catches the
-   defect this file was written for: a pane declaring a filter it cannot act on
-   answers every value identically. The two tests after it are the strong
-   forms, and say which of the two ways the value was acted on. */
+   SOMETHING, in the read or on the page. It is NOT the assertion that catches
+   the defect this file was written for: a refusal card and an apology note are
+   both page changes, so this test passed on the two panes as they stood. What
+   caught them was the coverage lock above, at the declaration level, and —
+   with the lock silenced — the two tests after this one, which say which of
+   the two ways the value was acted on and are the strong forms. This one is
+   the floor under a pane that answers every value identically. */
 test('a filter a pane declares changes the read or the page', async () => {
   const { PANES } = registry();
   let checked = 0;
@@ -735,8 +765,10 @@ test('a filter applied to the answer narrows what is on the page', async () => {
 
 /* =========== 5. no value reaches past every value the pane offers ===== */
 
-/* The value-level defect, which the coverage lock cannot see: it compares
-   filter NAMES, so a window added to a list it already declares walks past it.
+/* The value-level defect, which the coverage lock cannot see on a pane this
+   file boots: it compares filter NAMES there, so a window added to a list a
+   pane already declares walks past it. (`spend` is the exception, and only
+   because nothing here can boot it: the lock pins its windows by value too.)
    What happened offered 'custom' for a while, and the pane answered it with a
    refusal card; delete the refusal and leave the value, and the pane finds no
    entry for it in its own window table, falls through to no window at all, and

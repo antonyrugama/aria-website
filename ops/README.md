@@ -578,8 +578,8 @@ undeclared filter before a pane sees one, so no mutation of a pane can turn that
 narrower shell-level claim that can fail — that a pane is offered exactly the filters it
 declared and never one more — is held in `scripts/ops-shell-pane-v2.test.mjs`, and what the two
 pane suites hold instead is what their own bar draws. Cloud costs is the single exclusion, because it is
-still on the v1 shell; the lock pins the exact claim it is excused for, so a change to what it
-declares is red as well.
+still on the v1 shell; the lock pins the exact claim it is excused for by name **and by value**,
+so a filter or a window added to it is red as well, and it gets a live proof when it lands on v2.
 
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
