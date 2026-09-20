@@ -396,7 +396,10 @@ test('a stage the build is past draws a different rail from one it has not reach
     const step = document.querySelector('.pipe-step.done');
     const read = () => {
       const s = getComputedStyle(step, '::before');
-      return { height: s.height, left: s.left, right: s.right, background: s.backgroundColor };
+      return {
+        height: s.height, left: s.left, right: s.right, top: s.top,
+        background: s.backgroundColor
+      };
     };
     const on = read();
     step.classList.remove('done');
@@ -426,6 +429,13 @@ test('a stage the build is past draws a different rail from one it has not reach
   assert.strictEqual(rail.on.right, '0px',
     `the done rail should stop at the next node's edge, and ends at ${rail.on.right}`);
   assert.strictEqual(rail.off.right, '-11px', 'the base rail runs on to the next node centre');
+  /* And the third edge. A 3px rail replacing a 2px one keeps its centreline
+     only by rising half a pixel; `9.5px` and `10px` are different strings, so
+     the read above separates them on any machine and there is no reason to
+     leave the declaration to the whole-rule payload. */
+  assert.strictEqual(rail.on.top, '9.5px',
+    `the thicker rail should sit half a pixel up to stay centred, and sits at ${rail.on.top}`);
+  assert.strictEqual(rail.off.top, '10px', 'the base hairline sits on the 10px line');
 
   /* And it is opaque, where the base rail is 38% of the tone. Deleting only the
      background line of the rule would leave the height and still be caught. */
@@ -577,6 +587,49 @@ for (const theme of [EVALS_DARK, EVALS_LIGHT]) {
     assert.deepStrictEqual(seen.off, seen.plain,
       'with callout-warn removed the warning should be indistinguishable from the ' +
       'plain callout, and is not — so something other than the modifier is painting it');
+  });
+
+  /* The other half of the split, and the half the two assertions above cannot
+     reach: both of them compare two elements that resolve through this same
+     base rule, so they move together under any change to it and bind none of
+     its values. Put `background` back to the amber it carried before the split
+     and the pair above still passes with both boxes amber — which is the
+     sentence Stadiora/Aria#10647 opens with.
+
+     Bound against the tokens themselves rather than against the warning, and
+     resolved by the browser off this document so the expectation is the live
+     cascade's answer in this theme rather than a literal copied out of the
+     sheet under test. The probe is a child of the callout, so it resolves the
+     tokens in the place they are used. */
+  test(`the sentence beside the warning is painted the plain surface, in the ${theme.theme} theme`, async () => {
+    await show(theme);
+    const seen = await evaluate(`(() => {
+      const plain = [...document.querySelectorAll('.callout')]
+        .find((el) => !el.classList.contains('callout-warn'));
+      const probe = document.createElement('span');
+      probe.hidden = true;
+      plain.appendChild(probe);
+      const token = (name) => {
+        probe.style.backgroundColor = 'var(' + name + ')';
+        return getComputedStyle(probe).backgroundColor;
+      };
+      const surface2 = token('--surface-2');
+      const line2 = token('--line-2');
+      const s = getComputedStyle(plain);
+      const out = { fill: s.backgroundColor, shadow: s.boxShadow, surface2, line2 };
+      probe.remove();
+      return out;
+    })()`);
+
+    assert.match(seen.surface2, /^rgba?\(/, 'the probe should resolve --surface-2 to a colour');
+    assert.notStrictEqual(seen.surface2, seen.line2, 'the two tokens should not be one colour');
+
+    assert.strictEqual(seen.fill, seen.surface2,
+      `the consent boundary should be filled with --surface-2 (${seen.surface2}) and is ` +
+      `filled with ${seen.fill} — a note that is not a warning must not wear the warning tint`);
+    assert.strictEqual(seen.shadow, `${seen.line2} 0px 0px 0px 1px inset`,
+      `the consent boundary should be ringed by the --line-2 hairline and is ringed by ` +
+      `${seen.shadow}`);
   });
 }
 

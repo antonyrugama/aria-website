@@ -89,10 +89,12 @@
    leaves a void under a short one: "Get approval state" holds one field and
    "Decide request" holds five, so the short card was drawn 475px tall with
    400px of nothing under its button. Same finding, same fix, as .share-grid
-   on App releases. The measure is here as well as on the card so the band's
-   right edge is straight: .approval-card's own cap only binds the one card
-   that is not in this grid, the two inside it being narrower than 920px
-   already. */
+   on App releases. The measure is here as well as on the card so the three
+   approval cards line up with each other: .approval-card's own cap only binds
+   the one card that is not in this grid, the two inside it being narrower than
+   920px already. The band's own notices are not capped — a callout is
+   addressed to the band, not a surface anyone types into, and its prose is
+   already held to 78ch. */
 .approval-workflow-grid { max-width: 920px; align-items: start; }
 
 .q-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
