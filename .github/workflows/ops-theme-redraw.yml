@@ -17,6 +17,11 @@ name: Ops theme redraw
 # half that measures the resolved colour on a laid-out page, against the
 # palette aria.css really declares.
 #
+# Since Stadiora/Aria#10462 this sweeps every pane ops/assets/pane-registry.js
+# declares as well as ops/shell-v2.html, so a pane cannot join the app without
+# joining the sweep, and the count it judged is asserted against the count the
+# registry declares.
+#
 # A separate job from "Ops v2 shell" on purpose. That check stores a theme,
 # RELOADS, and measures a fresh page, which is correct in either theme because
 # the charts were drawn after theme.js had already decided. It never toggles, so
@@ -30,12 +35,14 @@ on:
     paths:
       - 'ops/**'
       - 'scripts/check-ops-theme-redraw.mjs'
+      - 'scripts/ops-api-stub.mjs'
       - '.github/workflows/ops-theme-redraw.yml'
   push:
     branches: [main]
     paths:
       - 'ops/**'
       - 'scripts/check-ops-theme-redraw.mjs'
+      - 'scripts/ops-api-stub.mjs'
       - '.github/workflows/ops-theme-redraw.yml'
   workflow_dispatch:
 
@@ -45,7 +52,12 @@ permissions:
 jobs:
   theme-redraw:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Every pane the registry declares plus the design-system page, two
+    # directions each, two loads and four censuses per page — against one page
+    # before Stadiora/Aria#10462. A run is a few minutes; the ceiling is here
+    # so a slow cold start cannot turn the sweep into a red check that measured
+    # nothing, which reads the same as a red check that found something.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       # Node 22 or newer, because the check drives headless Chrome over the
@@ -53,5 +65,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check every chart follows the theme button, both directions
+      - name: Check every page follows the theme button, both directions
         run: node scripts/check-ops-theme-redraw.mjs
