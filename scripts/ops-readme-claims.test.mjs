@@ -93,15 +93,18 @@ function claimBlocks(md) {
   const lines = md.split('\n');
   const blocks = new Map();
   for (let i = 0; i < lines.length; i += 1) {
-    const open = /^```claims(?:\s+id=([a-z0-9-]+))?\s*$/.exec(lines[i]);
+    const open = /^(\s*)```claims(?:\s+id=([a-z0-9-]+))?\s*$/.exec(lines[i]);
     if (!open) continue;
-    assert.ok(open[1], `${README_PATH}:${i + 1}: a claims block with no id=`);
+    assert.ok(open[2], `${README_PATH}:${i + 1}: a claims block with no id=`);
+    const indent = open[1];
     const body = [];
     let j = i + 1;
-    for (; j < lines.length && lines[j] !== '```'; j += 1) body.push(lines[j]);
+    for (; j < lines.length && lines[j].trim() !== '```'; j += 1) {
+      body.push(lines[j].startsWith(indent) ? lines[j].slice(indent.length) : lines[j]);
+    }
     assert.ok(j < lines.length, `${README_PATH}:${i + 1}: claims block never closes`);
-    assert.ok(!blocks.has(open[1]), `${README_PATH}:${i + 1}: id=${open[1]} appears twice`);
-    blocks.set(open[1], { line: i + 1, lines: body.filter((l) => l.trim() !== '') });
+    assert.ok(!blocks.has(open[2]), `${README_PATH}:${i + 1}: id=${open[2]} appears twice`);
+    blocks.set(open[2], { line: i + 1, lines: body.filter((l) => l.trim() !== '') });
     i = j;
   }
   return blocks;
@@ -362,6 +365,31 @@ DERIVED['v1-status-classes'] = () => V1_STATUS_CLASSES.map((cls) => {
   return `.${cls} = declared in ${sheets.join(', ') || '(no sheet)'}; drawn by ${drawnBy.join(', ') || '(no page)'}${verdict}`;
 });
 
+/* Every sideways-scrolling box any stylesheet here declares, and whether the
+   same sheet positions it. `overflow-x` clips only a descendant whose
+   containing block is the box, so a static box does not clip an absolutely
+   positioned child - which is the premise departure 15 is written about. The
+   box is found by its own `overflow-x`, never by class name. */
+DERIVED['scroll-wrapper-position'] = () => {
+  const out = [];
+  for (const sheet of ASSETS.filter((a) => a.endsWith('.css'))) {
+    const rules = cssRules(read(path.join('ops/assets', sheet)));
+    const boxes = new Map();
+    for (const rule of rules) {
+      if (!/overflow-x\s*:\s*auto/.test(rule.body)) continue;
+      rule.selectors.forEach((sel) => boxes.set(sel, true));
+    }
+    for (const box of [...boxes.keys()].sort()) {
+      const positions = rules
+        .filter((r) => r.selectors.includes(box))
+        .flatMap((r) => declarations(r.body))
+        .filter((d) => /^position:/.test(d));
+      out.push(`${sheet} ${box} = ${positions.length ? positions.join('; ') : 'position: static (the sheet sets none)'}`);
+    }
+  }
+  return out;
+};
+
 /* What the v2 showcase guard pins, counted out of its own tables rather than
    out of the sentence that describes them. The parse is asserted, so a
    refactor that moves these constants is a red run with a named cause, never
@@ -385,6 +413,24 @@ DERIVED['shell-v2-pins'] = () => {
     `tokens pinned the same in every theme = ${invariant.size}`,
     ...themes.map(([theme, set]) => `tokens pinned in total for ${theme} = ${new Set([...set, ...invariant]).size}`),
     `color-scheme pinned per theme = ${[...scheme.matchAll(/([a-z]+):\s*'/g)].length}`
+  ];
+};
+
+/* What the content security policy costs, counted rather than remembered:
+   how many pages would need a hash if the theme were inlined, and whether the
+   two things the policy forbids are actually absent from the markup. A page
+   that grows an inline script or a style attribute is red here. */
+DERIVED['csp-pages'] = () => {
+  const csp = PAGES.filter((page) => /http-equiv=["']Content-Security-Policy["']/i.test(read(path.join('ops', page))));
+  const themed = PAGES.filter((page) => loadedAssets(page).includes('theme.js'));
+  const inlineScript = PAGES.filter((page) => /<script(?![^>]*\bsrc=)[^>]*>/i.test(read(path.join('ops', page))));
+  const inlineStyle = PAGES.filter((page) => /\sstyle=["']/i.test(read(path.join('ops', page))));
+  return [
+    `pages in ops/ = ${PAGES.length}`,
+    `pages declaring the policy in a <meta> = ${csp.length}`,
+    `pages loading assets/theme.js = ${themed.length}`,
+    `pages with an inline <script> = ${inlineScript.length ? inlineScript.join(', ') : 0}`,
+    `pages with a style attribute in markup = ${inlineStyle.length ? inlineStyle.join(', ') : 0}`
   ];
 };
 
@@ -458,8 +504,16 @@ test('every repository file ops/README.md names is in the tree or declared delet
       if (FOREIGN.test(file)) continue;
       judged += 1;
       if (deleted.has(file) || deleted.has(path.basename(file))) continue;
-      if (inTree.has(file)) continue;
-      if (byBasename.has(path.basename(file))) continue;
+      /* The spellings this README uses are resolved to repository paths before
+         they are looked up, rather than matched on their last segment: a span
+         carrying a directory is held to that directory, or `ops/assets/x.css`
+         and `made/up/x.css` both read as right because the leaf matches. A
+         bare `x.css` with no directory is the one spelling resolved by leaf,
+         which is how most of this file names an asset. */
+      const candidates = file.includes('/')
+        ? [file, `ops/${file.replace(/^\/?ops\//, '')}`]
+        : [file, byBasename.get(file)].filter(Boolean);
+      if (candidates.some((c) => inTree.has(c))) continue;
       missing.push(`${README_PATH}:${i + 1}: names ${file}, which is neither in the tree nor in the deleted-assets block`);
     }
   });

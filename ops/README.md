@@ -153,7 +153,18 @@ What follows from wanting it this strict:
 
 - **No inline script.** The theme must be applied before first paint or navigating between panes
   flashes the wrong colours, so `assets/theme.js` is a blocking classic script in `<head>`
-  rather than an inline snippet. No hash to keep in sync across eleven files.
+  rather than an inline snippet, and there is no hash to keep in sync across every page in the
+  dashboard. How many that is, and whether the two things the policy forbids are actually absent
+  from the markup, is counted rather than remembered:
+
+  ```claims id=csp-pages
+  pages in ops/ = 13
+  pages declaring the policy in a <meta> = 13
+  pages loading assets/theme.js = 13
+  pages with an inline <script> = 0
+  pages with a style attribute in markup = 0
+  ```
+
 - **No inline `style` attributes.** Everything that can be a class is a class. The handful of
   lengths and colours that are genuinely data-driven, a bar segment's width, a skeleton block's
   height, a legend swatch, App releases' rollout meter and its adoption bar, are set through
@@ -1183,28 +1194,46 @@ those panes now.
     those two pages. That block was deleted from the end of `ops.css` in `aria-website#74` when
     App releases and Look up a user moved to the v2 layer and stopped loading this stylesheet;
     the arithmetic it was computed from is kept in the historical record below.
-15. **`.table-wrap` is positioned.** `overflow-x` clips only a descendant whose containing block
-    is the wrapper, and an absolutely positioned one resolves that to the nearest positioned
-    ancestor. Left static, an `.sr-only` span inside a table wider than a phone resolves to the
-    page, escapes the wrapper's clip, and extends the document's scroll width: the table scrolls
-    inside its card and the whole page scrolls sideways with it. `position: relative` puts the
-    containing block back where the clip is.
+15. **A sideways-scrolling wrapper needs to be positioned, and seven of the eight are not.**
+    `overflow-x` clips only a descendant whose containing block is the wrapper, and an absolutely
+    positioned one resolves that to the nearest **positioned** ancestor. Left static, an
+    `.sr-only` span inside a table wider than a phone resolves past the wrapper, escapes its
+    clip, and extends the document's scroll width: the table scrolls inside its card and the
+    whole page scrolls sideways with it. `position: relative` puts the containing block back
+    where the clip is.
 
-    Stated exactly, because the rule is on every page: **no pane ships a span that triggers this
-    today**, so it is a guard rather than a repair, and it was measured as one. Put a
-    screen-reader-only span in the last cell of each wrapper at 375px and delete the declaration
-    at run time, and the document's scroll width goes from 375 to 1118 on Settings and to 434 on
-    App releases, with the span's offset parent moving from the wrapper to `body`; with the
-    declaration it stays 375 on both. Settings reaches the same end by a second route, using
-    `aria-label` on the revoke buttons rather than a hidden span, and App releases and People and
-    usage already carry hidden spans inside a wrapper that happen to sit inside the visible width.
-    Both are one layout change away from not doing so.
+    This item used to say the declaration was "on every page". It was not, and on the v2 layer it
+    is not now. Where it actually is, derived from the sheets by finding each box through its own
+    `overflow-x` rather than by class name:
 
-    It changes nothing else. Every element on all seven pane pages was measured at 1440px and
-    375px with the declaration and without it: the only difference anywhere is the wrapper's own
-    computed `position`. No geometry, paint order, or sticky behaviour moves, because a sticky
-    header is itself positioned and was already painting in the positioned layer, and `z-index`
-    stays `auto` so no stacking context is created.
+    ```claims id=scroll-wrapper-position
+    ops.css .table-wrap = position: relative
+    pane-alerts-v2.css .scrollx = position: static (the sheet sets none)
+    pane-analytics-v2.css .u-scroll = position: relative
+    pane-evaluations-v2.css .tbl-wrap = position: static (the sheet sets none)
+    pane-releases-v2.css .tbl-scroll = position: static (the sheet sets none)
+    pane-run-history-v2.css .tbl-wrap = position: static (the sheet sets none)
+    pane-settings-v2.css .tbl-wrap = position: static (the sheet sets none)
+    pane-spend-v2.css .sp-scroll = position: static (the sheet sets none)
+    pane-users-v2.css .tbl-wrap = position: static (the sheet sets none)
+    ```
+
+    `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
+    `login.html` and `setup.html` load and neither of them draws a table. `.u-scroll` on People
+    and usage is the one v2 wrapper that carries the repair. The other seven are static, so the
+    escape route above is open on them the moment a pane puts an absolutely positioned
+    screen-reader span inside one. **No pane ships such a span today** — that is why nothing is
+    broken on screen — which makes this an open gap rather than a shipped guard, and the guard
+    this README is checked by now says so out loud instead of describing a rule that moved out
+    from underneath it. Tracked as `Stadiora/Aria#10706`.
+
+    **Not covered here.** The original item carried measured figures — a document scroll width
+    going from 375px to 1118px on Settings and to 434px on App releases with the declaration
+    deleted at run time. Those were taken against the v1 `.table-wrap` before the panes were
+    remodelled, and nothing in this tree reproduces them: the sheets those panes load today
+    declare no `position` to delete. They are gone rather than restated, because an unreproducible
+    number in a departures record is the defect this file was just corrected for.
+
 16. **A filter-bar note wraps.** `.badge` is `nowrap`, which is right for a chip and wrong for
     the sentence a `scopeNote` or `filterNote` puts in the bar. A flex item will not shrink
     below unbreakable content, so on a phone the note was wider than the bar and pushed the
