@@ -236,7 +236,7 @@
       var next = e.detail;
       if (next.range === filters.range && next.env === filters.env) return;
       filters = next;
-      load();
+      reload();
     });
 
     /* ------------------------------------------------------------ loading */
@@ -402,7 +402,7 @@
       /* Both halves unreadable is the whole pane unreadable. Anything less
          renders what did come back, in the degraded state. */
       if (openFailed && rulesFailed) {
-        region.failed(data.open.error, load);
+        region.failed(data.open.error, reload);
         return;
       }
 
@@ -798,9 +798,9 @@
       if (problem.firedAt && problem.status !== 'closed') {
         when.appendChild(factRow('Open for', fmt.since(problem.firedAt), true));
       }
-      if (problem.status === 'acknowledged' && problem.acknowledgedAt) {
-        when.appendChild(factRow('Taken on', fmt.ago(problem.acknowledgedAt), true));
-      }
+      /* When it was taken on is NOT a row here. The footer already prints it,
+         and with the one fact this grid cannot carry -- who took it on. One
+         fact, one slot, and the slot is the one that says more. */
       grid.appendChild(when);
 
       var where = h('div', { className: 'p-col' });
@@ -1179,10 +1179,11 @@
        is the thing this is here to prevent. If the operator has already put
        focus somewhere themselves by then, it is left where they put it.
 
-       Every re-read goes through here, not only the ones a write asked for.
-       "Try again" and "Clear the filters" are both inside the region the
-       re-read replaces, so they destroy themselves exactly as an acknowledge
-       button does, and for three rounds only the write paths were covered. */
+       load() is called directly in exactly one place -- the first read, at the
+       bottom of this file, which is not a re-read and must not move focus off
+       whatever the page loaded with. Every other call is a re-read and comes
+       through here, because a read control destroys itself exactly as a write
+       control does: both sit inside the region the re-read replaces. */
     function reload() {
       return load().then(function () {
         var host = document.getElementById('content');
@@ -1381,7 +1382,7 @@
           body: { enabled: next }
         }).then(function () {
           S.toast('check', (rule.title || rule.ruleKey) + (next ? ' turned on' : ' turned off'));
-          load();
+          reload();
         }).catch(function (err) {
           /* Put the switch back where it was. It shows what the rule is, and
              a switch left in a position the server refused is a lie. */

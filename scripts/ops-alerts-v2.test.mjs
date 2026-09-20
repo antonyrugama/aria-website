@@ -43,8 +43,11 @@
        below bind what this file CAN decide -- that the severity control is
        still the same node after it is pressed, and that a reload started with
        nothing focused ends with the content region focused. The removal half
-       was measured on the real page in round 4 of this pull request's
-       independent review. */
+       was measured on the real page in rounds 4 and 5 of this pull request's
+       independent review, which is also where three re-read sites were found
+       still dropping focus over a green suite: the tests below therefore name
+       every site rather than one per shape, and that enumeration is the part
+       a reader should distrust first. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -360,33 +363,92 @@ test('picking a severity does not replace the control being picked', async () =>
     'the button that was pressed before stayed pressed');
 });
 
+/* Start from nothing focused, do the thing, report where focus ended up.
+   Blurring first is load-bearing: if something already holds focus then the
+   assertion afterwards is satisfied by the state the test started in rather
+   than by anything the pane did. */
+async function focusAfter(dom, act) {
+  if (dom.doc.activeElement) dom.doc.activeElement.blur();
+  assert.equal(dom.doc.activeElement, null, 'something already held focus');
+  act();
+  await settle();
+  return dom.doc.activeElement;
+}
+
 /* The read controls are INSIDE the region the re-read replaces, so unlike the
    severity control they cannot survive; what they can do is put focus back.
-   The write paths had this from v1 and the read paths did not. */
-test('a control that reloads the pane hands focus back rather than dropping it', async () => {
-  const failed = await boot({ open: new Error('upstream timed out') });
-  const again = buttonNamed(failed.doc.body, /Try again/);
-  assert.ok(again, 'the failed read drew no Try again button');
-  /* Asserted before as well as after: nothing may already hold focus, or the
-     assertion below is satisfied by the state the test started in. */
-  assert.equal(failed.doc.activeElement, null, 'something already held focus');
-  again.dispatch('click');
-  await settle();
-  assert.equal(failed.doc.activeElement, failed.doc.getElementById('content'),
-    'pressing Try again left nothing holding focus, so the operator is on <body>');
 
+   Every site that re-reads is asserted here rather than one per shape. The
+   sites differ only in which control was pressed, and the defect is per-site:
+   the round that fixed two of these left the other three dropping focus over
+   a green suite, because nothing named them. */
+test('every control that reloads the pane hands focus back rather than dropping it', async () => {
+  /* Both halves unreadable: the whole pane is the failed state and the shell
+     draws the retry, inside the region the retry replaces. */
+  const dead = await boot({
+    open: new Error('upstream timed out'),
+    rules: new Error('upstream timed out'),
+  });
+  const wholePane = buttonNamed(dead.doc.body, /Try again/);
+  assert.ok(wholePane, 'the whole-pane failure drew no Try again button');
+  assert.equal(await focusAfter(dead, () => wholePane.dispatch('click')),
+    dead.doc.getElementById('content'),
+    'the whole-pane Try again left nothing holding focus, so the operator is on <body>');
+
+  /* One half unreadable: a band above the queue carries its own retry. */
+  const partial = await boot({ open: new Error('upstream timed out') });
+  const bandAgain = buttonNamed(partial.doc.body, /Try again/);
+  assert.ok(bandAgain, 'the partly failed read drew no Try again button');
+  assert.equal(await focusAfter(partial, () => bandAgain.dispatch('click')),
+    partial.doc.getElementById('content'),
+    'the band Try again left nothing holding focus');
+
+  /* Clear the filters on the pane's own window: the shell has no range to put
+     back, so the pane re-reads for itself. */
   const empty = await boot({ open: { problems: [problem({ severity: 'warning' })] } });
   empty.answers.open = { problems: [] };
   severityButton(empty, 'Critical').dispatch('click');
   await settle();
   const clear = buttonNamed(empty.doc.body, /Clear the filters/);
   assert.ok(clear, 'the filtered empty state drew no Clear the filters button');
-  if (empty.doc.activeElement) empty.doc.activeElement.blur();
-  assert.equal(empty.doc.activeElement, null, 'something already held focus');
-  clear.dispatch('click');
+  assert.equal(await focusAfter(empty, () => clear.dispatch('click')),
+    empty.doc.getElementById('content'),
+    'Clear the filters left nothing holding focus');
+
+  /* The same button on a window that is not the pane's default takes the
+     other branch: the shell puts the range back and the re-read arrives as
+     ops:filters instead. One control, two code paths, and the path an
+     operator reaches by changing the window was the one left dropping focus. */
+  const wide = await boot({
+    search: '?range=7d',
+    open: { problems: [problem({ severity: 'warning' })] },
+  });
+  wide.answers.open = { problems: [] };
+  severityButton(wide, 'Critical').dispatch('click');
   await settle();
-  assert.equal(empty.doc.activeElement, empty.doc.getElementById('content'),
-    'pressing Clear the filters left nothing holding focus');
+  const clearWide = buttonNamed(wide.doc.body, /Clear the filters/);
+  assert.ok(clearWide, 'the filtered empty state drew no Clear the filters button');
+  assert.equal(await focusAfter(wide, () => clearWide.dispatch('click')),
+    wide.doc.getElementById('content'),
+    'Clear the filters on a window the pane does not start on left nothing holding focus');
+
+  /* A rule switch disables itself while the PATCH is in flight, which drops
+     focus on its own before the re-read replaces the row. */
+  const rules = await boot({});
+  const sw = withClass(rules.doc.body, 'sw')[0];
+  assert.ok(sw, 'the rules table drew no switch');
+  assert.equal(await focusAfter(rules, () => { sw.checked = false; sw.dispatch('change'); }),
+    rules.doc.getElementById('content'),
+    'turning a rule off left nothing holding focus');
+});
+
+/* The first read is not a re-read. Nothing has been thrown away, so there is
+   nothing to hand back, and moving focus into the content region on load would
+   take a keyboard user past the skip link and the rail without asking. */
+test('the first read does not move focus', async () => {
+  const dom = await boot({});
+  assert.equal(dom.doc.activeElement, null,
+    'loading the page moved focus, so the operator was carried past the rail');
 });
 
 /* ====================== controls that would be refused ================== */
@@ -466,6 +528,19 @@ test('an unacknowledged problem says nobody has it; one taken on names who has',
     'a problem somebody is on did not say who');
   assert.doesNotMatch(text, /Nobody has picked this up/,
     'a problem somebody is on still said nobody had it');
+
+  /* The footer sentence carries WHEN as well as WHO, so a "Taken on" row in
+     the fact grid would put the same relative time on the card twice. The
+     needle is bounded to the time itself -- an unbounded capture runs on into
+     the next sentence and can never repeat, which is how this assertion first
+     passed over the defect it is named for. Asserting the footer printed one
+     at all means deleting the footer cannot satisfy the count instead. */
+  const card = allText(problemCards(taken)[0]);
+  const stamp = /took this on ((?:an?|\d+) [a-z]+ ago)/.exec(card);
+  assert.ok(stamp, 'the footer did not say when the problem was taken on');
+  const times = card.split(stamp[1]).length - 1;
+  assert.equal(times, 1,
+    'the time a problem was taken on is on the card ' + times + ' times: ' + stamp[1]);
 });
 
 test('taking a problem on and closing it are two different calls', async () => {
