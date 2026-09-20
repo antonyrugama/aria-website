@@ -19,10 +19,13 @@
         half-dead.
 
      2. PAINT. The dialog is screenshotted, the scrim is removed from the DOM,
-        and it is screenshotted again. The two PNGs must be byte-identical. A
-        scrim carrying `pointer-events: none` would pass the hit test while
-        still painting 62% dim and a 2px blur over the dialog, and the pointer
-        assertion could never see it.
+        and it is screenshotted again. Almost all of the dialog's pixels must
+        be unchanged -- see PAINT_COVERAGE_LIMIT below for why the comparison
+        is a coverage threshold rather than byte equality, and for the two
+        measured populations the threshold sits between. A scrim carrying
+        `pointer-events: none` would pass the hit test while still painting
+        62% dim and a 2px blur over the dialog, and the pointer assertion
+        could never see it.
 
    Neither assertion compares z-index values. Stacking is resolved from the
    whole ancestor chain, so two numbers agree with each other whatever a
@@ -243,6 +246,10 @@ const CLIP_INSET = 1;
    of 130,530 pixels changed in dark (97.7%, mean 17.6) and 130,517 in light
    (99.99%, mean 87.3). An alpha overlay covers the whole dialog; antialiasing
    traces glyph edges.
+
+   The noise is smaller on the runner than on a laptop, not larger, so the
+   threshold is not marginal where it matters: ubuntu-latest reports 0.08% and
+   0.10% for the same two measurements macOS reports 0.11% and 0.12% for.
 
    So the assertion is COVERAGE, not identity, and its threshold sits between
    two measured populations rather than being chosen hopefully: 5% is 40 times

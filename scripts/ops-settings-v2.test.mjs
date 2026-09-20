@@ -1099,6 +1099,111 @@ test('a reload whose record read answers a whole page still offers Load more',
       'Load more after the reload asked for the wrong window');
   });
 
+/* The same defect on the other reset. loadRecord(reset) throws the window away
+   in its own `if (reset)` block, which #10689's fix did not touch, and the
+   Refresh button reaches it -- an operator presses that far more often than
+   they revoke an account (Stadiora/Aria#10740).
+
+   Both arms again, and for the same reason: a test that only checks Load more
+   is hidden after a failure is satisfied by hiding it always. */
+test('a Refresh whose record read fails offers no Load more over the rows it lost',
+  async () => {
+    let zeroth = 0;
+    const server = auditServer((offset) => {
+      if (offset !== 0) return HOLD;
+      zeroth += 1;
+      /* A whole first page, so `more` is TRUE when Refresh is pressed. */
+      return zeroth === 1 ? auditWindow('boot') : HOLD;
+    });
+    const dom = await boot({ audit: server.stub });
+    const card = () => cardByTitle(dom, 'What was done');
+    const moreButton = () => buttonsIn(card()).filter((b) => /load more/i.test(allText(b)))[0];
+    const refreshButton = () => buttonsIn(card()).filter((b) => /refresh/i.test(allText(b)))[0];
+    const rowsOn = () => {
+      const body = card().querySelectorAll('tbody')[0];
+      return body ? body.children.length : 0;
+    };
+
+    assert.equal(rowsOn(), AUDIT_PAGE, 'the first window is not on screen');
+    assert.equal(moreButton().hidden, false,
+      'a whole page was sent and Load more was not offered, so this test would pass '
+      + 'against a record whose `more` was already false');
+
+    refreshButton().dispatch('click');
+    await dom.settle();
+    assert.deepEqual(server.asked, [0, 0], 'Refresh did not reread the record');
+    assert.equal(server.holdCount(), 1, 'the reread answered itself instead of being held');
+
+    server.fail(0, new Error('The operations API did not answer.'));
+    await dom.settle();
+
+    assert.match(allText(card()), /could not be read/i,
+      'the reread failed and the card is not saying so, so what follows is not the '
+      + 'failure state this test is about');
+    assert.equal(rowsOn(), 0, 'the failed Refresh left rows on screen');
+    const more = moreButton();
+    assert.ok(more, 'the record card lost its Load more control altogether');
+    assert.equal(more.hidden, true,
+      'the card says it could not read the record and is offering to load more of it');
+  });
+
+test('a Refresh that answers a whole page still offers Load more', async () => {
+  let zeroth = 0;
+  const server = auditServer((offset) => {
+    if (offset !== 0) return HOLD;
+    zeroth += 1;
+    return zeroth === 1 ? auditWindow('boot') : auditWindow('post');
+  });
+  const dom = await boot({ audit: server.stub });
+  const card = () => cardByTitle(dom, 'What was done');
+  const moreButton = () => buttonsIn(card()).filter((b) => /load more/i.test(allText(b)))[0];
+  const refreshButton = () => buttonsIn(card()).filter((b) => /refresh/i.test(allText(b)))[0];
+
+  refreshButton().dispatch('click');
+  await dom.settle();
+
+  assert.deepEqual(server.asked, [0, 0], 'Refresh did not reread the record');
+  assert.match(allText(card()), /post_0\b/, 'the reread window is not on screen');
+  assert.equal(moreButton().hidden, false,
+    'the reread answered a whole page and Load more is hidden, so the reset clears '
+    + '`more` without the read being allowed to set it again');
+
+  moreButton().dispatch('click');
+  await dom.settle();
+  assert.deepEqual(server.asked, [0, 0, AUDIT_PAGE],
+    'Load more after the Refresh asked for the wrong window');
+});
+
+/* The narrow arm of the same branch: a LATER page failing is not a reset, the
+   rows stay on screen, and the window they came from still has more behind it.
+   Clearing `more` there too would answer a failed retry by taking the retry
+   away -- so the fix above is gated on `reset` and this test is what holds it
+   there. */
+test('a Load more that fails keeps the rows and keeps offering to try again',
+  async () => {
+    const server = auditServer((offset) => (offset === 0 ? auditWindow('boot') : HOLD));
+    const dom = await boot({ audit: server.stub });
+    const card = () => cardByTitle(dom, 'What was done');
+    const moreButton = () => buttonsIn(card()).filter((b) => /load more/i.test(allText(b)))[0];
+    const rowsOn = () => {
+      const body = card().querySelectorAll('tbody')[0];
+      return body ? body.children.length : 0;
+    };
+
+    moreButton().dispatch('click');
+    await dom.settle();
+    assert.deepEqual(server.asked, [0, AUDIT_PAGE], 'Load more asked for the wrong window');
+
+    server.fail(0, new Error('The operations API did not answer.'));
+    await dom.settle();
+
+    assert.equal(rowsOn(), AUDIT_PAGE, 'a failed later page threw away the rows already read');
+    assert.doesNotMatch(allText(card()), /could not be read/i,
+      'a failed later page replaced the rows with a failure body');
+    assert.equal(moreButton().hidden, false,
+      'a later page failed and the pane withdrew the control that retries it');
+  });
+
 /* ================================================================ the export */
 
 test('a record cell that a spreadsheet would run as a formula is defused', async () => {
