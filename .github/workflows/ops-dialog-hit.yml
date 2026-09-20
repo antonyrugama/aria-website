@@ -1,0 +1,68 @@
+name: Ops v2 dialog hit
+
+# Confirms that every confirmation dialog the dashboard opens actually receives
+# the pointer over its own controls, and that the scrim meant to sit behind it
+# really does.
+#
+# Why this is a browser check and not a stylesheet scan or a DOM test: the
+# defect it exists for leaves the DOM perfect. In Stadiora/Aria#10688 the
+# Settings pane's revoke dialog -- the pane's only destructive control -- was
+# declared at z-index 60 beneath a scrim at 90. The element existed, carried
+# its role, trapped focus and submitted from the keyboard, so every unit test
+# passed; `document.elementFromPoint` over its confirm button returned the
+# scrim and a real mouse click never landed. Nothing that reads the DOM can see
+# that, and nothing that compares the two z-index NUMBERS can either, because
+# stacking is resolved over the whole ancestor chain and a containing block
+# between them changes the answer without changing either number.
+#
+# So the check asks the browser. It hit-tests five points on every control in
+# the dialog, and it screenshots the dialog with and without its scrim: a scrim
+# carrying `pointer-events: none` would pass the hit test while still painting
+# 62% dim over the dialog, and only the pixels show that.
+#
+# The sweep fails rather than skips when it measures nothing -- a green run
+# having opened zero dialogs is exactly the false green it exists to remove.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
+# ubuntu-latest ships google-chrome-stable, which ops-contrast.yml and
+# ops-shell-v2.yml already drive over the DevTools Protocol on this image.
+
+on:
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-dialog-hit.mjs'
+      - 'scripts/ops-api-stub.mjs'
+      - '.github/workflows/ops-dialog-hit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-dialog-hit.mjs'
+      - 'scripts/ops-api-stub.mjs'
+      - '.github/workflows/ops-dialog-hit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dialog-hit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # Node 22 or newer, because the check drives headless Chrome over the
+      # DevTools Protocol through the global WebSocket rather than a package.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Fail here rather than deep inside the check if the image ever stops
+      # shipping a browser. A pointer guard with no browser has to stop, not
+      # skip.
+      - name: Confirm the runner has a browser
+        run: |
+          google-chrome --version || chromium --version
+      - name: Hit-test every confirmation dialog in both themes
+        run: node scripts/check-ops-dialog-hit.mjs
