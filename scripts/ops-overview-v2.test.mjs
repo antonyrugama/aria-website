@@ -18,9 +18,16 @@
    children-presentational and SVG <text> inside it is announced to nobody;
    and every doorway has to point at the pane the registry says owns it.
 
-   Every test here has a published mutation in the pull request: the exact file
-   and the exact original line whose removal or inversion makes that test fail.
-   A test with no such line is a test that pins nothing. */
+   Every test here but one has a published mutation in the pull request: the
+   exact file and the exact original line whose removal or inversion makes that
+   test fail. A test with no such line is a test that pins nothing.
+
+   The exception is `the tone vocabulary is read from the sheets, not from a
+   list here`, and it is NOT COVERED by any published row. Its inputs are the
+   two stylesheets, and the tone words it names are declared by ops/assets/aria.css,
+   which this pull request is not allowed to edit. The only mutation that would
+   falsify it lives in a file outside this change, so none is published rather
+   than a weaker one being passed off as proof. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
