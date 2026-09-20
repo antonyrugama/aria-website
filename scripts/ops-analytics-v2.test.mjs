@@ -57,50 +57,70 @@ const MOBILE_TREND = [
 ];
 const WEB_TREND = MOBILE_TREND.map((v) => Math.round(v * 0.29));
 
-/* A whole, healthy answer. Every test below starts here and takes something
-   away or moves one field, because the rules under test are rules about
-   absence. */
+/* A whole, healthy answer, built to `OpsUsagePayload` in
+   `app-backend/server/services/opsUsage/opsUsageView.ts` rather than to what
+   reads well: every field here is a shape the route can actually send, down to
+   the `W1` offsets, the app-prefixed version labels, the four metric labels it
+   names and `rollupsComputedAt` carrying the freshness. A fixture the endpoint
+   cannot produce proves the pane against a payload that will never arrive.
+
+   Every test below starts here and takes something away or moves one field,
+   because the rules under test are rules about absence. */
 function usageFixture(over) {
   const base = {
     availability: { state: 'ready' },
-    asOf: hoursAgo(5),
+    asOf: '2026-09-20T00:00:00.000Z',
     window: {
       days: 30, daysCovered: 30,
       reportingStart: '2026-08-22T00:00:00.000Z',
+      rollupsComputedAt: hoursAgo(5),
       daysMissingRollups: [],
     },
     apps: [
       {
-        label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
+        app: 'mobile-app', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
         coverageBasisPoints: 9200,
         metrics: [
           { label: 'Active people', value: 1061, kind: 'count' },
           { label: 'Sessions', value: 8430, kind: 'count' },
-          { label: 'Median session', value: 372, kind: 'seconds' },
           {
             label: 'Sessions per person', value: 7.9, kind: 'decimal',
-            digits: 1, denominator: 1061,
+            digits: 1, numerator: 8430, denominator: 1061,
+          },
+          {
+            label: 'Opened a feature', value: 6400, kind: 'rate',
+            numerator: 679, denominator: 1061,
           },
         ],
-        trend: { label: 'Active people', color: 's1', values: MOBILE_TREND.slice() },
+        trend: {
+          label: 'Active people per day, Mobile', color: 's1',
+          values: MOBILE_TREND.slice(),
+        },
       },
       {
-        label: 'Coaches Web', tone: 'coaches', subtitle: 'Coach app',
+        app: 'coaches-web', label: 'Coaches Web', tone: 'coaches',
+        subtitle: 'Coach workspace',
         coverageBasisPoints: 10000,
         metrics: [
           { label: 'Active people', value: 308, kind: 'count' },
           { label: 'Sessions', value: 1204, kind: 'count' },
-          { label: 'Median session', value: 640, kind: 'seconds' },
           {
             label: 'Sessions per person', value: 3.9, kind: 'decimal',
-            digits: 1, denominator: 308,
+            digits: 1, numerator: 1204, denominator: 308,
+          },
+          {
+            label: 'Opened a feature', value: 8100, kind: 'rate',
+            numerator: 249, denominator: 308,
           },
         ],
-        trend: { label: 'Active people', color: 's2', values: WEB_TREND.slice() },
+        trend: {
+          label: 'Active people per day, Coaches Web', color: 's2',
+          values: WEB_TREND.slice(),
+        },
       },
     ],
     cohorts: [{
-      app: 'Mobile', label: 'Who comes back', offsets: [1, 2, 3, 4],
+      app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2', 'W3', 'W4'],
       rows: [
         {
           label: 'Week of 24 Aug', size: 214,
@@ -122,7 +142,7 @@ function usageFixture(over) {
       hint: 'Share of people who used it at least once',
       rows: [
         {
-          label: 'Chat with Aria', app: 'Mobile', color: 's1',
+          label: 'Aria chat', app: 'Mobile', color: 's1',
           basisPoints: 6400, users: 679, denominator: 1061,
         },
         {
@@ -135,8 +155,14 @@ function usageFixture(over) {
     coverage: {
       shortfall: { detail: '8.0% of Mobile sessions in this window ran on an app version that does not report feature use.' },
       versions: [
-        { label: '2.9.1', coverageBasisPoints: 10000, sessionShareBasisPoints: 7200 },
-        { label: '2.8.4', coverageBasisPoints: 0, sessionShareBasisPoints: 800 },
+        {
+          label: 'Mobile 2.9.1', coverageBasisPoints: 10000,
+          sessionShareBasisPoints: 7200, note: 'Share is of Mobile sessions.',
+        },
+        {
+          label: 'Coaches Web version not reported', coverageBasisPoints: 0,
+          sessionShareBasisPoints: 800, note: 'Share is of Coaches Web sessions.',
+        },
       ],
     },
   };
@@ -305,24 +331,24 @@ test('a rate over a group under the floor is withheld, and one over the floor is
   const under = await boot({
     usage: usageFixture((u) => {
       u.apps[0].metrics[3].denominator = 49;
-      u.apps[0].metrics[3].value = 7.9;
+      u.apps[0].metrics[3].value = 6400;
     }),
   });
-  const withheldTile = tileText(under, /Sessions per person/);
+  const withheldTile = tileText(under, /Opened a feature/);
   assert.match(withheldTile, /Not reported/, 'a rate over 49 people was published anyway');
   assert.match(withheldTile, /floor is 50/, 'the tile withheld a figure without saying why');
-  assert.doesNotMatch(withheldTile, /7\.9/, 'the withheld figure was printed regardless');
+  assert.doesNotMatch(withheldTile, /64\.0%/, 'the withheld figure was printed regardless');
 
   /* The other direction. Without it this test passes just as well against a
      pane that withholds every figure it is given. */
   const over = await boot({
     usage: usageFixture((u) => {
       u.apps[0].metrics[3].denominator = 50;
-      u.apps[0].metrics[3].value = 7.9;
+      u.apps[0].metrics[3].value = 6400;
     }),
   });
-  const shown = tileText(over, /Sessions per person/);
-  assert.match(shown, /7\.9/, 'a rate over exactly 50 people was withheld');
+  const shown = tileText(over, /Opened a feature/);
+  assert.match(shown, /64\.0%/, 'a rate over exactly 50 people was withheld');
   assert.doesNotMatch(shown, /Not reported/, 'a publishable figure was withheld anyway');
 });
 
@@ -332,8 +358,8 @@ test('a ratio delivered as a decimal still goes through the floor', async () => 
      not the kind. */
   const dom = await boot({
     usage: usageFixture((u) => {
-      u.apps[0].metrics[3].kind = 'decimal';
-      u.apps[0].metrics[3].denominator = 12;
+      u.apps[0].metrics[2].kind = 'decimal';
+      u.apps[0].metrics[2].denominator = 12;
       u.apps[0].metrics[1].denominator = 12;
     }),
   });
@@ -347,7 +373,7 @@ test('a feature row over too small a group shows no share', async () => {
   const dom = await boot({});
   const features = card(dom, /Most used features/);
   const text = allText(features);
-  assert.match(text, /Chat with Aria/, 'the feature table lost its rows');
+  assert.match(text, /Aria chat/, 'the feature table lost its rows');
   assert.match(text, /64\.0%/, 'a share over 1061 people was withheld');
   assert.match(text, /Not reported, 41 people in the group, floor is 50/,
     'a share over 41 people was published: ' + text);
@@ -381,7 +407,7 @@ test('a window with no stored days shows its stored-day figures as not reported'
       u.window.reportingStart = null;
       u.apps.forEach((app) => {
         app.metrics[1].value = 0;
-        app.metrics[3].value = 0;
+        app.metrics[2].value = 0;
       });
     }),
   });
@@ -499,11 +525,11 @@ test('every app figure is in the split, withheld ones with their reason', async 
     usage: usageFixture((u) => { u.apps[1].metrics[3].denominator = 20; }),
   });
   const split = allText(card(dom, /Side by side/));
-  assert.match(split, /Median session/, 'the split lost a figure the answer sent');
-  assert.match(split, /10m 40s/, 'a seconds figure was not printed as a duration');
+  assert.match(split, /Opened a feature/, 'the split lost a figure the answer sent');
+  assert.match(split, /64\.0%/, 'a rate the answer sent was not printed as a percentage');
   assert.match(split, /Not reported, 20 people in the group, floor is 50/,
     'a withheld figure in the split gave no reason: ' + split);
-  assert.doesNotMatch(split, /3\.9/, 'the withheld figure was printed in the split anyway');
+  assert.doesNotMatch(split, /81\.0%/, 'the withheld figure was printed in the split anyway');
 });
 
 /* ================================ the line ============================= */
@@ -549,7 +575,7 @@ test('the days with no stored figures are named under the line', async () => {
       u.window.daysMissingRollups = ['2026-09-03T00:00:00.000Z', '2026-09-04T00:00:00.000Z'];
     }),
   });
-  const trend = allText(card(dom, /Active people, /)) || liveText(dom);
+  const trend = allText(card(dom, /Active people per day/)) || liveText(dom);
   assert.match(trend, /No stored figures on 3 Sep 2026, 4 Sep 2026/,
     'the gap days were not named: ' + trend);
 
@@ -564,7 +590,12 @@ test('the chart is named with its own data, and the name moves when the data doe
   const dom = await boot({});
   const name = chart(dom).getAttribute('aria-label');
 
-  assert.match(name, /Active people/, 'the chart name did not say what is drawn');
+  assert.match(name, /^Active people per day, one line per app/,
+    'the chart name did not say what is drawn: ' + name);
+  assert.doesNotMatch(name, /^Daily activity/,
+    'the chart name fell back to a generic phrase against the labels the route sends');
+  assert.doesNotMatch(name, /per day, Mobile/,
+    'the chart name kept one app\'s qualifier over a chart of both apps: ' + name);
   assert.match(name, /one line per app/, 'the chart name did not say it is more than one series');
   assert.match(name, /the last 30 days/, 'the chart name did not say the window it covers');
   assert.match(name, /Mobile: 30 of 30 days with a reading/,
@@ -629,24 +660,68 @@ test('the tile sparkline is hidden, and is not drawn across a gap', async () => 
 
 /* ============================== how old it is ========================== */
 
+test('the age is read from the recompute, not from the end of the window', async () => {
+  /* The route sets `asOf` to the window's exclusive end, which is the last UTC
+     midnight recomputed on every request. Reading the age from it makes every
+     answer under 24 hours old by construction, so the stale path can never be
+     reached no matter how far behind the rollups are. The freshness the pane
+     is claiming to report lives in `window.rollupsComputedAt`. */
+  const behind = await boot({
+    usage: usageFixture((u) => {
+      u.asOf = new Date(Date.now() - 2 * HOUR).toISOString();
+      u.window.rollupsComputedAt = hoursAgo(84);
+    }),
+  });
+  const text = liveText(behind);
+  assert.match(text, /84 hours behind/,
+    'the age came from the window end rather than the recompute: ' + text);
+
+  /* The other direction, and the one a field swap would pass on its own: a
+     fresh recompute behind an old window end is NOT stale. */
+  const ahead = await boot({
+    usage: usageFixture((u) => {
+      u.asOf = hoursAgo(84);
+      u.window.rollupsComputedAt = new Date(Date.now() - 2 * HOUR).toISOString();
+    }),
+  });
+  assert.doesNotMatch(liveText(ahead), /hours behind/,
+    'a fresh recompute was called stale because the window end was old');
+});
+
 test('an answer a whole run behind says how far behind it is', async () => {
-  const stale = await boot({ usage: usageFixture((u) => { u.asOf = hoursAgo(40); }) });
+  const stale = await boot({
+    usage: usageFixture((u) => { u.window.rollupsComputedAt = hoursAgo(40); }),
+  });
   const text = liveText(stale);
   assert.match(text, /40 hours behind/, 'a 40 hour old answer did not say it was behind');
   assert.match(text, /counted \d+ \w+ \d{4}/i, 'the stale answer did not say when it was counted');
 
-  const fresh = await boot({ usage: usageFixture((u) => { u.asOf = hoursAgo(5); }) });
+  const fresh = await boot({
+    usage: usageFixture((u) => { u.window.rollupsComputedAt = hoursAgo(5); }),
+  });
   const freshText = liveText(fresh);
   assert.doesNotMatch(freshText, /hours behind/, 'a 5 hour old answer was called stale');
   assert.match(freshText, /Counted \d+ \w+ \d{4}/, 'a fresh answer did not say when it was counted');
 });
 
 test('an answer with no time on it says that, rather than looking fresh', async () => {
-  const dom = await boot({ usage: usageFixture((u) => { delete u.asOf; }) });
-  assert.match(liveText(dom), /Counted at an unreported time/,
-    'an answer with no timestamp was drawn as though it had one');
-  assert.doesNotMatch(liveText(dom), /Counted \d+ \w+ \d{4}/,
+  const unreadable = await boot({
+    usage: usageFixture((u) => { u.window.rollupsComputedAt = 'whenever'; }),
+  });
+  assert.match(liveText(unreadable), /Counted at an unreported time/,
+    'an answer with an unreadable timestamp was drawn as though it had one');
+  assert.doesNotMatch(liveText(unreadable), /Counted \d+ \w+ \d{4}/,
     'the pane invented a counting time');
+
+  /* Null is the route's own value for "nothing has been computed", and it is a
+     different statement from a time that cannot be read. */
+  const never = await boot({
+    usage: usageFixture((u) => { u.window.rollupsComputedAt = null; }),
+  });
+  assert.match(liveText(never), /Nothing counted yet/,
+    'a window with no recompute at all was drawn as though it had one');
+  assert.doesNotMatch(liveText(never), /Counted \d+ \w+ \d{4}/,
+    'the pane invented a counting time for a window that has never been computed');
 });
 
 /* ============================= not-aged cells ========================== */
@@ -665,6 +740,53 @@ test('a week a group has not reached is not a zero', async () => {
   assert.doesNotMatch(allText(cohort), /n\/a/, 'an unreported cell printed a formatter fallback');
 });
 
+test('the cohort card names its app, and never the filter behind it', async () => {
+  const dom = await boot({});
+  const cohort = card(dom, /Who comes back/);
+  const head = findAll(cohort, (n) => (n.className || '').split(' ').indexOf('card-head') !== -1)[0];
+  const headText = allText(head);
+
+  /* `label` is the app's name and `app` is the value the filter sends. The two
+     are a word apart in the payload and a world apart on screen. */
+  assert.match(headText, /Mobile/, 'the cohort card did not say which app it is of');
+  assert.doesNotMatch(headText, /\bmobile\b/,
+    'the cohort card printed the filter enum at an operator: ' + headText);
+  assert.match(headText, /Who comes back/,
+    'the cohort card lost the question it answers: ' + headText);
+});
+
+test('a week column is headed in words, from the offset the route sends', async () => {
+  const dom = await boot({});
+  const cohort = card(dom, /Who comes back/);
+  const heads = findAll(cohort, (n) => isTag(n, 'th') && n.getAttribute('scope') === 'col')
+    .map((n) => allText(n).trim());
+
+  assert.deepEqual(heads, ['Week joined', 'People', 'Week 1', 'Week 2', 'Week 3', 'Week 4'],
+    'the offsets the route sends were not headed in words: ' + heads.join(' | '));
+});
+
+test('the tile draws the line of its own figure, and only of its own figure', async () => {
+  const dom = await boot({});
+  /* The route qualifies the series with the app -- `Active people per day,
+     Mobile` against a figure called `Active people` -- so an equality test
+     draws no sparkline at all on a real answer. */
+  assert.equal(findAll(tile(dom, /Active people/), (n) => isTag(n, 'svg')).length, 1,
+    'the figure the daily line is of drew no line');
+  assert.equal(findAll(tile(dom, /^\s*Sessions\b/m), (n) => isTag(n, 'svg')).length, 0,
+    'a figure the daily line is not of drew it anyway');
+
+  /* The boundary: a longer figure name that merely starts the same way is a
+     different figure and takes no line. */
+  const other = await boot({
+    usage: usageFixture((u) => {
+      u.apps[0].trend.label = 'Active people who churned per day, Mobile';
+      u.apps[1].trend.label = 'Active people who churned per day, Coaches Web';
+    }),
+  });
+  assert.equal(findAll(tile(other, /Active people/), (n) => isTag(n, 'svg')).length, 0,
+    'a tile claimed a line drawn of something else');
+});
+
 /* ================================ the tiles ============================ */
 
 test('the tiles are the answer figures, in its order, and never more than four', async () => {
@@ -678,7 +800,7 @@ test('the tiles are the answer figures, in its order, and never more than four',
     .map((n) => allText(n));
 
   assert.deepEqual(labels,
-    ['Active people', 'Sessions', 'Median session', 'Sessions per person'],
+    ['Active people', 'Sessions', 'Sessions per person', 'Opened a feature'],
     'the tiles are not the answer figures in the answer order: ' + labels.join(' | '));
 });
 

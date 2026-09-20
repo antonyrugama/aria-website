@@ -242,18 +242,28 @@
   .u-vs-side:first-child { padding-top: 0; border-top: 0; }
 }
 
+/* A grid item's automatic minimum size is its own content, so a card holding
+   anything wider than its track keeps the track that wide and takes the whole
+   page sideways with it — and a scroll box inside it never gets to clip,
+   because its parent is already wider than the screen. The item has to be
+   allowed to shrink first; only then does overflow-x mean anything. At every
+   width, not only on a phone: the cause is a wide table, and a long version
+   label overflows a two-column desktop grid exactly as it overflows one
+   column. */
+.grid > .card { min-width: 0; }
+
+/* Table headings are nowrap by default (aria.css), which is right for a short
+   column name and wrong for a row heading carrying a value: version labels
+   arrive as "Coaches Web version not reported", which no column is that wide
+   for. Wrapping keeps it a heading and keeps it inside the card. */
+.u-vers th[scope="row"] { white-space: normal; }
+
 /* Below this the cohort grid has more columns than a phone has room for, so it
    scrolls sideways inside its card rather than squeezing every week to an
    unreadable sliver. The row heading stays a heading, so a reader who has
    scrolled still knows which signup group a cell belongs to. */
 @media (max-width: 760px) {
   .ln-wrap .chart { height: 168px; }
-  /* A grid item's automatic minimum size is its own content, so the card
-     holding the grid keeps the track 460px wide and takes the page sideways
-     with it — and the scroll box inside never gets to clip, because its parent
-     is already wider than the screen. The item has to be allowed to shrink
-     first; only then does overflow-x mean anything. */
-  .grid > .card { min-width: 0; }
   /* Positioned, so that the screen-reader text inside the grid is contained
      by the scroll box. An absolutely positioned box is clipped by a scroll
      container only when that container is its containing block, so with a

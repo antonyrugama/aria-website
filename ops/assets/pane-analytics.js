@@ -23,11 +23,14 @@
         no row anywhere adds them. Somebody who used both is one person.
      4. **A missing day breaks the line** instead of dropping it to the floor,
         and the days themselves are named under the chart.
-     5. **How old the answer is travels with the figures.** The count is
+     5. **How old the answer is travels with the figures**, read from
+        `window.rollupsComputedAt` and never from `asOf`. The recount is
         nightly, so a poller a run behind would otherwise serve yesterday's
-        figures as today's with nothing on screen saying so. The age sits in
-        the head of the band the headline numbers are in, and turns from a
-        plain stamp into a warning past STALE_AFTER_HOURS.
+        figures as today's with nothing on screen saying so - and `asOf` is the
+        window's exclusive end, recomputed to last midnight on every request,
+        so an answer whose rollups last ran a week ago still carries a fresh
+        one. The age sits in the head of the band the headline numbers are in,
+        and turns from a plain stamp into a warning past STALE_AFTER_HOURS.
 
    Consent gating is not here. It happens at ingest, and a second gate on the
    display side would be a second place that decision is made and a second
@@ -55,8 +58,8 @@
      saying so. */
   var REPORTING_FLOOR = 50;
 
-  /* The recount runs nightly, so an answer older than this has missed a whole
-     run rather than having been read mid-run. */
+  /* The recount runs nightly, so a recompute older than this has missed a
+     whole run rather than having been read mid-run. */
   var STALE_AFTER_HOURS = 36;
 
   /* Most days named in full before the list is summarised: long enough to be
@@ -100,19 +103,10 @@
     return metric.kind === 'rate' || num(metric.denominator) !== null;
   }
 
-  function seconds(value) {
-    var whole = Math.round(value);
-    var mins = Math.floor(whole / 60);
-    var secs = whole % 60;
-    return mins ? mins + 'm ' + secs + 's' : secs + 's';
-  }
-
   function metricValue(metric) {
     var value = num(metric.value);
     if (value === null) return fmt.none;
-    if (metric.kind === 'money') return fmt.money(value, metric.currency);
     if (metric.kind === 'rate') return fmt.percent(value, metric.digits);
-    if (metric.kind === 'seconds') return seconds(value);
     if (metric.kind === 'decimal') {
       return value.toFixed(num(metric.digits) === null ? 1 : metric.digits);
     }
@@ -428,15 +422,48 @@
   }
 
   /* What the lines are of, taken from the answer rather than written here. The
-     apps have to agree before it can be said once over the whole chart. */
+     route names each series after the figure and then qualifies it with the
+     app it belongs to -- `Active people per day, Mobile` -- so the qualifier
+     comes off before the apps are compared. Without that every real answer has
+     two labels that disagree, and a chart of active people is announced as
+     "Daily activity by app": the name stops carrying the data, which is the
+     whole reason a role="img" chart needs one. The apps still have to agree on
+     what is left before it can be said once over the whole chart. */
   function trendLabel(series) {
-    var labels = series.map(function (one) { return one.trendLabel || ''; })
+    var labels = series.map(function (one) { return unqualified(one); })
       .filter(function (label) { return !!label; });
     var first = labels[0] || 'Daily activity';
     var agreed = labels.length === series.length && labels.every(function (label) {
       return label === first;
     });
     return agreed ? first : 'Daily activity by app';
+  }
+
+  /* One series' label with its own app's name taken off the end, and only its
+     own: a label qualified with a different app is left alone, so two series
+     that really are of different things still disagree. */
+  function unqualified(one) {
+    var label = one.trendLabel || '';
+    var suffix = ', ' + (one.label || '');
+    if (one.label && label.length > suffix.length &&
+      label.lastIndexOf(suffix) === label.length - suffix.length) {
+      return label.slice(0, label.length - suffix.length);
+    }
+    return label;
+  }
+
+  /* Whether a daily series is the day-by-day of this figure, so the tile may
+     draw it. The route names the series after the figure, makes it a rate per
+     day and then qualifies it with the app -- `Active people per day, Mobile`
+     against a figure called `Active people` -- so an exact match draws no
+     sparkline at all on a real answer. Matched on the whole of what is left
+     after the app comes off, never by prefix: `Active people who churned per
+     day` starts with `Active people` and is a different figure. */
+  function trendIsOf(app, metric) {
+    var of = typeof metric.label === 'string' ? metric.label : '';
+    var label = unqualified({ trendLabel: (app.trend || {}).label, label: app.label });
+    if (!of || !label) return false;
+    return label === of || label === of + ' per day';
   }
 
   function chartSeries(data) {
@@ -494,12 +521,25 @@
 
   /* The age of the answer, in the head of the band its figures are in.
 
-     Three outcomes, and they are different statements: no timestamp at all, a
-     timestamp from the last run, and a timestamp old enough that a whole run
-     has been missed. The last one carries the age in words, not a colour. */
+     Read from `window.rollupsComputedAt`, the freshest recompute behind the
+     summed figures, and never from `asOf`: the route sets `asOf` to the
+     window's exclusive end, which is the last UTC midnight recomputed on every
+     request, so it says when the window ended and not when anything was
+     counted. An answer a week stale carries a fresh `asOf`.
+
+     Four outcomes, and they are different statements: nothing has ever been
+     computed, a time that cannot be read, a recompute from the last run, and
+     one old enough that a whole run has been missed. The last one carries the
+     age in words, not a colour. */
   function freshness(data) {
-    var hours = fmt.hoursSince(data.asOf);
-    var stamp = fmt.utcStamp(data.asOf);
+    var computedAt = (data.window || {}).rollupsComputedAt;
+    if (computedAt === null || computedAt === undefined || computedAt === '') {
+      return h('span', { className: 'pill warn' }, [
+        S.icon('warn'), h('span', { text: 'Nothing counted yet' })
+      ]);
+    }
+    var hours = fmt.hoursSince(computedAt);
+    var stamp = fmt.utcStamp(computedAt);
     if (hours === null || stamp === null) {
       return h('span', { className: 'pill warn' }, [
         S.icon('warn'), h('span', { text: 'Counted at an unreported time' })
@@ -560,7 +600,7 @@
     var meta = h('div', { className: 'kpi-meta' }, [
       h('span', { className: 'pill', text: lead.label })
     ]);
-    if (lead.trend && lead.trend.label === metric.label) {
+    if (lead.trend && trendIsOf(lead, metric)) {
       var line = spark(lead.trend.values, lead.trend.color);
       if (line) meta.appendChild(h('span', { className: 'kpi-spark' }, [line]));
     }
@@ -729,7 +769,10 @@
   function cohortCard(cohort) {
     var offsets = list(cohort.offsets);
     var card = S.card();
-    card.appendChild(S.cardHead(cohort.label || 'Who comes back', cohort.app || null, []));
+    /* `label` is the app's name and `app` is the filter enum behind it, so the
+       note is the label and the title is the question. Printing `app` puts
+       `mobile` in front of an operator. */
+    card.appendChild(S.cardHead('Who comes back', cohort.label || null, []));
 
     var headRow = h('tr', {}, [
       h('th', { scope: 'col', className: 'u-when', text: 'Week joined' }),
@@ -754,9 +797,14 @@
     return card;
   }
 
+  /* Offsets travel as `W1`...`Wn`. The column says the week in words, because
+     `W3` in a row of numbers reads as a figure rather than as a heading. */
   function offsetLabel(offset) {
+    var text = String(offset === null || offset === undefined ? '' : offset);
+    var week = /^W(\d+)$/i.exec(text);
+    if (week) return 'Week ' + week[1];
     var n = num(offset);
-    return n === null ? String(offset) : 'Week ' + n;
+    return n === null ? text : 'Week ' + n;
   }
 
   function cohortRow(row, cells) {
@@ -894,7 +942,7 @@
     });
 
     card.appendChild(h('div', { className: 'card-body' }, [
-      h('table', { className: 'tbl' }, [h('thead', {}, [headRow]), body])
+      h('table', { className: 'tbl u-vers' }, [h('thead', {}, [headRow]), body])
     ]));
 
     var shortfall = coverage.shortfall;
