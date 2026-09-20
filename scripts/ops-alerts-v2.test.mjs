@@ -164,6 +164,11 @@ const MACHINE_READ_PREFIXES = [
    over the raw text with `[\s\S]` or `\s+` in the pattern instead, a frame
    over a copy taken before the collapse, and any reading of the sheet outside
    this file. */
+/* Typed once, and checked against BOTH sides: the declaration below must
+   really be called this, and the NOT COVERED bullet must really point at it.
+   Found by my own round-6 battery -- dropping the name from the bullet left
+   the suite green, so the pointer was prose like any other. */
+const FRAMES_LIST_NAME = 'PROSE_FRAMES_OVER_THE_SHEET';
 const PROSE_FRAMES_OVER_THE_SHEET = [
   'the paint stems the reader has',
   'the stemless properties a keyword walks past on',
@@ -2391,6 +2396,17 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
     'the sheet carries a line shaped like a machine-read one that nothing reads: '
     + headings.join(' / '));
   /* The unprefixed kind, counted off the code rather than typed in prose. */
+  assert.ok(THIS_FILE.includes('const ' + FRAMES_LIST_NAME + ' = ['),
+    'FRAMES_LIST_NAME does not name a list this file declares, so the bullet points at '
+    + 'nothing and the check below is comparing a string to itself');
+  /* The whole NOT COVERED block, not the one bullet parsed above: the
+     frames are named in a different bullet from the prefixes. */
+  const notCovered = /NOT COVERED, deliberately[\s\S]*?\*\//.exec(THIS_FILE);
+  assert.ok(notCovered, 'the NOT COVERED block is gone, and with it every claim about '
+    + 'what this file does not check');
+  assert.ok(notCovered[0].includes(FRAMES_LIST_NAME),
+    'the NOT COVERED block stopped naming ' + FRAMES_LIST_NAME + ', so the unprefixed '
+    + 'readers are enumerated in code and unmentioned in the prose that claims to name them');
   const frames = (THIS_FILE.match(FRAME_SPELLING) || []).length;
   assert.equal(frames, PROSE_FRAMES_OVER_THE_SHEET.length,
     'this file reads the sheet through ' + frames + ' prose frames and names '
@@ -2427,14 +2443,22 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
     for (const m of readFileSync(new URL(name, import.meta.url), 'utf8')
       .matchAll(/^test\('([^']+)'/gm)) foreign.add(m[1]);
   }
-  const quotedHere = [...THIS_FILE.replace(/\s+/g, ' ').matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(quotedHere.filter((q) => foreign.has(q) && !TEST_TITLES.has(q)), [],
+  /* Asked per known title rather than by scanning this file for quoted runs.
+     A scan pairs quote characters in order, so ONE unbalanced " anywhere
+     above shifts every pair after it -- this file holds 275 of them, an odd
+     number, and the shift is why my round-6 battery could paste a foreign
+     title into a comment and watch the suite stay green. Membership cannot
+     drift: each candidate is a string we already have. */
+  const normalised = THIS_FILE.replace(/\s+/g, ' ');
+  const quotedForeign = [...foreign]
+    .filter((title) => !TEST_TITLES.has(title) && normalised.includes('"' + title + '"'));
+  assert.deepEqual(quotedForeign, [],
     'a comment in this file quotes a test title that belongs to a DIFFERENT ops suite, '
     + 'which reads as a proof pointer and is not one');
 
   console.log('machine-read docblock lines judged: '
     + JSON.stringify({ read: MACHINE_READ_PREFIXES.length, inSheet: headings.length,
-      proseFrames: frames, ownCitations: marked.length }));
+      proseFrames: frames, ownCitations: marked.length, foreignTitles: foreign.size }));
 });
 
 test('every test the stylesheet cites by name is a test this file registers', () => {
