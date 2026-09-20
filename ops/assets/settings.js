@@ -53,6 +53,7 @@
   var ADMINS = '/api/ops/admins';
   var SESSIONS = '/api/ops/sessions';
   var AUDIT = '/api/ops/audit';
+  var OPS_SOURCE_PARTS = ['', 'api', 'ops'];
   var AUDIT_PAGE = 50;
 
   var ROLE_LABELS = { owner: 'Owner', operator: 'Operator', viewer: 'Viewer' };
@@ -165,13 +166,17 @@
     return el;
   }
 
+  function sourceEndpoint(slug) {
+    return OPS_SOURCE_PARTS.concat([slug]).join('/');
+  }
+
   /* A card holding what a read answered. The endpoint is written onto the
      card, so the claim the chip makes is checkable against the requests the
      pane actually issued rather than against a list somebody maintains. */
-  function liveCard(endpoint, title, note, end) {
+  function liveCard(sourceSlug, title, note, end) {
     var box = S.card();
     box.setAttribute('data-source', 'live');
-    box.setAttribute('data-endpoint', endpoint);
+    box.setAttribute('data-endpoint', sourceEndpoint(sourceSlug));
     box.appendChild(S.cardHead(title, note, (end || []).concat([
       sourceChip(LIVE_WORD, 'radio')
     ])));
@@ -632,7 +637,7 @@
     function administratorsBand(admins, sessions, sessionResult) {
       var band = S.band('Administrators', 'Everyone who can open this dashboard');
 
-      var host = liveCard(ADMINS, 'Accounts', fmt.plural(admins.length, 'account'));
+      var host = liveCard('admins', 'Accounts', fmt.plural(admins.length, 'account'));
       var tbl = table([
         { label: 'Person' }, { label: 'Role' }, { label: 'Status' },
         { label: 'Last signed in' }, { label: 'Session ends' }, { label: 'Action', right: true }
@@ -827,7 +832,7 @@
         : fmt.plural(rows.length, 'session') + ' across ' +
           fmt.plural(distinctAdmins(rows), 'person', 'people'));
 
-      var host = liveCard(SESSIONS, 'Signed in now', null);
+      var host = liveCard('sessions', 'Signed in now', null);
 
       if (sessionResult.error) {
         host.appendChild(failureBody(sessionResult.error, load));
@@ -944,7 +949,7 @@
       exportButton.appendChild(h('span', { text: 'Export what is loaded' }));
       exportButton.addEventListener('click', function () { exportRows(record.rows); });
 
-      var host = liveCard(AUDIT, 'What was done', null, [refresh, exportButton]);
+      var host = liveCard('audit', 'What was done', null, [refresh, exportButton]);
 
       var more = h('button', {
         className: 'btn btn-sm', type: 'button', 'data-role': 'more', text: 'Load more'
