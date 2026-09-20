@@ -318,11 +318,13 @@ function buildDailySeries(period, billedDays, current, comparison, refusal) {
    The input the route is driven by: one entry per usage day per billed group.
    `window()` folds them into the shape `repository.loadCostWindow` returns.
 
-   Every group below is a real shape from the seed mapping in
-   app-backend/shared/operations-cost.ts and the infrastructure named in
-   CLAUDE.md, with the subscription ids replaced by coded ones: everything
-   under ops/ is world-readable, so no real subscription id, hostname or
-   account goes into a fixture. */
+   Every group below is the real SHAPE of the seed mapping in
+   app-backend/shared/operations-cost.ts -- an Azure service name, one of the
+   six category keys, a resource group on one of two subscriptions -- with the
+   subscription ids AND the resource group names replaced by coded ones.
+   Everything under ops/ is world-readable, so nothing a real deployment is
+   actually called goes into a fixture. The Azure service names are Microsoft
+   product names, not ours, and they are what makes the rows legible. */
 
 const SUB_A = '00000000-0000-4000-8000-00000000000a';
 const SUB_B = '00000000-0000-4000-8000-00000000000b';
@@ -330,27 +332,27 @@ const SUB_B = '00000000-0000-4000-8000-00000000000b';
 export const GROUPS = [
   {
     serviceName: 'Azure OpenAI', category: 'ai_and_models',
-    resourceGroup: 'rg-aria-prod', subscriptionId: SUB_A, subscriptionLabel: 'Aria production',
+    resourceGroup: 'rg-app-prod', subscriptionId: SUB_A, subscriptionLabel: 'Production',
     perDay: 41000000,
   },
   {
     serviceName: 'Virtual Machines', category: 'ci_and_build',
-    resourceGroup: 'rg-ansamcal-ci', subscriptionId: SUB_B, subscriptionLabel: 'CI sandbox',
+    resourceGroup: 'rg-build-sandbox', subscriptionId: SUB_B, subscriptionLabel: 'CI sandbox',
     perDay: 26500000,
   },
   {
     serviceName: 'Azure Database for PostgreSQL', category: 'data',
-    resourceGroup: 'rg-aria-prod', subscriptionId: SUB_A, subscriptionLabel: 'Aria production',
+    resourceGroup: 'rg-app-prod', subscriptionId: SUB_A, subscriptionLabel: 'Production',
     perDay: 18800000,
   },
   {
     serviceName: 'Azure Container Apps', category: 'application_compute',
-    resourceGroup: 'rg-aria-prod', subscriptionId: SUB_A, subscriptionLabel: 'Aria production',
+    resourceGroup: 'rg-app-prod', subscriptionId: SUB_A, subscriptionLabel: 'Production',
     perDay: 12400000,
   },
   {
     serviceName: 'Azure Monitor', category: 'platform_and_observability',
-    resourceGroup: '', subscriptionId: SUB_A, subscriptionLabel: 'Aria production',
+    resourceGroup: '', subscriptionId: SUB_A, subscriptionLabel: 'Production',
     perDay: 4300000,
   },
 ];
@@ -360,7 +362,7 @@ export const GROUPS = [
    grouping adding up to the invoice instead of quietly losing it. */
 export const UNGROUPED_GROUP = {
   serviceName: 'Azure Spring Apps', category: 'ungrouped',
-  resourceGroup: 'rg-aria-prod', subscriptionId: SUB_A, subscriptionLabel: 'Aria production',
+  resourceGroup: 'rg-app-prod', subscriptionId: SUB_A, subscriptionLabel: 'Production',
   perDay: 310000,
 };
 
@@ -803,8 +805,8 @@ test('a grouping whose rows add up to the bill says so, with the bill beside it'
 
   const grouping = card(dom, /By category/);
   assert.ok(grouping, 'the grouping card is on the page');
-  assert.equal(runCount(grouping, /^5 rows adding up to the bill$/), 1,
-    'the reconciliation line names the row count it added up');
+  assert.equal(runCount(grouping, /^5 categories adding up to the bill$/), 1,
+    'the reconciliation line names what it added up, not just how many');
   /* $103.00 a day over ten days. Printed as the total beside the rows it is
      the sum of, which is the whole point of putting it there. */
   assert.equal(runCount(grouping, /^\$1,030\.00$/), 1,
@@ -823,9 +825,9 @@ test('a grouping whose rows do not add up to the bill reports the gap as a figur
   const grouping = card(dom, /By category/);
 
   assert.equal(
-    runCount(grouping, /^5 rows adding up to \$1,029\.00, \$1\.00 short of the bill$/), 1,
+    runCount(grouping, /^5 categories adding up to \$1,029\.00, \$1\.00 short of the bill$/), 1,
     'the gap is stated as a figure, in the direction it goes');
-  assert.equal(runCount(grouping, /^5 rows adding up to the bill$/), 0,
+  assert.equal(runCount(grouping, /^5 categories adding up to the bill$/), 0,
     'the category card must not also claim it reconciles');
 });
 
@@ -1003,7 +1005,7 @@ test('a grouping with an unmapped row still adds up to the bill', async () => {
     range: 'month', billedThrough: 10, groups: GROUPS.concat([UNGROUPED_GROUP]),
   });
   const dom = await boot({ costs: data });
-  assert.equal(runCount(card(dom, /By category/), /^6 rows adding up to the bill$/), 1,
+  assert.equal(runCount(card(dom, /By category/), /^6 categories adding up to the bill$/), 1,
     'the unmapped row is counted, which is why the categories reconcile to the invoice');
 });
 
@@ -1213,7 +1215,7 @@ test('a closed period carries no forecast, and the pane draws none', async () =>
 
 /* ------------------------------------------------------- the view switch */
 
-test('the three groupings are one card and a switch, not three cards', async () => {
+test('the allocation groupings are one card and a switch, not a card each', async () => {
   const dom = await boot({ costs: payload({ range: 'month', billedThrough: 10 }) });
   const live = livePanel(dom);
   assert.equal(runCount(live, /^By category$/), 1, 'the grouping on screen names itself once');
@@ -1224,9 +1226,11 @@ test('the three groupings are one card and a switch, not three cards', async () 
 
 test('the switch says which grouping is on, as state rather than as a colour', async () => {
   const dom = await boot({ costs: payload({ range: 'month', billedThrough: 10 }) });
-  const buttons = byClass(livePanel(dom), 'btn')
-    .filter((n) => /^(Category|Resource group|Service)$/.test(String(n.textContent || '')));
-  assert.equal(buttons.length, 3, 'three groupings to choose from');
+  const buttons = byClass(livePanel(dom), 'sp-views')
+    .flatMap((row) => findAll(row, (n) => n.getAttribute
+      && n.getAttribute('data-view') !== null));
+  assert.deepEqual(buttons.map((n) => String(n.textContent)), ['Category', 'Resource group'],
+    'the two allocation cuts, and NOT Service -- the table below already draws those rows');
 
   const on = buttons.filter((n) => n.getAttribute('aria-pressed') === 'true');
   assert.equal(on.length, 1, 'exactly one is pressed');
@@ -1247,37 +1251,174 @@ test('switching grouping redraws from the answer in hand, without reading again'
   /* The window holds two subscriptions, so the route qualifies every group
      name with the subscription it is billed on -- a bare name is ambiguous
      when the same group exists on two bills. */
-  assert.equal(runCount(live, /^rg-aria-prod \(Aria production\)$/), 1,
+  assert.equal(runCount(live, /^rg-app-prod \(Production\)$/), 1,
     'with the other grouping\'s own rows');
   assert.equal(dom.calls.filter((c) => c.endpoint === '/api/ops/costs').length, before,
-    'three cuts of one bill need one read, not three');
+    'two cuts of one bill need one read, not two');
 });
+
+test('switching hands keyboard focus back to the button that did it', async () => {
+  const dom = await boot({ costs: payload({ range: 'month', billedThrough: 10 }) });
+  const button = byClass(livePanel(dom), 'btn')
+    .filter((n) => String(n.textContent) === 'Resource group')[0];
+
+  /* A keyboard operator reaches the switch by tabbing to it, so the click
+     arrives with focus ON the button. The redraw destroys that button; if
+     nothing hands focus back they are dropped to the top of the document and
+     have to traverse the skip link, the rail and the filter bar again -- on
+     every switch, for the pane's only interactive control. */
+  button.focus();
+  assert.equal(dom.doc.activeElement, button, 'focus starts on the control');
+  button.dispatchEvent({ type: 'click' });
+
+  const after = dom.doc.activeElement;
+  assert.ok(after, 'focus did not fall off the document');
+  assert.notEqual(after, dom.body, 'and was not dropped to the top of the page');
+  assert.equal(after.getAttribute('data-view'), 'resourceGroup',
+    'it is on the rebuilt button for the grouping now showing');
+  assert.equal(after.getAttribute('aria-pressed'), 'true',
+    'which is the one that reads as pressed');
+});
+
+test('a pointer switch does not move focus, because it was not on the switch', async () => {
+  const dom = await boot({ costs: payload({ range: 'month', billedThrough: 10 }) });
+  const button = byClass(livePanel(dom), 'btn')
+    .filter((n) => String(n.textContent) === 'Resource group')[0];
+
+  /* The other direction. Focus is nowhere in particular, and moving it onto
+     the switch would be a jump nobody asked for. */
+  assert.notEqual(dom.doc.activeElement, button, 'focus is not on the switch');
+  const before = dom.doc.activeElement;
+  button.dispatchEvent({ type: 'click' });
+  assert.equal(dom.doc.activeElement, before, 'and the redraw left it where it was');
+  assert.equal(runCount(livePanel(dom), /^By resource group$/), 1, 'the switch still worked');
+});
+
+/* The tone classes on a change pill read backwards on purpose -- up is the
+   bad direction on a bill -- so the chevron and the signed figure are what
+   carry the direction. Colour is never the only thing saying it, and that is
+   only true while the chevron follows the sign. */
+test('the change chevron follows the sign, so the tone is never the only thing saying it',
+  async () => {
+    const UP = 'M7 14l5-5 5 5';
+    const DOWN = 'M7 10l5 5 5-5';
+
+    const data = payload({ range: 'month', billedThrough: 10 });
+    data.views.service.rows[0].changeBasisPoints = 1850;
+    data.views.service.rows[1].changeBasisPoints = -1200;
+    data.views.service.rows[2].changeBasisPoints = 0;
+
+    const dom = await boot({ costs: data });
+    const table = card(dom, /By service/);
+
+    /* Read off the drawn pill, by its own printed figure, so the assertion
+       is against the sign on screen rather than against the fixture. */
+    const pills = byClass(table, 'pill').map((pill) => ({
+      text: ownText(pill),
+      tone: String(pill.className || ''),
+      paths: findAll(pill, (n) => n.tagName && n.tagName.toLowerCase() === 'path')
+        .map((n) => n.getAttribute('d'))
+    }));
+
+    const rise = pills.filter((p) => /^\+/.test(p.text))[0];
+    assert.ok(rise, 'a rise is on the table');
+    assert.deepEqual(rise.paths, [UP], 'a rise draws the up chevron');
+    assert.match(rise.tone, /\bdown\b/, 'and takes the rose tone, because up is bad on a bill');
+
+    const fall = pills.filter((p) => /^-/.test(p.text))[0];
+    assert.ok(fall, 'a fall is on the table');
+    assert.deepEqual(fall.paths, [DOWN], 'a fall draws the down chevron');
+    assert.match(fall.tone, /\bup\b/, 'and takes the emerald tone');
+
+    const flat = pills.filter((p) => p.text === 'No change')[0];
+    assert.ok(flat, 'a measured zero is on the table');
+    assert.deepEqual(flat.paths, [], 'and draws no chevron at all, because it points nowhere');
+
+    /* Both directions, against each other: the two glyphs must differ. A
+       single icon name used for both would satisfy every assertion above if
+       they were read one at a time. */
+    assert.notDeepEqual(rise.paths, fall.paths,
+      'a rise and a fall are not drawn with the same glyph');
+  });
 
 test('every grouping reconciles to the same bill, which is what makes switching safe', async () => {
   const data = payload({ range: 'month', billedThrough: 10 });
   const dom = await boot({ costs: data });
-  const bill = '$1,030.00';
+  const bill = /^\$1,030\.00$/;
 
   /* Scoped to the grouping card. The per-service table draws a reconciliation
-     line too, so asserting over the whole panel would pass on that one and
-     say nothing about the card the switch actually redraws. */
+     line of its own, so asserting over the whole panel would pass on that one
+     and say nothing about the card the switch actually redraws. */
   const seen = [];
-  for (const label of ['Category', 'Resource group', 'Service']) {
+  for (const [label, line] of [
+    ['Category', /^5 categories adding up to the bill$/],
+    ['Resource group', /^3 resource groups adding up to the bill$/]
+  ]) {
     const button = byClass(livePanel(dom), 'btn')
       .filter((n) => String(n.textContent) === label)[0];
     assert.ok(button, label + ' is offered');
     button.dispatchEvent({ type: 'click' });
 
     const on = switchCard(dom);
-    assert.equal(runCount(on, /^\d+ rows adding up to the bill$/), 1,
-      label + ' states that its own rows add up');
-    assert.equal(runCount(on, new RegExp('^\\' + bill + '$')), 1,
-      label + ' prints the bill it adds up to');
+    assert.equal(runCount(on, line), 1, label + ' states that its own rows add up');
+    assert.equal(runCount(on, bill), 1, label + ' prints the bill it adds up to');
     seen.push(label);
   }
-  assert.deepEqual(seen, ['Category', 'Resource group', 'Service'],
-    'all three groupings were switched to, not one of them three times');
+  assert.deepEqual(seen, ['Category', 'Resource group'],
+    'both groupings were switched to, not one of them twice');
+
+  /* The third cut is the table below, not a switch state. It is on the page
+     the whole time and it reconciles to the same bill. */
+  const table = card(dom, /By service/);
+  assert.equal(runCount(table, /^5 services adding up to the bill$/), 1,
+    'the per-service table adds up too, in its own words');
+  assert.equal(runCount(table, bill), 1, 'and to the same bill');
 });
+
+test('the per-service rows are drawn once, as the table, and not also as a switch state',
+  async () => {
+    const dom = await boot({ costs: payload({ range: 'month', billedThrough: 10 }) });
+
+    /* Read off `data-view`, not the button's words. A grouping restored to
+       the switch without a label in VIEW_BUTTON falls back to its own key,
+       so a test filtering on the text "Service" would not see it come back
+       -- and the duplication it is named for would walk straight through. */
+    const offered = byClass(livePanel(dom), 'sp-views')
+      .flatMap((row) => findAll(row, (n) => n.getAttribute
+        && n.getAttribute('data-view') !== null))
+      .map((n) => n.getAttribute('data-view'));
+    assert.deepEqual(offered, ['category', 'resourceGroup'],
+      'the switch offers the two allocation cuts and nothing that redraws the table');
+
+    /* Walked, not reasoned about: every state the switch can reach, asserted
+       to draw each card title once and each reconciliation sentence once.
+       The duplication this is named for only appears in the state that draws
+       the rows a second time, so a test that never enters that state cannot
+       see it. */
+    for (const key of offered.concat(offered.slice(0, 1))) {
+      const button = findAll(livePanel(dom), (n) => n.getAttribute
+        && n.getAttribute('data-view') === key)[0];
+      button.dispatchEvent({ type: 'click' });
+
+      const live = livePanel(dom);
+      const heads = byClass(live, 'card').map((n) => String(runs(n)[0] || ''));
+      assert.deepEqual(heads, Array.from(new Set(heads)),
+        'with ' + key + ' on, no two cards carry the same title: ' + heads.join(' / '));
+
+      const claims = runs(live).filter((t) => / adding up to /.test(t));
+      assert.equal(claims.length, 2,
+        'with ' + key + ' on, two cards make the reconciliation claim: the grouping '
+        + 'on screen and the table');
+      assert.deepEqual(claims, Array.from(new Set(claims)),
+        'with ' + key + ' on, the two claims are about different things: '
+        + claims.join(' / '));
+    }
+
+    assert.equal(runCount(livePanel(dom), /^5 services adding up to the bill$/), 1,
+      'the table says it about services');
+    assert.equal(runCount(livePanel(dom), /^5 categories adding up to the bill$/), 1,
+      'the grouping card about categories, and the two sentences differ');
+  });
 
 test('a grouping the answer has no rows for is not offered', async () => {
   const data = payload({ range: 'month', billedThrough: 10 });
@@ -1287,8 +1428,10 @@ test('a grouping the answer has no rows for is not offered', async () => {
   const labels = byClass(livePanel(dom), 'btn')
     .map((n) => String(n.textContent || ''))
     .filter((t) => /^(Category|Resource group|Service)$/.test(t));
-  assert.deepEqual(labels, ['Category', 'Service'],
-    'a button that switches to an empty card is a control that does nothing');
+  assert.deepEqual(labels, [],
+    'a button that switches to an empty card is a control that does nothing, and a '
+    + 'switch with one state left is not a switch');
+  assert.ok(card(dom, /By category/), 'the grouping that does have rows is still drawn');
 });
 
 /* ------------------------------------------- the subscription-level row */
@@ -1301,7 +1444,7 @@ test('a charge billed to no resource group keeps the route\'s own words', async 
   button.dispatchEvent({ type: 'click' });
 
   const live = livePanel(dom);
-  assert.equal(runCount(live, /^Subscription level \(Aria production\)$/), 1,
+  assert.equal(runCount(live, /^Subscription level \(Production\)$/), 1,
     'the poller\'s empty-string sentinel is a real row and gets real words');
   assert.equal(
     runCount(live, /^Billed to the subscription rather than to a resource group\.$/), 1,

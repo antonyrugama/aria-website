@@ -284,13 +284,22 @@
     ]);
   }
 
-  /* ------------------------------------------------------- the three views
+  /* -------------------------------------------------- the allocation views
 
-     One bill, three groupings. The card below the switch is one grouping; the
-     switch says which, and the reconciliation line under the rows says it
-     still adds up to the same bill. */
+     One bill, cut two ways by allocation: what the money was for, and which
+     Azure group it was billed to. The switch says which cut is on screen and
+     the reconciliation line under the rows says it still adds up to the same
+     bill.
 
-  var VIEW_ORDER = ['category', 'resourceGroup', 'service'];
+     `service` is deliberately NOT here. The route sends it as a third view of
+     the same rows, and the per-service table below draws exactly those rows:
+     offering it in the switch as well drew two cards with the same title, the
+     same rows and the same reconciliation line, which is the one thing this
+     remodel exists to remove. The table is the better drawing of it -- Azure
+     names a service, so the column wants a row header and a scroll, not a
+     share bar -- so the table keeps it and the switch does not. */
+
+  var VIEW_ORDER = ['category', 'resourceGroup'];
 
   /* The grouping the pane opens on. Category first because it answers what
      the money was for, which is the question the pane's own name asks. */
@@ -300,9 +309,19 @@
      -- "What the money was spent on" -- wraps onto three lines at 320px. */
   var VIEW_BUTTON = {
     category: 'Category',
-    resourceGroup: 'Resource group',
-    service: 'Service'
+    resourceGroup: 'Resource group'
   };
+
+  /* What a row of each grouping IS, so its reconciliation line names the
+     things it is adding up. Two cards on one page both ending in "5 rows
+     adding up to the bill" is one sentence printed twice; "5 categories" and
+     "12 services" are two facts. */
+  var VIEW_NOUN = {
+    category: ['category', 'categories'],
+    resourceGroup: ['resource group'],
+    service: ['service']
+  };
+  var ROW_NOUN = ['row'];
 
   function availableViews(data) {
     var views = data.views || {};
@@ -326,6 +345,7 @@
         'aria-pressed': on ? 'true' : 'false',
         text: VIEW_BUTTON[key] || key
       });
+      button.setAttribute('data-view', key);
       button.addEventListener('click', function () { onPick(key); });
       row.appendChild(button);
     });
@@ -350,7 +370,7 @@
     var wrap = h('div', { className: 'sp-rows' });
     rows.forEach(function (row) { wrap.appendChild(billRow(row, data)); });
     card.appendChild(h('div', { className: 'card-body' }, [
-      wrap, reconciliation(rows, data)
+      wrap, reconciliation(rows, data, VIEW_NOUN[key] || ROW_NOUN)
     ]));
     return card;
   }
@@ -426,7 +446,9 @@
 
      A gap is stated as a figure, with a glyph and words beside it: never a
      colour alone. */
-  function reconciliation(rows, data) {
+  function reconciliation(rows, data, noun) {
+    var one = (noun || ROW_NOUN)[0];
+    var many = (noun || ROW_NOUN)[1];
     var total = num((data.total || {}).micros);
     var summed = 0;
     var unreadable = false;
@@ -454,7 +476,7 @@
         S.icon('check'),
         h('span', {
           className: 'sp-recon-gap',
-          text: fmt.plural(rows.length, 'row') + ' adding up to the bill'
+          text: fmt.plural(rows.length, one, many) + ' adding up to the bill'
         }),
         h('span', { className: 'sp-recon-total sp-num', text: money(total, data) })
       ]);
@@ -464,7 +486,7 @@
       S.icon('warn'),
       h('span', {
         className: 'sp-recon-gap',
-        text: fmt.plural(rows.length, 'row') + ' adding up to ' + money(summed, data) +
+        text: fmt.plural(rows.length, one, many) + ' adding up to ' + money(summed, data) +
           ', ' + money(Math.abs(gap), data) +
           (gap > 0 ? ' more than' : ' short of') + ' the bill'
       }),
@@ -732,7 +754,7 @@
 
     card.appendChild(h('div', { className: 'card-body' }, [
       h('div', { className: 'sp-scroll' }, [table]),
-      reconciliation(rows, data)
+      reconciliation(rows, data, VIEW_NOUN.service)
     ]));
     return card;
   }
@@ -860,13 +882,30 @@
     }
 
     /* Switching grouping redraws from the answer already in hand rather than
-       re-reading: it is three cuts of one bill, so a second request would
+       re-reading: it is two cuts of one bill, so a second request would
        fetch the same bytes and put a skeleton over a question the page has
        already answered. */
     function pick(key) {
       viewKey = key;
       if (!latest) return;
+
+      /* The button that was just pressed is destroyed by the redraw below, so
+         a keyboard operator would be dropped to the top of the document on
+         every switch -- past the skip link, the rail and the filter bar --
+         for the pane's only interactive control. Only when focus WAS on the
+         switch: a pointer user has focus nowhere in particular and moving it
+         there would be a jump they did not ask for. */
+      var host = document.getElementById('content');
+      var live = document.activeElement;
+      var wasOnSwitch = !!(live && live.getAttribute
+        && live.getAttribute('data-view') !== null);
+
       region.show(render(latest, viewKey, pick));
+
+      if (wasOnSwitch && host) {
+        var again = host.querySelectorAll('[data-view="' + key + '"]')[0];
+        if (again && again.focus) again.focus();
+      }
       S.announce('The bill is now grouped by ' + (VIEW_BUTTON[key] || key) + '.');
     }
 

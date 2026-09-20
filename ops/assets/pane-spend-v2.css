@@ -317,8 +317,11 @@
    aria.css:360 already sets flex-wrap on .band-head, restating it or adding
    it to .band-end leaves .band-end's width identical at 320, 375 and 768, and
    `margin-left: 0` leaves every measurement unchanged at 320 to 768 because a
-   wrapped .band-end already fills its line. Deleting THIS line alone
-   reinstates 436/320. */
+   wrapped .band-end already fills its line. Deleting THIS line alone, in the
+   poller-failure state, reinstates the same ~1036 the figures above report:
+   measured 1035/320, 1035/375 and 1035/768 on a re-run, against 320/320,
+   375/375 and 768/768 with it. (An earlier note here read 436/320; that
+   figure came from a partial mutation and does not reproduce.) */
 .band-end .pill { white-space: normal; }
 
 @media (max-width: 720px) {
