@@ -965,6 +965,7 @@ fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
 |---|---|
 | `node --test scripts/*.test.mjs` | The accessible name every chart derives, that preview state is applied in **both** directions, and that the theme button re-resolves each chart's colours. Runs `scripts/ops-aria-shell.test.mjs` alongside the pane tests. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
+| `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the surface behind each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
 
@@ -979,9 +980,59 @@ coverage: deleting `stroke` from `icon()` left sixty icons a blank box with the 
 What the icon sweep does **not** answer is whether an ink that resolves to a real colour can be
 seen against what is painted behind it. That needs the effective background — layered gradients
 and `color-mix` alpha here, not any one ancestor's `background-color` — and it belongs to a
-contrast oracle rather than to a paint-presence check. It reads one geometry property,
-`stroke-width` on the stroke channel, because that is the channel icons paint through; an icon
-hidden by `opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+contrast oracle rather than to a paint-presence check; `check-ops-contrast.mjs` is that oracle,
+and it measures text, not icons. The icon sweep reads one geometry property, `stroke-width` on
+the stroke channel, because that is the channel icons paint through; an icon hidden by
+`opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+
+### Measuring contrast where the colour lands
+
+Pinning token values catches a palette that was derived instead of ported, and a token that
+quietly changed value. It cannot catch a **usage-site swap**: a rule that asks for the *wrong*
+token, where both tokens exist and both hold the value the design says. Swap `.pill.acc`'s
+`color: var(--cyan-ink)` for `color: var(--cyan)` and every token still resolves, every pinned
+value still matches, both suites stay green, and the pill measures 3.03:1 in light.
+
+So `check-ops-contrast.mjs` measures pixels instead of parsing CSS. Backdrops on this page are
+layered gradients under `color-mix` surfaces, and no ancestor's `background-color` is the colour
+a reader sees, so the check hides every glyph with a constructable stylesheet — `<style>` is
+blocked by the page's `style-src 'self'`, CSSOM is not — screenshots the full page, and samples
+the surface behind each **run of text**. Runs, not element boxes: a row that contains a chip is
+12% chip, and the row's own words sit on none of it.
+
+Two things decide the answer, and both are per **role**:
+
+- **The ink decides against its worst surface.** The hatch behind `.budget .fore` is 22% amber
+  every 6px, so a letter crossing a stripe is read at the stripe's ratio whatever the rest of
+  the run does. Judging the widest surface instead lets a minority one hide a failure — with
+  that one line changed, the below-AA site the page carries today reads 6.01:1 and passes.
+- **An ink it cannot resolve is refused, never assumed.** Assuming opaque is the flattering
+  direction for an ink: a faded ink read as solid clears AA. `color(srgb …)` — how Chromium
+  serialises `color-mix()` — is read as the 0..1 floats CSS Color 4 says it is, because the
+  parser this one was ported from understood only `rgb()` and silently dropped 40 sites with 10
+  real failures among them (monorepo #10255). Anything it cannot read fails the run.
+
+The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
+--self-test` runs six parts against a synthetic fixture — the formula against published WebAIM
+values, the decode/plate/sample pipeline against declared swatch colours, plate integrity pixel
+by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
+read as its fallback, and `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5). If any part
+fails, nothing is measured and the run exits non-zero.
+
+**Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
+geometry against its card — is outside this check; 1.4.11 is a different requirement and this
+tool measures text only. A skip link parked off-canvas is skipped, so its focused appearance is
+unmeasured. Only `shell-v2.html` is walked, at one viewport, in the four states `applyState`
+exposes. `::before`/`::after` content is measured against its originating element's box rather
+than its own, because a pseudo-element has no text node to range over. And the check answers
+"can this be read", not "is this the designed colour" — the token pins in
+`check-ops-shell-v2.mjs` answer that, and the two are complementary.
+
+Sites that are below AA on the page today are frozen one at a time in `KNOWN_BELOW_AA`, keyed
+per site — theme, state, selector and the words — with the issue that tracks each. The freeze is
+asserted in both directions: an entry that stops reproducing, matches more than one site, or
+moves by more than 0.15 fails the run, so an exemption cannot outlive what it exempts. There is
+one entry today, [Stadiora/Aria#10366](https://github.com/Stadiora/Aria/issues/10366).
 
 The pre-paint half of the shell check is the part worth keeping. A theme default written in two
 places that disagree produces a page that paints one theme and switches to the other a moment

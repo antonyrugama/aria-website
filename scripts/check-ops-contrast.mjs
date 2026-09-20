@@ -1000,7 +1000,22 @@ const FREEZE_TOLERANCE = 0.15;
    if the number moves. Each entry carries the issue that tracks the fix.
 
    This list is not a place to put a site you have not looked at. */
-const KNOWN_BELOW_AA = [];
+const KNOWN_BELOW_AA = [
+  {
+    theme: 'light',
+    states: ['live', 'loading', 'empty', 'degraded'],
+    selector: 'div.fore',
+    text: '+26%',
+    ratio: 4.49,
+    need: 4.5,
+    issue: 'https://github.com/Stadiora/Aria/issues/10366',
+    why: 'The forecast half of the budget bar paints --amber-ink over a 22% amber hatch. ' +
+      'On the stripe that is #92400E on #DFCABB — 4.49:1 against a 4.5:1 requirement. ' +
+      'The gap between stripes clears AA at 6.01:1, so the text is legible for part of ' +
+      'every letter and not the rest. ops/assets/aria.css is shared by four pane agents ' +
+      'and is not this PR to edit.'
+  }
+];
 
 /* ------------------------------------------------------------------ main */
 
