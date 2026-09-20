@@ -656,11 +656,15 @@ test('a second page of the record does not print a row that is already on screen
       const offset = o && o.query ? o.query.offset : 0;
       /* A newest-first log that is still being written: one entry arrived
          between the two requests, so the second page repeats aud_3. */
-      return offset === 0 ? first : [first[2], {
-        id: 'aud_4', occurredAt: back(6 * HOUR), actorEmail: 'owner@ops.invalid',
-        actorRole: 'owner', action: 'admin.login', outcome: 'success',
-        targetType: null, targetId: null, reason: null, ipAddress: '198.51.100.7',
-      }];
+      if (offset === 0) return first;
+      if (offset === 3) {
+        return [first[2], {
+          id: 'aud_4', occurredAt: back(6 * HOUR), actorEmail: 'owner@ops.invalid',
+          actorRole: 'owner', action: 'admin.login', outcome: 'success',
+          targetType: null, targetId: null, reason: null, ipAddress: '198.51.100.7',
+        }];
+      }
+      return [];
     };
     const dom = await boot({ audit: page });
     const record = cardByTitle(dom, 'What was done');
@@ -674,9 +678,22 @@ test('a second page of the record does not print a row that is already on screen
 
     const rows = record.querySelectorAll('tbody')[0].children;
     assert.equal(rows.length, 4, 'the repeated entry was printed twice');
-    const ids = dom.calls.filter((c) => c.endpoint === AUDIT).map((c) => c.query.offset);
-    assert.deepEqual(ids, [0, 3],
+
+    /* The third request is the whole point of clicking twice. Up to here the
+       server has sent every row the pane kept, so an offset advanced by what
+       SURVIVED the de-duplication is indistinguishable from one advanced by
+       what was SENT: both read 3. It is the page that repeated a row which
+       separates them - sent 2, kept 1 - and only the request after it can
+       show which of the two the pane counted. */
+    more.hidden = false;
+    more.dispatch('click');
+    await dom.settle();
+
+    const offsets = dom.calls.filter((c) => c.endpoint === AUDIT).map((c) => c.query.offset);
+    assert.deepEqual(offsets, [0, 3, 5],
       'the offset did not advance by what the server sent');
+    assert.equal(record.querySelectorAll('tbody')[0].children.length, 4,
+      'the end of the record changed what was on screen');
   });
 
 test('an unrecognised action is shown as recorded rather than relabelled', async () => {
