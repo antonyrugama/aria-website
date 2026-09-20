@@ -52,8 +52,8 @@
    The pane list is read out of assets/pane-registry.js, the table both shells
    boot from, so a pane cannot join the app without joining this sweep, and the
    number of panes judged is asserted against the number the registry declares.
-   Nine of the ten are on the v2 bootstrap; Cloud costs is still on the v1
-   shell and is judged through the same door as the rest.
+   All ten are on the v2 bootstrap — #65 moved Cloud costs, the last one — and
+   every one of them is judged through the same door.
 
    HOW A RESULT VIEW IS REACHED. Eight panes reach one from their own boot
    read, answered here by a stub that sends populated figures rather than the
@@ -123,7 +123,11 @@
      to compare against. A pane that draws exactly one row and marks it, or one
      tab and selects it, has no unmarked shape anywhere, and that is reported
      as unjudgeable rather than passed — but it is reported, not measured. The
-     fixtures here draw two matches and three tabs for exactly that reason.
+     users fixture draws two match rows for exactly that reason: one would
+     leave the picked row with nothing to compare against. Cloud costs fails
+     earlier and louder — below two groupings its switch does not render at
+     all, so the state is absent rather than unjudgeable and EXPECTED_PAIRS
+     catches it.
 
    Usage:  node scripts/check-ops-result-view.mjs
    Chrome: CHROME_PATH, or the usual install locations on Linux and Windows.
@@ -151,7 +155,7 @@ const STEP_MS = 900;
 
 /* A floor, and only a floor: it says the pane put something on the page. The
    RESULT_PROOF markers below are what say the pane put its RESULT on the
-   page. The thinnest result view in this sweep is Cloud costs at 114
+   page. The thinnest result view in this sweep is Live jobs at 143
    elements. */
 const MIN_CONTENT_ELEMENTS = 20;
 
@@ -469,11 +473,9 @@ const USAGE = {
    the pane draws the reconciled sentence rather than the gap one.
 
    `views` keyed by category / resourceGroup / service, each `{ label, hint,
-   rows }`, is the shape BOTH generations of this pane read: the v1 module in
-   assets/pane-spend.js and the v2 remodel on antonyrugama/aria-website#65.
-   The markers this check pins for the pane are row labels, which both print
-   verbatim, so the conversion does not silently drop the pane out of the
-   sweep. */
+   rows }`, is the shape the route sends. All three keys have to be here and
+   the note on `resourceGroup` below says why. The markers this check pins for
+   the pane are row labels, which the pane prints verbatim. */
 const COST_ROWS = [
   { key: 'openai', label: 'Azure OpenAI', micros: 240_000_000, color: 's1' },
   { key: 'postgres', label: 'Postgres', micros: 92_000_000, color: 's2' },
@@ -805,12 +807,17 @@ const KNOWN_UNPAINTED_STATE = [
    anybody editing this table, and a pane that stops drawing the pairs it has
    today fails rather than passing on zero comparisons.
 
-   Seven panes are zero because their result views declare no ARIA state at
+   Eight panes are zero because their result views declare no ARIA state at
    all. That is stated here rather than left to be inferred from a sweep that
    silently compared nothing. */
 const EXPECTED_PAIRS = {
   overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0,
-  /* The Category / Service tabs over the three cuts of the bill. */
+  /* One pair: the Group-the-bill-by switch's two buttons, `category` against
+     `resourceGroup`. Not `service` — the pane drops that key from its switch
+     on purpose (ops/assets/pane-spend.js:288-302) and draws the per-service
+     figures as a table instead, so `service` feeds a table and no ARIA state.
+     Deleting `resourceGroup` from the fixture takes this to 0 and fails the
+     run; deleting `service` leaves it at 1. */
   spend: 1,
   evals: 0,
   releases: 0,
@@ -1246,10 +1253,11 @@ const probeFor = (markers) => `(() => {
 
   const contentText = content ? clean(content) : '';
   const title = document.querySelector('.page-title');
-  /* Two spellings, for two shells: shell-pane-v2.js writes the pane's question
-     into .page-sub and the v1 shell.js into .page-question. Cloud costs is the
-     one pane still on the v1 shell, and reading only the v2 spelling drops it
-     out of the sweep silently. */
+  /* Two spellings. The pane header aria.js:253 builds writes the question into
+     .page-sub, which is what all ten pages render. .page-question is
+     shell.js:290's spelling, and no ops page loads shell.js any more — it is
+     kept in this selector so the probe does not depend on that staying true,
+     at a cost of one clause. */
   const sub = document.querySelector('.page-sub, .page-question');
 
   return JSON.stringify({
