@@ -426,6 +426,28 @@ DERIVED['shell-v2-pins'] = () => {
   ];
 };
 
+/* Every place this README points at a line of code. The anchor it quotes is
+   the subject and comes from the block; the LINE is derived. An anchor that
+   no longer appears in the file it names, or appears twice, is a failure
+   here rather than a number that silently drifts - which is what happened to
+   three of the seven line citations this file used to carry. */
+DERIVED['source-anchors'] = () => {
+  const block = BLOCKS.get('source-anchors');
+  assert.ok(block, `${README_PATH} carries no claims block with id=source-anchors`);
+  return block.lines.map((l) => l.trim()).map((line) => {
+    const m = /^(\S+) "(.+)" = line \d+$/.exec(line);
+    assert.ok(m, `source-anchors: "${line}" is not <path> "<anchor>" = line <n>`);
+    const [, file, needle] = m;
+    assert.ok(fs.existsSync(path.join(ROOT, file)), `source-anchors: ${file} is not a file here`);
+    const hits = read(file).split('\n')
+      .map((text, i) => (text.includes(needle) ? i + 1 : 0))
+      .filter(Boolean);
+    assert.equal(hits.length, 1,
+      `${file} contains "${needle}" ${hits.length} times, so it does not point at one line`);
+    return `${file} "${needle}" = line ${hits[0]}`;
+  });
+};
+
 /* What the content security policy costs, counted rather than remembered:
    how many pages would need a hash if the theme were inlined, and whether the
    two things the policy forbids are actually absent from the markup. A page

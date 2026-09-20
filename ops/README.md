@@ -241,17 +241,18 @@ ops/
     pane-registry.js    what every pane is called, asks, filters on and allows —
                         the one table both shells read
     shell.js            v1 rail, top bar, filter bar, boot gate — no page loads
-                        it; two test files still execute it
+                        it; the tests that do are in assets-only-in-tests
     login.js            the sign-in page controller
     setup.js            the first-time setup page controller
     operate.js          v1 pane furniture: charts, drawer, confirm, states — no
-                        page loads it; two test files still execute it
-    alerts-model.js     the problems API in plain words, shared by two panes
+                        page loads it; likewise
+    alerts-model.js     the problems API in plain words; which pages load it is
+                        assets-by-page, and no count is kept here
     pane-overview.js    Overview
     pane-alerts.js      Problems
     pane-data.js        v1 plumbing for the understand panes and for Overview's
                         figures: source, formatting, states, charts — no page
-                        loads it; two test files still read it
+                        loads it; likewise
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
     pane-evaluations.js dataset validation, private quarantine import and approval handoffs
@@ -339,9 +340,10 @@ shell.js = ops-alerts-v2.test.mjs, ops-shell-pane-v2.test.mjs
 ```
 
 Those three are the answer to "what dies when the last pane moves across": **not yet**, and not
-because of the pages. Two test files execute `shell.js` and `operate.js` on purpose — the reason
-is recorded at `ops/assets/shell-pane-v2.js:113` — and `pane-data.js` is read by two more, so
-deleting any of them takes the tests with it. `ops.css` and `icons.js` are not page-less at all:
+because of the pages. Test files execute `shell.js` and `operate.js` on purpose — the reason is
+recorded in `ops/assets/shell-pane-v2.js` — and read `pane-data.js`, so deleting any of them
+takes those tests with it. Which tests, and how many, is the block above rather than this
+sentence. `ops.css` and `icons.js` are not page-less at all:
 `login.html` and `setup.html` still load both, and those two pages have no v2 remodel.
 
 And the files this README still talks about which are no longer in the tree. The guard checks
@@ -1351,7 +1353,8 @@ would blend them is not drawn.
    order loses it entirely between 561px and 650px. Putting the share first is not a fix
    either: it only moves the clip onto the version. The version is on the key beside the bar,
    so the chip states the share alone and nothing unbounded goes in it.
-   See `assets/pane-releases.js:173-188` and `assets/pane-releases-v2.css:157-166`.
+   See the comments in `assets/pane-releases.js` and `assets/pane-releases-v2.css` that the
+   `source-anchors` block pins.
 
 Two additions the mock does not have, both of which exist because the pane reads a live answer
 where the mock reads its own sample text:
@@ -1416,14 +1419,14 @@ the thing it describes is the worse of the two failures.
    it.** It belongs to the card in 5 that has no source, and the fact it carries has no home
    here: it is a statement about **consent** — nothing was collected, so there is nothing behind
    the mask to unlock — and on this pane a mask is the opposite, a value the owner *can* unlock
-   with a recorded reason. The account card's foot (`assets/pane-users.js:943`) says that
+   with a recorded reason. The account card's foot says that
    plainly, "Hidden for every role, including this one, until a reveal is recorded", and reading
    it as the mock's sentence in a new place would get it backwards. Nothing replaces the mock's
    sentence, because the pane has no consent input to state it from: the API tells this pane
    whether a field can be *shown*, never whether it was collected. Both notes it prints are
    about showability — `neverShownNote` for a field that is never shown here at all
-   (`assets/pane-users.js:692`, health readings and any field the API marks `reveal: 'never'`)
-   and `unavailableNote` for one that cannot be revealed right now (`:702`). Neither claims a
+   (health readings and any field the API marks `reveal: 'never'`)
+   and `unavailableNote` for one that cannot be revealed right now. Neither claims a
    value does or does not exist behind the mask, and the pane does not author that claim.
 7. **The mock's `why` blocks are not reproduced.** They argue for the design rather than state a
    fact about the account, and the mocks' own rule is one fact per slot. What they carried that
@@ -1647,7 +1650,7 @@ answer.
    that instead. (`chartName` and `seriesSentence` in `ops/assets/pane-analytics.js`; the
    sentences are pinned in `scripts/ops-analytics-v2.test.mjs`.)
 6. **No Custom range**, which is the registry's decision, recorded in the comment above the
-   entry at `pane-registry.js:103-110`: the bar carries a range name and no bounds, so a custom
+   entry in `assets/pane-registry.js`: the bar carries a range name and no bounds, so a custom
    window reaches the usage API with no start and no end, and that route answers over the widest
    window retention allows rather than refusing it. The figures would be confident and for a
    window nobody chose. Nothing states this **on screen** — `shell-pane-v2.js` renders
@@ -1676,7 +1679,7 @@ answer.
    - `features.coverageNote` was the feature card's footer, twenty words carrying that same
      coverage figure a third time. The method survives as nine: *Only seen on app versions that
      report feature use.* The number does not. This one is **read**, unlike the rest of the
-     list: `pane-analytics.js:1058` tests the field and draws its own nine words when the route
+     list: `assets/pane-analytics.js` tests the field and draws its own nine words when the route
      sent it, so what is dropped is the route's wording and its figure, not the field.
    - `features.note` and `features.hint` both say the shares are of each app's own active people.
      The card head prints `hint`, seven words; `note` is two sentences of the same thing.
@@ -2182,6 +2185,24 @@ contrast oracle rather than to a paint-presence check; `check-ops-contrast.mjs` 
 and it measures text, not icons. The icon sweep reads one geometry property, `stroke-width` on
 the stroke channel, because that is the channel icons paint through; an icon hidden by
 `opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+
+### Where this README points at code
+
+Six places below point at a comment or a line rather than a file. The anchor each one quotes is
+the subject; **the line number is derived**, so a pointer whose code moved is a red run naming
+the new line, and a pointer whose code is gone is a red run saying so. Three of the seven line
+citations this file used to carry had already drifted — `pane-registry.js:103-110` was the
+alerting note, not the Custom-range comment, and both `pane-users.js` citations were about 250
+lines short — which is why none of them are typed any more.
+
+```claims id=source-anchors
+ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 136
+ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 173
+ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 157
+ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1008
+ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
+```
 
 ### What holds this README to the code
 
