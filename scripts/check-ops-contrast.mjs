@@ -1609,7 +1609,7 @@ async function selfTest() {
        where one at 0.05 is a gamut policy wearing a rounding allowance's
        name. So `0.9 / 255` passes here, and that is the bound doing what it
        claims rather than a gap in it. */
-    const slackIsUnderAByte = GAMUT_SLACK <= 1 / 255;
+    const slackIsAtMostAByte = GAMUT_SLACK <= 1 / 255;
     const overRead = !!over && !over.unjudgeable && typeof over.ratio === 'number' &&
       !!parseColor(overInk);
     /* Clamped, so the byte a 1.00003 component becomes is 255 and not 255.008. */
@@ -1629,15 +1629,20 @@ async function selfTest() {
        It is coupled to GAMUT_SLACK, and the coupling is worth naming: this
        literal parses only while the slack is at least 0.0019, so the green
        band for the constant is [0.0019, 1/255] and not the 4e-5 floor the
-       shape guards above impose. A slack narrowed below 0.0019 reds this part
-       through `overIsOvershoot` as well, so the two findings cannot hide each
-       other, but a reader tracing one bound needs the other. */
+       shape guards above impose. Which assertion catches a narrowed slack
+       depends on how far it is narrowed, and only the bottom of that range
+       reaches `overIsOvershoot`: from 0.0019 down to 4e-5 the literal is
+       refused and THIS line is what reds, while below 4e-5 the overshoot
+       stops fitting the window and `overIsOvershoot` reds too. Either way the
+       part reds, which is why the message below distinguishes a refused
+       literal from an unclamped one -- a reader who sees the clamp blamed for
+       a slack problem is chasing the wrong bound. */
     const lowParsed = parseColor('color(srgb -0.0019 0.5 0.5)');
     const lowClamped = !!lowParsed && lowParsed.r === 0 &&
       Math.abs(lowParsed.g - 127.5) < 1e-9;
     const wideRefused = !!wide && wide.unjudgeable === 'unreadable ink syntax' &&
       wide.ratio === undefined && parseColor(wideInk) === null;
-    const ok = overIsOvershoot && wideIsOutside && slackIsUnderAByte && overRead &&
+    const ok = overIsOvershoot && wideIsOutside && slackIsAtMostAByte && overRead &&
       clamped && lowClamped && wideRefused;
     if (!ok) bad++;
     console.log(`     ${ok ? 'ok  ' : 'FAIL'} <span style="color: color-mix(in srgb, oklch(1 0 0) 50%, white)">` +
@@ -1648,7 +1653,7 @@ async function selfTest() {
       `\n          <span style="color: color-mix(in srgb, color(display-p3 1 0 0) 90%, white)"> ${wideInk}` +
       `\n          ${wideIsOutside ? 'sits outside the slack' : 'is NOT outside the slack'}` +
       `; routed as ${wide ? (wide.unjudgeable || `JUDGED at ${wide.ratio?.toFixed(2)}:1`) : 'nothing'}` +
-      `\n          GAMUT_SLACK is ${GAMUT_SLACK} — ${slackIsUnderAByte ? 'under a byte, so it is a rounding allowance' : 'A BYTE OR WIDER, so the window is a gamut policy and not a rounding allowance'}` +
+      `\n          GAMUT_SLACK is ${GAMUT_SLACK} — ${slackIsAtMostAByte ? 'at most a byte, so it is a rounding allowance' : 'WIDER THAN A BYTE, so the window is a gamut policy and not a rounding allowance'}` +
       `; color(srgb -0.0019 0.5 0.5) parses to ` +
       `${lowParsed ? `rgb(${[lowParsed.r, lowParsed.g, lowParsed.b].map((v) => v.toFixed(3)).join(', ')})` : 'nothing'}` +
       `${lowParsed ? (lowClamped ? '' : ' — the LOWER clamp is not holding') : ' — refused, so the slack is under 0.0019 and this says nothing about the clamp'}`);

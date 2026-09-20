@@ -1768,9 +1768,10 @@ values, the decode/plate/sample pipeline against declared swatch colours, plate 
 by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
 read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), both ends of the
 gamut window pinned against Chromium's own serialisation of an in-gamut overshoot and a
-wide-gamut mix — with the slack capped at one byte, because guards written in terms of it
-bracket it rather than pin it, and the clamp's lower half pinned against arithmetic, because
-the one fixture component that is negative is refused before the clamp runs — and the three boundary
+wide-gamut mix — with the slack capped at a byte, because guards written in terms of it
+bracket it rather than pin it, and the clamp's lower half pinned against a literal, because the
+only rendered fixture with negative components is the wide-gamut one and the gate refuses it
+before the clamp runs — and the three boundary
 censuses counted on a page that carries six spellings of a nested browsing context, an open
 author shadow root, a closed one, and seven user-agent roots carrying text of which exactly one
 paints words no source reaches — that one named in full, so a census that catches the wrong host
