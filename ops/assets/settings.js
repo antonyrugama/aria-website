@@ -512,6 +512,13 @@
          line has just thrown away. Clearing busy without this hands that
          response an unowned record to land in. */
       record.token += 1;
+      /* `more` describes the window the five lines above have just discarded,
+         and it is the only field left doing so. When the reload's own record
+         read fails, recordBand() takes the error branch and calls
+         syncControls() directly -- acceptPage(), which is the only other place
+         `more` is written, never runs -- so the card came up with a failure
+         body and a live Load more over zero rows (Stadiora/Aria#10689). */
+      record.more = false;
 
       Promise.all([
         readAdmins(),

@@ -125,7 +125,20 @@
    inert. assets/settings.js owns that half. */
 .modal {
   position: fixed;
-  z-index: 60;
+  /* Above the scrim at 90 and the drawer rail at 100, below the toast at 120,
+     which are the layers ops/assets/shell-pane-v2.css declares. At 60 this
+     panel lost to its own scrim: `document.elementFromPoint` over the confirm
+     button returned `div.scrim`, so the pane's one destructive action could
+     not be confirmed with a pointer at all (Stadiora/Aria#10688).
+
+     The number belongs here rather than on the scrim because the scrim is
+     right to be above the page -- it is the thing making the page inert -- and
+     because nothing between this element and the root alters the comparison:
+     measured in Chrome, the panel and the scrim are both children of <body>,
+     <body> creates no stacking context, and each is a positioned child of the
+     root's. So this z-index is compared with the scrim's directly, and raising
+     it is a fix rather than a bigger number that happens to work. */
+  z-index: 110;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   width: min(460px, calc(100vw - 32px));

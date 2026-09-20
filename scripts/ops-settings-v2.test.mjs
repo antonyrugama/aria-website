@@ -1012,6 +1012,93 @@ test('a Load more page from before a reload cannot make the pane think it is idl
     assert.equal(server.holdCount(), 3);
   });
 
+/* `more` is the seventh field on the record and the last one load()'s reset
+   left describing the window it had just discarded (Stadiora/Aria#10689).
+
+   Both arms, because hiding Load more unconditionally passes the first test on
+   its own and takes paging away from the pane entirely -- the same trap the
+   section above is built around. The two tests differ only in whether the
+   reload's record read answers, so what they isolate is the reset rather than
+   anything about the read. */
+test('a reload whose record read fails offers no Load more over the rows it lost',
+  async () => {
+    let zeroth = 0;
+    const server = auditServer((offset) => {
+      if (offset !== 0) return HOLD;
+      zeroth += 1;
+      /* A whole first page, so `more` is TRUE when the reload begins. A short
+         page would leave it false and the test would pass without the fix. */
+      return zeroth === 1 ? auditWindow('boot') : HOLD;
+    });
+    const dom = await boot({ audit: server.stub });
+    const card = () => cardByTitle(dom, 'What was done');
+    const moreButton = () => buttonsIn(card()).filter((b) => /load more/i.test(allText(b)))[0];
+    const rowsOn = () => {
+      /* The failure body replaces the table rather than emptying it, so
+         "no rows" is the absence of a tbody here, not a tbody of length 0. */
+      const body = card().querySelectorAll('tbody')[0];
+      return body ? body.children.length : 0;
+    };
+
+    assert.equal(rowsOn(), AUDIT_PAGE, 'the first window is not on screen');
+    assert.equal(moreButton().hidden, false,
+      'a whole page was sent and Load more was not offered, so this test would pass '
+      + 'against a record whose `more` was already false');
+
+    /* The revoke reloads the pane, and this time the record read fails. */
+    const accounts = cardByTitle(dom, 'Accounts');
+    buttonsIn(accounts).filter((b) => /revoke/i.test(allText(b)))[0].dispatch('click');
+    const form = dom.doc.querySelector('.modal');
+    form.querySelector('.modal-input').value = 'Laptop reported lost';
+    form.dispatch('submit');
+    await dom.settle();
+    assert.equal(server.holdCount(), 1, 'the reload answered itself instead of being held');
+
+    server.fail(0, new Error('The operations API did not answer.'));
+    await dom.settle();
+
+    assert.match(allText(card()), /could not be read/i,
+      'the record read failed and the card is not saying so, so what follows is '
+      + 'not the failure state this test is about');
+    assert.equal(rowsOn(), 0, 'the failed reload left rows on screen');
+    const more = moreButton();
+    assert.ok(more, 'the record card lost its Load more control altogether');
+    assert.equal(more.hidden, true,
+      'the card says it could not read the record and is offering to load more of it');
+  });
+
+test('a reload whose record read answers a whole page still offers Load more',
+  async () => {
+    let zeroth = 0;
+    const server = auditServer((offset) => {
+      if (offset !== 0) return HOLD;
+      zeroth += 1;
+      return zeroth === 1 ? auditWindow('boot') : auditWindow('post');
+    });
+    const dom = await boot({ audit: server.stub });
+    const card = () => cardByTitle(dom, 'What was done');
+    const moreButton = () => buttonsIn(card()).filter((b) => /load more/i.test(allText(b)))[0];
+
+    const accounts = cardByTitle(dom, 'Accounts');
+    buttonsIn(accounts).filter((b) => /revoke/i.test(allText(b)))[0].dispatch('click');
+    const form = dom.doc.querySelector('.modal');
+    form.querySelector('.modal-input').value = 'Laptop reported lost';
+    form.dispatch('submit');
+    await dom.settle();
+
+    assert.deepEqual(server.asked, [0, 0], 'the revoke did not reload the record');
+    assert.match(allText(card()), /post_0\b/, 'the reloaded window is not on screen');
+    assert.equal(moreButton().hidden, false,
+      'the reload answered a whole page and Load more is hidden, so the reset clears '
+      + '`more` without the read being allowed to set it again');
+
+    /* And it pages from the reloaded window rather than the discarded one. */
+    moreButton().dispatch('click');
+    await dom.settle();
+    assert.deepEqual(server.asked, [0, 0, AUDIT_PAGE],
+      'Load more after the reload asked for the wrong window');
+  });
+
 /* ================================================================ the export */
 
 test('a record cell that a spreadsheet would run as a formula is defused', async () => {
