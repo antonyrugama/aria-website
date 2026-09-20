@@ -27,6 +27,11 @@
      filters()               a copy of the current filter selection
      resetRange()            put the range back to the pane's own default;
                              answers whether that changed anything
+     paneFilters(nodes)      put the pane's own controls in the shared filter
+                             bar, replacing any it put there before. A pane
+                             declares in the registry what the shell can filter
+                             on; this is for a control only the pane's own read
+                             can honour, such as a facet one endpoint takes
      paneHref(paneId)        a link to another pane carrying the selection
      setBadge(railId, badge) put a count beside a rail item, or remove it with
                              null. badge is { label, tone, description }
@@ -486,6 +491,49 @@
     });
 
     return bar;
+  }
+
+  /* The pane's own controls, in the bar the shell drew.
+
+     The registry says what the SHELL can filter on, and it is deliberately a
+     closed set: scope, range and environment mean the same thing on every
+     pane, so they are decided once. A facet only one endpoint takes — the
+     severity the problems API filters on, say — cannot live there without the
+     registry growing a column per pane, so the pane builds those controls and
+     hands them over.
+
+     The same rule still applies to what a pane puts here: a control that
+     changes nothing is worse than no control. What this adds is where the
+     controls go, not permission to draw one that does nothing.
+
+     Replaces whatever the pane put here last, so a pane that re-renders its
+     controls to show a cleared selection swaps its own nodes and touches
+     neither the shell's controls nor the notes. The slot sits after the
+     shell's controls and before the notes, which state an absence and belong
+     at the end of the bar. */
+  var paneSlot = null;
+
+  function paneFilters(nodes) {
+    var bar = document.querySelector('.filters');
+    if (!bar) {
+      /* A pane with no shell filters and no note has no bar to stand in, so
+         one is made. It is put where renderFilters would have put it: after
+         the top bar, before the content. */
+      var main = document.querySelector('.main');
+      var content = document.getElementById('content');
+      if (!main || !content) return null;
+      bar = h('div', { className: 'filters' });
+      main.insertBefore(bar, content);
+    }
+    if (!paneSlot || paneSlot.parentNode !== bar) {
+      paneSlot = h('div', { className: 'filters-pane' });
+      var notes = bar.querySelectorAll('.filter-note');
+      if (notes.length) bar.insertBefore(paneSlot, notes[0]);
+      else bar.appendChild(paneSlot);
+    }
+    clear(paneSlot);
+    (nodes || []).forEach(function (node) { if (node) paneSlot.appendChild(node); });
+    return paneSlot;
   }
 
   /* ------------------------------------------------------ the panel shapes */
@@ -1098,6 +1146,7 @@
     panes: PANES,
     filters: function () { return shallow(filters); },
     resetRange: resetRange,
+    paneFilters: paneFilters,
     paneHref: paneHref,
     setBadge: setBadge,
     region: region,

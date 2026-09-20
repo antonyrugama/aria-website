@@ -153,6 +153,16 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
   max-width: 62ch;
 }
 
+/* ------------------------------------------------ the pane's own controls */
+
+/* OpsPaneShell.paneFilters() puts a pane's own controls in the shared bar, in
+   one slot it can replace wholesale. The slot lays them out the way the bar
+   lays out its own children, so a control looks the same whichever of the two
+   put it there. */
+.filters-pane {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+
 /* --------------------------------------------------------------- spacing */
 
 .mt-xs { margin-top: 6px; }

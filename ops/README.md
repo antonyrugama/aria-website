@@ -235,8 +235,8 @@ ops/
     operate.css         pane styling for the operate panes
     operate.js          shared pane furniture: charts, drawer, confirm, states
     alerts-model.js     the problems API in plain words, shared by two panes
-    pane-overview.js    Overview
-    pane-alerts.js      Problems
+    pane-overview.js    Overview (on the v2 layer)
+    pane-alerts.js      Problems (on the v2 layer)
     pane-awaiting-data.js  Happening now
     pane-data.js        shared plumbing for the understand panes and for
                         Overview's figures: source, formatting, states, charts
@@ -257,6 +257,7 @@ ops/
                         the three gates, the phone drawer, the toast
     pane-overview-v2.css  Overview's own shapes
     pane-releases-v2.css  App releases' own shapes
+    pane-alerts-v2.css    Problems' own shapes
     pane-settings-v2.css  Settings' own shapes
     pane-users-v2.css     Look up a user's own shapes
     pane-run-history-v2.js   What happened
@@ -270,9 +271,10 @@ ops/
 monorepo, ported here so the panes can be remodelled one at a time. They sit **beside** `ops.css`
 and `shell.js` rather than replacing them: both define `.card`, `.rail`, `.topbar`, `.btn`,
 `.seg`, `.pill`, `.tbl` and `.nav-item` from different token sets, so **a page loads one or the
-other, never both.** Every pane listed above still loads v1 and still reads the endpoint it
-always read. Panes move across in their own changes, and the day the last one moves, `ops.css`,
-`shell.js`, `operate.css` and `icons.js` go.
+other, never both.** **Overview** (`index.html`) and **Problems** (`alerts.html`) are across;
+every other pane listed above still loads v1. All of them still read the endpoints they always
+read — moving a pane across changes its surface, never its reads. Panes move across in their own
+changes, and the day the last one moves, `ops.css`, `shell.js`, `operate.css` and `icons.js` go.
 
 `shell-v2.html` exists so the system can be seen and checked. It makes no API call and holds no
 operational data — every number on it is a literal in the page — so unlike a pane it has nothing
@@ -353,6 +355,7 @@ and none of `ops.css`, `operate.css`, `shell.js` or `icons.js`. `data-pane` rath
 | `definePane(id, render)` | register what a pane draws. `render(content, pane)` gets the pane's `<main>` and its registry entry, after parsing and after the session is confirmed |
 | `init()` | boot this page. Automatic on a page whose `<body data-pane>` names a registered pane |
 | `filters()` / `resetRange()` | the current selection; put the range back to the pane's default |
+| `paneFilters(nodes)` | the pane's own controls, in the shared filter bar, replacing any it put there before |
 | `paneHref(paneId)` | a link to another pane, carrying only the filters that pane has |
 | `setBadge(railId, badge)` | a count beside a rail item, or `null` to remove it |
 | `region(content)` | the four preview states, as a region the pane owns |
@@ -415,9 +418,10 @@ reveal is recorded, and offers no control here.
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
 which is the opposite of what a window ending today needs. When a page comes back full, both
-Overview and Problems say so, every count reads as "at least", and the two figures that cannot
-be salvaged, the 30 day false-alarm rate and the 30 day volume chart, say they cannot be worked
-out instead of showing a number that is quietly short.
+Overview and Problems say so and every count reads as "at least"; on Problems the whole of the
+"how the watching is doing" card — the fortnight's opened and closed counts, the median time to
+take one on, and the false-alarm figure — says it cannot be worked out rather than showing a
+number that is quietly short.
 
 **People and usage** and **Cloud costs** are drawn in full: every state, every card, and the
 whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET /api/ops/costs`,
@@ -1206,6 +1210,47 @@ is not a complete diff: it names the departures that carry a decision.
 
 `assets/pane-run-history-v2.css` carries this pane's own shapes.
 
+### Problems on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/alerts.html` in the Aria monorepo is the approved design. The pane
+follows its structure, its drill-down paths and the rules its README calls normative.
+
+As with Overview, the list below is **not a complete diff against the mock**. It names the
+departures that carry a decision. Wording and ordering differ in more places than are listed,
+because the mock is a static page with hand-written sample text and the pane writes its words
+from the answer.
+
+1. **No drawer and no modal.** The mock opens a problem in a side drawer and closes one in a
+   dialog. The detail expands in place under the card instead, with `aria-expanded` and
+   `aria-controls`, and Close is an inline form. At 375px a modal is a focus trap over a page
+   the operator still needs to read, and a second thing that can overflow sideways; the v1
+   drawer also lived in `operate.css`, which a v2 page cannot load.
+2. **No meter on a problem card.** The answer carries an observed value and a threshold and no
+   scale to put them on. A bar between two numbers with no axis is the budget-bar problem from
+   Overview in another shape.
+3. **No "right now" column in the rules table.** `GET /api/ops/alerts/rules` sends each rule's
+   threshold and the verdict of its last evaluation, and no current reading. The table's foot
+   says that rather than leaving a reader to wonder where the column went.
+4. **No volume chart.** The mock draws problems per day over 30 days. The problems read is capped
+   at 100 with no second page, so a chart drawn from it would be short by exactly the recent days
+   it is about. The card in that slot states what the sample can and cannot answer.
+5. **Six facts the mock shows are absent, for the same reason — no source.** People affected by a
+   problem; snooze and mute; how many times a reminder has been sent; an "Add a rule" control;
+   the share of problems found by a rule rather than by a person; and a note attached to taking a
+   problem on. None is in any of the three answers, and the API is unchanged by this work.
+6. **The routing card is v1's, not the mock's.** Delivery is a real operational fact — the rules
+   answer carries each channel's last delivery status, its last failure reason and its
+   consecutive-failure count — and a page that claims alerting is armed without saying whether
+   anything can be delivered is claiming the wrong thing.
+7. **The rule switch is a checkbox.** The mock draws a `<button>` with a styled child. A real
+   `<input type="checkbox" role="switch">` is what a screen reader and a keyboard already know,
+   so the knob is a `::after` on the input.
+
+The close note is the one piece of the mock's sample text that is **content rather than filler**.
+It is printed from the problem's own record — the `closed` event's `detail.note` in
+`GET /api/ops/alerts/problems/:id` — and the closed list says where to find it rather than
+dropping it.
+
 ### Known contrast debt, inherited
 
 Measured across both themes against composited backgrounds. **Every pairing rendered by the
@@ -1402,8 +1447,9 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-shell-pane-v2.test.mjs` | That the rail cannot drift from the registry, that a pane is offered exactly the filters it declared and never one more, that a role without access gets a named refusal rather than a blank pane, that the three gates stay mutually exclusive, and that the v2 formatters still agree with the v1 ones they were ported from. |
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
 | `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that a selection the record cannot act on is refused rather than answered, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
+| `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is and a failed read is never allowed to claim there is nothing there; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
-| `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
+| `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px in both themes: that nothing is past the right edge, and that the longest sentence the pane can put in a rule row was actually laid out — the check would otherwise pass on a page that never drew the row it exists for. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
 
 Charts and icons are swept for paint **separately**, with their own counts and their own
