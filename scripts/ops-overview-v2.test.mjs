@@ -101,7 +101,13 @@ function summaryFixture(over) {
       { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' },
     ],
   };
-  return over ? over(base) : base;
+  if (!over) return base;
+  /* An override that mutates and returns nothing used to yield undefined here,
+     which boot() then read as "no override" and quietly served the default
+     fixture — a test written to remove a field would pass against a payload
+     that still had it. Both styles work now. */
+  const out = over(base);
+  return out === undefined ? base : out;
 }
 
 function problemsFixture(rows) {
@@ -259,6 +265,23 @@ test('the pane never claims a 24 hour window the pipeline cannot answer', async 
   const dom = await boot({});
   assert.doesNotMatch(liveText(dom), /24 hours|last day|today/i,
     'a figure claimed an hourly window that nothing behind it aggregates to');
+});
+
+/* The branch above covers an answer that DID describe a window. The one below
+   covers the answer that did not, which is the worse case: a tile with no
+   window to print either guesses one or says so, and only one of those is
+   honest. Nothing bound this path until it was raised in review. */
+test('a block whose answer describes no window says so rather than guessing one', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => { delete s.people.window; }),
+  });
+  const tile = tileText(dom, /Active people/i);
+  assert.match(tile, /Window not reported/,
+    'a tile with no window in the answer printed no window at all');
+  assert.doesNotMatch(tile, /whole UTC day/,
+    'a tile with no window in the answer named a window anyway');
+  assert.match(tileText(dom, /runs/i), /whole UTC day/,
+    'the other tiles lost their window label too, so this proves nothing');
 });
 
 /* ================= availability: words, never a numeral ================= */
@@ -499,11 +522,54 @@ test('the reporting floor is the same number the understand panes use', async ()
     'Overview and the understand panes now hide a share over different group sizes');
 });
 
+/* The test above pins the literal; it cannot see whether the literal is ever
+   applied, which is the source-grep shape this repository has been caught by
+   before. Raised in review. This one runs the branch. */
+test('a comparison over too small a group prints no rate', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => {
+      s.people.platform.previousActive = 9;
+      s.people.reportingFloor = 50;
+    }),
+  });
+  const tile = tileText(dom, /Active people/i);
+  assert.match(tile, /no rate under 50 people/,
+    'a comparison against 9 people printed no reason for withholding the rate');
+  assert.doesNotMatch(tile, /%/,
+    'a share was drawn over a group too small to report one');
+  assert.match(tileText(dom, /Cloud spend/i), /%/,
+    'every rate on the pane disappeared, so this proves nothing about the floor');
+});
+
 /* ======================= status, never colour alone ===================== */
+
+/* The class families this pane paints a state in. A family prefix rather than
+   an enumeration: `st-bad`, `is-crit` and `acc-blue` are three spellings of
+   one idea, and a hand-listed set of whole class names went blind to five of
+   them at the first review. A new tone in any of these families is caught
+   without editing this line.
+
+   Proof pointer: widening this from /\b(hot|warn|ok|soon|pill)\b/ is what
+   makes the hero visible to the scan at all. The scan alone still does not
+   kill a blanked hero, because the hero element contains the severity chips
+   and their words satisfy it — that is what the next test is for. */
+const TONE_CLASS = /(^|\s)(st-[a-z]+|is-[a-z]+|acc|acc-[a-z]+|tone-[a-z]+|vio|hot|warn|ok|soon|up|down|info|pill)(\s|$)/;
 
 test('every status on the pane is carried in words, not only in a tone class', async () => {
   const dom = await boot({});
-  const toned = findAll(livePanel(dom), (n) => /\b(hot|warn|ok|soon|pill)\b/.test(n.className || ''));
+  const inChart = (n) => {
+    for (let p = n.parentNode; p; p = p.parentNode) {
+      if (p.getAttribute && p.getAttribute('role') === 'img') return true;
+    }
+    return false;
+  };
+  /* Shapes inside a role="img" are skipped on purpose, not overlooked:
+     role="img" is children-presentational, so nothing in there is announced at
+     all and a word placed on it would be announced to nobody. The chart's data
+     lives in its accessible NAME, which `the activity chart's accessible name
+     carries the data` binds, and which shape belongs to which app is also in
+     data-series. */
+  const toned = findAll(livePanel(dom), (n) => TONE_CLASS.test(n.className || '') && !inChart(n));
   assert.ok(toned.length >= 3, 'the pane carries no status markers at all');
   for (const node of toned) {
     /* A coloured dot beside a word is fine, and is how the mock draws a
@@ -522,6 +588,35 @@ test('every status on the pane is carried in words, not only in a tone class', a
         'a signed figure is toned but nothing near it says what it is measuring');
     }
   }
+});
+
+/* The status ribbon is the pane's largest status element and the scan above
+   cannot kill it: the hero carries the severity chips inside it, so blanking
+   its title and sub leaves letters in allText() and the scan still passes.
+   Raised in review as a demonstrated false green. This reads the title and the
+   sub directly, and requires all three states to say something DIFFERENT —
+   a constant string satisfies "has words" and says nothing. */
+const HERO = (dom, cls) =>
+  allText(findAll(livePanel(dom), (n) => (n.className || '').indexOf(cls) !== -1)[0] || {})
+    .replace(/\s+/g, ' ').trim();
+
+test('the ribbon says its own state in words, and a different one per state', async () => {
+  const cases = {
+    active: await boot({}),
+    quiet: await boot({ problems: { problems: [] } }),
+    unarmed: await boot({ rules: { rules: [], channels: [] } }),
+  };
+
+  const titles = [];
+  for (const [name, dom] of Object.entries(cases)) {
+    const title = HERO(dom, 'hero-title');
+    const sub = HERO(dom, 'hero-sub');
+    assert.match(title, /[A-Za-z]{3}/, 'the ribbon title carries no words in the ' + name + ' state');
+    assert.match(sub, /[A-Za-z]{3}/, 'the ribbon sub carries no words in the ' + name + ' state');
+    titles.push(title);
+  }
+  assert.equal(new Set(titles).size, titles.length,
+    'the ribbon says the same thing in every state, so it says nothing: ' + JSON.stringify(titles));
 });
 
 test('a critical problem says critical in the queue row itself', async () => {
@@ -578,4 +673,44 @@ test('the pane asks for exactly the three reads it needs, and no filters', async
   const summaryCall = dom.calls.filter((c) => c.endpoint === '/api/ops/summary')[0];
   assert.equal(summaryCall.query, undefined,
     'the summary read carried a filter this pane offers no control for');
+});
+
+/* ===================== the rail badge is a real read ==================== */
+
+/* "A dashboard that invents a count is worse than one that shows nothing" is
+   the rule the bootstrap's badge pass-through exists for, and until this was
+   raised in review nothing on the Overview side held it: a hard-coded label
+   and a badge that was never cleared both left the suite green. */
+const railBadge = (dom) => {
+  const items = findAll(dom.body, (n) => (n.className || '').indexOf('nav-item') !== -1);
+  const alerts = items.filter((n) => n.getAttribute('data-rail-id') === 'alerts')[0];
+  if (!alerts) return null;
+  const badge = findAll(alerts, (n) => /(^|\s)nav-badge(\s|$)/.test(n.className || ''))[0];
+  const sr = findAll(alerts, (n) => (n.className || '').indexOf('nav-badge-sr') !== -1)[0];
+  return { label: badge ? allText(badge).trim() : null, sr: sr ? allText(sr).trim() : '' };
+};
+
+test('the Problems badge is the count this pane just read, not a number in the client', async () => {
+  const two = await boot({
+    problems: {
+      problems: [
+        { id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open', title: 'A', firedAt: '2026-09-20T05:20:00.000Z' },
+        { id: 'p2', reference: 'PRB-105', severity: 'warning', status: 'open', title: 'B', firedAt: '2026-09-20T05:25:00.000Z' },
+      ],
+      total: 2,
+    },
+  });
+  assert.equal(railBadge(two).label, '2', 'the rail badge does not match the answer');
+  assert.match(railBadge(two).sr, /2 problems with nobody on them/,
+    'the badge is a bare number with nothing saying what it counts');
+
+  const one = await boot({});
+  assert.equal(railBadge(one).label, '1', 'a one-problem answer did not produce a badge of 1');
+});
+
+test('a quiet system leaves no count beside Problems at all', async () => {
+  const dom = await boot({ problems: { problems: [], total: 0 } });
+  assert.equal(railBadge(dom).label, null,
+    'the rail kept a count on a system with no problems on it');
+  assert.match(allText(dom.body), /Overview/, 'the rail did not render, so this proves nothing');
 });

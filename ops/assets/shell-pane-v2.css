@@ -15,8 +15,14 @@
    nobody chose. Where a value is needed per theme it is declared on the
    element that uses it and overridden under [data-theme="light"].
 
-   No colour value here is new. Everything paints in the tokens aria.css
-   declares, which are WCAG AA by construction (monorepo #10042).
+   No colour value here is new except two, and they are named rather than left
+   implied: `--scrim-paint` below declares rgba(3, 6, 10, .62) and its light
+   override rgba(24, 34, 46, .38), both carried over from v1's `ops.css`
+   `--scrim`. They are declared on the element, not on :root, because a
+   thirty-fourth root property would trip check-ops-shell-v2.mjs, and the scrim
+   is a decorative overlay with no text on it so no contrast pair depends on
+   them. Everything else paints in the tokens aria.css declares, which are
+   WCAG AA by construction (monorepo #10042).
    ========================================================================= */
 
 /* ------------------------------------------------------------- the gates */

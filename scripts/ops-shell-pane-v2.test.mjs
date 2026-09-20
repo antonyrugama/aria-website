@@ -759,14 +759,44 @@ test('the local fixture hook is off anywhere that is not this machine', async ()
   assert.equal(on.shell.isLoopback(), true);
 });
 
-test('a fixture path off this origin, or with control characters in it, is refused', async () => {
+test('a fixture path with a control character or whitespace in it is refused', async () => {
+  const { shell } = await bootPane('overview', {
+    href: 'http://127.0.0.1:8000/ops/index.html', definePane: () => {},
+  });
+  assert.equal(shell.safeHref('fixtures/o\u0000k.json'), null);
+  assert.equal(shell.safeHref('fixtures/o k.json'), null);
+  assert.ok(shell.safeHref('fixtures/ok.json'), 'a same-origin relative path was refused');
+});
+
+/* The three refusals below are separate tests because each one is the only
+   thing that binds one line of safeHref(). Rolled into one test they would
+   pass on any single line surviving, which is exactly how the first published
+   evidence for this helper came to claim a line was pinned when it was not.
+
+   Same-origin absolutes and same-host protocol-relatives are the cases that
+   matter: a cross-origin string is caught by the origin comparison as well, so
+   a test that only sends evil.example.invalid cannot tell the scheme test and
+   the origin test apart. */
+test('a fixture path written as an absolute URL is refused, even on this origin', async () => {
+  const { shell } = await bootPane('overview', {
+    href: 'http://127.0.0.1:8000/ops/index.html', definePane: () => {},
+  });
+  assert.equal(shell.safeHref('http://127.0.0.1:8000/ops/fixtures/ok.json'), null);
+  assert.equal(shell.safeHref('javascript:alert(1)'), null);
+});
+
+test('a fixture path written protocol-relative is refused, even to this host', async () => {
+  const { shell } = await bootPane('overview', {
+    href: 'http://127.0.0.1:8000/ops/index.html', definePane: () => {},
+  });
+  assert.equal(shell.safeHref('//127.0.0.1:8000/ops/fixtures/ok.json'), null);
+  assert.equal(shell.safeHref('\\\\127.0.0.1:8000/ops/fixtures/ok.json'), null);
+});
+
+test('a fixture path off this origin is refused', async () => {
   const { shell } = await bootPane('overview', {
     href: 'http://127.0.0.1:8000/ops/index.html', definePane: () => {},
   });
   assert.equal(shell.safeHref('http://evil.example.invalid/x.json'), null);
-  assert.equal(shell.safeHref('javascript:alert(1)'), null);
-  assert.equal(shell.safeHref('fixtures/o\u0000k.json'), null);
-  assert.equal(shell.safeHref('fixtures/o k.json'), null);
   assert.equal(shell.safeHref('//evil.example.invalid/x.json'), null);
-  assert.ok(shell.safeHref('fixtures/ok.json'), 'a same-origin relative path was refused');
 });
