@@ -199,10 +199,13 @@
 
 /* The box carries a tab stop (pane-alerts.js), so it takes a focus ring, and
    aria.css's global :focus-visible sits 2px OUTSIDE the element. This box is
-   a full-width child of a card, so 2px outside it is 2px into the card's own
-   edge and the ring is clipped there. Pulling the offset inside draws the
-   whole ring on the table's own surface. Same line as pane-releases-v2.css
-   .tbl-scroll and pane-settings-v2.css .tbl-wrap. */
+   flush with its card's left, right and top edges, so outside the box is
+   outside the CARD: measured on the rendered page, every pixel of the default
+   ring falls beyond the box and none of it on the table it belongs to.
+   Negating the offset draws the same 2px ring the same 2px in, on the table's
+   own surface. The test derives this value from aria.css rather than typing
+   it. Same line as pane-releases-v2.css .tbl-scroll and pane-settings-v2.css
+   .tbl-wrap. */
 .scrollx:focus-visible { outline-offset: -2px; }
 
 /* Six columns in 760px leaves the rule's name in a strip barely wider than

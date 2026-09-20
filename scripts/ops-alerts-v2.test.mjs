@@ -1884,13 +1884,25 @@ test('the rules table scrolls inside a box a keyboard can reach and a screen rea
     assert.equal(targets[0].parentNode, table, 'the caption names some other table');
     assert.ok(allText(targets[0]).trim().length > 0, 'the caption is empty');
 
-    /* aria.css puts :focus-visible 2px OUTSIDE the element. This box is a
-       full-width child of a card, so 2px outside it is 2px into the card's
-       own edge, where the ring is clipped. */
+    /* The ring is the global one, moved. aria.css puts :focus-visible that
+       far OUTSIDE the element; this box is flush with its card's left, right
+       and top edges, so outside the box is outside the CARD -- measured on
+       the rendered page at both widths and both themes, all of the default
+       ring lands beyond the box and none of it on the table. The override is
+       the NEGATION of aria.css's own offset, derived here rather than typed,
+       so a global ring that moves takes this one with it instead of leaving a
+       stale -2px behind. */
+    const global = declarations(ARIA_CSS).filter(
+      (d) => d.selector === ':focus-visible' && d.property === 'outline-offset');
+    assert.equal(global.length, 1, 'aria.css no longer draws one global focus ring offset');
+    const outside = Number(/^(-?[\d.]+)px$/.exec(global[0].value)?.[1]);
+    assert.ok(Number.isFinite(outside) && outside > 0,
+      'aria.css\'s global ring is no longer outside the element, so there is nothing to pull in');
+
     const offsets = declarations(PANE_CSS).filter(
       (d) => d.selector === '.' + classes[0] + ':focus-visible' && d.property === 'outline-offset');
-    assert.deepEqual(offsets.map((d) => d.value), ['-2px'],
-      'the focus ring on the scrolling box is not pulled inside it');
+    assert.deepEqual(offsets.map((d) => d.value), [(-outside) + 'px'],
+      'the focus ring on the scrolling box is not pulled in by what aria.css pushed it out');
   });
 
 /* The state the tab stop exists FOR. Every rule switch is disabled for anyone
