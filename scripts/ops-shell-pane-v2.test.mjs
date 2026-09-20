@@ -1110,11 +1110,13 @@ async function openReauth(options) {  const opts = options || {};
    NOT COVERED: a declaration that reaches the dialog through a selector
    naming NONE of the classes, ids or attribute names this tree carries — a
    bare type selector (`input { … }`), a universal, or an attribute this tree
-   does not have. The candidate filter below never considers those rules. It
-   reads ids and attribute names as well as classes, and collects them from
-   the dialog's ancestors as well as from the dialog, because `#reauthPassword`
-   and `[type="password"]` are on the field and `[data-theme]` is on <html>;
-   a classes-only filter dropped all three.
+   does not have. The candidate filter never considers those rules, in EITHER
+   sweep -- this one and the pane-sheet outranking sweep share one filter, so
+   they agree on what is out of scope rather than one refusing what the other
+   ignores. It reads ids and attribute names as well as classes, and collects
+   them from the dialog's ancestors as well as from the dialog, because
+   `#reauthPassword` and `[type="password"]` are on the field and
+   `[data-theme]` is on <html>; a classes-only filter dropped all three.
 
    NOT COVERED: a `@media` feature this cannot evaluate is REFUSED by name
    rather than skipped, including `prefers-reduced-motion` — reading it as
@@ -1449,14 +1451,14 @@ function rootOf(nodes) {
    alike, and a bare one matches in BOTH themes in a browser. So `cascade()`
    takes the theme, seeds the root itself, re-seeds on every resolve because
    two resolvers can be alive at once, and refuses to run without one. */
-function cascade(nodes, sheets, theme) {
-  assert.ok(theme === 'dark' || theme === 'light',
-    'cascade() was given no theme; a root carrying none dismisses every [data-theme] rule in silence');
-  const themeRoot = rootOf(nodes);
-  assert.ok(themeRoot && themeRoot.tagName.toLowerCase() === 'html',
-    'the dialog tree no longer climbs to <html>, so seeding the theme there styles nothing');
-  themeRoot.setAttribute('data-theme', theme);
-
+/* The set of names this tree carries, as one regex: a rule naming none of
+   them cannot reach the dialog, which is the NOT COVERED stated above. Shared
+   by BOTH sweeps. The pane sweep used to have no filter at all, so once the
+   blanket `:` skip went, a pane rule the resolver merely cannot READ --
+   `:is(.u-chip, .u-row)`, which the loose reading must take as matching
+   everything -- was refused there while the shared path dismissed it in
+   silence. Round five's own battery, in the over-refusal direction. */
+function candidateFilter(nodes) {
   /* The candidate filter. A rule is considered when it names something this
      tree actually carries. Classes alone are not enough: session.js writes
      `id="reauthPassword"` and `type="password"` onto the password field, and
@@ -1484,7 +1486,18 @@ function cascade(nodes, sheets, theme) {
      could help it (round five). Class names stay case-SENSITIVE where it
      counts, in `matchToken`, so a widened candidate that does not really
      match is still dismissed there rather than answered. */
-  const CANDIDATE = new RegExp([...named].join('|'), 'i');
+  return new RegExp([...named].join('|'), 'i');
+}
+
+function cascade(nodes, sheets, theme) {
+  assert.ok(theme === 'dark' || theme === 'light',
+    'cascade() was given no theme; a root carrying none dismisses every [data-theme] rule in silence');
+  const themeRoot = rootOf(nodes);
+  assert.ok(themeRoot && themeRoot.tagName.toLowerCase() === 'html',
+    'the dialog tree no longer climbs to <html>, so seeding the theme there styles nothing');
+  themeRoot.setAttribute('data-theme', theme);
+
+  const CANDIDATE = candidateFilter(nodes);
 
   const rules = [];
   let order = 0;
@@ -1789,11 +1802,21 @@ test('the dialog outranks every pane sheet that declares a field class of its ow
   assert.ok(paneSheets.length >= 5, 'only ' + paneSheets.length + ' pane sheets found');
 
   let contested = 0;
+  const candidate = candidateFilter(nodes);
   for (const file of paneSheets) {
     const src = readFileSync(new URL(file, dir), 'utf8');
     for (const rule of cssRules(src, 'assets/' + file)) {
+      if (!candidate.test(rule.selector)) continue;
       const hits = nodes.filter((el) => selectorReaches(rule.selector, el));
       if (!hits.length) continue;
+      /* For the refusal, not the answer. A condition this cannot evaluate --
+         `@supports`, `@layer`, `prefers-reduced-motion` -- has to stop the
+         sweep now that cssRules recurses into those blocks instead of throwing
+         at parse time, or the rule is compared with its condition silently
+         dropped. The BOOLEAN is deliberately ignored: a width-limited pane
+         rule is still compared against the resting cascade, which over-reports
+         and never under-reports. */
+      mediaMatches(rule.media, { width: 1440 });
       if (hasCombinator(rule.selector)) {
         throw new Error('REFUSED, a pane sheet aims a combinator at the dialog: ' +
           'assets/' + file + ' ' + rule.selector);
