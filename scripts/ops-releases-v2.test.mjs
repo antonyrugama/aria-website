@@ -26,11 +26,13 @@
    carry the reading. Nothing inside it is announced to anybody.
 
    Every test here has a published mutation — the exact file, the exact
-   original line, and the payload that makes that one test fail. 44 tests, 44
-   rows: 43 in PR antonyrugama/aria-website#55, and the 44th ("a pipeline row
-   states the build number once") in the follow-up that added it, with a
-   mutation in each direction because the invariant is a count and a count has
-   two ways to be wrong.
+   original line, and the payload that makes that one test fail. 44 tests, 45
+   rows: 43 in PR antonyrugama/aria-website#55, and 2 for the 44th ("a
+   pipeline row states the build number once") in the follow-up that added it,
+   one mutation in each direction because the invariant is a count and a count
+   has two ways to be wrong. Rows exceed tests whenever a test has more than
+   one way to fail; they are not the same number and the breakdown is the
+   check on both.
 
    That claim is checked by counting `test(` names against row names rather
    than by eye: the first round of #55's review found the claim was 38 of 39,

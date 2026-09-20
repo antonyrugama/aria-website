@@ -40,11 +40,13 @@
                     nothing else from the event
 
    Every test here has a published mutation — the exact file, the exact
-   original line, and the payload that makes that one test fail. 41 tests, 42
-   rows: 40 in PR antonyrugama/aria-website#58, and the 41st ("an empty
+   original line, and the payload that makes that one test fail. 41 tests, 43
+   rows: 40 in PR antonyrugama/aria-website#58, and 3 for the 41st ("an empty
    subscription card names the tier it was sent and classifies nothing") in
-   the follow-up that added it, carrying three rows of its own because the API
-   can send a tier three ways and each is a different way to be wrong.
+   the follow-up that added it, because the API can send a tier three ways and
+   each is a different way to be wrong. Rows exceed tests whenever a test has
+   more than one way to fail; they are not the same number and the breakdown
+   is the check on both.
 
    Seven of the 40 were rewritten by that same follow-up and their #58 rows no
    longer hold: the danger-zone test changed materially, and six others moved
@@ -759,8 +761,9 @@ test('an empty subscription card names the tier it was sent and classifies nothi
     detail: detailFixture((d) => { d.billing = { fields: [] }; d.tier = { brand: true }; }),
   });
   const box3 = card(nameless, 'Subscription');
-  assert.match(allText(box3), /The account is on Unknown\./);
+  assert.match(allText(box3), /The tier it reported has no name\./);
   assert.ok(!allText(box3).includes('undefined'), 'the pane printed undefined to an operator');
+  assert.ok(!/The account is on/.test(allText(box3)), 'a nameless tier was given a name');
 });
 
 /* The danger zone. The mock draws four buttons; no route performs one, so the

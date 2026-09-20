@@ -1119,14 +1119,15 @@
          and defines no paid-or-free semantics for any of them — `brand` picks
          a pill tone (see tierPill). So name the tier beside the absence and
          leave the reading to the operator, which is what the head pill did
-         before it became a third copy of the same fact. Floored the way
-         tierPill floors it, because a tier can arrive with neither label nor
-         key and `undefined` is not a tier name. */
-      var tierName = detail.tier && (detail.tier.label || detail.tier.key || 'Unknown');
+         before it became a third copy of the same fact. Three shapes, because
+         a tier can arrive with no name at all and "on Unknown" reads as a
+         tier called Unknown — which is a claim the API never made. */
+      var tier = detail.tier;
+      var tierName = tier && (tier.label || tier.key);
       box.appendChild(h('div', { className: 'card-body' }, [
         shell.stateBlock('empty', 'No subscription record', [
-          tierName
-            ? 'The account is on ' + tierName + '.'
+          tierName ? 'The account is on ' + tierName + '.'
+            : tier ? 'The tier it reported has no name.'
             : 'No tier was reported for this account either.'
         ], 4)
       ]));
