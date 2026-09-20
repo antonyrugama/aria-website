@@ -9,9 +9,10 @@ name: Ops theme redraw
 # Delete that call and every chart keeps the previous theme's palette — bright
 # dark-ramp strokes left on a white surface, which is the WCAG AA failure the
 # light palette exists to prevent (monorepo Stadiora/Aria#10042). Nothing
-# throws, no token is missing, no shape is unpainted, and the other browser
-# guard, scripts/check-ops-shell-v2.mjs, stays green: it reloads instead of
-# toggling. The unit suite is the other half of the coverage —
+# throws, no token is missing, no shape is unpainted, and the repository's two
+# other browser guards both stay green on it: scripts/check-ops-shell-v2.mjs
+# and scripts/check-ops-narrow-overflow.mjs each store a theme and navigate, so
+# neither ever toggles one. The unit suite is the other half of the coverage —
 # scripts/ops-aria-shell.test.mjs goes red on that deletion too, reading back
 # the attributes the renderer wrote against a hand-written DOM. This job is the
 # half that measures the resolved colour on a laid-out page, against the
