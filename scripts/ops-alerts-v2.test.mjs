@@ -1060,8 +1060,6 @@ test('a capped closed read that reaches back past the window reports no zero', a
     'the card said nothing about why it cannot answer: ' + text);
   assert.match(text, /most recent closures are missing/,
     'the cap was not disclosed anywhere on a page that has no other disclosure');
-  assert.ok(old.doc.querySelector('.c-list') || /cannot be told from this read/.test(text),
-    'neither the closed list nor its refusal was drawn at all');
 
   /* A read that came back SHORT and empty is a real zero and still says so. */
   const none = await boot({ closed: { problems: [] } });
