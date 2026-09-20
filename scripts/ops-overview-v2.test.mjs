@@ -55,6 +55,18 @@ const TOKENS = {
 
 const hoursAgo = (n) => new Date(Date.now() - n * 3600000).toISOString();
 
+/* Problem stamps are relative for the same reason the release card's are, one
+   fixture down: the ribbon prints how long ago the oldest problem started,
+   against the real clock. These were fixed dates, so they aged a little every
+   day, and the day they reached "24 hours ago" the sweep below read that as a
+   claim about a 24 hour WINDOW and went red. The release card had already been
+   converted for exactly this; these were the site that conversion missed.
+
+   The offsets keep the original spacing (05:20, 05:25, 05:30, 05:55 against a
+   06:00 read), so the oldest is still the oldest and an acknowledgement still
+   lands after the problem it acknowledges. */
+const minutesAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
+
 const DAYS = ['2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16',
   '2026-09-17', '2026-09-18', '2026-09-19'];
 
@@ -131,7 +143,7 @@ function problemsFixture(rows) {
       id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open',
       title: 'Generation queue is backing up',
       summary: 'Nothing has drained for 40 minutes.',
-      firedAt: '2026-09-20T05:20:00.000Z',
+      firedAt: minutesAgo(40),
       workPane: 'jobs', workPaneLabel: 'Jobs running now',
     }] : rows,
     total: rows === undefined ? 1 : rows.length,
@@ -140,8 +152,8 @@ function problemsFixture(rows) {
 
 const RULES = {
   rules: [
-    { key: 'queue', label: 'Queue depth', enabled: true, lastEvaluatedAt: '2026-09-20T05:55:00.000Z', lastEvaluationStatus: 'firing', lastFiredAt: '2026-09-20T05:20:00.000Z' },
-    { key: 'errors', label: 'Error rate', enabled: true, lastEvaluatedAt: '2026-09-20T05:55:00.000Z', lastEvaluationStatus: 'ok', lastFiredAt: null },
+    { key: 'queue', label: 'Queue depth', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'firing', lastFiredAt: minutesAgo(40) },
+    { key: 'errors', label: 'Error rate', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'ok', lastFiredAt: null },
   ],
   channels: [{ key: 'teams', label: 'Teams', configured: true, status: 'ok' }],
 };
@@ -288,12 +300,30 @@ test('the pane never claims a 24 hour window the pipeline cannot answer', async 
      asked. That is the age of a READ, not the span a figure covers, and a
      store asked 24 hours ago says so honestly. It is asserted to still be on
      the page first, or the exclusion would cover the defect by deleting the
-     card that carries it. */
+     card that carries it.
+
+     The ribbon's oldest-problem sentence is taken out on the same grounds and
+     with the same presence assertion. It prints the age of an EVENT — when the
+     oldest open problem started — which is no more a window claim than the
+     read age is. It was not excluded when the read age was, so a problem that
+     happened to be between 24 and 25 hours old turned this red on a pane that
+     had claimed nothing. Both sentences state an age; neither states a span.
+
+     NOT COVERED: an age printed in a wording AGE below does not list. The
+     pattern tracks fmt.ago()'s vocabulary, so a new branch there needs a new
+     branch here, and the presence assertions are what make that failure loud
+     rather than silent. */
+  const AGE = '(?:\\d+ seconds?|a minute|\\d+ minutes|an hour|\\d+ hours|\\d+ days) ago';
   const readAge = /Read from the stores (within the hour|[\d,.]+ hours? ago)\./;
   assert.match(text, readAge,
     'the releases card printed no read age, so the exclusion below covers nothing');
 
-  assert.doesNotMatch(text.replace(readAge, ''), /24 hours|last day|today/i,
+  const heroAge = new RegExp('Oldest started [^,.]+, ' + AGE + '\\.');
+  assert.match(text, heroAge,
+    'the ribbon printed no oldest-problem age, so the exclusion below covers nothing');
+
+  assert.doesNotMatch(text.replace(readAge, '').replace(heroAge, ''),
+    /24 hours|last day|today/i,
     'a figure claimed an hourly window that nothing behind it aggregates to');
 });
 
@@ -792,8 +822,8 @@ test('the Problems badge is the count this pane just read, not a number in the c
   const two = await boot({
     problems: {
       problems: [
-        { id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open', title: 'A', firedAt: '2026-09-20T05:20:00.000Z' },
-        { id: 'p2', reference: 'PRB-105', severity: 'warning', status: 'open', title: 'B', firedAt: '2026-09-20T05:25:00.000Z' },
+        { id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open', title: 'A', firedAt: minutesAgo(40) },
+        { id: 'p2', reference: 'PRB-105', severity: 'warning', status: 'open', title: 'B', firedAt: minutesAgo(35) },
       ],
       total: 2,
     },
@@ -944,8 +974,8 @@ test('the needs-attention head does not restate the count the ribbon just gave',
   const dom = await boot({
     problems: {
       problems: [
-        { id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open', title: 'A', firedAt: '2026-09-20T05:20:00.000Z' },
-        { id: 'p2', reference: 'PRB-105', severity: 'warning', status: 'open', title: 'B', firedAt: '2026-09-20T05:25:00.000Z' },
+        { id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open', title: 'A', firedAt: minutesAgo(40) },
+        { id: 'p2', reference: 'PRB-105', severity: 'warning', status: 'open', title: 'B', firedAt: minutesAgo(35) },
       ],
       total: 2,
     },
@@ -991,8 +1021,8 @@ test('the empty sentence says so when it is only true of the page that was read'
   for (let i = 0; i < 100; i += 1) {
     rows.push({
       id: 'p' + i, reference: 'PRB-' + (200 + i), severity: 'warning', status: 'acknowledged',
-      title: 'Taken on ' + i, firedAt: '2026-09-20T05:20:00.000Z',
-      acknowledgedBy: 'ops', acknowledgedAt: '2026-09-20T05:30:00.000Z',
+      title: 'Taken on ' + i, firedAt: minutesAgo(40),
+      acknowledgedBy: 'ops', acknowledgedAt: minutesAgo(30),
     });
   }
   const dom = await boot({ problems: { problems: rows, total: 480 } });
