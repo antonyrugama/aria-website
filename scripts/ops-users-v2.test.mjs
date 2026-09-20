@@ -48,12 +48,24 @@
    more than one way to fail; they are not the same number and the breakdown
    is the check on both.
 
-   Seven of the 40 were rewritten by that same follow-up and their #58 rows no
-   longer hold: the danger-zone test changed materially, and six others moved
-   onto the MATCHES and ACTIVITY constants when those two card titles were
-   renamed, so #58's rows for them name lines whose text changed. Live proofs
-   are in the follow-up: its rows 3 and 4 for the danger zone, row 5 breaking
-   the one site ACTIVITY reads, row 6 breaking the one site MATCHES reads.
+   ONE of the 40 no longer holds: #58's row 33 replaces a line in the
+   danger-zone action row, and this follow-up took the second child off that
+   row, so the line that row's payload rewrites is not there any more. Its
+   live replacements are the follow-up's rows 3 and 4.
+
+   The other 39 were re-applied at this head, one at a time, and every one
+   still turns its own named test red on its own. Many of the line numbers
+   #58 published are stale — this follow-up deleted lines above them in both
+   files — so read #58's anchors by their quoted text, not by their number.
+
+   That paragraph was wrong before this follow-up's fourth review round, which
+   is the reason it is now a measured count and not a recollection. It said
+   seven no longer held, on the theory that renaming the two card titles broke
+   the six tests that look those cards up. It did not: the rename moved the
+   lookup key in this file and the constants that hold it, while #58's rows
+   break sites in pane-users.js that the rename never touched. The sentence
+   voided six live proofs, one of them the only published evidence for
+   `promise 6 is on screen`.
 
    **The count in the sentence above is part of the claim.** If you add a test
    here, neither the number nor the "every" stretches to cover it — prove it
