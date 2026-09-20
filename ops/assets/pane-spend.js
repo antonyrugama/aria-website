@@ -330,7 +330,7 @@
     });
   }
 
-  /* aria-pressed rather than three links: the switch changes what the card
+  /* aria-pressed rather than two links: the switch changes what the card
      below it says without navigating, and which one is on has to reach a
      screen reader as state, not as a colour. */
   function viewSwitch(keys, current, onPick) {

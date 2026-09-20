@@ -128,7 +128,7 @@
 
 /* ---------------------------------------------------------- the view switch
 
-   Three groupings of one bill. The mock draws them as a segmented control in
+   Two groupings of one bill. The mock draws them as a segmented control in
    the card head; here they are real radio-shaped buttons with aria-pressed,
    because the switch changes what the card below says and a screen reader
    has to be told which one is on. */
@@ -325,11 +325,25 @@
 .band-end .pill { white-space: normal; }
 
 @media (max-width: 720px) {
-  /* aria.css:398 gives .card-head no flex-wrap, so the three view buttons
-     stay beside the card title and squeeze it: measured, the title block
-     drops from 236px to 104px and its note breaks over three lines while the
-     switch itself wraps to two. Giving the switch its own full-width row
-     below the title is the fix. */
+  /* aria.css:398 gives .card-head no flex-wrap, so the two view buttons stay
+     beside the card title and squeeze it. Re-measured at this head in
+     Chromium, on the grouping card, with these three declarations deleted
+     from the live sheet and the same nodes read again:
+
+       700px  title block 127.02px either way, note on one line either way,
+              switch on one row either way -- the head simply grows 52.25px
+              to 100.25px. Two buttons still fit beside the title here, so
+              between 720px and roughly 400px the rule only moves the switch
+              onto its own row; it is not rescuing the title yet.
+       375px  title block 127.02px -> 125.13px, the note breaks over TWO
+              lines and the switch wraps to two rows.
+       320px  title block 127.02px -> 102.27px, note over two lines, switch
+              over two rows.
+
+     So the squeeze the rule exists for is a phone-width one, and the rule is
+     load-bearing there. (An earlier note here read 236px -> 104px with the
+     note over three lines; that was measured against the three-button switch
+     this pane no longer draws and does not reproduce.) */
   .card-head { flex-wrap: wrap; }
   .card-end { margin-left: 0; width: 100%; }
   .sp-views { width: 100%; }
