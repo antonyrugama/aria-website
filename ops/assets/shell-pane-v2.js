@@ -49,7 +49,7 @@
    The pane displays production operational data to an administrator, so no
    value from the API, the querystring or storage may become markup, and the
    page's Content-Security-Policy carries no 'unsafe-inline'. The one style
-   write, the skeleton height at :621, goes through CSSOM, which CSP does not
+   write, the skeleton height in skeleton(), goes through CSSOM, which CSP does not
    gate; it materialises a style attribute on the two .skel elements and on
    nothing else.
 

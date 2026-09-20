@@ -879,3 +879,50 @@ test('each app keys the same colour in the tile as in the chart legend', async (
   assert.equal(new Set(dots.map((d) => d.tone)).size, dots.length,
     'two apps were drawn in one colour: ' + dots.map((d) => d.label + '=' + d.tone).join(', '));
 });
+
+/* =============== the count is not said twice on one screen ============== */
+
+/* The ribbon title, the severity chips and the queue rows are three views of
+   the same count within about eighty pixels of each other. The queue card's
+   own head used to add a fourth ("2 problems with nobody on them" under a
+   ribbon reading "2 problems need a person"), which is the density the
+   editorial rule exists to stop. The empty case keeps its sentence because
+   it says something the rows cannot. */
+test('the needs-attention head does not restate the count the ribbon just gave', async () => {
+  const dom = await boot({
+    problems: {
+      problems: [
+        { id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open', title: 'A', firedAt: '2026-09-20T05:20:00.000Z' },
+        { id: 'p2', reference: 'PRB-105', severity: 'warning', status: 'open', title: 'B', firedAt: '2026-09-20T05:25:00.000Z' },
+      ],
+      total: 2,
+    },
+  });
+  const panel = livePanel(dom);
+
+  const heroTitle = allText(findAll(panel, (n) => /(^|\s)hero-title(\s|$)/
+    .test(n.className || ''))[0] || {}).trim();
+  assert.match(heroTitle, /\d/, 'this fixture did not put a count in the ribbon');
+
+  const head = findAll(panel, (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''))
+    .filter((n) => /Needs attention/i.test(allText(n)))[0];
+  assert.ok(head, 'the needs-attention card lost its title');
+  const note = findAll(head.parentNode,
+    (n) => /(^|\s)card-note(\s|$)/.test(n.className || ''))[0];
+
+  assert.equal(note, undefined,
+    'the queue head restates the count the ribbon already gave: ' +
+    JSON.stringify(allText(note)) + ' under ' + JSON.stringify(heroTitle));
+});
+
+test('the needs-attention head keeps its sentence when nothing needs a person', async () => {
+  const dom = await boot({ problems: { problems: [], total: 0 } });
+  const panel = livePanel(dom);
+  const head = findAll(panel, (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''))
+    .filter((n) => /Needs attention/i.test(allText(n)))[0];
+  if (!head) return;
+  const note = findAll(head.parentNode,
+    (n) => /(^|\s)card-note(\s|$)/.test(n.className || ''))[0];
+  assert.ok(note && /Nobody is being asked/.test(allText(note)),
+    'the empty case lost the one sentence the rows cannot carry');
+});

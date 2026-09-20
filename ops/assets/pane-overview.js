@@ -426,10 +426,14 @@
          cannot be qualified by the footer alone: a full page keeps the oldest
          of each severity and drops the newest, and a newer problem with nobody
          on it is exactly what it drops. */
+      /* No count here. The ribbon above already says how many need a person,
+         the chips beside it say the same by severity, and the rows below are
+         the count. The empty case keeps a sentence because it says something
+         the rows cannot: the list is short because nobody is being asked to
+         do anything, not because the read came back thin. */
       card.appendChild(S.cardHead('Needs attention',
         needing.length
-          ? model.atLeast(fmt.plural(needing.length, 'problem'), capped) +
-            (needing.length === 1 ? ' with nobody on it' : ' with nobody on them')
+          ? null
           : (capped
               ? 'Nobody is being asked to do anything in the ' + fmt.int(model.PAGE) +
                 ' problems that could be read'
