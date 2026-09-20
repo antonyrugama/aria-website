@@ -987,8 +987,15 @@ test('the docblock and the README name exactly what the module exports', async (
    session.js is loaded after the shell so the shell keeps the fake session it
    captured at module scope and the real promptReauth is still the one on
    test. */
-async function openReauth(options) {
-  const opts = options || {};
+/* Every close path in the dialog resolves its promise, so a pending promise
+   is a defect rather than a slow answer. Bounded so it is reported as one. */
+const PENDING = Symbol('still pending');
+function settled(promise) {
+  return Promise.race([promise, new Promise((r) => setTimeout(() => r(PENDING), 50))])
+    .then((v) => { assert.notEqual(v, PENDING, 'the dialog never settled, so nothing closed it'); return v; });
+}
+
+async function openReauth(options) {  const opts = options || {};
   const dom = await bootPane(opts.pane || 'overview', {
     definePane: (content, pane, shell) => {
       content.appendChild(shell.h('button', { type: 'button', id: 'act', text: 'Suspend' }));
@@ -1535,7 +1542,10 @@ test('Escape closes the dialog, refuses the action, and gives focus back to what
   assert.equal(doc.activeElement === invoker, false, 'the dialog never took focus, so returning it proves nothing');
 
   doc.dispatch('keydown', { key: 'Escape' });
-  assert.equal(await pending, false, 'Escape resolved the dialog as a confirmation');
+  /* Raced rather than awaited: a dialog that refuses to close leaves this
+     promise pending forever, and a test that hangs reports nothing and takes
+     the CI job with it. */
+  assert.equal(await settled(pending), false, 'Escape did not close the dialog as a refusal');
   assert.equal(doc.activeElement, invoker, 'focus was dropped instead of returned to the control that opened it');
   assert.equal(body.children.filter((el) => el.classList.contains('modal')).length, 0,
     'the dialog is still in the document after it closed');
