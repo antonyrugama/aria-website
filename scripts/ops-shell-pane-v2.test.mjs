@@ -402,6 +402,92 @@ test('a link to another pane carries only the filters that pane has', async () =
   }
 });
 
+/* =========================== the pane's own controls ==================== */
+
+/* The children of the filter bar, as class names in document order. Order is
+   the assertion: the notes state an absent control and belong at the end of
+   the bar, so a pane's own control has to land before them and after the
+   shell's. */
+function barOrder(doc) {
+  const bar = doc.querySelector('.filters');
+  return bar ? bar.childNodes.map((n) => n.getAttribute('class') || n.tagName) : null;
+}
+
+test("a pane's own control lands in the shared bar, before the notes", async () => {
+  const { doc } = await bootPane('alerts', {
+    file: 'alerts.html',
+    definePane: (content, pane, shell) => {
+      shell.paneFilters([shell.h('span', { className: 'filter-label', text: 'Severity' })]);
+    },
+  });
+
+  const order = barOrder(doc);
+  const slot = order.findIndex((c) => c.indexOf('filters-pane') !== -1);
+  const note = order.findIndex((c) => c.indexOf('filter-note') !== -1);
+  assert.ok(slot !== -1, 'the pane slot is not in the bar at all: ' + JSON.stringify(order));
+  assert.ok(note !== -1, 'this pane has no filter note, so the order proves nothing');
+  assert.ok(slot < note,
+    'the pane control landed after the note that states an absent control: ' +
+    JSON.stringify(order));
+
+  /* And the shell's own control is still there. A slot that replaced the bar
+     rather than joining it would pass every assertion above. */
+  assert.equal(doc.querySelector('.filters').querySelectorAll('[id="fRange"]').length, 1,
+    "the pane's control took the shell's range control off the bar");
+});
+
+test('a pane that renders its controls again replaces them rather than adding more', async () => {
+  let shellRef = null;
+  const { doc } = await bootPane('alerts', {
+    file: 'alerts.html',
+    definePane: (content, pane, shell) => {
+      shellRef = shell;
+      shell.paneFilters([shell.h('div', { className: 'seg', text: 'first' })]);
+    },
+  });
+
+  const slot = doc.querySelector('.filters-pane');
+  assert.equal(slot.childNodes.length, 1);
+  assert.equal(slot.childNodes[0].textContent, 'first');
+
+  shellRef.paneFilters([shellRef.h('div', { className: 'seg', text: 'second' })]);
+  assert.equal(doc.querySelectorAll('.filters-pane').length, 1,
+    'a second render grew a second slot');
+  assert.equal(slot.childNodes.length, 1,
+    'a re-render stacked the new controls on top of the old ones: ' +
+    slot.childNodes.map((n) => n.textContent).join(', '));
+  assert.equal(slot.childNodes[0].textContent, 'second');
+});
+
+test('a pane with no filter bar of its own gets one rather than losing its control', async () => {
+  const registry = registryOnly();
+  const bare = Object.keys(registry.PANES).filter((id) => {
+    const p = registry.PANES[id];
+    return !p.scope && !p.range && !p.env && !p.scopeNote && !p.filterNote;
+  });
+  assert.ok(bare.length >= 1, 'every pane now declares a filter, so this proves nothing');
+
+  const id = bare[0];
+  const { doc } = await bootPane(id, {
+    file: registry.PANES[id].file,
+    definePane: (content, pane, shell) => {
+      shell.paneFilters([shell.h('div', { className: 'seg', text: 'mine' })]);
+    },
+  });
+
+  const bar = doc.querySelector('.filters');
+  assert.ok(bar, id + ' has no shell filters, so the control had nowhere to go');
+  assert.equal(bar.querySelectorAll('.filters-pane').length, 1);
+  assert.equal(bar.querySelector('.filters-pane').childNodes[0].textContent, 'mine');
+
+  /* Where it went matters as much as that it went somewhere: above the
+     content, not after it. */
+  const main = doc.querySelector('.main');
+  const kids = main.childNodes;
+  assert.ok(kids.indexOf(bar) < kids.findIndex((n) => n.getAttribute('id') === 'content'),
+    'the bar was put after the content');
+});
+
 /* ================================ role gating ========================== */
 
 const ROLES = ['owner', 'operator', 'viewer'];
@@ -901,7 +987,8 @@ function globMatches(glob, file) {
 
 function suiteInputs() {
   const files = ['scripts/ops-dom-harness.mjs'];
-  for (const suite of ['ops-shell-pane-v2.test.mjs', 'ops-overview-v2.test.mjs']) {
+  for (const suite of ['ops-shell-pane-v2.test.mjs', 'ops-overview-v2.test.mjs',
+    'ops-alerts-v2.test.mjs']) {
     files.push('scripts/' + suite);
     const src = readFileSync(new URL('./' + suite, import.meta.url), 'utf8');
     for (const [, rel] of src.matchAll(/\bread\('([^']+)'\)/g)) files.push('ops/' + rel);

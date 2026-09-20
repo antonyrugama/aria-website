@@ -1,0 +1,357 @@
+/* =========================================================================
+   Aria Operations — People and usage pane (v2)
+   Loaded after assets/aria.css and assets/shell-pane-v2.css, on
+   ops/analytics.html and nowhere else.
+
+   Adapted from docs/mocks/ops-dashboard-v2/assets/pane-understand.css in the
+   Aria monorepo, narrowed to the shapes this one pane uses. Three panes are
+   being remodelled at once, so each takes its own file instead of sharing one
+   and a later issue can consolidate. Anything aria.css already declares is
+   used from there rather than copied.
+
+   No new colour value. Every rule here paints in a token aria.css declares,
+   which is the palette that was made WCAG AA by construction (monorepo
+   #10042). Status text takes the -ink variant of its tone, because the base
+   colour is the tint and the -ink is the text on that tint.
+   ========================================================================= */
+
+/* ----------------------------------------------------------- series tones */
+
+/* The response names a series colour from a closed set — s1 to s6, plus
+   "muted" for a line that is a comparison rather than a reading. Mapped to the
+   v2 tokens in assets/pane-analytics.js rather than passed through, so an
+   unrecognised name falls back to a drawn line in the first series colour
+   instead of keying a custom property that does not exist, which paints
+   nothing at all. */
+.tone-muted { --c: var(--ink-3); }
+
+/* ------------------------------------------------------------ the lines */
+
+/* Drawn in the pane rather than through aria.js's area renderer, which joins
+   its path straight across a missing point. A day an app has no stored reading
+   for arrives as null, and both alternatives are a lie about a real quantity:
+   joining across it draws people who were never counted, and plotting it as
+   zero draws a day the app was open and nobody used it.
+
+   The colour is a CSS declaration rather than a value resolved in JS at draw
+   time, so the theme attribute repaints it and nothing has to call redraw. */
+.ln {
+  fill: none;
+  stroke: var(--c, var(--cyan));
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* One day with a reading between two days without one. A zero-length stroke
+   with a round cap, so it is a dot at every width. */
+.ln-pt {
+  fill: none;
+  stroke: var(--c, var(--cyan));
+  stroke-width: 5.2;
+  stroke-linecap: round;
+}
+
+/* The drawing is stretched to its box, so a stroke measured in the drawing's
+   own units would be thinner across than along. Measured in the box instead:
+   a 2.1 stroke is 2.1 device-independent pixels whatever the box is. */
+.chart line, .chart path { vector-effect: non-scaling-stroke; }
+
+/* The y scale sits outside the svg, in HTML, over the same gridlines.
+
+   Two defects it avoids. The svg is scaled to whatever width the card gets, so
+   an <text> inside it is scaled too and lands at about four pixels on a 375px
+   screen. And role="img" carries children-presentational, so <text> inside one
+   is announced to nobody at any size. Out here it is real text at a real size,
+   and the picture keeps its accessible name for the whole series.
+
+   The top of each label comes from the gridline it belongs to, as a percentage
+   of the viewBox height, so it follows the drawing at every width. */
+.ln-wrap { display: flex; align-items: stretch; gap: 8px; }
+.ln-axis { position: relative; flex: none; width: 46px; }
+.ln-wrap .chart { flex: 1; min-width: 0; height: 210px; }
+.ln-tick {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  text-align: right;
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The tile sparkline. Stretched, because it repeats the shape of a series the
+   chart below states in full and is hidden from the accessible tree. */
+.spark { height: 34px; }
+
+/* -------------------------------------------------------------- the tiles */
+
+/* aria.css lays the meta row out without wrapping, which fits the reference
+   page because every tile there carries one short pill. These carry a pill and
+   a sparkline, so the row is allowed a second line at a narrow width rather
+   than pushing the tile wider than its column. */
+.kpi-meta { flex-wrap: wrap; row-gap: 6px; }
+.kpi-spark { height: 34px; margin-top: 0; flex: 1; min-width: 96px; }
+
+/* A figure that is withheld is a sentence, not a number, so it is set in the
+   text face: a monospace "Not reported" reads as a value that was measured. */
+.kpi-val.is-absent {
+  font-family: var(--sans);
+  font-size: 19px; font-weight: 560; letter-spacing: -.015em;
+  color: var(--ink-2);
+}
+
+/* --------------------------------------------------------- side by side */
+
+/* One column per app, with a hairline between. Never a blend and never a
+   total: there is no row here that adds the columns, because somebody who used
+   both apps is one person and would be counted twice. */
+.u-vs { display: flex; align-items: stretch; }
+.u-vs-side {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 18px;
+  border-left: 1px solid var(--line);
+}
+.u-vs-side:first-child { padding-left: 0; border-left: 0; }
+.u-vs-side:last-child { padding-right: 0; }
+
+.u-vs-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.u-vs-name {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 580;
+}
+
+.u-vs-big { margin-top: 12px; }
+.u-vs-val {
+  font-size: 26px; font-weight: 480; letter-spacing: -.032em;
+  line-height: 1.1;
+}
+.u-vs-val.is-absent {
+  font-family: var(--sans);
+  font-size: 16px; font-weight: 560; letter-spacing: -.01em;
+  color: var(--ink-2);
+}
+.u-vs-cap {
+  font-size: 9.5px; font-weight: 620; letter-spacing: .11em;
+  text-transform: uppercase; color: var(--ink-3);
+  margin-top: 6px;
+}
+
+.u-vs-rows { margin-top: 14px; }
+.u-vs-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.u-vs-k { font-size: 12px; color: var(--ink-2); min-width: 0; }
+.u-vs-v { font-size: 13px; text-align: right; }
+.u-vs-v.is-absent {
+  font-family: var(--sans);
+  font-size: 11.5px; font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------- the grid */
+
+/* A real table rather than the mock's CSS grid: the cells are a matrix of
+   figures with a heading on both axes, and a grid of divs cannot say which
+   week and which signup group a cell belongs to. */
+/* Sized by its own content, and scrolled sideways inside the card when there
+   is more of it than the card is wide.
+
+   It was `table-layout: fixed` with the two heading columns reserved at 30%
+   and 11%, on the reasoning that the browser otherwise hands the spare width
+   to the first week and draws one week four times the size of the others.
+   That reasoning holds for four columns and fails for eleven: `offsets` is as
+   long as the widest group has aged weeks, so a 90 day window - one of the
+   four ranges the bar offers, and the one the insufficient state's own button
+   navigates to - sends `W1` to `W11`, the remaining 59% divides to about 25px
+   a column, and a fixed table does not overflow, it OVERLAPS. Every
+   percentage printed over its neighbour, at every width, while the page
+   measured clean because the damage was inside the scroll box.
+
+   Auto layout cannot overlap: the columns take the width the figures need and
+   the card scrolls when they do not fit. The first-week-takes-everything
+   problem it was guarding against needs spare width to give away, and a table
+   wide enough to scroll has none. */
+.u-cohort { width: 100%; }
+.u-cohort th, .u-cohort td { white-space: nowrap; }
+
+.u-cohort th[scope="row"] {
+  padding: 8px 14px 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; font-weight: 520; letter-spacing: 0;
+  text-transform: none; color: var(--ink);
+  white-space: nowrap;
+}
+.u-cohort td { padding: 6px 4px; }
+.u-cohort td:first-of-type { padding-right: 14px; }
+.u-cohort th:first-child, .u-cohort td:first-of-type { padding-left: 0; }
+
+/* The shade is a second reading of a figure that is printed in the cell, not
+   the only way to read it. */
+.u-cell .num {
+  display: block;
+  padding: 9px 6px;
+  border-radius: 7px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+/* The ramp stops where --ink stops clearing 4.5:1 over it. In the dark theme
+   --cyan is a bright cyan and --ink is nearly white, so every step of tint
+   moves the cell background towards the text: at 56% the figure measured
+   4.32:1, below AA, on the retention the fixture itself draws. Measured
+   composited against the real ancestor chain in both themes; the figures are
+   in the pull request. */
+.u-i1 .num { background: color-mix(in srgb, var(--cyan) 11%, transparent); }
+.u-i2 .num { background: color-mix(in srgb, var(--cyan) 17%, transparent); }
+.u-i3 .num { background: color-mix(in srgb, var(--cyan) 24%, transparent); }
+.u-i4 .num { background: color-mix(in srgb, var(--cyan) 31%, transparent); }
+.u-i5 .num { background: color-mix(in srgb, var(--cyan) 38%, transparent); }
+
+/* Not enough time has passed for this group to reach this week. Deliberately
+   unlike a zero, and named in text for anything that does not read the tint. */
+.u-na {
+  color: var(--ink-3);
+  text-align: center;
+  font-size: 15px;
+}
+
+/* Below the reporting floor. Spans the whole row, because suppressing one cell
+   at a time would let the rest be read as a trend. */
+.u-sup { font-size: 12px; color: var(--ink-3); }
+.u-sup-in { display: flex; align-items: center; gap: 8px; }
+.u-sup svg { width: 14px; height: 14px; flex: none; color: var(--ink-3); }
+
+/* ---------------------------------------------------------- what they do */
+
+/* A row heading here carries a feature's name rather than a column name, so it
+   drops the `.tbl th` treatment for the same reason the version table does.
+
+   `overflow-wrap: anywhere` for the same reason as well, and it is not
+   theoretical: the route's label is `FEATURE_LABELS[row.featureKey] ??
+   row.featureKey` (`opsUsageView.ts:691`), so a key that outlives its member of
+   `TelemetryFeatureKey` prints as the raw telemetry key, and this table has no
+   `.u-scroll` box to catch it. Measured with two such labels,
+   `mental_activities_daily_checkin` and
+   `sprint_video_analysis_retrospective`: 83px of page overflow at 320 and 28px
+   at 375 without this declaration, 0px at 320, 375, 768 and 1440 with it, both
+   themes. Nothing in today's `FEATURE_LABELS` (`opsUsageView.ts:169-178`)
+   reaches it -- its longest key is `sprint_video_analysis`, 21 characters, and
+   every one of the eight has a mapped label with spaces in it -- so this is
+   the fallback's rule, not the map's. */
+.u-feat th[scope="row"] {
+  padding: 11px 14px 11px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; font-weight: 520; letter-spacing: 0;
+  text-transform: none; color: var(--ink);
+  white-space: normal; overflow-wrap: anywhere;
+}
+.u-feat th:first-child, .u-feat td:first-of-type { padding-left: 0; }
+.u-bar-col { width: 34%; min-width: 90px; }
+
+/* A card is as tall as what is in it. Left to stretch, the shorter of two
+   cards in a row grows a band of empty surface under its last row, which reads
+   as something that failed to load. */
+.grid.g-main { align-items: start; }
+
+/* -------------------------------------------------------------- narrow */
+
+@media (max-width: 1280px) {
+  .u-vs { flex-direction: column; }
+  .u-vs-side {
+    padding: 14px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .u-vs-side:first-child { padding-top: 0; border-top: 0; }
+}
+
+/* A grid item's automatic minimum size is its own content, so a card holding
+   anything wider than its track keeps the track that wide and takes the whole
+   page sideways with it - and a scroll box inside it never gets to clip,
+   because its parent is already wider than the screen. The item has to be
+   allowed to shrink first; only then does overflow-x mean anything. At every
+   width, not only on a phone: the cause is a wide table, and a long version
+   label overflows a two-column desktop grid exactly as it overflows one
+   column.
+
+   PROVEN, on the answer that carries exactly ONE cohort. `pane-analytics.js`
+   builds that band as `grid g2` when more than one app has cohort rows and
+   plain `grid` when one does, and only the `g2`/`g3`/`g4` tracks are
+   `minmax(0, ...)` (`aria.css:367-372`) - plain `.grid` declares no
+   `grid-template-columns` at all, so its single implicit track is `auto` and
+   the item's automatic minimum size is its min-content contribution. That
+   contribution is not zero here: `.u-cohort` carries `min-width: 460px` inside
+   the `@media (max-width: 760px)` block below, so `overflow-x: auto` on
+   `.u-scroll` has nothing to clip against until the card itself is allowed to
+   shrink. Removing this one declaration and re-rendering that answer measures
+   194px of page overflow at 320 and 139px at 375, in both themes, the
+   overflowing run being the cohort card's `card-note`; 0px at 768, 1024 and
+   1440.
+
+   The four earlier fixtures - two cohorts, eleven offsets, 32 character
+   version labels, partial coverage - all measure 0px at every width without
+   it, because each has more than one cohort and lands on a `minmax(0, ...)`
+   track. That is why an earlier revision of this comment recorded the rule as
+   unproven: none of those four had the shape it protects. The single-cohort
+   answer is ordinary - one app with admissible signup weeks, or a scope filter
+   selecting one - and it is the case this declaration is load-bearing on. */
+.grid > .card { min-width: 0; }
+
+/* The cohort grid is as wide as the answer's weeks make it, so the card
+   scrolls at every width rather than only on a phone: eleven weeks do not fit
+   a half-width desktop card either. Positioned, so that the screen-reader text
+   inside it is contained -- an absolutely positioned box is clipped by a
+   scroll container only when that container is its containing block, and with
+   a static parent the visually-hidden spans sat at the table's real width in
+   page coordinates and took the document sideways on their own, while the grid
+   they belong to was clipped correctly and every rect on the page measured
+   clean. */
+.u-scroll { overflow-x: auto; min-width: 0; position: relative; }
+
+/* A row heading here carries a value rather than a column name, so it drops
+   the whole `.tbl th` treatment (aria.css:667) the way the cohort and feature
+   tables do: 9.5px uppercase letter-spaced `--ink-3` turns `Coaches Web
+   version not reported` into shouted small print, and it is the only
+   identifier the row has. Wrapping for the same reason - nowrap is right for a
+   short column name and wrong for a label this long.
+
+   `anywhere` rather than `break-word`, and that difference is the whole rule.
+   The label is `${app} ${app_version}`, and `app_version` is a 32 character
+   free-text column: `1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f` is one unbroken token, so
+   `white-space: normal` finds exactly one break opportunity in the label - the
+   space after the app name - and the token still sets the column's minimum
+   width. Only `anywhere` breaks inside a word AND contributes to min-content
+   sizing, which is what a table column measures itself by; `break-word` would
+   wrap the painted text and leave the table's intrinsic width where it was. */
+.u-vers th[scope="row"] {
+  font-size: 12.5px; font-weight: 520; letter-spacing: 0;
+  text-transform: none; color: var(--ink);
+  white-space: normal; overflow-wrap: anywhere;
+}
+
+/* Below this the cohort grid has more columns than a phone has room for, so it
+   scrolls sideways inside its card rather than squeezing every week to an
+   unreadable sliver. The row heading stays a heading, so a reader who has
+   scrolled still knows which signup group a cell belongs to. */
+@media (max-width: 760px) {
+  .ln-wrap .chart { height: 168px; }
+  .u-cohort { min-width: 460px; }
+  .u-bar-col { display: none; }
+  /* Column headings are nowrap by default, which is right for a heading and
+     wrong for the narrowest phone: "Share of people" set in caps with letter
+     spacing is wider than the column it names, and a table whose own minimum
+     is wider than the screen takes the page with it. */
+  .u-feat thead th { white-space: normal; }
+  /* A pill is nowrap so a status never breaks mid-phrase, which is right until
+     the phrase is longer than the screen. The band head already wraps, but a
+     nowrap child cannot be what wraps, so the age of a late answer — the
+     longest string this pane puts in a pill — took the page sideways at 320px
+     in the state the pane exists to make visible. */
+  .band-head .pill { white-space: normal; }
+}

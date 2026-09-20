@@ -256,6 +256,7 @@ ops/
                         the three gates, the phone drawer, the toast
     pane-overview-v2.css  Overview's own shapes
     pane-releases-v2.css  App releases' own shapes
+    pane-alerts-v2.css    Problems' own shapes
     pane-settings-v2.css  Settings' own shapes
     pane-users-v2.css     Look up a user's own shapes
     pane-run-history-v2.js   What happened
@@ -263,6 +264,7 @@ ops/
     pane-jobs-live-v2.js     Happening now
     pane-jobs-live-v2.css    Happening now's own shapes
     pane-evaluations-v2.css  Aria quality's own shapes
+    pane-analytics-v2.css  People and usage's own shapes
 ```
 
 ### The v2 layer
@@ -271,9 +273,12 @@ ops/
 monorepo, ported here so the panes can be remodelled one at a time. They sit **beside** `ops.css`
 and `shell.js` rather than replacing them: both define `.card`, `.rail`, `.topbar`, `.btn`,
 `.seg`, `.pill`, `.tbl` and `.nav-item` from different token sets, so **a page loads one or the
-other, never both.** Every pane listed above still loads v1 and still reads the endpoint it
-always read. Panes move across in their own changes, and the day the last one moves, `ops.css`,
-`shell.js`, `operate.css` and `icons.js` go.
+other, never both.** **Which layer a pane is on is stated by its own page**, in the stylesheets
+and scripts its `<head>` loads, and nowhere else: a list here would have to be corrected by every
+change that moves a pane, and the first one that moved while another was in review left it saying
+something untrue. All panes read the endpoints they always read — moving a pane across changes
+its surface, never its reads. Panes move across in their own changes, and the day the last one
+moves, `ops.css`, `shell.js`, `operate.css` and `icons.js` go.
 
 `shell-v2.html` exists so the system can be seen and checked. It makes no API call and holds no
 operational data — every number on it is a literal in the page — so unlike a pane it has nothing
@@ -354,6 +359,7 @@ and none of `ops.css`, `operate.css`, `shell.js` or `icons.js`. `data-pane` rath
 | `definePane(id, render)` | register what a pane draws. `render(content, pane)` gets the pane's `<main>` and its registry entry, after parsing and after the session is confirmed |
 | `init()` | boot this page. Automatic on a page whose `<body data-pane>` names a registered pane |
 | `filters()` / `resetRange()` | the current selection; put the range back to the pane's default |
+| `paneFilters(nodes)` | the pane's own controls, in the shared filter bar, replacing any it put there before |
 | `paneHref(paneId)` | a link to another pane, carrying only the filters that pane has |
 | `setBadge(railId, badge)` | a count beside a rail item, or `null` to remove it |
 | `region(content)` | the four preview states, as a region the pane owns |
@@ -435,9 +441,10 @@ reveal is recorded, and offers no control here.
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
 which is the opposite of what a window ending today needs. When a page comes back full, both
-Overview and Problems say so, every count reads as "at least", and the two figures that cannot
-be salvaged, the 30 day false-alarm rate and the 30 day volume chart, say they cannot be worked
-out instead of showing a number that is quietly short.
+Overview and Problems say so and every count reads as "at least"; on Problems the whole of the
+"how the watching is doing" card — the fortnight's opened and closed counts, the median time to
+take one on, and the false-alarm figure — says it cannot be worked out rather than showing a
+number that is quietly short.
 
 **People and usage** and **Cloud costs** are drawn in full: every state, every card, and the
 whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET /api/ops/costs`,
@@ -596,8 +603,18 @@ The headline label follows the range in the answer rather than saying "Month to 
 the window is. That was invisible while the pane had no endpoint and would have put those words
 over a twelve month bill the day it got one.
 
-**People and usage** expects `asOf`, `window`, `coverage`, `apps`, `cohorts`, `funnel`, and
-`features`. `availability.state` is `ready`, `insufficient`, or `not_reporting`.
+**People and usage** expects `asOf`, `window`, `coverage`, `apps`, `cohorts` and `features`.
+`availability.state` is `ready`, `insufficient`, or `not_reporting`. There is no `funnel`:
+`OpsUsagePayload` has never carried one, and departure 9 below says why the pane stopped
+drawing one.
+
+The age on the band head is read from `window.rollupsComputedAt` and never from `asOf`. They
+look interchangeable and are not: the route sets `asOf` to the window's exclusive end, which is
+the last UTC midnight and is recomputed on every request, so an answer whose rollups last ran a
+week ago still arrives with an `asOf` from this morning. `rollupsComputedAt` is the freshest
+recompute behind the summed figures, and `null` when nothing has been computed at all — a
+different statement from a timestamp that cannot be read, and the pane says each of them
+differently.
 
 `window` carries three separate facts about how much of the chosen span has figures behind it,
 and the pane renders all three as statements about the *window*, never about a column, because
@@ -605,8 +622,17 @@ each is a union across the selected apps:
 
 - `daysCovered` with `reportingStart` is the span that has ever been aggregated. A 90 day window
   opened today reaches back past the pipeline's own lifetime, and those earlier days are outside
-  it rather than missing from it. The pane says which days it covers and, where the covered span
-  is shorter than the window, why.
+  it rather than missing from it. Where the covered span is shorter than the window, the head of
+  the first band says how much of the window that span reaches and from which day — `20 of 90
+  days covered, from 31 Aug 2026` — beside the figures that are summed over it, because the range
+  name alone says 90 days either way. **Covered**, never *stored*: the span is the distance from
+  `reportingStart` to the end of the window, and the days inside it that carry figures are that
+  distance minus `daysMissingRollups`, so on the answer above the pill says 20, the chart's name
+  says `18 of 90 days with a reading` and the trend foot names the two gap days. It does not say *why* the span is short: that the rollups began on a
+  particular day is a fact about the pipeline rather than about this answer, and a sentence
+  explaining it is an argument, which the editorial rule keeps off the pane. Not a warning
+  either — the route is explicit that partial coverage annotates the figures rather than
+  replacing them.
 - `daysMissingRollups` is the real gap: days at or after `reportingStart` that carry no stored
   figures. Those shorten the session and coverage figures and leave the live people figures
   alone, and the callout says so.
@@ -1111,6 +1137,14 @@ would blend them is not drawn.
    about the release, and the mocks' own rule is one fact per slot. The facts those blocks
    carried are on screen: the store ceiling is named beside the share, and the age of a store
    reading is attached to the row it fed.
+9. **A chip inside a version-share segment reads `57%`, not `1.1.1 · 57%`.** The mock's wide
+   chip carries the version name as well as the share. A chip is sized by its segment and a
+   store version name has no length limit, so the mock's shape clips whatever it puts last —
+   and last is the percentage, the one number the chip exists to state. Measured, the mock's
+   order loses it entirely between 561px and 650px. Putting the share first is not a fix
+   either: it only moves the clip onto the version. The version is on the key beside the bar,
+   so the chip states the share alone and nothing unbounded goes in it.
+   See `assets/pane-releases.js:173-188` and `assets/pane-releases-v2.css:157-166`.
 
 Two additions the mock does not have, both of which exist because the pane reads a live answer
 where the mock reads its own sample text:
@@ -1171,14 +1205,30 @@ the thing it describes is the worse of the two failures.
    memberSince, summary, record, activity, devices, billing, access and supportActions, and
    nothing about consent. A consent grid invented on the page is worse than none, because it
    would be read as the record.
-6. **One adoption of the mock's wording, not its shape, for "Not granted means not collected".**
-   The sentence is true and load-bearing, but it belongs to the card in 5 that has no source. The
-   fact it protects — that a mask is not a hidden value waiting to be unlocked — is in the
-   account card's foot, where the masks actually are.
+6. **The mock's "Not granted means not collected" is dropped, and nothing on this pane replaces
+   it.** It belongs to the card in 5 that has no source, and the fact it carries has no home
+   here: it is a statement about **consent** — nothing was collected, so there is nothing behind
+   the mask to unlock — and on this pane a mask is the opposite, a value the owner *can* unlock
+   with a recorded reason. The account card's foot (`assets/pane-users.js:943`) says that
+   plainly, "Hidden for every role, including this one, until a reveal is recorded", and reading
+   it as the mock's sentence in a new place would get it backwards. Nothing replaces the mock's
+   sentence, because the pane has no consent input to state it from: the API tells this pane
+   whether a field can be *shown*, never whether it was collected. Both notes it prints are
+   about showability — `neverShownNote` for a field that is never shown here at all
+   (`assets/pane-users.js:692`, health readings and any field the API marks `reveal: 'never'`)
+   and `unavailableNote` for one that cannot be revealed right now (`:702`). Neither claims a
+   value does or does not exist behind the mask, and the pane does not author that claim.
 7. **The mock's `why` blocks are not reproduced.** They argue for the design rather than state a
    fact about the account, and the mocks' own rule is one fact per slot. What they carried that
    is a fact is on screen: the reveal card says what is recorded, the access band says how long
    it is kept, the activity card says what is not shown.
+8. **No "Recently looked up" row.** This one is a privacy decision and not an editorial one. The
+   mock keeps the coded references this browser has opened and offers them back as shortcuts;
+   the pane keeps none, in any store, for any length of time. A list of the accounts an
+   administrator has recently opened is a small standing record of who was looked at, sitting on
+   the device rather than in the access record where the athlete can see it — and the access
+   record is the thing that makes the rest of this pane defensible. Typing the reference again
+   costs a few seconds and leaves the only copy in the place that is auditable.
 
 Two additions the mock does not have, both because the pane reads a live answer where the mock
 reads its own sample text:
@@ -1272,6 +1322,205 @@ sections above, this is not a complete diff: it names the departures that carry 
    taken when the page loaded, and the page says so rather than implying a live one.
 
 `assets/pane-jobs-live-v2.css` carries this pane's own shapes.
+### Problems on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/alerts.html` in the Aria monorepo is the approved design. The pane
+follows its structure, its drill-down paths and the rules its README calls normative.
+
+As with Overview, the list below is **not a complete diff against the mock**. It names the
+departures that carry a decision. Wording and ordering differ in more places than are listed,
+because the mock is a static page with hand-written sample text and the pane writes its words
+from the answer.
+
+1. **No drawer and no modal.** The mock opens a problem in a side drawer and closes one in a
+   dialog. The detail expands in place under the card instead, with `aria-expanded` and
+   `aria-controls`, and Close is an inline form. At 375px a modal is a focus trap over a page
+   the operator still needs to read, and a second thing that can overflow sideways; the v1
+   drawer also lived in `operate.css`, which a v2 page cannot load.
+2. **No meter on a problem card.** The answer carries an observed value and a threshold and no
+   scale to put them on. A bar between two numbers with no axis is the budget-bar problem from
+   Overview in another shape.
+3. **No "right now" column in the rules table.** `GET /api/ops/alerts/rules` sends each rule's
+   threshold and the verdict of its last evaluation, and no current reading. The table's foot
+   says that rather than leaving a reader to wonder where the column went.
+4. **No volume chart.** The mock draws problems per day over 30 days. The problems read is capped
+   at 100 with no second page, so a chart drawn from it would be short by exactly the recent days
+   it is about. The card in that slot states what the sample can and cannot answer.
+5. **Six facts the mock shows are absent, for the same reason — no source.** People affected by a
+   problem; snooze and mute; how many times a reminder has been sent; an "Add a rule" control;
+   the share of problems found by a rule rather than by a person; and a note attached to taking a
+   problem on. None is in any of the three answers, and the API is unchanged by this work.
+6. **The routing card is v1's, not the mock's.** Delivery is a real operational fact — the rules
+   answer carries each channel's last delivery status, its last failure reason and its
+   consecutive-failure count — and a page that claims alerting is armed without saying whether
+   anything can be delivered is claiming the wrong thing.
+7. **The rule switch is a checkbox.** The mock draws a `<button>` with a styled child. A real
+   `<input type="checkbox" role="switch">` is what a screen reader and a keyboard already know,
+   so the knob is a `::after` on the input.
+
+The close note is the one piece of the mock's sample text that is **content rather than filler**.
+It is printed from the problem's own record — the `closed` event's `detail.note` in
+`GET /api/ops/alerts/problems/:id` — and the closed list says where to find it rather than
+dropping it.
+
+### People and usage on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/analytics.html` in the Aria monorepo is the approved design.
+`ops/analytics.html` follows its structure and the rules its README calls normative, and reads
+`GET /api/ops/usage` unchanged: this is a surface remodel, and no field moved to make it.
+
+The list below is **not a complete diff against the mock**. It names the departures that carry a
+decision — something the mock draws that nothing behind the pane can answer, and a second caption
+for a fact already on screen. Wording and ordering differ in more places than are listed, because
+the mock is a static page with hand-written sample text and the pane writes its words from the
+answer.
+
+1. **No week-over-week pill on a tile.** The response carries one window and no previous one,
+   so a delta drawn from the window the pane already has would be a number nobody measured.
+   **No "New signups this month" tile** for a different reason: not absence but repetition —
+   the response does carry per-app active-people counts, and a signup total on a tile would be
+   the same population the band beneath it already breaks down.
+2. **No "Returning after 7 days" headline.** Retention arrives as a grid of signup groups, each
+   with its own denominator. Collapsing them into one figure means choosing a group and an
+   offset, and the pane would then be publishing a rate the answer never sent.
+3. **No "Where people are" region table.** No region or country field is in the response.
+4. **No per-row ribbon, no `Times` column and no `Week over week` column in the feature table.**
+   The response sends a share of people and the group it was measured over, not an event count
+   and not a daily series per feature.
+5. **The chart's scale is HTML beside the drawing rather than `<text>` inside it.** `role="img"`
+   carries `children-presentational`, so text inside the picture is announced to nobody, and the
+   drawing is stretched to the width of its card, which would render that text at about four
+   pixels on a phone. The picture keeps an accessible name that states what the lines are of and
+   the window they cover, then, for each line, how many of the window's days have a reading, its
+   low and high — or that it is flat — and its last reading. A line with no reading at all says
+   that instead. (`chartName` and `seriesSentence` in `ops/assets/pane-analytics.js`; the
+   sentences are pinned in `scripts/ops-analytics-v2.test.mjs`.)
+6. **No Custom range**, which is the registry's decision, recorded in the comment above the
+   entry at `pane-registry.js:103-110`: the bar carries a range name and no bounds, so a custom
+   window reaches the usage API with no start and no end, and that route answers over the widest
+   window retention allows rather than refusing it. The figures would be confident and for a
+   window nobody chose. Nothing states this **on screen** — `shell-pane-v2.js` renders
+   `pane.filterNote` where a missing control would have been, and the `analytics` entry sets
+   none, unlike `spend`, which sets `scopeNote`. The absence is a decision about the bar, and the
+   bar belongs to a file this pane may not edit; adding the note is `Stadiora/Aria#10449`.
+7. **The retention grid has no legend.** Every cell prints its own percentage, so a key mapping
+   tint to range is the same fact again; the one symbol that is not a number, `·` for a week a
+   group has not reached yet, is named once in the band note and carries its own text for a
+   screen reader.
+8. **The mock's explanatory captions are not reproduced, and neither are four of the route's
+   own sentences nor four of its counts**, under the same rule: the mocks encode one fact per
+   slot, which is what took the approved set from 7,240 words to 4,842. What was dropped, and
+   why, since these are fields the answer carries — read as a sweep of `OpsUsagePayload`, so
+   every non-optional member the pane does not read is on this list:
+   - `coverage.shortfall.detail` was the versions card's footer. It is the complement of the
+     coverage pill — 30.7% did not report *is* 69.3% did — and the `Reporting` column beside it
+     names which versions, which is the part an operator acts on. What makes *already on screen*
+     true is departure 16: the pill is drawn on every answer that carries a figure, not only on
+     the ones with two columns.
+   - `features.coverageNote` was the feature card's footer, twenty words carrying that same
+     coverage figure a third time. The method survives as nine: *Only seen on app versions that
+     report feature use.* The number does not.
+   - `features.note` and `features.hint` both say the shares are of each app's own active people.
+     The card head prints `hint`, seven words; `note` is two sentences of the same thing.
+   - `consent.detail` is four sentences saying the gate is at ingest. The pane prints the route's
+     shorter form of the same statement, the last sentence of `cohorts[].note`, beside the groups
+     it is about. Where no group is drawn the head of the first band carries
+     **Consenting accounts only** instead, so the page never prints headcounts without it.
+   - `metrics[].numerator`, `cohorts[].rows[].cells[].returned` and `features.rows[].users` are
+     each the count a printed rate was computed over — `679 of 1,061`, drawn by the v1 pane
+     beside every rate. One fact per slot: the rate is the fact, and the base it was taken over
+     is not withheld, because `denominator` is read for the reporting floor and a rate is
+     withheld outright when its base is under it. The counts come back in the day a cell grows a
+     hover or a detail view, which is where a second figure belongs.
+   - `apps[].subtitle` is `Athlete app` / `Coach workspace`. The split card already heads each
+     column with the app's own name, and there are two apps; a gloss on which is which is a
+     sentence restating a label.
+   - `apps[].tone` drives the v1 pane's `tag-` class and has no v2 equivalent — the series token
+     the pane needs is `trend.color`, which it reads. `window.grain` and `window.timezone` are
+     literal constants (`'day'`, `'UTC'`); `window.range`, `window.start`, `window.endExclusive`
+     and `filters` belong to the shell's bar, not to the pane.
+9. **No activation funnel card.** `OpsUsagePayload` carries no `funnel` member and the route's
+   own docblock says why: a funnel's second step is read against its first, so it is a rate over
+   people whether or not it says so, and the only counts available for one are not consent
+   gated. The v1 pane drew one anyway, from a field the server never sends — visible only when
+   a local fixture supplied it, and drawn without the reporting floor this pane otherwise
+   applies to every rate. The remodel drops the card rather than carrying dead code that
+   contradicts the pane's own contract; the mock does not draw one either.
+
+10. **No median-session tile.** The mock draws one, and the metric union the route can send is
+    `count`, `rate` or `decimal` — there is no duration in it, and the four figures it names per
+    app are active people, sessions, sessions per person and the share who opened a feature. A
+    tile for a figure the endpoint cannot produce is a tile that would always read "Not
+    reported", so the fourth slot carries the share who opened a feature instead.
+11. **Week columns are headed `Week 1`, from offsets that arrive as `W1`.** The mock's wording,
+    the route's value: `W3` set in a row of percentages reads as a figure rather than as a
+    heading. The cohort card is headed with the question it answers and noted with the route's
+    own definition of a group — `cohorts[].note`, which names its app inside it — never with
+    `app`, which is the value the filter sends and reaches an operator as `mobile`. That note is
+    the one place the pane says what the figures are *of*: `size` counts the accounts created
+    that week which also opened the app that week, not the week's sign-ups, and the population is
+    only people who have usage analytics on. Neither is inferable from a grid of percentages.
+
+12. **The retention grid scrolls sideways inside its card, at every width.** `offsets` is as long
+    as the widest group has aged weeks, so the 90-day range — one of the four the bar offers, and
+    where the insufficient state's own button sends you — sends eleven week columns, which do not
+    fit a half-width desktop card either. The alternative, a fixed table layout, does not overflow
+    when it runs out of room: it *overlaps*, printing each percentage over its neighbour while a
+    page-level measurement reads clean.
+
+13. **A `Which versions report` card, which the mock does not draw.** `coverage.versions` is the
+    only place an operator can see that a figure on this page is missing a slice of the estate,
+    and which build to chase; the split card's coverage pill says how much is missing but not
+    from where. The share column is of each app's own sessions — the route's own denominator — so
+    the card head carries that sentence once rather than repeating it on every row.
+14. **A second pill in the first band's head, which the mock does not draw: how much of the
+    window the stored span reaches.** The mock's bar carries a range name and nothing behind it, and its
+    sample answer is a window covered in full. A real one need not be: the nightly job began
+    writing rollups on a particular day, so a 90 day window reaches back past the pipeline's own
+    lifetime and its session total is a sum over the covered span while the range name still says
+    90. The pill states that span and not the days that carry figures — those are the span minus
+    `daysMissingRollups`, and the chart's name and the trend foot already say both. Drawn only
+    when the covered span is shorter than the window and not empty —
+    `daysCovered: 0` is a different statement, and every stored-day figure already reads
+    **not reported** with its reason attached.
+15. **A third pill in that head wherever no group is drawn: Consenting accounts only.** The
+    consent statement is the route's, and its home is the last sentence of `cohorts[].note`,
+    beside the groups it is about. `buildCohorts` skips an app whose widest admissible signup
+    week has aged into nothing (`opsUsageView.ts:932`), which happens on **7d** always — the
+    only admissible start is the window's own and `floor(7d / 7d) - 1` is zero aged weeks — and
+    on **14d** on every weekday but the one the window ends on, because there the admissible
+    interval is eight days wide and holds two signup weeks only when it ends on one. That is
+    **13 of the 28 range-and-weekday combinations**, not one range: the band does not render and
+    the statement leaves the page while the headcounts stay. Drawn where no group is drawn —
+    gated on `cohorts.length`, which is the fact that decides it, and never on the range, which
+    is not — and read from `consent.enforcedAt` rather than written here. Four words rather than
+    `consent.detail`'s four sentences: the pane does not restate a paragraph it has a shorter
+    true form of, and the gate itself stays at ingest.
+16. **The coverage pill survives the split card refusing to draw.** `scope=mobile` and
+    `scope=coaches` are two of the three values the bar offers and both send one app, so
+    `appColumn` never runs and the card says *No split to draw* instead. The headline tiles carry
+    no coverage figure, so before this the figure was printed **zero** times on those two
+    selections — while the versions and feature cards both drop the route's sentence about it on
+    the ground that it is already on screen, and the feature card still prints *Only seen on app
+    versions that report feature use*, telling the operator the shares are undercounted without
+    the magnitude. `coveragePill` now draws in the one-app state block as well as in a column,
+    which is one printing on every answer that carries a figure. Round 8 finding.
+
+Two invariants on this pane are held by its own `node:test` file and by measurement in review,
+not by a repo guard: no browser guard renders `ops/analytics.html`, because
+`scripts/check-ops-narrow-overflow.mjs` renders the Problems pane and
+`scripts/check-ops-theme-redraw.mjs` renders the shell demo. Tracked as
+[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462).
+
+### Where this pane departs from the shared page furniture
+
+`assets/pane-analytics-v2.css` carries this pane's own shapes. One rule in it resets a shared
+one rather than adding to it: `.u-vers th[scope="row"]` drops the whole `.tbl th` treatment,
+because a row heading here carries a value rather than a column name and `aria.css`'s 9.5px
+uppercase letter-spaced `--ink-3` turns `Coaches Web version not reported` into shouted small
+print. It also sets `overflow-wrap: anywhere`, which is about `app_version` being a 32 character
+free-text column: `Mobile 1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f` holds one break opportunity, and the
+version token alone otherwise sets the column's minimum width and takes the page sideways.
 
 ### Known contrast debt, inherited
 
@@ -1448,8 +1697,10 @@ cross-origin API call would be.
 
 `scripts/check-ops-narrow-overflow.mjs` is one such stub, written for a narrow-viewport
 regression and reusable as a starting point. It serves this repository, answers the auth calls
-and the two Problems reads, lays the pane out in headless Chrome at 375px in both themes, and
-fails if `documentElement.scrollWidth` exceeds the viewport. Run it with
+and the two Problems reads, lays the pane out in headless Chrome at **375px and 360px** in both
+themes, and fails if `documentElement.scrollWidth` exceeds the viewport. Two widths because an
+overflow that reproduced on CI's fonts at 375px reproduced on macOS only at 360px, and a guard
+a reviewer cannot make fail locally is a guard that gets argued with instead of read. Run it with
 `node scripts/check-ops-narrow-overflow.mjs`; it also runs in CI on any change under `ops/`.
 
 `shell-v2.html` needs none of that. It calls no API, so `python3 -m http.server 8000` and
@@ -1470,8 +1721,11 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
 | `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that a selection the record cannot act on is refused rather than answered, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
 | `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front is older than the breach reads not clearing and one whose front arrived after it reads moving, that both can be on screen at once and stay different, that a missing unit, a missing or negative observation, a missing breach start or a span of zero produces cannot tell rather than the alarming one, that a problem whose `conditionClearedAt` is set reads stopped in the past tense rather than as a live breach, is excluded from the longest-wait tile and sorts below everything still going, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that staging is refused before the read rather than after it, that an empty page says whether anything was watching, that no `button` or `input` is drawn without a route behind it, and that the read carries its querystring as well as its path. |
+| `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
+| `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
-| `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
+| `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
+| `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px **and 360px** in both themes: that nothing is past the right edge, and that the longest sentence the pane can put in a rule row was actually laid out — the check would otherwise pass on a page that never drew the row it exists for. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
 
 Charts and icons are swept for paint **separately**, with their own counts and their own
@@ -1485,9 +1739,326 @@ coverage: deleting `stroke` from `icon()` left sixty icons a blank box with the 
 What the icon sweep does **not** answer is whether an ink that resolves to a real colour can be
 seen against what is painted behind it. That needs the effective background — layered gradients
 and `color-mix` alpha here, not any one ancestor's `background-color` — and it belongs to a
-contrast oracle rather than to a paint-presence check. It reads one geometry property,
-`stroke-width` on the stroke channel, because that is the channel icons paint through; an icon
-hidden by `opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+contrast oracle rather than to a paint-presence check; `check-ops-contrast.mjs` is that oracle,
+and it measures text, not icons. The icon sweep reads one geometry property, `stroke-width` on
+the stroke channel, because that is the channel icons paint through; an icon hidden by
+`opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+
+### Measuring contrast where the colour lands
+
+Pinning token values catches a palette that was derived instead of ported, and a token that
+quietly changed value. It cannot catch a **usage-site swap**: a rule that asks for the *wrong*
+token, where both tokens exist and both hold the value the design says. Swap `.pill.acc`'s
+`color: var(--cyan-ink)` for `color: var(--cyan)` and every token still resolves, every pinned
+value still matches, both suites stay green, and the pill measures 3.03:1 in light.
+
+So `check-ops-contrast.mjs` measures pixels instead of parsing CSS. Backdrops on this page are
+layered gradients under `color-mix` surfaces, and no ancestor's `background-color` is the colour
+a reader sees, so the check hides every glyph with a constructable stylesheet — `<style>` is
+blocked by the page's `style-src 'self'`, CSSOM is not — screenshots the full page, and samples
+the **topmost paint at each run of text** with the glyphs lifted. Runs, not element boxes: a row
+that contains a chip is 12% chip, and the row's own words sit on none of it. That paint is the
+surface *behind* the glyphs only while nothing paints *above* them — lifting the text cannot tell
+the two apart, and the error runs the flattering way, so over-paint is in NOT COVERED below.
+
+Four things decide the answer, and each is chosen for the **role** the colour plays — an ink,
+not a fill. Three of the four end in a refusal rather than a number, because a refusal fails
+the run and a wrong number does not:
+
+- **The ink decides against its worst surface**, with no minimum share. The hatch behind
+  `.budget .fore` is 22% amber every 6px, so a letter crossing a stripe is read at the stripe's
+  4.49:1 and not at the 6.01:1 of the gap. Put a 5% floor on surfaces and a real 1.63:1 site
+  sinks below it unseen. Judge the widest surface instead and the site the page carries today
+  stops failing altogether — what catches *that* is the freeze list below, which requires every
+  frozen site to still reproduce and reports 0 matches where it needs 1. On a page with nothing
+  frozen, judging the widest surface would be silent; the freeze entry is load-bearing here.
+- **An ink it cannot resolve is refused, never assumed.** Assuming opaque is the flattering
+  direction for an ink: a faded ink read as solid clears AA. `color(srgb …)` — how Chromium
+  serialises `color-mix()` — is read as the 0..1 floats CSS Color 4 says it is, because the
+  parser this one was ported from understood only `rgb()` and silently dropped 40 sites with 10
+  real failures among them (monorepo #10255). Anything it cannot read fails the run.
+- **The fade does not have to be on the text.** `opacity` does not inherit, so a faded ancestor
+  leaves the text element reading `opacity: 1` while its glyphs composite at the ancestor's
+  alpha. The ink's alpha is the product of every `opacity` in the chain, plus `fill-opacity` on
+  SVG. That product is the true glyph alpha only while nothing **inside** a fade paints a
+  surface under the text — group opacity composites a subtree as a unit, so the glyphs blend
+  with that surface first and the pair is faded together. Where something does, the site is
+  **refused by name** rather than guessed at; the painter does not have to be the faded element
+  and does not have to be faded itself.
+- **The ink is `color` — or `-webkit-text-fill-color`, which beats it for the glyph interior —
+  times that alpha. Four named properties that defeat that reading are refused.** `filter`,
+  `mix-blend-mode`, `-webkit-text-stroke` and, on SVG text, `stroke` each decide the pixel a
+  glyph paints while the computed colour still reads exactly as the stylesheet asked for, which
+  is the flattering direction for an ink: `filter: opacity(.06)` and `opacity: .06` paint
+  identically and only the second is in the model; `mix-blend-mode: screen` erases black text
+  that still computes to `rgb(0, 0, 0)`; SVG paints `fill` then `stroke`, so a 2px stroke in
+  the surface colour erases a 10px label whose `fill` is unchanged. Set any of the four and the
+  site is **refused by name** and the run fails. Read on the element and its ancestors — and,
+  for a `::placeholder` site, on the pseudo-element too, together with its own `opacity`, which
+  is the one place an `opacity` sits outside the chain above.
+
+  That list is **what this tool will not stand behind, not what CSS can do to a glyph, and it
+  does not close.** `mask-image` and `clip-path` are two more ways to spell the same 6% fade,
+  both measured passing at the same anchor where `opacity` and `filter` are both caught; they
+  are in NOT COVERED below rather than in the list, because enumerating CSS is the losing half
+  of this trade. `backdrop-filter` is a deliberate omission of a different kind — it alters the
+  backdrop, which the screenshot samples correctly — and that reasoning is specific to
+  `backdrop-filter`, not a general property of the screenshot: `text-shadow` is painted on the
+  real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four today (its
+  one `filter` is a `:hover` the sweep never enters), so the refusals cost no coverage.
+  `::first-line` and `::first-letter` are refused on the same terms — see the pseudo-element
+  paragraph below — and likewise match nothing on the shell today.
+
+The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
+--self-test` runs seven parts against synthetic fixtures — the formula against published WebAIM
+values, the decode/plate/sample pipeline against declared swatch colours, plate integrity pixel
+by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
+read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), and the three boundary
+censuses counted on a page that carries six spellings of a nested browsing context, an open
+author shadow root, a closed one, and seven user-agent roots carrying text of which exactly one
+paints words no source reaches — that one named in full, so a census that catches the wrong host
+fails too. If any part fails, nothing is measured
+and the run exits non-zero.
+
+**Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
+geometry against its card — is outside this check; 1.4.11 is a different requirement and this
+tool measures text only. Text over a picture is likewise outside it: the plate hides `img`,
+`canvas` and text-free `<svg>` outright, so a word sitting on an icon or an image would be
+sampled against the surface *behind* it rather than against the picture, and `video` is not
+hidden at all. The shell has no `img`, `canvas` or `video`, and its text-free SVGs paint nothing
+under any text band (measured in round 4 of this PR's independent review: a plate that keeps them
+visible differs from the shipped plate by **0 pixels** across the four text bands their boxes
+contain), so this bites nowhere today. A skip link parked off-canvas is skipped, so its focused appearance is
+unmeasured. Only `shell-v2.html` is walked, at one viewport, in the four states `applyState`
+exposes.
+
+**Text painted by `::before`, `::after` or `::marker` is not measured at all.** A
+pseudo-element has no text node to range over, so there is nothing to sample the surface behind.
+Rather than measure the originating element's box and call that an answer, the run **fails** if
+any of the three paints text — for `::before`/`::after` a quoted string, `counter()`,
+`counters()`, `attr()` or a quote keyword; for `::marker`, `display: list-item` with a
+`list-style-type` other than `none`, because a marker's `content` computes to `normal` whatever
+the page asks for and the words come from the type. `content: ''`, the decorative form this page
+uses everywhere, is not text and is not flagged. What is claimed is that **these three cannot
+pass unmeasured** — nothing more.
+
+**Three other pseudo-elements are handled by two other mechanisms, and the list is still open.**
+`::placeholder` is collected and **read** from its own computed style, because it carries its own
+colour — and a `::placeholder` whose own style carries `opacity`, `filter`, `mix-blend-mode` or
+`-webkit-text-stroke` is **refused by name**, because all four apply to the pseudo-element while
+leaving the originating element reporting the defaults, so neither the alpha chain nor the
+element-level refusal can see them. (`PLATE_CSS` also lifts it explicitly. That rule is **proven
+on the self-test fixture only**: deleting it leaves the real page's plate band byte-identical,
+not because the shell sets no placeholder colour — it sets one at `.field input::placeholder` —
+but because the `*` rule's inherited transparent `-webkit-text-fill-color` beats that colour and
+already lifts those glyphs. A page spelling its placeholder ink as `-webkit-text-fill-color` on
+the pseudo-element would **not** be lifted by that rule; that case is not covered. `PLATE_HOLDS`
+cannot speak for it either, because a placeholder has no text node to iterate.) `::first-line` and `::first-letter` repaint the element's **own** text — no new text node,
+no new box, no change to the site count, and the plate lifts them correctly — so nothing in the
+census or the plate check can see them; they are **refused by name** instead, detected by
+comparing the pseudo-element's resolved ink against the element's own on the element and on every
+ancestor, since first-line styles propagate into inline descendants. (`-webkit-text-fill-color`
+does not apply through either one in Chromium, measured rather than assumed, so `color` is the
+whole channel.) That is six pseudo-elements by three mechanisms — and **`::selection`,
+`::target-text` and the highlight pseudos repaint text too and are neither censused, read nor
+refused.** Six handled is not "all of them"; round 5 of this PR's review found `::first-line` by
+reading past exactly this kind of sentence.
+
+**Text painted through `filter`, `mix-blend-mode`, `-webkit-text-stroke` or an SVG `stroke` is
+not measured** — it is refused, which fails the run, so it can neither pass unmeasured nor be
+reported as a number the tool cannot stand behind. The same goes for a surface painted inside a
+fade. These are refusals, not coverage.
+
+**`text-shadow` is deleted on the plate, so the surface immediately around a glyph is not the
+surface measured.** A shadow paints from the glyph outline even when the text itself is
+transparent, so leaving it in would put glyph geometry into the very sample the plate exists to
+keep clean — clearing it is right for the plate and wrong for the reader, who sees the halo. A
+five-deep `text-shadow` on `.tbl th` changes 259 of 4608 pixels in the sampled band on the real
+page and **0** on the plate, and the run stays green. No claim is made about which direction that
+error runs: WCAG 2.x does not model a halo and this tool does not invent one.
+
+**Paint that lands ON TOP of the glyphs is sampled as though it were behind them, and the error
+runs in the flattering direction.** The plate is the whole page screenshotted with the glyphs
+made transparent; lifting the text cannot distinguish paint under it from paint over it, so a
+positioned sibling, child or pseudo-element covering a text run is read as that run's backdrop.
+`unmodelled()` walks the element and its ancestors, and an over-painting box is neither, so there
+is no property to refuse by name. A `::after` with `position: absolute; inset: -2px;
+background: rgba(255,255,255,.94)` over `span.card-note` exits **0** with the site count
+unmoved, and — forcing the AA threshold to 99 so every judged site prints its ratio — the number
+this tool reports goes **UP**, from `5.85:1 … #55637A on #F8FBFD` to `6.08:1 … #55637A on
+#FFFFFF`: it has sampled the overlay and called it the backdrop. The round-6 reviewer's
+independent pixel probe puts the best contrast available anywhere in that band, on the real
+page, at **1.08:1**. The same pixels spelled `opacity: .06` on the element are caught at 1.08:1.
+A second shape with no pseudo-element and no `content` — an absolutely positioned child `i` over
+`.legend span` — behaves identically: exit 0, with the reviewer measuring the real page at
+6.95:1 to 1.09:1 while the tool moves 6.94:1 to 6.95:1.
+Closing it would mean a geometric overlap analysis over positioned boxes rather than a named
+refusal, so it is named here instead. The shell does not do this today: neutralising every
+shipped positioned overlay that paints in the content layer changes **0 of 113,083** sampled band
+pixels in dark/degraded and **0 of 114,670** in light/live.
+
+**A paint-affecting property outside those four is neither modelled nor refused**, and text
+under one is measured as though it were painted in full. `mask-image` and `clip-path` are the
+demonstrated cases: a 6% `mask-image` on `.legend span` and a `clip-path: inset(100%)` that
+paints no glyph at all both measure clean, at the same anchors where `opacity: .06` and
+`filter: opacity(.06)` are caught. This is the honest shape of a refusal list — it holds what
+has been named and nothing more — and it is why the pixel-level checks below exist alongside
+it. A fifth spelling found later is a new entry, not a surprise.
+
+**The backdrop-alpha refusal is written and unexercised.** Chromium returns this page's
+screenshot as PNG colour type 2, which has no alpha channel, so the "a backdrop I cannot read
+as one opaque colour is refused" half of the per-role rule is structurally unreachable on this
+decode path and no mutation drives it. It is a fail-closed guard against that path changing,
+claimed as nothing.
+
+**Text on an element with no box of its own is refused, and only `display: contents` is
+named.** The collector drops anything whose box is smaller than a glyph, which is how this page
+spells "not shown" — `.sr` clips its text to 1×1 and paints nothing. `display: contents` gives
+the same zero rect and means the opposite: no box, while the text paints in full. That case is
+**refused by name**, which fails the run. Other ways to have no box while text paints — a
+zero-sized block with `overflow: visible`, for one — are **still dropped in silence**, and the
+gate cannot tell them apart without letting `.sr` into the sweep at its full text width. Naming
+one member of a class is not covering the class.
+
+**The WCAG 1.4.3 inactive-component exemption is bounded to form controls, and it no longer
+outranks a refusal.** Round 7 of this PR's independent review broke both halves of this in one
+payload: `closest(':disabled')` reaches through `<fieldset disabled>`, which is simultaneously an
+element HTML lets be disabled and a container, so one attribute on `ops/shell-v2.html` took **56
+status badges** out of the sweep — including the issue's own headline `.pill.acc` defect at
+3.03:1 — and the run reported `1576 … 56 exempt as inactive controls` and exited 0. The same
+wrapper also turned 56 *refusals* into 56 exemptions, because the exemption was tested first.
+Both are closed: the nearest `:disabled` ancestor-or-self must now also be a `button`, `input`,
+`select`, `textarea`, `option` or `optgroup` — `fieldset` and `form` are deliberately not on that
+list — and the refusal check runs **before** the exemption, so "refusals fail the run" now has no
+exception. The exempt count is printed on every run and is `0` today, and the shell carries no
+`:disabled` element and no `<fieldset>` at all.
+
+**Text over a picture is not covered.** The plate hides `img`, `canvas` and text-free `<svg>`
+outright — the last is every `Aria.icon()` on the page — so text over one would be measured
+against whatever is underneath rather than against the picture, and `video` is not hidden at
+all. `shell-v2.html` carries no `img`, `canvas` or `video` element, so nothing here exercises
+that path for those three and no mutation proves it either way — read it as not covered, not as
+handled.
+
+**WCAG's large-text allowance is not implemented: every text site needs 4.5:1.** The allowance
+drops the requirement to 3.0:1 at 24px, or at 18.66px bold, and both numbers can only come from
+`getComputedStyle().fontSize` — the size the stylesheet *asked for*, not the size the glyphs land
+at. Round 7 of this PR's review bought the weaker threshold with `font-size: 24px;
+transform: scale(.48)` on `.pill.acc`, which renders glyphs **narrower** than the untouched
+11.5px pill and passed the issue's own 3.03:1 headline defect at exit 0. That was answered by
+refusing `transform` and `zoom` by name, and round 8 reproduced the identical output twice more
+without touching either: `scale: .48` is an independent transform property Chromium keeps out of
+computed `transform`, and `font-size-adjust: .2` is not a transform at all. Refusing by name cost
+one round per spelling and closed nothing, because the spelling was never the cause — with the
+allowance in place, plain `font-size: 24px` and no scaling of any kind was already enough to pass
+the 3.03:1 defect.
+
+So the allowance is **deleted** rather than defended, and nothing in the tool reads the rendered
+size. The cost is real and runs the safe way for an ink: text WCAG AA would genuinely permit at
+3.0:1 fails this check. It costs **0** sites today — the sweep still passes at 1632 with 4.5:1
+required everywhere, and the lowest ratio measured on any unfrozen site is 5.20:1 — and a site
+that ever earns the allowance goes in `KNOWN_BELOW_AA` with an issue, where it is reconciled in
+both directions instead of granted silently. Rotation and skew are **not** refused and never
+were: `rotate: 20deg` passes, and what a rotated site gets is a sample taken from its
+axis-aligned bounding box, which is wider than the glyphs. Under the worst-surface rule a wider
+box can only add surfaces and so can only lower the ratio, which is the conservative direction.
+
+**Text inside a shadow root is refused, because nothing here enters one.** `COLLECT`,
+`GENERATED_TEXT` and `PLATE_HOLDS` are all `document.querySelectorAll('*')` walks, and none of
+them crosses a shadow boundary. Round 8 of this PR's review put a declarative shadow root on the
+pill row with no JavaScript at all: eight sites left the sweep with no site row, no refusal and
+no census entry — the headline 3.03:1 defect among them — and the run still reported every
+rendered text site meeting AA, eight short. Author shadow roots, open **and** closed, now fail
+the run. The census is taken over CDP with `DOM.getDocument({ pierce: true })` rather than in the
+page, because `el.shadowRoot` is `null` for a closed root: measured here, a closed declarative
+root is invisible to the in-page read and reports `shadowRootType: "closed"` to CDP, so an
+in-page census would have covered half the class while reading as though it covered all of it.
+It refuses rather than measures — piercing the sweep into shadow trees means ranges, plate rules
+and the `*` selector all crossing the boundary — and it costs **0** sites: the shell carries no
+author shadow root in any of the eight passes. That last fact is also why the census is asserted
+in **self-test part G** rather than only on the shell: on a page with no shadow root, a census
+that always returns nothing looks exactly like a working one. Part G's fixture carries an open
+author root, a closed one and a user-agent one, and requires exactly the first two.
+
+**A user-agent shadow root is refused when it paints words `COLLECT` has no source for, and
+measured when it does not.** `COLLECT` reads a control's words from its own text nodes, from
+`.selectedOptions`, from `.value` and from `.placeholder`. All four of the shipped page's
+user-agent roots — one `<select>`, its two `<option>`s and one `<input>` — fall inside those
+four sources and are measured, proven by mutation: colouring `#sampleRange` `#E9EDF2` fails the
+run at `1.08:1` in four passes, colouring the placeholder `#EDEFF2` fails it at `1.11:1`, and the
+failing select run samples a clean `#F2F6FA` backdrop with no glyph pixels in it, which is what
+says the plate lifts a user-agent-painted value too. Round 8 of this PR's review wrote that the
+`<select>`'s value was out of reach and filed it as an issue; round 9 disproved that from the
+code and from those mutations, so
+[Stadiora/Aria#10422](https://github.com/Stadiora/Aria/issues/10422) is closed as not a defect.
+
+Round 10 then showed that round 9 had stopped one step short. A user-agent root that paints words
+in **none** of those four sources used to leave the sweep with no site, no refusal and no census
+entry. Four of them are reachable from this shell with no change to the tool — `<input
+type="file">` ("Choose File / No file chosen"), `<input type="date">` with no value
+("mm/dd/yyyy"), `<input type="submit">` with no value ("Submit"), and `<img alt>` on a broken
+`src` — and each exited **0** while painting real text at about `1.13:1` in light. The control is
+what makes it a defect rather than a limit: the same element at the same anchor with the same
+ink, `<input type="date" value="2026-09-20">`, routes its identical glyphs through `.value`.
+
+Those are now refused by name. The test is behavioural, not a tag list: `DOM.getDocument` with
+`pierce: true` returns the user-agent root's own text nodes, so "this root paints words" is
+answered by the browser. A host is refused unless `COLLECT`'s own rule, run on that host,
+produces **the same string the root paints** — a match is the only thing that shows the glyphs in
+the root are the glyphs the sweep judged — and unless the host is visible with a box of at least
+2×2. That is why the shipped page refuses **0**: `.selectedOptions` gives the `<select>` exactly
+the `Last 7 days` its root paints, `.placeholder` gives the search input exactly its own
+placeholder, and each `<option>` has its own text node. Round 11 replaced an *existence* test
+here, which `placeholder=" "` and `placeholder="never painted"` both walked straight through.
+A working `<img>`, `<input type="range">`, `<input type="color">`, `<progress>` and `<meter>` all
+report an empty root and are never censused. Two consequences worth stating because they are
+costs, not wins: `<video controls>` and `<audio controls>` are refused **whatever they contain**,
+since their root paints a running time and their fallback content — which Chromium never renders
+— does not match it; and `<input type="date" value="…">` is refused too, because its root paints
+`09/20/2026` where `.value` reads `2026-09-20`. Part G's fixture carries seven user-agent roots
+with text — a sourced `<select>`, its `<option>`, a sourced `::placeholder`, the file input's own
+inner UA button sourced through `.value`, a `display: none` reset and a zero-box submit — plus
+one visible `<input type="file">`, and requires **exactly that one, named in full**, to be
+refused: four exonerations of a source, two of a gate, one catch. A census that refused
+everything, nothing, or the wrong host fails there.
+
+What a user-agent root still keeps out of reach is the `<option>` **list** of an open `<select>`,
+which the browser paints in a platform popup outside the page — there are no such glyphs in the
+screenshot, and nothing in the page's own styling decides its contrast.
+
+**Text inside a nested browsing context is refused, for the same reason and a worse one.** A
+frame is a separate document: the shell's `*` walks do not reach it, the plate stylesheet is not
+installed in it, and no `Range` can be taken over its text — while it paints into the same
+screenshot at full size. Round 9 of this PR's review replaced the pill span with an
+`<iframe srcdoc>` rendering the same pill from the same stylesheet, with the headline token swap
+applied: the sweep went from `1632` sites to `1624`, **exited 0**, and still printed that every
+text site it reaches meets AA, while the pill inside the frame painted at `2.89:1` — worse than
+the `3.03:1` this guard exists for. CSP does not prevent it: `shell-v2.html` is
+`default-src 'none'` with no `frame-src`, and `about:srcdoc` is exempt from CSP by spec. The
+census is `Page.getFrameTree` over CDP, not a tag-name list, so a different spelling does not
+walk through it — and that is asserted in **self-test part G**, whose fixture carries
+`<iframe srcdoc>`, `<iframe src>`, `<object type=text/html>`, `<embed type=text/html>`,
+`<object type=image/svg+xml>` and `<embed type=image/svg+xml>` and requires all six to be
+reported. An in-page census would miss two of those outright: `embed.contentDocument` reads
+`null` to script in the page even for HTML the `<embed>` is hosting. It refuses rather than
+measures, and it costs **0** sites: the shell carries no nested browsing context in any of the
+eight passes.
+
+On the shipped page, CSP narrows which spellings can even create a context: `default-src 'none'`
+with no `frame-src` and no `object-src` blocks `<object>` and `<embed>` entirely — they create no
+context and paint nothing — and blocks `<iframe src>`, which still appears in the frame tree as a
+`chrome-error://` child and is still refused. `about:srcdoc` is exempt from CSP by spec, which is
+why it is the spelling that reached the sweep.
+
+And the check answers "is the ink readable against the paint at its own run", which is "can this
+be read" only while nothing paints over the glyphs — not "is this the designed colour". The token
+pins in `check-ops-shell-v2.mjs` answer the second, and the three are complementary.
+
+Sites that are below AA on the page today are frozen one at a time in `KNOWN_BELOW_AA`, keyed
+per site — theme, state, selector and the words — with the issue that tracks each. The freeze is
+asserted in both directions: an entry that stops reproducing, matches more than one site, or
+moves by more than 0.15 fails the run, so an exemption cannot outlive what it exempts. There is
+one entry today, [Stadiora/Aria#10366](https://github.com/Stadiora/Aria/issues/10366).
 
 The pre-paint half of the shell check is the part worth keeping. A theme default written in two
 places that disagree produces a page that paints one theme and switches to the other a moment
