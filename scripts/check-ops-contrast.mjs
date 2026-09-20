@@ -348,7 +348,11 @@ const hex = ({ r, g, b }) =>
 
 /* ----------------------------------------------------------- measurement */
 
-/* WCAG's large-text exemption: 18.66px bold, or 24px at any weight. */
+/* WCAG's large-text exemption: 18.66px bold, or 24px at any weight.
+
+   Both numbers are read from the DECLARED font-size, which is the rendered
+   size only while nothing scales the element. transform and zoom are refused
+   by name for exactly that reason -- see unmodelled(). */
 function threshold(fontSize, fontWeight) {
   const big = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
   return big ? 3.0 : 4.5;
@@ -470,14 +474,21 @@ const COLLECT = `(() => {
        rather than dropped, so nothing escapes the sweep by being marked
        disabled without anyone noticing.
 
-       :disabled and nothing else. It matches only the elements HTML lets be
-       disabled, so the exemption cannot be reached from a container: the
-       attribute selector [disabled] matches ANY element carrying the word,
-       including a <div> the browser disables nothing about, and one word of
-       markup would then take a whole subtree out of the sweep. aria-disabled
-       is likewise absent: it describes a component that is still operable and
-       still meant to be read. */
-    const inactive = !!el.closest(':disabled');
+       :disabled alone is NOT enough, and round 7 of this PR's review proved
+       it: <fieldset disabled> is both an element HTML lets be disabled and a
+       container, so closest(':disabled') reaches every descendant and one
+       attribute took 56 status badges out of the sweep, the issue's own
+       headline 3.03:1 defect among them. Those badges are neither inactive
+       nor controls. So the nearest :disabled ancestor-or-self must ALSO be a
+       control that paints its own text. fieldset and form are deliberately
+       absent from that list; they are containers, and WCAG 1.4.3 exempts a
+       component, not everything inside a box. aria-disabled is absent too: it
+       describes a component that is still operable and still meant to be
+       read. */
+    const CONTROL = ['button', 'input', 'select', 'textarea', 'option', 'optgroup'];
+    const disabledHost = el.closest(':disabled');
+    const inactive = !!disabledHost &&
+      CONTROL.includes(disabledHost.tagName.toLowerCase());
 
     /* String comparisons rather than a regex: this probe is a template literal,
        so a backslash here is read twice and a regex written the obvious way
@@ -492,9 +503,14 @@ const COLLECT = `(() => {
        REFUSED by name rather than approximated: under any of them the ink
        still computes to the designed colour while the page paints something
        else, and reporting the designed colour is the flattering direction for
-       an ink. Refusals fail the run — except inside a :disabled control, where
-       WCAG 1.4.3's exemption is applied first and the site is counted as
-       exempt rather than failed.
+       an ink. Refusals fail the run, with no exception: WCAG 1.4.3's
+       inactive-component exemption is now applied AFTER the refusal check, so
+       a disabled control whose text is painted by something unmodelled is
+       reported, not waved through.
+
+       Two of them — transform and zoom — are here for a different reason
+       than the rest: they do not repaint the glyph, they resize it, and the
+       WCAG threshold this tool picks comes from the DECLARED font-size.
 
        Not a list of everything CSS can do to a glyph — a list of what this
        tool will not stand behind, and it does not close. mask-image and
@@ -514,6 +530,33 @@ const COLLECT = `(() => {
       const sw = parseFloat(st.webkitTextStrokeWidth);
       if (Number.isFinite(sw) && sw > 0) {
         return '-webkit-text-stroke ' + st.webkitTextStrokeWidth + ' on ' + nameOf(n);
+      }
+      /* transform and zoom decide the size the glyphs RENDER at, and this
+         tool picks its WCAG threshold from the DECLARED font-size. Round 7 of
+         this PR's review showed the gap is exploitable in the flattering
+         direction: font-size: 24px with transform: scale(.48) renders glyphs
+         NARROWER than the untouched 11.5px pill and buys the 3.0:1 large-text
+         allowance, which passed the issue's own 3.03:1 headline defect at
+         exit 0 with nothing dropped, exempted or refused.
+
+         Refused by name rather than resolved. Multiplying an effective scale
+         into fontSize is a few lines and is the analysis this tool has
+         declined five times already: a scale factor is not the only way a
+         transform moves glyphs, the threshold is not the only thing rendered
+         size feeds, and guard code written mid-review is where the defects
+         live. Refusing is fail-closed and, on this page, free — nothing under
+         any text site carries either property in any of the eight passes.
+         This also covers the rotate and skew case the sampling geometry note
+         could only describe. */
+      if (st.transform && st.transform !== 'none') {
+        return 'transform "' + st.transform + '" on ' + nameOf(n) +
+          ' decides the rendered glyph size, and the AA threshold is picked ' +
+          'from the declared ' + st.fontSize;
+      }
+      if (st.zoom && st.zoom !== '1' && parseFloat(st.zoom) !== 1) {
+        return 'zoom ' + st.zoom + ' on ' + nameOf(n) +
+          ' decides the rendered glyph size, and the AA threshold is picked ' +
+          'from the declared ' + st.fontSize;
       }
       /* SVG paint is fill THEN stroke, and stroke is the SVG spelling of the
          property above. This one completes the model the tool already
@@ -1359,7 +1402,11 @@ try {
         const targets = await evaluate(COLLECT);
         const results = await measureSites(targets, `${SHELL} (${theme}/${state})`);
         for (const r of results) {
-          if (r.inactive) { exempt++; continue; }
+          /* The refusal is checked FIRST. Until round 7 the exemption ran
+             ahead of it, so marking a subtree inactive turned 56 refusals
+             into 56 exemptions and the run went green on paint the tool had
+             already declined to model. A site this tool cannot speak for is
+             reported whatever its control state. */
           if (r.unjudgeable) {
             const key = `${r.unjudgeable}|${r.cls || r.tag}|${r.ink}`;
             const prev = unjudged.get(key);
@@ -1367,6 +1414,7 @@ try {
             else unjudged.set(key, { ...r, theme, state, n: 1 });
             continue;
           }
+          if (r.inactive) { exempt++; continue; }
           checked++;
           const key = `${r.cls || r.tag}|${theme}`;
           const prev = worst.get(key);
@@ -1465,7 +1513,7 @@ try {
       console.log('    closest five to their threshold:');
       for (const r of floor) {
         console.log(`      ${r.ratio.toFixed(2)}:1 (needs ${r.need.toFixed(1)})  ${r.theme.padEnd(5)}` +
-          ` ${r.fg} on ${r.bg}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/)[0] : ''}  "${r.text}"` +
+          ` ${r.fg} on ${r.bg}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}  "${r.text}"` +
           `${frozen.has(siteKey(r)) ? '   [frozen, below AA]' : ''}`);
       }
     }

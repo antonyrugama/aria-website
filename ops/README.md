@@ -1149,16 +1149,38 @@ zero-sized block with `overflow: visible`, for one — are **still dropped in si
 gate cannot tell them apart without letting `.sr` into the sweep at its full text width. Naming
 one member of a class is not covering the class.
 
-**A refusal inside a `:disabled` control is counted as exempt, not failed.** WCAG 1.4.3's
-inactive-component exemption is applied before the refusal check, so "refusals fail the run"
-has exactly that one exception. The exempt count is printed on every run and is `0` today.
+**The WCAG 1.4.3 inactive-component exemption is bounded to form controls, and it no longer
+outranks a refusal.** Round 7 of this PR's independent review broke both halves of this in one
+payload: `closest(':disabled')` reaches through `<fieldset disabled>`, which is simultaneously an
+element HTML lets be disabled and a container, so one attribute on `ops/shell-v2.html` took **56
+status badges** out of the sweep — including the issue's own headline `.pill.acc` defect at
+3.03:1 — and the run reported `1576 … 56 exempt as inactive controls` and exited 0. The same
+wrapper also turned 56 *refusals* into 56 exemptions, because the exemption was tested first.
+Both are closed: the nearest `:disabled` ancestor-or-self must now also be a `button`, `input`,
+`select`, `textarea`, `option` or `optgroup` — `fieldset` and `form` are deliberately not on that
+list — and the refusal check runs **before** the exemption, so "refusals fail the run" now has no
+exception. The exempt count is printed on every run and is `0` today, and the shell carries no
+`:disabled` element and no `<fieldset>` at all.
 
 **Text over a picture is not covered.** The plate hides `img` and `canvas` outright, so text
 over one would be measured against whatever is underneath rather than against the picture, and
 `video` is not hidden at all. `shell-v2.html` contains none of the three, so nothing here
 exercises that path and no mutation proves it either way — read it as not covered, not as
-handled. Text that a transform rotates or skews is sampled from its axis-aligned bounding box,
-which is wider than the glyphs.
+handled.
+
+**The AA threshold is picked from the DECLARED font-size, so `transform` and `zoom` are refused
+by name.** WCAG's large-text allowance drops the requirement from 4.5:1 to 3.0:1 at 24px, or at
+18.66px bold, and `getComputedStyle` reports the size the stylesheet asked for, not the size the
+glyphs land at. Round 7 of this PR's review turned that into a pass for the defect the whole
+guard exists to catch: `font-size: 24px; transform: scale(.48)` on `.pill.acc`, with the headline
+`--cyan-ink` → `--cyan` swap, renders glyphs **narrower** than the untouched 11.5px pill
+(39.22×13 clean versus 36.52×13.44 under the payload, measured outside the tool) and exits **0**
+at 1632, with the summary printing `3.03:1 (needs 3.0)` as a pass. Refused rather than resolved:
+multiplying an effective scale into the font size is a few lines, but it is analysis added
+mid-review, which is where this workstream's defects live, and refusing is fail-closed. It costs
+nothing here — **0** text sites on the shell carry a `transform` or a `zoom` on themselves or any
+ancestor, in all eight passes. This also covers rotation and skew, which the tool previously only
+noted as a sampling-geometry caveat: their axis-aligned bounding box is wider than the glyphs.
 
 And the check answers "is the ink readable against the paint at its own run", which is "can this
 be read" only while nothing paints over the glyphs — not "is this the designed colour". The token
