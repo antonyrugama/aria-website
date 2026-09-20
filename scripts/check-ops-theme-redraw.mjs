@@ -567,9 +567,17 @@ const censusProbe = (page) => `(() => {
 
 /* The real control, clicked the way an operator clicks it. Nothing here calls
    OpsTheme or Aria directly: the edge under test is the one that runs when the
-   button in the top bar is pressed. */
+   button in the top bar is pressed.
+
+   Two ids because there are two shells, the same split this file already reads
+   twice over for data-pane / data-page and .page-sub / .page-question.
+   ops/assets/aria.js builds the v2 top bar and its button is #themeBtn; the v1
+   ops/assets/shell.js builds its own and calls it #themeToggle, and Cloud
+   costs is the one pane still on that shell. Knowing only the v2 spelling, the
+   sweep found no button there at all, which is what the previous commit went
+   red on. */
 const CLICK_PROBE = `(() => {
-  const btn = document.getElementById('themeBtn');
+  const btn = document.querySelector('#themeBtn, #themeToggle');
   if (!btn) return JSON.stringify({ clicked: false });
   btn.click();
   return JSON.stringify({
