@@ -565,7 +565,16 @@ function cssRules(css, media = null) {
     }
     const body = src.slice(open + 1, end);
     if (prelude.startsWith('@')) {
-      if (/^@(media|supports)\b/.test(prelude)) out.push(...cssRules(body, prelude));
+      /* Every at-rule, by what its body holds rather than by which at-rule it
+         is: one holding rules is walked into, one holding declarations
+         outright is a body of its own. Naming `@media` and `@supports` left
+         `@keyframes` unscanned by everything below -- a colour does not stop
+         being a colour for standing in an animation, and a named at-rule list
+         passes every at-rule it does not name. */
+      if (/\{/.test(body)) out.push(...cssRules(body, prelude));
+      else if (body.trim()) {
+        out.push({ selectors: [prelude], body, media, targets: (re) => re.test(prelude) });
+      }
     } else if (prelude) {
       const selectors = prelude.split(',').map((s) => s.trim()).filter(Boolean);
       out.push({
@@ -1539,6 +1548,43 @@ test('the per-service rows are drawn once, as the table, and not also as a switc
       'the grouping card about categories, and the two sentences differ');
   });
 
+test('the column past the edge is reachable without a pointer, and says what it is',
+  async () => {
+    /* What this box hides on a phone is a column, not a margin: measured in
+       Chrome 152 at 320px it is 315 wide inside 256, with the whole Change
+       column (241.33..314.72 inside the box) past the visible edge. 360px
+       hides 18px, 375px 4px, 414px and up none.
+
+       Chrome >= 127 puts an overflowing scroller into the tab order on its
+       own, and measured here it does -- but focus then lands on a box with no
+       role and no name, and an engine without that behaviour leaves the
+       column to a pointer alone. Named and focusable is what
+       ops/README.md:942-944 states as the rule and what the Analytics,
+       Evaluations, Releases and Settings panes already do. */
+    const dom = await boot();
+    const table = card(dom, /By service/);
+    const box = byClass(table, 'sp-scroll')[0];
+    assert.ok(box, 'the per-service table is not inside a scroll box at all');
+    assert.equal(byClass(box, 'sp-tbl').length, 1,
+      'the box that scrolls is not the one holding the table');
+    assert.equal(box.getAttribute('tabindex'), '0',
+      'the box carrying the Change column cannot be reached from a keyboard');
+    assert.equal(box.getAttribute('role'), 'region',
+      'focus lands on a bare div, which announces nothing about what it holds');
+    assert.equal(box.getAttribute('aria-label'), 'By service',
+      'the region does not say which table it is');
+
+    /* And the name is the answer's own, not a constant in the pane: the card
+       head and the region have to keep saying the same thing when the route
+       renames the view. */
+    const renamed = payload();
+    renamed.views.service.label = 'By Azure service';
+    const second = await boot({ costs: renamed });
+    const box2 = byClass(card(second, /By Azure service/), 'sp-scroll')[0];
+    assert.equal(box2.getAttribute('aria-label'), 'By Azure service',
+      'the region is named from a constant rather than from the answer');
+  });
+
 test('a grouping the answer has no rows for is not offered', async () => {
   const data = payload({ range: 'month', billedThrough: 10 });
   data.views.resourceGroup.rows = [];
@@ -1652,7 +1698,13 @@ const MARKUP_WRITE = /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*wri
    the policy. The clause below pins that exception rather than trusting it:
    every `.style` contact in the module must BE a `setProperty` call. Also
    not covered: an attribute name assembled at runtime, which no source scan
-   can see and which the page's own policy is the enforcement for. */
+   can see and which the page's own policy is the enforcement for. And three
+   further spellings, verified SURVIVED rather than assumed: a namespaced
+   `setAttributeNS(null, 'style', ...)`, a capitalised `Style:` key on `h()`
+   (HTML lowercases attribute names, so it writes a real style attribute), and
+   `document.createRange().createContextualFragment(...)`. This module writes
+   none of the three, and widening an analyzer to reach them adds guard code
+   nothing has reviewed; they are recorded here rather than matched. */
 const STYLE_ATTR_WRITE = /setAttribute\(\s*['"]style['"]|[{,]\s*['"]?style['"]?\s*:/;
 
 test('the pane module writes no markup and no style attribute', () => {
@@ -1701,13 +1753,25 @@ test('the pane module writes no markup and no style attribute', () => {
 
    Scanned as an allowlist over declaration VALUES rather than as a list of
    spellings, because a guard that names the spellings it knows passes every
-   spelling it does not: the previous form of this test matched `#hex` and
-   `rgb(` only, and a CSS named colour, an `oklch()` and a `color-mix()`
-   carrying a raw colour all walked through it. Values rather than the whole
-   file, because a selector may legitimately carry a colour word -- `.sp-tan`
-   names no colour -- and a property name may not be scanned as its own
-   value. */
-const COLOUR_SLOT = /(^--)|color|background|border|outline|fill|stroke|shadow/;
+   spelling it does not: a CSS named colour, an `oklch()` and a `color-mix()`
+   carrying a raw colour all walk through a `#hex`-and-`rgb(`-only match.
+   Values rather than the whole file, because a selector may legitimately
+   carry a colour word -- `.sp-tan` names no colour -- and a property name may
+   not be scanned as its own value.
+
+   Beside it, NOT instead of it, the spelling match this test used to be: see
+   `rawColourSpellings()` below. The value scan replaced it once and lost
+   coverage doing so, which is the shape of defect this file exists to catch
+   in the pane. A union cannot lose what a clause already had.
+
+   NOT COVERED by either clause: a CSS NAMED colour standing in a property
+   whose name carries none of the words `COLOUR_SLOT` gates on --
+   `text-decoration: underline crimson` is the shape. The spelling clause has
+   no property gate but reads only hexes and the `rgb()`/`hsl()` families, and
+   the value scan reads any spelling but only where it is looking. Widening
+   the gate to every property means allowlisting every geometry word in CSS,
+   which is a larger guard than the sheet it guards. */
+const COLOUR_SLOT = /(^--)|color|background|border|outline|fill|stroke|shadow|rule|filter/;
 
 const COLOURLESS_WORDS = new Set([
   'none', 'solid', 'dashed', 'dotted', 'double', 'inset', 'outset', 'hidden',
@@ -1715,23 +1779,55 @@ const COLOURLESS_WORDS = new Set([
   'round', 'square', 'butt', 'miter', 'bevel', 'evenodd', 'nonzero',
   'repeat', 'no-repeat', 'space', 'center', 'cover', 'contain',
   'border-box', 'padding-box', 'content-box', 'collapse', 'separate',
+  /* The filter functions, so `filter` can be gated for the colour one of
+     them takes without every blur in the sheet reading as a colour. */
+  'blur', 'brightness', 'contrast', 'drop-shadow', 'grayscale', 'hue-rotate',
+  'invert', 'opacity', 'saturate', 'sepia',
 ]);
 
 /* Strips the two things allowed to WRAP a value -- a token reference, and a
    `color-mix()` whose own arguments are then scanned -- plus the lengths and
    numbers that share colour shorthands. Whatever is left is examined. A
    `color-mix(in srgb, var(--ink) 22%, transparent)` reduces to nothing and
-   passes; `color-mix(in srgb, white 40%, transparent)` leaves `white`. */
+   passes; `color-mix(in srgb, white 40%, transparent)` leaves `white`.
+
+   A `var()` FALLBACK survives the strip, because a fallback is a value the
+   page can paint -- `var(--nope, crimson)` renders crimson -- and this sheet
+   ships the idiom twice (`stroke: var(--c, var(--cyan))`). Only the token
+   reference itself goes.
+
+   A hex becomes a word before the lengths go, because `#333` is all digits
+   and the length sweep would otherwise leave a bare `#` with nothing to
+   flag. */
 function colourResidue(value) {
   let out = value;
   let before;
   do {
     before = out;
-    out = out.replace(/var\(\s*--[a-z0-9-]+\s*(,[^()]*)?\)/gi, ' ');
+    out = out
+      .replace(/var\(\s*--[a-z0-9-]+\s*\)/gi, ' ')
+      .replace(/var\(\s*--[a-z0-9-]+\s*,/gi, ' ( ');
   } while (out !== before);
   return out
     .replace(/color-mix\(\s*in\s+[a-z-]+\s*,/gi, ' ')
+    .replace(/#[0-9a-f]{3,8}\b/gi, ' hex ')
     .replace(/[\d.]+(px|rem|em|ex|ch|%|s|ms|deg|fr|vh|vw|vmin|vmax|pt)?/gi, ' ');
+}
+
+/* The other clause: the spelling match, over the whole comment-stripped
+   sheet. No property gate, no value parsing, no scope -- which is exactly
+   what makes it worth keeping beside the value scan. It sees a hex wherever
+   it stands: in a property nothing thought to list (`filter: drop-shadow(0 0
+   2px #2b7fff)`), inside a `var()` fallback, inside a `@keyframes` body, and
+   spelled with no letters at all (`#333`), which the value scan's length
+   sweep eats. What it cannot see is a CSS named colour or an `oklch()`, and
+   that is the value scan's half of the union. */
+function rawColourSpellings(css) {
+  const body = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  return [
+    ...(body.match(/#[0-9a-fA-F]{3,8}\b/g) || []),
+    ...(body.match(/\b(?:rgb|rgba|hsl|hsla)\(/g) || []),
+  ];
 }
 
 /* Every colour value a body of declarations states outright, as
@@ -1753,15 +1849,27 @@ function colourValues(body) {
 }
 
 test('the stylesheet introduces no colour value of its own', () => {
-  /* A positive control per spelling, so the allowlist cannot claim a reach
-     it does not have -- and the legitimate forms alongside, because a guard
-     that flags everything is as useless as one that flags nothing. */
+  /* A positive control per spelling, so neither clause can claim a reach it
+     does not have -- and the legitimate forms alongside, because a guard that
+     flags everything is as useless as one that flags nothing.
+
+     An all-numeric hex is in here because it was NOT: the list carried
+     `#2b7fff` and `#FFF`, both of which have letters in them, and the one
+     spelling it did not contain was the one spelling the value scan could not
+     see. A control list only proves what it contains. */
   const CAUGHT = [
-    'background: #2b7fff', 'color: #FFF', 'background: white',
+    'background: #2b7fff', 'color: #FFF', 'background: #333', 'color: #112233',
+    'background: white',
     'stroke: rgb(0, 0, 0)', 'color: rgba(0,0,0,.4)', 'background: hsl(210 90% 60%)',
     'background: oklch(0.72 0.19 250)', 'color: lab(50% 40 59)',
     'background: color-mix(in srgb, white 40%, transparent)',
     '--c: crimson', 'border-top: 1px solid #2b7fff', 'box-shadow: 0 1px 2px rgba(0,0,0,.4)',
+    /* A colour in a property the gate has to name to reach. */
+    'filter: drop-shadow(0 0 2px #2b7fff)', 'filter: drop-shadow(0 0 2px crimson)',
+    'column-rule: 1px solid crimson',
+    /* A colour standing in a token reference's fallback, which paints. */
+    'background: var(--nope, #ff0000)', 'background: var(--nope, crimson)',
+    'stroke: var(--c, #ff0000)',
   ];
   CAUGHT.forEach((decl) => {
     assert.equal(colourValues(decl + ';').length, 1, 'the guard cannot see: ' + decl);
@@ -1771,16 +1879,46 @@ test('the stylesheet introduces no colour value of its own', () => {
     'border-top: 1px solid var(--line)', 'stroke-width: 1', '--c: var(--cyan)',
     'background: color-mix(in srgb, var(--ink) 22%, transparent)',
     'background: transparent', 'color: currentColor', 'border-radius: 20px',
+    'stroke: var(--c, var(--cyan))', 'filter: blur(6px)',
+    'filter: drop-shadow(0 1px 2px var(--line))',
   ];
   ALLOWED.forEach((decl) => {
     assert.deepEqual(colourValues(decl + ';'), [], 'the guard mis-reads: ' + decl);
   });
+
+  /* Scope, as its own control: a declaration is read wherever the sheet puts
+     it, and an at-rule that holds no rules is still a body. */
+  const nested = cssRules(
+    '@media (max-width: 9px) { .a { color: crimson; } }'
+    + '@supports (color: oklch(0 0 0)) { .b { color: crimson; } }'
+    + '@keyframes k { to { background: crimson; } }'
+    + '@font-face { font-family: X; src: url(a.woff2); }'
+  );
+  assert.deepEqual(
+    nested.flatMap((rule) => colourValues(rule.body)),
+    ['color: crimson', 'color: crimson', 'background: crimson'],
+    'a colour does not stop being a colour for standing inside an at-rule'
+  );
+
+  /* The spelling clause, controlled on its own: every hex shape including the
+     all-numeric one, both function families, and a sheet where the only hex
+     is in a comment. */
+  ['#333', '#112233', '#2b7fff', '#FFF', 'rgb(0,0,0)', 'rgba(0,0,0,.4)',
+    'hsl(210 90% 60%)', 'hsla(210 90% 60% / .4)'].forEach((spelling) => {
+    assert.equal(rawColourSpellings('.x { background: ' + spelling + '; }').length, 1,
+      'the spelling clause cannot see: ' + spelling);
+  });
+  assert.deepEqual(
+    rawColourSpellings('/* #333 rgb( */ .x { background: var(--c, var(--cyan)); }'), [],
+    'the spelling clause reads a comment as a declaration'
+  );
 
   const stated = [];
   RULES.forEach((rule) => { stated.push(...colourValues(rule.body)); });
   assert.deepEqual(stated, [],
     'the v2 palette is AA by construction; a colour here is outside that proof and does not '
     + 'follow the theme');
+  assert.deepEqual(rawColourSpellings(PANE_CSS), [], 'same rule, spelled the other way');
 });
 
 test('a card cannot set the page\'s own minimum width', () => {

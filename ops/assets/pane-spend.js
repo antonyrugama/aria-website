@@ -752,8 +752,21 @@
     });
     table.appendChild(body);
 
+    /* The box scrolls sideways on a phone and what it hides is a column, not
+       a margin: measured at 320px it is 314 wide inside 256, with the whole
+       Change column past the visible edge. So it is reachable from a keyboard
+       and it says which table it is -- a scroll region a keyboard cannot get
+       to fails WCAG 2.1.1, and Chrome's own tab-ordering of overflowing
+       scrollers is both engine-specific and nameless. Same treatment as the
+       Analytics, Evaluations, Releases and Settings panes give their wide
+       tables. */
     card.appendChild(h('div', { className: 'card-body' }, [
-      h('div', { className: 'sp-scroll' }, [table]),
+      h('div', {
+        className: 'sp-scroll',
+        tabindex: '0',
+        role: 'region',
+        'aria-label': text(view.label) || 'By service'
+      }, [table]),
       reconciliation(rows, data, VIEW_NOUN.service)
     ]));
     return card;
