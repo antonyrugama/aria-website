@@ -68,8 +68,10 @@
  * each end so the corner arc is never sampled, and every ratio reported is the
  * MINIMUM over each band. The sample counts are asserted, because a band that
  * silently collapses to one pixel is the original defect returning, and the
- * interior and outside worst pixels are asserted to differ, because their
- * being byte-identical is the tell that one band is not where it is named.
+ * interior and outside worst pixels are asserted to be more than rounding
+ * apart, because their coming back near enough to identical is the tell that
+ * one band is not where it is named. On the real page they sit 16 of 255
+ * apart in dark and 18 in light; flatten the chip and they close to 1 and 0.
  *
  * NOT COVERED, stated rather than implied:
  *
@@ -831,11 +833,13 @@ for (const theme of THEMES) {
     assert.ok(mask.samples.interior >= 40 && mask.samples.outside >= 30,
       `the mask's neighbouring bands were read at ${mask.samples.interior} interior and ` +
       `${mask.samples.outside} outside samples, which is too few to have walked the edge`);
-    assert.notEqual(mask.worstInterior.join(), mask.worstOutside.join(),
-      `the worst pixel inside the mask chip and the worst pixel outside it both resolve to ` +
-      `${mask.worstInterior}. Either the chip has lost the surface that distinguishes it ` +
-      'from the card it sits on, or one of the two bands is not where it is named — and ' +
-      'that identity is precisely how a single-pixel sample of a hatched interior came ' +
+    const separation = Math.max(...mask.worstInterior.map((v, i) => Math.abs(v - mask.worstOutside[i])));
+    assert.ok(separation >= 3,
+      `the worst pixel inside the mask chip (${mask.worstInterior}) and the worst pixel ` +
+      `outside it (${mask.worstOutside}) are ${separation} of 255 apart, which is rounding ` +
+      'rather than a difference. Either the chip has lost the surface that distinguishes ' +
+      'it from the card it sits on, or one of the two bands is not where it is named — and ' +
+      'that near-identity is precisely how a single-pixel sample of a hatched interior came ' +
       'back holding the card surface and published it as the interior');
     assert.ok(mask.vsInterior >= AA_GRAPHIC,
       `the dashed edge reads ${mask.vsInterior}:1 against the worst pixel of the mask chip ` +
