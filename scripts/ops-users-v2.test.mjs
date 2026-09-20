@@ -761,9 +761,9 @@ test('an empty subscription card names the tier it was sent and classifies nothi
     detail: detailFixture((d) => { d.billing = { fields: [] }; d.tier = { brand: true }; }),
   });
   const box3 = card(nameless, 'Subscription');
-  assert.match(allText(box3), /The tier it reported has no name\./);
   assert.ok(!allText(box3).includes('undefined'), 'the pane printed undefined to an operator');
   assert.ok(!/The account is on/.test(allText(box3)), 'a nameless tier was given a name');
+  assert.match(allText(box3), /The tier it reported has no name\./);
 });
 
 /* The danger zone. The mock draws four buttons; no route performs one, so the
