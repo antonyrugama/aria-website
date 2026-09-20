@@ -40,10 +40,11 @@
                     nothing else from the event
 
    Every test here has a published mutation — the exact file, the exact
-   original line, and the payload that makes that one test fail. 41 tests, 41
+   original line, and the payload that makes that one test fail. 41 tests, 42
    rows: 40 in PR antonyrugama/aria-website#58, and the 41st ("an empty
-   subscription card reads as a contradiction...") in the follow-up that added
-   it, with a mutation in each direction because it asserts two branches.
+   subscription card names the tier it was sent and classifies nothing") in
+   the follow-up that added it, carrying three rows of its own because the API
+   can send a tier three ways and each is a different way to be wrong.
 
    Seven of the 40 were rewritten by that same follow-up and their #58 rows no
    longer hold: the danger-zone test changed materially, and six others moved
@@ -726,29 +727,40 @@ test('the matches table shows coded references and the mask the API sent, and no
 });
 
 /* The tier came off the Subscription head because it was a third copy of it.
-   That head was the only thing naming the tier when there is no billing record,
-   so the empty state names it — and only when naming it says something, which
-   is when the tier is paid and the missing record is therefore a contradiction.
-   Both branches are asserted: one direction alone passes with the sentence
-   hard-coded, which is the defect it would be hiding. */
-test('an empty subscription card reads as a contradiction on a paid tier and as expected on a free one', async () => {
-  const paid = await openAccount({
-    detail: detailFixture((d) => { d.billing = { fields: [] }; }),
-  });
-  const paidBox = card(paid, 'Subscription');
-  assert.match(allText(paidBox), /No subscription record/);
-  assert.match(allText(paidBox), /on Athlete Pro, so a record was expected here/);
-  assert.ok(!allText(paidBox).includes('expected answer'), 'a paid tier was called expected');
-
-  const free = await openAccount({
+   That head was the only thing naming the tier when there is no billing
+   record, so the empty state names it — and only names it. Round 2 of this
+   pane's review caught the first attempt classifying the tier as paid or free
+   from `tier.brand`, which is a pill tone with no billing meaning: a Coach
+   team account, one of the pane's own three tier filters, carries no `brand`
+   and was told it was on the free tier. The pane is not sent that fact, so it
+   states none. All three shapes the API can send are asserted, because each
+   one is a different way to be wrong. */
+test('an empty subscription card names the tier it was sent and classifies nothing', async () => {
+  const unbranded = await openAccount({
     detail: detailFixture((d) => {
       d.billing = { fields: [] };
-      d.tier = { key: 'free', label: 'Free', brand: false };
+      d.tier = { key: 'coach_team', label: 'Coach team' };
     }),
   });
-  const freeBox = card(free, 'Subscription');
-  assert.match(allText(freeBox), /On the free tier that is the expected answer/);
-  assert.ok(!allText(freeBox).includes('was expected here'), 'the free tier read as a contradiction');
+  const box1 = card(unbranded, 'Subscription');
+  assert.match(allText(box1), /No subscription record/);
+  assert.match(allText(box1), /The account is on Coach team\./);
+  assert.ok(!/free tier/i.test(allText(box1)), 'a tier with no brand key was called free');
+
+  const none = await openAccount({
+    detail: detailFixture((d) => { d.billing = { fields: [] }; delete d.tier; }),
+  });
+  const box2 = card(none, 'Subscription');
+  assert.match(allText(box2), /No tier was reported for this account either\./);
+  assert.ok(!/The account is on/.test(allText(box2)), 'a tier was named that was never sent');
+  assert.ok(!/free tier/i.test(allText(box2)), 'an unreported tier was called free');
+
+  const nameless = await openAccount({
+    detail: detailFixture((d) => { d.billing = { fields: [] }; d.tier = { brand: true }; }),
+  });
+  const box3 = card(nameless, 'Subscription');
+  assert.match(allText(box3), /The account is on Unknown\./);
+  assert.ok(!allText(box3).includes('undefined'), 'the pane printed undefined to an operator');
 });
 
 /* The danger zone. The mock draws four buttons; no route performs one, so the

@@ -1114,17 +1114,20 @@
     box.appendChild(shell.cardHead('Subscription', null, null));
 
     if (!billing || !(billing.fields || []).length) {
-      /* Which of the two this is turns on the account's own tier. A paid tier
-         with no billing record is a contradiction; on the free tier the same
-         empty answer is correct. The head carried the tier as a pill until the
-         pill was a third copy of it, so the state block names it instead. */
-      var paid = detail.tier && detail.tier.brand;
+      /* An empty billing record means different things on different tiers and
+         this pane cannot tell which: the API sends tier { key, label, brand }
+         and defines no paid-or-free semantics for any of them — `brand` picks
+         a pill tone (see tierPill). So name the tier beside the absence and
+         leave the reading to the operator, which is what the head pill did
+         before it became a third copy of the same fact. Floored the way
+         tierPill floors it, because a tier can arrive with neither label nor
+         key and `undefined` is not a tier name. */
+      var tierName = detail.tier && (detail.tier.label || detail.tier.key || 'Unknown');
       box.appendChild(h('div', { className: 'card-body' }, [
         shell.stateBlock('empty', 'No subscription record', [
-          paid
-            ? 'The account is on ' + (detail.tier.label || detail.tier.key) +
-              ', so a record was expected here.'
-            : 'On the free tier that is the expected answer rather than a missing one.'
+          tierName
+            ? 'The account is on ' + tierName + '.'
+            : 'No tier was reported for this account either.'
         ], 4)
       ]));
       return box;

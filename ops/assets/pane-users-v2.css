@@ -43,8 +43,9 @@
 /* Not this pane's markup and deliberately not deleted with the rest of the
    mock's unused form rules: session.js writes `field-label` into the
    re-authentication modal it can raise over any ops page, and a v2 page loads
-   no ops.css, so this sheet is the only thing styling it. See the note in
-   ops/README.md — the modal's other classes have no v2 rules at all. */
+   no ops.css, so this sheet is the only thing styling it. The modal's other
+   classes have no v2 rules at all — Stadiora/Aria#10447, which needs
+   shell-pane-v2.css and so cannot be fixed from a pane. */
 .field-label { font-size: 11.5px; font-weight: 540; color: var(--ink-3); }
 
 /* A form-level complaint. Never colour alone: the caller puts a glyph in it. */
