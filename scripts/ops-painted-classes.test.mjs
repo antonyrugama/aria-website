@@ -268,6 +268,7 @@ async function show(state) {
 const EVALS_DARK = { key: 'evals/1280/dark', url: '/ops/evaluations.html', width: 1280, theme: 'dark', ready: '#approval-trust-note', validate: true };
 const EVALS_LIGHT = { key: 'evals/1280/light', url: '/ops/evaluations.html', width: 1280, theme: 'light', ready: '#approval-trust-note', validate: true };
 const EVALS_940 = { key: 'evals/940/dark', url: '/ops/evaluations.html', width: 940, theme: 'dark', ready: '.evidence-form-grid' };
+const EVALS_880 = { key: 'evals/880/dark', url: '/ops/evaluations.html', width: 880, theme: 'dark', ready: '.evidence-form-grid' };
 const SHIP_DARK = { key: 'ship/1280/dark', url: '/ops/releases.html', width: 1280, theme: 'dark', ready: '.pipe-step.done' };
 const SHIP_MID = { key: 'ship/1280/dark/in-review', url: '/ops/releases.html', width: 1280, theme: 'dark', ready: '.pipe-step.todo', android: 'in_review' };
 
@@ -277,12 +278,28 @@ const SHIP_MID = { key: 'ship/1280/dark/in-review', url: '/ops/releases.html', w
    of a callout here reports a transparent background-color and the card behind
    it is a gradient. */
 async function backdrop(selector) {
+  /* Read twice around a frame and insist on the same answer: getBackgroundColors
+     is resolved against what has been painted, so a read taken while the pane is
+     still settling can report the surface a layer up and turn a contrast figure
+     into a coin toss. */
+  let last = null;
+  for (let i = 0; i < 40; i++) {
+    const now = await backdropOnce(selector);
+    if (now && last && last.join() === now.join()) return now;
+    last = now;
+    await evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
+  }
+  throw new Error(`Chromium never settled on a backdrop for ${selector}`);
+}
+
+async function backdropOnce(selector) {
   const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
   const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
   assert.ok(nodeId, `no element matches ${selector}`);
   const answer = await cdp.send('CSS.getBackgroundColors', { nodeId });
-  assert.ok(answer.backgroundColors && answer.backgroundColors.length,
-    `Chromium reported no backdrop for ${selector}`);
+  /* An empty answer means Chromium has not painted the stack yet rather than
+     that the element has no backdrop, so it is a reason to look again. */
+  if (!answer.backgroundColors || !answer.backgroundColors.length) return null;
   return answer.backgroundColors.map(parseColour).reduce((under, over) => composite(under, over));
 }
 
@@ -352,9 +369,15 @@ before(async () => {
 
 after(async () => {
   if (cdp) cdp.close();
-  if (browser) browser.kill();
+  if (browser) {
+    const gone = new Promise((done) => browser.once('exit', done));
+    browser.kill();
+    await Promise.race([gone, new Promise((r) => setTimeout(r, 5000))]);
+  }
   server.close();
-  if (profile) fs.rmSync(profile, { recursive: true, force: true });
+  /* Chrome writes its profile out as it shuts down, so a removal that starts
+     the instant kill() returns races it and throws ENOTEMPTY. */
+  if (profile) fs.rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
 });
 
 /* ===================== Stadiora/Aria#10646 — App releases ================= */
@@ -423,7 +446,17 @@ test('the three stage states draw three different rails in one pipeline', async 
     'an unreached stage should draw a dashed rail, and drew ' + rails.todo.image);
   assert.strictEqual(rails.done.image, 'none',
     'a done stage should draw a solid rail, and drew ' + rails.done.image);
-  assert.notStrictEqual(rails.done.background, rails.now.background);
+
+  /* Solid against washed, not one hue against another. Done stages are toned
+     `ok` and the current stage takes the row's own tone, so two rails painted
+     by the SAME base rule already differ in colour: comparing the two colours
+     passes with the done rule's `background` line deleted and says nothing.
+     What the rule actually does is replace a 38% wash with the tone itself, so
+     the reading is alpha, and it holds whatever tone the row is in. */
+  assert.strictEqual(parseColour(rails.done.background)[3], 1,
+    'the done rail should be the solid tone, and is ' + rails.done.background);
+  assert.ok(parseColour(rails.now.background)[3] < 1,
+    'the base rail should stay a wash, and is ' + rails.now.background);
 });
 
 test('the done rail clears AA non-text contrast against the card behind it', async () => {
@@ -746,6 +779,23 @@ test('the approval field grid holds two columns to the same width as the evidenc
     'is holding it open');
   assert.strictEqual(seen.q, seen.on,
     'the two field grids on this pane should behave the same way at the same width');
+
+  /* The other end of the same claim. Holding the grid open at 940px is the
+     rule; collapsing it at 880px is the media block, and each of the two can
+     be deleted without moving the other, so both are read. */
+  await show(EVALS_880);
+  const narrow = await evaluate(`(() => {
+    const columns = (sel) => getComputedStyle(document.querySelector(sel))
+      .gridTemplateColumns.split(' ').length;
+    return { grid: columns('.evidence-form-grid'), q: columns('.q-grid'),
+      viewport: document.documentElement.clientWidth };
+  })()`);
+
+  assert.strictEqual(narrow.viewport, 880, 'this arm only says anything under 900px');
+  assert.strictEqual(narrow.grid, 1,
+    'under 900px the approval field grid should be a single column, and is ' +
+    narrow.grid + ' — the media block is not what is collapsing it');
+  assert.strictEqual(narrow.q, 1, 'the evidence grid collapses at the same width');
 });
 
 /* Anchor: the `.approval-workflow-grid { align-items: start }` declaration.
