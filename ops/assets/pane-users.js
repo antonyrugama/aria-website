@@ -499,6 +499,67 @@
 
   /* --------------------------------------------------------- match list */
 
+  /* The mark a picked row carries beside its coded reference. A word, not a
+     tint: colour is the one channel an operator may not have, and this is the
+     control that decides which account everything below the table describes.
+     The glyph is decorative (assets/aria.js hides every icon it builds), so
+     the word is what carries the fact. */
+  function selectedMark() {
+    var mark = pill('acc', 'Selected', 'check');
+    mark.className = mark.className + ' sel-mark';
+    return mark;
+  }
+
+  /* Selection, said four ways, because three of the four readers of this table
+     cannot see the fourth:
+
+       the class     what assets/pane-users-v2.css draws the wash and the rail
+                     from. Stadiora/Aria#10456: the pane wrote this class and
+                     no sheet users.html loads had a rule for it, so picking a
+                     match changed nothing on screen at all.
+       aria-current  the ROW saying it is the one the pane is describing.
+                     aria-pressed below is a fact about the button, and a
+                     screen reader walking the table by row never enters it.
+                     Chrome's CDP property enumeration does not list
+                     aria-current on anything — not on a row, not on
+                     aria-current="page" on a link — so this one is correct
+                     ARIA that the PR could not evidence in a tree dump, and
+                     it is deliberately not the channel anything relies on.
+       aria-pressed  the control's own state, for a reader on the button. This
+                     one IS in the tree: pressed="true" on the picked control
+                     and "false" on the rest.
+       the word      "Selected", in the row, so the affordance is never the
+                     wash alone — and, being real text in the row's name cell,
+                     it is the channel that reaches every assistive technology
+                     rather than the ones that map a given attribute.
+
+     One function for the first paint and for every later change. The two used
+     to be written twice — once in the row builder, once in renderSelectedRow —
+     and a repaint that forgets one channel is invisible to everybody except
+     the person who needed that channel. */
+  function applySelection(tr, on) {
+    tr.className = on ? 'match-row is-selected' : 'match-row';
+    if (on) tr.setAttribute('aria-current', 'true');
+    else tr.removeAttribute('aria-current');
+
+    var pick = tr.querySelector('.match-row-btn');
+    if (pick) pick.setAttribute('aria-pressed', String(on));
+
+    var mark = tr.querySelector('.sel-mark');
+    if (on && !mark) {
+      /* Into the line the coded reference is on, rather than after the masked
+         email under it: the mark belongs beside the name of the row, and the
+         email is a block that would push it onto a third line of its own. The
+         line is its own element so this is an appendChild with one possible
+         outcome — `pick.nextSibling` reads as the same intent and is a
+         different answer in a DOM where the email is absent. */
+      var line = tr.querySelector('.match-id');
+      if (line) line.appendChild(selectedMark());
+    } else if (!on && mark && mark.parentNode) {
+      mark.parentNode.removeChild(mark);
+    }
+  }
+
   function matchesCard(data, onPick, selectedRef) {
     var box = shell.card();
     var rows = (data.matches || []).length;
@@ -547,22 +608,24 @@
     var tbody = h('tbody');
     (data.matches || []).forEach(function (m) {
       var tr = h('tr');
-      if (m.reference === selectedRef) tr.className = 'is-selected';
 
       /* The whole row is not the control. A row click is unreachable from a
          keyboard, so the account cell carries a real button and that button is
-         what selects the account. */
+         what selects the account. Both classes on it are query hooks rather
+         than style hooks — applySelection finds the control by the first and
+         renderSelectedRow finds the rows by the second — which is why neither
+         has a rule in any stylesheet and neither should be read as one that
+         went missing. */
       var pick = h('button', {
         className: 'btn btn-ghost btn-sm match-row-btn', type: 'button',
-        'data-ref': m.reference,
-        'aria-pressed': String(m.reference === selectedRef)
+        'data-ref': m.reference
       });
       pick.appendChild(code(m.reference));
       pick.appendChild(h('span', { className: 'sr', text: ', open this account' }));
       pick.addEventListener('click', function () { onPick(m.reference); });
 
-      var cell = h('th', { scope: 'row' });
-      cell.appendChild(pick);
+      var cell = h('th', { scope: 'row', className: 'match-name' });
+      cell.appendChild(h('div', { className: 'match-id' }, [pick]));
       if (m.maskedEmail) {
         cell.appendChild(h('div', { className: 't-sub' }, [
           h('span', { className: 'locked' }, [icon('lock'), h('span', { text: m.maskedEmail })])
@@ -579,6 +642,8 @@
       if (!(m.flags || []).length) flags.appendChild(h('span', { className: 'muted tiny', text: 'none' }));
       tr.appendChild(flags);
 
+      /* After the cells, because it writes into two of them. */
+      applySelection(tr, m.reference === selectedRef);
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -1396,6 +1461,13 @@
     selectedRef = reference;
     clearReveals();
 
+    /* Before the request, not after it. The row is what the operator just
+       acted on, and a table that only marks the pick once the account has
+       answered leaves the one control on the page with no feedback for the
+       length of a network round trip — which is most of the time anybody is
+       looking at it. */
+    renderSelectedRow();
+
     var column = document.getElementById('accountColumn');
     if (!column) return;
     clear(column);
@@ -1413,7 +1485,6 @@
       var detail = (payload && payload.data) || {};
       detail.reference = detail.reference || reference;
 
-      renderSelectedRow();
       var col = document.getElementById('accountColumn');
       if (!col) return;
       clear(col);
@@ -1472,11 +1543,9 @@
 
   function renderSelectedRow() {
     if (!resultRegion) return;
-    Array.prototype.forEach.call(resultRegion.querySelectorAll('.match-row-btn'), function (btn) {
-      var on = btn.getAttribute('data-ref') === selectedRef;
-      btn.setAttribute('aria-pressed', String(on));
-      var row = btn.parentNode && btn.parentNode.parentNode;
-      if (row && row.tagName === 'TR') row.className = on ? 'is-selected' : '';
+    Array.prototype.forEach.call(resultRegion.querySelectorAll('.match-row'), function (tr) {
+      var pick = tr.querySelector('.match-row-btn');
+      applySelection(tr, !!pick && pick.getAttribute('data-ref') === selectedRef);
     });
   }
 
