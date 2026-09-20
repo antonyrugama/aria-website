@@ -1784,9 +1784,19 @@ the run and a wrong number does not:
   `color(srgb 1.08372 -0.104021 -0.0350659)`, which scaled by 255 is a colour that does not
   exist and a ratio to match. The first is read, the second is refused, and both are pinned by
   Chromium's own serialisation in **self-test part F2** rather than by this paragraph.
-  Anything it cannot read fails the run. The shell carries 775 `color(srgb …)` values today and
-  every component of every one of them is inside the window, so the gate costs no coverage
-  here — it is there for the mix that has not been written yet.
+  Anything it cannot read fails the run. **No ink on the shell reaches this branch, as measured
+  on this commit.** The parser sees inks only — backdrops come from screenshot pixels and never
+  enter it — so instrumenting the branch and running a full sweep counts every string that
+  arrives: **ten**, of which nine are the fixture spans in parts F and F2 and the tenth is the
+  literal F2 parses directly to pin the clamp's lower half. None is a page ink. The
+  `color-mix()` values the shell does carry are backgrounds, borders and shadows. So the gate
+  costs no coverage here, and it is not costing none because the page's mixes happen to be in
+  gamut — it is not reached. It is there for the first mix written into a `color`.
+
+  **That is an observation, not an invariant, and nothing here enforces it.** A `color-mix()`
+  written into a `color` tomorrow starts arriving at the branch with no warning, which is the
+  intended outcome — the gate is what handles it — but the count above is a fact about this
+  commit that a stylesheet change can move, and no assertion pins it.
 - **The fade does not have to be on the text.** `opacity` does not inherit, so a faded ancestor
   leaves the text element reading `opacity: 1` while its glyphs composite at the ancestor's
   alpha. The ink's alpha is the product of every `opacity` in the chain, plus `fill-opacity` on
@@ -1825,7 +1835,10 @@ values, the decode/plate/sample pipeline against declared swatch colours, plate 
 by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
 read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), both ends of the
 gamut window pinned against Chromium's own serialisation of an in-gamut overshoot and a
-wide-gamut mix, and the three boundary
+wide-gamut mix — with the slack capped at a byte, because guards written in terms of it
+bracket it rather than pin it, and the clamp's lower half pinned against a literal, because the
+only rendered fixture with negative components is the wide-gamut one and the gate refuses it
+before the clamp runs — and the three boundary
 censuses counted on a page that carries six spellings of a nested browsing context, an open
 author shadow root, a closed one, and seven user-agent roots carrying text of which exactly one
 paints words no source reaches — that one named in full, so a census that catches the wrong host

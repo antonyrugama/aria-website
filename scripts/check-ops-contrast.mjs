@@ -342,7 +342,11 @@ function over(fg, bg) {
    refuses that, which means it refuses pure white and fails the run on a
    colour nothing is wrong with. `oklab` and `lab` overshoot the same way; the
    largest seen is 4e-5, a twenty-five-thousandth of the window. Both ends are
-   pinned by literals in part F rather than by this paragraph. */
+   pinned by literals in part F2 rather than by this paragraph — the shape
+   guards there bracket this constant from below, and a bound assertion caps it
+   at one byte from above, because a window written in terms of itself is not a
+   rounding allowance. The cap is a byte and not this half-byte on purpose:
+   asserting the constant equals itself proves nothing. */
 const GAMUT_SLACK = 0.5 / 255;
 
 /* The two serialisations getComputedStyle actually returns on this page.
@@ -1374,7 +1378,7 @@ async function measureSites(targets, where) {
  *      each and asserts the two shapes still exist before asserting how they
  *      are routed.
  *   G. THE THREE BOUNDARY CENSUSES, which decide whether a site is SEEN at
- *      all and so sit upstream of everything A-F measures. A page carrying
+ *      all and so sit upstream of everything A-F2 measures. A page carrying
  *      six spellings of a nested browsing context must report six, which is
  *      what distinguishes a census of CONTEXTS from a tag-name list; a page
  *      carrying an open author root, a closed author root and a user-agent
@@ -1592,15 +1596,54 @@ async function selfTest() {
     const overIsOvershoot = !!overC && overC.some((v) => v > 1) &&
       overC.every((v) => v >= -GAMUT_SLACK && v <= 1 + GAMUT_SLACK);
     const wideIsOutside = !!wideC && wideC.some((v) => v < -GAMUT_SLACK || v > 1 + GAMUT_SLACK);
+    /* Both guards above are written in terms of GAMUT_SLACK, so they move with
+       it: they bracket the constant rather than pin it. The lower bracket is
+       real — a slack under 4e-5 stops the overshoot fitting inside the window
+       and `overIsOvershoot` goes false — but the upper one only bites at 0.084,
+       where 1.08372 falls inside and the wide span starts being judged. So a
+       slack twenty-five times too wide passed this part. The bound below is
+       ONE byte, not the half-byte the constant is written at, and deliberately
+       so: asserting `GAMUT_SLACK === 0.5 / 255` would be the constant checking
+       itself. A byte is the independent contract — a slack this small can only
+       be a rounding allowance on a value that should have landed in gamut,
+       where one at 0.05 is a gamut policy wearing a rounding allowance's
+       name. So `0.9 / 255` passes here, and that is the bound doing what it
+       claims rather than a gap in it. */
+    const slackIsAtMostAByte = GAMUT_SLACK <= 1 / 255;
     const overRead = !!over && !over.unjudgeable && typeof over.ratio === 'number' &&
       !!parseColor(overInk);
     /* Clamped, so the byte a 1.00003 component becomes is 255 and not 255.008. */
     const overParsed = parseColor(overInk);
     const clamped = !!overParsed &&
       ['r', 'g', 'b'].every((k) => overParsed[k] >= 0 && overParsed[k] <= 255);
+    /* The clamp has two halves and the `over` fixture exercises one: every
+       component of it is near 1, so a vanished `Math.max(0, ...)` goes unseen
+       there. (The `wide` fixture IS negative, but it is refused before the
+       clamp ever runs, which is the point of it.) The lower half is pinned
+       against arithmetic instead of against a rendered colour: -0.0019 is in
+       gamut by GAMUT_SLACK, so it must parse, and -0.0019 x 255 is -0.4845,
+       which must come back as the byte 0. That is a statement about Math.max,
+       not about this file's model of colour, so a literal is not circular
+       here the way it would be for the gate.
+
+       It is coupled to GAMUT_SLACK, and the coupling is worth naming: this
+       literal parses only while the slack is at least 0.0019, so the green
+       band for the constant is [0.0019, 1/255] and not the 4e-5 floor the
+       shape guards above impose. Which assertion catches a narrowed slack
+       depends on how far it is narrowed, and only the bottom of that range
+       reaches `overIsOvershoot`: from 0.0019 down to 4e-5 the literal is
+       refused and THIS line is what reds, while below 4e-5 the overshoot
+       stops fitting the window and `overIsOvershoot` reds too. Either way the
+       part reds, which is why the message below distinguishes a refused
+       literal from an unclamped one -- a reader who sees the clamp blamed for
+       a slack problem is chasing the wrong bound. */
+    const lowParsed = parseColor('color(srgb -0.0019 0.5 0.5)');
+    const lowClamped = !!lowParsed && lowParsed.r === 0 &&
+      Math.abs(lowParsed.g - 127.5) < 1e-9;
     const wideRefused = !!wide && wide.unjudgeable === 'unreadable ink syntax' &&
       wide.ratio === undefined && parseColor(wideInk) === null;
-    const ok = overIsOvershoot && wideIsOutside && overRead && clamped && wideRefused;
+    const ok = overIsOvershoot && wideIsOutside && slackIsAtMostAByte && overRead &&
+      clamped && lowClamped && wideRefused;
     if (!ok) bad++;
     console.log(`     ${ok ? 'ok  ' : 'FAIL'} <span style="color: color-mix(in srgb, oklch(1 0 0) 50%, white)">` +
       ` ${overInk}\n          ${overIsOvershoot ? 'overshoots 1 and sits inside the slack' : 'is NOT the overshoot this case needs'}` +
@@ -1609,7 +1652,11 @@ async function selfTest() {
       `${overParsed && !clamped ? ' — NOT CLAMPED' : ''}` +
       `\n          <span style="color: color-mix(in srgb, color(display-p3 1 0 0) 90%, white)"> ${wideInk}` +
       `\n          ${wideIsOutside ? 'sits outside the slack' : 'is NOT outside the slack'}` +
-      `; routed as ${wide ? (wide.unjudgeable || `JUDGED at ${wide.ratio?.toFixed(2)}:1`) : 'nothing'}`);
+      `; routed as ${wide ? (wide.unjudgeable || `JUDGED at ${wide.ratio?.toFixed(2)}:1`) : 'nothing'}` +
+      `\n          GAMUT_SLACK is ${GAMUT_SLACK} — ${slackIsAtMostAByte ? 'at most a byte, so it is a rounding allowance' : 'WIDER THAN A BYTE, so the window is a gamut policy and not a rounding allowance'}` +
+      `; color(srgb -0.0019 0.5 0.5) parses to ` +
+      `${lowParsed ? `rgb(${[lowParsed.r, lowParsed.g, lowParsed.b].map((v) => v.toFixed(3)).join(', ')})` : 'nothing'}` +
+      `${lowParsed ? (lowClamped ? '' : ' — the LOWER clamp is not holding') : ' — refused, so the slack is under 0.0019 and this says nothing about the clamp'}`);
   }
 
   console.log('\n  G. boundary censuses — a frame, an author shadow root and unsourced user-agent text');
