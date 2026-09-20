@@ -111,6 +111,9 @@
      - a @keyframes child is not a selector   ctx = 'rules' unconditionally in
                                               the at-rule branch
      - an unquoted url() is not a comment     the url( passthrough removed
+     - a `}` inside a string does not         the structure-free span skip
+       close a block, and a `{` inside        deleted from parseStyleRules'
+       one does not open the next             loop
      - :where() is read as :is() is           the where arm of the pseudo gate
                                               removed
      - the attribute name is case-folded      m[1].toLowerCase() -> m[1]
@@ -130,10 +133,14 @@
        rule ALIVE, not dead                   '=' for the flagged shape
      - the markup side is case-folded too     the body attribute map's
                                               toLowerCase() removed
+     - and the script side, because          the literal scan's 'gi' flags
+       setAttribute lowercases the name      back to 'g'
      - a hasAttribute read is a read          READ_CALL narrowed to
                                               getAttribute
      - documentElement.innerHTML is a         that entry deleted from
-       document replacement                   DOCUMENT_REPLACERS
+       document replacement, under the        DOCUMENT_REPLACERS / its `?.`
+       optional-chain and bracket             and bracket alternatives
+       spellings too                          removed
      - an inline script is scanned like a     inlineScripts returning []
        file
      - the body of a <script src> is read     the src skip reinstated in
@@ -151,9 +158,10 @@
        recognise refuses everything,         deleted / the own-property
        including an Object.prototype key     check on REFLECTED_MEMBER
                                              replaced by a bare index
-     - an optional chain and a bracket       the `\??` and the bracket
-       index are member access too           spellings removed from
-                                             MEMBER_ON_DOCUMENT
+     - an optional chain and a bracket       the `(?:\?\.)?` removed from
+       index are member access too           MEMBER_ON_DOCUMENT, or the
+                                             BRACKET_ON_DOCUMENT loop gated
+                                             off (they are two constants)
      - a comment that opens and closes       the script-body clause in
        inside one <script> body is a         comment-swallows-markup's
        refusal, though it swallows no tag    detect() deleted
@@ -235,7 +243,13 @@
      `--!>`, which closes one for a browser and not for the regex; or a
      comment never closed at all. Rather than ask where the comment came
      from, this asks what the blanking ate, so it needs no opinion about the
-     parser it is standing in for.
+     parser it is standing in for. The third clause is the case where the
+     `<!--` opens inside the attribute value of the very tag it damages: the
+     tag name is then before the span, so the first clause cannot see it,
+     and the script body is raw, so the second cannot either. The second
+     clause looks for an opener only: once the third clause exists, a `-->`
+     in a script body can only close a span that one of the other two has
+     already refused, so asking about it was a branch nothing could bind.
    - quoted-gt-in-tag: A `>` inside a quoted attribute value of <body>,
      <link> or <script>. Every tag reader here stops at the first `>`, so
      the rest of the tag is read as though it were page text: the body
@@ -260,10 +274,11 @@
      the element itself handed to a function — fn(document.body) or
      Object.assign(document.body, ...). Catching the argument position by
      text would refuse every attribute on every page in this repository,
-     because two scripts pass document.documentElement to
-     MutationObserver.observe and a third names document.body in a comment,
-     so this is disclosed rather than refused: refusing it switches the
-     whole arm off.
+     because eleven sites across six scripts name one of the two outside a
+     member access: three pass it as a function argument, one of those to
+     MutationObserver.observe; six are identity or existence tests; and two
+     are prose inside comments. So this is disclosed rather than refused:
+     refusing it switches the whole arm off.
    - character-reference: An HTML character reference in an attribute value
      is read as the characters it is written with, so `data-page="a&amp;b"`
      is compared against the selector as seven characters rather than the
@@ -308,6 +323,31 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /* Blank out CSS comments, preserving every newline so a rule's line number
    survives. Strings and unquoted url() bodies are copied through untouched: a
    comment opener inside a `content` string is content, not a comment. */
+/* The end index of the string or unquoted url() body that starts at `i`, or
+   -1 if nothing structure-free starts there. A backslash escapes the next
+   character and an unterminated string ends at the newline, as CSS says.
+   stripCssComments preserves these spans and parseStyleRules must not read
+   structure inside them, so both ask this one function where such a span ends
+   and the two cannot drift apart about it. */
+export function structureFreeSpanEnd(src, i) {
+  const ch = src[i];
+  if (ch === '"' || ch === "'") {
+    let k = i + 1;
+    while (k < src.length) {
+      if (src[k] === '\\') { k += 2; continue; }
+      if (src[k] === ch) return k + 1;
+      if (src[k] === '\n') return k;
+      k++;
+    }
+    return src.length;
+  }
+  if ((ch === 'u' || ch === 'U') && /^url\(/i.test(src.slice(i, i + 4))) {
+    const end = src.indexOf(')', i);
+    return end === -1 ? src.length : end + 1;
+  }
+  return -1;
+}
+
 export function stripCssComments(src) {
   let out = '';
   let i = 0;
@@ -320,24 +360,9 @@ export function stripCssComments(src) {
       i = end;
       continue;
     }
-    if (ch === '"' || ch === "'") {
-      const quote = ch;
-      out += ch;
-      i++;
-      while (i < src.length) {
-        if (src[i] === '\\') { out += src.slice(i, i + 2); i += 2; continue; }
-        out += src[i];
-        i++;
-        if (src[i - 1] === quote || src[i - 1] === '\n') break;
-      }
-      continue;
-    }
-    if ((ch === 'u' || ch === 'U') && /^url\(/i.test(src.slice(i, i + 4))) {
-      const end = src.indexOf(')', i);
-      const stop = end === -1 ? src.length : end + 1;
-      out += src.slice(i, stop);
-      i = stop;
-      continue;
+    if (ch === '"' || ch === "'" || (ch === 'u' || ch === 'U')) {
+      const spanEnd = structureFreeSpanEnd(src, i);
+      if (spanEnd !== -1) { out += src.slice(i, spanEnd); i = spanEnd; continue; }
     }
     out += ch;
     i++;
@@ -363,6 +388,26 @@ export function parseStyleRules(source) {
   for (let i = 0; i < src.length; i++) {
     const ch = src[i];
     if (ch === '\n') line++;
+
+    /* A string or an unquoted url() body carries no structure. Without this,
+       a `}` inside `content: "}"` closes the block and whatever follows it
+       inside the string is accumulated as the next rule's prelude — a
+       selector the browser has never seen, reported dead at a line whose
+       real rule is live. splitOutside and parseAttrSelector already track
+       quotes; this was the corner that did not. */
+    if (ch === '"' || ch === "'" || ch === 'u' || ch === 'U') {
+      const spanEnd = structureFreeSpanEnd(src, i);
+      if (spanEnd !== -1) {
+        const span = src.slice(i, spanEnd);
+        if (ctx === 'rules') {
+          if (!prelude.trim()) preludeLine = line;
+          prelude += span;
+        }
+        line += (span.match(/\n/g) || []).length;
+        i = spanEnd - 1;
+        continue;
+      }
+    }
 
     if (ch === '{') {
       const text = prelude.replace(/\s+/g, ' ').trim();
@@ -744,9 +789,16 @@ export const MARKUP_REFUSALS = [
       + 'complete comment for a browser and unterminated for the regex; a `--!>`, which '
       + 'closes one for a browser and not for the regex; or a comment never closed at '
       + 'all. Rather than ask where the comment came from, this asks what the blanking '
-      + 'ate, so it needs no opinion about the parser it is standing in for.',
+      + 'ate, so it needs no opinion about the parser it is standing in for. The third '
+      + 'clause is the case where the `<!--` opens inside the attribute value of the very '
+      + 'tag it damages: the tag name is then before the span, so the first clause cannot '
+      + 'see it, and the script body is raw, so the second cannot either. The second '
+      + 'clause looks for an opener only: once the third clause exists, a `-->` in a '
+      + 'script body can only close a span that one of the other two has already '
+      + 'refused, so asking about it was a branch nothing could bind.',
     detect: (html) => commentSpans(html).some((s) => /<(?:link|body|script)\b/i.test(s))
-      || scriptBodiesAsWritten(html).some((b) => /<!--|-->/.test(b)),
+      || scriptBodiesAsWritten(html).some((b) => /<!--/.test(b))
+      || /<(?:link|body|script)\b[^>]*<!--/i.test(html),
   },
   {
     id: 'quoted-gt-in-tag',
@@ -795,9 +847,9 @@ export function markupRefusals(html) {
 /* ================= can a script write this attribute? =================== */
 
 const DOCUMENT_REPLACERS = [
-  /\bdocument\s*\.\s*write(?:ln)?\s*\(/,
-  /\.\s*outerHTML\s*=[^=]/,
-  /\bdocument\s*\.\s*documentElement\s*\.\s*innerHTML\s*=[^=]/,
+  /\bdocument\s*\??\s*\.\s*write(?:ln)?\s*(?:\?\.)?\s*\(/,
+  /(?:\.\s*outerHTML|\[\s*(['"`])outerHTML\1\s*\])\s*=[^=]/,
+  /\bdocument\s*\??\s*\.\s*documentElement\s*(?:\??\s*\.\s*innerHTML|\s*\[\s*(['"`])innerHTML\1\s*\])\s*=[^=]/,
 ];
 
 /* The first argument to a set/remove/toggleAttribute call on the document's
@@ -918,17 +970,19 @@ function camel(attrName) {
    otherwise the clause that says why it might. `undefined` means the member
    name is not resolvable from the source — a computed bracket key — which is
    a risk for every attribute rather than for a guessed one. `spelling` is
-   'dot' or 'bracket': the attribute-API skip is only honoured on the dot
-   path, because the three readers that earn it all require a dot.
+   'dot' or 'bracket': BOTH skip lists are honoured only on the dot path,
+   because every reader that earns a place on either of them requires a
+   literal dot — including DOCUMENT_REPLACERS, which is what makes
+   documentElement.innerHTML safe to call read-only here.
    REFLECTED_MEMBER is read with an own-property check because a bare index
    resolves constructor, toString, valueOf, hasOwnProperty and __proto__ off
    Object.prototype, and each of those truthy hits took the skip. */
 function memberReachRisk(member, attrName, spelling) {
   if (member === undefined) return 'reaches a member this check cannot resolve';
-  if (READ_ONLY_ON_DOCUMENT.has(member)) return null;
+  if (spelling === 'dot' && READ_ONLY_ON_DOCUMENT.has(member)) return null;
   if (spelling === 'dot' && ATTRIBUTE_API_ON_DOCUMENT.has(member)) return null;
-  if (ATTRIBUTE_API_ON_DOCUMENT.has(member)) {
-    return 'is an attribute API reached under a spelling no other check here reads';
+  if (ATTRIBUTE_API_ON_DOCUMENT.has(member) || READ_ONLY_ON_DOCUMENT.has(member)) {
+    return 'is reached under a spelling no other check here reads';
   }
   const reflects = Object.prototype.hasOwnProperty.call(REFLECTED_MEMBER, member)
     ? REFLECTED_MEMBER[member]
@@ -945,7 +999,11 @@ function memberReachRisk(member, attrName, spelling) {
 export function attributeWriteRisks(attrName, scripts) {
   const risks = [];
   const prop = camel(attrName);
-  const literal = new RegExp(`(['"\`])${attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\1`, 'g');
+  /* Case-insensitive because setAttribute lowercases the qualified name for
+     an HTML element in an HTML document, so setAttribute('DATA-PAGE', v)
+     writes data-page. The selector side (parseAttrSelector) and the markup
+     side (parseTagAttributes) already fold; this was the third corner. */
+  const literal = new RegExp(`(['"\`])${attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\1`, 'gi');
   const datasetWrite = new RegExp(
     `\\.\\s*dataset\\s*(?:\\.\\s*${prop}\\b|\\[\\s*['"\`]${prop}['"\`]\\s*\\])\\s*=[^=]`,
   );
@@ -1553,6 +1611,63 @@ test('the pieces the analysis is built from behave', () => {
   assert.equal(reach('document.body.appendChild(n);'), 0,
     'and the read-only list still keeps the arm alive');
 
+  /* setAttribute lowercases the qualified name, so the script side has to fold
+     like the selector and markup sides already do — with the `\1` anchor
+     keeping it from spreading to a name it does not own. */
+  assert.equal(reach("document.body.setAttribute('DATA-PAGE', 'users');"), 1,
+    'setAttribute lowercases the name, so an upper-case literal writes data-page');
+  assert.equal(reach("document.body.setAttribute('DATA-PANE', 'x');"), 0,
+    'but folding must not make one attribute name match another');
+  assert.equal(reach('document.body.setAttribute(`data-theme`, v);'), 0,
+    'a whole BACKTICK literal naming another attribute is not a computed name either, '
+    + 'or one backtick-spelled call anywhere refuses every attribute in the repository');
+
+  /* The document-replacement family. Every spelling below is one V8 parses:
+     document?.documentElement.innerHTML = v and dE?.["innerHTML"] = v are
+     SyntaxErrors, an optional chain cannot be an assignment target. */
+  assert.equal(reach("document?.write('<body data-page=users>');"), 1,
+    'document itself can be optional-chained in front of write too');
+  assert.equal(reach("document.write?.('<body data-page=users>');"), 1,
+    'and the call can be optional too');
+  assert.equal(reach('document.documentElement["innerHTML"] = H;'), 2,
+    'a bracketed innerHTML on documentElement replaces the document, and the read-only '
+    + 'skip that makes innerHTML safe is a DOT reader, so the bracket must not take it — '
+    + 'two risks, one from each of the checks that has to see it');
+  assert.equal(reach('document.body["innerHTML"] = H;'), 1,
+    'the read-only skip is earned on the dot path only, like the attribute-API one');
+  assert.equal(reach('document.body.innerHTML = H;'), 0,
+    'while the dot spelling still takes it, or the arm switches off repo-wide');
+  assert.equal(reach('el["outerHTML"] = H;'), 1,
+    'outerHTML under a bracket replaces the element it is written on');
+
+  /* A string carries no structure. Without that, the `}` below closes the
+     block and the browser-invisible selector inside the string is judged. */
+  assert.deepEqual(
+    parseStyleRules('.a { content: "} body[data-page=\'users\'] {"; color: red; }')
+      .map((r) => r.selector),
+    ['.a'], 'a `}` inside a string does not close the block');
+  assert.deepEqual(
+    parseStyleRules('.a { content: "{"; } body[data-page="users"] { color: red; }')
+      .map((r) => r.selector),
+    ['.a', 'body[data-page="users"]'],
+    'and a `{` inside one does not swallow the rest of the sheet');
+  assert.deepEqual(
+    parseStyleRules('.a { background: url(a}b); } body[data-page="users"] { color: red; }')
+      .map((r) => r.selector),
+    ['.a', 'body[data-page="users"]'],
+    'an unquoted url() body carries no structure either');
+  assert.deepEqual(
+    parseStyleRules('.a { background: url(a\nb); }\nbody[data-page="users"] { color: red; }')
+      .map((r) => `${r.line}:${r.selector}`),
+    ['1:.a', '3:body[data-page="users"]'],
+    'and the newlines inside a skipped span still count, or every line number after '
+    + 'a multi-line string names the wrong rule');
+  assert.equal(structureFreeSpanEnd('"a\\"b" x', 0), 6,
+    'a backslash escapes the closing quote');
+  assert.equal(structureFreeSpanEnd('"a\nb"', 0), 2,
+    'and an unterminated string ends at the newline, as CSS says');
+  assert.equal(structureFreeSpanEnd('body[x]', 0), -1, 'nothing else is a span');
+
   assert.deepEqual(parseAttrSelector('[data-page="x"]'), { name: 'data-page', op: '=', value: 'x' });
   assert.deepEqual(parseAttrSelector('[data-page]'), { name: 'data-page', op: 'exists', value: null });
   assert.deepEqual(parseAttrSelector('[data-page~="x"]'), { name: 'data-page', op: '~=', value: null });
@@ -1610,9 +1725,11 @@ export const WRONG_DEAD_NOT_COVERED = [
       + 'quotes: an alias, a closest("body"), or the element itself handed to a function '
       + '— fn(document.body) or Object.assign(document.body, ...). Catching the argument '
       + 'position by text would refuse every attribute on every page in this repository, '
-      + 'because two scripts pass document.documentElement to MutationObserver.observe '
-      + 'and a third names document.body in a comment, so this is disclosed rather than '
-      + 'refused: refusing it switches the whole arm off.',
+      + 'because eleven sites across six scripts name one of the two outside a member '
+      + 'access: three pass it as a function argument, one of those to '
+      + 'MutationObserver.observe; six are identity or existence tests; and two are prose '
+      + 'inside comments. So this is disclosed rather than refused: refusing it switches '
+      + 'the whole arm off.',
     wrongAnswer: () => [
       ...verdicts(
         [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
@@ -1770,16 +1887,30 @@ const REFUSAL_DEMOS = {
     + `<script>\n<!--\n${WRITE}\n// -->\n</script></body></html>`,
     /* the two halves of that clause, each on its own. Here only the `<!--` is
        in a script body and the span ends at an ORDINARY comment's `-->`, so
-       the span contains no tag (`</script>` is not `<script`) and the other
-       half of the predicate never fires. */
+       the span contains no tag (`</script>` is not `<script`) and neither of
+       the other two clauses fires. */
     `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
     + `<script>var s = "<!--"; ${WRITE}</script>`
     + '<!-- ordinary comment --></body></html>',
-    /* and here only the `-->` is in a script body: the `<!--` is inside the
-       <script> tag's own attribute value, which starts BEFORE the span, so
-       again no tag name is swallowed — but the write is */
+    /* and here the `<!--` is inside the <script> tag's own attribute value,
+       which starts BEFORE the span, so again no tag name is swallowed — but
+       the write is. This is the third clause's shape, and it is what made
+       asking about a `-->` in a script body redundant. */
     `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
     + `<script data-x="<!--">${WRITE} // -->\n</script></body></html>`,
+    /* the `<!--` opens inside the attribute value of the very tag it damages,
+       so the tag name is BEFORE the span and the first clause cannot see it,
+       and the script body is raw so the second cannot either. Three tags,
+       three different things destroyed: the script that writes the attribute,
+       the href that links the sheet, and the body attribute map itself —
+       which came back carrying the literal string `body` as an attribute
+       name. All three were judged, not refused, until this clause. */
+    `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
+    + `<script data-x="<!--">${WRITE}</script><!-- ordinary comment --></body></html>`,
+    '<!doctype html><html><head><link rel="stylesheet" data-note="<!--" href="assets/x.css">'
+    + '<!-- ordinary comment --></head><body data-page="login">x</body></html>',
+    `<!doctype html><html><head>${LINK}</head>`
+    + '<body data-note="<!--" data-page="login">x<!-- ordinary comment --></body></html>',
     /* <!--> is a complete empty comment for a browser, unterminated for the regex */
     `<!doctype html><html><head><!-->${LINK}<!-- ordinary comment -->`
     + '</head><body data-page="login">x</body></html>',
