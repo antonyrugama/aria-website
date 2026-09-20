@@ -39,12 +39,17 @@
      map, as is one loaded by a page outside `ops/`.
    - The test-fixture map sees this repo's `read('assets/NAME')` idiom. A test
      that opens an asset another way reads as "nothing loads it".
-   - Which pages can DRAW a class is read from the class tokens a page and its
-     in the page and in the scripts that page loads. A class assembled at
-     runtime (`'badge-' + tone`) is invisible to it, and a name that appears in
-     a comment counts as a draw site. It errs towards claiming MORE coverage
-     for a class than the page really has, so a `(no page)` value is the strong
+   - Which pages can DRAW a class is read from the class tokens written in the
+     page and in the scripts that page loads. A class assembled at runtime
+     (`'badge-' + tone`) is invisible to it, and a name that appears in a
+     comment counts as a draw site. It errs towards claiming MORE coverage for
+     a class than the page really has, so a `(no page)` value is the strong
      direction and a named page is the weak one.
+   - The `painted where drawn` verdict asks only whether SOME rule in a
+     stylesheet that page loads carries that class in its selector. It does not
+     ask whether the rule applies to the element the page drew, whether another
+     rule overrides it, or what it paints. A class painted only through an
+     attribute selector — `[class*="badge"]` — reads as unpainted.
    - Whether a guard script sweeps the registry is read from its source naming
      `OpsPaneRegistry`; the pages it renders are the `/ops/*.html` literals in
      it. A page fetched from a variable is not seen.
@@ -341,11 +346,47 @@ const PAGE_TOKENS = new Map(PAGES.map((page) => {
 
 DERIVED['v1-status-classes'] = () => V1_STATUS_CLASSES.map((cls) => {
   const selector = new RegExp(`\\.${cls}(?![\\w-])`);
-  const sheets = ASSETS.filter((a) => a.endsWith('.css'))
-    .filter((a) => cssRules(read(path.join('ops/assets', a))).some((r) => r.selectors.some((s) => selector.test(s))));
+  const declaring = (sheet) => cssRules(read(path.join('ops/assets', sheet)))
+    .some((r) => r.selectors.some((s) => selector.test(s)));
+  const sheets = ASSETS.filter((a) => a.endsWith('.css')).filter(declaring);
   const drawnBy = PAGES.filter((page) => PAGE_TOKENS.get(page).has(cls));
-  return `.${cls} = ${sheets.join(', ') || '(no sheet)'}; drawn by ${drawnBy.join(', ') || '(no page)'}`;
+  /* The half that matters on a live page: a page can write the token and load
+     no stylesheet that declares it, which paints nothing and fails silently.
+     Decided per page from that page's OWN sheets, never from the global list
+     on the left of this line. */
+  const unpainted = drawnBy.filter((page) =>
+    !loadedAssets(page).filter((a) => a.endsWith('.css')).some(declaring));
+  const verdict = drawnBy.length === 0 ? ''
+    : unpainted.length === 0 ? '; painted where drawn'
+    : `; no sheet declares it on ${unpainted.join(', ')}`;
+  return `.${cls} = declared in ${sheets.join(', ') || '(no sheet)'}; drawn by ${drawnBy.join(', ') || '(no page)'}${verdict}`;
 });
+
+/* What the v2 showcase guard pins, counted out of its own tables rather than
+   out of the sentence that describes them. The parse is asserted, so a
+   refactor that moves these constants is a red run with a named cause, never
+   a silently uncounted one. */
+DERIVED['shell-v2-pins'] = () => {
+  const src = read('scripts/check-ops-shell-v2.mjs');
+  const grab = (name, re) => {
+    const m = re.exec(src);
+    assert.ok(m, `scripts/check-ops-shell-v2.mjs: could not lift ${name}`);
+    return m[1];
+  };
+  const keys = (body) => new Set([...body.matchAll(/'(--[a-z0-9-]+)'\s*:/g)].map((m) => m[1]));
+  const invariant = keys(grab('INVARIANT', /const INVARIANT = \{([\s\S]*?)\n\};/));
+  const palette = grab('PALETTE', /const PALETTE = \{([\s\S]*?)\n\};/);
+  const themes = [...palette.matchAll(/\n {2}([a-z]+): \{([\s\S]*?)\n {2}\},?/g)]
+    .map(([, theme, body]) => [theme, keys(body)]);
+  assert.ok(themes.length > 0, 'scripts/check-ops-shell-v2.mjs: PALETTE declared no themes');
+  const scheme = grab('COLOR_SCHEME', /const COLOR_SCHEME = \{([\s\S]*?)\};/);
+  return [
+    ...themes.map(([theme, set]) => `palette tokens pinned for ${theme} = ${set.size}`),
+    `tokens pinned the same in every theme = ${invariant.size}`,
+    ...themes.map(([theme, set]) => `tokens pinned in total for ${theme} = ${new Set([...set, ...invariant]).size}`),
+    `color-scheme pinned per theme = ${[...scheme.matchAll(/([a-z]+):\s*'/g)].length}`
+  ];
+};
 
 /* Assets this README still talks about and the tree no longer holds. Checked
    for absence, which is the half that rots: a file that comes back leaves the

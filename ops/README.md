@@ -229,16 +229,18 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     pane-registry.js    what every pane is called, asks, filters on and allows —
                         the one table both shells read
-    shell.js            v1 rail, top bar, filter bar, boot gate
+    shell.js            v1 rail, top bar, filter bar, boot gate — no page loads
+                        it; two test files still execute it
     login.js            the sign-in page controller
     setup.js            the first-time setup page controller
-    operate.css         pane styling for the operate panes
-    operate.js          shared pane furniture: charts, drawer, confirm, states
+    operate.js          v1 pane furniture: charts, drawer, confirm, states — no
+                        page loads it; two test files still execute it
     alerts-model.js     the problems API in plain words, shared by two panes
     pane-overview.js    Overview
     pane-alerts.js      Problems
-    pane-data.js        shared plumbing for the understand panes and for
-                        Overview's figures: source, formatting, states, charts
+    pane-data.js        v1 plumbing for the understand panes and for Overview's
+                        figures: source, formatting, states, charts — no page
+                        loads it; two test files still read it
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
     pane-evaluations.js dataset validation, private quarantine import and approval handoffs
@@ -282,14 +284,13 @@ aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.
 aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 icons.js = login.html, setup.html
 login.js = login.html
-operate.css = alerts.html, index.html, jobs-live.html, run-history.html
 operate.js = (no page)
-ops.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+ops.css = login.html, setup.html
 pane-alerts-v2.css = alerts.html
 pane-alerts.js = alerts.html
 pane-analytics-v2.css = analytics.html
 pane-analytics.js = analytics.html
-pane-data.js = analytics.html, index.html, spend.html
+pane-data.js = (no page)
 pane-evaluations-v2.css = evaluations.html
 pane-evaluations.js = evaluations.html
 pane-jobs-live-v2.css = jobs-live.html
@@ -321,13 +322,24 @@ them from disk on purpose. The block below is the list of those, with the test f
 each one, derived the same way.
 
 ```claims id=assets-only-in-tests
+operate.js = ops-alerts-v2.test.mjs, ops-shell-pane-v2.test.mjs
+pane-data.js = ops-overview-v2.test.mjs, ops-shell-pane-v2.test.mjs
+shell.js = ops-alerts-v2.test.mjs, ops-shell-pane-v2.test.mjs
 ```
+
+Those three are the answer to "what dies when the last pane moves across": **not yet**, and not
+because of the pages. Two test files execute `shell.js` and `operate.js` on purpose — the reason
+is recorded at `ops/assets/shell-pane-v2.js:113` — and `pane-data.js` is read by two more, so
+deleting any of them takes the tests with it. `ops.css` and `icons.js` are not page-less at all:
+`login.html` and `setup.html` still load both, and those two pages have no v2 remodel.
 
 And the files this README still talks about which are no longer in the tree. The guard checks
 each one is **absent**, so a file that comes back leaves the prose around it red rather than
 quietly wrong again.
 
 ```claims id=deleted-assets
+operate.css = all 257 lines, deleted in aria-website#74 (eae7de31041ffc5e4c773ff662b6821ad09ac5ec)
+settings.css = deleted when Settings moved to the v2 shell
 ```
 
 ### The v2 layer
@@ -337,11 +349,18 @@ monorepo, ported here so the panes can be remodelled one at a time. They sit **b
 and `shell.js` rather than replacing them: both define `.card`, `.rail`, `.topbar`, `.btn`,
 `.seg`, `.pill`, `.tbl` and `.nav-item` from different token sets, so **a page loads one or the
 other, never both.** **Which layer a pane is on is stated by its own page**, in the stylesheets
-and scripts its `<head>` loads, and nowhere else: a list here would have to be corrected by every
-change that moves a pane, and the first one that moved while another was in review left it saying
-something untrue. All panes read the endpoints they always read — moving a pane across changes
-its surface, never its reads. Panes move across in their own changes, and the day the last one
-moves, `ops.css`, `shell.js`, `operate.css` and `icons.js` go.
+and scripts its `<head>` loads, and nowhere else: a list written here by hand would have to be
+corrected by every change that moves a pane, and the first one that moved while another was in
+review left it saying something untrue. The list below is therefore read out of the pages. All
+panes read the endpoints they always read — moving a pane across changes its surface, never its
+reads.
+
+Every pane has now moved, and the v1 layer did **not** all die with the last one. What actually
+died is `operate.css`; what survives, and why, is the two blocks under Layout above. `ops.css`
+and `icons.js` are still loaded by `login.html` and `setup.html`, which are not panes and have no
+v2 remodel; `shell.js`, `operate.js` and `pane-data.js` are loaded by no page and executed by the
+tests, so they are fixtures rather than dead code. A sentence here predicting which files go on
+which day is exactly the claim that rotted, so there is no longer one.
 
 `shell-v2.html` exists so the system can be seen and checked. It makes no API call and holds no
 operational data — every number on it is a literal in the page — so unlike a pane it has nothing
@@ -391,8 +410,8 @@ alerts = alerts.html, shell-pane-v2.js, pane-alerts-v2.css
 analytics = analytics.html, shell-pane-v2.js, pane-analytics-v2.css
 spend = spend.html, shell-pane-v2.js, pane-spend-v2.css
 evals = evaluations.html, shell-pane-v2.js, pane-evaluations-v2.css
-releases = releases.html, shell.js, (no sheet of its own)
-users = users.html, shell.js, (no sheet of its own)
+releases = releases.html, shell-pane-v2.js, pane-releases-v2.css
+users = users.html, shell-pane-v2.js, pane-users-v2.css
 settings = settings.html, shell-pane-v2.js, pane-settings-v2.css
 ```
 
@@ -430,7 +449,7 @@ A v2 pane page loads, in this order:
 <script src="assets/pane-<name>.js"></script>
 ```
 
-and none of `ops.css`, `operate.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
+and none of `ops.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
 `data-page`, so the two shells can never both claim one document.
 
 `window.OpsPaneShell` is the whole surface, and a test holds this table to it in both directions:
@@ -612,21 +631,20 @@ set of constraints:
   deletion workflow, which needs the athlete's own confirmation.
 
 The shared filter bar round trips through the querystring, so a pane reads a selection rather
-than inventing one. A pane listens on `window` for two events, both dispatched once the session
-is confirmed and the shell is in the document, so a listener added while `shell.js` is still
-booting cannot miss them:
+than inventing one. A pane listens on `window` for two events, both dispatched by
+`shell-pane-v2.js` once the session is confirmed and the shell is in the document, so a listener
+added while the shell is still booting cannot miss them:
 
 - `ops:ready`, carrying `{ pane, filters }`, which is the signal that `#content` exists.
 - `ops:filters`, carrying the selection, fired for the starting selection as well as for every
   change to it. `OpsShell.filters()` returns the same thing on demand.
 
-Per-pane filters arrive with the pane that needs them. App releases adds a Platform switch beside
-the shared controls rather than growing a second bar underneath the first: its module appends to
-the rendered `.filterbar`, deferring to `ops:ready` when the bar is not in the document yet,
-which is the same small move `OpsOperate.paneFilters` makes for the operate panes. It is written
-out locally rather than reached for across `operate.js`, because App releases loads none of the
-rest of that file and a whole shared module pulled in for six lines is a dependency the pages do
-not need.
+Per-pane filters are declared, not appended. The bar a pane gets is the one `pane-registry.js`
+declares for it and `shell-pane-v2.js` draws, and no pane module on the v2 layer touches
+`.filterbar` at all — the only code that does is in `shell.js` and `operate.js`, which no page
+loads. App releases is the pane this paragraph used to describe as adding its own Platform
+switch; its registry entry now declares `scope`, `range` and `env` all false and carries a
+`filterNote` saying why, so the shell prints the note where controls would have been.
 
 The scope control follows the rule the mocks encode: All, Mobile and Coaches Web appear only
 where a per-app split is real. Cloud costs says so inline, because cloud spend is billed per
@@ -685,9 +703,11 @@ cannot be reached through the URL — is deliberately not asserted there: the sh
 undeclared filter before a pane sees one, so no mutation of a pane can turn that claim red. The
 narrower shell-level claim that can fail — that a pane is offered exactly the filters it
 declared and never one more — is held in `scripts/ops-shell-pane-v2.test.mjs`, and what the two
-pane suites hold instead is what their own bar draws. Cloud costs is the single exclusion, because it is
-still on the v1 shell; the lock pins the exact claim it is excused for by name **and by value**,
-so a filter or a window added to it is red as well, and it gets a live proof when it lands on v2.
+pane suites hold instead is what their own bar draws. Cloud costs is the single exclusion: that file does not boot it, so
+nothing there proves its windows. The lock pins the exact claim it is excused for by name **and
+by value**, so a filter or a window added to it is red as well. The pane itself is on the v2
+bootstrap like every other — the `panes` block above is what says so — and the exclusion is now
+about what that file boots rather than about which shell the pane is on.
 
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
@@ -1091,7 +1111,11 @@ and the future-date and 90-day retention bounds are unchanged.
 
 ## Departures from the approved mocks
 
-`assets/ops.css` is the mock stylesheet with these changes:
+`assets/ops.css` is the mock stylesheet with these changes. Read the list as the record of the
+v1 stylesheet: `ops.css` is now loaded by `login.html` and `setup.html` only (the block under
+Layout is where that is read off the pages), so an item below saying "every page" or naming a
+pane page is describing what that rule reached while the panes were on it. The v2 sheets carry
+those panes now.
 
 1. **No Google Fonts `@import`.** The font stacks are unchanged, so anyone with Fira Sans or
    JetBrains Mono installed sees the intended faces and everyone else falls back cleanly.
@@ -1151,9 +1175,10 @@ and the future-date and 90-day retention bounds are unchanged.
     keeps the inverse text colour: white on pale grey, 1.2:1, so the label vanished under the
     pointer that was about to click it. This is not a pane-scoped fix and it is not a token
     change; the sign-in button is the one it was found on.
-14. **The two ship and support panes darken the light-theme status ink**, scoped to those two
-    pages. Same debt as item 11's neighbours and the same shape of fix as `operate.css`; see the
-    second half of the note below.
+14. **Gone: the two ship and support panes darkened the light-theme status ink**, scoped to
+    those two pages. That block was deleted from the end of `ops.css` in `aria-website#74` when
+    App releases and Look up a user moved to the v2 layer and stopped loading this stylesheet;
+    the arithmetic it was computed from is kept in the historical record below.
 15. **`.table-wrap` is positioned.** `overflow-x` clips only a descendant whose containing block
     is the wrapper, and an absolutely positioned one resolves that to the nearest positioned
     ancestor. Left static, an `.sr-only` span inside a table wider than a phone resolves to the
@@ -1492,7 +1517,8 @@ from the answer.
    dialog. The detail expands in place under the card instead, with `aria-expanded` and
    `aria-controls`, and Close is an inline form. At 375px a modal is a focus trap over a page
    the operator still needs to read, and a second thing that can overflow sideways; the v1
-   drawer also lived in `operate.css`, which a v2 page cannot load.
+   drawer also lived in `operate.css`, which a v2 page could not load and which has since been
+   deleted outright.
 2. **No meter on a problem card.** The answer carries an observed value and a threshold and no
    scale to put them on. A bar between two numbers with no axis is the budget-bar problem from
    Overview in another shape.
@@ -1527,8 +1553,17 @@ at all: Chrome grants a scrollable box a tab stop of its own, but leaves it unna
 roleless, and Safari grants none. So the box carries `tabindex="0"`, `role="region"` and the
 table's own screen-reader `<caption>` as its accessible name, and the focus ring is pulled
 inside its edge, because `aria.css` draws that ring 2px outside the element and the box is
-flush with the card. Same three attributes and the same one CSS line as App releases'
-`.tbl-scroll` and Settings' `tableWrap()` (`Stadiora/Aria#10459`).
+flush with the card: with `aria.css`'s `+2px` left alone, `aria-website#72` measured 21,234
+device pixels of ring painted entirely beyond the box and none of its four edges showing ring
+inside it, all of that outside the card it belongs to.
+
+Same three attributes as App releases' `.tbl-scroll` and Settings' `tableWrap()`
+(`Stadiora/Aria#10459`) — but **not the same one CSS line**, and there never was one. This pane
+and Settings each set `outline-offset: -2px` in their own sheet; App releases sets that and a
+`border-radius: 0` beside it; and the four other sideways-scrolling boxes on the v2 panes set
+nothing of their own and take `aria.css`'s ring 2px outside. Which box carries which rule is
+read out of the sheets rather than stated here, because that sentence is the one that was
+wrong.
 
 Which boxes carry a ring of their own is read out of the v2 pane sheets — every box that
 declares `overflow-x: auto`, found by that declaration and not by its class name, with whatever
@@ -1538,7 +1573,7 @@ its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is 
 pane-alerts-v2.css .scrollx = outline-offset: -2px
 pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, 2px outside)
 pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
-pane-releases-v2.css .tbl-scroll = outline-offset: -2px
+pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
 pane-run-history-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, 2px outside)
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
 pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, 2px outside)
@@ -1592,8 +1627,13 @@ answer.
 8. **The mock's explanatory captions are not reproduced, and neither are four of the route's
    own sentences nor four of its counts**, under the same rule: the mocks encode one fact per
    slot, which is what took the approved set from 7,240 words to 4,842. What was dropped, and
-   why, since these are fields the answer carries — read as a sweep of `OpsUsagePayload`, so
-   every non-optional member the pane does not read is on this list:
+   why, since these are fields the answer carries. The list names **the members whose absence
+   carries a decision**, and nothing here claims it is every member the pane does not read: it
+   once did, and that claim was false, because `asOf` and `apps[].app` are non-optional members
+   the pane does not read and neither was on it (`Stadiora/Aria#10474`). Completeness is in the
+   NOT COVERED list under "What checks this" and stays there: `OpsUsagePayload` is declared in
+   the Aria monorepo, at `app-backend/server/services/opsUsage/opsUsageView.ts`, so no check in
+   this repository can enumerate its members to subtract the read ones from.
    - `coverage.shortfall.detail` was the versions card's footer. It is the complement of the
      coverage pill — 30.7% did not report *is* 69.3% did — and the `Reporting` column beside it
      names which versions, which is the part an operator acts on. What makes *already on screen*
@@ -1601,7 +1641,9 @@ answer.
      the ones with two columns.
    - `features.coverageNote` was the feature card's footer, twenty words carrying that same
      coverage figure a third time. The method survives as nine: *Only seen on app versions that
-     report feature use.* The number does not.
+     report feature use.* The number does not. This one is **read**, unlike the rest of the
+     list: `pane-analytics.js:1058` tests the field and draws its own nine words when the route
+     sent it, so what is dropped is the route's wording and its figure, not the field.
    - `features.note` and `features.hint` both say the shares are of each app's own active people.
      The card head prints `hint`, seven words; `note` is two sentences of the same thing.
    - `consent.detail` is four sentences saying the gate is at ingest. The pane prints the route's
@@ -1692,8 +1734,13 @@ Two invariants on this pane are held by its own `node:test` file and by measurem
 not by a repo guard. Since [Stadiora/Aria#10492](https://github.com/Stadiora/Aria/issues/10492)
 `scripts/check-ops-narrow-overflow.mjs` does render `ops/analytics.html`, at 375px and 360px in
 both themes — but with an empty `/api/ops/usage` envelope, so what it lays out is this pane's
-no-data card and not a populated pane. `scripts/check-ops-theme-redraw.mjs` renders the shell
-demo. Tracked as [Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462).
+no-data card and not a populated pane. Since
+[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462)
+`scripts/check-ops-theme-redraw.mjs` does render this pane's own page too, in both theme
+directions — but its fixture, `scripts/ops-api-stub.mjs`, answers `/api/ops/usage` with an empty
+envelope as well, and says so in its own docblock, so that sweep also toggles the no-data card
+rather than a populated pane. What it holds there is that the toggled page equals a fresh load
+of itself, which is not one of this pane's two invariants either.
 
 ### Where this pane departs from the shared page furniture
 
@@ -1783,56 +1830,81 @@ pane's own classes, each because a shared rule assumes content this pane does no
 - `.grid > .card { min-width: 0 }`, so a grid track may be narrower than the table inside it and
   the table scrolls in its own card rather than widening the page.
 
-### Known contrast debt, inherited
+### Known contrast debt, inherited — a historical record
 
-Measured across both themes against composited backgrounds. **Every pairing rendered by the
-panes built so far passes in both themes**, text at 4.5:1 or better and control boundaries at
-3:1 or better. That was verified again for the two understand panes across all four of their
-states, 68 pairings in total, worst case 4.67:1 in light and 5.99:1 in dark.
+**Nothing in this section describes a pairing any page draws today.** It is the record of the
+v1 status palette: what it measured, the arithmetic the figures come from, and the two
+page-scoped fixes that were shipped against it. Both of those fixes have since been deleted,
+and every pane is now on the v2 layer, with its own `pane-*-v2.css` and its own inks. It is kept
+because the arithmetic recomputes from the shipped tokens and the palette owner acts on these
+numbers, and because the first pane to draw one of these classes again inherits the debt with it.
 
-Settings was measured the same way and **needs no fix of its own**, which is why it carries
-neither of the two page-scoped blocks below. Every text pairing it draws was read off the
-rendered page rather than computed from tokens, by walking each element's ancestor background
-chain and compositing what the engine actually paints: 36 distinct pairings in light and 36 in
-dark, across the ready, empty, per-card failure, access-record failure and denied states, at
-1440px and 375px, plus the revoke confirmation. Nothing fails. The lowest in light is 4.665,
-`.badge-warn` on a card, and the next is `.badge-ok` at 4.695; the lowest in dark is 5.988. Both
-figures land on the "Ink was, on a card" column of the badge table below to three decimals, which
-is the point: those inks are untouched here, and what keeps them passing is where the badge is
-put. Settings draws its status badges **only** inside a card, and it draws no `.badge-crit`, no
-`.badge-info`, no `.btn-danger` and no platform tag anywhere. The whole set of tinted classes on the pane is
-`.badge`, `.badge-ok`, `.badge-warn`, `.badge-brand`, `.tag`, `.callout` and `.callout-warn`.
+What changed, and when:
 
-Two of those figures are worth keeping in view rather than filing away. 4.665 is a pass with
-0.165 to spare, so a Settings badge moved onto the page background, or onto any surface darker
-than a card, fails on the day it is moved; and the light-theme `.badge-warn` ink there is the
-same `#9A5B06` the two blocks below darken elsewhere, so the eventual token change closes this
-margin too.
+- Every pane in the rail moved to v2. App releases and Look up a user — the two pages the second
+  table below is about — moved with the rest; the epic closed when Cloud costs merged as
+  `c791c8dac68f08be684902139d601be9107e27c8`. This section used to describe both as pre-remodel
+  pages that load no stylesheet of their own (`Stadiora/Aria#10457`).
+- `operate.css` was deleted, all 257 lines of it, in `aria-website#74`
+  (`eae7de31041ffc5e4c773ff662b6821ad09ac5ec`), and the light-theme badge block at the end of
+  `ops.css` went in the same change. Those were the two fixes this section describes as live
+  (`Stadiora/Aria#10639`).
+- `ops.css` itself is now loaded by `login.html` and `setup.html` only, so a rule in it reaches
+  the sign-in and setup pages and nothing else. The block under Layout above is where that is
+  read off the pages.
 
-Part of that debt has now come due, and three separate fixes have landed against it. Which pages
-get which follows from where each one lives, so it is worth being explicit: `ops.css` is on every
-page, `operate.css` is on the four operate pages only, and the third fix is in `ops.css` but
-scoped by a selector to the two ship and support pages.
+Which of these classes any page can still draw is therefore derived rather than remembered. A
+`(no page)` means no file the scan can read assembles that token; `no sheet declares it on
+<page>` means the page writes the token and loads no stylesheet that carries a rule for it.
 
-**The callout fix is in `ops.css`, so it reaches every page.** The warning and critical callout
-inks measured 4.41:1 and 4.26:1 in the light theme *only when the callout sat directly on the
-page background*, which is darker than a card; on a card they passed. A translucent tint takes
-its final colour from whatever is behind it, so the same component had two different ratios
-depending on where it was put. The fix mixes the tint into `--surface-1` instead of into
-transparency, which makes the fill, and therefore the ratio, independent of the surface
-underneath. They now measure 4.94:1 and 4.74:1. No approved hue changed, and dark is unaffected.
+```claims id=v1-status-classes
+.badge = declared in ops.css; drawn by (no page)
+.badge-ok = declared in ops.css; drawn by (no page)
+.badge-warn = declared in ops.css; drawn by (no page)
+.badge-crit = declared in ops.css; drawn by (no page)
+.badge-info = declared in ops.css; drawn by (no page)
+.badge-brand = declared in ops.css; drawn by (no page)
+.flagchip = declared in ops.css; drawn by (no page)
+.tag-mobile = declared in ops.css; drawn by (no page)
+.tag-coaches = declared in ops.css; drawn by (no page)
+.tag-backend = declared in ops.css; drawn by (no page)
+.build = declared in ops.css; drawn by (no page)
+.masked = declared in ops.css; drawn by users.html; no sheet declares it on users.html
+.verdict-better = declared in ops.css; drawn by (no page)
+.verdict-worse = declared in ops.css; drawn by (no page)
+.verdict-slightly-worse = declared in ops.css; drawn by (no page)
+.reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
+.nav-count = declared in ops.css; drawn by (no page)
+.btn-danger = declared in ops.css, pane-settings-v2.css; drawn by settings.html; painted where drawn
+.field-error = declared in ops.css, pane-evaluations-v2.css, pane-users-v2.css; drawn by evaluations.html, login.html, setup.html, users.html; painted where drawn
+.callout-warn = declared in ops.css; drawn by evaluations.html; no sheet declares it on evaluations.html
+```
 
-**The badge fix is in `operate.css`, so it reaches the operate panes only.** They are the first
-to draw a status badge loose on the page background, and `operate.css` darkens the three
-light-theme inks, scoped to `[data-theme="light"]` and to the badge's ink alone.
+Three lines in that block are worth reading twice:
 
-The ratios are computed rather than eyeballed, and are reproducible from the shipped tokens. The
-badge tint is semi-transparent, so the background that decides is the tint composited over
-whatever the badge sits on: `composited = 0.11 x status token + 0.89 x parent surface` in sRGB,
-because `--tint` is 11% in the light theme, then the WCAG 2 relative-luminance ratio. These panes
-put a badge on `--surface-1` `#FFFFFF` (a card, the alert list, the drawer), on `--surface-2`
-`#F6F8FB` (an alert row on hover, the runbook card) and on `--bg` `#EEF2F7` (the filter bar). The
-page is the darkest of the three, so it is the one that has to clear 4.5:1.
+- **`.btn-danger` is drawn, and painted.** Settings writes it on the revoke controls and on the
+  confirmation's submit, and `pane-settings-v2.css` declares it. This section used to file it
+  under "drawn by nothing built so far", and said in as many words that Settings draws none. The
+  4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
+  paints it now; the live figure is whatever `check-ops-contrast.mjs` measures on the page.
+- **`.masked` and `.callout-warn` are written with nothing behind them on the page that writes
+  them.** `pane-users.js` spells the mask `masked locked`, and only `.locked` is declared in
+  `pane-users-v2.css`, which is what gives the row its look; `pane-evaluations.js` spells the
+  warning callout `callout callout-warn`, and `pane-evaluations-v2.css` declares `.callout` and
+  not the variant. Neither is a contrast defect — an element with no rule takes the ink around it
+  — but both are a token whose rule was left behind in `ops.css` when the pane moved, and the
+  block above is where that now shows up.
+- **Everything else is drawn by no page at all.** The whole badge, flagchip, platform-tag and
+  verdict vocabulary below is declared in `ops.css` and assembled by nothing the scan can see.
+
+What the figures were. The ratios are computed rather than eyeballed, and are reproducible from
+the shipped tokens. The badge tint is semi-transparent, so the background that decides is the
+tint composited over whatever the badge sits on: `composited = 0.11 x status token + 0.89 x
+parent surface` in sRGB, because `--tint` was 11% in the light theme, then the WCAG 2
+relative-luminance ratio. The operate panes put a badge on `--surface-1` `#FFFFFF` (a card, the
+alert list, the drawer), on `--surface-2` `#F6F8FB` (an alert row on hover, the runbook card) and
+on `--bg` `#EEF2F7` (the filter bar). The page was the darkest of the three, so it was the one
+that had to clear 4.5:1.
 
 | Badge | Ink was | Ink now | On a card | On a hovered row | On the page |
 |---|---|---|---|---|---|
@@ -1840,34 +1912,35 @@ page is the darkest of the three, so it is the one that has to clear 4.5:1.
 | `.badge-warn` | `#9A5B06` | `#885005` | 4.665 to 5.652 | 4.399 to 5.331 | 4.176 to 5.060 |
 | `.badge-ok` | `#047857` | `#046B4D` | 4.695 to 5.591 | 4.429 to 5.275 | 4.205 to 5.008 |
 
-All three now clear 4.5:1 on every surface W2 draws them on. Before, only the card cleared it and
-only just. The two variants these panes draw but the fix does not touch already pass: `.badge-info`
-is 5.649 on a card and 5.058 on the page, and the plain `.badge` is 6.82 on a card.
+All three cleared 4.5:1 on every surface those panes drew them on. Before the fix, only the card
+cleared it and only just. The two variants those panes drew but the fix did not touch already
+passed: `.badge-info` was 5.649 on a card and 5.058 on the page, and the plain `.badge` 6.82 on
+its own opaque fill. That fix lived in the three rules at the end of `operate.css`, and went with
+the file.
 
 An earlier version of this section recorded 4.15 / 4.22 / 4.27 before and 4.55 or better after.
 Neither figure reproduces from the tokens, and the before figures also disagreed with W1's own
 record of 4.04 / 4.21 / 4.17 for crit / ok / warn over the page background, which does match the
 table above. The palette owner acts on these numbers, so they need to be recomputable.
 
-That is a patch and not the fix. The base status tokens are also the dots, the chart series, the
-meters and the callout borders, all of which pass where they are used and all of which are shared
-with the panes other waves are building; darkening the tokens themselves is a decision about the
-approved palette and belongs to whoever owns it. When it happens, the three rules at the end of
-`operate.css` become redundant and should be deleted.
+The callout fix is the one piece of this that is still in a file a page loads. Warning and
+critical callout inks measured 4.41:1 and 4.26:1 in the light theme *only when the callout sat
+directly on the page background*, which is darker than a card; on a card they passed. A
+translucent tint takes its final colour from whatever is behind it, so the same component had two
+different ratios depending on where it was put. The fix mixes the tint into `--surface-1` instead
+of into transparency, which makes the fill, and therefore the ratio, independent of the surface
+underneath. They measured 4.94:1 and 4.74:1 after it. No approved hue changed, and dark was
+unaffected. It is in `ops.css`, so what it reaches now is `login.html` and `setup.html`.
 
-**The third fix is the same shape, for App releases and Look up a user.** Those two pages load no
-stylesheet of their own, so it sits at the end of `ops.css` and is scoped by the page rather than
-by the file: `[data-theme="light"] body:is([data-page="releases"], [data-page="users"])`. Nothing
-outside those two pages is restyled by it. The three badge inks are byte-identical to the three
-in `operate.css` on purpose; a second set of values would mean a critical badge was one red on
-Problems and a different red on Look up a user, which is worse than the debt.
-
-These two panes never put a tinted status loose on the page background, so the surface that
-decides is a different one: the selected match row, which is `--brand-dim` over a card and
-composites to `#E3F3F6`. They also draw one pairing that composites twice, a state badge inside a
-`.build` chip already tinted with the same hue, and that is the worst pairing on either pane.
-Same formula as above, with `--tint-soft` 9% for a platform tag and no tint at all where the ink
-goes straight onto a card.
+The second fix was the same shape, for App releases and Look up a user, and sat at the end of
+`ops.css` scoped by the page rather than by the file:
+`[data-theme="light"] body:is([data-page="releases"], [data-page="users"])`. Both panes have
+since moved to v2 and that block has been deleted, so the table below is a record of what the v1
+pages measured, not of what those pages paint. The surface that decided was the selected match
+row, `--brand-dim` over a card, compositing to `#E3F3F6`; the worst pairing on either pane
+composited twice, a state badge inside a `.build` chip already tinted with the same hue. Same
+formula as above, with `--tint-soft` 9% for a platform tag and no tint at all where the ink went
+straight onto a card.
 
 | Pair | Ink was | Ink now | On a card | On a hovered row | On a selected row |
 |---|---|---|---|---|---|
@@ -1878,82 +1951,58 @@ goes straight onto a card.
 | `.tag-coaches` | `#7C3AED` | `#7434DF` | 4.978 to 5.560 | 4.706 to 5.257 | 4.390 to 4.903 |
 
 And the double-tinted pairing, on a card: `.badge-crit` inside `.build.is-blocked` 3.852 to
-4.771, `.badge-ok` inside `.build.is-live` 4.059 to 4.834. 4.771 is the worst figure either pane
-produces after the fix, and 3.852 was the worst before it. Of the 36 pairings the two panes draw
-with a status token as text, 17 were below 4.5:1 and none is now.
+4.771, `.badge-ok` inside `.build.is-live` 4.059 to 4.834. 4.771 was the worst figure either pane
+produced after the fix, and 3.852 the worst before it. Of the 36 pairings the two panes drew with
+a status token as text, 17 were below 4.5:1 and none was after.
 
 Every figure above is the arithmetic, so it recomputes from the tokens. The same pairings were
-also measured against what the browser actually composites, by walking each element's ancestor
-background chain: those agree to within 0.03 (the engine mixes at a precision the hex round trip
-here does not keep), and the worst rendered pairing on either pane is 4.778. Deleting the five
-rules at run time and re-measuring brings back exactly five failures, worst 3.970, which is what
-makes them load bearing rather than decorative. The lowest rendered figure on App releases is not
-in the table at all: it is `--text-3` on the tinted `.build` chip at 4.586, which passes untouched
-and is recorded so the next person to darken a chip knows how little room is left.
+also measured against what the browser composited at the time, by walking each element's ancestor
+background chain: those agreed to within 0.03 (the engine mixes at a precision the hex round trip
+here does not keep), and the worst rendered pairing on either pane was 4.778. Deleting the five
+rules at run time and re-measuring brought back exactly five failures, worst 3.970, which is what
+made them load bearing rather than decorative. The lowest rendered figure on the v1 App releases
+pane was not in the table at all: `--text-3` on the tinted `.build` chip at 4.586, recorded so
+the next person to darken a chip knows how little room was left.
 
-Three of those rows already passed and are moved anyway: `.verdict-worse` 5.321 to 6.590,
+Three of those rows already passed and were moved anyway: `.verdict-worse` 5.321 to 6.590,
 `.verdict-slightly-worse` and `.reveal-note` 5.422 to 6.570, `.verdict-better` 5.484 to 6.531.
-`.verdict-worse` and `.badge-crit` are drawn in adjacent cells of the same release-health row, and
-two reds a shade apart in one row read as a mistake rather than as a palette.
+`.verdict-worse` and `.badge-crit` were drawn in adjacent cells of the same release-health row,
+and two reds a shade apart in one row read as a mistake rather than as a palette.
 
-Deliberately untouched on these two pages, with the worst figure each reaches on them:
+Deliberately untouched on those two pages, with the worst figure each reached on them:
 `.badge-info` and `.flagchip.is-info` 4.837 inside a `.build` chip and 4.998 on a selected row,
-`.badge-brand` 4.825, the plain `.badge` 6.821 on its own opaque fill, `.masked` 4.706,
-`--text-3` on a selected row 4.771, and `.field-error` 5.321. `.field-error` has a second reason:
-the sign-in page draws it too, and darkening it under a page scope would give one component two
-inks across pages for no contrast gain.
+`.badge-brand` 4.825, the plain `.badge` 6.821 on its own opaque fill, `.masked` 4.706 — the
+figure is of `ops.css`'s rule, which is no longer what the users pane loads — `--text-3` on a
+selected row 4.771, and `.field-error` 5.321. `.field-error` had a second reason: the sign-in
+page draws it too, and darkening it under a page scope would have given one component two inks
+across pages for no contrast gain. That is still true, and `.field-error` is the one class in
+this record that is drawn on four pages and painted on all four.
 
-What is left. The first three rows are drawn by nothing built so far, and are recorded so that
-the first pane to draw one does not ship it unnoticed. The fourth is a boundary rather than an
-untouched debt:
+What was left unfixed. These were recorded so that the first pane to draw one did not ship it
+unnoticed, and that is still what they are for; the block above is what now decides whether
+anything draws them:
 
 | Pair | Light ratio |
 |---|---|
-| `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
-| `.btn-danger:hover` | 3.79 |
+| `.nav-count.is-crit`, `.btn-danger` on their `ops.css` tint over a card | 4.49 |
+| `.btn-danger:hover`, same | 3.79 |
 | `.tag-backend` on its tint | 4.46 |
-| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, on a page carrying neither scoped fix | 4.04 / 4.21 / 4.17 |
+| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, with neither scoped fix | 4.04 / 4.21 / 4.17 |
 
-The last row is the badge fix's own boundary and is recorded rather than dropped, because the
-darkened inks live in `operate.css` and in a rule scoped to two pages, so People and usage, Cloud
-costs and Settings carry neither. Those panes avoid the row rather than inherit it: a status badge
-on them goes inside a card, never loose on the page background, where it measures 4.67:1 or
-better. The row closes for everyone on the day the tokens themselves are darkened, which is the
-same day the three rules at the end of `operate.css` and the block at the end of `ops.css` are
-deleted together.
+The `.btn-danger` rows are `ops.css`'s ink over `ops.css`'s tint. Settings draws that class from
+its own sheet now, so those two figures no longer describe the only place the class is drawn, and
+what does describe it is `check-ops-contrast.mjs` measuring the rendered page. The last row was
+the badge fix's own boundary: it closes for good on the day the status tokens themselves are
+darkened, which is a decision about the approved palette and belongs to whoever owns it — the
+base tokens are also the dots, the chart series, the meters and the callout borders.
 
-Every class this record is written about is a `ops.css` class, and which sheets still declare it
-and which pages can still draw it are read out of the tree rather than remembered here. A `(no
-page)` is the strong direction — nothing assembles that token anywhere the scan can see — and a
-named page is the weak one, since a token built at run time is invisible to it.
+Dark mode passed throughout and was untouched. Both badge overrides were scoped to
+`[data-theme="light"]`, so the dark inks were the ones W1 shipped: over the same three surfaces
+and the same 14% tint, the lowest of the four badges was `.badge-crit` on `--surface-2` at 5.200,
+and `.badge-info` the next at 5.457. Every other pairing was 5.657 or better.
 
-```claims id=v1-status-classes
-.badge = ops.css; drawn by releases.html, settings.html, users.html
-.badge-ok = ops.css, operate.css; drawn by alerts.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, users.html
-.badge-warn = ops.css, operate.css; drawn by alerts.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, users.html
-.badge-crit = ops.css, operate.css; drawn by alerts.html, index.html, jobs-live.html, releases.html, run-history.html, users.html
-.badge-info = ops.css; drawn by alerts.html, index.html, jobs-live.html, releases.html, run-history.html, users.html
-.badge-brand = ops.css; drawn by releases.html, settings.html, users.html
-.flagchip = ops.css; drawn by releases.html, users.html
-.tag-mobile = ops.css; drawn by releases.html, users.html
-.tag-coaches = ops.css; drawn by releases.html, users.html
-.tag-backend = ops.css; drawn by (no page)
-.build = ops.css; drawn by releases.html
-.masked = ops.css; drawn by releases.html, users.html
-.verdict-better = ops.css; drawn by releases.html
-.verdict-worse = ops.css; drawn by releases.html
-.verdict-slightly-worse = ops.css; drawn by releases.html
-.reveal-note = ops.css; drawn by users.html
-.nav-count = ops.css; drawn by (no page)
-.btn-danger = ops.css; drawn by (no page)
-.field-error = ops.css; drawn by login.html, releases.html, users.html
-.callout-warn = ops.css; drawn by evaluations.html, settings.html
-```
-
-Dark mode passes throughout and is untouched. Both badge overrides are scoped to
-`[data-theme="light"]`, so the dark inks are the ones W1 shipped: over the same three surfaces
-and the same 14% tint, the lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200,
-and `.badge-info` is the next at 5.457. Every other pairing is 5.657 or better.
+What measures contrast now is `scripts/check-ops-contrast.mjs`, on the rendered page rather than
+from the tokens; the section after next is about what it can and cannot see.
 
 ## Working on it locally
 
@@ -2019,13 +2068,28 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front is older than the breach reads not clearing and one whose front arrived after it reads moving, that both can be on screen at once and stay different, that a missing unit, a missing or negative observation, a missing breach start or a span of zero produces cannot tell rather than the alarming one, that a problem whose `conditionClearedAt` is set reads stopped in the past tense rather than as a live breach, is excluded from the longest-wait tile and sorts below everything still going, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that the bar draws no app and no environment control at all and says why instead, that an empty page says whether anything was watching, that no `button` or `input` is drawn without a route behind it, and that the read carries its querystring as well as its path. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
-| `scripts/ops-spend-v2.test.mjs` | That each of the three cuts of the bill — the two the switch offers and the per-service table — adds up to the billed total exactly and that the line says so in both directions — reconciled, and the gap named when they do not — and that a sum which cannot be checked says that instead of reporting a gap of zero; that the `ungrouped` row is drawn and marked rather than hidden and is inside the sum; that a row with no figure prints words and is not added up as a zero; that the change pill's chevron follows the figure's own sign and that a rise and a fall are not the same glyph; that the per-service rows are drawn once and no state of the switch draws them again; that activating the switch hands focus back to the button that was activated, and only when focus was there to begin with; that a forecast is drawn only when the route sent one; that the age of the answer is printed beside the total once the poller is behind — the stale path — and against the answer's own publish lag rather than a constant in the pane; that the day line breaks on a day past the end of a stretch instead of joining across it; that each of the five availability states gets its own words and an unknown sixth still gets some; that the chart is named with its data and draws no `<text>` inside the figure; that the day chart carries the dates the route labelled under it and names both of its lines, so the dashed one is not just a texture; that a period billed only part way through says how far and to which day, and one billed to its own end does not repeat what the range name says; that the way out of an empty period travels to the closed month rather than back to the period it escapes — read from the link's `href`, not from its words; that no view button is offered for a grouping the answer did not carry; that the box holding the per-service table is reachable from a keyboard and names itself from the answer's own label, because at 320px the whole Change column is past its visible edge; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup. **Not covered**: that money is divided once at display and never summed as a float — every figure in the fixture is a whole number of dollars, so rounding each row to cents before summing changes no output and no mutation can make it red; it becomes testable when a fixture row carries a fraction of a cent. Any spelling the restored match cannot read — a CSS named colour, an `oklch()`, a `lab()`, a `color-mix()`; everything except a hex and the `rgb()`/`hsl()` families, in any case — inside a property whose name carries none of the colour-bearing words the value scan gates on, `text-decoration: underline crimson` being the shape, is seen by neither clause. The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Three exotic ways to write markup or a style attribute walk through the module guard: `setAttributeNS(null, 'style', …)`, a capitalised `Style:` prop key on `h()`, and `createContextualFragment()`. None of the four is drawn by this pane today. |
-| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
+| `scripts/ops-spend-v2.test.mjs` | That each of the three cuts of the bill — the two the switch offers and the per-service table — adds up to the billed total exactly and that the line says so in both directions — reconciled, and the gap named when they do not — and that a sum which cannot be checked says that instead of reporting a gap of zero; that the `ungrouped` row is drawn and marked rather than hidden and is inside the sum; that a row with no figure prints words and is not added up as a zero; that the change pill's chevron follows the figure's own sign and that a rise and a fall are not the same glyph; that the per-service rows are drawn once and no state of the switch draws them again; that activating the switch hands focus back to the button that was activated, and only when focus was there to begin with; that a forecast is drawn only when the route sent one; that the age of the answer is printed beside the total once the poller is behind — the stale path — and against the answer's own publish lag rather than a constant in the pane; that the day line breaks on a day past the end of a stretch instead of joining across it; that each of the five availability states gets its own words and an unknown sixth still gets some; that the chart is named with its data and draws no `<text>` inside the figure; that the day chart carries the dates the route labelled under it and names both of its lines, so the dashed one is not just a texture; that a period billed only part way through says how far and to which day, and one billed to its own end does not repeat what the range name says; that the way out of an empty period travels to the closed month rather than back to the period it escapes — read from the link's `href`, not from its words; that no view button is offered for a grouping the answer did not carry; that the box holding the per-service table is reachable from a keyboard and names itself from the answer's own label, because at 320px the whole Change column is past its visible edge; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup. **Not covered**: that money is divided once at display and never summed as a float — every figure in the fixture is a whole number of dollars, so rounding each row to cents before summing changes no output and no mutation can make it red; it becomes testable when a fixture row carries a fraction of a cent. In a property whose name carries none of the colour-bearing words the value scan gates on — `text-decoration`, `text-emphasis` and `mask-image` are the three shapes — **anything the spelling clause cannot read** is seen by neither clause: a named colour, an `oklch()`, a `lab()`, a `color-mix()`. Not only the named colour `text-decoration: underline crimson` names (`Stadiora/Aria#10663`). The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Which properties are gated and which spellings are read is the `spend-colour-gate` block below, produced by running the guard's own two matchers rather than by reading them. Three exotic ways to write markup or a style attribute walk through the module guard: `setAttributeNS(null, 'style', …)`, a capitalised `Style:` prop key on `h()`, and `createContextualFragment()`. None of the four is drawn by this pane today. |
+| `node scripts/check-ops-result-view.mjs` | Whether a state the JavaScript can enter is one a loaded stylesheet can **paint**. It drives every pane the registry declares past its landing state to a result view, proves it arrived by a string only that view draws, and then asks two things in real Chrome with no pointer over the page: that every class the pane wrote is reached by at least one rule from a sheet that page loads, and that every positive `aria-current`/`-selected`/`-pressed`/`-checked`/`-expanded` is painted differently from the same shape without it. `Stadiora/Aria#10456` is the shape: `pane-users.js` wrote `is-selected` on the picked match, no sheet `users.html` loads had a rule for it, and every other guard stayed green for the life of the defect. Known failures are enumerated in `KNOWN_UNPAINTED`, and each entry must still reproduce. **Not covered**, from its own docblock: one width (1280px); contrast, since two states that differ imperceptibly both pass; the accessibility tree, since the state is read off the markup rather than out of Chrome; any result view nobody drives — one per pane; a class judged per page rather than per site; the reach of a `~` or `+` clause; and paint that is not a class at all. |
+| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon on `/ops/shell-v2.html`** reaches that page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. All of that is measured on that one page, which is the only page in the repository that draws `aria.js`'s charts and its icon gallery. It does load every other page in `ops/` afterwards, in both themes, but only to catch a console error or a page that rendered nothing: a pane shipping an unpainted icon is **not** seen here. |
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
 | `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at 375px **and 360px** in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
-| `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
+| `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the page. A colour resolved at **draw time** is only correct for the theme it was drawn in; this loads every pane `assets/pane-registry.js` declares plus `/ops/shell-v2.html`, clicks the real button, and requires **every node's** resolved paint to equal the paint that node carries on a **fresh load** of the same page in the theme the button switched to — sixteen paint properties per node, with a `url(#id)` gradient resolved to its stops, because the ids are minted per draw. Two assertions stand either side of that one: that the two fresh loads differ at all, so the comparison is not vacuous on a page the theme never reached, and, on the pages that draw `aria.js`'s charts, that every shape painted from a token holds the palette's pinned value — the only one of the three that would notice `aria.css` drifting away from the palette, since a page compared against itself agrees with itself. Both directions, every page. **Not covered**, from its own docblock: pseudo-elements, any property outside those sixteen, a gradient that changed in a way its stops do not record, a page whose DOM differs between the two loads (reported as not comparable rather than passed), the populated states of People and usage and Cloud costs — the shared stub answers both with an empty envelope — and any theme beyond dark and light. |
 
-Which of those four browser guards runs where is read out of the guards and the workflows: the
+The `33` in that first row is not typed either. It is the size of the guard's own two pinned
+tables — the per-theme palette and the tokens it holds invariant across themes — counted out of
+the file:
+
+```claims id=shell-v2-pins
+palette tokens pinned for dark = 26
+palette tokens pinned for light = 26
+tokens pinned the same in every theme = 7
+tokens pinned in total for dark = 33
+tokens pinned in total for light = 33
+color-scheme pinned per theme = 2
+```
+
+Which browser guard runs where is read out of the guards and the workflows, so a guard added
+next week is a red run here rather than a paragraph that quietly describes four of five: the
 workflow whose job line carries `node scripts/<guard>`, and the pages the guard's own source
 names — `every pane the registry declares` where it boots from `OpsPaneRegistry` rather than
 from a literal list. This says what each guard **loads**, which is the half that goes stale; what
@@ -2034,8 +2098,9 @@ it then asserts on each page is the table above.
 ```claims id=browser-guards
 check-ops-contrast.mjs = ops-contrast.yml; /ops/shell-v2.html
 check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry declares
-check-ops-shell-v2.mjs = ops-shell-v2.yml; /ops/shell-v2.html
-check-ops-theme-redraw.mjs = ops-theme-redraw.yml; /ops/shell-v2.html
+check-ops-result-view.mjs = ops-result-view.yml; every pane the registry declares + /ops/run-history.html
+check-ops-shell-v2.mjs = ops-shell-v2.yml; every page in ops/
+check-ops-theme-redraw.mjs = ops-theme-redraw.yml; every pane the registry declares + /ops/shell-v2.html
 ```
 
 The Cloud costs colour guard's own reach is not described here either. The block below is
@@ -2063,9 +2128,9 @@ value #333 = spelling clause reads it
 value rgb(255, 0, 0) = spelling clause reads it
 value hsl(0 100% 50%) = spelling clause reads it
 value crimson = spelling clause cannot read it
-value oklch(0.7 0.2 250) = spelling clause reads it
-value lab(50% 40 59) = spelling clause reads it
-value color-mix(in srgb, crimson 50%, transparent) = spelling clause reads it
+value oklch(0.7 0.2 250) = spelling clause cannot read it
+value lab(50% 40 59) = spelling clause cannot read it
+value color-mix(in srgb, crimson 50%, transparent) = spelling clause cannot read it
 ```
 
 Charts and icons are swept for paint **separately**, with their own counts and their own
@@ -2083,6 +2148,46 @@ contrast oracle rather than to a paint-presence check; `check-ops-contrast.mjs` 
 and it measures text, not icons. The icon sweep reads one geometry property, `stroke-width` on
 the stroke channel, because that is the channel icons paint through; an icon hidden by
 `opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+
+### What holds this README to the code
+
+Seven issues were filed against this file in one day (`Stadiora/Aria#10457`, `#10474`, `#10510`,
+`#10639`, `#10641`, `#10655`, `#10663`), all of them the same defect: a sentence describing the
+code more broadly, or more narrowly, than the code behaves. A README that describes a guard more
+broadly than it behaves is worse than no README, because the next reader stops looking.
+
+So the numbers and lists this file is read **for** are not typed here. They are in fenced blocks
+whose info string is `claims id=<id>`, and `scripts/ops-readme-claims.test.mjs` rebuilds each one
+from the repository — the pages' own `<link>` and `<script>` tags, `pane-registry.js` executed in
+a vm, the stylesheets parsed into rules, the guard scripts and workflows, and
+`ops-spend-v2.test.mjs`'s own regexes run against probe values — then `deepStrictEqual`s the
+block against it. The expectation is never read out of the README, so breaking the code turns the
+run red with this file untouched. Every id it derives must appear exactly once here and every
+block here must be one it derives, so a block cannot be added, renamed or dropped silently, and
+the run prints what it judged, per block, in CI.
+
+Nine blocks: `assets-by-page`, `assets-only-in-tests`, `deleted-assets`, `panes`,
+`table-focus-rings`, `browser-guards`, `shell-v2-pins`, `spend-colour-gate`,
+`v1-status-classes`. A tenth check sweeps every repository file path this README names in a code
+span and requires it to be in the tree or declared in `deleted-assets`, which is what makes a
+file deleted elsewhere red here rather than quietly stale.
+
+**NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
+restating a block in English, or claiming something no block carries, is nobody's red. Only
+statically spelled `assets/…` tags are seen, so a runtime-injected asset is invisible. The
+fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
+are class tokens written in a page and the scripts it loads, so a class assembled at runtime is
+invisible and a name in a comment counts as a draw — a `(no page)` is the strong direction, a
+named page the weak one — and `painted where drawn` asks only whether some rule in a stylesheet
+that page loads names the class, not whether it applies, wins or paints anything. A guard's page
+set is read from `OpsPaneRegistry` and the `/ops/*.html` literals in its source. `OpsUsagePayload`
+is declared in the Aria monorepo, so nothing here can decide whether departure 8's list is a
+complete sweep of it, which is why that departure no longer claims to be one. Contrast ratios are
+pixels, not arithmetic over the tree: `check-ops-contrast.mjs` is that oracle. And the
+`deleted-assets` list is checked for absence only — the pull request each line names is not
+verifiable from a shallow checkout.
+
+The file's own docblock carries the same list, beside the code it is about.
 
 ### Measuring contrast where the colour lands
 
