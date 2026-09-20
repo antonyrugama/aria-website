@@ -58,7 +58,11 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 /* Relative to now, because every reading under test is relative to now. A
-   fixed date in a fixture ages into a different test. */
+   fixed date in a fixture ages into a different test.
+
+   One call is one instant. A fixture whose subject is two recorded times being
+   EQUAL reads this once and reuses the value — two calls are two instants, and
+   they agree only when they land in the same millisecond (#10514). */
 const at = (msAgo) => new Date(Date.now() - msAgo).toISOString();
 
 /* ------------------------------------------------------------- fixtures */
@@ -482,18 +486,46 @@ test('a span of zero is cannot tell, because no time elapsed for either claim', 
   /* Measured at the instant it crossed the line. Both verdicts are statements
      about what happened while the queue was over the line, and nothing has
      happened yet, so oldest >= span is satisfied by every non-negative age and
-     means nothing. */
-  const dom = await boot({
-    problems: {
-      problems: [queueProblem({
-        firstBreachedAt: at(10 * MINUTE),
-        firedAt: at(10 * MINUTE),
-        lastObservedAt: at(10 * MINUTE),
-      })],
-      summary: {},
-    },
+     means nothing.
+
+     ONE read of the clock, used three times. The subject here is an IDENTITY
+     between two recorded times, and an identity cannot be written as three
+     coincidences: `at(...)` three times asks the clock three times and gets one
+     instant only when all three land in the same millisecond. It did not, and a
+     1ms window is a window, so the pane correctly read a span and printed
+     `over the line 0.0s Not clearing` — an honest verdict, failed by a test
+     whose premise had quietly stopped holding (#10514).
+
+     NOT COVERED, and stated rather than implied: what the pane says about a
+     window wider than zero but under a second. Nothing writes one. An open
+     problem's span is at least its rule's duration, and durationSeconds is
+     validated as a whole number greater than zero
+     (app-backend opsAlertsRouter.ts), so the engine's spans are exactly zero —
+     which is what createProblem and restartProblemPersistence stamp from a
+     single `now` — or a second and up. The 1ms width that reddened CI is the
+     one width no record has. */
+  const instant = at(10 * MINUTE);
+  const problem = queueProblem({
+    firstBreachedAt: instant,
+    firedAt: instant,
+    lastObservedAt: instant,
   });
+  assert.equal(problem.firstBreachedAt, problem.lastObservedAt,
+    'the fixture did not build a zero-width window, so nothing below is about one');
+
+  const dom = await boot({ problems: { problems: [problem], summary: {} } });
   const text = allText(queueRows(dom)[0]);
+
+  /* The premise, before the verdict. `Cannot tell` is reached by a missing
+     observation OR a missing span, so on its own it cannot say which one the
+     pane refused, and it would stay green while the span reasoning it is named
+     for went untested. These two pin it to the span: the age is readable, and
+     the window is the thing the pane declined to read. */
+  assert.match(text, /oldest 1h 0m/,
+    'the observation was unreadable too, so Cannot tell proves nothing about the span');
+  assert.match(text, /over the line not readable/,
+    'the pane read a span out of two readings taken at the same instant: ' + text);
+
   assert.match(text, /Cannot tell/, 'a zero-width breach window was treated as a span');
   assert.doesNotMatch(text, /Not clearing|Moving, behind/,
     'a zero-width window produced a verdict about time that had not passed');
