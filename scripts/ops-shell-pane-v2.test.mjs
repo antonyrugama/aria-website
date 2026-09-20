@@ -800,3 +800,61 @@ test('a fixture path off this origin is refused', async () => {
   assert.equal(shell.safeHref('http://evil.example.invalid/x.json'), null);
   assert.equal(shell.safeHref('//evil.example.invalid/x.json'), null);
 });
+
+/* Round eight: the module docblock listed 18 of the 23 exported names and
+   ops/README.md's table listed 22, while both called themselves "the whole
+   surface". Three sibling panes are being built against those two documents,
+   so a name they omit is a name nobody uses and a name they invent is a
+   support question.
+
+   Both directions are asserted, because the one-direction version of this test
+   would pass on a document that listed a function the module does not export. */
+function documentedInDocblock(src) {
+  const start = src.indexOf('Public surface — window.OpsPaneShell:');
+  assert.ok(start > 0, 'the docblock no longer names its public surface');
+  const end = src.indexOf('That list is the whole of it', start);
+  assert.ok(end > start, 'the docblock no longer closes its public surface list');
+  const names = new Set();
+  for (const line of src.slice(start, end).split('\n')) {
+    /* The left column: everything before the run of spaces that starts the
+       description. A continuation line is indented past it and has none. */
+    const m = /^\s{5}(\S.*?)(?:\s{2,}|$)/.exec(line);
+    if (!m) continue;
+    for (const part of m[1].split('/')) {
+      const name = part.trim().replace(/\(.*$/, '');
+      if (/^[a-zA-Z][A-Za-z0-9]*$/.test(name)) names.add(name);
+    }
+  }
+  return names;
+}
+
+function documentedInReadme(src) {
+  const start = src.indexOf('`window.OpsPaneShell` is the whole surface');
+  assert.ok(start > 0, 'ops/README.md no longer names the bootstrap surface');
+  const end = src.indexOf('\n\n', src.indexOf('|---|---|', start));
+  const names = new Set();
+  for (const row of src.slice(start, end).split('\n')) {
+    if (!row.startsWith('| `')) continue;
+    const left = row.slice(1, row.indexOf('|', 1));
+    for (const [, name] of left.matchAll(/`([A-Za-z][A-Za-z0-9]*)(?:\([^`]*\))?`/g)) names.add(name);
+  }
+  return names;
+}
+
+test('the docblock and the README name exactly what the module exports', async () => {
+  const dom = await bootPane('overview', {});
+  const exported = Object.keys(dom.shell).sort();
+  assert.ok(exported.length > 15, 'only ' + exported.length + ' names exported, so this is not reading the module');
+
+  for (const [where, documented] of [
+    ['the shell-pane-v2.js docblock', documentedInDocblock(SHELL_SRC)],
+    ['ops/README.md', documentedInReadme(read('README.md'))],
+  ]) {
+    const missing = exported.filter((name) => !documented.has(name));
+    const invented = [...documented].filter((name) => exported.indexOf(name) === -1);
+    assert.deepEqual(missing, [], where + ' does not name ' + missing.join(', ') +
+      ', which the module exports');
+    assert.deepEqual(invented, [], where + ' names ' + invented.join(', ') +
+      ', which the module does not export');
+  }
+});

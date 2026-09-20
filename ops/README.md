@@ -341,7 +341,7 @@ A v2 pane page loads, in this order:
 and none of `ops.css`, `operate.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
 `data-page`, so the two shells can never both claim one document.
 
-`window.OpsPaneShell` is the whole surface:
+`window.OpsPaneShell` is the whole surface, and a test holds this table to it in both directions:
 
 | | |
 |---|---|
@@ -353,7 +353,7 @@ and none of `ops.css`, `operate.css`, `shell.js` or `icons.js`. `data-pane` rath
 | `region(content)` | the four preview states, as a region the pane owns |
 | `read(source)` | the pane's own read, through the local fixture hook |
 | `h` / `icon` / `card` / `cardHead` / `band` / `bandHead` / `stateBlock` / `link` | DOM builders, never `innerHTML` |
-| `announce` / `toast` / `fmt` / `safeHref` / `failureMessage` / `panes` | the rest |
+| `announce` / `toast` / `fmt` / `safeHref` / `isLoopback` / `failureMessage` / `panes` | the rest |
 
 Two events fire on `window` once the shell is in the document: `ops:ready` and then `ops:filters`,
 which fires again on every change. Both carry the starting selection, so a pane never reads the

@@ -163,8 +163,3 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
 
 /* A skeleton block the pane sizes itself. */
 .skel-block { height: 80px; }
-
-/* cardHead() renders its title as an h3 so every card is in the heading
-   outline. aria.css sizes .card-title but sets no box, so the heading tag's
-   own margin has to go or every card head gains a gap. */
-.card-title { margin: 0; }

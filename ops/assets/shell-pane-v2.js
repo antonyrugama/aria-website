@@ -33,12 +33,21 @@
      region(content)         the four preview states, as a region a pane owns
      h(tag, opts, children)  DOM builder. Never innerHTML
      icon(name, className)   assets/aria.js's icon set, as an SVGElement
-     card / cardHead / bandHead / stateBlock   the v2 panel shapes
+     card / cardHead / band / bandHead / stateBlock / link   the v2 shapes
      announce(message)       polite live-region announcement
      toast(iconName, text)   transient confirmation
      fmt                     the formatters every pane prints figures through
      read(source)            a pane's own read, with the local fixture hook
+     safeHref(text)          a same-origin, same-scheme href, or null
+     isLoopback()            whether this page is being served locally, which
+                             is the only place a fixture may be read from
+     failureMessage(error)   what to tell a person about a failed read
      panes                   the registry, read-only
+
+   That list is the whole of it, in both directions: a test boots the page and
+   compares Object.keys(OpsPaneShell) against the names in this block and
+   against ops/README.md's table, so neither can document a function that does
+   not exist or miss one that does.
 
    Two events fire on window once the shell is in the document, in this order:
    ops:ready (detail { pane, filters }) and then ops:filters (detail = the
@@ -488,8 +497,9 @@
   /* The title is a heading, not a styled div, so a card cannot be a section a
      screen reader navigating by heading jumps straight past. h3 because
      bandHead is the h2 and the pane's own name is the h1 in the top bar.
-     shell-pane-v2.css resets the margin the tag brings with it, because
-     aria.css styles .card-title's type and not its box. */
+     Nothing has to be undone for the tag: aria.css:131 is `* { margin: 0 }`,
+     so the heading arrives with no box of its own and .card-title's type
+     rules land on it unchanged. */
   function cardHead(title, note, end) {
     var head = h('div', { className: 'card-head' });
     var words = h('div');

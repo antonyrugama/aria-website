@@ -1105,3 +1105,74 @@ test('every card title is a heading, so no card is jumped past', async () => {
       JSON.stringify(allText(t)));
   }
 });
+
+/* Round eight: making card titles h3 in round seven inverted the outline where
+   it had only been flat before — stateBlock defaults to h2, so "Nothing needs
+   attention" and "There is no line to draw for this window" became h2s nested
+   inside h3-titled cards. A reader navigating by heading was told the block was
+   a sibling of the band above it.
+
+   This binds the CLASS rather than those four call sites: any heading inside a
+   titled card or band has to be deeper than the title of the thing that
+   contains it, whatever the pane later puts there. */
+const HEADING = (n) => (/^H([1-6])$/.test(String(n.tagName || '')) ? Number(RegExp.$1) : 0);
+
+function ownTitle(node) {
+  for (const kid of node.childNodes || []) {
+    if (!kid.tagName) continue;
+    if (!/(^|\s)(card-head|band-head)(\s|$)/.test(kid.className || '')) continue;
+    const found = findAll(kid, (n) => /(^|\s)(card-title|band-title)(\s|$)/.test(n.className || ''))[0];
+    if (found) return found;
+  }
+  return null;
+}
+
+function outlineFaults(node, floor, faults, titles) {
+  const level = HEADING(node);
+  if (level) {
+    /* A container's own title was already measured against what contains the
+       container, so it is not measured against itself here. */
+    if (!titles.has(node) && level <= floor) {
+      faults.push('h' + level + ' "' + allText(node) + '" sits inside a container titled h' + floor);
+    }
+    return faults;
+  }
+  let next = floor;
+  if (/(^|\s)(card|band)(\s|$)/.test(node.className || '')) {
+    const mine = ownTitle(node);
+    if (mine) {
+      titles.add(mine);
+      if (HEADING(mine) <= floor) {
+        faults.push('h' + HEADING(mine) + ' "' + allText(mine) +
+          '" titles a container inside one titled h' + floor);
+      }
+      next = HEADING(mine);
+    }
+  }
+  for (const kid of node.childNodes || []) {
+    if (kid.tagName) outlineFaults(kid, next, faults, titles);
+  }
+  return faults;
+}
+
+for (const [name, mk] of [
+  ['live', async () => livePanel(await boot({}))],
+  ['all quiet', async () => livePanel(await boot({ problems: { problems: [], total: 0 } }))],
+  ['unarmed', async () => livePanel(await boot({
+    problems: { problems: [], total: 0 }, rules: NEVER_RUN_RULES,
+  }))],
+  ['no line to draw', async () => livePanel(await boot({
+    summary: summaryFixture((s) => { s.activity.series = []; }),
+  }))],
+]) {
+  test('the heading outline never inverts inside a card — ' + name, async () => {
+    const panel = await mk();
+    const headings = findAll(panel, (n) => HEADING(n) > 0);
+    assert.ok(headings.length >= 3,
+      'only ' + headings.length + ' headings in the ' + name + ' render, so this is not reading the page');
+    const titled = findAll(panel, (n) => /(^|\s)(card|band)(\s|$)/.test(n.className || '') && ownTitle(n));
+    assert.ok(titled.length >= 1, 'no titled container in the ' + name + ' render');
+    const faults = outlineFaults(panel, 1, [], new Set());
+    assert.deepEqual(faults, [], faults.join(' | '));
+  });
+}

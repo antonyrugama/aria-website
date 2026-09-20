@@ -454,7 +454,7 @@
            without scrolling back, and adds nothing the ribbon said. */
         body.appendChild(armed.trustworthy
           ? quietBlock(armed)
-          : S.stateBlock('warn', 'The checks are not running', []));
+          : S.stateBlock('warn', 'The checks are not running', [], 4));
         card.appendChild(body);
         return card;
       }
@@ -499,7 +499,7 @@
         armed.lastFiredAt
           ? 'Last problem fired ' + fmt.ago(armed.lastFiredAt) + '.'
           : 'No problem has ever fired.'
-      ]);
+      ], 4);
     }
 
     var SEVERITY_ACCENT = { crit: 'acc-bad', warn: 'acc-warn', info: 'acc-blue' };
@@ -520,7 +520,9 @@
       /* The severity in words as well as in the accent colour and the glyph,
          because the accent is the only thing separating a critical item from
          an informational one at a glance. */
-      words.appendChild(h('h3', {
+      /* h4, not h3: this row sits inside the queue card, whose own title is
+         the h3. */
+      words.appendChild(h('h4', {
         className: 'q-title ' + (SEVERITY_INK[tone] || 'is-info'),
         text: model.SEVERITY_LABEL[problem.severity] + ': ' + problem.title
       }));
@@ -978,7 +980,7 @@
            as a measured flat zero, which is the one thing a window with no
            stored reading must not look like. */
         body.appendChild(S.stateBlock('empty', 'There is no line to draw for this window',
-          [detailOf(activity, 'The answer carried no daily figures for this window.')]));
+          [detailOf(activity, 'The answer carried no daily figures for this window.')], 4));
         card.appendChild(body);
         appendNote(card, activity && activity.note);
         return card;
@@ -1001,7 +1003,7 @@
         /* One day with a reading is a point, not a line, and there is nothing
            to join up. The figures below still say what was counted. */
         body.appendChild(S.stateBlock('empty', 'Not enough days to draw a line yet',
-          ['Fewer than two days in this window have a stored reading.']));
+          ['Fewer than two days in this window have a stored reading.'], 4));
       }
 
       /* The chart's own numbers, in text. Nothing on this pane may exist only
@@ -1240,7 +1242,7 @@
         glyph.setAttribute('aria-hidden', 'true');
         item.appendChild(glyph);
         item.appendChild(h('div', {}, [
-          h('h3', { className: 'omit-title', text: textOf(entry.title) || entry.key }),
+          h('h4', { className: 'omit-title', text: textOf(entry.title) || entry.key }),
           h('p', {
             className: 'omit-desc',
             text: textOf(entry.detail) ||
@@ -1294,7 +1296,7 @@
           S.failureMessage(result.error),
           'Nothing here is a zero: the figures are unread, not absent. The problems ' +
             'above were read separately and are unaffected.'
-        ]);
+        ], 3);
         var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
         again.addEventListener('click', function () { load(); });
         block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
@@ -1309,7 +1311,7 @@
         empty.appendChild(S.stateBlock('empty', 'These figures have nothing behind them yet', [
           'The operations API answered without the headline figures.',
           'Nothing is being hidden from you, and nothing here is a zero.'
-        ]));
+        ], 3));
         band.appendChild(empty);
         return;
       }
