@@ -164,13 +164,19 @@ function loadPane(role) {
     addEventListener: () => {},
     setTimeout: () => null,
     clearTimeout: () => {},
-    OpsShell: {
+    OpsPaneShell: {
       h,
       icon: (name) => h('span', { className: 'icon icon-' + name }),
       definePane: () => {},
       announce: () => {},
+      card: (cls) => h('div', { className: 'card' + (cls ? ' ' + cls : '') }),
+      cardHead: (title) => h('div', { className: 'card-head' }, [h('h3', { className: 'card-title', text: title })]),
+      band: (title) => h('section', { className: 'band' }, [h('h2', { className: 'band-title', text: title })]),
       stateBlock: () => h('div', { className: 'state-block' }),
-      wireTabs: () => {},
+      failureMessage: (err) => (err && err.message) || 'unreadable',
+      region: () => ({
+        loading() {}, show() {}, degraded() {}, empty() {}, failed() {}
+      }),
       filters: () => ({ scope: 'all' })
     },
     OpsSession: {
