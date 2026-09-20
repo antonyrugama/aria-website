@@ -69,6 +69,16 @@
    wrong judgement would be silent, and silence is the failure this guard
    cannot afford.
 
+   The same instinct now covers the markup itself. Everything here reads a
+   page with patterns rather than with a parser, and review found input shapes
+   where those patterns disagree with a browser in the dangerous direction.
+   Rather than teach the patterns to parse them, the shapes are DETECTED and
+   the run refuses: a page this cannot read stops the judgement for the whole
+   run, both arms, because an unreadable page can hide a <link> as easily as a
+   body attribute and a hidden <link> orphans a live stylesheet. The detectors
+   are the refuses-to-read table in the block below; MARKUP_REFUSALS is where
+   they live, and each one has a demonstration driven through analyze().
+
    COVERED, each with the mutation that proves it
 
    Every claim below is proved by a mutation run against the real repository
@@ -126,6 +136,14 @@
        document replacement                   DOCUMENT_REPLACERS
      - an inline script is scanned like a     inlineScripts returning []
        file
+     - the body of a <script src> is read     the src skip reinstated in
+       too                                   inlineScripts
+     - a <script type> a browser does not     the isExecutedScript gate
+       run is not read as code               removed
+     - a repeated attribute keeps the        the hasOwnProperty guard in
+       FIRST spelling, as HTML does          parseTagAttributes removed
+     - markup this cannot read stops the     any one detector's detect()
+       judgement rather than being judged    returning false
 
    NOT COVERED, on purpose
 
@@ -135,10 +153,6 @@
        it. Narrowing the claim was preferred to guessing at it.
      - CSS nesting. A rule nested inside another rule's block is not judged.
        This repository has none; if it gains some, they are simply not seen.
-     - A body-attribute write through a reference to <body> that is not
-       textually document.body or document.documentElement — an alias, a
-       closest('body'), an element handed in as an argument. The refusal check
-       reads text and cannot resolve those.
      - An attribute selector with an operator other than `=`, a case-insensitive
        flag, or a bare [attr] presence test. These are read and then ignored,
        which can only under-report. That "ignored" is enforced in one place:
@@ -148,38 +162,80 @@
        requirement for a value no page can carry.
      - Whether a sheet a page DOES load is the right sheet for it, and whether
        a rule that is alive is also correct.
-     - Anything outside ops/, and anything in a SUBDIRECTORY of it: the page
-       and sheet listings are one level deep, so ops/panes/foo.html would not
-       be read and a sheet only it linked would be reported orphaned.
-     - @import. The orphan arm reads <link> tags only, so a sheet reachable
-       only through an @import inside a linked sheet reads as orphaned. The
-       dashboard has no @import and its own comment says it deliberately has
-       none, which is why this is recorded rather than implemented.
-     - HTML character references in an attribute value. `data-page="a&amp;b"`
-       is read as the seven characters it is written with, so a selector
-       asking for `a&b` would be judged against the wrong string.
-     - CSS escapes in a selector's value, which is the same shape on the other
-       side: `[data-page="lo\67 in"]` matches `login` and is compared as the
-       characters it is written with.
-     - Which <body> is the page's <body>. The first match for `<body` outside
-       an HTML comment wins, so one inside a <template> or a string literal
-       would be read as the page's own.
+     - Anything outside ops/. Only ops/*.html and ops/assets/* are read.
 
-   Five of those — the subdirectory, the @import, the character reference, the
-   CSS escape and the wrong <body> — are shapes where the wrong answer would be
-   DEAD rather than alive, so it is worth being exact about the direction the
-   rest of this leans. Within the analysis it does perform, anything it cannot
-   parse, resolve or intersect is treated as ALIVE, so it under-reports rather
-   than deleting something that is still on screen; the exception is a script
-   that could be writing the attribute, which becomes a loud REFUSAL, because
-   there the safe answer is not "alive" but "stop". Outside that analysis, in
-   the five input shapes above, it would be wrong in the dangerous direction,
-   and each is named here rather than defended against because none of the five
-   exists in this repository and all five fail loudly rather than silently.
+   THE DIRECTION IT LEANS, AND WHERE IT LEANS THE WRONG WAY
 
-   That list is where two rounds of review put their findings, and both rounds
-   found it overclaiming. It is worth reading as the least trustworthy part of
-   this file rather than the most. */
+   Within the analysis it performs, anything it cannot parse, resolve or
+   intersect is treated as ALIVE, so it under-reports rather than deleting
+   something that is still on screen; the exception is a script that could be
+   writing the attribute, which becomes a loud REFUSAL, because there the safe
+   answer is not "alive" but "stop".
+
+   At the INPUT boundary it has been wrong the other way, and that is the
+   direction that matters: a wrong DEAD here is not a false alarm, it is an
+   instruction to delete live CSS, and this guard is what deleted 94 lines of
+   ops.css and all of operate.css. Every round of review this file has had
+   found the prose list of those shapes short or its count wrong, each time by
+   reading past the bullet the round before had named. So the list is no
+   longer prose.
+
+   The block below is PARSED BACK OUT OF THIS FILE and deepEqual'd against the
+   two tables in the code — MARKUP_REFUSALS and WRONG_DEAD_NOT_COVERED — by
+   `the header's counts block is the code's tables, not a typed claim`. Every
+   refuses-to-read entry has a demonstration driven through analyze() that
+   must produce a refusal, and every wrong-dead-not-covered entry has one that
+   must still produce the WRONG verdict. So neither count is typed, no entry's
+   wording can drift from the code, a shape that gets fixed cannot stay on the
+   list, and a detector cannot be added without being demonstrated.
+
+   None of the refuses-to-read shapes and none of the wrong-dead-not-covered
+   shapes exists in ops/ today.
+
+   ```counts
+   refuses-to-read: 3
+   - comment-in-script: An HTML comment opener or closer inside a <script>
+     element. stripHtmlComments runs over the whole page, so a `<!--` in a
+     JavaScript string blanks everything up to the next `-->` anywhere later,
+     including a following script and any <link> or <body> between them.
+   - quoted-gt-in-tag: A `>` inside a quoted attribute value of <body>,
+     <link> or <script>. Every tag reader here stops at the first `>`, so the
+     rest of the tag is read as though it were page text: the body attribute
+     map comes back wrong, and an href after the quote disappears, which
+     orphans a sheet the page really loads.
+   - script-end-tag: A `</script` that the end-tag pattern `</script\s*>`
+     does not match, such as `</script/>`. The element never closes for this
+     guard and its body is never scanned, while a browser closes the element
+     there and runs it.
+   wrong-dead-not-covered: 7
+   - aliased-body-write: The refusal check reads text, so a write through a
+     reference to <body> that is not textually document.body or
+     document.documentElement — an alias, a closest("body"), an argument — is
+     invisible unless it also names the attribute in quotes.
+   - body-in-template: The first `<body` outside an HTML comment wins, so one
+     inside a <template> or a string literal is read as the page's own and
+     the real one is never seen.
+   - character-reference: An HTML character reference in an attribute value
+     is read as the characters it is written with, so `data-page="a&amp;b"`
+     is compared against the selector as seven characters rather than the
+     three the browser resolves it to.
+   - css-escape: A CSS escape in a selector value is compared as the
+     characters it is written with, so `[data-page="lo\67 in"]`, which
+     matches login, is not read as login.
+   - import-only-sheet: The orphan arm reads <link> tags only, so a sheet
+     reachable only through an @import inside a linked sheet reads as
+     orphaned.
+   - script-injected-link: The orphan arm reads <link> tags only, so a
+     stylesheet a script builds and appends at runtime reads as orphaned.
+   - subdirectory-page: The page and sheet listings are one level deep, so
+     ops/panes/foo.html would not be read and a sheet only it linked would be
+     reported orphaned.
+   ```
+
+   Read that block as the least trustworthy part of this file rather than the
+   most: it is what three rounds of review have found something in, and the
+   only reason to trust it further than the prose that preceded it is that it
+   is now checked. */
 
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -470,7 +526,14 @@ function parseTagAttributes(tagBody) {
   const re = /([\w:.-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
   let m;
   while ((m = re.exec(tagBody)) !== null) {
-    attrs[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4] ?? '';
+    const name = m[1].toLowerCase();
+    /* HTML keeps the FIRST spelling of a repeated attribute and drops the
+       rest. Keeping the last read <body data-page="login" data-page="users">
+       as users, which is a deletion instruction against every rule the page
+       really matches. */
+    if (!Object.prototype.hasOwnProperty.call(attrs, name)) {
+      attrs[name] = m[2] ?? m[3] ?? m[4] ?? '';
+    }
   }
   return attrs;
 }
@@ -505,18 +568,110 @@ export function bodyAttributes(html) {
 /* Script text written INTO a page. The refusal check is the guard's safety
    net, and a net that only covers ops/assets/*.js has a hole the width of a
    <script> tag: the same source that is refused in a file would be invisible
-   inline. Every script body is read, including the body of a <script src>,
-   which a browser ignores: reading it can only add refusals, and a refusal is
-   the loud direction. */
+   inline. Every executed script's body is read, including the body of a
+   <script src>, which a browser ignores: reading it can only add refusals,
+   and a refusal is the loud direction.
+
+   A <script> whose type is neither absent nor a JavaScript type is NOT read,
+   because a browser does not execute it either. attributeWriteRisks only asks
+   whether the attribute name appears in quotes, so a JSON island whose keys
+   happen to be attribute names would otherwise be reported as a script that
+   could write <body> — a permanently red assertion over a data block. */
+const JAVASCRIPT_TYPE = /^(?:module|(?:text|application)\/(?:x-)?(?:java|ecma)script)$/;
+
+function isExecutedScript(tagBody) {
+  const type = (parseTagAttributes(tagBody).type || '').toLowerCase().split(';')[0].trim();
+  return type === '' || JAVASCRIPT_TYPE.test(type);
+}
+
 export function inlineScripts(html, pagePath) {
   const out = [];
-  const re = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
   let m;
   const clean = stripHtmlComments(html);
   while ((m = re.exec(clean)) !== null) {
-    if (m[1].trim()) out.push({ name: `${pagePath} (inline script)`, source: m[1] });
+    if (!isExecutedScript(m[1])) continue;
+    if (m[2].trim()) out.push({ name: `${pagePath} (inline script)`, source: m[2] });
   }
   return out;
+}
+
+/* ============ markup this guard cannot read, and will not judge =========
+
+   Everything above reads a page with patterns rather than with a parser, and
+   review of the commit that added this file found input shapes that make
+   those patterns disagree with a browser in the DANGEROUS direction: the
+   guard reports DEAD on CSS the page really uses, which here is an
+   instruction to delete it. Each shape below was run through analyze() and
+   checked against real Chromium served over HTTP, not reasoned about.
+
+   The disposition is the instinct the refusal check already has. A guard that
+   says "I cannot tell" is safe; a guard that says DEAD deletes your CSS. So
+   none of these teaches the reader to parse the shape correctly. They REFUSE:
+   the run fails by name, and the whole judgement stops for that run — both
+   arms, every sheet — because a page whose markup cannot be read can hide a
+   <link> as easily as a body attribute, and a hidden <link> orphans a live
+   stylesheet.
+
+   Every detector reads the page exactly as WRITTEN, before comment stripping,
+   because unreliable comment stripping is one of the shapes being detected. */
+
+/* True when a quoted attribute value is still open at the end of a tag body,
+   which is how a `>` inside one gets mistaken for the end of the tag. */
+export function endsInsideQuote(text) {
+  let quote = null;
+  for (const ch of text) {
+    if (quote) { if (ch === quote) quote = null; }
+    else if (ch === '"' || ch === "'") quote = ch;
+  }
+  return quote !== null;
+}
+
+export const MARKUP_REFUSALS = [
+  {
+    id: 'comment-in-script',
+    why: 'An HTML comment opener or closer inside a <script> element. stripHtmlComments '
+      + 'runs over the whole page, so a `<!--` in a JavaScript string blanks everything '
+      + 'up to the next `-->` anywhere later, including a following script and any '
+      + '<link> or <body> between them.',
+    detect(html) {
+      const re = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+      let m;
+      while ((m = re.exec(html)) !== null) if (/<!--|-->/.test(m[1])) return true;
+      return false;
+    },
+  },
+  {
+    id: 'quoted-gt-in-tag',
+    why: 'A `>` inside a quoted attribute value of <body>, <link> or <script>. Every tag '
+      + 'reader here stops at the first `>`, so the rest of the tag is read as though it '
+      + 'were page text: the body attribute map comes back wrong, and an href after the '
+      + 'quote disappears, which orphans a sheet the page really loads.',
+    detect(html) {
+      const re = /<(?:body|link|script)\b([^>]*)>/gi;
+      let m;
+      while ((m = re.exec(html)) !== null) if (endsInsideQuote(m[1])) return true;
+      return false;
+    },
+  },
+  {
+    id: 'script-end-tag',
+    why: 'A `</script` that the end-tag pattern `</script\\s*>` does not match, such as '
+      + '`</script/>`. The element never closes for this guard and its body is never '
+      + 'scanned, while a browser closes the element there and runs it.',
+    detect(html) {
+      const re = /<\/script/gi;
+      let m;
+      while ((m = re.exec(html)) !== null) {
+        if (!/^\s*>/.test(html.slice(m.index + m[0].length))) return true;
+      }
+      return false;
+    },
+  },
+];
+
+export function markupRefusals(html) {
+  return MARKUP_REFUSALS.filter((r) => r.detect(html));
 }
 
 /* ================= can a script write this attribute? =================== */
@@ -603,9 +758,26 @@ export function analyze(input) {
   };
 
   const onDisk = new Set(input.sheets.map((s) => s.name));
+
+  /* A page whose markup this guard cannot read stops the whole judgement.
+     Not just that page's: an unreadable page can hide a <link>, and a hidden
+     <link> is what turns a live stylesheet into an orphan. Both arms below
+     therefore still COUNT what they see, so the printed summary stays honest,
+     and report nothing. */
+  for (const p of input.pages) {
+    for (const risk of markupRefusals(p.source)) {
+      findings.push({
+        kind: 'unreadable-markup',
+        where: p.name,
+        detail: `${risk.id}: ${risk.why}`,
+      });
+    }
+  }
+  const judging = findings.length === 0;
+
   for (const p of pages) {
     for (const href of p.sheets) {
-      if (!onDisk.has(href)) {
+      if (judging && !onDisk.has(href)) {
         findings.push({
           kind: 'dangling-link',
           where: `${p.name} -> ${href}`,
@@ -621,11 +793,13 @@ export function analyze(input) {
     counts.rules += rules.length;
 
     if (loaders.length === 0) {
-      findings.push({
-        kind: 'orphan-sheet',
-        where: sheet.name,
-        detail: `no page under ops/ has a <link rel="stylesheet"> for ${sheet.name}`,
-      });
+      if (judging) {
+        findings.push({
+          kind: 'orphan-sheet',
+          where: sheet.name,
+          detail: `no page under ops/ has a <link rel="stylesheet"> for ${sheet.name}`,
+        });
+      }
       continue;
     }
 
@@ -655,14 +829,16 @@ export function analyze(input) {
 
       const refused = verdicts.find((v) => v.refused);
       if (refused) {
-        findings.push({
-          kind: 'refused',
-          where: `${sheet.name}:${rule.line}`,
-          detail: `cannot judge this rule: ${refused.refused.join('; ')}`,
-        });
+        if (judging) {
+          findings.push({
+            kind: 'refused',
+            where: `${sheet.name}:${rule.line}`,
+            detail: `cannot judge this rule: ${refused.refused.join('; ')}`,
+          });
+        }
         continue;
       }
-      if (verdicts.every((v) => v.dead)) {
+      if (judging && verdicts.every((v) => v.dead)) {
         findings.push({
           kind: 'dead-body-scope',
           where: `${sheet.name}:${rule.line}`,
@@ -749,6 +925,16 @@ test('no body attribute this guard judged can be written by a script', () => {
   assert.deepEqual(refused.map((f) => f.where), [],
     'the guard refused to judge these rules rather than risk a wrong answer:\n' +
     refused.map((f) => `  ${f.where}: ${f.detail}`).join('\n'));
+});
+
+test('every page under ops/ is markup this guard can read', () => {
+  /* Not a style rule: a single unreadable page switches BOTH arms above off
+     for the whole run, so without this the guard would pass by judging
+     nothing at all — the quietest false green available to it. */
+  const unreadable = result.findings.filter((f) => f.kind === 'unreadable-markup');
+  assert.deepEqual(unreadable.map((f) => f.where), [],
+    'this guard judged nothing, because these pages are shapes it refuses to read:\n' +
+    unreadable.map((f) => `  ${f.where}: ${f.detail}`).join('\n'));
 });
 
 /* ============================== the guard ===============================
@@ -1000,6 +1186,15 @@ test('the pieces the analysis is built from behave', () => {
 
   assert.deepEqual(bodyAttributes('<body data-page="x" class="y">'), { 'data-page': 'x', class: 'y' });
   assert.equal(bodyAttributes('<!-- <body data-page="x"> -->'), null);
+  assert.deepEqual(bodyAttributes('<body data-page="login" data-page="users">'),
+    { 'data-page': 'login' },
+    'HTML keeps the first spelling of a repeated attribute; keeping the last reads this '
+    + 'page as users and calls every rule it really matches dead');
+
+  assert.equal(endsInsideQuote(' rel="stylesheet" href="a.css"'), false);
+  assert.equal(endsInsideQuote(' data-x="a'), true, 'a quoted value left open by a `>`');
+  assert.equal(endsInsideQuote(' title="it\'s fine"'), false,
+    'an apostrophe inside a double-quoted value does not open a quote');
 
   /* inlineScripts, on its own values rather than through a fixture whose
      verdict is the same either way. Each of the three assertions below is red
@@ -1099,19 +1294,6 @@ export const WRONG_DEAD_NOT_COVERED = [
     expected: ['dead-body-scope ops/assets/x.css:1'],
   },
   {
-    id: 'comment-in-script',
-    why: 'stripHtmlComments runs over the whole page, so `<!--` inside a JavaScript string '
-      + 'blanks everything up to the next `-->` anywhere later, including a following '
-      + 'script and any <link> or <body> between them.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', '<!doctype html><html><head>'
-        + '<script>var s = "<!--";</script>'
-        + `<script>${WRITE}</script>${LINK}<!-- ordinary comment -->`
-        + '</head><body data-page="login">x</body></html>')],
-      wantsUsers),
-    expected: ['orphan-sheet ops/assets/x.css'],
-  },
-  {
     id: 'css-escape',
     why: 'A CSS escape in a selector value is compared as the characters it is written '
       + 'with, so `[data-page="lo\\67 in"]`, which matches login, is not read as login.',
@@ -1119,16 +1301,6 @@ export const WRONG_DEAD_NOT_COVERED = [
       [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
         + '<body data-page="login">x</body></html>')],
       [sheet('ops/assets/x.css', 'body[data-page="lo\\67 in"] { color: red; }')]),
-    expected: ['dead-body-scope ops/assets/x.css:1'],
-  },
-  {
-    id: 'duplicate-body-attribute',
-    why: 'parseTagAttributes keeps the LAST spelling of a repeated attribute and HTML keeps '
-      + 'the first, so `<body data-page="login" data-page="users">` is read as users.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
-        + '<body data-page="login" data-page="users">x</body></html>')],
-      wantsLogin),
     expected: ['dead-body-scope ops/assets/x.css:1'],
   },
   {
@@ -1141,39 +1313,6 @@ export const WRONG_DEAD_NOT_COVERED = [
       [sheet('ops/assets/x.css', '@import url(y.css);\n.a { color: red; }'),
         sheet('ops/assets/y.css', '.b { color: red; }')]),
     expected: ['orphan-sheet ops/assets/y.css'],
-  },
-  {
-    id: 'quoted-gt-in-body-tag',
-    why: 'The <body> reader stops at the first `>`, so `<body data-x="a>b" '
-      + 'data-page="login">` parses as two empty attributes named data-x and a.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
-        + '<body data-x="a>b" data-page="login">x</body></html>')],
-      wantsLogin),
-    expected: ['dead-body-scope ops/assets/x.css:1'],
-  },
-  {
-    id: 'quoted-gt-in-link-tag',
-    why: 'The <link> reader stops at the first `>` the same way, so a `>` in any quoted '
-      + 'attribute before href hides the href and the sheet the page really loads '
-      + 'reads as orphaned.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', '<!doctype html><html><head>'
-        + '<link rel="stylesheet" title="a>b" href="assets/x.css"></head>'
-        + '<body data-page="login">x</body></html>')],
-      wantsLogin),
-    expected: ['orphan-sheet ops/assets/x.css'],
-  },
-  {
-    id: 'script-end-tag',
-    why: 'The end-tag pattern is `</script\\s*>`, so `</script/>` does not close the '
-      + 'element for this guard and the script body is never read, while a browser '
-      + 'closes the element there and runs it.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
-        + `<body data-page="login">x<script>${WRITE}</script/></body></html>`)],
-      wantsUsers),
-    expected: ['dead-body-scope ops/assets/x.css:1'],
   },
   {
     id: 'script-injected-link',
@@ -1207,6 +1346,46 @@ test('every shape this guard is documented to get wrong still gets it wrong', ()
   assert.equal(new Set(ids).size, ids.length, 'duplicate id');
 });
 
+/* The markup shapes the guard refuses to read, one demonstration per detector
+   id, driven through analyze() rather than through detect(). A detector that
+   fires but does not stop the judgement would be a refusal in name only. */
+const REFUSAL_DEMOS = {
+  'comment-in-script': [
+    '<!doctype html><html><head><script>var s = "<!--";</script>'
+    + `<script>${WRITE}</script>${LINK}<!-- ordinary comment -->`
+    + '</head><body data-page="login">x</body></html>',
+  ],
+  'quoted-gt-in-tag': [
+    `<!doctype html><html><head>${LINK}</head>`
+    + '<body data-x="a>b" data-page="login">x</body></html>',
+    '<!doctype html><html><head><link rel="stylesheet" title="a>b" href="assets/x.css">'
+    + '</head><body data-page="login">x</body></html>',
+  ],
+  'script-end-tag': [
+    `<!doctype html><html><head>${LINK}</head>`
+    + `<body data-page="login">x<script>${WRITE}</script/></body></html>`,
+  ],
+};
+
+test('markup this guard cannot read is refused, and stops the judgement', () => {
+  assert.deepEqual(Object.keys(REFUSAL_DEMOS).sort(), MARKUP_REFUSALS.map((r) => r.id).sort(),
+    'every detector needs a demonstration and every demonstration needs a detector');
+
+  for (const [id, markups] of Object.entries(REFUSAL_DEMOS)) {
+    for (const markup of markups) {
+      /* The sheet asks for a value the page does not carry AND the page is the
+         sheet's only loader, so without the refusal this run produces a
+         dead-body-scope or an orphan-sheet — a deletion instruction. */
+      const out = analyze({ pages: [page('ops/login.html', markup)], sheets: wantsUsers, scripts: [] });
+      assert.deepEqual(out.findings.map((f) => `${f.kind} ${f.where}`),
+        [`unreadable-markup ops/login.html`],
+        `${id}: this markup was judged rather than refused, or refused under another id`);
+      assert.ok(out.findings[0].detail.startsWith(`${id}:`),
+        `${id}: refused under ${out.findings[0].detail.split(':')[0]} instead`);
+    }
+  }
+});
+
 /* The header's machine-checked block, parsed back out of this file. This is
    not a source grep: nothing here asserts that the file contains a string. It
    reads the documented table out of the prose and deepEquals it against the
@@ -1238,14 +1417,20 @@ const flat = (s) => s.replace(/\s+/g, ' ').trim();
 
 test('the header\'s counts block is the code\'s tables, not a typed claim', () => {
   const parsed = parseCountsBlock(readFileSync(SELF, 'utf8'));
-  const codeSays = WRONG_DEAD_NOT_COVERED.map((e) => ({ id: e.id, why: flat(e.why) }));
+  const tables = {
+    'refuses-to-read': MARKUP_REFUSALS,
+    'wrong-dead-not-covered': WRONG_DEAD_NOT_COVERED,
+  };
   assert.ok(parsed, 'the header carries no machine-checked ' + FENCE + ' block, so its ' +
-    `list of wrong-DEAD shapes is typed prose. The code demonstrates ${codeSays.length}: ` +
-    codeSays.map((e) => e.id).join(', '));
-  const section = parsed['wrong-dead-not-covered'];
-  assert.ok(section, 'the block has no wrong-dead-not-covered section');
-  assert.deepEqual(section.entries.map((e) => ({ id: e.id, why: flat(e.why) })), codeSays,
-    'the header and the table disagree about which shapes produce a wrong DEAD');
-  assert.equal(section.count, codeSays.length,
-    'the count in the header is not the number of entries below it');
+    'lists are typed prose. The code carries ' +
+    Object.entries(tables).map(([k, t]) => `${k}: ${t.map((e) => e.id).join(', ')}`).join('; '));
+  assert.deepEqual(Object.keys(parsed).sort(), Object.keys(tables).sort(),
+    'the block and the code do not carry the same sections');
+  for (const [name, table] of Object.entries(tables)) {
+    const codeSays = table.map((e) => ({ id: e.id, why: flat(e.why) }));
+    assert.deepEqual(parsed[name].entries.map((e) => ({ id: e.id, why: flat(e.why) })), codeSays,
+      `the header and the code disagree about ${name}`);
+    assert.equal(parsed[name].count, codeSays.length,
+      `the ${name} count in the header is not the number of entries below it`);
+  }
 });
