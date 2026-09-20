@@ -605,12 +605,24 @@ test('an empty page over a failed rules read does not report that nothing is wat
   assert.match(text, /whether anything is watching is unknown/,
     'the empty page said nothing about the read that failed: ' + text);
 
-  /* The filtered branch is the same sentence on a second call site. */
+  /* The filtered branch is the same sentence on a second call site, where it
+     gains " That is the case whatever these filters are set to." -- a
+     fabricated fact promoted to an invariant. `picked` is not read off the
+     querystring, so this drives the real control. */
   const filtered = await boot({
-    open: { problems: [] }, rules: new Error('The rules broke.'), search: '?severity=critical',
+    open: { problems: [] }, closed: { problems: [] }, rules: new Error('The rules broke.'),
   });
-  assert.doesNotMatch(emptyText(filtered), /no alert rules at all/,
-    'the filtered empty state fabricated a verdict from a read that never landed');
+  findAll(filtered.doc.querySelector('.filters-pane'),
+    (n) => n.tagName === 'BUTTON' && allText(n) === 'Critical')[0].dispatch('click');
+  await settle();
+  const filteredText = emptyText(filtered);
+  assert.match(filteredText, /Nothing matches these filters/,
+    'the filtered branch was never reached: ' + filteredText);
+  assert.doesNotMatch(filteredText, /no alert rules at all/,
+    'the filtered empty state fabricated a verdict from a read that never landed: ' +
+    filteredText);
+  assert.match(filteredText, /whether anything is watching is unknown/,
+    'the filtered empty state said nothing about the read that failed: ' + filteredText);
 
   /* And a read that DID land with no rules still says so, or the fix above is
      "never say it" rather than "say it when it is true". */
