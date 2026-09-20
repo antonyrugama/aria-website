@@ -1037,6 +1037,8 @@ async function openReauth(options) {  const opts = options || {};
     card: modal.querySelector('.modal-card'),
     input: modal.querySelector('.field-input'),
     alert: modal.querySelector('.form-alert'),
+    title: modal.querySelector('.sec-title'),
+    hint: modal.querySelector('.field-hint'),
   };
 }
 
@@ -1054,11 +1056,15 @@ async function openReauth(options) {  const opts = options || {};
 
    What it REFUSES BY NAME rather than skipping: an `!important` declaration,
    a media feature it cannot evaluate, and any selector it cannot read that
-   COULD still reach the dialog — reachability judged by the loosest possible
-   reading, every combinator relaxed to a descendant and every unreadable
-   pseudo taken as matching, so a rule is only dismissed when no reading of it
-   applies here. A guard that silently drops what it cannot parse reports a
-   clean sweep over the half of the sheet it understood.
+   COULD still reach the dialog — reachability judged by the loosest reading
+   of each combinator in turn, `>` and descendant both read as "some
+   ancestor", `+` and `~` both read as "some earlier sibling", every
+   unreadable pseudo taken as matching, so a rule is only dismissed when no
+   reading of it applies here. Reading a sibling combinator as a descendant
+   would NARROW instead, and a sibling rule aimed at the dialog would be
+   dropped before the refusal could fire. A guard that silently drops what it
+   cannot parse reports a clean sweep over the half of the sheet it
+   understood.
 
    NOT COVERED: interaction and structural state — `:hover`, `:focus-visible`,
    `:disabled`, `::before` and the like are excluded from the resting cascade
@@ -1143,6 +1149,53 @@ function matchChain(compounds, index, node, loose) {
 function selectorMatches(compounds, el, loose) {
   if (!matchCompound(compounds[compounds.length - 1], el, loose)) return false;
   return matchChain(compounds, compounds.length - 2, el.parentNode, loose);
+}
+
+/* The reachability pass keeps each combinator rather than throwing it away.
+   Reading `>` as a descendant WIDENS, so a rule written with one is still
+   considered and then refused by name below. Reading `+` or `~` as a
+   descendant NARROWS, and a sibling rule that genuinely reaches the dialog
+   would be dismissed here instead -- silently, which is the one thing this
+   resolver promises not to do. session.js appends the label and the password
+   field back to back inside the card, so `.field-label + .field-input` is a
+   live shape on this exact tree, not a hypothetical one. */
+function parseSelector(selector) {
+  const trimmed = selector.trim();
+  const masked = maskGroups(trimmed);
+  const parts = []; let at = 0;
+  const re = /\s*([>+~])\s*|\s+/g;
+  let m;
+  while ((m = re.exec(masked))) {
+    parts.push({ compound: trimmed.slice(at, m.index), after: m[1] || ' ' });
+    at = m.index + m[0].length;
+  }
+  parts.push({ compound: trimmed.slice(at), after: null });
+  return parts.every((p) => p.compound) && parts.length ? parts : null;
+}
+
+function reachesFrom(parts, index, node) {
+  if (index < 0) return true;
+  const pool = [];
+  if (parts[index].after === '+' || parts[index].after === '~') {
+    /* Any earlier sibling, not only the adjacent one: `+` is a special case
+       of `~`, so taking both as `~` is the wider reading. */
+    for (const sib of (node.parentNode ? node.parentNode.children : [])) {
+      if (sib === node) break;
+      pool.push(sib);
+    }
+  } else {
+    let at = node.parentNode;
+    while (at && at.tagName) { pool.push(at); at = at.parentNode; }
+  }
+  return pool.some((cand) => matchCompound(parts[index].compound, cand, true)
+    && reachesFrom(parts, index - 1, cand));
+}
+
+function selectorReaches(selector, el) {
+  const parts = parseSelector(selector);
+  if (!parts) return true;
+  if (!matchCompound(parts[parts.length - 1].compound, el, true)) return false;
+  return reachesFrom(parts, parts.length - 2, el);
 }
 
 /* Splitting and combinator detection happen at bracket depth zero, so a `>`
@@ -1280,12 +1333,13 @@ function cascade(nodes, sheets) {
       rule.order = order;
       order += 1;
 
-      /* The loosest possible reading: every combinator relaxed to a
-         descendant, every unreadable pseudo taken as matching. A rule no
-         element here matches even under that reading cannot apply here under
-         any reading, so it is dismissed rather than refused. */
-      const loose = splitSelector(rule.selector, '\\s*[>+~]\\s*|\\s+');
-      const reaches = nodes.some((el) => selectorMatches(loose, el, true));
+      /* The loosest possible reading, combinator by combinator: descendant
+         and child both read as "some ancestor", adjacent and general sibling
+         both read as "some earlier sibling", every unreadable pseudo taken as
+         matching. A rule no element here matches even under that reading
+         cannot apply here under any reading, so it is dismissed rather than
+         refused. */
+      const reaches = nodes.some((el) => selectorReaches(rule.selector, el));
       if (!reaches) continue;
 
       if (hasCombinator(rule.selector)) {
@@ -1338,10 +1392,11 @@ function styledClasses(nodes, sheets) {
     for (const cls of classesOf(el)) {
       const hit = rules.some((rule) => {
         if (!new RegExp('\\.' + cls + '(?![-\\w])').test(rule.selector)) return false;
-        const compounds = splitSelector(rule.selector, '\\s*[>+~]\\s*|\\s+');
-        const last = compounds[compounds.length - 1];
+        const parts = parseSelector(rule.selector);
+        if (!parts) return false;
+        const last = parts[parts.length - 1].compound;
         if (!new RegExp('\\.' + cls + '(?![-\\w])').test(last)) return false;
-        return selectorMatches(compounds, el, true);
+        return selectorReaches(rule.selector, el);
       });
       if (!hit) out.set(cls, el.tagName.toLowerCase());
     }
@@ -1380,7 +1435,7 @@ test('every class the re-authentication dialog writes is styled by a sheet every
 });
 
 test('the dialog is painted as a dialog: over the page, on its own surface, bounded, at both widths', async () => {
-  const { modal, scrim, card, input, alert } = await openReauth();
+  const { modal, scrim, card, input, alert, title, hint } = await openReauth();
   const nodes = [scrim, modal, ...dialogTree([modal])];
   const resolve = cascade(nodes, SHARED_SHEETS);
   const padding = {};
@@ -1415,6 +1470,11 @@ test('the dialog is painted as a dialog: over the page, on its own surface, boun
       'the dialog card is unbounded' + where + ', so it fills whatever it is opened over');
     assert.ok(Number.parseFloat(value(card, 'padding')) > 0,
       'the dialog card has no padding' + where);
+    /* A flex child with `auto` cross-axis margin is what keeps a card taller
+       than the viewport scrollable instead of clipped past the top edge. */
+    assert.equal(value(card, 'margin'), 'auto',
+      'the dialog card does not centre itself in the scrolling layer' + where +
+      ', so a card taller than the viewport loses its top to the edge');
 
     /* iOS zooms the page for any input under 16px, and this one is typed. */
     assert.ok(Number.parseFloat(value(input, 'font-size')) >= 16,
@@ -1422,6 +1482,23 @@ test('the dialog is painted as a dialog: over the page, on its own surface, boun
     assert.equal(value(input, 'width'), '100%', 'the password field is not a field-width box' + where);
     assert.match(value(input, 'background') || '', /var\(--surface/,
       'the password field has no surface, so it is a browser default box' + where);
+    /* WCAG 2.5.8 target size. The field is the one thing on this dialog a
+       phone user has to hit before they can type. */
+    assert.ok(Number.parseFloat(value(input, 'min-height')) >= 44,
+      'the password field is ' + value(input, 'min-height') + ' tall' + where +
+      ', under the 44px touch target');
+
+    /* The heading is the dialog's accessible name, and it has to read as a
+       heading rather than as another line of the prose beneath it. */
+    const titleSize = Number.parseFloat(value(title, 'font-size'));
+    const hintSize = Number.parseFloat(value(hint, 'font-size'));
+    assert.ok(isFinite(titleSize) && isFinite(hintSize),
+      'the dialog title or its hint stopped naming a font size' + where);
+    assert.ok(titleSize > hintSize,
+      'the dialog title is ' + titleSize + 'px and its hint ' + hintSize + 'px' + where +
+      ', so the name of the dialog does not read as its name');
+    assert.ok(Number.parseFloat(value(title, 'font-weight')) > 400,
+      'the dialog title is not weighted apart from body text' + where);
 
     /* role="alert" and the same ink as the prose above it is a message that is
        announced and invisible. */
@@ -1478,20 +1555,29 @@ test('the dialog outranks every pane sheet that declares a field class of its ow
   for (const file of paneSheets) {
     const src = readFileSync(new URL(file, dir), 'utf8');
     for (const rule of cssRules(src, 'assets/' + file)) {
-      const compounds = splitSelector(rule.selector, '\\s*[>+~]\\s*|\\s+');
-      if (!selectorMatches(compounds, nodes[nodes.length - 1], true)
-        && !nodes.some((el) => selectorMatches(compounds, el, true))) continue;
-      const el = nodes.filter((n) => selectorMatches(compounds, n, true))[0];
+      const hits = nodes.filter((el) => selectorReaches(rule.selector, el));
+      if (!hits.length) continue;
       if (/:/.test(rule.selector)) continue;
-      const theirs = specificity(compounds);
-      for (const name of declarations(rule).keys()) {
-        const ours = shared(el, { width: 1440 }).get(name);
-        assert.ok(ours, 'assets/' + file + ' { ' + rule.selector + ' } declares ' + name +
-          ' on the dialog and no shared sheet does, so the dialog looks different on that pane');
-        assert.ok(ours.specificity > theirs,
-          'assets/' + file + ' { ' + rule.selector + ' } outranks ' + ours.from + ' for ' + name +
-          ', so the dialog is styled by whichever pane you happen to be on');
-        contested += 1;
+      const parts = parseSelector(rule.selector);
+      if (!parts) continue;
+      if (hasCombinator(rule.selector)) {
+        throw new Error('REFUSED, a pane sheet aims a combinator at the dialog: ' +
+          'assets/' + file + ' ' + rule.selector);
+      }
+      const theirs = specificity(splitSelector(rule.selector, '\\s+'));
+      /* Every node the rule reaches, not just the first: the same selector can
+         land on the label and the field, and only one of them may be answered. */
+      for (const el of hits) {
+        for (const name of declarations(rule).keys()) {
+          const ours = shared(el, { width: 1440 }).get(name);
+          assert.ok(ours, 'assets/' + file + ' { ' + rule.selector + ' } declares ' + name +
+            ' on ' + el.tagName.toLowerCase() + '.' + [...classesOf(el)].join('.') +
+            ' and no shared sheet does, so the dialog looks different on that pane');
+          assert.ok(ours.specificity > theirs,
+            'assets/' + file + ' { ' + rule.selector + ' } outranks ' + ours.from + ' for ' + name +
+            ', so the dialog is styled by whichever pane you happen to be on');
+          contested += 1;
+        }
       }
     }
   }
@@ -1606,7 +1692,7 @@ test('the page behind the dialog goes inert and comes back, and the live regions
   /* The other direction. A test that only checks inert goes ON passes on a
      shell that never takes it off, which leaves the page permanently dead. */
   doc.dispatch('keydown', { key: 'Escape' });
-  await pending;
+  await settled(pending);
   for (const el of backdrop) {
     assert.equal(el.getAttribute('aria-hidden'), null,
       'the page stayed hidden from assistive tech after the dialog closed');
