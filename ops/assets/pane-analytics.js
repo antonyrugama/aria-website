@@ -559,6 +559,44 @@
     ]);
   }
 
+  /* How much of the chosen window has ever been aggregated, beside the figures
+     that are summed over it.
+
+     A window is not always covered. The nightly job started writing rollups on
+     a particular day, so a 90 day window opened today reaches back past the
+     pipeline's own lifetime, and the route reports that as `daysCovered` with
+     `reportingStart` -- an annotation on the figures rather than a state that
+     replaces them. Without it a 90 day window with 20 covered days draws a
+     sessions total identical to one covered in full, and nothing on screen says
+     the total is over a fifth of the days the range name claims.
+
+     Only when the span is short and not empty: `daysCovered: 0` is a different
+     statement, already made by every stored-day figure reading *not reported*,
+     and a pill saying `0 of 90 days stored` beside them would be that fact
+     twice. Neutral, not a warning -- days outside the data's lifetime are not a
+     fault, and the route is explicit that this is not an availability state. */
+  function windowCoverage(data) {
+    var span = windowSpan(data);
+    if (!span || span.days === null) return null;
+    if (span.covered <= 0 || span.covered >= span.days) return null;
+    var text = fmt.int(span.covered) + ' of ' + fmt.plural(span.days, 'day') + ' stored';
+    var from = span.start ? fmt.utcDay(span.start) : null;
+    return h('span', { className: 'pill' }, [
+      S.icon('history'),
+      h('span', { text: from ? text + ', from ' + from : text })
+    ]);
+  }
+
+  /* The head of the first band: how old the answer is, and how much of the
+     window is behind it. Two facts, never merged -- an answer recomputed an
+     hour ago over a window the pipeline only reaches a fifth of is fresh and
+     short at the same time. */
+  function answerNotes(data) {
+    return [freshness(data), windowCoverage(data)].filter(function (node) {
+      return !!node;
+    });
+  }
+
   /* --------------------------------------------------------------- tiles */
 
   /* The headline figures, taken from the first app in the answer and labelled
@@ -944,8 +982,15 @@
      share is over that app's own sessions, so with two apps in the table the
      column holds two denominators and four rows that sum to 200%. One note
      over the table is that statement made once; the rows' own sentences would
-     be the same fact four times. When every row agrees - one app in the
-     selection - the route's own sentence is printed verbatim. */
+     be the same fact four times.
+
+     Verbatim only when every row says the same thing, which is narrower than
+     "one app in the selection": past the twelfth version of an app the route
+     adds a summed remainder row whose note carries a second sentence about
+     the summing, so one app with thirteen versions has two notes and takes the
+     general sentence. That is the right outcome -- both notes name the same
+     denominator, and printing one of the two would drop the summing -- but it
+     is not the one an "every row agrees means one app" reading predicts. */
   function shareNote(versions) {
     var notes = [];
     versions.forEach(function (version) {
@@ -1007,7 +1052,7 @@
 
     var wrap = h('div', { className: 'stack' });
 
-    var headline = S.band('Who is using Aria', null, [freshness(data)]);
+    var headline = S.band('Who is using Aria', null, answerNotes(data));
     var grid = tiles(data);
     if (grid) headline.appendChild(grid);
     wrap.appendChild(headline);

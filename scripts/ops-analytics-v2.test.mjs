@@ -105,7 +105,7 @@ function usageFixture(over) {
       endExclusive: '2026-09-20T00:00:00.000Z',
       days: 30, grain: 'day', timezone: 'UTC',
       rollupsComputedAt: hoursAgo(5),
-      reportingStart: '2026-08-21T00:00:00.000Z',
+      reportingStart: '2026-08-21',
       daysCovered: 30,
       daysMissingRollups: [],
     },
@@ -638,7 +638,7 @@ test('a single reading between two gaps is drawn as a point, not dropped', async
 test('the days with no stored figures are named under the line', async () => {
   const dom = await boot({
     usage: usageFixture((u) => {
-      u.window.daysMissingRollups = ['2026-09-03T00:00:00.000Z', '2026-09-04T00:00:00.000Z'];
+      u.window.daysMissingRollups = ['2026-09-03', '2026-09-04'];
     }),
   });
   const trend = allText(card(dom, /Active people per day/)) || liveText(dom);
@@ -788,6 +788,71 @@ test('an answer with no time on it says that, rather than looking fresh', async 
     'a window with no recompute at all was drawn as though it had one');
   assert.doesNotMatch(liveText(never), /Counted \d+ \w+ \d{4}/,
     'the pane invented a counting time for a window that has never been computed');
+});
+
+/* ======================= how much of it is covered ===================== */
+
+test('a window the pipeline has only reached part of says so beside the figures', async () => {
+  /* `daysCovered` with `reportingStart` is not a shade of staleness and not an
+     availability state: the route is explicit that partial coverage annotates
+     the figures rather than replacing them. A 90 day window opened today
+     reaches back past the day the nightly job started writing rollups, so its
+     session total is a sum over the covered span while the range name still
+     says 90 days. Without this the two answers draw the same screen. */
+  const partial = await boot({
+    usage: usageFixture((u) => {
+      u.window.range = '90d';
+      u.window.days = 90;
+      u.window.daysCovered = 20;
+      u.window.reportingStart = '2026-08-31';
+    }),
+  });
+  const text = liveText(partial);
+  assert.match(text, /20 of 90 days stored/,
+    'a window covered for 20 of its 90 days did not say so: ' + text);
+  assert.match(text, /from 31 Aug 2026/,
+    'the covered span did not say where it starts: ' + text);
+
+  /* The other direction, which is the one a hard-coded sentence passes on its
+     own: a fully covered window must not carry the annotation. */
+  const whole = await boot({
+    usage: usageFixture((u) => {
+      u.window.range = '90d';
+      u.window.days = 90;
+      u.window.daysCovered = 90;
+    }),
+  });
+  assert.doesNotMatch(liveText(whole), /of 90 days stored/,
+    'a fully covered window was annotated as short');
+
+  /* And the figures still draw. Partial coverage is not the empty state. */
+  assert.match(text, /8,430/, 'a partly covered window stopped drawing its figures');
+});
+
+test('a window with nothing stored says that once, not twice', async () => {
+  /* `daysCovered: 0` with `reportingStart: null` arrives as `ready`, and every
+     figure counted from stored days already reads NOT REPORTED with the reason
+     attached. A pill reading `0 of 90 days stored` beside them would be the
+     same fact a second time, which is the rule this remodel exists for. */
+  const none = await boot({
+    usage: usageFixture((u) => {
+      u.window.range = '90d';
+      u.window.days = 90;
+      u.window.daysCovered = 0;
+      u.window.reportingStart = null;
+      /* Not one day aggregated means the sums over stored days are zero. A
+         fixture that leaves them at 8,430 is one the route cannot send. */
+      u.apps.forEach((app) => {
+        app.metrics[1].value = 0;
+        app.metrics[2].value = 0;
+      });
+    }),
+  });
+  const text = liveText(none);
+  assert.doesNotMatch(text, /0 of 90 days stored/,
+    'the empty covered span was drawn as a short one');
+  assert.match(text, /no day in this window has stored figures/,
+    'a window with nothing stored did not say so: ' + text);
 });
 
 /* ============================= not-aged cells ========================== */
@@ -992,6 +1057,50 @@ test('the retention grid is sized by its content and scrolls, at every width', a
     'the scroll box is only declared inside a media query, so it is a phone-only fix');
 });
 
+test('a version label with no space in it can still break', async () => {
+  /* WHAT THIS PINS, EXACTLY: one declaration, not a rendering. The measured
+     proof is in the pull request -- removing `overflow-wrap: anywhere` and
+     answering with the labels below takes the page 140px sideways at 320,
+     85px at 375 and 28px at 1440, in both themes.
+
+     Why it needs its own line rather than riding on `white-space: normal`:
+     the label is `${app} ${app_version}` and `app_version` is a 32 character
+     free-text column, so `Mobile 1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f` holds exactly
+     one break opportunity -- the space after the app name -- and the version
+     token alone still sets the column's minimum width. `anywhere` is the only
+     value that both breaks inside a word AND lowers min-content size, which is
+     what a table column measures itself by; `break-word` wraps the painted
+     text and leaves the table's intrinsic width where it was, so the page
+     still goes sideways. A test that accepted either would pass over the
+     defect. */
+  const css = readFileSync(new URL('assets/pane-analytics-v2.css', OPS), 'utf8');
+  const rule = (css.match(/\.u-vers\s+th\[scope="row"\]\s*\{[^}]*\}/) || [''])[0];
+  assert.ok(rule, 'the version row heading has no rule of its own at all');
+  assert.match(rule, /overflow-wrap\s*:\s*anywhere/,
+    'an unbroken 32 character version token has nowhere to break: ' + rule);
+
+  /* And the label really is one token, so the rule above is not guarding a
+     case the route cannot send. `app_version` is `varchar(32)`. */
+  const dom = await boot({
+    usage: usageFixture((u) => {
+      u.coverage.versions = [{
+        label: 'Mobile 1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f',
+        coverageBasisPoints: 10000,
+        sessionShareBasisPoints: 10000,
+        note: 'Share is of Mobile sessions.',
+      }];
+    }),
+  });
+  const heading = findAll(card(dom, /Which versions report/),
+    (n) => isTag(n, 'th') && n.getAttribute('scope') === 'row')[0];
+  const printed = allText(heading).trim();
+  assert.equal(printed, 'Mobile 1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f',
+    'the label was not printed whole: ' + printed);
+  const longest = printed.split(' ').reduce((a, b) => (b.length > a.length ? b : a), '');
+  assert.ok(longest.length >= 28,
+    'the fixture no longer carries an unbroken token, so this proves nothing');
+});
+
 /* ====================== what the figures are of ======================= */
 
 test('a group is defined by the answer, not by the pane', async () => {
@@ -1041,6 +1150,31 @@ test('the versions table says whose sessions the share is of', async () => {
     'a single-app table did not carry the route\'s own note: ' + oneText);
   assert.doesNotMatch(oneText, /each app's own/,
     'a single-app table hedged a denominator it knows exactly: ' + oneText);
+
+  /* And the case the docblock used to mis-describe: past the twelfth version
+     of one app the route appends a summed remainder row whose note adds a
+     second sentence, so one app can send two notes. Both name the same
+     denominator, and printing either one alone drops what the other says. */
+  const remainder = await boot({
+    usage: usageFixture((u) => {
+      u.coverage.versions = [
+        {
+          label: 'Mobile 2.9.1', coverageBasisPoints: 10000,
+          sessionShareBasisPoints: 6000, note: 'Share is of Mobile sessions.',
+        },
+        {
+          label: 'Mobile, 4 other versions', coverageBasisPoints: 0,
+          sessionShareBasisPoints: 4000,
+          note: 'Share is of Mobile sessions. Versions past the 12 largest, summed.',
+        },
+      ];
+    }),
+  });
+  const remainderText = allText(card(remainder, /Which versions report/));
+  assert.match(remainderText, /Share is of each app's own sessions/,
+    'two notes from one app were collapsed onto one of them: ' + remainderText);
+  assert.doesNotMatch(remainderText, /Versions past the 12 largest/,
+    'the card head printed a row-level sentence as the column-level one');
 });
 
 test('the coverage figure is printed once', async () => {
@@ -1068,6 +1202,34 @@ test('the coverage figure is printed once', async () => {
   });
   assert.doesNotMatch(allText(livePanel(clean)), /Only seen on app versions/,
     'the pane made a coverage caveat the answer did not');
+});
+
+test('what the feature shares are a share of comes from the answer', async () => {
+  /* `features.hint` is the route's own denominator sentence, and it is the
+     only thing on the card that says the shares are per app rather than of
+     everybody. Nothing asserted it reached the page, so dropping it rendered a
+     table of percentages with no denominator and every test stayed green. */
+  const dom = await boot({});
+  const text = allText(card(dom, /Most used features/));
+  assert.match(text, /Share of each app's own active people/,
+    'the feature card did not say what its shares are of: ' + text);
+
+  /* From the answer, not written here: a different hint moves the page. */
+  const moved = await boot({
+    usage: usageFixture((u) => { u.features.hint = 'Share of everyone who opened anything'; }),
+  });
+  const movedText = allText(card(moved, /Most used features/));
+  assert.match(movedText, /Share of everyone who opened anything/,
+    'the card kept its own sentence over the one the answer sent: ' + movedText);
+  assert.doesNotMatch(movedText, /Share of each app's own active people/,
+    'the pane printed a denominator the answer did not send');
+
+  /* And it is conditional: an answer with no hint gets no invented one. */
+  const bare = await boot({
+    usage: usageFixture((u) => { delete u.features.hint; }),
+  });
+  assert.doesNotMatch(allText(card(bare, /Most used features/)), /Share of each app's own/,
+    'the pane made a denominator claim the answer did not');
 });
 
 test('the floor comes from the answer, and 50 is only the fallback', async () => {

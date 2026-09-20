@@ -290,11 +290,20 @@
    tables do: 9.5px uppercase letter-spaced `--ink-3` turns `Coaches Web
    version not reported` into shouted small print, and it is the only
    identifier the row has. Wrapping for the same reason - nowrap is right for a
-   short column name and wrong for a label this long. */
+   short column name and wrong for a label this long.
+
+   `anywhere` rather than `break-word`, and that difference is the whole rule.
+   The label is `${app} ${app_version}`, and `app_version` is a 32 character
+   free-text column: `1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f` is one unbroken token, so
+   `white-space: normal` finds exactly one break opportunity in the label - the
+   space after the app name - and the token still sets the column's minimum
+   width. Only `anywhere` breaks inside a word AND contributes to min-content
+   sizing, which is what a table column measures itself by; `break-word` would
+   wrap the painted text and leave the table's intrinsic width where it was. */
 .u-vers th[scope="row"] {
   font-size: 12.5px; font-weight: 520; letter-spacing: 0;
   text-transform: none; color: var(--ink);
-  white-space: normal;
+  white-space: normal; overflow-wrap: anywhere;
 }
 
 /* Below this the cohort grid has more columns than a phone has room for, so it

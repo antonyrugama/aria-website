@@ -602,8 +602,14 @@ each is a union across the selected apps:
 
 - `daysCovered` with `reportingStart` is the span that has ever been aggregated. A 90 day window
   opened today reaches back past the pipeline's own lifetime, and those earlier days are outside
-  it rather than missing from it. The pane says which days it covers and, where the covered span
-  is shorter than the window, why.
+  it rather than missing from it. Where the covered span is shorter than the window, the head of
+  the first band says how much of it is stored and from which day — `20 of 90 days stored, from
+  31 Aug 2026` — beside the figures that are summed over it, because the range name alone says
+  90 days either way. It does not say *why* the span is short: that the rollups began on a
+  particular day is a fact about the pipeline rather than about this answer, and a sentence
+  explaining it is an argument, which the editorial rule keeps off the pane. Not a warning
+  either — the route is explicit that partial coverage annotates the figures rather than
+  replacing them.
 - `daysMissingRollups` is the real gap: days at or after `reportingStart` that carry no stored
   figures. Those shorten the session and coverage figures and leave the live people figures
   alone, and the callout says so.
@@ -1349,6 +1355,24 @@ dropping it.
     and which build to chase; the split card's coverage pill says how much is missing but not
     from where. The share column is of each app's own sessions — the route's own denominator — so
     the card head carries that sentence once rather than repeating it on every row.
+14. **A second pill in the first band's head, which the mock does not draw: how much of the
+    window is stored.** The mock's bar carries a range name and nothing behind it, and its
+    sample answer is a window covered in full. A real one need not be: the nightly job began
+    writing rollups on a particular day, so a 90 day window reaches back past the pipeline's own
+    lifetime and its session total is a sum over `daysCovered` days while the range name still
+    says 90. Drawn only when the covered span is shorter than the window and not empty —
+    `daysCovered: 0` is a different statement, and every stored-day figure already reads
+    **not reported** with its reason attached.
+
+### Where this pane departs from the shared page furniture
+
+`assets/pane-analytics-v2.css` carries this pane's own shapes. One rule in it resets a shared
+one rather than adding to it: `.u-vers th[scope="row"]` drops the whole `.tbl th` treatment,
+because a row heading here carries a value rather than a column name and `aria.css`'s 9.5px
+uppercase letter-spaced `--ink-3` turns `Coaches Web version not reported` into shouted small
+print. It also sets `overflow-wrap: anywhere`, which is about `app_version` being a 32 character
+free-text column: `Mobile 1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f` holds one break opportunity, and the
+version token alone otherwise sets the column's minimum width and takes the page sideways.
 
 ### Known contrast debt, inherited
 
