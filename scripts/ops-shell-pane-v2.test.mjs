@@ -1053,14 +1053,18 @@ async function openReauth(options) {  const opts = options || {};
    nothing.
 
    What it reads: class, id, type and attribute selectors, `:empty`,
-   descendant combinators, and `@media` width queries. `[data-theme="light"]`
-   is read the same way a browser reads it, against the attribute the harness
-   root actually carries, so the caller resolves the sheet once per theme
-   rather than once. Review round two found this pass resolving the dark
-   theme ONLY, with every light-theme rule aimed at the dialog dismissed in
-   silence, and found a readable `[attr]` or `#id` compound matched STRICTLY
-   inside a pass documented as loose — the same unsafe direction as the
-   sibling-combinator hole above, in a different token type.
+   descendant combinators, and `@media` width queries. `[data-theme]` is read
+   the way a browser reads it, against the attribute on <html> — so `cascade()`
+   TAKES the theme, seeds that root itself, and refuses to run without one.
+   Three rounds of review found the same defect in three token types, each
+   time a rule that reaches the dialog dismissed one line before the refusal
+   meant to catch it: combinators flattened to descendants (round one), a
+   readable `[attr]`/`#id` matched strictly inside a pass documented as loose
+   (round two), and that round-two fix landing in one of three callers, with
+   the other two resolving against a root carrying no theme at all (round
+   three) — which dismisses a BARE `[data-theme]` too, and a bare one matches
+   in both themes. Hence the seeding lives in `cascade()` and not in a caller:
+   the caller is the part that was wrong twice.
 
    What it REFUSES BY NAME rather than skipping: an `!important` declaration,
    a media feature it cannot evaluate, and any selector it cannot read that
@@ -1089,9 +1093,15 @@ async function openReauth(options) {  const opts = options || {};
    and `[type="password"]` are on the field and `[data-theme]` is on <html>;
    a classes-only filter dropped all three.
 
+   NOT COVERED: a `@media` feature this cannot evaluate is REFUSED by name
+   rather than skipped, including `prefers-reduced-motion` — reading it as
+   false for want of a caller supplying it would make every such block
+   silently inert, which is how round three found it.
+
    NOT COVERED: anything only a layout engine can answer — computed size,
-   wrapping, overlap. The pixels are measured in a browser and reported on the
-   pull request. */
+   wrapping, overlap, and a hide spelled in a property this does not
+   enumerate. The pixels are measured in a browser and reported on the pull
+   request. */
 
 const STATE_PSEUDO = /^:(hover|focus|focus-visible|focus-within|active|disabled|checked|visited|target|placeholder)$/;
 
@@ -1333,7 +1343,11 @@ function mediaMatches(queries, env) {
   return queries.every((q) => {
     const m = /^\((max|min)-width:\s*(\d+)px\)$/.exec(q);
     if (m) return m[1] === 'max' ? env.width <= Number(m[2]) : env.width >= Number(m[2]);
-    if (q === '(prefers-reduced-motion: reduce)') return !!env.reducedMotion;
+    /* Not `return !!env.reducedMotion`. No caller supplies it, so that reads
+       false for every block and makes the whole thing silently inert instead
+       of refused. aria.css:910 ships one and check-ops-narrow-overflow.mjs
+       launches Chrome with --force-prefers-reduced-motion, so it is a live
+       shape. Refused by name like every other feature this cannot evaluate. */
     throw new Error('REFUSED, unreadable media query: ' + q);
   });
 }
@@ -1352,7 +1366,32 @@ function dialogTree(root) {
   return out;
 }
 
-function cascade(nodes, sheets) {
+/* A name goes into a regex, so it is escaped on the way in. Nothing on this
+   tree carries a metacharacter today; one that did would throw, or match more
+   than it named, and the over-match direction is the silent one. */
+function esc(name) { return String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function rootOf(nodes) {
+  let at = nodes[0];
+  while (at && at.parentNode && at.parentNode.tagName) at = at.parentNode;
+  return at;
+}
+
+/* The theme is NOT the caller's to remember. Round two added per-theme
+   seeding to one of three callers and round three found the other two still
+   resolving against a root carrying no `data-theme` at all -- which dismisses
+   `[data-theme="light"]`, `[data-theme="dark"]` AND a bare `[data-theme]`
+   alike, and a bare one matches in BOTH themes in a browser. So `cascade()`
+   takes the theme, seeds the root itself, re-seeds on every resolve because
+   two resolvers can be alive at once, and refuses to run without one. */
+function cascade(nodes, sheets, theme) {
+  assert.ok(theme === 'dark' || theme === 'light',
+    'cascade() was given no theme; a root carrying none dismisses every [data-theme] rule in silence');
+  const themeRoot = rootOf(nodes);
+  assert.ok(themeRoot && themeRoot.tagName.toLowerCase() === 'html',
+    'the dialog tree no longer climbs to <html>, so seeding the theme there styles nothing');
+  themeRoot.setAttribute('data-theme', theme);
+
   /* The candidate filter. A rule is considered when it names something this
      tree actually carries. Classes alone are not enough: session.js writes
      `id="reauthPassword"` and `type="password"` onto the password field, and
@@ -1365,13 +1404,12 @@ function cascade(nodes, sheets) {
     for (let el = start; el && el.tagName; el = el.parentNode) {
       if (seen.has(el)) break;
       seen.add(el);
-      for (const c of classesOf(el)) named.add('\\.' + c + '(?![-\\w])');
+      for (const c of classesOf(el)) named.add('\\.' + esc(c) + '(?![-\\w])');
       const id = attrOf(el, 'id');
-      if (id) named.add('#' + id + '(?![-\\w])');
-      for (const a of (el.attributeNames || [])) named.add('\\[\\s*' + a + '(?=[\\]~^$*|=\\s])');
-      for (const a of Object.keys(REFLECTED)) {
-        if (attrOf(el, a) !== null) named.add('\\[\\s*' + a + '(?=[\\]~^$*|=\\s])');
-      }
+      if (id) named.add('#' + esc(id) + '(?![-\\w])');
+      const attrs = new Set(el.attributeNames || []);
+      for (const a of Object.keys(REFLECTED)) if (attrOf(el, a) !== null) attrs.add(a);
+      for (const a of attrs) named.add('\\[\\s*' + esc(a) + '(?=[\\]~^$*|=\\s])');
     }
   }
   const CANDIDATE = new RegExp([...named].join('|'));
@@ -1416,6 +1454,7 @@ function cascade(nodes, sheets) {
   assert.ok(rules.length >= 6, 'only ' + rules.length + ' rules reach the dialog, so this is not reading the sheets');
 
   return function resolve(el, env) {
+    themeRoot.setAttribute('data-theme', theme);
     const won = new Map();
     for (const rule of rules) {
       if (rule.state) continue;
@@ -1493,18 +1532,17 @@ test('every class the re-authentication dialog writes is styled by a sheet every
 });
 
 test('the dialog is painted as a dialog: over the page, on its own surface, bounded, at both widths and in both themes', async () => {
-  const { root, modal, scrim, card, input, alert, title, hint } = await openReauth();
+  const { modal, scrim, card, input, alert, title, hint } = await openReauth();
   const nodes = [scrim, modal, ...dialogTree([modal])];
   const padding = {};
 
   /* Both themes, not one. This sheet themes the dialog through
      `[data-theme="light"]` on <html>, so a cascade resolved against a root
      carrying no theme answers for dark only and a light-theme rule aimed at
-     the dialog goes unread. Seeding the root is what a page does before
-     paint, and it puts the other half of the sheet on test. */
+     the dialog goes unread. cascade() seeds the root, which is what a page
+     does before paint, and it puts the other half of the sheet on test. */
   for (const theme of ['dark', 'light']) {
-    root.setAttribute('data-theme', theme);
-    const resolve = cascade(nodes, SHARED_SHEETS);
+    const resolve = cascade(nodes, SHARED_SHEETS, theme);
 
   for (const width of [1440, 375]) {
     const env = { width, theme };
@@ -1513,23 +1551,34 @@ test('the dialog is painted as a dialog: over the page, on its own surface, boun
     const where = ' at ' + width + 'px in the ' + theme + ' theme';
 
     /* Before anything about HOW it is painted: that it is painted at all.
-       Every earlier assertion here reads a specific property on a specific
+       Every other assertion here reads a specific property on a specific
        element, so a rule that simply removes the dialog from the page --
        `[data-theme="light"] .modal-card { display: none; }` is the shape,
        and it only has to outrank `.modal-card` to win -- satisfies all of
-       them and hides the feature in half the product. Asserted over the
-       whole tree, because the layer, the card and the field each take it
-       away on their own. */
+       them and hides the feature in half the product. Over the whole tree,
+       because the layer, the card and the field each take it away alone.
+
+       These FOUR properties only. A declared value is normalised first --
+       case folded, and `opacity` read as a number so `0.0`, `.0` and `0%` do
+       not walk through a string compare -- but a value is still a string from
+       a sheet, not a computed style, so a hide spelled in some OTHER property
+       (`transform: scale(0)`, `clip-path: inset(100%)`, a zero `max-height`,
+       an off-screen `translate`) is NOT COVERED here and is caught, if at
+       all, by the browser sweep reported on the pull request. */
+    const HIDDEN = {
+      display: (v) => v === 'none',
+      visibility: (v) => v === 'hidden' || v === 'collapse',
+      'content-visibility': (v) => v === 'hidden',
+      opacity: (v) => Number.parseFloat(v) === 0,
+    };
     for (const el of nodes) {
       const what = el.tagName.toLowerCase() + (classesOf(el).length ? '.' + classesOf(el).join('.') : '');
-      assert.notEqual(value(el, 'display'), 'none',
-        what + ' is display:none' + where + ', so the dialog is not on the page at all');
-      assert.notEqual(value(el, 'visibility'), 'hidden',
-        what + ' is visibility:hidden' + where + ', so the dialog is on the page and invisible');
-      assert.notEqual(String(value(el, 'opacity')), '0',
-        what + ' is opacity:0' + where + ', so the dialog is on the page and invisible');
-      assert.notEqual(value(el, 'content-visibility'), 'hidden',
-        what + ' is content-visibility:hidden' + where + ', so the dialog renders nothing');
+      for (const [prop, hides] of Object.entries(HIDDEN)) {
+        const raw = value(el, prop);
+        if (raw === null || raw === undefined) continue;
+        assert.ok(!hides(String(raw).trim().toLowerCase()),
+          what + ' is ' + prop + ':' + raw + where + ', so the dialog is not on the page');
+      }
     }
 
     assert.equal(value(modal, 'position'), 'fixed', 'the dialog does not sit over the page' + where);
@@ -1611,11 +1660,13 @@ test('the dialog is painted as a dialog: over the page, on its own surface, boun
   assert.deepEqual(Object.keys(padding).sort(), ['dark1440', 'dark375', 'light1440', 'light375']);
 });
 
-test('the dialog reserves no box while its alert is empty, and stays in the document either way', async () => {
+test('the dialog reserves no box while its alert is empty, and stays in the document either way, in both themes', async () => {
   const { modal, scrim, alert, text } = await openReauth();
   const nodes = [scrim, modal, ...dialogTree([modal])];
-  const resolve = cascade(nodes, SHARED_SHEETS);
-  const value = (el, prop) => { const d = resolve(el, { width: 1440 }).get(prop); return d ? d.value : null; };
+
+  for (const theme of ['dark', 'light']) {
+  const resolve = cascade(nodes, SHARED_SHEETS, theme);
+  const value = (el, prop) => { const d = resolve(el, { width: 1440, theme }).get(prop); return d ? d.value : null; };
 
   assert.equal(alert.childNodes.length, 0, 'session.js stopped opening the dialog with an empty alert');
   assert.equal(value(alert, 'padding'), '0', 'the empty alert reserves a padded box above the password field');
@@ -1628,17 +1679,25 @@ test('the dialog reserves no box while its alert is empty, and stays in the docu
     'the empty alert is display:none, so revealing it with its text is the unreliable half of how role="alert" announces');
 
   /* And the other direction: the collapse must not survive the message. */
-  alert.appendChild(text('That password did not match.'));
+  const msg = alert.appendChild(text('That password did not match.'));
   assert.equal(value(alert, 'padding'), '10px 12px',
-    'the alert does not take its box back once it carries a message');
+    'the alert does not take its box back once it carries a message in the ' + theme + ' theme');
   assert.match(value(alert, 'background') || '', /color-mix/,
-    'the alert does not take its danger tint back once it carries a message');
+    'the alert does not take its danger tint back once it carries a message in the ' + theme + ' theme');
+  alert.removeChild(msg);
+  }
 });
 
-test('the dialog outranks every pane sheet that declares a field class of its own', async () => {
+test('the dialog outranks every pane sheet that declares a field class of its own, in both themes', async () => {
   const { modal, scrim } = await openReauth();
   const nodes = [scrim, modal, ...dialogTree([modal])];
-  const shared = cascade(nodes, SHARED_SHEETS);
+
+  let contestedAll = 0;
+  for (const theme of ['dark', 'light']) {
+  /* cascade() seeds the theme on the root, and the selectorReaches() calls
+     below read that same root, so a pane rule aimed at `[data-theme]` is
+     considered rather than dismissed for want of the attribute. */
+  const shared = cascade(nodes, SHARED_SHEETS, theme);
 
   const dir = new URL('assets/', OPS);
   const paneSheets = readdirSync(dir).filter((f) => /^pane-.*-v2\.css$/.test(f));
@@ -1662,7 +1721,7 @@ test('the dialog outranks every pane sheet that declares a field class of its ow
          land on the label and the field, and only one of them may be answered. */
       for (const el of hits) {
         for (const name of declarations(rule).keys()) {
-          const ours = shared(el, { width: 1440 }).get(name);
+          const ours = shared(el, { width: 1440, theme }).get(name);
           assert.ok(ours, 'assets/' + file + ' { ' + rule.selector + ' } declares ' + name +
             ' on ' + el.tagName.toLowerCase() + '.' + [...classesOf(el)].join('.') +
             ' and no shared sheet does, so the dialog looks different on that pane');
@@ -1675,7 +1734,11 @@ test('the dialog outranks every pane sheet that declares a field class of its ow
     }
   }
   assert.ok(contested >= 5,
-    'only ' + contested + ' pane declarations contest the dialog, so this is not reading the pane sheets');
+    'only ' + contested + ' pane declarations contest the dialog in the ' + theme +
+    ' theme, so this is not reading the pane sheets');
+  contestedAll += contested;
+  }
+  assert.ok(contestedAll >= 10, 'the sweep collapsed to one theme');
 });
 
 test('every page that boots the v2 pane shell also loads the sheet that styles the dialog', () => {
