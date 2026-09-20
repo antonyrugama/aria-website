@@ -268,6 +268,68 @@ ops/
     pane-spend-v2.css     Cloud costs' own shapes
 ```
 
+The tree above says what each file is **for**. What each file is **loaded by** is not written
+here in prose, because prose is what went wrong: seven issues were filed against this README in
+one day, every one of them a sentence describing the code more broadly or more narrowly than the
+code behaves. The block below is read out of the `<link>` and `<script>` tags in `ops/*.html` by
+`scripts/ops-readme-claims.test.mjs` and compared line for line, so a page that stops loading
+something, or a file that is deleted, is a red test rather than a stale sentence.
+
+```claims id=assets-by-page
+alerts-model.js = alerts.html, index.html, jobs-live.html, run-history.html
+api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
+aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+icons.js = login.html, setup.html
+login.js = login.html
+operate.css = alerts.html, index.html, jobs-live.html, run-history.html
+operate.js = (no page)
+ops.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+pane-alerts-v2.css = alerts.html
+pane-alerts.js = alerts.html
+pane-analytics-v2.css = analytics.html
+pane-analytics.js = analytics.html
+pane-data.js = analytics.html, index.html, spend.html
+pane-evaluations-v2.css = evaluations.html
+pane-evaluations.js = evaluations.html
+pane-jobs-live-v2.css = jobs-live.html
+pane-jobs-live-v2.js = jobs-live.html
+pane-overview-v2.css = index.html
+pane-overview.js = index.html
+pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+pane-releases-v2.css = releases.html
+pane-releases.js = releases.html
+pane-run-history-v2.css = run-history.html
+pane-run-history-v2.js = run-history.html
+pane-settings-v2.css = settings.html
+pane-spend-v2.css = spend.html
+pane-spend.js = spend.html
+pane-users-v2.css = users.html
+pane-users.js = users.html
+session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, spend.html, users.html
+settings.js = settings.html
+setup.js = setup.html
+shell-pane-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+shell-v2.js = shell-v2.html
+shell.js = (no page)
+theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+```
+
+A file no page loads is not automatically dead: some are kept alive by the tests, which load
+them from disk on purpose. The block below is the list of those, with the test files that read
+each one, derived the same way.
+
+```claims id=assets-only-in-tests
+```
+
+And the files this README still talks about which are no longer in the tree. The guard checks
+each one is **absent**, so a file that comes back leaves the prose around it red rather than
+quietly wrong again.
+
+```claims id=deleted-assets
+```
+
 ### The v2 layer
 
 `aria.css` and `aria.js` are the design system from `docs/mocks/ops-dashboard-v2/` in the Aria
@@ -315,6 +377,24 @@ before it asks for a pane's contents, so which script finishes first cannot chan
 Registration rather than a flag in the registry, because the thing that knows whether a pane is
 built is the pane's own module being on the page; a boolean in the registry could claim "built"
 on a page that loads nothing to build it.
+
+That is why the list below is **read out of the pages** rather than written here: the page each
+pane names in the registry, the shell that page loads, and the pane's own stylesheet if it has
+one. A pane that moves across layers changes this block in the same change that moves it, or the
+suite is red.
+
+```claims id=panes
+overview = index.html, shell-pane-v2.js, pane-overview-v2.css
+jobs = jobs-live.html, shell-pane-v2.js, pane-jobs-live-v2.css
+history = run-history.html, shell-pane-v2.js, pane-run-history-v2.css
+alerts = alerts.html, shell-pane-v2.js, pane-alerts-v2.css
+analytics = analytics.html, shell-pane-v2.js, pane-analytics-v2.css
+spend = spend.html, shell-pane-v2.js, pane-spend-v2.css
+evals = evaluations.html, shell-pane-v2.js, pane-evaluations-v2.css
+releases = releases.html, shell.js, (no sheet of its own)
+users = users.html, shell.js, (no sheet of its own)
+settings = settings.html, shell-pane-v2.js, pane-settings-v2.css
+```
 
 ### One registry, two shells
 
@@ -1450,6 +1530,21 @@ inside its edge, because `aria.css` draws that ring 2px outside the element and 
 flush with the card. Same three attributes and the same one CSS line as App releases'
 `.tbl-scroll` and Settings' `tableWrap()` (`Stadiora/Aria#10459`).
 
+Which boxes carry a ring of their own is read out of the v2 pane sheets — every box that
+declares `overflow-x: auto`, found by that declaration and not by its class name, with whatever
+its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is red here.
+
+```claims id=table-focus-rings
+pane-alerts-v2.css .scrollx = outline-offset: -2px
+pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, 2px outside)
+pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
+pane-releases-v2.css .tbl-scroll = outline-offset: -2px
+pane-run-history-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, 2px outside)
+pane-settings-v2.css .tbl-wrap = outline-offset: -2px
+pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, 2px outside)
+pane-users-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, 2px outside)
+```
+
 ### People and usage on v2: where the pane departs from the mock
 
 `docs/mocks/ops-dashboard-v2/analytics.html` in the Aria monorepo is the approved design.
@@ -1827,6 +1922,34 @@ better. The row closes for everyone on the day the tokens themselves are darkene
 same day the three rules at the end of `operate.css` and the block at the end of `ops.css` are
 deleted together.
 
+Every class this record is written about is a `ops.css` class, and which sheets still declare it
+and which pages can still draw it are read out of the tree rather than remembered here. A `(no
+page)` is the strong direction — nothing assembles that token anywhere the scan can see — and a
+named page is the weak one, since a token built at run time is invisible to it.
+
+```claims id=v1-status-classes
+.badge = ops.css; drawn by releases.html, settings.html, users.html
+.badge-ok = ops.css, operate.css; drawn by alerts.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, users.html
+.badge-warn = ops.css, operate.css; drawn by alerts.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, users.html
+.badge-crit = ops.css, operate.css; drawn by alerts.html, index.html, jobs-live.html, releases.html, run-history.html, users.html
+.badge-info = ops.css; drawn by alerts.html, index.html, jobs-live.html, releases.html, run-history.html, users.html
+.badge-brand = ops.css; drawn by releases.html, settings.html, users.html
+.flagchip = ops.css; drawn by releases.html, users.html
+.tag-mobile = ops.css; drawn by releases.html, users.html
+.tag-coaches = ops.css; drawn by releases.html, users.html
+.tag-backend = ops.css; drawn by (no page)
+.build = ops.css; drawn by releases.html
+.masked = ops.css; drawn by releases.html, users.html
+.verdict-better = ops.css; drawn by releases.html
+.verdict-worse = ops.css; drawn by releases.html
+.verdict-slightly-worse = ops.css; drawn by releases.html
+.reveal-note = ops.css; drawn by users.html
+.nav-count = ops.css; drawn by (no page)
+.btn-danger = ops.css; drawn by (no page)
+.field-error = ops.css; drawn by login.html, releases.html, users.html
+.callout-warn = ops.css; drawn by evaluations.html, settings.html
+```
+
 Dark mode passes throughout and is untouched. Both badge overrides are scoped to
 `[data-theme="light"]`, so the dark inks are the ones W1 shipped: over the same three surfaces
 and the same 14% tint, the lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200,
@@ -1901,6 +2024,49 @@ stored reading — which on this pane is most of them.
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
 | `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at 375px **and 360px** in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
+
+Which of those four browser guards runs where is read out of the guards and the workflows: the
+workflow whose job line carries `node scripts/<guard>`, and the pages the guard's own source
+names — `every pane the registry declares` where it boots from `OpsPaneRegistry` rather than
+from a literal list. This says what each guard **loads**, which is the half that goes stale; what
+it then asserts on each page is the table above.
+
+```claims id=browser-guards
+check-ops-contrast.mjs = ops-contrast.yml; /ops/shell-v2.html
+check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry declares
+check-ops-shell-v2.mjs = ops-shell-v2.yml; /ops/shell-v2.html
+check-ops-theme-redraw.mjs = ops-theme-redraw.yml; /ops/shell-v2.html
+```
+
+The Cloud costs colour guard's own reach is not described here either. The block below is
+produced by **running** that guard's two matchers — `COLOUR_SLOT` and `rawColourSpellings`,
+lifted out of `scripts/ops-spend-v2.test.mjs` — over a fixed set of probes, so each line is the
+guard's answer rather than a reading of it. A `does not look here` or a `cannot read it` is a
+hole; they are the NOT COVERED row above, stated as values.
+
+```claims id=spend-colour-gate
+property --sp-ink = value scan looks here
+property color = value scan looks here
+property background-image = value scan looks here
+property border-color = value scan looks here
+property outline-color = value scan looks here
+property fill = value scan looks here
+property stroke = value scan looks here
+property box-shadow = value scan looks here
+property filter = value scan looks here
+property text-decoration = value scan does not look here
+property text-emphasis = value scan does not look here
+property mask-image = value scan does not look here
+property accent-color = value scan looks here
+value #2b7fff = spelling clause reads it
+value #333 = spelling clause reads it
+value rgb(255, 0, 0) = spelling clause reads it
+value hsl(0 100% 50%) = spelling clause reads it
+value crimson = spelling clause cannot read it
+value oklch(0.7 0.2 250) = spelling clause reads it
+value lab(50% 40 59) = spelling clause reads it
+value color-mix(in srgb, crimson 50%, transparent) = spelling clause reads it
+```
 
 Charts and icons are swept for paint **separately**, with their own counts and their own
 messages, and each sweep marks what it swept so that every `<svg>` on the page has to be claimed
