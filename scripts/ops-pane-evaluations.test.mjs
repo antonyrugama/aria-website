@@ -1059,7 +1059,7 @@ const within = (node, ancestor) => {
 };
 
 /* Everything a reader meets on the page EXCEPT the preview, as one string.
-   Three things this buys over asking each element for its own text:
+   Four things this buys over asking each element for its own text:
 
    - A phrase split across sibling elements is still found. <b>180</b> inside a
      sentence is this file's own idiom (u-list-row bolds a score that way), and
@@ -1068,19 +1068,25 @@ const within = (node, ancestor) => {
      announce() is how a screen-reader operator receives every success message
      on this pane, and the stamps are visual chips; an invented figure announced
      there would reach a blind operator with nothing marking it invented.
-   - It collects the attributes that carry text a person receives, not only
-     textContent. A placeholder is painted on screen until the operator types;
-     an aria-label REPLACES the element's text for a screen reader, so a figure
-     there is worse than one in the live region — it also suppresses the real
-     words underneath it. This pane already uses both idioms.
+   - It collects text carried on ATTRIBUTES, not only textContent. The list is
+     SPOKEN_ATTRS below and that is the only place it is written down, because
+     an enumeration repeated in prose goes stale the round after the list is
+     widened — which is how `value` came to be missing from one and present in
+     the other. Two shapes justify the class: an attribute PAINTED on screen
+     (a field's value, a placeholder shown until the operator types), and an
+     attribute a screen reader SUBSTITUTES for the element's text (aria-label,
+     title, alt). The second is worse than the live region, because it also
+     suppresses the real words underneath it. This pane already uses all three
+     idioms: input() takes a value, and the page carries placeholders and
+     aria-labels.
    - There is one string and one place to be wrong, rather than a rule applied
      per node.
 
    Element boundaries join with a single space, the way allText does, so a
    figure split MID-TOKEN across two elements is not found. That is disclosed
    below rather than chased. */
-const SPOKEN_ATTRS = ['placeholder', 'title', 'aria-label', 'aria-description',
-  'aria-valuetext', 'alt', 'aria-roledescription'];
+const SPOKEN_ATTRS = ['value', 'placeholder', 'title', 'aria-label',
+  'aria-description', 'aria-valuetext', 'alt', 'aria-roledescription'];
 
 function textOutside(node, excluded) {
   if (!node || node === excluded) return '';

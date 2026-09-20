@@ -810,12 +810,14 @@ usable rule rather than a coincidence: the working half prints digests, byte cou
 The sweep reads one string taken from `<body>` with the panel's subtree removed, so it covers the
 shell's live region — `announce()` is how a screen-reader operator hears every success here, and
 the stamps are visual chips — and it finds a phrase split across sibling elements, which bolding a
-number inside a sentence produces and which a per-element sweep walked past. It also reads the
-attributes that carry text a person receives: `placeholder`, `title`, `alt` and `aria-label`. A
-placeholder is painted on screen until the operator types, and an `aria-label` replaces the
-element's text for a screen reader, so a figure in one is worse than a figure in the live region —
-it suppresses the real words underneath it as well. The two states are the booted page and the
-page after both working forms have been submitted and answered.
+number inside a sentence produces and which a per-element sweep walked past. It also reads text
+carried on attributes, listed once as `SPOKEN_ATTRS` in that file and nowhere else, because an
+enumeration repeated in prose goes stale the round after the list is widened. Two shapes qualify:
+an attribute painted on screen, like a field's `value` or a placeholder shown until the operator
+types, and one a screen reader substitutes for the element's text, like an `aria-label` — a figure
+in the second is worse than one in the live region, because it suppresses the real words
+underneath it as well. The two states are the booted page and the page after both working forms
+have been submitted and answered.
 
 Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
 inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in
