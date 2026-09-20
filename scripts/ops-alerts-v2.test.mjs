@@ -364,6 +364,27 @@ test('closing a problem sends the reason and the note somebody wrote', async () 
     'the note somebody wrote did not reach the server');
 });
 
+/* The route accepts exactly two reasons from a person. `self_resolved` is
+   the engine's own, and the close endpoint answers `ops_close_reason_invalid`
+   to anybody who sends it, so an option offering it is a button that can only
+   fail. The harness does not implement a select's implicit first-option
+   default, which is why the close tests above set `.value` by hand and why
+   none of them can see WHICH options are on offer -- this one reads the
+   option elements themselves. */
+test('the close form offers only the two reasons a person is allowed to send', async () => {
+  const dom = await boot({});
+  buttonNamed(problemCards(dom)[0], /^Close/).dispatch('click');
+  const form = findAll(panel(dom, 'live'), (n) => n.tagName === 'FORM')[0];
+  const select = findAll(form, (n) => n.tagName === 'SELECT')[0];
+  const offered = findAll(select, (n) => n.tagName === 'OPTION')
+    .map((n) => n.getAttribute('value'));
+  assert.equal(offered.length, 2,
+    'the close form offers ' + offered.length + ' reasons: ' + JSON.stringify(offered));
+  assert.equal(offered.indexOf('self_resolved'), -1,
+    'the close form offers self_resolved, which the route refuses from a person');
+  assert.deepEqual(offered.slice().sort(), ['no_action_needed', 'resolved']);
+});
+
 test('a close with no note sends no note rather than an empty one', async () => {
   const dom = await boot({});
   buttonNamed(problemCards(dom)[0], /^Close/).dispatch('click');
@@ -449,6 +470,49 @@ test('a figure read over a filtered answer says which filter it was read over', 
     'a severity-scoped answer was presented as a total');
 });
 
+/* ===================== a closed problem is not an open one ============== */
+
+/* `Open for` measures to now, so on a closed problem it counts on past the
+   moment the thing stopped. A range filter admits closed problems into the
+   queue -- two of the three windows this pane offers -- so this is the
+   ordinary view, not an exotic one. */
+test('a closed problem is not told how long it has been open', async () => {
+  const dom = await boot({
+    search: '?range=7d',
+    open: { problems: [] },
+    closed: { problems: [closedProblem()] },
+  });
+  const cards = problemCards(dom);
+  assert.equal(cards.length, 1, 'the closed problem was not in the queue at all');
+  const text = allText(cards[0]);
+  assert.doesNotMatch(text, /Open for/,
+    'a closed problem is still being told how long it has been open: ' + text);
+  assert.match(text, /Started/,
+    'the dated start went missing along with the running total');
+
+  const open = await boot({});
+  assert.match(allText(problemCards(open)[0]), /Open for/,
+    'an open problem stopped saying how long it has been open');
+});
+
+test('a closed card states the reason and the person once, not the word Closed twice', async () => {
+  const dom = await boot({
+    search: '?range=7d',
+    open: { problems: [] },
+    closed: { problems: [closedProblem({ closeReason: 'resolved' })] },
+  });
+  const text = allText(problemCards(dom)[0]).replace(/\s+/g, ' ');
+  assert.equal((text.match(/Closed/g) || []).length, 1,
+    'the card says "Closed" more than once: ' + text);
+  assert.match(text, /Resolved by owner@example\.invalid/,
+    'the reason and the person went missing with the duplication');
+
+  /* The closed LIST has no pill, so its sentence still carries both. */
+  const listed = allText(dom.doc.querySelector('.c-list')).replace(/\s+/g, ' ');
+  assert.match(listed, /Closed as resolved by owner@example\.invalid \d+ days ago/,
+    'the closed list lost the sentence that is its only statement of when: ' + listed);
+});
+
 /* ============================== de-duplication ========================= */
 
 test('a problem that is in both answers is one problem', async () => {
@@ -519,6 +583,27 @@ test('one read failing leaves everything the other read on screen', async () => 
   });
   assert.match(liveText(neither), /This pane could not be read/,
     'a pane with nothing readable still drew a shell of one');
+});
+
+/* The channels come out of the rules answer. A rules read that never landed
+   knows nothing about them, and "no notification channel is set up" is the
+   one sentence on this pane that means alerts reach nobody. */
+test('a rules read that failed does not report that nothing is set up to notify', async () => {
+  const dom = await boot({ rules: new Error('The rules could not be read.') });
+  const routing = dom.doc.querySelector('.c-side');
+  const text = allText(routing);
+  assert.doesNotMatch(text, /No notification channel is set up/,
+    'a read that never landed claimed there is no channel: ' + text);
+  assert.match(text, /could not be read/,
+    'the routing card said nothing at all about the read that failed');
+
+  const landed = await boot({ rules: rulesFixture(undefined) });
+  assert.match(allText(landed.doc.querySelector('.c-side')), /Microsoft Teams/,
+    'a rules read that landed stopped listing its channels');
+
+  const none = await boot({ rules: Object.assign(rulesFixture(), { channels: [] }) });
+  assert.match(allText(none.doc.querySelector('.c-side')), /No notification channel is set up/,
+    'an answer that really carries no channel stopped saying so');
 });
 
 /* ============================== the rules table ======================== */
@@ -786,6 +871,57 @@ test('the last-fortnight figures are refused over a read that came back full', a
   assert.match(text, /Nothing is drawn from a sample missing exactly the days it is about/);
 });
 
+/* The open read and the closed read are taken at different instants, so one
+   problem closed between them comes back in both. The queue de-duplicates;
+   the figures beside it were adding the same problem twice. */
+test('a problem in both answers is counted once by the figures, not only listed once', async () => {
+  const shared = closedProblem({ id: 'prb_1', reference: 'AO-118' });
+  const dom = await boot({
+    search: '?range=7d',
+    open: { problems: [shared] },
+    closed: { problems: [shared] },
+  });
+  const rows = withClass(dom.doc.body, 'w-rows')[0];
+  const text = allText(rows).replace(/\s+/g, ' ');
+  assert.match(text, /Opened 1\b/,
+    'one problem in both answers was counted twice: ' + text);
+  assert.match(text, /Closed 1\b/, 'the closure went missing: ' + text);
+});
+
+/* The closed read is issued on EVERY load, whatever the range control says,
+   so a capped one has to be disclosed on the default window too -- where the
+   queue holds no closed problem and the queue's own disclosure never fires. */
+test('a capped closed read is disclosed on the window that does not filter by it', async () => {
+  const capped = await boot({
+    closed: { problems: manyProblems(100).map((_, i) => closedProblem({
+      id: 'cl_' + i, reference: 'AO-' + (400 + i),
+    })) },
+  });
+  const listed = allText(capped.doc.querySelector('.c-list').parentNode.parentNode);
+  assert.match(listed, /most recent closures are missing from this list/,
+    'a capped closed list was drawn with nothing said about it: ' + listed);
+  /* The total the foot prints is "<n> closed. Open one to read..."; the
+     disclosure sentence also contains "100 closed", which is why this pins
+     the whole construction rather than the two words. */
+  assert.doesNotMatch(listed, /\d+ closed\. Open one to read/,
+    'a total was printed over a read that came back full: ' + listed);
+
+  /* Both directions. A read that came back SHORT of the cap is a real total,
+     so the count is still printed and the disclosure is still absent -- an
+     invariant checked only one way passes just as well with the figure
+     switched off everywhere. */
+  const short = await boot({
+    closed: { problems: manyProblems(8).map((_, i) => closedProblem({
+      id: 'sh_' + i, reference: 'AO-' + (500 + i),
+    })) },
+  });
+  const shortText = allText(short.doc.querySelector('.c-list').parentNode.parentNode);
+  assert.doesNotMatch(shortText, /most recent closures are missing/,
+    'a closed read that came back short was disclosed as truncated');
+  assert.match(shortText, /8 closed\. Open one to read/,
+    'a read that came back short stopped saying how many it held: ' + shortText);
+});
+
 test('a rate over too few closures is reported as counts instead', async () => {
   const few = await boot({
     search: '?range=30d',
@@ -878,6 +1014,65 @@ test('a problem carries the dated time it started, not only how long ago', async
   assert.match(card, /\d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2} UTC/,
     'the only time on the card is a relative one, which two operators in two ' +
     'time zones cannot quote to each other');
+});
+
+/* ======================= the two disclosures on a card ================== */
+
+/* One problem can be on screen twice -- once in the queue, once in "Recently
+   closed" -- so an id derived from the problem alone put two elements with
+   the same id in the document and both buttons' aria-controls resolved to
+   the first. */
+test('two views of one problem do not hand the document two elements with one id', async () => {
+  const dom = await boot({
+    search: '?range=7d',
+    open: { problems: [] },
+    closed: { problems: [closedProblem()] },
+  });
+  const ids = findAll(dom.doc.body, (n) => n.getAttribute && n.getAttribute('id'))
+    .map((n) => n.getAttribute('id'));
+  const seen = {};
+  const dupes = ids.filter((id) => {
+    if (Object.prototype.hasOwnProperty.call(seen, id)) return true;
+    seen[id] = true;
+    return false;
+  });
+  assert.deepEqual(dupes, [], 'the document holds a repeated id: ' + JSON.stringify(dupes));
+
+  /* Both surfaces really are on screen, or the assertion above is vacuous. */
+  assert.equal(problemCards(dom).length, 1, 'the problem is not in the queue');
+  assert.ok(withClass(dom.doc.body, 'c-row').length >= 1,
+    'the problem is not in the closed list');
+});
+
+/* Details and the close form used to write into one host, so each button
+   reported itself expanded over the other one's content, and opening Details
+   destroyed a part-filled close form without saying so. */
+test('Details and Close each own their own region, and each says so truthfully', async () => {
+  const dom = await boot({});
+  const card = problemCards(dom)[0];
+  const details = buttonNamed(card, /Details/);
+  const close = buttonNamed(card, /^Close/);
+
+  assert.notEqual(details.getAttribute('aria-controls'), close.getAttribute('aria-controls'),
+    'Details and Close point at the same region');
+
+  close.dispatch('click');
+  await settle();
+  const note = findAll(panel(dom, 'live'), (n) => n.tagName === 'TEXTAREA')[0];
+  assert.ok(note, 'Close opened no form');
+  note.value = 'Half a sentence somebody was still typing';
+  assert.equal(details.getAttribute('aria-expanded'), 'false',
+    'opening the close form reported Details as expanded');
+
+  details.dispatch('click');
+  await settle();
+  assert.equal(close.getAttribute('aria-expanded'), 'true',
+    'opening Details said the close form was shut while it was still on screen');
+  const still = findAll(panel(dom, 'live'), (n) => n.tagName === 'TEXTAREA')[0];
+  assert.ok(still, 'opening Details destroyed the close form');
+  assert.equal(still.value, 'Half a sentence somebody was still typing',
+    'opening Details threw away what somebody had typed into the close form');
+  assert.equal(details.getAttribute('aria-expanded'), 'true');
 });
 
 /* ========================= clearing the filters ======================== */

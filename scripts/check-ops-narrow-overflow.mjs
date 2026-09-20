@@ -29,10 +29,15 @@
    run of this check failed at 375px on a second badge that the same commit
    had passed locally on Windows. Linux is what the check is measured on.
 
-   375px only, deliberately. 320px catches a further overflow — the Severity
-   segmented control is wider than the bar there — but that is a different
-   mechanism in a control this change does not touch, so it is filed rather
-   than folded in and this check does not yet assert it.
+   Two widths, 375px and 360px. 375px is the acceptance criterion; 360px
+   exists because of the platform split above. The first CI run of the v2
+   Problems pane failed at 375px on Linux on a filter note that fitted 375px
+   on macOS with nothing to spare, so a local run could not see it and a
+   reviewer on a Mac had to find it by hand. 360px reproduces on any platform
+   what CI's wider font metrics produce at 375px. 320px catches a further
+   overflow — the Severity segmented control is wider than the bar there —
+   but that is a different mechanism in a control this change does not touch,
+   so it is filed rather than folded in and this check does not assert it.
 
    The stub is deliberately hostile rather than tidy. It sends a rule that
    cannot judge and whose reason is the longest sentence the vocabulary in
@@ -52,7 +57,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = '/ops/alerts.html';
-const WIDTHS = [375];
+const WIDTHS = [375, 360];
 const HEIGHT = 812;
 const THEMES = ['dark', 'light'];
 
@@ -238,11 +243,29 @@ function connect(url) {
 const PROBE = `(() => {
   const de = document.documentElement;
   const viewport = de.clientWidth;
+
+  /* A designed horizontal scroller and everything inside it. The rules table
+     is 760px wide inside a 375px card ON PURPOSE, so its cells all report
+     right edges far past the viewport while scrolling in place and leaving
+     documentElement alone. Left in, they fill the report and the element that
+     actually set the document width never appears -- which is how a CI
+     failure came to name a table that was not the cause. */
+  const scrolls = (el) => {
+    const x = getComputedStyle(el).overflowX;
+    return x === 'auto' || x === 'scroll' || x === 'hidden' || x === 'clip';
+  };
+  const inScroller = (el) => {
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      if (scrolls(n)) return true;
+    }
+    return false;
+  };
+
   const past = [];
   for (const el of document.querySelectorAll('body *')) {
     const box = el.getBoundingClientRect();
     if (box.width === 0 && box.height === 0) continue;
-    if (box.right > viewport + 0.5) {
+    if (box.right > viewport + 0.5 && !inScroller(el)) {
       past.push({
         tag: el.tagName.toLowerCase(),
         cls: el.getAttribute('class') || '',

@@ -25,9 +25,12 @@
      1. **A count from a full read is a floor, not a total.** A read answers
         with at most OpsAlertsModel.PAGE problems, worst first and then oldest,
         so a full page keeps the oldest of each severity and drops the most
-        recent. The disclosures name WHICH problems went missing, and anything
-        worked out over a window that ends today — the closed list and the
-        opened/closed counts — is made unavailable rather than approximate.
+        recent. The disclosures name WHICH problems went missing. The
+        opened/closed counts, worked out over a window that ends today, are
+        made unavailable rather than approximate. The closed LIST is still
+        drawn from a capped read — it is a list, and a short list of real
+        closures is still true of every row in it — but it says so in its own
+        foot and prints no total over it.
      2. **The severity filter is applied by the API and the category filter is
         applied here**, so a figure read over a severity-scoped answer says so
         rather than reading as a total.
@@ -287,16 +290,26 @@
        them is in both — and one problem cannot honestly be two rows, so the
        queue is keyed by id. */
     function visibleProblems(data) {
+      return distinct(problemsOf(data.open).concat(problemsOf(data.closed)))
+        .filter(inRange).filter(matchesCategory).sort(model.byWorstThenOldest);
+    }
+
+    /* One problem is one problem. The open read and the closed read are taken
+       at different instants, so one closed between them comes back in both,
+       and anything that counts or lists the two together has to say so once.
+       The queue used to be the only place that did; the figures beside it
+       were adding the same problem twice. */
+    function distinct(problems) {
       var seen = {};
       var all = [];
-      problemsOf(data.open).concat(problemsOf(data.closed)).forEach(function (problem) {
+      problems.forEach(function (problem) {
         var key = problem && problem.id;
         if (key === undefined || key === null) return;
         if (Object.prototype.hasOwnProperty.call(seen, key)) return;
         seen[key] = true;
         all.push(problem);
       });
-      return all.filter(inRange).filter(matchesCategory).sort(model.byWorstThenOldest);
+      return all;
     }
 
     /* Whether any control is narrowing what came back. The window is one of
@@ -598,6 +611,10 @@
           'then oldest, and that many came back, so the most recent ones are missing from ' +
           'this list and from the counts above.');
       }
+      /* Gated on the range because this sentence is about the QUEUE: on the
+         default window the queue holds no closed problem, so it cannot be
+         short of one. The closed card discloses its own capped read itself,
+         on every load. */
       if (model.capped(problemsOf(data.closed)) && RANGE_DAYS[filters.range]) {
         parts.push('The closed problems were read the same way and also came back full, so ' +
           'the most recent closures are missing from this list too.');
@@ -703,7 +720,12 @@
       var when = h('div', { className: 'p-col' });
       var started = fmt.utcStamp(problem.firedAt);
       if (started) when.appendChild(factRow('Started', started, true));
-      if (problem.firedAt) when.appendChild(factRow('Open for', fmt.since(problem.firedAt), true));
+      /* "Open for" measures to now, so it is only true while the problem is
+         open. On a closed one -- which a range filter admits -- it printed a
+         number that grew after the thing had stopped. */
+      if (problem.firedAt && problem.status !== 'closed') {
+        when.appendChild(factRow('Open for', fmt.since(problem.firedAt), true));
+      }
       if (problem.status === 'acknowledged' && problem.acknowledgedAt) {
         when.appendChild(factRow('Taken on', fmt.ago(problem.acknowledgedAt), true));
       }
@@ -772,24 +794,39 @@
           text: (who || 'An administrator') + ' took this on ' + fmt.ago(problem.acknowledgedAt)
         }));
       } else if (problem.status === 'closed') {
-        row.appendChild(h('span', { className: 'tiny muted', text: closedSentence(problem) }));
+        row.appendChild(h('span', {
+          className: 'tiny muted', text: closedSentence(problem, true)
+        }));
       }
 
       /* Details and the close form open under the whole footer rather than
          inside the action row, so a long runbook is not sized by the buttons
-         beside it. */
-      var host = h('div');
-      row.appendChild(actions(problem, data, host));
+         beside it -- and they get ONE HOST EACH. Sharing a host made each
+         button report itself expanded over the other one's content, and made
+         Details silently destroy a part-filled close form. */
+      var detailHost = h('div');
+      var closeHost = h('div');
+      row.appendChild(actions(problem, data, detailHost, closeHost, 'q'));
       wrap.appendChild(row);
-      wrap.appendChild(host);
+      wrap.appendChild(detailHost);
+      wrap.appendChild(closeHost);
       return wrap;
     }
 
-    function closedSentence(problem) {
+    /* Who closed it and why. `whenIsAlready` is true where the card already
+       carries a "Closed <ago>" pill: the reason and the person are new, the
+       word and the elapsed time are not, and one fact gets one slot. */
+    function closedSentence(problem, whenIsAlready) {
       var reason = problem.closeReason
         ? (CLOSE_REASON_LABEL[problem.closeReason] || problem.closeReason).toLowerCase()
         : null;
       var who = textOf(problem.closedByEmail);
+      if (whenIsAlready) {
+        var head = reason
+          ? reason.charAt(0).toUpperCase() + reason.slice(1)
+          : 'Closed';
+        return head + (who ? ' by ' + who : '');
+      }
       return 'Closed' + (reason ? ' as ' + reason : '') + (who ? ' by ' + who : '') +
         ' ' + fmt.ago(problem.closedAt);
     }
@@ -806,7 +843,7 @@
       return letters.toUpperCase();
     }
 
-    function actions(problem, data, host) {
+    function actions(problem, data, detailHost, closeHost, surface) {
       var row = h('div', { className: 'row wrap gap-sm p-actions' });
 
       var file = model.PANE_FILE[problem.workPane];
@@ -815,11 +852,11 @@
           problem.workPaneLabel || 'Where the work happens'));
       }
 
-      row.appendChild(detailsButton(problem, data, host));
+      row.appendChild(detailsButton(problem, data, detailHost, surface));
 
       if (problem.status !== 'closed') {
         if (canAct) {
-          row.appendChild(closeButton(problem, host));
+          row.appendChild(closeButton(problem, closeHost, surface));
           if (problem.status === 'open') row.appendChild(takeOnButton(problem));
         } else {
           /* A disabled button says "not now"; the absent one plus this says
@@ -856,8 +893,12 @@
        opened, which is why it is not folded into the list read: a queue of
        thirty problems would otherwise make thirty-one requests to draw a
        screen nobody has asked a question of yet. */
-    function detailsButton(problem, data, host) {
-      var id = 'detail-' + String(problem.id).replace(/[^A-Za-z0-9_-]/g, '');
+    /* `surface` is which list this card is in: one problem can be on screen
+       twice -- once in the queue, once in "Recently closed" -- and an id
+       derived from the problem alone put two of them in the document, so both
+       buttons' aria-controls resolved to the first one. */
+    function detailsButton(problem, data, host, surface) {
+      var id = 'detail-' + surface + '-' + String(problem.id).replace(/[^A-Za-z0-9_-]/g, '');
       host.setAttribute('id', id);
       var button = h('button', {
         className: 'btn btn-sm', type: 'button', text: 'Details',
@@ -965,9 +1006,12 @@
        closing does before it is done, because closing is not undoable: the
        condition coming back raises a new problem rather than reopening this
        one. */
-    function closeButton(problem, host) {
+    function closeButton(problem, host, surface) {
+      var id = 'close-' + surface + '-' + String(problem.id).replace(/[^A-Za-z0-9_-]/g, '');
+      host.setAttribute('id', id);
       var button = h('button', {
-        className: 'btn btn-sm', type: 'button', text: 'Close', 'aria-expanded': 'false'
+        className: 'btn btn-sm', type: 'button', text: 'Close',
+        'aria-expanded': 'false', 'aria-controls': id
       });
       button.appendChild(h('span', { className: 'sr', text: ' problem ' + problem.reference }));
       button.addEventListener('click', function () {
@@ -975,7 +1019,7 @@
         clear(host);
         button.setAttribute('aria-expanded', open ? 'false' : 'true');
         if (open) return;
-        var form = closeForm(problem, function () {
+        var form = closeForm(problem, surface, function () {
           button.setAttribute('aria-expanded', 'false');
           clear(host);
           button.focus();
@@ -986,8 +1030,8 @@
       return button;
     }
 
-    function closeForm(problem, onCancel) {
-      var safe = String(problem.id).replace(/[^A-Za-z0-9_-]/g, '');
+    function closeForm(problem, surface, onCancel) {
+      var safe = surface + '-' + String(problem.id).replace(/[^A-Za-z0-9_-]/g, '');
       var reasonId = 'close-reason-' + safe;
       var noteId = 'close-note-' + safe;
 
@@ -1003,10 +1047,14 @@
         className: 'p-label', 'for': reasonId, text: 'Why is it being closed?'
       }));
       var reason = h('select', { id: reasonId });
+      /* Two reasons, not three. `self_resolved` is the engine's own: when a
+         condition clears with nobody on it, the route closes the problem that
+         way itself. A person cannot choose it -- the close endpoint answers
+         `ops_close_reason_invalid` -- so offering it is a button that can only
+         fail. It is still printed on a record the engine closed. */
       [
         { value: 'resolved', label: 'Resolved, somebody fixed it' },
-        { value: 'no_action_needed', label: 'Nothing to do, it did not need a person' },
-        { value: 'self_resolved', label: 'Fixed itself, nobody had to act' }
+        { value: 'no_action_needed', label: 'Nothing to do, it did not need a person' }
       ].forEach(function (option) {
         reason.appendChild(h('option', { value: option.value, text: option.label }));
       });
@@ -1274,7 +1322,7 @@
       grid.appendChild(closedCard(data));
       var side = h('div', { className: 'c-side' });
       side.appendChild(watchingCard(data));
-      side.appendChild(routingCard(armed));
+      side.appendChild(routingCard(armed, Boolean(data.rules.error)));
       grid.appendChild(side);
       section.appendChild(grid);
       return section;
@@ -1322,13 +1370,23 @@
 
       /* The note somebody wrote when they closed it is on the problem's own
          record rather than in this list, so this says where it is instead of
-         leaving the sentence out with no explanation. */
+         leaving the sentence out with no explanation.
+
+         The closed read is issued on EVERY load, whatever the range control
+         says, so a capped one is disclosed here rather than beside the queue:
+         the queue's own disclosure is about the queue, and on the default
+         window the queue holds no closed problem to be short of. A count over
+         a capped read is a floor, so it is not printed as a total. */
+      var cappedClosed = model.capped(problemsOf(data.closed));
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(icon('history'));
       foot.appendChild(h('span', {
-        text: recent.length > CLOSED_SHOWN
-          ? fmt.int(recent.length) + ' closed. Open one to read the note it was closed with.'
-          : 'Open one to read the note it was closed with.'
+        text: (cappedClosed
+          ? 'Only ' + PAGE + ' closed problems can be read at once and that many came ' +
+            'back, worst first and then oldest, so the most recent closures are missing ' +
+            'from this list. '
+          : recent.length > CLOSED_SHOWN ? fmt.int(recent.length) + ' closed. ' : '') +
+          'Open one to read the note it was closed with.'
       }));
       box.appendChild(foot);
       return box;
@@ -1351,7 +1409,7 @@
 
       var host = h('div');
       words.appendChild(h('div', { className: 'row wrap gap-sm mt-xs' }, [
-        detailsButton(problem, data, host)
+        detailsButton(problem, data, host, 'c')
       ]));
       words.appendChild(host);
       row.appendChild(words);
@@ -1390,7 +1448,7 @@
       }
 
       var cutoff = Date.now() - CLOSED_DAYS * 86400000;
-      var everything = problemsOf(data.open).concat(problemsOf(data.closed));
+      var everything = distinct(problemsOf(data.open).concat(problemsOf(data.closed)));
       var opened = everything.filter(function (problem) {
         var fired = time(problem.firedAt);
         return fired !== null && fired >= cutoff;
@@ -1443,10 +1501,26 @@
     /* Where a problem actually goes. A problem that only ever appears on this
        page is a log line pretending to be an alert, so the pane states, per
        channel, whether it is set up and what the last delivery did. */
-    function routingCard(armed) {
+    /* Where a problem goes once it is raised. The channels come out of the
+       rules answer, so a rules read that never landed knows nothing about
+       them: the card says the list could not be read rather than "no channel
+       is set up", which is the one sentence on this pane that means alerts
+       reach nobody. The pane does not get to say that from an empty object it
+       built itself. */
+    function routingCard(armed, rulesFailed) {
       var box = S.card();
       box.appendChild(S.cardHead('Where problems are sent'));
       var body = h('div', { className: 'card-body' });
+
+      if (rulesFailed) {
+        body.appendChild(h('p', {
+          className: 'tiny is-warn',
+          text: 'Where problems are sent could not be read, so whether anything ' +
+            'is getting through is unknown.'
+        }));
+        box.appendChild(body);
+        return box;
+      }
 
       if (!armed.channels.length) {
         body.appendChild(h('p', {
