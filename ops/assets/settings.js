@@ -1,188 +1,249 @@
-/* The Settings pane: who can get in, what we keep, and for how long.
+/* The Settings pane on the v2 design system: who can get in, what is kept,
+   and for how long.
 
-   This pane is the one with real authority behind it, so two rules run through
-   every line below.
+   Two rules run through every line below, and neither is a styling decision.
 
    FIRST, IT NEVER CLAIMS AUTHORITY IT DOES NOT HAVE. The role in hand decides
    what this file draws and nothing else. It does not decide what is allowed:
    the server re-reads the account row on every request and answers 403 whether
-   or not this page drew the control. A revoke button that should not be there
-   is a cosmetic bug, not a security one, and the reverse is what matters, so
-   every mutation is sent and the server's answer is what appears on screen.
+   or not this page drew the control. A Revoke button that should not be there
+   is a cosmetic bug; the reverse is the one that matters, so every mutation is
+   sent and the server's answer is what appears on screen. The pane is owner
+   only in assets/pane-registry.js, and the shell renders its named refusal for
+   every other role without ever asking this file for a pane — which is why
+   nothing here reads anything until definePane's callback runs.
 
-   SECOND, IT SHOWS WHAT IS TRUE RATHER THAN WHAT THE MOCK DREW. Several cards
-   in the approved mock are settings that no API can yet read or write:
-   retention windows, the cost category mapping, integration connection state,
-   the session and elevated-access windows. Rendering those as working selects
-   and switches would be the worst outcome available, because a control that
-   silently writes nothing is indistinguishable from one that works. Each of
-   them therefore renders the mock's own not-configured pattern, says which of
-   the two it is, and states the rules that will hold when it does become
-   editable. What is real is real: administrators, sessions, revocation, and
-   the access record all come from the API and nothing else.
+   SECOND, IT SAYS WHICH HALF OF ITSELF IS REAL. Six areas are on screen and
+   three of them are read from an API: administrators, active sessions and the
+   access record. Retention windows, the cost-category mapping and integration
+   state have no endpoint to read or write, so they print no figure at all.
+   They say what is missing and which of "not built" and "not reported"
+   applies. Rendering them as populated tables would be the worst outcome
+   available, because a number nobody can check is indistinguishable from one
+   that came from somewhere. Stadiora/Aria#5442 wires those three up; this file
+   restyles all six and moves none of them across the line.
+
+   The split is drawn three ways, and never in colour alone:
+
+     1. every card head carries a source chip whose WORD says which it is;
+     2. a card with nothing behind it is hatched and dashed rather than lit;
+     3. a card with nothing behind it contains no numeral, anywhere.
+
+   assets/pane-settings-v2.css carries the first two. This file carries the
+   third, which is why the static prose below is written without a single
+   digit in it — that is a rule, not an accident, and changing one of those
+   sentences means keeping it. scripts/ops-settings-v2.test.mjs holds the
+   partition in both directions: every card the pane marks as read names an
+   endpoint the pane actually requested, every card it marks as static names
+   none and prints no digit, and neither set is empty.
 
    Mutations here are confirmed before they fire, carry the written reason the
    server requires, report what the server actually said, and are followed by a
-   reload of the access record so the record of the change is on screen next to
+   reload of the access record, so the record of the change is on screen beside
    the change itself. */
 (function (global) {
   'use strict';
 
+  var S = global.OpsPaneShell;
   var session = global.OpsSession;
-  var shell = global.OpsShell;
-  var h = shell.h;
-  var icon = shell.icon;
+  var h = S.h;
+  var icon = S.icon;
+  var fmt = S.fmt;
 
+  var ADMINS = '/api/ops/admins';
+  var SESSIONS = '/api/ops/sessions';
+  var AUDIT = '/api/ops/audit';
   var AUDIT_PAGE = 50;
 
   var ROLE_LABELS = { owner: 'Owner', operator: 'Operator', viewer: 'Viewer' };
+  var STATUS_LABELS = { active: 'Active', disabled: 'Disabled', suspended: 'Suspended' };
 
   /* Plain language for the actions the identity boundary records. An action
      with no entry here renders as the raw name in monospace rather than as a
-     guess, so a new one added server side is visible rather than mislabelled. */
+     guess, so one added server side is visible rather than mislabelled. */
   var ACTION_LABELS = {
-    'admin.login': 'signed in',
-    'admin.login_failed': 'sign in failed',
-    'admin.logout': 'signed out',
-    'admin.reauth': 'confirmed password',
-    'admin.reauth_failed': 'password confirmation failed',
-    'admin.password_changed': 'password changed',
-    'admin.provisioned': 'account provisioned',
-    'admin.session_revoke': 'access revoked',
-    'admin.session_revoke_failed': 'revoke refused',
-    'admin.refresh_failed': 'sign in refresh failed',
-    'admin.refresh_reuse_detected': 'session token reused',
-    'admin.refresh_grace_used': 'two tabs refreshed at once'
+    'admin.login': 'Signed in',
+    'admin.login_failed': 'Sign in refused',
+    'admin.logout': 'Signed out',
+    'admin.reauth': 'Confirmed password',
+    'admin.reauth_failed': 'Password confirmation refused',
+    'admin.password_changed': 'Changed password',
+    'admin.provisioned': 'Account provisioned',
+    'admin.session_revoke': 'Revoked a session',
+    'admin.session_revoke_failed': 'Revoke refused',
+    'admin.refresh_failed': 'Sign in refresh failed',
+    'admin.refresh_reuse_detected': 'Session token reused',
+    'admin.refresh_grace_used': 'Two tabs refreshed at once'
   };
 
-  /* The sections in the rail, in the order they appear. One list, so the rail
-     and the page cannot disagree about what exists or what it is called. */
-  var SECTIONS = [
-    { id: 'setAdmins', label: 'Administrators' },
-    { id: 'setSessions', label: 'Sessions and access' },
-    { id: 'setRetention', label: 'What we keep, and for how long' },
-    { id: 'setCosts', label: 'Cost mapping' },
-    { id: 'setIntegrations', label: 'Integrations' },
-    { id: 'setAudit', label: 'Access record' }
-  ];
+  /* What kind of thing an action was done to, said the way the rest of the
+     dashboard says it. An unrecognised kind is shown as recorded, for the same
+     reason an unrecognised action is. */
+  var TARGET_LABELS = {
+    ops_admin_session: 'sign in session',
+    ops_admin_account: 'administrator account'
+  };
 
   /* ------------------------------------------------------------ formatting */
 
-  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
-
   function parseDate(value) {
-    if (!value) return null;
+    if (typeof value !== 'string' || !value) return null;
     var d = new Date(value);
     return isFinite(d.getTime()) ? d : null;
   }
 
-  /* The exact moment, for the title attribute. A relative age is the readable
-     form and a precise timestamp is the one an incident is reconstructed from,
-     so both are carried rather than one chosen. */
-  function absolute(date) {
-    try { return date.toLocaleString(); } catch (e) { return date.toISOString(); }
-  }
-
-  function gap(ms) {
-    var seconds = Math.round(Math.abs(ms) / 1000);
-    if (seconds < 60) return 'under a minute';
-    var minutes = Math.round(seconds / 60);
-    if (minutes < 60) return plural(minutes, 'minute');
+  /* A length of time in the largest unit that still reads as a quantity. The
+     shell's fmt has ago/since, which measure from now to a stamp; neither can
+     express a gap between two stamps or a gap that has not happened yet, and
+     both of those are on this pane. */
+  function spanWords(ms) {
+    var minutes = Math.round(Math.abs(ms) / 60000);
+    if (minutes < 60) return fmt.plural(Math.max(1, minutes), 'minute');
     var hours = Math.round(minutes / 60);
-    if (hours < 48) return plural(hours, 'hour');
-    return plural(Math.round(hours / 24), 'day');
+    if (hours < 48) return fmt.plural(hours, 'hour');
+    return fmt.plural(Math.round(hours / 24), 'day');
   }
 
-  function ago(date) {
-    var ms = Date.now() - date.getTime();
-    if (ms < 45000) return 'just now';
-    return gap(ms) + ' ago';
-  }
-
-  function until(date) {
-    var ms = date.getTime() - Date.now();
-    if (ms <= 0) return 'expired';
-    return 'in ' + gap(ms);
-  }
-
-  /* A cell carrying a relative time with the exact one behind it. Absent
-     values say so rather than rendering an empty cell, because "never" and
-     "not reported" are different facts and a blank is neither. */
-  function timeCell(value, mode, absent) {
+  function endsIn(value) {
     var date = parseDate(value);
-    if (!date) return h('td', { className: 'muted', text: absent });
-    var text = mode === 'until' ? until(date) : ago(date);
-    return h('td', { className: 'mono', text: text, title: absolute(date) });
+    if (!date) return null;
+    var ms = date.getTime() - Date.now();
+    return ms <= 0 ? 'expired' : 'in ' + spanWords(ms);
   }
 
-  function roleBadge(role) {
+  function ago(value) {
+    var words = fmt.ago(value);
+    return words === fmt.none ? null : words;
+  }
+
+  /* A cell carrying a relative time with the exact one behind it. The relative
+     age is the readable form and the timestamp is what an incident is
+     reconstructed from, so both are carried rather than one chosen. A value
+     that is not there says so rather than rendering blank: "never" and "not
+     recorded" are different facts and an empty cell is neither. */
+  function timeCell(value, words, absent) {
+    if (!words) return h('td', { className: 'muted cell-nowrap', text: absent });
+    return h('td', {
+      className: 'num dim cell-nowrap', text: words, title: fmt.utcStamp(value) || ''
+    });
+  }
+
+  function pill(tone, glyph, text) {
+    var el = h('span', { className: 'pill' + (tone ? ' ' + tone : '') });
+    if (glyph) el.appendChild(icon(glyph));
+    el.appendChild(h('span', { text: text }));
+    return el;
+  }
+
+  /* Role and status both carry a word as well as a tone. Nothing on this pane
+     is readable by colour alone. */
+  function rolePill(role) {
     var label = ROLE_LABELS[role] || role || 'unknown';
-    var badge = h('span', {
-      className: 'badge' + (role === 'owner' ? ' badge-brand' : ''),
-      text: label
-    });
-    return badge;
+    if (role === 'owner') return pill('vio', 'lock', label);
+    if (role === 'operator') return pill('acc', null, label);
+    return pill('', null, label);
   }
 
-  var STATUS_LABELS = { active: 'Active', disabled: 'Disabled', suspended: 'Suspended' };
-
-  /* Status carries a glyph as well as its word, so it never reads by colour
-     alone. An unrecognised status shows exactly what the API said. */
-  function statusBadge(status) {
+  function statusPill(status) {
     var active = status === 'active';
-    var badge = h('span', { className: 'badge ' + (active ? 'badge-ok' : 'badge-warn') });
-    badge.appendChild(icon(active ? 'check' : 'warn'));
-    badge.appendChild(h('span', { text: STATUS_LABELS[status] || status || 'Unknown' }));
-    return badge;
+    return pill(active ? 'up' : 'warn', active ? 'check' : 'warn',
+      STATUS_LABELS[status] || status || 'Unknown');
   }
 
-  /* -------------------------------------------------------------- scaffold */
+  /* ---------------------------------------------------- live against static
 
-  function card(children) { return h('div', { className: 'card' }, children); }
+     Both chips are the same neutral ghost pill and differ only in the word and
+     the glyph. A chip that carried the distinction in its tone would be
+     carrying it in colour alone. */
+  var LIVE_WORD = 'Live';
+  var STATIC_WORD = 'No API yet';
 
-  function cardHead(title, hint, trailing) {
-    var head = h('div', { className: 'card-head' }, [
-      h('h2', { className: 'card-title', text: title })
-    ]);
-    if (hint) head.appendChild(h('span', { className: 'card-hint', text: hint }));
-    if (trailing) {
-      head.appendChild(h('div', { className: 'spacer' }));
-      head.appendChild(trailing);
-    }
-    return head;
+  function sourceChip(word, glyph) {
+    var el = h('span', { className: 'pill ghost src-chip' });
+    el.appendChild(icon(glyph));
+    el.appendChild(h('span', { text: word }));
+    return el;
   }
 
-  /* A footnote of more than one sentence stops being a row and becomes a
-     paragraph, so its glyph aligns to the first line rather than to the middle
-     of the block. */
-  function cardFoot(lines, iconName) {
-    var foot = h('div', {
-      className: 'card-foot' + (lines.length > 1 ? ' card-foot-note' : '')
+  /* A card holding what a read answered. The endpoint is written onto the
+     card, so the claim the chip makes is checkable against the requests the
+     pane actually issued rather than against a list somebody maintains. */
+  function liveCard(endpoint, title, note, end) {
+    var box = S.card();
+    box.setAttribute('data-source', 'live');
+    box.setAttribute('data-endpoint', endpoint);
+    box.appendChild(S.cardHead(title, note, (end || []).concat([
+      sourceChip(LIVE_WORD, 'radio')
+    ])));
+    return box;
+  }
+
+  /* A card for one of the three areas nothing serves yet. It carries no
+     endpoint and prints no numeral: what it has to say is which of "not built"
+     and "not reported" applies, and what stays true regardless. */
+  function staticCard(title, note, lines, rules) {
+    var box = S.card();
+    box.setAttribute('data-source', 'static');
+    box.appendChild(S.cardHead(title, note, [sourceChip(STATIC_WORD, 'layers')]));
+
+    var body = h('div', { className: 'card-body' });
+    lines.forEach(function (line) {
+      body.appendChild(h('p', { className: 'static-line', text: line }));
     });
-    if (iconName) foot.appendChild(icon(iconName));
-    var body = h('div');
-    lines.forEach(function (line) { body.appendChild(h('p', { text: line })); });
-    foot.appendChild(body);
+    if (rules && rules.length) {
+      var list = h('ul', { className: 'rules' });
+      rules.forEach(function (rule) {
+        list.appendChild(h('li', {}, [icon('lock'), h('span', { text: rule })]));
+      });
+      body.appendChild(list);
+    }
+    box.appendChild(body);
+    return box;
+  }
+
+  function cardFoot(text, glyph, end) {
+    var foot = h('div', { className: 'card-foot' });
+    if (glyph) foot.appendChild(icon(glyph));
+    foot.appendChild(h('span', { text: text }));
+    if (end) {
+      foot.appendChild(h('div', { className: 'sp' }));
+      foot.appendChild(end);
+    }
     return foot;
   }
 
-  function skeletonRows(count) {
-    var body = h('div', { className: 'card-body' }, [
-      h('span', { className: 'sr-only', role: 'status', text: 'Loading' })
-    ]);
-    for (var i = 0; i < count; i++) {
-      body.appendChild(h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }));
-    }
-    return body;
+  /* A table wide enough to need its own scroll rather than the document's, and
+     reachable from a keyboard, so the columns past the edge are not a
+     pointer's alone. */
+  function tableWrap(label, table) {
+    var wrap = h('div', {
+      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label
+    });
+    wrap.appendChild(table);
+    return wrap;
   }
 
-  /* Replaces a card's body without touching its head, so a reload does not
-     make the heading it is filed under disappear and come back. */
-  function swapBody(host, node) {
-    var existing = host.querySelector('.card-body, .table-wrap, .state-block');
-    while (existing) {
-      existing.parentNode.removeChild(existing);
-      existing = host.querySelector('.card-body, .table-wrap, .state-block');
+  function table(columns) {
+    var el = h('table', { className: 'tbl' });
+    var row = h('tr');
+    columns.forEach(function (column) {
+      row.appendChild(h('th', { className: column.right ? 'r' : '', text: column.label }));
+    });
+    el.appendChild(h('thead', {}, [row]));
+    el.appendChild(h('tbody'));
+    return el;
+  }
+
+  function bodyOf(el) { return el.querySelector('tbody'); }
+
+  /* Replaces what a card is showing without touching its head or its foot, so
+     a reload does not make the heading the rows are filed under disappear and
+     come back. */
+  function setCardBody(host, node) {
+    var stale = host.querySelector('.card-body, .tbl-wrap');
+    while (stale) {
+      stale.parentNode.removeChild(stale);
+      stale = host.querySelector('.card-body, .tbl-wrap');
     }
     var foot = host.querySelector('.card-foot');
     if (foot) host.insertBefore(node, foot);
@@ -190,96 +251,88 @@
   }
 
   /* The failure state for one card. Deliberately per card rather than per
-     pane: the access record failing to load is no reason to hide the
-     administrator list, and a pane that blanks itself on any error tells an
-     operator less than one that says which part is missing. */
-  function errorBody(err, retry) {
-    var block = shell.stateBlock('warn', 'Could not load this', [
-      (err && err.message) || 'The operations API did not answer.',
-      'Nothing has been changed. Try again in a moment.'
-    ], 3);
-    var button = h('button', { className: 'btn mt', type: 'button', text: 'Try again' });
-    button.addEventListener('click', retry);
-    block.appendChild(button);
-    return block;
-  }
-
-  /* A card for something the API cannot report yet. The distinction it draws
-     is the whole point: "not built" is a promise about a release, "not
-     configured" is a fact about production, and an empty card is neither. */
-  function unavailableBody(title, lines) {
-    return shell.stateBlock('build', title, lines, 3);
+     pane: the access record failing to load is no reason to take the
+     administrator list off the screen, and a pane that blanks itself on any
+     error tells an operator less than one that says which part is missing. */
+  function failureBody(err, retry) {
+    var body = h('div', { className: 'card-body' });
+    var block = S.stateBlock('warn', 'This could not be read', [
+      S.failureMessage(err),
+      'Nothing here is a zero. These rows are unread, not absent.'
+    ], 4);
+    var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
+    again.addEventListener('click', retry);
+    block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+    body.appendChild(block);
+    return body;
   }
 
   /* ---------------------------------------------------------- confirm modal */
 
-  /* Same shape as the re-authentication prompt the session layer already
+  /* The same shape as the re-authentication prompt the session layer already
      draws: focus trapped, Escape closes, focus restored, everything behind it
      inert. Nothing destructive on this pane fires without one.
 
      onConfirm receives the typed reason and a small controller, and owns the
-     dialog until it resolves. Failures stay in the dialog rather than closing
-     it and reporting elsewhere, so the operator can correct and retry with the
-     context still on screen. */
+     dialog until it resolves. A refusal stays in the dialog rather than
+     closing it and reporting elsewhere, so the operator can correct and retry
+     with the context still on screen. */
   function confirmAction(opts) {
     var previous = document.activeElement;
     var closed = false;
 
-    var scrim = h('div', { className: 'scrim is-open' });
-    var modal = h('div', {
-      className: 'modal', role: 'dialog', 'aria-modal': 'true',
-      'aria-labelledby': 'setConfirmTitle'
-    });
+    var scrim = h('div', { className: 'scrim' });
     /* novalidate, because the browser's own bubble for a required field is
-       transient, styled by the browser, and blocks the submit handler that
+       transient, styled by the browser, and pre-empts the submit handler that
        would otherwise put the same message in the alert region below, where a
        screen reader is told about it and it stays on screen. */
-    var form = h('form', { className: 'modal-card', novalidate: 'novalidate' });
-
-    form.appendChild(h('h2', {
-      className: 'sec-title', id: 'setConfirmTitle', text: opts.title
-    }));
-    opts.lines.forEach(function (line) {
-      form.appendChild(h('p', { className: 'field-hint', text: line }));
+    var form = h('form', {
+      className: 'modal', role: 'dialog', 'aria-modal': 'true',
+      'aria-labelledby': 'setConfirmTitle', novalidate: 'novalidate'
     });
 
-    var alertBox = h('div', { className: 'form-alert mt', role: 'alert' });
-    alertBox.appendChild(h('span'));
+    form.appendChild(h('h2', {
+      className: 'modal-title', id: 'setConfirmTitle', text: opts.title
+    }));
+    opts.lines.forEach(function (line) {
+      form.appendChild(h('p', { className: 'modal-line', text: line }));
+    });
+
+    var alertBox = h('div', { className: 'modal-alert', role: 'alert' });
+    alertBox.hidden = true;
     form.appendChild(alertBox);
-    alertBox.classList.add('hidden');
 
     form.appendChild(h('label', {
-      className: 'field-label mt', for: 'setConfirmReason', text: opts.reasonLabel
+      className: 'modal-label', 'for': 'setConfirmReason', text: opts.reasonLabel
     }));
     var reason = h('input', {
-      className: 'field-input set-reason', id: 'setConfirmReason', type: 'text',
+      className: 'modal-input', id: 'setConfirmReason', type: 'text',
       autocomplete: 'off', maxlength: '200', required: 'required'
     });
     form.appendChild(reason);
     form.appendChild(h('p', {
-      className: 'field-hint',
-      text: 'Recorded with your name against this action. It cannot be edited or removed later.'
+      className: 'modal-hint',
+      text: 'Recorded against your name. It cannot be edited or removed afterwards.'
     }));
 
     var row = h('div', { className: 'row mt' });
     var cancel = h('button', { className: 'btn', type: 'button', text: 'Cancel' });
     var confirm = h('button', {
-      className: 'btn btn-primary', type: 'submit', text: opts.confirmLabel
+      className: 'btn btn-danger', type: 'submit', text: opts.confirmLabel
     });
     row.appendChild(cancel);
-    row.appendChild(h('div', { className: 'spacer' }));
+    row.appendChild(h('div', { className: 'sp' }));
     row.appendChild(confirm);
     form.appendChild(row);
 
-    modal.appendChild(form);
     document.body.appendChild(scrim);
-    document.body.appendChild(modal);
+    document.body.appendChild(form);
 
     /* Live regions stay out of the inert set. One carrying aria-hidden
        announces nothing, which would silence exactly the messages a dialog
        produces, and neither holds anything focusable. */
     var backdrop = Array.prototype.filter.call(document.body.children, function (el) {
-      return el !== modal && el !== scrim &&
+      return el !== form && el !== scrim &&
         !el.hasAttribute('aria-live') && !el.classList.contains('toast-host');
     });
     backdrop.forEach(function (el) {
@@ -289,7 +342,7 @@
 
     function focusables() {
       return Array.prototype.filter.call(
-        modal.querySelectorAll('button, input'),
+        form.querySelectorAll('button, input'),
         function (el) { return !el.disabled; }
       );
     }
@@ -308,7 +361,7 @@
     /* Focus reset to <body>, or returning from browser chrome, matches neither
        Tab branch above and would otherwise walk straight out of the dialog. */
     function onFocusIn(e) {
-      if (!modal.contains(e.target)) {
+      if (!form.contains(e.target)) {
         var items = focusables();
         if (items.length) items[0].focus();
       }
@@ -323,20 +376,20 @@
         if ('inert' in el) el.inert = false;
         el.removeAttribute('aria-hidden');
       });
-      modal.remove();
+      form.remove();
       scrim.remove();
 
       /* Focus goes back where it came from, unless the action that just ran
          redrew the thing it came from. A revoked row is replaced by the reload
          that follows it, so the control that opened the dialog is no longer in
          the document and focusing it drops the keyboard back to the top of the
-         page. The caller names somewhere in the region that changed instead. */
+         page. The caller names somewhere inside the region that changed. */
       if (previous && previous.isConnected && previous.focus) {
         previous.focus();
         return;
       }
       var fallback = opts.focusOnClose && opts.focusOnClose();
-      if (fallback) {
+      if (fallback && fallback.focus) {
         if (!fallback.hasAttribute('tabindex')) fallback.setAttribute('tabindex', '-1');
         fallback.focus();
       }
@@ -347,15 +400,15 @@
       fail: function (message) {
         /* The dialog can be dismissed while the request it fired is still in
            flight, and a refusal that lands afterwards has nowhere to go in a
-           detached dialog. It goes where the success message goes instead. An
+           detached dialog. It goes where a confirmation would go instead. An
            operator who pressed Escape still fired the action, and being told
            nothing is the one outcome a refusal must never produce. */
         if (closed) {
-          shell.toast('warn', message);
-          shell.announce(message);
+          S.toast('warn', message);
+          S.announce(message);
           return;
         }
-        alertBox.classList.remove('hidden');
+        alertBox.hidden = false;
         alertBox.textContent = '';
         alertBox.appendChild(icon('warn'));
         alertBox.appendChild(h('span', { text: message }));
@@ -373,7 +426,7 @@
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
-      var text = reason.value.trim();
+      var text = (reason.value || '').trim();
       /* The server refuses a revocation with no reason, so asking here saves a
          round trip. It is not the check that matters: that one is the
          server's, and it still runs. */
@@ -390,900 +443,816 @@
     reason.focus();
   }
 
-  /* ------------------------------------------------------- administrators */
+  /* -------------------------------------------------------------- the pane */
 
-  /* One administrator's live sessions. The account list carries the furthest
-     expiry, which is what the table shows, but a revocation is per session, so
-     the ids come from the session list. */
-  function activeSessionsFor(adminId, sessions) {
-    var now = Date.now();
-    return sessions.filter(function (s) {
-      if (s.adminId !== adminId || s.revokedAt) return false;
-      var expires = parseDate(s.expiresAt);
-      return !expires || expires.getTime() > now;
-    });
-  }
+  S.definePane('settings', function (content) {
+    var region = S.region(content);
+    var loadToken = 0;
 
-  function revokeSessions(ids, reason) {
-    /* Sequential, not parallel. Each revocation writes its own record, and a
-       burst of concurrent deletes against one account makes the order of that
-       record arbitrary for no gain on a list this size. */
-    var revoked = 0;
-    var failure = null;
-    return ids.reduce(function (chain, id) {
-      return chain.then(function () {
-        if (failure) return null;
-        return session.call('/api/ops/sessions/' + encodeURIComponent(id), {
-          method: 'DELETE',
-          body: { reason: reason }
-        }).then(function () {
-          revoked += 1;
-        }, function (err) {
-          /* A session revoked by somebody else between the list and the click
-             is not a failure of this action: the outcome asked for is the
-             outcome in place. Anything else stops the run, because carrying on
-             after a refusal would hide it behind a success message. */
-          if (err && err.code === 'ops_session_already_revoked') return;
-          if (err && err.code === 'ops_session_not_found') return;
-          failure = err;
-        });
+    /* The access record pages in place, so its rows outlive a redraw of the
+       card they sit in and the controls that describe the state of the record
+       stay put while the rows under them change. */
+    var record = {
+      host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: null
+    };
+
+    /* ---------------------------------------------------------------- reads */
+
+    /* The account list goes through the shell's loader and the other two go
+       straight to session.call. The loader's local fixture hook is one file
+       per pane, so it can stand in for exactly one read; this is the read that
+       decides which of the four preview states the pane is in, so it is the
+       one worth being able to fake locally. */
+    function readAdmins() {
+      return S.read({ paneId: 'settings', endpoint: ADMINS })
+        .then(function (result) { return result.data; });
+    }
+
+    /* Sessions and the record fail on their own terms rather than through the
+       pane. Who can get in is the question this pane owns, and a record that
+       will not load is no reason to hide the account list: the rejection is
+       carried as a value and drawn as one failed card, with the pane degraded
+       rather than gone. */
+    function soft(promise) {
+      return promise.then(function (payload) {
+        return { rows: Array.isArray(payload && payload.data) ? payload.data : [] };
+      }, function (err) {
+        return { error: err };
       });
-    }, Promise.resolve()).then(function () {
-      if (failure) {
-        /* The refusal carries what ran before it. A run that revoked two of
-           three sessions and then stopped has changed the world, and a caller
-           that only learns "refused" leaves a stale table on screen and tells
-           the operator nothing has been revoked, which by then is false. */
-        failure.revoked = revoked;
-        throw failure;
-      }
-      return revoked;
-    });
-  }
-
-  /* What signing out actually does to your own row. The session list marks the
-     one this tab is holding, so the others can be counted exactly; where that
-     mark is missing, every live session but one is still the honest floor. */
-  function otherSessionNote(live) {
-    var marked = live.some(function (s) { return s.current; });
-    var others = marked
-      ? live.filter(function (s) { return !s.current; }).length
-      : Math.max(0, live.length - 1);
-    if (!others) return 'sign out to end this session';
-    return 'sign out ends this one, not your other ' + plural(others, 'session');
-  }
-
-  /* The line beside a card's heading says what the card is currently showing,
-     so every path that changes what the card is showing has to set it. It
-     starts on "Loading", and a card that only rewrote it on the populated path
-     would leave the word Loading over a rendered empty state or a rendered
-     failure, which reads as a card still waiting for an answer it already got. */
-  function setHint(host, text) {
-    var hint = host.querySelector('.card-hint');
-    if (hint) hint.textContent = text;
-  }
-
-  function renderAdmins(host, admins, sessions) {
-    var mine = (session.state.admin && session.state.admin.id) || null;
-
-    if (!admins.length) {
-      setHint(host, 'no accounts returned');
-      swapBody(host, unavailableBody('No administrator accounts', [
-        'The API returned an empty account list. That is not a state a signed in ' +
-        'administrator should be able to see, so treat it as the API being wrong ' +
-        'rather than as an empty list.'
-      ]));
-      return;
     }
 
-    var wrap = h('div', { className: 'table-wrap' });
-    var table = h('table', { className: 'data' });
-    var head = h('tr');
-    ['Account', 'Role', 'Status', 'Last signed in', 'Session expires', 'Actions']
-      .forEach(function (label) { head.appendChild(h('th', { text: label })); });
-    table.appendChild(h('thead', {}, [head]));
+    function load() {
+      var token = ++loadToken;
+      region.loading([
+        { type: 'block', height: 74 },
+        { type: 'rows', count: 4 },
+        { type: 'rows', count: 5 }
+      ]);
+      record.rows = [];
+      record.offset = 0;
+      record.seen = null;
+      record.busy = false;
+      record.pending = false;
 
-    var body = h('tbody');
-    admins.forEach(function (admin) {
-      var row = h('tr');
+      Promise.all([
+        readAdmins(),
+        soft(session.call(SESSIONS)),
+        soft(session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: 0 } }))
+      ]).then(function (results) {
+        if (token !== loadToken) return;
+        render(results[0], results[1], results[2]);
+      }, function (err) {
+        if (token !== loadToken) return;
+        region.failed(err, load);
+      });
+    }
 
-      var account = h('td', { className: 'cell-strong' });
-      account.appendChild(h('span', { className: 'set-actor', text: admin.email }));
-      if (admin.displayName && admin.displayName !== admin.email) {
-        account.appendChild(h('span', { className: 'set-cell-note', text: admin.displayName }));
+    function render(adminRows, sessionResult, recordResult) {
+      var admins = Array.isArray(adminRows) ? adminRows : [];
+
+      /* Empty is a real state with a real trigger, and here it is a narrow
+         one. There is always at least one owner, so an empty account list is
+         the settings store failing to answer rather than a dashboard nobody
+         can open — and "0 administrators" reads as "everyone is locked out",
+         which is the sentence that makes an operator start breaking things to
+         fix a problem that does not exist. */
+      if (!admins.length) {
+        region.empty(nothingBehindIt());
+        return;
       }
-      row.appendChild(account);
 
-      row.appendChild(h('td', {}, [roleBadge(admin.role)]));
-      row.appendChild(h('td', {}, [statusBadge(admin.status)]));
-      row.appendChild(timeCell(admin.lastLoginAt, 'ago', 'never signed in'));
-      row.appendChild(timeCell(admin.activeSessionExpiresAt, 'until', 'no live session'));
+      var sessions = sessionResult.rows || [];
+      var degraded = !!(sessionResult.error || recordResult.error);
 
-      var live = activeSessionsFor(admin.id, sessions);
-      var actions = h('td');
+      var stack = h('div', { className: 'stack' });
+      stack.appendChild(hero(admins, sessions, sessionResult.error));
+      stack.appendChild(administratorsBand(admins, sessions, sessionResult));
+      stack.appendChild(sessionsBand(admins, sessions, sessionResult));
+      stack.appendChild(recordBand(recordResult));
+      stack.appendChild(keepBand());
+      stack.appendChild(integrationsBand());
+
+      if (degraded) region.degraded(stack);
+      else region.show(stack);
+    }
+
+    function nothingBehindIt() {
+      var box = S.card();
+      var block = S.stateBlock('plug', 'The settings store did not answer', [
+        'This is not an empty administrator list. There is always at least one owner.',
+        'Access is enforced on the server on every request, so nobody has lost or ' +
+          'gained anything because this failed to load.'
+      ]);
+      var again = h('button', {
+        className: 'btn btn-primary', type: 'button', text: 'Try again'
+      });
+      again.addEventListener('click', load);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      box.appendChild(block);
+      return box;
+    }
+
+    /* ------------------------------------------------------------- the hero */
+
+    /* The answer to the pane's own first question, before any detail, counted
+       from the account list and from nothing else. It is not a card and it
+       carries no source chip, because there is no second thing it could be:
+       it exists only on the path where that read answered, and every figure on
+       it is a count of rows drawn below it. */
+    function hero(admins, sessions, sessionsUnread) {
+      var counts = { owner: 0, operator: 0, viewer: 0 };
+      var off = 0;
+      admins.forEach(function (admin) {
+        if (Object.prototype.hasOwnProperty.call(counts, admin.role)) counts[admin.role] += 1;
+        if (admin.status !== 'active') off += 1;
+      });
+
+      var words = [];
+      ['owner', 'operator', 'viewer'].forEach(function (role) {
+        if (counts[role]) words.push(fmt.plural(counts[role], ROLE_LABELS[role].toLowerCase()));
+      });
+      var sub = words.join(', ');
+      if (!sessionsUnread) {
+        sub += ' \u00b7 ' + fmt.plural(liveOnes(sessions).length, 'live session');
+      }
+
+      var box = h('section', { className: 'hero ' + (off ? 'st-warn' : 'st-ok') });
+      box.appendChild(h('div', { className: 'hero-orb', 'aria-hidden': 'true' }, [
+        h('i'), h('i'), h('b')
+      ]));
+      box.appendChild(h('div', {}, [
+        h('h2', {
+          className: 'hero-title',
+          text: fmt.plural(admins.length, 'person', 'people') + ' can sign in'
+        }),
+        h('p', { className: 'hero-sub', text: sub })
+      ]));
+
+      var chips = h('div', { className: 'hero-chips' });
+      chips.appendChild(pill('vio', 'lock', 'Owner only'));
+      var ceiling = sessionCeiling(sessions);
+      if (ceiling) chips.appendChild(pill('ghost', 'clock', 'Sessions end after ' + ceiling));
+      if (off) chips.appendChild(pill('warn', 'warn', fmt.plural(off, 'account') + ' not active'));
+      box.appendChild(chips);
+      return box;
+    }
+
+    function liveOnes(sessions) {
+      var now = Date.now();
+      return sessions.filter(function (row) {
+        if (row.revokedAt) return false;
+        var expires = parseDate(row.expiresAt);
+        return !expires || expires.getTime() > now;
+      });
+    }
+
+    /* How long a session lasts, measured rather than asserted. Every session
+       is issued with the same window, so the longest live one answers it; a
+       page with nothing to measure says nothing rather than printing the
+       number this file happens to believe. A hard-coded thirty days here would
+       keep reading "30 days" for as long as it took somebody to notice the
+       server had been changed. */
+    function sessionCeiling(sessions) {
+      var widest = 0;
+      liveOnes(sessions).forEach(function (row) {
+        var from = parseDate(row.createdAt);
+        var to = parseDate(row.expiresAt);
+        if (!from || !to) return;
+        widest = Math.max(widest, to.getTime() - from.getTime());
+      });
+      return widest > 0 ? spanWords(widest) : null;
+    }
+
+    function myId() {
+      return (session.state.admin && session.state.admin.id) || null;
+    }
+
+    /* ---------------------------------------------------------- the accounts */
+
+    function administratorsBand(admins, sessions, sessionResult) {
+      var band = S.band('Administrators', 'Everyone who can open this dashboard');
+
+      var host = liveCard(ADMINS, 'Accounts', fmt.plural(admins.length, 'account'));
+      var tbl = table([
+        { label: 'Person' }, { label: 'Role' }, { label: 'Status' },
+        { label: 'Last signed in' }, { label: 'Session ends' }, { label: 'Action', right: true }
+      ]);
+      var rows = bodyOf(tbl);
+      var mine = myId();
+
+      admins.forEach(function (admin) {
+        var row = h('tr');
+
+        var who = h('td');
+        who.appendChild(h('div', { className: 't-main', text: admin.email }));
+        if (admin.id === mine) {
+          who.appendChild(h('div', { className: 't-sub', text: 'This is you' }));
+        } else if (admin.displayName && admin.displayName !== admin.email) {
+          who.appendChild(h('div', { className: 't-sub', text: admin.displayName }));
+        }
+        row.appendChild(who);
+
+        row.appendChild(h('td', {}, [rolePill(admin.role)]));
+        row.appendChild(h('td', {}, [statusPill(admin.status)]));
+        row.appendChild(timeCell(admin.lastLoginAt, ago(admin.lastLoginAt), 'never'));
+        row.appendChild(timeCell(admin.activeSessionExpiresAt,
+          endsIn(admin.activeSessionExpiresAt), 'no live session'));
+        row.appendChild(accountAction(host, admin, sessions, sessionResult, mine));
+
+        rows.appendChild(row);
+      });
+
+      host.appendChild(tableWrap('Administrator accounts', tbl));
+      host.appendChild(cardFoot(
+        'Accounts are provisioned with production access, not invited from here.', 'lock'));
+      band.appendChild(host);
+      band.appendChild(rolesNote());
+      return band;
+    }
+
+    /* Three roles and no custom permission set, said once, under the table
+       whose Role column is the thing it explains. */
+    function rolesNote() {
+      var note = h('div', { className: 'note' });
+      note.appendChild(icon('info'));
+      var words = h('div');
+      [
+        ['Owner', ' reveals personal data, changes settings and revokes access. '],
+        ['Operator', ' takes on problems, closes them and retries runs. '],
+        ['Viewer', ' reads, and nothing else. ']
+      ].forEach(function (pair) {
+        words.appendChild(h('b', { text: pair[0] }));
+        words.appendChild(document.createTextNode(pair[1]));
+      });
+      words.appendChild(document.createTextNode(
+        'Three fixed roles; there is no custom permission set.'));
+      note.appendChild(words);
+      return note;
+    }
+
+    function accountAction(host, admin, sessions, sessionResult, mine) {
+      var cell = h('td', { className: 'r' });
+      var wrap = h('div', { className: 'cell-act' });
+      cell.appendChild(wrap);
+
+      if (sessionResult.error) {
+        /* The account list answered and the session list did not, so what
+           there is to revoke is unknown. A Revoke button drawn against an
+           unread list would be a control acting on a guess. */
+        wrap.appendChild(h('span', { className: 'muted tiny', text: 'sessions unread' }));
+        return cell;
+      }
+
+      var theirs = liveOnes(sessions).filter(function (row) {
+        return row.adminId === admin.id;
+      });
+
       if (admin.id === mine) {
-        /* Your own access is ended by signing out, which revokes the session
-           you are holding and only that one. Doing it from this table would
-           sign you out mid-action with no way to see the result.
+        /* Your own access ends by signing out, which revokes the session in
+           your hand and only that one. Doing it from this table would sign you
+           out mid-action with no way left to see the result. */
+        wrap.appendChild(h('span', { className: 'muted tiny', text: 'sign out to end yours' }));
+        return cell;
+      }
+      if (!theirs.length) {
+        wrap.appendChild(h('span', { className: 'muted tiny', text: 'nothing to revoke' }));
+        return cell;
+      }
 
-           Which is why the count is said out loud when there is more than one.
-           Signing out of the tab in your hand leaves your other live sessions
-           running, and a row that says otherwise is the sentence somebody reads
-           on the day a laptop goes missing. */
-        actions.appendChild(h('span', {
-          className: 'set-cell-note', text: otherSessionNote(live)
+      /* The name carries the account, because a column of identical Revoke
+         buttons is a list of unlabelled buttons to anybody reading it out of
+         context. An aria-label rather than a visually hidden span: .sr is
+         absolutely positioned, and one inside a table that scrolls inside its
+         own card lands at its static position out past the right edge on a
+         phone and takes the whole page's scroll width with it. */
+      var button = h('button', {
+        className: 'btn btn-sm btn-danger', type: 'button', text: 'Revoke',
+        'aria-label': 'Revoke access for ' + admin.email
+      });
+      button.addEventListener('click', function () {
+        promptRevoke(host, admin, theirs);
+      });
+      wrap.appendChild(button);
+      return cell;
+    }
+
+    function promptRevoke(host, admin, rows) {
+      confirmAction({
+        title: 'Revoke access for ' + admin.email,
+        lines: [
+          'This ends ' + fmt.plural(rows.length, 'live session') + ' for this account. ' +
+            'They lose the dashboard on their next request and sign in again.',
+          'The account is left alone. This does not change their role.'
+        ],
+        reasonLabel: 'Why are you revoking this',
+        confirmLabel: 'Revoke access',
+        focusOnClose: function () { return host; },
+        onConfirm: function (reason, dialog) {
+          revokeSessions(rows.map(function (row) { return row.id; }), reason).then(
+            function (count) {
+              /* Redraw first, close second. The button that opened this dialog
+                 is inside the table being replaced, so starting the reload
+                 before the dialog closes is what lets close() see that where
+                 focus came from has gone, and put it on the card instead of
+                 dropping it to the top of the page. */
+              load();
+              dialog.close();
+              S.toast('check', count === 0
+                ? 'Those sessions had already ended.'
+                : fmt.plural(count, 'session') + ' revoked for ' + admin.email);
+              S.announce(fmt.plural(count, 'session') + ' revoked.');
+            },
+            function (err) {
+              var done = (err && err.revoked) || 0;
+              var refusal = S.failureMessage(err);
+              /* Part of it ran, so the table and the record on screen are both
+                 out of date. Reloading is what makes the sentence below
+                 checkable rather than something to be believed. */
+              if (done) load();
+              dialog.fail(done
+                ? refusal + ' ' + fmt.plural(done, 'session') + ' had already been revoked ' +
+                  'before it stopped, and the pane is reloading.'
+                : refusal + ' Nothing has been revoked.');
+            }
+          );
+        }
+      });
+    }
+
+    function revokeSessions(ids, reason) {
+      /* Sequential, not parallel. Each revocation writes its own entry in the
+         access record, and a burst of concurrent deletes against one account
+         makes the order of that record arbitrary for no gain on a list this
+         size. */
+      var revoked = 0;
+      var failure = null;
+      return ids.reduce(function (chain, id) {
+        return chain.then(function () {
+          if (failure) return null;
+          return session.call(SESSIONS + '/' + encodeURIComponent(id), {
+            method: 'DELETE',
+            body: { reason: reason }
+          }).then(function () {
+            revoked += 1;
+          }, function (err) {
+            /* A session revoked by somebody else between the list and the
+               click is not a failure of this action: the outcome asked for is
+               the outcome in place. Anything else stops the run, because
+               carrying on past a refusal would hide it behind a success. */
+            if (err && (err.code === 'ops_session_already_revoked' ||
+              err.code === 'ops_session_not_found')) return;
+            failure = err;
+          });
+        });
+      }, Promise.resolve()).then(function () {
+        if (failure) {
+          /* The refusal carries what ran before it. A run that revoked two of
+             three sessions and then stopped has changed the world, and a
+             caller that only learns "refused" leaves a stale table on screen
+             and tells the operator nothing was revoked, which by then is
+             false. */
+          failure.revoked = revoked;
+          throw failure;
+        }
+        return revoked;
+      });
+    }
+
+    /* ---------------------------------------------------------- the sessions */
+
+    function sessionsBand(admins, sessions, sessionResult) {
+      var rows = liveOnes(sessions);
+      var band = S.band('Active sessions', sessionResult.error
+        ? 'Could not be read'
+        : fmt.plural(rows.length, 'session') + ' across ' +
+          fmt.plural(distinctAdmins(rows), 'person', 'people'));
+
+      var host = liveCard(SESSIONS, 'Signed in now', null);
+
+      if (sessionResult.error) {
+        host.appendChild(failureBody(sessionResult.error, load));
+        band.appendChild(host);
+        return band;
+      }
+
+      if (!rows.length) {
+        /* Not a state the API can reach from a page somebody is reading: the
+           request that asked for this list was made with a live session. */
+        var body = h('div', { className: 'card-body' });
+        body.appendChild(S.stateBlock('warn', 'No live sessions came back', [
+          'Yours was used to ask for this list, so at least one was live a moment ago.'
+        ], 4));
+        host.appendChild(body);
+        band.appendChild(host);
+        return band;
+      }
+
+      var byId = {};
+      admins.forEach(function (admin) { byId[admin.id] = admin; });
+
+      var tbl = table([
+        { label: 'Session' }, { label: 'Administrator' }, { label: 'Started' },
+        { label: 'Last used' }, { label: 'Ends' }, { label: 'Action', right: true }
+      ]);
+      var tbody = bodyOf(tbl);
+      var mine = myId();
+
+      rows.forEach(function (row) {
+        var admin = byId[row.adminId] || {};
+        var tr = h('tr');
+
+        tr.appendChild(h('td', {}, [h('span', {
+          className: 'code', text: shortId(row.id), title: String(row.id || '')
+        })]));
+
+        var who = h('td');
+        who.appendChild(h('div', { className: 't-main', text: admin.email || 'unknown account' }));
+        who.appendChild(h('div', {
+          className: 't-sub', text: ROLE_LABELS[admin.role] || 'role not reported'
         }));
-      } else if (!live.length) {
-        actions.appendChild(h('span', { className: 'set-cell-note', text: 'nothing to revoke' }));
+        tr.appendChild(who);
+
+        tr.appendChild(timeCell(row.createdAt, ago(row.createdAt), 'not recorded'));
+        tr.appendChild(timeCell(row.lastUsedAt, ago(row.lastUsedAt), 'not recorded'));
+        tr.appendChild(timeCell(row.expiresAt, endsIn(row.expiresAt), 'not recorded'));
+
+        var action = h('td', { className: 'r' });
+        var wrap = h('div', { className: 'cell-act' });
+        if (row.current) {
+          wrap.appendChild(pill('up', 'check', 'This session'));
+        } else if (row.adminId && row.adminId === mine) {
+          wrap.appendChild(h('span', { className: 'muted tiny', text: 'another of yours' }));
+        } else {
+          var button = h('button', {
+            className: 'btn btn-sm btn-danger', type: 'button', text: 'Revoke',
+            'aria-label': 'Revoke session ' + shortId(row.id) + ' for ' +
+              (admin.email || 'an unknown account')
+          });
+          button.addEventListener('click', function () {
+            promptRevoke(host, {
+              id: row.adminId, email: admin.email || 'an unknown account'
+            }, [row]);
+          });
+          wrap.appendChild(button);
+        }
+        action.appendChild(wrap);
+        tr.appendChild(action);
+
+        tbody.appendChild(tr);
+      });
+
+      host.appendChild(tableWrap('Active sessions', tbl));
+      host.appendChild(cardFoot(
+        'A hard ceiling, not an idle timeout. Revoking signs out on the next request.',
+        'clock'));
+      band.appendChild(host);
+      return band;
+    }
+
+    function distinctAdmins(rows) {
+      var seen = {};
+      var n = 0;
+      rows.forEach(function (row) {
+        var key = String(row.adminId);
+        if (!Object.prototype.hasOwnProperty.call(seen, key)) { seen[key] = true; n += 1; }
+      });
+      return n;
+    }
+
+    /* An identifier long enough to be unique on screen and short enough to
+       read out. The whole value stays in the title, because the short form is
+       for finding a row and the long one is for quoting it. */
+    function shortId(id) {
+      var text = String(id === null || id === undefined ? 'unknown' : id);
+      return text.length > 12 ? text.slice(0, 12) : text;
+    }
+
+    /* ------------------------------------------------------------ the record */
+
+    function recordBand(recordResult) {
+      var band = S.band('Access record', 'Privileged actions, newest first');
+
+      var refresh = h('button', { className: 'btn btn-sm', type: 'button' });
+      refresh.appendChild(icon('refresh'));
+      refresh.appendChild(h('span', { text: 'Refresh' }));
+      refresh.addEventListener('click', function () { loadRecord(true); });
+
+      var exportButton = h('button', {
+        className: 'btn btn-sm', type: 'button', 'data-role': 'export'
+      });
+      exportButton.appendChild(icon('dl'));
+      exportButton.appendChild(h('span', { text: 'Export what is loaded' }));
+      exportButton.addEventListener('click', function () { exportRows(record.rows); });
+
+      var host = liveCard(AUDIT, 'What was done', null, [refresh, exportButton]);
+
+      var more = h('button', {
+        className: 'btn btn-sm', type: 'button', 'data-role': 'more', text: 'Load more'
+      });
+      more.hidden = true;
+      more.addEventListener('click', function () { loadRecord(false); });
+
+      /* The append-only rule, on the card it governs, next to the only write
+         path there is. Export writes a copy; nothing on this pane can edit or
+         remove an entry, and that includes whoever is reading it. */
+      host.appendChild(cardFoot(
+        'Append only. Nobody can edit or delete an entry, including an owner.', 'lock', more));
+
+      record.host = host;
+      if (recordResult.error) {
+        setCardBody(host, failureBody(recordResult.error, function () { loadRecord(true); }));
+        syncControls();
       } else {
-        /* The name carries the account, because a table of identical Revoke
-           buttons is a list of unlabelled buttons to anybody reading it out of
-           context. An aria-label rather than a visually hidden span: the span
-           is absolutely positioned, and one inside a table that scrolls inside
-           its card lands at its static position out past the right edge of a
-           phone and takes the whole page's scroll width with it. */
-        var button = h('button', {
-          className: 'btn btn-sm', type: 'button', text: 'Revoke',
-          'aria-label': 'Revoke access for ' + admin.email
-        });
-        button.addEventListener('click', function () {
-          promptRevoke(host, admin, live);
-        });
-        actions.appendChild(button);
+        acceptPage(recordResult.rows, true);
       }
-      row.appendChild(actions);
 
-      body.appendChild(row);
-    });
-    table.appendChild(body);
-    wrap.appendChild(table);
-    swapBody(host, wrap);
-
-    setHint(host, plural(admins.length, 'account') + ', no shared credentials');
-  }
-
-  function promptRevoke(host, admin, live) {
-    confirmAction({
-      title: 'Revoke access for ' + admin.email,
-      lines: [
-        'This ends ' + plural(live.length, 'live session') + ' for this account. They ' +
-        'lose the dashboard on their next request and have to sign in again.',
-        'The account itself is left alone, and this does not change their role.'
-      ],
-      reasonLabel: 'Why are you revoking this',
-      confirmLabel: 'Revoke access',
-      focusOnClose: function () { return host; },
-      onConfirm: function (reason, dialog) {
-        revokeSessions(live.map(function (s) { return s.id; }), reason).then(function (count) {
-          /* Redraw first, close second. The button that opened this dialog is
-             inside the table being replaced, so starting the reload before the
-             dialog closes is what lets close() see that where focus came from
-             has gone and put it on the card instead of dropping it to the top
-             of the page. */
-          loadAdmins(host);
-          /* The record of the change, beside the change. */
-          reloadAudit();
-          dialog.close();
-          shell.toast('check', count === 0
-            ? 'Those sessions had already ended.'
-            : plural(count, 'session') + ' revoked for ' + admin.email);
-          shell.announce(plural(count, 'session') + ' revoked.');
-        }, function (err) {
-          var done = (err && err.revoked) || 0;
-          var refusal = (err && err.message) || 'The operations API refused that.';
-          if (done) {
-            /* Part of this ran, so the table and the record on screen are both
-               out of date. Redrawing them is what makes the sentence below
-               checkable rather than something the operator has to believe. */
-            loadAdmins(host);
-            reloadAudit();
-          }
-          dialog.fail(done
-            ? refusal + ' ' + plural(done, 'session') + ' had already been revoked before ' +
-              'it stopped, and the table is reloading.'
-            : refusal + ' Nothing has been revoked.');
-        });
-      }
-    });
-  }
-
-  function loadAdmins(host) {
-    setHint(host, 'Loading');
-    swapBody(host, skeletonRows(4));
-    Promise.all([
-      session.call('/api/ops/admins'),
-      session.call('/api/ops/sessions')
-    ]).then(function (answers) {
-      var admins = answers[0] && answers[0].data;
-      var sessions = answers[1] && answers[1].data;
-      renderAdmins(host, Array.isArray(admins) ? admins : [],
-        Array.isArray(sessions) ? sessions : []);
-    }, function (err) {
-      setHint(host, 'could not load');
-      swapBody(host, errorBody(err, function () { loadAdmins(host); }));
-    });
-  }
-
-  function adminsCard() {
-    /* The mock draws this as the card's primary action. It is not one yet:
-       there is no invitation endpoint, so it is rendered inert and the reason
-       is in the footnote below rather than in a tooltip nobody on a keyboard
-       would find. Deliberately not the primary button style, which would read
-       as the thing to do next. */
-    var invite = h('button', {
-      className: 'btn btn-sm', type: 'button',
-      text: 'Invite administrator', disabled: 'disabled'
-    });
-    var host = card([
-      cardHead('Administrators', 'Loading', invite),
-      cardFoot([
-        'Administrator accounts are separate identities from athlete or coach accounts. ' +
-        'The same person signing in as an athlete gets no dashboard access at all.',
-        'Inviting an administrator is not built yet, so the button above does nothing. ' +
-        'Accounts are provisioned by someone with production access.',
-        'Sign in is by password today. Passkeys and one time codes are designed but not built, ' +
-        'so this table reports the account status rather than a sign in method.'
-      ], 'lock')
-    ]);
-    host.id = 'setAdmins';
-    host.className = 'card set-section';
-    loadAdmins(host);
-    return host;
-  }
-
-  /* ------------------------------------------------------------------ roles */
-
-  /* Every row here is a claim about the server, so every row is written from
-     the server rather than from the design.
-
-     "except Settings" is not a footnote to the first row, it is the row. This
-     pane is the only one in the shell's registry that carries a role at all,
-     and the two endpoints behind it, the administrator list and the access
-     record, are the two that carry requireOpsRole('owner'). A matrix that told
-     an operator they can view every pane would be wrong about the very page it
-     is printed on, and would be read as an entitlement by the person least able
-     to check it.
-
-     A row carrying the trailing marker says its endpoint does not exist yet,
-     so the row is the rule that endpoint will be written against rather than
-     one anything refuses today. Marked on the row rather than counted in the
-     footnote, because a count is a second place to be wrong the moment
-     somebody reorders this. */
-  var ROLE_MATRIX = [
-    ['View every pane except Settings', true, true, true],
-    ['Open Settings, including this page', true, false, false],
-    ['Take on and close problems', true, true, false],
-    ['Change an alert rule', true, false, false],
-    ['See every administrator\'s sessions', true, false, false],
-    ['Revoke another administrator', true, false, false],
-    ['Revoke a session of your own', true, true, true],
-    ['Cancel or requeue jobs', true, true, false, true],
-    ['Run quality checks', true, true, false, true],
-    ['Override a ship check', true, false, false, true],
-    ['Show a hidden personal detail', true, false, false],
-    ['See what was asked and answered', true, false, false, true]
-  ];
-
-  function rolesCard() {
-    var wrap = h('div', { className: 'table-wrap' });
-    var table = h('table', { className: 'data' });
-    var head = h('tr');
-    ['Capability', 'Owner', 'Operator', 'Viewer'].forEach(function (label) {
-      head.appendChild(h('th', { text: label }));
-    });
-    table.appendChild(h('thead', {}, [head]));
-
-    var body = h('tbody');
-    ROLE_MATRIX.forEach(function (entry) {
-      var row = h('tr');
-      var name = h('td', { className: 'cell-strong', text: entry[0] });
-      if (entry[4]) {
-        name.appendChild(h('span', {
-          className: 'set-cell-note', text: 'no endpoint yet, so nothing refuses it'
-        }));
-      }
-      row.appendChild(name);
-      for (var i = 1; i <= 3; i++) {
-        row.appendChild(h('td', { text: entry[i] ? 'Yes' : 'No' }));
-      }
-      body.appendChild(row);
-    });
-    table.appendChild(body);
-    wrap.appendChild(table);
-
-    return card([
-      cardHead('What each role can do'),
-      wrap,
-      cardFoot([
-        'There is no custom role builder. Three roles everyone understands beat twenty ' +
-        'nobody checks.',
-        'This table describes the rules the server enforces. It is not a control, and ' +
-        'editing this page would not change what a role can do.',
-        'A row marked as having no endpoint yet names the rule its endpoint will be written ' +
-        'against. For every other row, a No is enforced by the server today, either by ' +
-        'refusing the request or by narrowing what it returns, and a row that is Yes for ' +
-        'every role needs no enforcement. Pane visibility is decided by the shell, and ' +
-        'Settings is the only pane a role can be turned away from; on the server, the ' +
-        'administrator list and the access record behind it refuse anyone but an owner.'
-      ])
-    ]);
-  }
-
-  /* ------------------------------------------------------ sessions and access */
-
-  function settingRow(name, description, value, note) {
-    var row = h('div', { className: 'set-row' });
-    var left = h('div', {}, [
-      h('div', { className: 'set-name', text: name }),
-      h('p', { className: 'set-desc', text: description })
-    ]);
-    var right = h('div', { className: 'set-value' });
-    if (typeof value === 'string') right.appendChild(h('span', { text: value }));
-    else right.appendChild(value);
-    if (note) right.appendChild(h('span', { className: 'tiny', text: note }));
-    row.appendChild(left);
-    row.appendChild(right);
-    return row;
-  }
-
-  function sessionWindowRow() {
-    var current = session.state.session || {};
-    var created = parseDate(current.createdAt);
-    var expires = parseDate(current.expiresAt);
-
-    if (!created || !expires) {
-      return settingRow(
-        'Stay signed in for',
-        'How long before an administrator has to sign in again. Longer is more ' +
-        'convenient on a private tool, and worse if someone steals a laptop.',
-        'Not reported'
-      );
+      band.appendChild(host);
+      return band;
     }
 
-    var days = Math.max(1, Math.round((expires.getTime() - created.getTime()) / 86400000));
-    return settingRow(
-      'Stay signed in for',
-      'How long before an administrator has to sign in again. Longer is more ' +
-      'convenient on a private tool, and worse if someone steals a laptop. Refreshing ' +
-      'does not extend it, so a session ends the same number of days after it started ' +
-      'however often it is used.',
-      plural(days, 'day'),
-      'this session ends ' + until(expires)
-    );
-  }
-
-  function reauthRows() {
-    var seconds = session.state.reauthWindowSeconds;
-    var minutes = typeof seconds === 'number' && seconds > 0
-      ? Math.max(1, Math.round(seconds / 60)) : null;
-
-    return [
-      settingRow(
-        'Ask me to sign in again for sensitive things',
-        'Showing a personal detail, seeing what was asked and answered, and overriding a ' +
-        'ship check ask for your password again, unless you signed in or last confirmed it ' +
-        'inside the window below. This is not a switch, and there is no way to turn it off ' +
-        'from here.',
-        'Always on'
-      ),
-      settingRow(
-        'How long extra access lasts',
-        'Once you have confirmed your password, it stays confirmed for this long, then ' +
-        'the next sensitive action asks again.',
-        minutes === null ? 'Not reported' : plural(minutes, 'minute')
-      ),
-      settingRow(
-        'Sign in from known locations only',
-        'Restricting sign in to a list of addresses. Not built, and off by consequence ' +
-        'rather than by choice: sign in is allowed from anywhere.',
-        'Not built'
-      )
-    ];
-  }
-
-  function sessionsCard() {
-    var body = h('div', { className: 'card-body' });
-    body.appendChild(sessionWindowRow());
-    reauthRows().forEach(function (row) { body.appendChild(row); });
-
-    var host = card([
-      cardHead('Sessions and access', 'What is in force now'),
-      body,
-      cardFoot([
-        'These read the session you are holding. Changing them needs a settings API that ' +
-        'is not built yet, so this card shows values rather than controls. A control that ' +
-        'quietly wrote nothing would be worse than no control.'
-      ], 'lock')
-    ]);
-    host.id = 'setSessions';
-    host.className = 'card set-section';
-    return host;
-  }
-
-  /* --------------------------------------------------------------- retention */
-
-  function retentionCard() {
-    var body = h('div', { className: 'card-body' });
-    body.appendChild(unavailableBody('Retention windows are not readable here yet', [
-      'Nothing on this page currently sets how long activity history, what was asked and ' +
-      'answered, or the access record are kept. The API does not expose those windows yet, ' +
-      'so showing a number would mean making one up.',
-      'Two rules are fixed and will not become options when it does:'
-    ]));
-
-    var rules = h('ul', { className: 'set-rules' });
-    [
-      'Changes apply from now on. Nothing already recorded is deleted early by shortening ' +
-      'a window.',
-      'The record of who looked at which account can never be set below 90 days, by anyone, ' +
-      'including an owner.'
-    ].forEach(function (rule) { rules.appendChild(h('li', { text: rule })); });
-    body.appendChild(rules);
-
-    var host = card([
-      cardHead('What we keep, and for how long'),
-      body,
-      cardFoot([
-        'Activity history is metadata only: timing, state, cost, model version, and the reason ' +
-        'something failed. What was asked and answered is stored encrypted and stays hidden on ' +
-        'screen whatever the window says.'
-      ], 'lock')
-    ]);
-    host.id = 'setRetention';
-    host.className = 'card set-section';
-    return host;
-  }
-
-  /* ------------------------------------------------------------ cost mapping */
-
-  function costsCard() {
-    var body = h('div', { className: 'card-body' });
-    body.appendChild(unavailableBody('The mapping is not editable here yet', [
-      'Which cloud service counts as which category is held server side and used by the ' +
-      'Cloud costs pane. There is no read or write API for it yet, so this page cannot ' +
-      'show you the mapping in force, and it would be worse to show a copy that could be ' +
-      'out of date.'
-    ]));
-
-    var callout = h('div', { className: 'callout callout-warn mt' });
-    callout.appendChild(icon('warn'));
-    var text = h('div');
-    text.appendChild(h('strong', { text: 'New services start ungrouped, never guessed. ' }));
-    text.appendChild(document.createTextNode(
-      'Anything ungrouped appears as its own line with a warning on the Cloud costs pane, ' +
-      'so nothing quietly disappears into "other" and the groups always add up to the exact bill.'
-    ));
-    callout.appendChild(text);
-    body.appendChild(callout);
-
-    var host = card([
-      cardHead('Cost mapping', 'Which cloud service counts as what'),
-      body
-    ]);
-    host.id = 'setCosts';
-    host.className = 'card set-section';
-    return host;
-  }
-
-  /* ------------------------------------------------------------ integrations */
-
-  function integrationsCard() {
-    var body = h('div', { className: 'card-body' });
-    body.appendChild(unavailableBody('Connection state is not reported yet', [
-      'This card is where each outside connection says whether it is working and how fresh ' +
-      'its last read was. The API does not report that yet, so nothing here would be a ' +
-      'measurement.',
-      'A connection being unreported here says nothing about whether it is working. Check ' +
-      'the pane that depends on it.'
-    ]));
-
-    var host = card([
-      cardHead('Integrations', 'Connection state only'),
-      body,
-      cardFoot([
-        'Passwords and keys are never shown here, not even partly, and this page never ' +
-        'receives one. When this card fills in, it will show whether each connection is ' +
-        'working and nothing else.'
-      ], 'lock')
-    ]);
-    host.id = 'setIntegrations';
-    host.className = 'card set-section';
-    return host;
-  }
-
-  /* --------------------------------------------------------------- the record */
-
-  var auditState = {
-    host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: {}
-  };
-
-  function actionCell(event) {
-    var cell = h('td');
-    var label = ACTION_LABELS[event.action];
-    if (label) {
-      cell.appendChild(h('span', { className: 'badge', text: label }));
-    } else {
-      /* An action this page has no wording for is shown exactly as recorded.
-         A guess would be a worse answer than the raw name. */
-      cell.appendChild(h('span', { className: 'tag', text: String(event.action || 'unknown') }));
+    function whatCell(event) {
+      var cell = h('td', { className: 'cell-nowrap' });
+      var label = ACTION_LABELS[event.action];
+      if (label) {
+        cell.appendChild(pill('', null, label));
+      } else {
+        /* An action this page has no wording for is shown exactly as recorded.
+           A guess would be a worse answer than the raw name. */
+        cell.appendChild(h('span', { className: 'code', text: String(event.action || 'unknown') }));
+      }
+      if (event.outcome && event.outcome !== 'success') {
+        cell.appendChild(document.createTextNode(' '));
+        cell.appendChild(pill('warn', 'warn', String(event.outcome)));
+      }
+      return cell;
     }
-    if (event.outcome && event.outcome !== 'success') {
-      var outcome = h('span', { className: 'badge badge-warn' });
-      outcome.appendChild(icon('warn'));
-      outcome.appendChild(h('span', { text: String(event.outcome) }));
-      cell.appendChild(document.createTextNode(' '));
-      cell.appendChild(outcome);
-    }
-    return cell;
-  }
 
-  /* What kind of thing an action was done to, said the way the rest of the
-     dashboard says it. An unrecognised kind is shown as recorded, for the same
-     reason an unrecognised action is. */
-  var TARGET_LABELS = {
-    ops_admin_session: 'sign in session',
-    ops_admin_account: 'administrator account'
-  };
-
-  function targetCell(event) {
-    if (!event.targetId && !event.targetType) {
-      return h('td', { className: 'muted', text: 'none' });
-    }
-    var cell = h('td');
-    cell.appendChild(h('span', {
-      className: 'mono', text: String(event.targetId || event.targetType)
-    }));
-    if (event.targetId && event.targetType) {
+    function targetCell(event) {
+      if (!event.targetId && !event.targetType) {
+        return h('td', { className: 'muted', text: 'nothing' });
+      }
+      var cell = h('td');
       cell.appendChild(h('span', {
-        className: 'set-cell-note',
-        text: TARGET_LABELS[event.targetType] || String(event.targetType)
+        className: 'code', text: shortId(event.targetId || event.targetType),
+        title: String(event.targetId || event.targetType)
       }));
-    }
-    return cell;
-  }
-
-  function auditTable(rows) {
-    var wrap = h('div', { className: 'table-wrap' });
-    var table = h('table', { className: 'data' });
-    var head = h('tr');
-    ['When', 'Who', 'What', 'To what', 'Why'].forEach(function (label) {
-      head.appendChild(h('th', { text: label }));
-    });
-    table.appendChild(h('thead', {}, [head]));
-
-    var body = h('tbody');
-    rows.forEach(function (event) {
-      var row = h('tr');
-      row.appendChild(timeCell(event.occurredAt, 'ago', 'not recorded'));
-
-      var actor = h('td');
-      actor.appendChild(h('span', { className: 'set-actor', text: event.actorEmail || 'unknown' }));
-      if (event.actorRole) {
-        actor.appendChild(h('span', {
-          className: 'set-cell-note', text: ROLE_LABELS[event.actorRole] || event.actorRole
+      if (event.targetId && event.targetType) {
+        cell.appendChild(h('div', {
+          className: 't-sub',
+          text: TARGET_LABELS[event.targetType] || String(event.targetType)
         }));
       }
-      row.appendChild(actor);
-
-      row.appendChild(actionCell(event));
-      row.appendChild(targetCell(event));
-      /* The only free text column, and the one worth reading. Every other cell
-         in the design system's table is nowrap, which would push a written
-         reason off the side of the card and behind a horizontal scrollbar. */
-      row.appendChild(h('td', {
-        className: 'set-wrap ' + (event.reason ? 'small' : 'muted'),
-        text: event.reason ? String(event.reason) : 'none given'
-      }));
-      body.appendChild(row);
-    });
-    table.appendChild(body);
-    wrap.appendChild(table);
-    return wrap;
-  }
-
-  /* Quoted, and defused. A spreadsheet reads a cell beginning with =, +, -, @
-     or a control character as a formula, and two columns of this export carry
-     text somebody else wrote: the reason an operator typed, and the address
-     submitted on a failed sign in, which anybody on the internet can choose.
-     Exporting the access record must not be a way to run something on the
-     machine of the person auditing it. */
-  function csvCell(value) {
-    var text = value === null || value === undefined ? '' : String(value);
-    if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
-    return '"' + text.replace(/"/g, '""') + '"';
-  }
-
-  /* Exports what is on screen, which is why the button says so. There is no
-     server side export, and pretending otherwise by exporting "everything"
-     while sending only the loaded page would be a quiet lie about a record
-     people are meant to be able to check. */
-  function exportRows(rows) {
-    var columns = ['occurredAt', 'actorEmail', 'actorRole', 'action', 'outcome',
-      'targetType', 'targetId', 'reason', 'ipAddress'];
-    var lines = [columns.map(csvCell).join(',')];
-    rows.forEach(function (event) {
-      lines.push(columns.map(function (key) { return csvCell(event[key]); }).join(','));
-    });
-
-    var blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-    var url = URL.createObjectURL(blob);
-    var link = h('a', {
-      href: url,
-      download: 'aria-ops-access-record-' + new Date().toISOString().slice(0, 10) + '.csv'
-    });
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    shell.announce(plural(rows.length, 'row') + ' exported.');
-  }
-
-  /* The two controls that describe the state of the record rather than its
-     contents. Kept apart from the table so that a reload can leave the rows
-     already on screen where they are. */
-  function syncAuditControls() {
-    var host = auditState.host;
-    if (!host) return;
-
-    var exportButton = host.querySelector('[data-role="export"]');
-    if (exportButton) exportButton.disabled = !auditState.rows.length;
-
-    var more = host.querySelector('[data-role="more"]');
-    if (more) {
-      more.hidden = !auditState.more;
-      more.disabled = auditState.busy;
-      more.textContent = auditState.busy ? 'Loading' : 'Load more';
+      return cell;
     }
-  }
 
-  function renderAudit() {
-    var host = auditState.host;
-    if (!host) return;
+    function recordTable(rows) {
+      var tbl = table([
+        { label: 'When' }, { label: 'Who' }, { label: 'What' },
+        { label: 'To what' }, { label: 'Why' }
+      ]);
+      var tbody = bodyOf(tbl);
 
-    if (!auditState.rows.length) {
-      swapBody(host, unavailableBody('Nothing recorded yet', [
-        'Every sign in, every refused sign in, every revoked session, and every privileged ' +
-        'action is written here. An empty record means none of those has happened, not that ' +
-        'recording is off.'
-      ]));
-    } else {
-      swapBody(host, auditTable(auditState.rows));
+      rows.forEach(function (event) {
+        var tr = h('tr');
+        tr.appendChild(timeCell(event.occurredAt, ago(event.occurredAt), 'not recorded'));
+
+        var actor = h('td');
+        actor.appendChild(h('div', { className: 't-main', text: event.actorEmail || 'unknown' }));
+        if (event.actorRole) {
+          actor.appendChild(h('div', {
+            className: 't-sub', text: ROLE_LABELS[event.actorRole] || String(event.actorRole)
+          }));
+        }
+        tr.appendChild(actor);
+
+        tr.appendChild(whatCell(event));
+        tr.appendChild(targetCell(event));
+        /* The only free-text column, and the one worth reading. Every other
+           cell here is nowrap, which would push a written reason off the side
+           of the card and behind a horizontal scrollbar. */
+        tr.appendChild(h('td', {
+          className: 'cell-wrap ' + (event.reason ? 'dim' : 'muted'),
+          text: event.reason ? String(event.reason) : 'none given'
+        }));
+        tbody.appendChild(tr);
+      });
+
+      return tableWrap('Access record', tbl);
     }
-    syncAuditControls();
-  }
 
-  function loadAudit(reset) {
-    var host = auditState.host;
-    if (!host) return;
-    /* A reload asked for while a page is in flight is held, not dropped. The
-       one caller that asks for it is the revocation that just succeeded, and
-       an audit request already running when it fires would otherwise leave the
-       record on screen missing the very event the toast says was written. */
-    if (auditState.busy) {
-      if (reset) auditState.pending = true;
-      return;
+    function renderRecord() {
+      if (!record.host) return;
+      if (!record.rows.length) {
+        var body = h('div', { className: 'card-body' });
+        body.appendChild(S.stateBlock('empty', 'Nothing recorded yet', [
+          'Every sign in, refused sign in, revoked session and privileged action is ' +
+            'written here. An empty record means none has happened, not that recording ' +
+            'is off.'
+        ], 4));
+        setCardBody(record.host, body);
+      } else {
+        setCardBody(record.host, recordTable(record.rows));
+      }
+      syncControls();
     }
-    auditState.busy = true;
-    auditState.pending = false;
 
-    if (reset) {
-      auditState.offset = 0;
-      auditState.rows = [];
-      auditState.seen = {};
-      /* The skeleton, not the empty state. An empty record and a record that
-         has not arrived yet are different answers to the same question, and
-         showing the first one while waiting for the second is how a pane says
-         something false for a second and a half. */
-      swapBody(host, skeletonRows(6));
+    /* The two controls that describe the state of the record rather than its
+       contents. Kept out of the body so a reload leaves them where they are. */
+    function syncControls() {
+      if (!record.host) return;
+      var exportButton = record.host.querySelector('[data-role="export"]');
+      if (exportButton) exportButton.disabled = !record.rows.length;
+      var more = record.host.querySelector('[data-role="more"]');
+      if (more) {
+        more.hidden = !record.more;
+        more.disabled = record.busy;
+        more.textContent = record.busy ? 'Loading' : 'Load more';
+      }
     }
-    syncAuditControls();
 
-    session.call('/api/ops/audit', {
-      query: { limit: AUDIT_PAGE, offset: auditState.offset }
-    }).then(function (payload) {
-      var rows = Array.isArray(payload.data) ? payload.data : [];
-      /* Paging by offset over a newest-first log that is still being written
-         means an event recorded between two pages shifts the window and the
-         next page repeats a row already on screen. A cursor is the server's
-         answer and belongs in its own issue; until then a row is not shown
-         twice in a record people are told they can check. Rows without an id
-         are kept as they come, because dropping them would be worse. */
+    /* Paging by offset over a newest-first log that is still being written
+       means an entry recorded between two pages shifts the window and the next
+       page repeats a row already on screen. A cursor is the server's answer
+       and belongs in its own issue; until then a row is not shown twice in a
+       record people are told they can check. Rows with no id are kept as they
+       come, because dropping them would be worse. */
+    function acceptPage(rows, first) {
+      if (!record.seen) record.seen = Object.create(null);
       var fresh = rows.filter(function (event) {
         var id = event && event.id;
         if (!id) return true;
-        if (auditState.seen[id]) return false;
-        auditState.seen[id] = true;
+        if (record.seen[id]) return false;
+        record.seen[id] = true;
         return true;
       });
-      auditState.rows = auditState.rows.concat(fresh);
+      record.rows = record.rows.concat(fresh);
       /* The offset advances by what the server sent, not by what survived the
          filter, or a repeated row would make the next page ask for one it has
          already been given. */
-      auditState.offset += rows.length;
-      /* A short page is the end of the record. Asking for another one would
-         return the same nothing. */
-      auditState.more = rows.length === AUDIT_PAGE;
-      auditState.busy = false;
-      renderAudit();
-      if (!fresh.length && rows.length) {
-        /* A page of rows already on screen: say so visibly, or the click looks
-           like it did nothing. The offset advanced, so when more remains the
-           next click asks for the page after it. */
-        shell.toast('warn', auditState.more
+      record.offset += rows.length;
+      /* A short page is the end of the record. Asking for another would return
+         the same nothing. */
+      record.more = rows.length === AUDIT_PAGE;
+      renderRecord();
+      if (!first && rows.length && !fresh.length) {
+        /* A page of rows already on screen: say so, or the click looks like it
+           did nothing. The offset advanced, so where more remains the next
+           click asks for the page after it. */
+        S.toast('warn', record.more
           ? 'That page held no new entries. Load more to continue.'
           : 'That page held no new entries, and it was the end of the record.');
       }
-      drainPendingAudit();
-    }, function (err) {
-      auditState.busy = false;
-      if (auditState.rows.length) {
-        /* Losing a later page is not a reason to throw away the rows already
-           being read. */
-        shell.toast('warn', (err && err.message) || 'Could not load more of the record.');
-        syncAuditControls();
-        drainPendingAudit();
+    }
+
+    function loadRecord(reset) {
+      if (!record.host) return;
+      /* A reload asked for while a page is in flight is held, not dropped. A
+         record request already running when a revocation succeeds would
+         otherwise leave the record on screen missing the very entry the
+         confirmation says was written. */
+      if (record.busy) {
+        if (reset) record.pending = true;
         return;
       }
-      swapBody(host, errorBody(err, function () { loadAudit(true); }));
-      syncAuditControls();
-      drainPendingAudit();
-    });
-  }
+      record.busy = true;
+      record.pending = false;
 
-  /* Runs the reload that arrived while a request was in flight. Once: the flag
-     is cleared as the held reload starts, so a request answering during it can
-     hold another one and no chain of them can run away. */
-  function drainPendingAudit() {
-    if (auditState.pending) loadAudit(true);
-  }
-
-  function reloadAudit() { loadAudit(true); }
-
-  function auditCard() {
-    var actions = h('div', { className: 'row' });
-    var exportButton = h('button', {
-      className: 'btn btn-sm', type: 'button', 'data-role': 'export', disabled: 'disabled'
-    });
-    exportButton.appendChild(icon('download'));
-    exportButton.appendChild(h('span', { text: 'Export what is loaded' }));
-    exportButton.addEventListener('click', function () { exportRows(auditState.rows); });
-
-    var refresh = h('button', { className: 'btn btn-sm', type: 'button' });
-    refresh.appendChild(icon('refresh'));
-    refresh.appendChild(h('span', { text: 'Refresh' }));
-    refresh.addEventListener('click', function () { loadAudit(true); });
-
-    actions.appendChild(refresh);
-    actions.appendChild(exportButton);
-
-    var foot = h('div', { className: 'card-foot' });
-    var more = h('button', {
-      className: 'btn btn-sm', type: 'button', 'data-role': 'more', text: 'Load more'
-    });
-    more.hidden = true;
-    more.addEventListener('click', function () { loadAudit(false); });
-    foot.appendChild(h('span', {
-      text: 'Nothing here can be deleted, including by an owner. The export covers the rows ' +
-        'loaded on this page, not the whole record.'
-    }));
-    foot.appendChild(h('div', { className: 'spacer' }));
-    foot.appendChild(more);
-
-    var host = card([
-      cardHead('Access record', 'Newest first', actions),
-      foot
-    ]);
-    host.id = 'setAudit';
-    host.className = 'card set-section';
-    auditState.host = host;
-    loadAudit(true);
-    return host;
-  }
-
-  /* ------------------------------------------------------------- the rail */
-
-  function sectionNav() {
-    var nav = h('nav', { className: 'card set-nav', 'aria-label': 'Settings sections' });
-    var body = h('div', { className: 'set-nav-body' });
-    var list = h('ul');
-
-    var links = [];
-    SECTIONS.forEach(function (section) {
-      var link = h('a', { href: '#' + section.id, text: section.label });
-      /* Marked on the way, not only once the scroll has settled. Following the
-         link is the deterministic half of this, and it is the half that has to
-         work: the observer below is an enhancement that a browser can decline
-         to run. */
-      link.addEventListener('click', function () { mark(section.id); });
-      links.push({ el: link, id: section.id });
-      list.appendChild(h('li', {}, [link]));
-    });
-    body.appendChild(list);
-    nav.appendChild(body);
-
-    function mark(id) {
-      links.forEach(function (entry) {
-        if (entry.id === id) entry.el.setAttribute('aria-current', 'location');
-        else entry.el.removeAttribute('aria-current');
-      });
-    }
-    /* A link into a section is a link into a section, so the rail agrees with
-       the address bar on arrival as well as after a click. */
-    function markFromHash() {
-      var id = (global.location.hash || '').replace('#', '');
-      mark(SECTIONS.some(function (s) { return s.id === id; }) ? id : SECTIONS[0].id);
-    }
-    markFromHash();
-    global.addEventListener('hashchange', markFromHash);
-
-    /* Which section you are reading, without a scroll handler that runs on
-       every frame. Absent IntersectionObserver, the rail still navigates and
-       simply keeps the first entry marked, which is a cosmetic loss. */
-    if (typeof global.IntersectionObserver === 'function') {
-      var seen = {};
-      var observer = new global.IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) { seen[entry.target.id] = entry.isIntersecting; });
-        for (var i = 0; i < SECTIONS.length; i++) {
-          if (seen[SECTIONS[i].id]) { mark(SECTIONS[i].id); return; }
+      if (reset) {
+        record.offset = 0;
+        record.rows = [];
+        record.seen = null;
+        /* The skeleton, not the empty state. An empty record and a record that
+           has not arrived yet are different answers to the same question, and
+           showing the first while waiting for the second is how a pane says
+           something false for a second and a half. */
+        var body = h('div', { className: 'card-body' });
+        for (var i = 0; i < 5; i++) {
+          body.appendChild(h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }));
         }
-      }, { rootMargin: '-72px 0px -55% 0px' });
-      global.setTimeout(function () {
-        SECTIONS.forEach(function (section) {
-          var el = document.getElementById(section.id);
-          if (el) observer.observe(el);
-        });
-      }, 0);
+        body.appendChild(h('span', { className: 'sr', role: 'status', text: 'Loading' }));
+        setCardBody(record.host, body);
+      }
+      syncControls();
+
+      session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: record.offset } }).then(
+        function (payload) {
+          record.busy = false;
+          acceptPage(Array.isArray(payload && payload.data) ? payload.data : [], false);
+          drain();
+        },
+        function (err) {
+          record.busy = false;
+          if (record.rows.length) {
+            /* Losing a later page is not a reason to throw away the rows
+               already being read. */
+            S.toast('warn', S.failureMessage(err));
+            syncControls();
+            drain();
+            return;
+          }
+          setCardBody(record.host, failureBody(err, function () { loadRecord(true); }));
+          syncControls();
+          drain();
+        }
+      );
     }
 
-    return nav;
-  }
+    /* Runs the reload that arrived while a request was in flight. Once: the
+       flag is cleared as the held reload starts, so a request answering during
+       it can hold another and no chain of them runs away. */
+    function drain() {
+      if (record.pending) loadRecord(true);
+    }
 
-  /* ---------------------------------------------------------------- render */
+    /* Quoted, and defused. A spreadsheet reads a cell beginning with =, +, -,
+       @ or a control character as a formula, and two columns of this export
+       carry text somebody else wrote: the reason an operator typed, and the
+       address submitted on a refused sign in, which anybody on the internet
+       can choose. Exporting the access record must not be a way to run
+       something on the machine of the person auditing it. */
+    function csvCell(value) {
+      var text = value === null || value === undefined ? '' : String(value);
+      if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+      return '"' + text.replace(/"/g, '""') + '"';
+    }
 
-  function intro() {
-    var callout = h('div', { className: 'callout' });
-    callout.appendChild(icon('lock'));
-    var body = h('div');
-    body.appendChild(h('strong', { text: 'Owner role required. ' }));
-    body.appendChild(document.createTextNode(
-      'Every request behind this pane is checked against your account on the server, not ' +
-      'against what this page drew. Changes made here take effect immediately and are ' +
-      'written to the access record at the bottom of the page.'
-    ));
-    callout.appendChild(body);
-    return callout;
-  }
+    /* Exports what is on screen, which is why the button says so. There is no
+       server-side export, and pretending otherwise by offering "everything"
+       while sending only the loaded pages would be a quiet lie about a record
+       people are meant to be able to check. */
+    function exportRows(rows) {
+      var columns = ['occurredAt', 'actorEmail', 'actorRole', 'action', 'outcome',
+        'targetType', 'targetId', 'reason', 'ipAddress'];
+      var lines = [columns.map(csvCell).join(',')];
+      rows.forEach(function (event) {
+        lines.push(columns.map(function (key) { return csvCell(event[key]); }).join(','));
+      });
 
-  /* The shell calls this once, with the pane's content region, after the
-     session is confirmed and the document has finished parsing. A pane with no
-     registration renders the not-built state, so nothing anywhere claims this
-     pane is built: the fact is this file being on the page.
+      var blob = new global.Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      var url = global.URL.createObjectURL(blob);
+      var link = h('a', {
+        href: url,
+        download: 'aria-ops-access-record-' + new Date().toISOString().slice(0, 10) + '.csv'
+      });
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      global.URL.revokeObjectURL(url);
+      S.announce(fmt.plural(rows.length, 'row') + ' exported.');
+    }
 
-     `host` is not in the document yet when this runs, which is why nothing here
-     looks the content area up by id. The one thing that has to wait for it, the
-     section observer, already does its own lookup a task later.
+    /* --------------------------------------------- what nothing serves yet
 
-     The role check that used to sit here is gone rather than moved: the shell
-     renders the denied state for a role that may not open this pane and never
-     asks for its contents, so this runs only for an owner. It was never the
-     gate in either place. The server refuses every request behind this pane on
-     its own, and would refuse them if this file drew every control. */
-  shell.definePane('settings', function (host) {
-    host.appendChild(intro());
+       Every string below is written without a digit in it, on purpose. See the
+       third rule in this file's opening block: a card with no API behind it
+       prints no numeral, so that no figure on this pane can be read as
+       measured when it was typed. */
 
-    var layout = h('div', { className: 'settings' });
-    layout.appendChild(sectionNav());
+    function keepBand() {
+      var band = S.band('What we keep, and for how long');
+      var grid = h('div', { className: 'grid g2' });
 
-    var stack = h('div', { className: 'stack' });
-    stack.appendChild(adminsCard());
-    stack.appendChild(rolesCard());
-    stack.appendChild(sessionsCard());
-    stack.appendChild(retentionCard());
-    stack.appendChild(costsCard());
-    stack.appendChild(integrationsCard());
-    stack.appendChild(auditCard());
-    layout.appendChild(stack);
+      grid.appendChild(staticCard(
+        'Data retention', 'Windows, and which of them are fixed',
+        ['No API reports the windows in force, so a length printed here would be invented.'],
+        [
+          'Some windows are configurable. The access record and the reveal record are ' +
+            'fixed by policy, because they record who looked at an athlete.',
+          'Shortening a configurable window deletes rows on the next nightly pass. It is ' +
+            'not a filter on what is read back.'
+        ]
+      ));
 
-    host.appendChild(layout);
+      grid.appendChild(staticCard(
+        'Cost categories', 'Which Azure service counts as what',
+        [
+          'The mapping is held server side and used by Cloud costs. Nothing reads or ' +
+            'writes it from here, and a copy shown here could be out of date.'
+        ],
+        [
+          'A new service starts ungrouped rather than guessed, and appears on Cloud costs ' +
+            'as its own line rather than inside a category it was never put in.'
+        ]
+      ));
+
+      band.appendChild(grid);
+      return band;
+    }
+
+    function integrationsBand() {
+      var band = S.band('Integrations', 'Connection state');
+      band.appendChild(staticCard(
+        'Outside connections', 'Whether each one is working',
+        [
+          'Nothing reports connection state yet, so anything here would be a claim rather ' +
+            'than a measurement.',
+          'A connection going unreported here says nothing about whether it works. The ' +
+            'pane that depends on it is where you would see it fail.'
+        ]
+      ));
+      return band;
+    }
+
+    load();
   });
 })(window);
