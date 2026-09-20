@@ -111,6 +111,10 @@
      - a @keyframes child is not a selector   ctx = 'rules' unconditionally in
                                               the at-rule branch
      - an unquoted url() is not a comment     the url( passthrough removed
+     - an ESCAPED quote opens no span,        the odd-backslash check in
+       so two rules stay two rules            structureFreeSpanEnd removed
+     - a url() ends at the `)` OUTSIDE        that arm's quote skip replaced
+       its own quotes                         by indexOf(')')
      - a `}` inside a string does not         the structure-free span skip
        close a block, and a `{` inside        deleted from parseStyleRules'
        one does not open the next             loop
@@ -138,9 +142,11 @@
      - a hasAttribute read is a read          READ_CALL narrowed to
                                               getAttribute
      - documentElement.innerHTML is a         that entry deleted from
-       document replacement, under the        DOCUMENT_REPLACERS / its `?.`
-       optional-chain and bracket             and bracket alternatives
-       spellings too                          removed
+       document replacement, under its        DOCUMENT_REPLACERS / its
+       bracket spelling too                   bracket alternative removed
+     - document.write is one under its        the bracket alternative removed
+       bracket spelling too, and under        from that entry / the ?. before
+       the ?.[ that a bracket takes           its receiver removed
      - an inline script is scanned like a     inlineScripts returning []
        file
      - the body of a <script src> is read     the src skip reinstated in
@@ -158,7 +164,7 @@
        recognise refuses everything,         deleted / the own-property
        including an Object.prototype key     check on REFLECTED_MEMBER
                                              replaced by a bare index
-     - an optional chain and a bracket       the `(?:\?\.)?` removed from
+     - an optional chain and a bracket       the `\??` removed from
        index are member access too           MEMBER_ON_DOCUMENT, or the
                                              BRACKET_ON_DOCUMENT loop gated
                                              off (they are two constants)
@@ -231,7 +237,7 @@
    shapes exists in ops/ today.
 
    ```counts
-   refuses-to-read: 4
+   refuses-to-read: 5
    - comment-swallows-markup: A comment, as this guard delimits one, that
      swallows something this analysis reads: a <link, a <body, a <script, or
      the text inside a <script>. stripHtmlComments is a single lazy regex
@@ -267,6 +273,19 @@
      does not match, such as `</script/>`. The element never closes for this
      guard and its body is never scanned, while a browser closes the element
      there and runs it.
+   - event-handler-attribute: An `on…=` attribute on any tag. A handler
+     attribute is script, and this guard reads script only from <script>
+     elements, so a handler that writes the body attribute —
+     onload="document.body.setAttribute('data-page','users')" — is invisible
+     to the write check, and one that rewrites a link's rel — <link
+     rel="preload" onload="this.rel='stylesheet'"> — is invisible to the
+     sheet check, which reads rel as written. Both end in a wrong DEAD, so
+     the page is refused rather than read. Feeding the handler body to the
+     script scan would catch the first and not the second, and would pool it
+     with every other script in the repository, refusing that attribute
+     everywhere; refusing this page only is the narrower answer. The ops
+     pages carry no handler attribute today, so this costs nothing until one
+     appears, and then it fails loudly instead of quietly.
    wrong-dead-not-covered: 6
    - aliased-body-write: A write that does not go through a member access on
      a textual document.body or document.documentElement is invisible unless
@@ -294,8 +313,13 @@
    - import-only-sheet: The orphan arm reads <link> tags only, so a sheet
      reachable only through an @import inside a linked sheet reads as
      orphaned.
-   - script-injected-link: The orphan arm reads <link> tags only, so a
-     stylesheet a script builds and appends at runtime reads as orphaned.
+   - script-injected-link: The orphan arm reads <link> tags as written, so a
+     stylesheet a script builds and appends at runtime reads as orphaned —
+     and so does one whose <link> is in the page but carries a rel the
+     script rewrites, which is the standard preload-then-promote idiom. An
+     inline handler that does either is refused by event-handler-attribute;
+     a handler in an external .js file is not, because refusing on that
+     would refuse every page in the repository at once.
    - subdirectory-page: The page and sheet listings are one level deep, so
      ops/panes/foo.html would not be read and a sheet only it linked would
      be reported orphaned. This is the one entry whose shape lives in how
@@ -332,6 +356,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export function structureFreeSpanEnd(src, i) {
   const ch = src[i];
   if (ch === '"' || ch === "'") {
+    /* A quote preceded by an odd number of backslashes is an escaped
+       character in an identifier, not a delimiter: `.a\"` is one class
+       selector, and treating it as an opener swallows the block that follows
+       and merges the next rule's selector into this one's, at this one's
+       line. The escape rule is applied inside a span below; this is the same
+       rule at the span's opening. */
+    let back = 0;
+    while (src[i - 1 - back] === '\\') back++;
+    if (back % 2 === 1) return -1;
     let k = i + 1;
     while (k < src.length) {
       if (src[k] === '\\') { k += 2; continue; }
@@ -342,8 +375,20 @@ export function structureFreeSpanEnd(src, i) {
     return src.length;
   }
   if ((ch === 'u' || ch === 'U') && /^url\(/i.test(src.slice(i, i + 4))) {
-    const end = src.indexOf(')', i);
-    return end === -1 ? src.length : end + 1;
+    /* The closing `)` has to be found outside the url's own quotes, or a
+       url("a)b") ends its span mid-token and the trailing quote opens a
+       runaway one — which loses every rule after it in the sheet. */
+    let k = i + 4;
+    while (k < src.length) {
+      if (src[k] === '"' || src[k] === "'") {
+        const inner = structureFreeSpanEnd(src, k);
+        k = inner === -1 ? k + 1 : inner;
+        continue;
+      }
+      if (src[k] === ')') return k + 1;
+      k++;
+    }
+    return src.length;
   }
   return -1;
 }
@@ -838,8 +883,22 @@ export const MARKUP_REFUSALS = [
       return false;
     },
   },
+  {
+    id: 'event-handler-attribute',
+    why: 'An `on…=` attribute on any tag. A handler attribute is script, and this guard '
+      + 'reads script only from <script> elements, so a handler that writes the body '
+      + 'attribute — onload="document.body.setAttribute(\'data-page\',\'users\')" — is '
+      + 'invisible to the write check, and one that rewrites a link\'s rel — '
+      + '<link rel="preload" onload="this.rel=\'stylesheet\'"> — is invisible to the '
+      + 'sheet check, which reads rel as written. Both end in a wrong DEAD, so the page '
+      + 'is refused rather than read. Feeding the handler body to the script scan would '
+      + 'catch the first and not the second, and would pool it with every other script '
+      + 'in the repository, refusing that attribute everywhere; refusing this page only '
+      + 'is the narrower answer. The ops pages carry no handler attribute today, so this '
+      + 'costs nothing until one appears, and then it fails loudly instead of quietly.',
+    detect: (html) => /<[a-z][^>]*\son[a-z]+\s*=/i.test(html),
+  },
 ];
-
 export function markupRefusals(html) {
   return MARKUP_REFUSALS.filter((r) => r.detect(html));
 }
@@ -847,9 +906,9 @@ export function markupRefusals(html) {
 /* ================= can a script write this attribute? =================== */
 
 const DOCUMENT_REPLACERS = [
-  /\bdocument\s*\??\s*\.\s*write(?:ln)?\s*(?:\?\.)?\s*\(/,
+  /\bdocument\s*(?:\??\s*\.)?\s*(?:write(?:ln)?|\[\s*(['"`])write(?:ln)?\1\s*\])\s*(?:\?\.)?\s*\(/,
   /(?:\.\s*outerHTML|\[\s*(['"`])outerHTML\1\s*\])\s*=[^=]/,
-  /\bdocument\s*\??\s*\.\s*documentElement\s*(?:\??\s*\.\s*innerHTML|\s*\[\s*(['"`])innerHTML\1\s*\])\s*=[^=]/,
+  /\bdocument\s*\.\s*documentElement\s*(?:\.\s*innerHTML|\s*\[\s*(['"`])innerHTML\1\s*\])\s*=[^=]/,
 ];
 
 /* The first argument to a set/remove/toggleAttribute call on the document's
@@ -1629,6 +1688,13 @@ test('the pieces the analysis is built from behave', () => {
     'document itself can be optional-chained in front of write too');
   assert.equal(reach("document.write?.('<body data-page=users>');"), 1,
     'and the call can be optional too');
+  assert.equal(reach('document["write"](`<body data-page=users>`);'), 1,
+    'write under a bracket index replaces the document exactly as the dot does, or the '
+    + 'one entry whose spellings were never widened keeps deleting live CSS');
+  assert.equal(reach('document?.["write"]("x");'), 1,
+    'including with the optional chain that a bracket index takes, which is ?.[');
+  assert.equal(reach('document["writeln"]("x");'), 1,
+    'and writeln is the same call, so the bracket has to carry it as well');
   assert.equal(reach('document.documentElement["innerHTML"] = H;'), 2,
     'a bracketed innerHTML on documentElement replaces the document, and the read-only '
     + 'skip that makes innerHTML safe is a DOT reader, so the bracket must not take it — '
@@ -1667,6 +1733,37 @@ test('the pieces the analysis is built from behave', () => {
   assert.equal(structureFreeSpanEnd('"a\nb"', 0), 2,
     'and an unterminated string ends at the newline, as CSS says');
   assert.equal(structureFreeSpanEnd('body[x]', 0), -1, 'nothing else is a span');
+  /* An ESCAPED quote is not a span opener. Miss that and `.a\" { … }` runs a
+     span to the next quote, which is inside the NEXT rule's selector: the two
+     rules merge into one, reported at the FIRST rule's line — the line the
+     browser is applying. The merged selector matches the dead half, so the
+     guard names a live line as dead. Both call sites share this helper. */
+  assert.equal(structureFreeSpanEnd('.a\\" {', 3), -1,
+    'a quote escaped by a backslash is an identifier character, not an opener');
+  assert.equal(structureFreeSpanEnd('.a\\\\" {', 4), 7,
+    'but an escaped BACKSLASH leaves the quote itself unescaped, so it does open');
+  assert.deepEqual(
+    parseStyleRules('.a\\" { color: rgb(1, 2, 3); }\nbody[data-page="users"] { color: red; }')
+      .map((r) => `${r.line}:${r.selector}`),
+    ['1:.a\\"', '2:body[data-page="users"]'],
+    'so an escaped quote in a selector leaves two rules on their own lines, or the '
+    + 'live line 1 is reported dead and the dead line 2 is never reported at all');
+  assert.deepEqual(
+    parseStyleRules('.content-\\[\\\'\\\'\\] { color: red; }\nbody[data-page="users"] { color: red; }')
+      .map((r) => r.line),
+    [1, 2], 'and the same holds for an escaped single quote');
+  /* A url() ends at the first `)` OUTSIDE its own quotes. Find it inside one
+     and the span ends mid-token, leaving a dangling quote that opens a
+     runaway span and silently drops every rule after it. */
+  assert.deepEqual(
+    parseStyleRules('.a { background: url("a)b"); }\nbody[data-page="users"] { color: red; }')
+      .map((r) => `${r.line}:${r.selector}`),
+    ['1:.a', '2:body[data-page="users"]'],
+    'a `)` inside a url string does not end the url');
+  assert.equal(structureFreeSpanEnd('url("a)b") x', 0), 10,
+    'the url span ends at the `)` that is outside the quotes');
+  assert.equal(structureFreeSpanEnd('url(abc', 0), 7,
+    'and an unclosed url( still ends, at the end of the sheet');
 
   assert.deepEqual(parseAttrSelector('[data-page="x"]'), { name: 'data-page', op: '=', value: 'x' });
   assert.deepEqual(parseAttrSelector('[data-page]'), { name: 'data-page', op: 'exists', value: null });
@@ -1805,15 +1902,28 @@ export const WRONG_DEAD_NOT_COVERED = [
   },
   {
     id: 'script-injected-link',
-    why: 'The orphan arm reads <link> tags only, so a stylesheet a script builds and '
-      + 'appends at runtime reads as orphaned.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', '<!doctype html><html><head></head>'
-        + '<body data-page="login">x</body></html>')],
-      [sheet('ops/assets/x.css', '.a { color: red; }')],
-      [{ name: 'ops/assets/s.js', source: "var l = document.createElement('link');"
-        + " l.rel = 'stylesheet'; l.href = 'assets/x.css'; document.head.appendChild(l);" }]),
-    expected: ['orphan-sheet ops/assets/x.css'],
+    why: 'The orphan arm reads <link> tags as written, so a stylesheet a script builds '
+      + 'and appends at runtime reads as orphaned — and so does one whose <link> is in '
+      + 'the page but carries a rel the script rewrites, which is the standard '
+      + 'preload-then-promote idiom. An inline handler that does either is refused by '
+      + 'event-handler-attribute; a handler in an external .js file is not, because '
+      + 'refusing on that would refuse every page in the repository at once.',
+    wrongAnswer: () => [
+      ...verdicts(
+        [page('ops/login.html', '<!doctype html><html><head></head>'
+          + '<body data-page="login">x</body></html>')],
+        [sheet('ops/assets/x.css', '.a { color: red; }')],
+        [{ name: 'ops/assets/s.js', source: "var l = document.createElement('link');"
+          + " l.rel = 'stylesheet'; l.href = 'assets/x.css'; document.head.appendChild(l);" }]),
+      ...verdicts(
+        [page('ops/login.html', '<!doctype html><html><head>'
+          + '<link rel="preload" as="style" href="assets/y.css"></head>'
+          + '<body data-page="login">x</body></html>')],
+        [sheet('ops/assets/y.css', '.a { color: red; }')],
+        [{ name: 'ops/assets/s.js',
+          source: "document.querySelector('link').rel = 'stylesheet';" }]),
+    ],
+    expected: ['orphan-sheet ops/assets/x.css', 'orphan-sheet ops/assets/y.css'],
   },
   {
     id: 'subdirectory-page',
@@ -1947,6 +2057,20 @@ const REFUSAL_DEMOS = {
   'script-end-tag': [
     `<!doctype html><html><head>${LINK}</head>`
     + `<body data-page="login">x<script>${WRITE}</script/></body></html>`,
+  ],
+  'event-handler-attribute': [
+    /* the handler writes the attribute the sheet is judged on: without the
+       refusal the page answers data-page=login and the users rule is DEAD */
+    `<!doctype html><html><head>${LINK}</head>`
+    + '<body data-page="login" onload="document.body.setAttribute(\'data-page\',\'users\')">'
+    + 'x</body></html>',
+    /* the handler makes a preload into a stylesheet, so rel as written is not
+       the rel the browser ends with and the sheet is not an orphan at all */
+    '<!doctype html><html><head><link rel="preload" as="style" href="assets/x.css"'
+    + ' onload="this.rel=\'stylesheet\'"></head><body data-page="login">x</body></html>',
+    /* any tag, not just the two above, and the name is folded like HTML folds it */
+    `<!doctype html><html><head>${LINK}</head>`
+    + '<body data-page="login"><div ONCLICK="go()">x</div></body></html>',
   ],
 };
 
