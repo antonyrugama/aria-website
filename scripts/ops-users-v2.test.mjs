@@ -40,13 +40,14 @@
                     nothing else from the event
 
    Every test here has a published mutation — the exact file, the exact
-   original line, and the payload that makes that one test fail. 41 tests, 43
-   rows: 40 in PR antonyrugama/aria-website#58, and 3 for the 41st ("an empty
+   original line, and the payload that makes that one test fail. 41 tests, 46
+   rows: 40 in PR antonyrugama/aria-website#58, and 6 for the 41st ("an empty
    subscription card names the tier it was sent and classifies nothing") in
-   the follow-up that added it, because the API can send a tier three ways and
-   each is a different way to be wrong. Rows exceed tests whenever a test has
-   more than one way to fail; they are not the same number and the breakdown
-   is the check on both.
+   the follow-up that added it. Six because that test's name makes two
+   promises — it names the tier, and it classifies nothing — and the API can
+   send a tier three ways, so each promise has to be broken on each shape.
+   Rows exceed tests whenever a test has more than one way to fail; they are
+   not the same number and the breakdown is the check on both.
 
    ONE of the 40 no longer holds: #58's row 33 replaces a line in the
    danger-zone action row, and this follow-up took the second child off that
@@ -79,9 +80,15 @@
        it is pinned to /ops/alerts.html and does not visit this page. The
        narrow-width readings for this pane are in the pull request as hand-run
        numbers, not as a guard.
-     - whether a CSS rule RENDERS. Node has no layout engine, so the hatched
-       mask, the accent rail on the danger card and the 720px stack are shape
-       assertions here and screenshots in the pull request.
+     - whether a CSS rule RENDERS. Node has no layout engine, so nothing here
+       can tell a rule that applies from one that is overridden, and no
+       assertion in this file reads a computed style. What the pane draws is
+       evidenced by the screenshots and the width measurements in the pull
+       request, not here. (Until round 5 this bullet named three specific
+       shapes -- the hatched mask, an accent rail, the 720px stack -- as
+       "shape assertions here". Two of the three appear nowhere in this file.
+       A NOT COVERED bullet that overclaims in the covered direction is the
+       same defect as one that overclaims anywhere else.)
      - focus movement. The stub's focus() sets document.activeElement and
        nothing computes offsetParent, so the re-mask focus fallback is
        exercised but its CHOICE of destination is not asserted.
@@ -750,6 +757,15 @@ test('the matches table shows coded references and the mask the API sent, and no
    states none. All three shapes the API can send are asserted, because each
    one is a different way to be wrong. */
 test('an empty subscription card names the tier it was sent and classifies nothing', async () => {
+  /* "Classifies nothing" is half this test's name, so every shape the API can
+     send gets the negative, and the negative covers BOTH words. Round 2's
+     defect read `tier.brand` -- a pill tone with no documented meaning -- and
+     called a `coach_team` account free; the same field would have called
+     `{brand: true}` paid. Round 5 found the nameless shape carrying no
+     negative at all, which is the branch that field's defect lived on, and
+     the two negatives that did exist only said "free". */
+  const classifies = (t) => /\b(free|paid)\b/i.test(t);
+
   const unbranded = await openAccount({
     detail: detailFixture((d) => {
       d.billing = { fields: [] };
@@ -759,7 +775,7 @@ test('an empty subscription card names the tier it was sent and classifies nothi
   const box1 = card(unbranded, 'Subscription');
   assert.match(allText(box1), /No subscription record/);
   assert.match(allText(box1), /The account is on Coach team\./);
-  assert.ok(!/free tier/i.test(allText(box1)), 'a tier with no brand key was called free');
+  assert.ok(!classifies(allText(box1)), 'a tier with no brand key was classified');
 
   const none = await openAccount({
     detail: detailFixture((d) => { d.billing = { fields: [] }; delete d.tier; }),
@@ -767,7 +783,7 @@ test('an empty subscription card names the tier it was sent and classifies nothi
   const box2 = card(none, 'Subscription');
   assert.match(allText(box2), /No tier was reported for this account either\./);
   assert.ok(!/The account is on/.test(allText(box2)), 'a tier was named that was never sent');
-  assert.ok(!/free tier/i.test(allText(box2)), 'an unreported tier was called free');
+  assert.ok(!classifies(allText(box2)), 'an unreported tier was classified');
 
   const nameless = await openAccount({
     detail: detailFixture((d) => { d.billing = { fields: [] }; d.tier = { brand: true }; }),
@@ -775,6 +791,7 @@ test('an empty subscription card names the tier it was sent and classifies nothi
   const box3 = card(nameless, 'Subscription');
   assert.ok(!allText(box3).includes('undefined'), 'the pane printed undefined to an operator');
   assert.ok(!/The account is on/.test(allText(box3)), 'a nameless tier was given a name');
+  assert.ok(!classifies(allText(box3)), 'a nameless tier was classified from its brand flag');
   assert.match(allText(box3), /The tier it reported has no name\./);
 });
 

@@ -43,11 +43,8 @@
 /* Not this pane's markup and deliberately not deleted with the rest of the
    mock's unused form rules: session.js writes `field-label` into the
    re-authentication modal it can raise over any ops page, and a v2 page loads
-   no ops.css, so this sheet is the only thing styling it. The modal's frame
-   does have v2 rules — shell-pane-v2.css styles `.scrim`, `.is-open` and
-   `.btn` — but its body does not: `modal`, `modal-card`, `sec-title`,
-   `field-input`, `field-hint`, `form-alert` and `spacer` have no rule in any
-   sheet a v2 page loads. That is Stadiora/Aria#10447, which needs
+   no ops.css, so on THIS page this sheet is the only thing styling it.
+   Stadiora/Aria#10447 covers the rest of that modal on v2 pages; it needs
    shell-pane-v2.css and so cannot be fixed from a pane. */
 .field-label { font-size: 11.5px; font-weight: 540; color: var(--ink-3); }
 
