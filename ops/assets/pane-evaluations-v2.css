@@ -54,9 +54,17 @@
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .field-input:hover { box-shadow: inset 0 0 0 1px var(--line-2); }
+/* An outline, not a translucent shadow: `color-mix(… 22%, transparent)`
+   composites against whatever is behind it, so it has no colour a contrast
+   oracle can resolve, and `outline: none` removed the one property that does.
+   Same shape and same fix as the shell's search field (Stadiora/Aria#10651,
+   ops/assets/aria.css). The offset is negative because this input sits flush
+   inside its card: a positive offset paints the ring outside the card, where
+   it is judged against the card's surroundings rather than against the field
+   it marks. The base rule's 1px inset line stays, under the ring. */
 .field-input:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 1px var(--cyan), 0 0 0 3px color-mix(in srgb, var(--cyan) 22%, transparent);
+  outline: 2px solid var(--cyan-ink);
+  outline-offset: -2px;
 }
 .field-input:disabled { color: var(--ink-3); background: var(--surface); }
 textarea.field-input { resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
