@@ -2196,11 +2196,18 @@ test('every class this pane draws is one a sheet the page loads can paint', asyn
     const app = dom.doc.getElementById('app');
     assert.ok(app, 'the page lost #app on ' + name);
     const classed = findAll(app, (n) => (n.className || '').trim() !== '');
-    /* A state that drew nothing contributes nothing and would pass in
-       silence. The thinnest of these is the failed read, which draws the
-       degraded card, the bar and the rail. */
-    assert.ok(classed.length > 20,
-      'only ' + classed.length + ' classed elements were drawn on ' + name +
+
+    /* The sweep reads the whole of #app, which is the shell's chrome as well
+       as the pane's panels, because the pane writes into the filter bar too.
+       The floor below counts only what the PANE drew: a pane that never
+       mounted still leaves the rail, the topbar and the gate behind it, so a
+       floor over #app is a floor a broken pane walks under. The thinnest of
+       these states is the failed read, at 36 classed elements. */
+    const content = dom.doc.getElementById('content');
+    assert.ok(content, 'the pane drew no result region at all on ' + name);
+    const drew = findAll(content, (n) => (n.className || '').trim() !== '');
+    assert.ok(drew.length > 25,
+      'the pane drew only ' + drew.length + ' classed elements on ' + name +
       ', so this state was judged empty');
 
     for (const node of classed) {
