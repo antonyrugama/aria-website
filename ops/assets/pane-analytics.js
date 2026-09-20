@@ -800,8 +800,20 @@
       body.appendChild(cohortRow(row, offsets.length));
     });
 
+    /* The grid is as wide as the answer's weeks make it and the box around it
+       scrolls, so the weeks past the edge have to be reachable without a
+       pointer. Chrome does not put a scroll container in the tab order on its
+       own. Same treatment as the Settings pane's wide tables
+       (ops/assets/settings.js), named so the region says which app's grid it
+       is rather than announcing an unlabelled region. */
     card.appendChild(h('div', { className: 'card-body' }, [
-      h('div', { className: 'u-scroll' }, [
+      h('div', {
+        className: 'u-scroll',
+        tabindex: '0',
+        role: 'region',
+        'aria-label': 'Retention by signup week' +
+          (typeof cohort.label === 'string' && cohort.label ? ', ' + cohort.label : '')
+      }, [
         h('table', { className: 'tbl u-cohort' }, [h('thead', {}, [headRow]), body])
       ])
     ]));

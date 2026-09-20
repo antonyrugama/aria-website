@@ -926,6 +926,31 @@ test('the widest window draws every week it sends', async () => {
   }
 });
 
+test('the weeks past the edge are reachable without a pointer', async () => {
+  /* A box that scrolls sideways is not in Chrome's tab order on its own, so
+     the columns past the card's edge would be a pointer's alone. Named, so the
+     region it becomes says which app's grid it is. */
+  const dom = await boot({ usage: wideFixture() });
+  const cohort = card(dom, /Who comes back/);
+  const box = findAll(cohort, (n) => (n.className || '').includes('u-scroll'))[0];
+  assert.ok(box, 'the grid is not inside a scroll box at all');
+  assert.equal(box.getAttribute('tabindex'), '0',
+    'the scroll box cannot be reached from a keyboard');
+  assert.equal(box.getAttribute('role'), 'region', 'the scroll box is an unnamed div');
+  assert.match(box.getAttribute('aria-label') || '', /Retention by signup week, Mobile/,
+    'the region does not say which grid it is: ' + box.getAttribute('aria-label'));
+
+  /* And the name degrades rather than trailing a comma when the answer sends
+     no label. */
+  const unlabelled = await boot({
+    usage: wideFixture((u) => { u.cohorts = [{ ...u.cohorts[0], label: '' }]; }),
+  });
+  const bare = findAll(card(unlabelled, /Who comes back/),
+    (n) => (n.className || '').includes('u-scroll'))[0];
+  assert.equal(bare.getAttribute('aria-label'), 'Retention by signup week',
+    'an answer with no app name left a dangling comma in the region name');
+});
+
 test('the retention grid is sized by its content and scrolls, at every width', async () => {
   /* WHAT THIS PINS, EXACTLY: two declarations in the stylesheet, not a
      rendering. It cannot see an overlap -- `node:test` has no layout -- and it
