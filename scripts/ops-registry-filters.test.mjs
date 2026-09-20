@@ -59,8 +59,10 @@
        other than the one it named. The shell-level claim, that a pane is
        offered exactly the filters it declared and never one more, is held
        where it can fail: scripts/ops-shell-pane-v2.test.mjs.
-     - `overview`, `evals`, `releases` and `settings`. They declare no filter,
-       so there is nothing on them for rules 1 to 3 to check. A regression
+     - `jobs`, `overview`, `evals`, `releases` and `settings`. They declare no
+       filter, so there is nothing on them for rules 1 to 3 to check. `jobs`
+       keeps a boot recipe in PAGES anyway, so the day it declares one again
+       rule 2 reaches it without anybody writing a recipe first. A regression
        that gives one of them a filter is caught by the coverage lock, which
        is a declaration-level failure rather than a recorded-call one; it says
        so in its own message.

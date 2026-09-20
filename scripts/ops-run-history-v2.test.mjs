@@ -386,9 +386,9 @@ test('a custom window in the URL is clamped back to the window the pane starts o
   assert.match(liveText(dom), /What the record shows the last 7 days/,
     'a window this pane cannot name was accepted, so its figures are labelled with '
     + 'a window that was never applied');
-  assert.doesNotMatch(liveText(dom), /What the record shows this window/,
-    'the page fell back to naming no window at all, which is the shape of a value '
-    + 'nothing is applying');
+  assert.doesNotMatch(liveText(dom), /What the record shows the window you picked/,
+    'the band fell back to naming no window at all, which is what this pane prints '
+    + 'for a range it has no label for, and the shape of a value nothing is applying');
 });
 
 /* ======================= empty is never just zero ======================= */
