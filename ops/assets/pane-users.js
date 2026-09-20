@@ -527,7 +527,12 @@
                      it is deliberately not the channel anything relies on.
        aria-pressed  the control's own state, for a reader on the button. This
                      one IS in the tree: pressed="true" on the picked control
-                     and "false" on the rest.
+                     and "false" on the rest. Stadiora/Aria#10648: until that
+                     issue was fixed it was the only channel the button
+                     carried, so the control announced "pressed" and was drawn
+                     pixel-for-pixel like the one beside it. It is now painted
+                     too — a ring, a heavier reference and a tint, in
+                     assets/pane-users-v2.css.
        the word      "Selected", in the row, so the affordance is never the
                      wash alone — and, being real text in the row's name cell,
                      it is the channel that reaches every assistive technology
@@ -611,11 +616,12 @@
 
       /* The whole row is not the control. A row click is unreachable from a
          keyboard, so the account cell carries a real button and that button is
-         what selects the account. Both classes on it are query hooks rather
-         than style hooks — applySelection finds the control by the first and
-         renderSelectedRow finds the rows by the second — which is why neither
-         has a rule in any stylesheet and neither should be read as one that
-         went missing. */
+         what selects the account. `match-row-btn` and `match-row` are query
+         hooks first — applySelection finds the control by the one and
+         renderSelectedRow finds the rows by the other — so neither is drawn
+         in its plain state. Stadiora/Aria#10648 gave the control's PRESSED
+         state a rule; the unpressed button is still a ghost button and
+         nothing styles it by either class. */
       var pick = h('button', {
         className: 'btn btn-ghost btn-sm match-row-btn', type: 'button',
         'data-ref': m.reference

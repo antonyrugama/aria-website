@@ -67,12 +67,15 @@
 
    KNOWN FAILURES ARE ENUMERATED, NEVER SKIPPED. The first run of this check
    found unpaintable classes on five panes, and one announced-but-unpainted
-   state, that this pull request may not fix. Each one is listed in
-   KNOWN_UNPAINTED or KNOWN_UNPAINTED_STATE with the issue tracking it, and
-   each entry must still reproduce: a class that starts painting, or stops
-   being drawn, or an exception nobody can produce any more, fails this check
-   just as loudly as a new orphan. A guard that narrows its own scope to stay
-   green is the defect class this file is named for.
+   state, that the pull request adding the check could not fix. Each one is
+   listed in KNOWN_UNPAINTED or KNOWN_UNPAINTED_STATE with the issue tracking
+   it, and each entry must still reproduce: a class that starts painting, or
+   stops being drawn, or an exception nobody can produce any more, fails this
+   check just as loudly as a new orphan. A guard that narrows its own scope to
+   stay green is the defect class this file is named for — and so is a guard
+   whose exception list outlives the defect, so the pull request that fixes
+   one of these deletes its lines here in the same change. Look up a user's
+   four lines, Stadiora/Aria#10643 and #10648, came out that way.
 
    WHAT THIS DOES NOT COVER, in the words of what is actually measured:
 
@@ -742,20 +745,21 @@ for (const page of PAGES) {
    check with a message telling you to delete the line. An exception nobody
    can produce is an exception nobody is reading.
 
-   `why` is the fact, not an excuse. Three entries on Look up a user are query
+   `why` is the fact, not an excuse. Two entries on Look up a user are query
    hooks — assets/pane-users.js queries them by class and says so in its own
-   comment — and they are the only entries here that are not defects. */
+   comment — and they are the only entries here that are not defects.
+
+   Stadiora/Aria#10643 was fixed in the pull request that deleted its two
+   lines from this list, and `match-row-btn` left with it: assets/pane-users.js
+   still queries the control by that class, but the class is now reached by
+   `.match-row-btn[aria-pressed="true"]` in assets/pane-users-v2.css, so it no
+   longer reproduces as unpainted and carrying it would be carrying an
+   exception nobody can produce. */
 const KNOWN_UNPAINTED = [
   { pane: 'users', cls: 'match-row', issue: null,
     why: 'a query hook: assets/pane-users.js:1467 finds the rows by it' },
-  { pane: 'users', cls: 'match-row-btn', issue: null,
-    why: 'a query hook: assets/pane-users.js:546 finds the pick control by it' },
   { pane: 'users', cls: 'sel-mark', issue: null,
     why: 'a query hook: assets/pane-users.js:549 finds the selected mark by it' },
-  { pane: 'users', cls: 'masked', issue: 'Stadiora/Aria#10643',
-    why: 'styled only in ops.css, which users.html deliberately does not load' },
-  { pane: 'users', cls: 'match-name', issue: 'Stadiora/Aria#10643',
-    why: 'no sheet in the repository defines it' },
   { pane: 'alerts', cls: 'rule-row', issue: 'Stadiora/Aria#10644',
     why: 'styled only in operate.css, which alerts.html deliberately does not load' },
   { pane: 'releases', cls: 'done', issue: 'Stadiora/Aria#10646',
@@ -787,19 +791,15 @@ const KNOWN_UNPAINTED = [
    Keyed by the attribute and the element's tag and classes, so a fix that
    paints the control breaks the key and tells you to delete the line.
 
-   The entry below is not #10456 recurring wholesale — Look up a user paints
-   the picked ROW and appends a "Selected" mark next to the control, so a
-   sighted operator can see which account is picked. What is unpainted is the
-   control's own aria-pressed: the button says "pressed" to a reader and is
-   pixel-for-pixel the other row's button. It is enumerated rather than fixed
-   here because a stylesheet change to a pane is a change to the product, and
-   this pull request adds a check. */
-const KNOWN_UNPAINTED_STATE = [
-  { pane: 'users', attr: 'aria-pressed',
-    marked: 'button.btn.btn-ghost.btn-sm.match-row-btn', issue: 'Stadiora/Aria#10648',
-    why: 'no sheet defines .match-row-btn[aria-pressed="true"]; the row wash and the ' +
-      'adjacent "Selected" mark are what a sighted operator reads instead' }
-];
+   Empty, and that is the point: the one entry this list was opened with —
+   Look up a user's pick control announcing aria-pressed while drawn
+   pixel-for-pixel like the button beside it, Stadiora/Aria#10648 — was fixed
+   by `.match-row-btn[aria-pressed="true"]` in assets/pane-users-v2.css, and
+   the line came out in the same pull request. An empty list is not a weaker
+   check: judgement 2 still compares every state pair it finds, and an
+   unpainted state that appears from here on is a plain failure with nobody to
+   claim it. */
+const KNOWN_UNPAINTED_STATE = [];
 
 /* The states each pane declares to assistive technology in its result view,
    and therefore the comparisons judgement 2 makes there. A minimum rather
