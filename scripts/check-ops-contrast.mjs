@@ -40,8 +40,11 @@
  *   4. THE SAFE DIRECTION IS PER ROLE, NOT GLOBAL. "Assume opaque when the
  *      alpha is unresolvable" over-reports on a fill and HIDES a defect on an
  *      ink, because a faded ink read as solid clears AA. So an ink whose alpha
- *      this cannot resolve is refused rather than assumed, and a backdrop this
- *      cannot read as one opaque colour is refused rather than averaged.
+ *      this cannot resolve is refused rather than assumed. The matching
+ *      backdrop refusal below is written and UNEXERCISED: Chromium returns
+ *      this page's screenshot as PNG colour type 2, which has no alpha
+ *      channel at all, so no mutation drives it. Read it as a guard on a
+ *      decode path that could change, not as a mechanism this page proves.
  *
  * Usage:
  *   node scripts/check-ops-contrast.mjs               # serve, check, report
@@ -470,13 +473,18 @@ const COLLECT = `(() => {
        REFUSED by name rather than approximated: under any of them the ink
        still computes to the designed colour while the page paints something
        else, and reporting the designed colour is the flattering direction for
-       an ink. Refusals fail the run, so nothing hides here.
+       an ink. Refusals fail the run — except inside a :disabled control, where
+       WCAG 1.4.3's exemption is applied first and the site is counted as
+       exempt rather than failed.
 
        Not a list of everything CSS can do to a glyph — a list of what this
-       tool will not stand behind. Modelling filter, blending and stroke would
-       be three more things to get wrong; refusing is one branch that cannot
-       be. backdrop-filter is deliberately absent: it alters the backdrop,
-       which the screenshot samples correctly. */
+       tool will not stand behind, and it does not close. mask-image and
+       clip-path are two more ways to spell a fade and are NOT here: they are
+       neither modelled nor refused, and text under one is measured as though
+       it were painted in full. Named in NOT COVERED rather than added, because
+       enumerating CSS is the losing half of this trade. backdrop-filter is a
+       deliberate omission of a different kind: it alters the backdrop, which
+       the screenshot samples correctly. */
     const unmodelled = (st, n) => {
       if (st.filter && st.filter !== 'none') {
         return 'filter "' + st.filter + '" on ' + nameOf(n);
@@ -487,6 +495,17 @@ const COLLECT = `(() => {
       const sw = parseFloat(st.webkitTextStrokeWidth);
       if (Number.isFinite(sw) && sw > 0) {
         return '-webkit-text-stroke ' + st.webkitTextStrokeWidth + ' on ' + nameOf(n);
+      }
+      /* SVG paint is fill THEN stroke, and stroke is the SVG spelling of the
+         property above. This one completes the model the tool already
+         declares for SVG — ink from fill, alpha from fill-opacity — rather
+         than reaching outside it. Only on the text element: stroke inherits,
+         so an ancestor that sets it is already visible here. */
+      if (n.namespaceURI === 'http://www.w3.org/2000/svg' &&
+          st.stroke && st.stroke !== 'none' &&
+          st.stroke !== 'rgba(0, 0, 0, 0)' && st.stroke !== 'transparent' &&
+          parseFloat(st.strokeWidth) > 0) {
+        return 'SVG stroke ' + st.stroke + ' at ' + st.strokeWidth + ' on ' + nameOf(n);
       }
       return null;
     };
@@ -647,7 +666,11 @@ const PLATE_CSS = `
      Neutralise SVG text, which is painted by fill and untouched by the color
      rule above, keep chart geometry, and hide only text-free SVGs, which are
      decorative icons and pure foreground. */
-  svg text { fill: transparent !important; }
+  /* SVG paints fill THEN stroke, so clearing fill alone leaves a stroked
+     label painting on the plate — glyph pixels in the very sample the plate
+     exists to keep clean. A 2px stroke on a 10px label measured 71% of the
+     sampled backdrop. */
+  svg text { fill: transparent !important; stroke: none !important; }
   svg:not(:has(text)), img, canvas { visibility: hidden !important; }
 `;
 
@@ -688,13 +711,17 @@ const PLATE_HOLDS = `(() => {
     /* Read the same channel the glyph interior is painted from, or this
        assertion answers about a property the page is not using. */
     const ink = isSvg ? cs.fill : (cs.webkitTextFillColor || cs.color);
-    const clear = ink === 'rgba(0, 0, 0, 0)' || ink === 'transparent' ||
-      /^color\\(srgb [^)]*\\/ 0\\)$/.test(ink);
-    if (!clear) {
-      lit.push(el.tagName.toLowerCase() +
-        ((el.getAttribute('class') || '') ? '.' + el.getAttribute('class').trim().split(/\\s+/).join('.') : '') +
-        ' paints ' + ink);
-    }
+    const transparent = (v) => v === 'rgba(0, 0, 0, 0)' || v === 'transparent' ||
+      /^color\\(srgb [^)]*\\/ 0\\)$/.test(v);
+    /* SVG text paints fill AND stroke. Asking only about fill answers about
+       one of the two channels and reports the plate held while the other one
+       is still painting glyphs into the backdrop sample. */
+    const strokeLit = isSvg && cs.stroke && cs.stroke !== 'none' &&
+      !transparent(cs.stroke) && parseFloat(cs.strokeWidth) > 0;
+    const name = el.tagName.toLowerCase() +
+      ((el.getAttribute('class') || '') ? '.' + el.getAttribute('class').trim().split(/\\s+/).join('.') : '');
+    if (!transparent(ink)) lit.push(name + ' paints ' + ink);
+    if (strokeLit) lit.push(name + ' strokes ' + cs.stroke + ' at ' + cs.strokeWidth);
   }
   return JSON.stringify({ lit: lit.slice(0, 8), count: lit.length });
 })()`;
@@ -813,6 +840,10 @@ async function measureSites(targets, where) {
     /* A backdrop role. The conservative direction for a backdrop is NOT
        "assume opaque": a see-through surface means the real backdrop is
        whatever is behind the page, which this tool cannot see. */
+    /* UNEXERCISED on this page: the screenshot decodes as PNG colour type 2,
+       which carries no alpha, so translucent is structurally 0 and no
+       mutation in this PR's battery drives this branch. Kept as a fail-closed
+       guard if that decode path ever changes; claimed as nothing. */
     if (bg.translucent > 0) {
       results.push({
         ...t, unjudgeable: 'backdrop not opaque',

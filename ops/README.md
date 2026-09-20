@@ -1025,16 +1025,22 @@ the run and a wrong number does not:
   **refused by name** rather than guessed at; the painter does not have to be the faded element
   and does not have to be faded itself.
 - **The ink is `color` — or `-webkit-text-fill-color`, which beats it for the glyph interior —
-  times that alpha, and nothing else. So everything else is refused.** `filter`,
-  `mix-blend-mode` and `-webkit-text-stroke` each decide the pixel a glyph paints while the
-  computed colour still reads exactly as the stylesheet asked for, which is the flattering
-  direction for an ink: `filter: opacity(.06)` and `opacity: .06` paint identically and only
-  the second is in the model, and `mix-blend-mode: screen` erases black text that still
-  computes to `rgb(0, 0, 0)`. Set any of the three, on the text or on an ancestor, and the site
-  is **refused by name** and the run fails. Modelling them would be three more things to get
-  wrong; refusing is one branch that cannot be. `backdrop-filter` needs no refusal — it alters
-  the backdrop, which the screenshot samples correctly. The shell has one `filter` today, a
-  `:hover` brightness the sweep never enters, so this costs no coverage.
+  times that alpha. Four named properties that defeat that reading are refused.** `filter`,
+  `mix-blend-mode`, `-webkit-text-stroke` and, on SVG text, `stroke` each decide the pixel a
+  glyph paints while the computed colour still reads exactly as the stylesheet asked for, which
+  is the flattering direction for an ink: `filter: opacity(.06)` and `opacity: .06` paint
+  identically and only the second is in the model; `mix-blend-mode: screen` erases black text
+  that still computes to `rgb(0, 0, 0)`; SVG paints `fill` then `stroke`, so a 2px stroke in
+  the surface colour erases a 10px label whose `fill` is unchanged. Set any of the four and the
+  site is **refused by name** and the run fails.
+
+  That list is **what this tool will not stand behind, not what CSS can do to a glyph, and it
+  does not close.** `mask-image` and `clip-path` are two more ways to spell the same 6% fade,
+  both measured passing at the same anchor where `opacity` and `filter` are both caught; they
+  are in NOT COVERED below rather than in the list, because enumerating CSS is the losing half
+  of this trade. `backdrop-filter` is a deliberate omission of a different kind — it alters the
+  backdrop, which the screenshot samples correctly. The shell sets none of the four today (its
+  one `filter` is a `:hover` the sweep never enters), so the refusals cost no coverage.
 
 The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
 --self-test` runs six parts against a synthetic fixture — the formula against published WebAIM
@@ -1057,10 +1063,28 @@ quote keyword. `content: ''`, the decorative form this page uses everywhere, is 
 not flagged. So generated text cannot pass unmeasured, but it also cannot be judged: a page that
 wants it has to either drop it or extend this tool.
 
-**Text painted through `filter`, `mix-blend-mode` or `-webkit-text-stroke` is not measured** —
-it is refused, which fails the run, so it can neither pass unmeasured nor be reported as a
-number the tool cannot stand behind. The same goes for a surface painted inside a fade. These
-are refusals, not coverage.
+**Text painted through `filter`, `mix-blend-mode`, `-webkit-text-stroke` or an SVG `stroke` is
+not measured** — it is refused, which fails the run, so it can neither pass unmeasured nor be
+reported as a number the tool cannot stand behind. The same goes for a surface painted inside a
+fade. These are refusals, not coverage.
+
+**A paint-affecting property outside those four is neither modelled nor refused**, and text
+under one is measured as though it were painted in full. `mask-image` and `clip-path` are the
+demonstrated cases: a 6% `mask-image` on `.legend span` and a `clip-path: inset(100%)` that
+paints no glyph at all both measure clean, at the same anchors where `opacity: .06` and
+`filter: opacity(.06)` are caught. This is the honest shape of a refusal list — it holds what
+has been named and nothing more — and it is why the pixel-level checks below exist alongside
+it. A fifth spelling found later is a new entry, not a surprise.
+
+**The backdrop-alpha refusal is written and unexercised.** Chromium returns this page's
+screenshot as PNG colour type 2, which has no alpha channel, so the "a backdrop I cannot read
+as one opaque colour is refused" half of the per-role rule is structurally unreachable on this
+decode path and no mutation drives it. It is a fail-closed guard against that path changing,
+claimed as nothing.
+
+**A refusal inside a `:disabled` control is counted as exempt, not failed.** WCAG 1.4.3's
+inactive-component exemption is applied before the refusal check, so "refusals fail the run"
+has exactly that one exception. The exempt count is printed on every run and is `0` today.
 
 **Text over a picture is not covered.** The plate hides `img` and `canvas` outright, so text
 over one would be measured against whatever is underneath rather than against the picture, and
