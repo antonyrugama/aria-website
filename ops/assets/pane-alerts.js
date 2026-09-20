@@ -30,7 +30,15 @@
         made unavailable rather than approximate. The closed LIST is still
         drawn from a capped read — it is a list, and a short list of real
         closures is still true of every row in it — but it says so in its own
-        foot and prints no total over it.
+        foot and prints no total over it. What it will not do is report a ZERO
+        from one: the closed query carries no date bound, so a capped read can
+        come back holding only closures older than the window the card is
+        about, and "nothing has been closed" would then be a fact the sample
+        was never in a position to carry.
+
+        Second, the empty state reads the rules to decide which kind of empty
+        it is, so when the RULES read is the one that failed it has not got
+        that fact and states neither kind.
      2. **The severity filter is applied by the API and the category filter is
         applied here**, so a figure read over a severity-scoped answer says so
         rather than reading as a total.
@@ -294,20 +302,48 @@
         .filter(inRange).filter(matchesCategory).sort(model.byWorstThenOldest);
     }
 
+    /* A disclosure's id, unique within one render by counting rather than by
+       deriving.
+
+       `surface` is which list the card is in: one problem can be on screen
+       twice -- once in the queue, once in "Recently closed" -- and an id built
+       from the problem alone put two elements with one id in the document, so
+       both buttons' aria-controls resolved to the first. Keying by surface
+       fixes that collision and leaves another: an id derived from
+       `problem.id` has to be sanitised into something an id attribute can
+       hold, and any sanitiser maps distinct inputs onto one string. A counter
+       cannot collide, so the question of what characters an id can contain
+       stops needing an answer. */
+    var discloseSeq = 0;
+
+    function discloseId(kind, surface) {
+      discloseSeq += 1;
+      return kind + '-' + surface + '-' + discloseSeq;
+    }
+
     /* One problem is one problem. The open read and the closed read are taken
        at different instants, so one closed between them comes back in both,
        and anything that counts or lists the two together has to say so once.
        The queue used to be the only place that did; the figures beside it
        were adding the same problem twice. */
     function distinct(problems) {
-      var seen = {};
+      var at = {};
       var all = [];
       problems.forEach(function (problem) {
         var key = problem && problem.id;
         if (key === undefined || key === null) return;
-        if (Object.prototype.hasOwnProperty.call(seen, key)) return;
-        seen[key] = true;
-        all.push(problem);
+        if (!Object.prototype.hasOwnProperty.call(at, key)) {
+          at[key] = all.length;
+          all.push(problem);
+          return;
+        }
+        /* Two copies of one problem are two answers taken at two instants, and
+           the closed one is the later fact by construction: a problem goes open
+           -> closed and never back, so a copy carrying `closedAt` was read after
+           a copy without it. Keeping the first copy showed the same reference
+           twice on one screen as "Still happening" in the queue and "Closed a
+           minute ago" in the list below. */
+        if (problem.closedAt && !all[at[key]].closedAt) all[at[key]] = problem;
       });
       return all;
     }
@@ -348,7 +384,7 @@
          to list, from reads that landed. A read that never landed has not
          earned the sentence "there is nothing here". */
       if (!openFailed && !queue.length) {
-        region.empty(emptyState(data, armed));
+        region.empty(emptyState(data, armed, rulesFailed));
         return;
       }
 
@@ -611,14 +647,12 @@
           'then oldest, and that many came back, so the most recent ones are missing from ' +
           'this list and from the counts above.');
       }
-      /* Gated on the range because this sentence is about the QUEUE: on the
-         default window the queue holds no closed problem, so it cannot be
-         short of one. The closed card discloses its own capped read itself,
-         on every load. */
-      if (model.capped(problemsOf(data.closed)) && RANGE_DAYS[filters.range]) {
-        parts.push('The closed problems were read the same way and also came back full, so ' +
-          'the most recent closures are missing from this list too.');
-      }
+      /* The closed read's own cap is NOT restated here. The closed card
+         discloses it on every load, in its own foot, and on the two windows
+         that admit closed problems into the queue this note fired as well --
+         forty words for one fact, on a pane rejected once for captioning
+         everything twice. One fact, one slot: the cap belongs to the card
+         that draws from the capped read. */
       if (!parts.length) return null;
 
       var notes = h('div', { className: 'p-notes' });
@@ -821,11 +855,14 @@
         ? (CLOSE_REASON_LABEL[problem.closeReason] || problem.closeReason).toLowerCase()
         : null;
       var who = textOf(problem.closedByEmail);
+      /* The card already carries a "Closed <ago>" pill, so the word and the
+         elapsed time are not new here -- but two of the three reasons are not
+         clauses ("Nothing to do by somebody" does not parse), so the person
+         goes after a dash rather than after "by". */
       if (whenIsAlready) {
-        var head = reason
-          ? reason.charAt(0).toUpperCase() + reason.slice(1)
-          : 'Closed';
-        return head + (who ? ' by ' + who : '');
+        if (!reason) return 'Closed' + (who ? ' by ' + who : '');
+        var head = reason.charAt(0).toUpperCase() + reason.slice(1);
+        return head + (who ? ' \u2014 ' + who : '');
       }
       return 'Closed' + (reason ? ' as ' + reason : '') + (who ? ' by ' + who : '') +
         ' ' + fmt.ago(problem.closedAt);
@@ -893,12 +930,8 @@
        opened, which is why it is not folded into the list read: a queue of
        thirty problems would otherwise make thirty-one requests to draw a
        screen nobody has asked a question of yet. */
-    /* `surface` is which list this card is in: one problem can be on screen
-       twice -- once in the queue, once in "Recently closed" -- and an id
-       derived from the problem alone put two of them in the document, so both
-       buttons' aria-controls resolved to the first one. */
     function detailsButton(problem, data, host, surface) {
-      var id = 'detail-' + surface + '-' + String(problem.id).replace(/[^A-Za-z0-9_-]/g, '');
+      var id = discloseId('detail', surface);
       host.setAttribute('id', id);
       var button = h('button', {
         className: 'btn btn-sm', type: 'button', text: 'Details',
@@ -1007,7 +1040,7 @@
        condition coming back raises a new problem rather than reopening this
        one. */
     function closeButton(problem, host, surface) {
-      var id = 'close-' + surface + '-' + String(problem.id).replace(/[^A-Za-z0-9_-]/g, '');
+      var id = discloseId('close', surface);
       host.setAttribute('id', id);
       var button = h('button', {
         className: 'btn btn-sm', type: 'button', text: 'Close',
@@ -1350,13 +1383,25 @@
         return box;
       }
 
+      /* Computed before the empty branch, not after it. The closed query sends
+         no date bound, so once more than PAGE closures exist the PAGE that come
+         back are the oldest and every one of them can predate this window --
+         and that is the state where an undisclosed cap does the most damage,
+         because the card renders "nothing has been closed" from a sample that
+         was never in a position to say so. The figures beside it already refuse
+         to count from that sample; this refuses to report a zero from it. */
+      var cappedClosed = model.capped(problemsOf(data.closed));
       var recent = closedRecently(data);
       if (!recent.length) {
         body.appendChild(h('p', {
           className: 'tiny muted',
-          text: 'Nothing has been closed in the last ' + CLOSED_DAYS + ' days.'
+          text: cappedClosed
+            ? 'Whether anything was closed in the last ' + CLOSED_DAYS + ' days cannot be ' +
+              'told from this read.'
+            : 'Nothing has been closed in the last ' + CLOSED_DAYS + ' days.'
         }));
         box.appendChild(body);
+        if (cappedClosed) box.appendChild(closedCapFoot(true, 0));
         return box;
       }
 
@@ -1377,7 +1422,14 @@
          the queue's own disclosure is about the queue, and on the default
          window the queue holds no closed problem to be short of. A count over
          a capped read is a floor, so it is not printed as a total. */
-      var cappedClosed = model.capped(problemsOf(data.closed));
+      box.appendChild(closedCapFoot(cappedClosed, recent.length));
+      return box;
+    }
+
+    /* The closed card's foot, drawn from both branches. `listed` is 0 on the
+       empty one, which has no row to send anybody into, so it says only what
+       the read could not cover. */
+    function closedCapFoot(cappedClosed, listed) {
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(icon('history'));
       foot.appendChild(h('span', {
@@ -1385,11 +1437,10 @@
           ? 'Only ' + PAGE + ' closed problems can be read at once and that many came ' +
             'back, worst first and then oldest, so the most recent closures are missing ' +
             'from this list. '
-          : recent.length > CLOSED_SHOWN ? fmt.int(recent.length) + ' closed. ' : '') +
-          'Open one to read the note it was closed with.'
+          : listed > CLOSED_SHOWN ? fmt.int(listed) + ' closed. ' : '') +
+          (listed ? 'Open one to read the note it was closed with.' : '')
       }));
-      box.appendChild(foot);
-      return box;
+      return foot;
     }
 
     function closedRow(problem, data) {
@@ -1515,8 +1566,8 @@
       if (rulesFailed) {
         body.appendChild(h('p', {
           className: 'tiny is-warn',
-          text: 'Where problems are sent could not be read, so whether anything ' +
-            'is getting through is unknown.'
+          text: 'This could not be read, so whether anything is getting through ' +
+            'is unknown.'
         }));
         box.appendChild(body);
         return box;
@@ -1573,7 +1624,7 @@
        rules are checking and found nothing, or the rules are not in a
        position to find anything. Only the second is a statement about the
        health of the system, and it is the only one allowed to make it. */
-    function emptyState(data, armed) {
+    function emptyState(data, armed, rulesFailed) {
       var wrap = h('div', { className: 'stack' });
       var box = S.card();
       var block;
@@ -1591,7 +1642,10 @@
           'No problem matches ' + filterSentence() + '.',
           'This says nothing about the problems these filters exclude.'
         ];
-        if (!armed.trustworthy) {
+        if (rulesFailed) {
+          missLines.push(UNREAD_WATCH +
+            ' That is the case whatever these filters are set to.');
+        } else if (!armed.trustworthy) {
           missLines.push(notArmedSentence(armed) +
             ' That is the case whatever these filters are set to.');
         }
@@ -1617,6 +1671,22 @@
           if (!S.resetRange()) load();
         });
         block.appendChild(h('div', { className: 'row mt-sm' }, [clearButton]));
+      } else if (rulesFailed) {
+        /* An empty list and alerting that has stopped look identical, and the
+           ONE thing that tells them apart is the rules read. When that read
+           is the thing that failed, the page has not got the fact and does
+           not get to state either one -- `armedState({})` is the empty object
+           the pane built for itself at the top of render(), so every count in
+           it is zero because nothing answered, not because nothing is there.
+           "There are no alert rules at all" over that object is the same
+           defect the routing card carried, in the state where it costs more:
+           an operator reads it three inches from "this part is unread". */
+        block = S.stateBlock('warn', 'Nothing is open, and whether anything is watching is unknown', [
+          UNREAD_WATCH,
+          'An empty problems page and alerting that has stopped look identical, and the ' +
+            'read that tells them apart is the one that failed. Treat this as unverified ' +
+            'until the rules can be read.'
+        ]);
       } else if (armed.trustworthy) {
         block = S.stateBlock('check', 'Nothing is wrong, and the watching is working', [
           fmt.plural(armed.checking, 'rule') + ' of ' + fmt.int(armed.total) +
@@ -1676,6 +1746,11 @@
 
     /* Why nothing is being judged, each reading of it separately, because
        they need different things done about them. */
+    /* Said wherever the page would otherwise have reported a verdict about
+       the watching that it read off an answer that never arrived. */
+    var UNREAD_WATCH = 'The rules could not be read, so whether anything is watching ' +
+      'is unknown.';
+
     function notArmedSentence(armed) {
       if (!armed.total) return 'There are no alert rules at all.';
       if (!armed.enabled) {

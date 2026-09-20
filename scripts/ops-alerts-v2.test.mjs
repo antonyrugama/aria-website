@@ -504,13 +504,26 @@ test('a closed card states the reason and the person once, not the word Closed t
   const text = allText(problemCards(dom)[0]).replace(/\s+/g, ' ');
   assert.equal((text.match(/Closed/g) || []).length, 1,
     'the card says "Closed" more than once: ' + text);
-  assert.match(text, /Resolved by owner@example\.invalid/,
-    'the reason and the person went missing with the duplication');
+  /* Em dash, not "by": two of the three reasons are not clauses, so
+     "Nothing to do by somebody" does not parse. */
+  assert.match(text, /Resolved \u2014 owner@example\.invalid/,
+    'the reason and the person went missing with the duplication: ' + text);
 
   /* The closed LIST has no pill, so its sentence still carries both. */
   const listed = allText(dom.doc.querySelector('.c-list')).replace(/\s+/g, ' ');
   assert.match(listed, /Closed as resolved by owner@example\.invalid \d+ days ago/,
     'the closed list lost the sentence that is its only statement of when: ' + listed);
+
+  /* The reason an operator can actually choose. It is not a clause, so the
+     short form has to hold it without "by" on the end of it. */
+  const nothing = await boot({
+    search: '?range=7d',
+    open: { problems: [] },
+    closed: { problems: [closedProblem({ closeReason: 'no_action_needed' })] },
+  });
+  assert.match(allText(problemCards(nothing)[0]).replace(/\s+/g, ' '),
+    /Nothing to do \u2014 owner@example\.invalid/,
+    'the short close sentence reads "Nothing to do by somebody", which does not parse');
 });
 
 /* ============================== de-duplication ========================= */
@@ -552,6 +565,40 @@ test('an empty queue says whether anything was in a position to notice', async (
   assert.match(text, /Nothing is being reported, and that is the problem/);
   assert.doesNotMatch(text, /Nothing is wrong/,
     'a page with nothing judging still said nothing was wrong');
+});
+
+/* The ONE fact that tells an empty problems list apart from alerting that has
+   stopped is the rules read. When that is the read that failed, the pane has
+   built `armedState({})` for itself -- every count zero because nothing
+   answered -- and "there are no alert rules at all" read off that object is a
+   fabricated fact, printed three inches from "this part is unread, not
+   empty". The routing card carried the same defect and was fixed; the empty
+   state is its second call site, and the suite was green with it because no
+   test booted with an empty open read AND a failed rules read together. */
+test('an empty page over a failed rules read does not report that nothing is watching', async () => {
+  const dom = await boot({ open: { problems: [] }, rules: new Error('The rules broke.') });
+  const text = emptyText(dom);
+  assert.doesNotMatch(text, /no alert rules at all/,
+    'a rules read that never landed was reported as no rules existing: ' + text);
+  assert.doesNotMatch(text, /Treat this as unmonitored/,
+    'a rules read that never landed was reported as alerting having stopped');
+  assert.match(text, /whether anything is watching is unknown/,
+    'the empty page said nothing about the read that failed: ' + text);
+
+  /* The filtered branch is the same sentence on a second call site. */
+  const filtered = await boot({
+    open: { problems: [] }, rules: new Error('The rules broke.'), search: '?severity=critical',
+  });
+  assert.doesNotMatch(emptyText(filtered), /no alert rules at all/,
+    'the filtered empty state fabricated a verdict from a read that never landed');
+
+  /* And a read that DID land with no rules still says so, or the fix above is
+     "never say it" rather than "say it when it is true". */
+  const really = await boot({
+    open: { problems: [] }, rules: Object.assign(rulesFixture(), { rules: [] }),
+  });
+  assert.match(emptyText(really), /no alert rules at all/,
+    'an answer that really carries no rules stopped saying so');
 });
 
 test('a read that never landed is never allowed to say there is nothing here', async () => {
@@ -922,6 +969,37 @@ test('a capped closed read is disclosed on the window that does not filter by it
     'a read that came back short stopped saying how many it held: ' + shortText);
 });
 
+/* The closed query sends no date bound, so once more than PAGE closures exist
+   the PAGE that come back are the oldest and every one can predate this
+   window. The card then draws "nothing has been closed" from a sample that was
+   never in a position to say so -- beside a figures card that refuses to count
+   from the SAME sample for the SAME reason. The disclosure used to sit below
+   the early return that branch takes. */
+test('a capped closed read that reaches back past the window reports no zero', async () => {
+  const old = await boot({
+    closed: { problems: manyProblems(100).map((_, i) => closedProblem({
+      id: 'old_' + i, reference: 'AO-' + (600 + i),
+      firedAt: at(61 * DAY), closedAt: at(60 * DAY),
+    })) },
+  });
+  const card = old.doc.querySelector('.c-card') || old.doc.querySelector('.card');
+  const text = liveText(old);
+  assert.doesNotMatch(text, /Nothing has been closed in the last/,
+    'a capped read that reaches back past the window was reported as a zero: ' + text);
+  assert.match(text, /cannot be told from this read/,
+    'the card said nothing about why it cannot answer: ' + text);
+  assert.match(text, /most recent closures are missing/,
+    'the cap was not disclosed anywhere on a page that has no other disclosure');
+  assert.ok(card, 'the closed card was not drawn at all');
+
+  /* A read that came back SHORT and empty is a real zero and still says so. */
+  const none = await boot({ closed: { problems: [] } });
+  assert.match(liveText(none), /Nothing has been closed in the last/,
+    'a read that came back short stopped reporting a genuine zero');
+  assert.doesNotMatch(liveText(none), /most recent closures are missing/,
+    'a read that came back short was disclosed as capped');
+});
+
 test('a rate over too few closures is reported as counts instead', async () => {
   const few = await boot({
     search: '?range=30d',
@@ -1022,26 +1100,74 @@ test('a problem carries the dated time it started, not only how long ago', async
    closed" -- so an id derived from the problem alone put two elements with
    the same id in the document and both buttons' aria-controls resolved to
    the first. */
+function repeatedIds(dom) {
+  const ids = findAll(dom.doc.body, (n) => n.getAttribute && n.getAttribute('id'))
+    .map((n) => n.getAttribute('id'));
+  const seen = {};
+  return ids.filter((id) => {
+    if (Object.prototype.hasOwnProperty.call(seen, id)) return true;
+    seen[id] = true;
+    return false;
+  });
+}
+
 test('two views of one problem do not hand the document two elements with one id', async () => {
   const dom = await boot({
     search: '?range=7d',
     open: { problems: [] },
     closed: { problems: [closedProblem()] },
   });
-  const ids = findAll(dom.doc.body, (n) => n.getAttribute && n.getAttribute('id'))
-    .map((n) => n.getAttribute('id'));
-  const seen = {};
-  const dupes = ids.filter((id) => {
-    if (Object.prototype.hasOwnProperty.call(seen, id)) return true;
-    seen[id] = true;
-    return false;
-  });
-  assert.deepEqual(dupes, [], 'the document holds a repeated id: ' + JSON.stringify(dupes));
+  assert.deepEqual(repeatedIds(dom), [],
+    'one problem on two surfaces put a repeated id in the document: ' +
+    JSON.stringify(repeatedIds(dom)));
 
   /* Both surfaces really are on screen, or the assertion above is vacuous. */
   assert.equal(problemCards(dom).length, 1, 'the problem is not in the queue');
   assert.ok(withClass(dom.doc.body, 'c-row').length >= 1,
     'the problem is not in the closed list');
+
+  /* And several problems on ONE surface. The surface key fixes the first
+     collision and says nothing about this one. */
+  const many = await boot({
+    open: { problems: [problem(), problem({ id: 'prb_2', reference: 'AO-119' })] },
+  });
+  assert.equal(problemCards(many).length, 2, 'the queue does not hold two problems');
+  assert.deepEqual(repeatedIds(many), [],
+    'several problems on one surface put a repeated id in the document: ' +
+    JSON.stringify(repeatedIds(many)));
+});
+
+/* An id that no element carries is a disclosure a screen reader cannot follow,
+   and the attribute still reads correctly in the DOM -- so a test that compares
+   the two aria-controls STRINGS is true of two dangling references as well as
+   two live ones, and counting repeated ids gets MORE green when an id is
+   removed. Both of those were in this suite and neither saw it. This resolves
+   each reference to an element and asserts it is that button's own region. */
+test('every aria-controls on a problem card resolves to that button\'s own region', async () => {
+  const dom = await boot({
+    search: '?range=7d',
+    closed: { problems: [closedProblem()] },
+  });
+  const buttons = findAll(dom.doc.body,
+    (n) => n.tagName === 'BUTTON' && n.getAttribute('aria-controls'));
+  assert.ok(buttons.length >= 4,
+    'fewer disclosure buttons than the queue and the closed list should hold: ' +
+    buttons.length);
+
+  buttons.forEach((button) => {
+    const id = button.getAttribute('aria-controls');
+    const region = dom.doc.getElementById(id);
+    assert.ok(region,
+      'aria-controls="' + id + '" on ' + allText(button).trim() +
+      ' points at an id no element in the document carries');
+
+    /* And at the right one: the region a click fills, not some other card's. */
+    button.dispatch('click');
+    assert.ok(allText(region).trim().length > 0,
+      'the region ' + id + ' named by ' + allText(button).trim() +
+      ' stayed empty when the button was pressed, so it is not that button\'s own');
+    button.dispatch('click');
+  });
 });
 
 /* Details and the close form used to write into one host, so each button
