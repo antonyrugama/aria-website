@@ -1,0 +1,371 @@
+/* Cloud costs' own shapes, on top of assets/aria.css and
+   assets/shell-pane-v2.css.
+
+   One stylesheet per pane on purpose: three pane remodels are in flight
+   against this repo at once and a shared file is a guaranteed conflict. Some
+   of what is here also exists in a sibling pane's stylesheet; a later issue
+   can lift the common part out once the remodels have landed.
+
+   Everything here is built from assets/aria.css's tokens. No colour value is
+   written in this file: a hex here would be outside the palette's AA proof
+   and would not follow the theme.
+
+   Adapted from docs/mocks/ops-dashboard-v2/assets/pane-understand.css in the
+   Aria monorepo, which is the approved design. What changed and why is in
+   ops/README.md under "Cloud costs on v2". */
+
+/* ---------------------------------------------------------------- tones
+
+   The mock writes style="--c:var(--amber)" on a marker; style-src 'self'
+   with no 'unsafe-inline' forbids a style attribute, so the six series
+   tokens the route sends are classes. Named for the route's own values
+   (s1..s6) rather than for the colours, because the route decides which row
+   gets which and this file must not second-guess it. */
+.sp-s1 { --c: var(--cyan); }
+.sp-s2 { --c: var(--violet); }
+.sp-s3 { --c: var(--emerald); }
+.sp-s4 { --c: var(--amber); }
+.sp-s5 { --c: var(--blue); }
+.sp-s6 { --c: var(--rose); }
+.sp-muted { --c: var(--ink-3); }
+
+/* ------------------------------------------------------------ the bill rows
+
+   One grouping of the bill, one row per line of it. Four columns at a desk:
+   the tone marker, the words, the money, the change. Below 720px the money
+   moves under the words, because a currency figure and a label cannot share
+   360px without one of them wrapping into the other. */
+.sp-rows { display: flex; flex-direction: column; gap: 14px; }
+
+.sp-row {
+  display: grid;
+  grid-template-columns: 4px minmax(0, 1fr) auto auto;
+  gap: 0 12px;
+  align-items: start;
+}
+
+.sp-mark {
+  width: 4px;
+  align-self: stretch;
+  border-radius: 20px;
+  background: var(--c, var(--cyan));
+  min-height: 34px;
+}
+
+.sp-name {
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--ink);
+  /* A service name is Azure's, not ours, and some of them have no space in
+     them at all. Without this one declaration the longest token sets the
+     column's minimum width and takes the page sideways at 320px. */
+  overflow-wrap: anywhere;
+}
+
+.sp-desc {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-top: 3px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sp-bar { margin-top: 9px; }
+
+.sp-money { text-align: right; }
+
+.sp-amt {
+  font-size: 13.5px;
+  font-weight: 560;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.sp-share {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-top: 3px;
+  white-space: nowrap;
+}
+
+.sp-chg { display: flex; justify-content: flex-end; align-items: center; }
+
+/* A row the mapping has never seen. The route sends it as its own category
+   rather than folding it into a neighbour, so it is drawn as its own line
+   with a word on it -- never a tone alone, which says nothing to a reader
+   who cannot see it. */
+.sp-row-ungrouped .sp-name { color: var(--amber-ink); }
+
+/* ------------------------------------------------------ the reconciliation
+
+   The pane's central claim, and the reason it is a line of its own rather
+   than a sentence: every row above adds up to the billed total exactly. The
+   figure is printed beside the rows it is the sum of. */
+.sp-recon {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.sp-recon svg { width: 14px; height: 14px; flex: none; }
+.sp-recon-ok svg { color: var(--emerald-ink); }
+.sp-recon-off svg { color: var(--rose-ink); }
+
+.sp-recon-gap { flex: 1 1 auto; min-width: 0; }
+
+.sp-recon-total {
+  font-size: 13.5px;
+  font-weight: 620;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- the view switch
+
+   Three groupings of one bill. The mock draws them as a segmented control in
+   the card head; here they are real radio-shaped buttons with aria-pressed,
+   because the switch changes what the card below says and a screen reader
+   has to be told which one is on. */
+.sp-views { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ------------------------------------------------------------- the headline
+
+   What the period cost, and what it is on course to become. The two sit
+   side by side because either alone invites the wrong reaction halfway
+   through a month. */
+.sp-head { display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: flex-end; }
+
+.sp-head-main { min-width: 0; }
+
+.sp-total {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 34px;
+  font-weight: 620;
+  letter-spacing: -.02em;
+  color: var(--ink);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.sp-total-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.sp-fore { min-width: 0; }
+
+.sp-fore-label {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.sp-fore-value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+  font-weight: 560;
+  color: var(--ink);
+  margin-top: 5px;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- the day line
+
+   The scale is HTML beside the picture rather than <text> inside it:
+   role="img" is children-presentational, so <text> in there is announced to
+   nobody, and the drawing is stretched to the card's width so text inside it
+   lands at about four pixels on a phone. */
+.sp-chart-wrap { display: flex; align-items: stretch; gap: 8px; }
+.sp-axis { position: relative; flex: none; width: 58px; }
+.sp-chart-wrap .chart { flex: 1; min-width: 0; height: 210px; }
+
+.sp-tick {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.chart { display: block; width: 100%; }
+
+/* Both strokes keep their width under a scale that is not the same in both
+   directions, which is what preserveAspectRatio="none" does to them. */
+.chart line, .chart path { vector-effect: non-scaling-stroke; }
+
+.sp-ln {
+  fill: none;
+  stroke: var(--c, var(--cyan));
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sp-ln-prev { stroke-dasharray: 4 4; stroke-width: 1.5; }
+
+/* A single billed day between two gaps has no line to belong to. A
+   zero-length path with a round cap rather than a circle: the drawing is
+   stretched to its box, and a circle would be drawn as an ellipse. */
+.sp-ln-pt {
+  fill: none;
+  stroke: var(--c, var(--cyan));
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.sp-gridline { stroke: var(--line); stroke-width: 1; }
+
+.sp-xaxis {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 0 66px;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.sp-xaxis span { white-space: nowrap; }
+
+/* ------------------------------------------------------------ the service table
+
+   Scrolls sideways inside its own card rather than taking the page with it.
+   A table is the right shape for this -- one service per row, four facts per
+   service -- and no width makes four columns of money fit a 320px screen. */
+.sp-scroll { overflow-x: auto; }
+
+.sp-tbl { width: 100%; border-collapse: collapse; }
+
+.sp-tbl th, .sp-tbl td {
+  padding: 8px 12px 8px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.sp-tbl th {
+  font-size: 11px;
+  font-weight: 560;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+
+.sp-tbl tbody tr:last-child td { border-bottom: 0; }
+
+.sp-tbl th[scope="row"] {
+  font-size: 12.5px;
+  font-weight: 520;
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: 0;
+  /* Azure service names run long and some carry no space. Without this the
+     longest one sets the column's minimum width and the card scrolls when
+     it did not need to. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 132px;
+}
+
+.sp-tbl td.sp-r { text-align: right; white-space: nowrap; }
+
+.sp-num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* -------------------------------------------------------------- the absences
+
+   A figure the answer does not carry is words, never a zero. On a pane about
+   money a zero is a claim, and it is the one claim a missing field must not
+   be turned into. */
+.sp-absent {
+  color: var(--ink-3);
+  font-style: normal;
+  font-size: 12.5px;
+}
+
+/* --------------------------------------------------------------- narrow
+
+   A card's min-content width sets the page's, because .grid (aria.css:366)
+   declares no grid-template-columns and the implicit auto track is sized by
+   its content. Without this a long service name in the table below takes the
+   whole page sideways instead of scrolling inside its own card. */
+.grid > .card { min-width: 0; }
+
+/* A .pill is nowrap, so the poller-failure pill carries its whole detail
+   sentence on one line, .band-end (aria.css:363, display:flex) grows to hold
+   it, and the PAGE goes sideways: measured 1036/768 and 1036/320 before this
+   rule, 768/768 and 320/320 after. It is not in a narrow-width media query
+   because the pill is as long as the failure text, so no viewport is wide
+   enough by construction.
+
+   This one declaration is the whole fix, and the rest of the obvious block
+   around it is deliberately absent because it was measured to do nothing:
+   aria.css:360 already sets flex-wrap on .band-head, restating it or adding
+   it to .band-end leaves .band-end's width identical at 320, 375 and 768, and
+   `margin-left: 0` leaves every measurement unchanged at 320 to 768 because a
+   wrapped .band-end already fills its line. Deleting THIS line alone
+   reinstates 436/320. */
+.band-end .pill { white-space: normal; }
+
+@media (max-width: 720px) {
+  /* aria.css:398 gives .card-head no flex-wrap, so the three view buttons
+     stay beside the card title and squeeze it: measured, the title block
+     drops from 236px to 104px and its note breaks over three lines while the
+     switch itself wraps to two. Giving the switch its own full-width row
+     below the title is the fix. */
+  .card-head { flex-wrap: wrap; }
+  .card-end { margin-left: 0; width: 100%; }
+  .sp-views { width: 100%; }
+
+  .sp-row {
+    grid-template-columns: 4px minmax(0, 1fr) auto;
+    gap: 0 10px;
+  }
+  /* The change pill moves under the money, in the same column, rather than
+     being dropped: a row that only says it went up is a row that has lost
+     the thing it went up from. */
+  .sp-chg {
+    grid-column: 3;
+    justify-content: flex-end;
+    margin-top: 6px;
+  }
+  .sp-total { font-size: 28px; }
+  .sp-axis { width: 52px; }
+  .sp-xaxis { margin-left: 60px; }
+}
+
+@media (max-width: 420px) {
+  .sp-head { gap: 16px; }
+  .sp-total { font-size: 25px; }
+  .sp-chart-wrap .chart { height: 180px; }
+
+  /* Six tick labels is what the route strides down to, and six dates at
+     10.5px plus the y-axis gutter do not fit 320px: the last one lands 6.4px
+     past the viewport and takes the page with it (measured 326/320 on a
+     closed period, where the dates are widest). The ticks shrink rather than
+     some of them being dropped, because which days the route chose to label
+     is its statement about the series, not this stylesheet's. */
+  .sp-xaxis { margin-left: 56px; gap: 2px; font-size: 9.5px; }
+
+  /* The service table scrolls sideways inside its card rather than taking
+     the page with it, but at 375px four money columns miss fitting by a few
+     pixels and the change pill is cut mid-figure. Tightening the gutters
+     buys those pixels back; the scroller stays for the widths where nothing
+     can. */
+  .sp-tbl th, .sp-tbl td { padding-right: 6px; }
+  .sp-tbl .pill { font-size: 10.5px; padding: 2px 6px; }
+}
