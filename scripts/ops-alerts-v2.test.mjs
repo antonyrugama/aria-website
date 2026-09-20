@@ -35,7 +35,9 @@
      - Anything the operations API decides. The role checks below prove the
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
-       monorepo. */
+       monorepo.
+     - That no value becomes markup. The last test here pins three spellings
+       and nothing more; it is a prohibition, not a proof. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -834,8 +836,14 @@ test('a problem links to the pane the answer named, at the file the registry giv
   const dom = await boot({});
   const links = findAll(problemCards(dom)[0], (n) => n.tagName === 'A');
   assert.equal(links.length, 1, 'a problem offered more than one way out, or none');
-  assert.equal(links[0].getAttribute('href').split('?')[0], 'jobs-live.html',
+  const href = links[0].getAttribute('href');
+  assert.equal(href.split('?')[0], 'jobs-live.html',
     'the doorway does not go to the pane that owns the detail');
+  assert.equal(href, dom.shell.paneHref('jobs'),
+    'the doorway is not the registry\'s own link for that pane, so it does not ' +
+    'carry the selection across: ' + href);
+  assert.notEqual(href, 'jobs-live.html',
+    'the link is the bare file, so the filters the operator set do not travel with it');
   assert.equal(allText(links[0]), 'Happening now');
 
   const nowhere = await boot({
@@ -893,7 +901,11 @@ test('the page loads one design system and one theme decision', () => {
   assert.ok(!/unsafe-inline/.test(html), 'the CSP grew unsafe-inline');
 });
 
-test('nothing on this pane turns a value into markup', () => {
+/* A prohibition on the spelling, not a proof about the behaviour: it pins the
+   three names, and a value that became markup by some other route would walk
+   past it. It is here because those three names are how it would actually
+   happen, and because nothing else in the suite would notice. */
+test('the pane never spells innerHTML, outerHTML or insertAdjacentHTML', () => {
   assert.ok(!/innerHTML/.test(PANE_SRC), 'the pane reached for innerHTML');
   assert.ok(!/\.outerHTML/.test(PANE_SRC), 'the pane reached for outerHTML');
   assert.ok(!/insertAdjacentHTML/.test(PANE_SRC), 'the pane reached for insertAdjacentHTML');

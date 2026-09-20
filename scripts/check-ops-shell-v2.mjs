@@ -1120,7 +1120,9 @@ try {
   await cdp.send('Network.setBlockedURLs', { urls: [] });
 
   /* ------------------------------------------------------- existing panes */
-  /* Nothing in this change touches a pane file. This is the proof. */
+  /* Every pane page, in both themes: that it renders something and raises
+     nothing. A pane moving to the v2 layer is exactly the change that could
+     break one, so this loop is the regression check for that move as well. */
   for (const theme of THEMES) {
     await setTheme(theme);
     for (const pane of PANES) {
