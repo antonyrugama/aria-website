@@ -653,6 +653,65 @@ function numerals(text) {
   return (text.match(/\d/g) || []).length;
 }
 
+/* ======================= the fixture is an answer ====================== */
+
+test('every answer this file builds is a shape the route can send', async () => {
+  /* Stadiora/Aria#10476. Two of the payloads this file used to hand the pane
+     were shapes `GET /api/ops/usage` cannot produce: a feature row whose
+     denominator was a DIFFERENT app's population -- the route sends one
+     denominator per app, that app's own active people (`opsUsageView.ts:689`)
+     -- and three `?scope=mobile` answers made by slicing `apps` down to one
+     while leaving both apps' signup grids and version rows in place, when the
+     route builds all four members from the same scoped list (`:561`, `:655`,
+     `:683`, `:686`).
+
+     The repair is that the fixture is composed from a scope rather than
+     edited after the fact, so neither shape is expressible. This holds it:
+     every row of every answer the builder makes belongs to an app the answer
+     has a column for, and every feature denominator is that app's own Active
+     people, read off the column rather than restated here. */
+  const answers = [];
+  ['all', 'mobile', 'coaches'].forEach((scope) => {
+    [['shipped', APP_PARTS], ['young', YOUNG_PARTS], ['unmeasured', UNMEASURED_PARTS]]
+      .forEach(([name, parts]) => {
+        answers.push([`${scope}/${name}`, usageFixture(null, { scope, parts }), scope]);
+      });
+  });
+  answers.push(['90 day', partial90(), 'all']);
+
+  answers.forEach(([name, answer, scope]) => {
+    const labels = answer.apps.map((app) => app.label);
+    assert.ok(labels.length, name + ' has no app columns at all');
+    assert.equal(answer.filters.app, scope,
+      name + ' says it was asked for ' + answer.filters.app);
+    assert.equal(labels.length, SCOPES[scope].length,
+      name + ' has ' + labels.length + ' columns for a selection of '
+      + SCOPES[scope].length + ': ' + labels);
+
+    (answer.cohorts || []).forEach((grid) => {
+      assert.ok(labels.indexOf(grid.label) !== -1,
+        name + ' carries a signup grid for ' + grid.label + ', which has no column: ' + labels);
+    });
+    ((answer.coverage || {}).versions || []).forEach((version) => {
+      assert.ok(labels.some((label) => version.label.indexOf(label) === 0),
+        name + ' carries a version row for ' + version.label + ', which has no column');
+      assert.ok(labels.some((label) => version.note === `Share is of ${label} sessions.`),
+        name + ' names another app in a version note: ' + version.note);
+    });
+    ((answer.features || {}).rows || []).forEach((row) => {
+      const column = answer.apps.filter((app) => app.label === row.app)[0];
+      assert.ok(column, name + ' carries a ' + row.app + ' feature row with no ' + row.app
+        + ' column');
+      const active = column.metrics.filter((m) => m.label === 'Active people')[0];
+      assert.equal(row.denominator, active.value,
+        name + ': the ' + row.label + ' row is measured against ' + row.denominator
+        + ' people while ' + row.app + ' had ' + active.value);
+      assert.ok(row.users <= row.denominator,
+        name + ': more people used ' + row.label + ' than were active in ' + row.app);
+    });
+  });
+});
+
 /* ========================= the read and the filters ===================== */
 
 test('the read carries the whole selection, not part of it', async () => {
