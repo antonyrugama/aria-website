@@ -37,6 +37,13 @@
        twenty-odd places this file reads the sheet's RULES through
        declarations(). Those are read as CSS, not as prose about CSS, so
        nothing they say can overclaim -- but no test counts them.
+     - The sheet's own reading rule, the HOW TO READ THIS COMMENT paragraph
+       at the top of it. The devices below IMPLEMENT that rule; nothing
+       reads it, so rewording it moves nothing -- measured, mutation M7-A4
+       on #75, where dropping the clause that makes a paragraph citation
+       count left the suite green. It is the one claim in the sheet that
+       cannot have a proof pointer, because it is the sentence that says
+       what a proof pointer IS.
      - What the stylesheet LOOKS like. Nothing here renders it. The lines it
        reads as data are NON-TOKEN PAINT, AVATAR INK TOKEN, SAME FOCUS RING
        AS and DIFFERENT FOCUS RING; the rest of what THREE sections of this
@@ -442,11 +449,11 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
    `tabindex="-1"` asks to be OUT of the tab order, and a tabindex whose value
    has no leading digits is IGNORED by the parser.
 
-   Two independent reviews have found more since, and a third more again; all
-   of them are rows of FOCUSABLE_PROBES marked FOUND IN REVIEW, and how many
-   is printed beside the table rather than typed here -- typing it here is
-   how this sentence came to say five and six while the table said six and
-   eight.
+   Independent review has found more since; all of them are rows of
+   FOCUSABLE_PROBES marked FOUND IN REVIEW, and how many is printed beside
+   the table rather than typed here. No count of the rounds either: this
+   sentence said "two, and a third more again" through five of them, which
+   is the same drift one line down, in the paragraph warning about it.
    What the two rounds between them corrected: tabindex is fed through HTML's
    rules for parsing INTEGERS rather than validated, and a parsed value
    outside the range of a long is an error just as a missing digit is; only
@@ -458,8 +465,9 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
    Every answer below is a row of FOCUSABLE_PROBES, which runs this helper
    against the case and compares it with a typed expectation. FOCUSABLE_PROBES
    is this helper's TEST surface, and saying it is the helper's whole surface
-   would be the claim this file exists to stop making: two review rounds each
-   found answers no row covered, and each time the row came after the finding.
+   would be the claim this file exists to stop making: review rounds have
+   repeatedly found answers no row covered, and each time the row came after
+   the finding rather than before it.
    What it cannot decide it REFUSES by throwing, rather than guessing: a wrong
    answer from a guard is worse than no guard.
 
@@ -474,10 +482,13 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
    was false of a fourth case it was covering: a radio group's one stop IS
    decided by type, name and checked. The fourth review of #75 measured four
    members this helper called tab stops that Chrome gives none to. A NAMED
-   radio is now refused rather than answered -- at any tabindex, a
-   non-negative one included, which the fifth review found still answered --
-   because the group is the owner form's business and not one node's; an
-   unnamed one is answered. */
+   radio is now refused rather than answered at any NON-NEGATIVE tabindex,
+   which is the narrowest true statement of it: the fifth review of #75 found
+   an explicit tabindex="0" or "2" still being answered, and the refusal moved
+   above that branch. It sits BELOW the disabled and negative-tabindex
+   branches, which stay answers -- both are decided by the node alone
+   whatever its group does, and refusing them would be wrong (mutation M6-R4
+   on #75). An unnamed radio is answered. */
 const FOCUSABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'];
 const DISABLEABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'FIELDSET', 'OPTGROUP', 'OPTION'];
 const HREF_TAGS = ['A', 'AREA'];
@@ -662,8 +673,8 @@ function focusable(node) {
    here is the typed column.
 
    The rows marked WAS WRONG are the ones Stadiora/Aria#10633 enumerated. The
-   rows marked FOUND IN REVIEW are the ones two rounds of independent review
-   of the fix for those found still wrong. Both are counted below the table
+   rows marked FOUND IN REVIEW are the ones independent review of the fix for
+   those found still wrong. Both are counted below the table
    rather than here, so a count and its rows cannot come apart. */
 const FOCUSABLE_PROBES = [
   { name: '<button>', tag: 'button', answer: true },
@@ -2309,8 +2320,9 @@ test('clearing the filters puts the window back as well as the pane\'s own contr
 
 /* ============================ the page itself ========================== */
 
-/* The sheet's reading rule -- "anything this sheet says about another file is
-   bound by a test ONLY where the sentence saying it names that test" -- is
+/* The sheet's reading rule -- the paragraph at the top of
+   ops/assets/pane-alerts-v2.css, not quoted here because a quotation of it
+   goes stale in silence and this one had, by one clause, for two rounds -- is
    the whole device this pane's docblock rests on, and it rests in turn on
    those citations resolving. Nothing checked that they did, so any cited test
    could be renamed with the suite green and every sentence citing it would go
@@ -2339,12 +2351,18 @@ const SHEET_QUOTES_THAT_ARE_NOT_CITATIONS = ['Still happening'];
    (mutation M4-R2 on #75). Each cited test carries its own mutations; this one
    only stops the sheet naming a test that no longer exists.
 
-   Two more shapes it does not see, both latent today. The scan reads STRAIGHT
-   double quotes, so a citation respelled with typographic quotes leaves the
-   set; that is caught by the identity below UNLESS the same title is cited
-   from two places, which the set comparison deliberately allows -- then one
-   of the two sites silently stops being checked. No title is doubly cited
-   at the moment. */
+   One shape it does not see: the scan reads STRAIGHT double quotes, so a
+   citation respelled with typographic quotes leaves the list entirely. That
+   IS caught, because the comparison below is by MULTISET.
+
+   It used to be by set, and this comment used to add that a doubly-cited
+   title would therefore have one of its two sites silently unchecked, "at
+   the moment" no title being doubly cited. That was false when it was
+   written: the rules-table title below is cited twice, at
+   pane-alerts-v2.css:150 and :311, and the suite printed the contradiction
+   every run -- cited 14 against a 13-entry list. Deleting either site was
+   green (found in the sixth review of #75). The list now carries a title
+   once per SITE, and the comparison counts. */
 const SHEET_CITATIONS = [
   'a problem card carries one severity, in the accent and both inks alike',
   'every rule switch is a real checkbox, reachable, stateful and named',
@@ -2357,6 +2375,9 @@ const SHEET_CITATIONS = [
   'the page loads one design system and one theme decision',
   'the reader refuses what READER_PROBES says it refuses, and walks past what it says it misses',
   'the rules table scrolls inside a box a keyboard can reach and a screen reader can name',
+  'the rules the sheet justifies by what the page draws name what it draws',
+  /* Twice: pane-alerts-v2.css:150 cites it for the pill's phrasing and :311
+     for the six columns. One entry per SITE, or deleting one site is green. */
   'the rules the sheet justifies by what the page draws name what it draws',
 ];
 
@@ -2497,12 +2518,14 @@ test('every test the stylesheet cites by name is a test this file registers', ()
      >= 8 against 14 real ones, six could be deleted in silence (found in the
      third review of #75) -- so the list itself is pinned and losing one is a
      deliberate edit here. */
-  assert.deepEqual([...new Set(cited)].sort(),
-    [...SHEET_CITATIONS, NON_TOKEN_PAINT_TITLE].sort(),
-    'the sheet cites a different set of tests than SHEET_CITATIONS lists, so a claim has '
-    + 'either gained or quietly LOST its proof pointer');
+  assert.deepEqual(cited.slice().sort(), [...SHEET_CITATIONS, NON_TOKEN_PAINT_TITLE].sort(),
+    'the sheet cites a different MULTISET of tests than SHEET_CITATIONS lists, so a claim '
+    + 'has either gained or quietly LOST its proof pointer. Counted per site, not per '
+    + 'title: a title cited from two places is listed twice, or deleting one of the two '
+    + 'goes unnoticed');
   console.log('stylesheet citations judged: '
-    + JSON.stringify({ quoted: quoted.length, cited: cited.length, resolved: cited.length }));
+    + JSON.stringify({ quoted: quoted.length, cited: cited.length,
+      distinctTests: new Set(cited).size }));
 });
 
 test('the page loads one design system and one theme decision', () => {
