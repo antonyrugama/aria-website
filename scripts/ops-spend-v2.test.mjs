@@ -687,6 +687,21 @@ function card(dom, heading) {
   return byClass(livePanel(dom), 'card').filter((n) => heading.test(allText(n)))[0];
 }
 
+/* The grouping card, found by the switch it carries rather than by its head,
+   because its head is whichever grouping is on. Scoping to it matters: the
+   per-service table below draws a reconciliation line of its own, so a
+   reconciliation assertion made over the whole panel passes on the wrong
+   card's sentence. */
+const switchCard = (dom) =>
+  byClass(livePanel(dom), 'card').filter((n) => byClass(n, 'sp-views').length > 0)[0];
+
+/* Every text run under a node joined once each -- see `runs` for why this is
+   not `allText`. A figure printed as a number and again inside a sentence
+   appears twice here and once in `runCount`. */
+const ownText = (node) => runs(node).join(' | ');
+const occurrences = (node, needle) =>
+  ownText(node).split(needle).length - 1;
+
 /* ------------------------------------------------- the fixture port itself
 
    The fixture builder above is code, and code that nothing checks is the
@@ -843,13 +858,20 @@ test('a row with no figure at all is not added up as a zero', async () => {
 
 test('a row the answer gives no figure for prints words, not a zero', async () => {
   const data = payload({ range: 'month', billedThrough: 10 });
+  /* Both drawings of a row, because they are different code: the grouping
+     card builds a row, the per-service table builds a table cell, and a
+     mutation in either one alone has to be caught here. */
   delete data.views.service.rows[1].micros;
   delete data.views.service.rows[1].shareBasisPoints;
+  delete data.views.category.rows[1].micros;
+  delete data.views.category.rows[1].shareBasisPoints;
 
   const dom = await boot({ costs: data });
   const live = livePanel(dom);
-  assert.ok(runCount(live, /^Not reported$/) >= 2,
-    'the figure and its share are both absent, and neither becomes $0.00');
+  assert.ok(runCount(card(dom, /By service/), /^Not reported$/) >= 2,
+    'in the table the figure and its share are both absent');
+  assert.ok(runCount(switchCard(dom), /^Not reported$/) >= 1,
+    'and the grouping card above it says so too, rather than drawing a $0.00 row');
   assert.equal(runCount(live, /^\$0\.00$/), 0,
     'a zero on a cost pane is a claim that something was billed nothing');
 });
@@ -897,10 +919,17 @@ test('an answer with no billed total at all does not print one', async () => {
 test('a recently collected answer prints when it was collected, without a warning', async () => {
   const dom = await boot({ costs: payload({ asOf: hoursAgo(5) }) });
   const live = livePanel(dom);
-  assert.equal(runCount(live, /^Collected \d+ \w+ \d{4} \d\d:\d\d UTC$/), 1,
+  const stamped = byClass(live, 'pill')
+    .filter((n) => /^Collected \d+ \w+ \d{4} \d\d:\d\d UTC$/.test(ownText(n)));
+  assert.equal(stamped.length, 1,
     'the collection time is on screen beside the figures');
+  /* The glyph is decorative and carries no name in the DOM, so the warn tone
+     is the one part of "this is a problem" a test can read. Five hours is
+     inside one publishing cycle and the pill must not carry it. */
+  assert.equal(hasClass(stamped[0], 'warn'), false,
+    'a fresh answer is stated, not warned about');
   assert.equal(runCount(live, /behind, collected/), 0,
-    'five hours is inside one publishing cycle, so nothing is behind');
+    'and nothing says it is behind');
 });
 
 test('an answer older than two publishing cycles says how far behind it is', async () => {
@@ -1227,14 +1256,27 @@ test('switching grouping redraws from the answer in hand, without reading again'
 test('every grouping reconciles to the same bill, which is what makes switching safe', async () => {
   const data = payload({ range: 'month', billedThrough: 10 });
   const dom = await boot({ costs: data });
+  const bill = '$1,030.00';
 
-  for (const label of ['Resource group', 'Service']) {
+  /* Scoped to the grouping card. The per-service table draws a reconciliation
+     line too, so asserting over the whole panel would pass on that one and
+     say nothing about the card the switch actually redraws. */
+  const seen = [];
+  for (const label of ['Category', 'Resource group', 'Service']) {
     const button = byClass(livePanel(dom), 'btn')
       .filter((n) => String(n.textContent) === label)[0];
+    assert.ok(button, label + ' is offered');
     button.dispatchEvent({ type: 'click' });
-    assert.ok(runCount(livePanel(dom), /rows adding up to the bill$/) >= 1,
-      label + ' adds up to the bill too');
+
+    const on = switchCard(dom);
+    assert.equal(runCount(on, /^\d+ rows adding up to the bill$/), 1,
+      label + ' states that its own rows add up');
+    assert.equal(runCount(on, new RegExp('^\\' + bill + '$')), 1,
+      label + ' prints the bill it adds up to');
+    seen.push(label);
   }
+  assert.deepEqual(seen, ['Category', 'Resource group', 'Service'],
+    'all three groupings were switched to, not one of them three times');
 });
 
 test('a grouping the answer has no rows for is not offered', async () => {
@@ -1289,6 +1331,13 @@ test('each figure on the headline is printed once, not once as a number and once
     assert.equal(runCount(head, /^\$1,030\.00$/), 1,
       'the period total appears once in its own card');
     assert.equal(runCount(head, /^\$3,090\.00$/), 1, 'and so does the forecast');
+    /* The rule the pane exists to follow is one fact per slot, and a caption
+       repeating a figure breaks it without ever producing a second bare run.
+       Counted across every run's text, not only runs that are the figure. */
+    assert.equal(occurrences(head, '$1,030.00'), 1,
+      'the total is not also spelled out in a sentence beside itself');
+    assert.equal(occurrences(head, '$3,090.00'), 1,
+      'and neither is the forecast');
   });
 
 /* ------------------------------------------------------------- the page */
