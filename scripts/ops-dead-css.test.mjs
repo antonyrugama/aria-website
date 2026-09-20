@@ -1476,6 +1476,8 @@ test('the pieces the analysis is built from behave', () => {
     'getAttributeNode returns a live Attr whose .value is a setter, so it is not a read');
   assert.equal(reach('document.body.constructor;'), 1,
     'an Object.prototype key is not a known reflected member');
+  assert.equal(reach('var v = document.body?.dataset;'), 1,
+    'an optional chain in front of a bare dataset read still stops the judgement');
   assert.equal(reach('document.body.appendChild(n);'), 0,
     'and the read-only list still keeps the arm alive');
 
@@ -1658,6 +1660,12 @@ const REFUSAL_DEMOS = {
     `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
     + `<script>var s = "<!--";</script><script>${WRITE}</script>`
     + '<!-- ordinary comment --></body></html>',
+    /* the same, with an EXTERNAL script inside the span: its body is empty, so
+       the script-text clause below cannot see this one and the <script tag
+       name in the span clause is the only thing refusing it */
+    `<!doctype html><html><head>${LINK}<title>a <!-- b</title>`
+    + '<script src="s.js"></script><!-- ordinary comment --></head>'
+    + '<body data-page="login">x</body></html>',
     /* the `<!--` is inside a <style>, where a browser sees no comment at all */
     '<!doctype html><html><head><style>/* <!-- */ .q { color: red; }</style>'
     + `${LINK}<!-- ordinary comment --></head><body data-page="login">x</body></html>`,
