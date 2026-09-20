@@ -385,6 +385,14 @@
     var CHIP_CLASS = { crit: 'down', warn: 'warn', info: 'info', ok: 'up' };
     var CHIP_ICON = { crit: 'warn', warn: 'warn', info: 'info', ok: 'check' };
 
+    /* The severities this pane can name, worst first, which is both the order
+       the chips are read in and the test for whether a severity is one of
+       them. A list rather than a lookup on the label map, because every plain
+       object already answers to `constructor` and `toString`, and a severity
+       arriving with one of those words in it would pass a truthiness test on
+       a map and then be counted as a severity the pane knows. */
+    var KNOWN_SEVERITIES = ['critical', 'warning', 'info'];
+
     function chip(tone, text) {
       var pill = h('span', { className: 'pill ' + (CHIP_CLASS[tone] || '') });
       pill.appendChild(icon(CHIP_ICON[tone] || 'info'));
@@ -395,18 +403,33 @@
     function ribbonChips(problems, armed, capped) {
       var row = h('div', { className: 'hero-chips' });
       var counts = { critical: 0, warning: 0, info: 0 };
+      /* Everything still open whose severity is not one of the three. Counted
+         rather than skipped: the ribbon above this row counts every open
+         problem, so a breakdown that quietly drops the ones it cannot name
+         sits under a title that contradicts it, and the problems that vanish
+         are exactly the ones nobody has looked at yet. */
+      var unknown = 0;
       /* Counted over everything still open, taken on or not, for the same
          reason the ribbon reads it that way: a problem with somebody's name on
          it is still a problem. */
       model.active(problems).forEach(function (p) {
-        if (counts[p.severity] !== undefined) counts[p.severity]++;
+        if (KNOWN_SEVERITIES.indexOf(p.severity) !== -1) counts[p.severity]++;
+        else unknown++;
       });
 
-      ['critical', 'warning', 'info'].forEach(function (severity) {
+      KNOWN_SEVERITIES.forEach(function (severity) {
         if (!counts[severity]) return;
         row.appendChild(chip(model.SEVERITY_TONE[severity],
           model.atLeast(fmt.int(counts[severity]), capped) + ' ' + severity));
       });
+
+      /* One chip for all of them rather than one per unrecognised word: the
+         count is the part that has to add up here, and the words themselves
+         are on the rows below, each shown as it arrived. */
+      if (unknown) {
+        row.appendChild(chip('info',
+          model.atLeast(fmt.int(unknown), capped) + ' of unknown severity'));
+      }
 
       var taken = model.takenOn(problems);
       if (taken.length) {
@@ -512,6 +535,30 @@
     var SEVERITY_ACCENT = { crit: 'acc-bad', warn: 'acc-warn', info: 'acc-blue' };
     var SEVERITY_INK = { crit: 'is-crit', warn: 'is-warn', info: 'is-info' };
 
+    /* A severity in words, for a value that may not be one of the three this
+       dashboard has a word for.
+
+       An unrecognised severity is shown exactly as it arrived rather than
+       translated, which is what alerts-model.js says its lookups do. For a
+       plain unrecognised word the Problems pane prints the same thing for the
+       same problem (pane-alerts.js:741), so two panes an operator moves
+       between during one incident say one word for one state. It does not
+       hold for the two cases below: that pane prints a function for
+       `constructor` and nothing at all for a severity that never arrived, and
+       fixing it is not in this pane's gift.
+
+       Only a severity that did not arrive at all, or arrived as something
+       that is not a word, falls back to "Unknown", because there is nothing
+       to show and a row that silently drops its prefix tells the operator
+       nothing is missing.
+
+       Both lookups go through textOf(), so a severity of `constructor` or
+       `toString` — words every plain object in JavaScript answers to — cannot
+       reach the screen as the source of a function. */
+    function severityWords(severity) {
+      return textOf(model.SEVERITY_LABEL[severity]) || textOf(severity) || 'Unknown';
+    }
+
     function queueItem(problem) {
       var tone = model.SEVERITY_TONE[problem.severity] || 'info';
       var box = S.card('accent q-item ' + (SEVERITY_ACCENT[tone] || 'acc-blue'));
@@ -531,12 +578,15 @@
          the h3. */
       words.appendChild(h('h4', {
         className: 'q-title ' + (SEVERITY_INK[tone] || 'is-info'),
-        text: model.SEVERITY_LABEL[problem.severity] + ': ' + problem.title
+        text: severityWords(problem.severity) + ': ' + problem.title
       }));
       words.appendChild(h('p', { className: 'q-desc', text: problem.summary }));
 
       var actions = h('div', { className: 'q-actions' });
-      var file = model.PANE_FILE[problem.workPane];
+      /* Through textOf() for the reason severityWords() is: the answer names
+         the pane, and a pane named `constructor` would make this lookup true
+         and put a function into an href. */
+      var file = textOf(model.PANE_FILE[problem.workPane]);
       /* The doorway. Overview owns no detail, so the only thing it offers is
          the pane where the work happens and the pane that owns the problem. */
       if (file && problem.workPane !== 'overview') {

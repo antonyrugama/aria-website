@@ -1,902 +1,958 @@
-/* Cloud costs.
+/* Cloud costs, on the v2 pane bootstrap.
 
-   The pane answers what we are paying for and whether anything is unusual, in
-   three views of the same money: a logical grouping for planning, the billing
-   grouping for reconciliation, and unit cost for decisions.
+   The pane answers what we are paying for, from one read of
+   GET /api/ops/costs. That route is unchanged by this work: this is a surface
+   remodel and no field moved to make it.
 
-   Two properties are load bearing and are checked in code rather than trusted:
+   Three properties are load bearing here. Each is checked by a test in
+   scripts/ops-spend-v2.test.mjs rather than only claimed in this comment:
 
-     1. **Every figure carries the moment it was true.** Cost data is never
-        live: the billing export publishes on a cycle, so a figure without its
-        "as of" is a figure pretending to be current. Staleness is shown, and
-        an old reading is still shown rather than replaced by nothing, because
-        losing the number is worse than knowing it is a few hours behind.
-     2. **The parts sum to the invoice.** Each view is a different way of
-        cutting one bill, so each has to add up to the same total. The pane
-        adds them and says so when they do not, rather than drawing five
-        confident rows under a total none of them reaches.
+     1. **The rows add up to the bill, and the page says so.** Every grouping
+        the route publishes is a re-sum of the same integer micros over the
+        same rows, with no top-N and no dropped tail, so the comparison is
+        exact rather than nearly exact. The pane does that arithmetic on
+        screen -- sums the rows it drew and prints the result beside the
+        billed total -- because a claim nobody can check is not the claim
+        this pane is making.
+     2. **A figure with no source is words, never a zero.** On a pane about
+        money a zero is a claim. The route is explicit that an absent field is
+        absent rather than zero, and the pane keeps that distinction.
+     3. **Every figure carries how old it is.** Cost data is never live: the
+        billing export publishes on a lag, so a figure without its collection
+        time is a figure pretending to be current. An old reading is still
+        shown rather than replaced by nothing, with its age beside it.
 
-   The All / Mobile / Coaches Web scope filter is deliberately absent here, and
-   the filter bar says so rather than leaving a gap: cloud spend is billed per
-   piece of infrastructure, so splitting one shared bill by client app would be
-   an invented number. */
+   The App scope control is absent, and the filter bar says so rather than
+   leaving a gap: cloud spend is billed per piece of infrastructure, so
+   splitting one shared bill by client app would be an invented number. The
+   registry owns that decision (`scope: false` with `scopeNote`), and the
+   Custom range is absent for a reason the registry also states: this route
+   refuses an unbounded range outright, so the option's only outcome would be
+   a failure card with a retry that cannot succeed.
+
+   Nothing here uses innerHTML and no style attribute is written into markup.
+   Two lengths are computed from the answer -- a share bar's width and a
+   gridline label's offset -- and both go through CSSOM, which the page's
+   Content-Security-Policy does not gate. */
 (function (global) {
   'use strict';
 
-  var shell = global.OpsShell;
-  var d = global.OpsPaneData;
-  var h = shell.h;
+  var S = global.OpsPaneShell;
+  var h = S.h;
+  var fmt = S.fmt;
 
   var PANE_ID = 'spend';
-
   var ENDPOINT = '/api/ops/costs';
+
+  /* Beyond this the answer is old enough to say so beside the figures rather
+     than only in a timestamp. Twice the route's own publish lag, so a normal
+     cycle never trips it and a missed one always does. */
+  var STALE_MULTIPLE = 2;
+
+  /* Used only when the answer did not carry a usable `publishLagHours`. The
+     route sends it on every response, including the ones with no figures, so
+     this is a value for an unreadable field rather than a second opinion
+     about Azure's publishing cycle. */
+  var FALLBACK_LAG_HOURS = 8;
+
+  var NOT_REPORTED = 'Not reported';
 
   /* Where the figures come from, built at the moment of the call.
 
-     The range is the only control this pane registers, and it has to travel:
-     the cost route defaults an absent range to this month, so a pane that sent
-     no querystring would answer "Last 3 months" with this month's bill and put
-     the operator's own selection in the bar above it as though it had been
-     applied. Every range the shell offers here is one this route serves, which
-     is why Custom is no longer among them. */
+     The range has to travel. The cost route defaults an absent range to this
+     month, so a pane that sent no querystring would draw this month's bill
+     under whatever the bar above it said, with nothing on screen admitting
+     the selection had been ignored. */
   function source() {
     return {
       paneId: PANE_ID,
       endpoint: ENDPOINT,
-      query: { range: shell.filters().range }
+      query: { range: S.filters().range }
     };
   }
 
-  var NOT_REPORTING = {
-    title: 'Cost reporting is not available yet',
-    detail: 'This pane asked the operations API for the bill and did not get ' +
-      'one back, so there is no total to show. A blank total would be ' +
-      'indistinguishable from a month that cost nothing.'
-  };
+  function list(value) { return Array.isArray(value) ? value : []; }
 
-  /* What the pane says when an answer arrives carrying no billed total.
-     Separate wording from the one above, because the two are different facts:
-     nothing was asked, against something answered and the answer was empty. */
-  var NO_TOTAL = {
-    title: 'This answer carried no billed total',
-    detail: 'The cost reporting answered, but the response held no total for ' +
-      'this period, so there is nothing to show it against and nothing for ' +
-      'the groupings below to be checked against.',
-    closing: 'A missing total and a zero total look identical on a bar, so ' +
-      'this pane draws neither. What this period cost is not something this ' +
-      'answer says, in either direction.'
-  };
-
-  /* A number from the payload, or null. Never a substituted zero: on a pane
-     about money, a zero is a claim, and it is the one claim a missing field
-     must not be turned into. */
-  function numeric(value) {
+  function num(value) {
     return (typeof value === 'number' && isFinite(value)) ? value : null;
   }
 
-  /* A money figure from the payload, or null.
-
-     Shape-strict, and that is the whole point of it existing separately from
-     numeric. A money field on this pane is an object carrying micros; reading
-     it as `box && box.micros` instead means a scalar `total: 0` short-circuits
-     the chain to the number 0, which is finite, which numeric accepts, which
-     puts "$0.00" under "Month to date" for a payload that reported no total at
-     all. The rule two comments up has to hold for every shape a sender can
-     send, not only for the absent one. Anything that is not an object with a
-     finite numeric micros, arrays and scalars included, is no figure. */
-  function moneyMicros(box) {
-    if (!box || typeof box !== 'object') return null;
-    return numeric(box.micros);
+  function text(value) {
+    return (typeof value === 'string' && value) ? value : null;
   }
 
-  function totalMicros(data) {
-    return moneyMicros(data && data.total);
+  /* The six series tokens the route cycles through, as the classes this
+     pane's stylesheet defines. An unrecognised token is drawn muted rather
+     than as a guess at which colour was meant. */
+  function toneClass(token) {
+    return /^s[1-6]$/.test(token) ? 'sp-' + token : 'sp-muted';
   }
 
-  /* ------------------------------------------------------- as of and stale */
-
-  /* The "as of" line, which every state that shows a figure carries.
-
-     Two separate facts, kept separate: when the reading was taken, and whether
-     the reading is behind where it should be. A pane that folds the second
-     into the first ends up either hiding staleness or shouting it on a normal
-     day. */
-  function asOfLine(data) {
-    var wrap = h('div', { className: 'row row-wrap asof' });
-    wrap.appendChild(shell.icon('clock'));
-
-    var stamp = d.utcStamp(data.asOf);
-    wrap.appendChild(h('span', {
-      text: stamp
-        ? 'As of ' + stamp + '.'
-        : 'The time of this reading was not reported, so it cannot be trusted as current.'
-    }));
-
-    if (data.publishLagHours) {
-      wrap.appendChild(h('span', {
-        text: 'Billing publishes on ' + d.article(data.publishLagHours) + ' ' +
-          data.publishLagHours + ' hour cycle, so today is only partly counted.'
-      }));
-    }
-
-    var stale = isStale(data);
-    if (stale) {
-      var badge = h('span', { className: 'badge badge-warn' });
-      badge.appendChild(shell.icon('warn'));
-      badge.appendChild(h('span', { text: stale.badge }));
-      wrap.appendChild(badge);
-      wrap.appendChild(h('span', { className: 'ink-warn', text: stale.detail }));
-      if (stale.also) {
-        wrap.appendChild(h('span', {
-          className: 'ink-warn',
-          text: 'The reporting also reported a failure of its own. ' + stale.also
-        }));
-      }
-    }
-    return wrap;
+  /* Every figure on this pane is integer micros in the answer's own currency.
+     One helper, so the currency cannot be dropped at one call site and kept
+     at another. */
+  function money(micros, data, digits) {
+    return fmt.money(micros, text(data.currency) || 'USD', digits);
   }
 
-  /* Returns the sentence explaining why a reading cannot be read as current,
-     or null.
-
-     Three independent sources of the answer, because they fail differently:
-     the reporting may say outright that its last attempt did not land, the
-     timestamp may be older than the publish cycle can explain, and the
-     timestamp may be ahead of now, which is not a fresh reading at all but two
-     clocks disagreeing. The third used to be invisible because the age was
-     clamped at zero, which made the one case nobody would guess at look like
-     the healthiest reading on the pane.
-
-     A disagreeing clock takes the badge, because it undermines any claim about
-     age, including the reporting's own. It does not take the other fact with
-     it: a declared export failure is independent of what the stamp says, and
-     is carried alongside as `also` rather than dropped, because it is the half
-     somebody can go and act on. */
-  function isStale(data) {
-    var declared = (data.staleness && data.staleness.state && data.staleness.state !== 'ok')
-      ? (data.staleness.detail || 'The last attempt to read costs did not land.')
-      : null;
-
-    var age = d.hoursSince(data.asOf);
-    if (age !== null && age < 0) {
-      return {
-        badge: 'Clocks disagree',
-        detail: 'This reading is stamped ' + d.hours(-age) + ' ahead of now, ' +
-          'so the reporting and this page do not agree on the time. Treat the ' +
-          'figures as unverified until that is explained.',
-        also: declared
-      };
-    }
-    if (declared) {
-      return { badge: 'Stale', detail: declared };
-    }
-    var lag = data.publishLagHours || 8;
-    if (age !== null && age > lag * 2) {
-      return {
-        badge: 'Stale',
-        detail: 'This reading is ' + d.hours(age) + ' old, which is longer ' +
-          'than the publishing cycle explains.'
-      };
-    }
-    return null;
+  /* A YYYY-MM-DD from the route, as the day it names. The formatters take an
+     instant, and a bare date parsed as one is already UTC midnight, so the
+     suffix is what stops a browser west of Greenwich printing the day
+     before. */
+  function day(date) {
+    var value = text(date);
+    return value ? fmt.utcDay(value + 'T00:00:00.000Z') : null;
   }
 
-  /* ------------------------------------------------------- budget header */
+  /* --------------------------------------------------------- how old it is
 
-  /* What the headline figure is the total of.
+     Two separate facts, and the pane never merges them. `asOf` is when the
+     figures were collected. `staleness` is the cost poller's own account of
+     whether collection is working at all. An answer collected an hour ago by
+     a poller that has failed every run since is fresh and broken at the same
+     time, and an operator needs both. */
 
-     It said "Month to date" whatever the range was, which was invisible while
-     this pane had no endpoint and became wrong the moment it had one: the same
-     words sat over a twelve month bill. The range travels in the response, so
-     the label is read from the answer rather than from the control, and an
-     unrecognised one falls back to words that are true of any window rather
-     than to the name of a window this might not be. */
+  function lagHours(data) {
+    var lag = num(data.publishLagHours);
+    return lag !== null && lag > 0 ? lag : FALLBACK_LAG_HOURS;
+  }
+
+  /* The age of the answer, beside the figures rather than under them.
+
+     This is the stale path: when the poller is behind, the number on screen
+     is old, and the page says how old next to it instead of serving it as
+     current. The threshold is the route's own publish lag doubled, so one
+     missed cycle shows and a normal one does not. */
+  function freshness(data) {
+    var asOf = text(data.asOf);
+    var hours = asOf ? fmt.hoursSince(asOf) : null;
+    var stamp = asOf ? fmt.utcStamp(asOf) : null;
+    if (hours === null || stamp === null) {
+      return h('span', { className: 'pill warn' }, [
+        S.icon('warn'), h('span', { text: 'Collected at an unreported time' })
+      ]);
+    }
+    if (hours >= lagHours(data) * STALE_MULTIPLE) {
+      return h('span', { className: 'pill warn' }, [
+        S.icon('warn'),
+        h('span', { text: fmt.hours(hours) + ' behind, collected ' + stamp })
+      ]);
+    }
+    return h('span', { className: 'pill' }, [
+      S.icon('clock'), h('span', { text: 'Collected ' + stamp })
+    ]);
+  }
+
+  /* What the poller says about itself, as a word and a glyph rather than a
+     colour.
+
+     Only when it is not `ok`: a poller doing its job is already stated by the
+     collection time beside it, and a pill repeating it would be that fact
+     twice. The route's own `detail` is the sentence, because it is the only
+     thing that knows which of the four reasons applies; `ok` is the one state
+     that carries no detail, and it is also the one state not drawn here. */
+  function pollerNote(data) {
+    var staleness = data.staleness || {};
+    var state = text(staleness.state);
+    if (!state || state === 'ok') return null;
+    var detail = text(staleness.detail);
+    return h('span', { className: 'pill warn' }, [
+      S.icon('warn'),
+      h('span', { text: detail || 'Cost collection is ' + state })
+    ]);
+  }
+
+  /* The part of the period that has a bill behind it.
+
+     Azure publishes on a lag and restates recent days, so a period is almost
+     never billed to its own end. Only when the two differ: a period billed in
+     full is already stated by the range name, and a pill repeating it would
+     be that fact twice. Neutral, not a warning -- a lag is how billing works,
+     not a fault. */
+  function billedNote(data) {
+    var period = data.period || {};
+    var billed = num(period.billedDays);
+    var inPeriod = num(period.daysInPeriod);
+    if (billed === null || inPeriod === null) return null;
+    if (billed <= 0 || billed >= inPeriod) return null;
+    var through = day(period.actualThrough);
+    var words = fmt.int(billed) + ' of ' + fmt.plural(inPeriod, 'day') + ' billed';
+    return h('span', { className: 'pill' }, [
+      S.icon('history'),
+      h('span', { text: through ? words + ', through ' + through : words })
+    ]);
+  }
+
+  function answerNotes(data) {
+    return [freshness(data), pollerNote(data), billedNote(data)]
+      .filter(function (node) { return !!node; });
+  }
+
+  /* --------------------------------------------------------- the headline */
+
+  /* The window these figures are of, from the answer's own range rather than
+     from the filter bar: the two can disagree for one paint while a read is
+     in flight, and the figures belong to the answer. */
   var RANGE_LABELS = {
-    'month': 'Month to date',
+    'month': 'This month to date',
     'last-month': 'Last month',
     '7d': 'Last 7 days',
     '3m': 'Last 3 months',
     '12m': 'Last 12 months'
   };
 
-  function totalLabel(data) {
-    var range = data && data.range;
-    return (typeof range === 'string' &&
-      Object.prototype.hasOwnProperty.call(RANGE_LABELS, range))
-      ? RANGE_LABELS[range] : 'Billed in this period';
+  function periodLabel(data) {
+    var range = text(data.range);
+    if (range && Object.prototype.hasOwnProperty.call(RANGE_LABELS, range)) {
+      return RANGE_LABELS[range];
+    }
+    var period = data.period || {};
+    var from = day(period.start);
+    var to = day(period.endExclusive);
+    if (from && to) return from + ' to ' + to;
+    return 'This period';
   }
 
-  function budgetCard(data) {
-    var currency = data.currency;
-    var card = d.card({});
-    var body = d.cardBody('stack-sm');
+  /* What the period cost, and what it is on course to become.
 
-    var total = totalMicros(data);
-    var forecast = moneyMicros(data.forecast);
-    var budget = moneyMicros(data.budget);
+     The two sit side by side because either alone invites the wrong reaction
+     a third of the way into a month: a total that looks small, or a forecast
+     with nothing behind it. */
+  function headline(data) {
+    var card = S.card();
+    var body = h('div', { className: 'card-body' });
 
-    /* The headline pair: what has been billed, and what that is on course to
-       become. Kept side by side because either one alone invites the wrong
-       reaction halfway through a month. */
-    var headline = h('div', { className: 'row row-wrap budget-head' });
-
-    var spent = h('div', {}, [
-      h('h2', { className: 'tile-label', text: totalLabel(data) }),
-      h('div', { className: 'row row-wrap budget-figure' }, [
-        h('div', { className: 'tile-value', text: d.money(total, currency) })
-      ])
+    var total = num((data.total || {}).micros);
+    var head = h('div', { className: 'sp-head' });
+    var main = h('div', { className: 'sp-head-main' }, [
+      h('h3', { className: 'kpi-label', text: periodLabel(data) })
     ]);
 
-    if (data.total && typeof data.total.changeBasisPoints === 'number') {
-      var up = data.total.changeBasisPoints > 0;
-      var delta = h('span', {
-        className: 'delta ' + (up ? 'delta-down' : 'delta-up'),
-        text: d.signedPercent(data.total.changeBasisPoints)
-      });
-      spent.lastChild.appendChild(delta);
-      spent.lastChild.appendChild(h('span', {
-        className: 'small muted',
-        text: data.total.comparisonLabel || 'against the same day last month'
-      }));
-    }
-    headline.appendChild(spent);
+    main.appendChild(total === null
+      ? h('div', { className: 'sp-total sp-absent', text: NOT_REPORTED })
+      : h('div', { className: 'sp-total', text: money(total, data) }));
 
-    if (forecast !== null) {
-      var right = h('div', { className: 'right budget-forecast' }, [
-        h('div', { className: 'small muted', text: 'Forecast to period end' }),
-        h('div', { className: 'mono budget-forecast-value', text: d.money(forecast, currency) })
-      ]);
-      if (budget !== null && budget > 0) {
-        right.appendChild(h('div', {
-          className: 'tiny muted',
-          text: d.percent(Math.round((forecast / budget) * 10000), 0) +
-            ' of the ' + d.money(budget, currency, { digits: 0 }) + ' budget'
-        }));
-      }
-      headline.appendChild(h('div', { className: 'spacer' }));
-      headline.appendChild(right);
-    }
-    body.appendChild(headline);
+    /* The route sends the change and its caption together or not at all, so
+       the pane never prints "against the same period last month" with no
+       figure beside it to be against. */
+    var meta = h('div', { className: 'sp-total-meta' });
+    var change = changePill(data.total);
+    if (change) meta.appendChild(change);
+    var label = text((data.total || {}).comparisonLabel);
+    if (label) meta.appendChild(h('span', { text: label }));
+    if (meta.childNodes.length) main.appendChild(meta);
+    head.appendChild(main);
 
-    var bar = budgetBar(data);
-    if (bar) body.appendChild(bar);
-
-    var foot = h('div', { className: 'row row-wrap budget-note' });
-    if (data.period) {
-      /* utcDay answers null for a stamp it cannot read, and null is not a
-         date an operator should ever be shown. The sentence exists only when
-         the day does. */
-      var billedThrough = data.period.actualThrough
-        ? d.utcDay(data.period.actualThrough) : null;
-      foot.appendChild(h('span', {
-        className: 'tiny muted',
-        text: 'Day ' + data.period.dayOfPeriod + ' of ' + data.period.daysInPeriod +
-          (billedThrough ? '. Billed usage through ' + billedThrough + '.' : '.')
-      }));
-    }
-    if (data.forecast && data.forecast.basis) {
-      foot.appendChild(h('span', { className: 'tiny muted', text: data.forecast.basis }));
-    }
-    if (foot.childNodes.length) body.appendChild(foot);
-
+    var forecast = forecastBlock(data);
+    if (forecast) head.appendChild(forecast);
+    body.appendChild(head);
     card.appendChild(body);
-    card.appendChild(d.cardFoot([asOfLine(data)]));
+
+    /* The forecast's own basis is the route's sentence and appears nowhere
+       else on the page, so it survives the trim. A closed period carries no
+       forecast, and then there is no foot either. */
+    var basis = text((data.forecast || {}).basis);
+    if (basis) {
+      card.appendChild(h('div', { className: 'kpi-foot' }, [h('span', { text: basis })]));
+    }
     return card;
   }
 
-  /* The budget bar. Scaled to whichever is larger, the budget or the forecast,
-     so an overrun is drawn as an overrun rather than silently clipped at the
-     end of the track.
-
-     Every length here is also stated in words above or below it. The bar is
-     hidden from assistive technology on purpose: repeating three figures as an
-     unlabelled graphic adds nothing a reader can use.
-
-     Returns null with no billed total, rather than drawing an empty track: a
-     bar starting at zero is a statement that nothing has been spent, and that
-     is exactly the statement a missing figure is not allowed to make. */
-  function budgetBar(data) {
-    var currency = data.currency;
-    var total = totalMicros(data);
-    if (total === null) return null;
-    var forecast = moneyMicros(data.forecast);
-    if (forecast === null) forecast = total;
-    var budget = moneyMicros(data.budget);
-
-    var scale = Math.max(budget || 0, forecast, total) || 1;
-    var wrap = h('div', { className: 'budget' });
-
-    var spent = h('i', { className: 'spent' });
-    spent.style.setProperty('width', ((total / scale) * 100).toFixed(2) + '%');
-    wrap.appendChild(spent);
-
-    if (forecast > total) {
-      var over = h('i', { className: 'fcast' });
-      over.style.setProperty('left', ((total / scale) * 100).toFixed(2) + '%');
-      over.style.setProperty('width', (((forecast - total) / scale) * 100).toFixed(2) + '%');
-      wrap.appendChild(over);
+  /* Up is the bad direction on a bill, which is why the tone classes read
+     backwards here: `.pill.down` is this design system's rose and `.pill.up`
+     its emerald, so a rise takes the rose one. The chevron and the sign both
+     carry the direction, so tone is never the only thing saying it. */
+  function changePill(carrier) {
+    var change = num((carrier || {}).changeBasisPoints);
+    if (change === null) return null;
+    if (change === 0) {
+      return h('span', { className: 'pill' }, [h('span', { text: 'No change' })]);
     }
-
-    if (budget !== null && budget > 0) {
-      var marker = h('span', { className: 'budget-marker' });
-      marker.style.setProperty('left', ((budget / scale) * 100).toFixed(2) + '%');
-      wrap.appendChild(marker);
-    }
-
-    wrap.setAttribute('aria-hidden', 'true');
-
-    var row = h('div', { className: 'budget-legend' }, [
-      h('span', { className: 'mono', text: d.money(total, currency) + ' billed so far' })
+    var up = change > 0;
+    return h('span', { className: 'pill ' + (up ? 'down' : 'up') }, [
+      S.icon(up ? 'up' : 'down'),
+      h('span', { text: fmt.signedPercent(change) })
     ]);
-    if (forecast > total) {
-      row.appendChild(h('span', {
-        className: 'mono muted',
-        text: d.money(forecast - total, currency) + ' more forecast'
-      }));
-    }
-    if (budget !== null && budget > 0) {
-      var overBudget = forecast > budget;
-      row.appendChild(h('span', {
-        className: overBudget ? 'mono ink-warn' : 'mono muted',
-        text: overBudget
-          ? d.money(forecast - budget, currency) + ' over the budget'
-          : d.money(budget - forecast, currency) + ' under the budget'
-      }));
-    }
-
-    return h('div', { className: 'budget-wrap' }, [wrap, row]);
   }
 
-  /* ------------------------------------------------------ unusual spending */
-
-  function anomalies(data) {
-    var found = data.anomalies || [];
-    if (!found.length) return null;
-
-    var wrap = h('div', { className: 'stack-sm' });
-    found.forEach(function (item) {
-      var box = d.callout('warn', 'warn', [d.strong(item.title), ' ' + item.detail]);
-      var link = d.payloadLink(item.link);
-      if (link) box.lastChild.appendChild(h('div', { className: 'row mt-sm' }, [link]));
-      wrap.appendChild(box);
-    });
-    return wrap;
+  function forecastBlock(data) {
+    var forecast = num((data.forecast || {}).micros);
+    if (forecast === null) return null;
+    return h('div', { className: 'sp-fore' }, [
+      h('div', { className: 'sp-fore-label', text: 'Forecast to period end' }),
+      h('div', { className: 'sp-fore-value', text: money(forecast, data) })
+    ]);
   }
 
-  /* ---------------------------------------------------- the three views */
+  /* -------------------------------------------------- the allocation views
 
-  var VIEWS = [
-    { key: 'category', label: 'Category' },
-    { key: 'resourceGroup', label: 'Resource group' },
-    { key: 'service', label: 'Service' }
-  ];
+     One bill, cut two ways by allocation: what the money was for, and which
+     Azure group it was billed to. The switch says which cut is on screen and
+     the reconciliation line under the rows says it still adds up to the same
+     bill.
 
-  /* What the card is called while a given view is selected. The payload names
-     each view; the registry above is the fallback so the heading is never
-     blank and never borrowed from a different grouping. */
-  function viewTitle(view, meta) {
-    return view.label || ('By ' + meta.label.toLowerCase());
-  }
+     `service` is deliberately NOT here. The route sends it as a third view of
+     the same rows, and the per-service table below draws exactly those rows:
+     offering it in the switch as well drew two cards with the same title, the
+     same rows and the same reconciliation line, which is the one thing this
+     remodel exists to remove. The table is the better drawing of it -- Azure
+     names a service, so the column wants a row header and a scroll, not a
+     share bar -- so the table keeps it and the switch does not. */
 
-  function viewsCard(data) {
+  var VIEW_ORDER = ['category', 'resourceGroup'];
+
+  /* The grouping the pane opens on. Category first because it answers what
+     the money was for, which is the question the pane's own name asks. */
+  var DEFAULT_VIEW = 'category';
+
+  /* Short words for the switch. A button carrying the route's own `label`
+     -- "What the money was spent on" -- wraps onto three lines at 320px. */
+  var VIEW_BUTTON = {
+    category: 'Category',
+    resourceGroup: 'Resource group'
+  };
+
+  /* What a row of each grouping IS, so its reconciliation line names the
+     things it is adding up. Two cards on one page both ending in "5 rows
+     adding up to the bill" is one sentence printed twice; "5 categories" and
+     "12 services" are two facts. */
+  var VIEW_NOUN = {
+    category: ['category', 'categories'],
+    resourceGroup: ['resource group'],
+    service: ['service']
+  };
+  var ROW_NOUN = ['row'];
+
+  function availableViews(data) {
     var views = data.views || {};
-    var present = VIEWS.filter(function (v) {
-      return views[v.key] && (views[v.key].rows || []).length;
+    return VIEW_ORDER.filter(function (key) {
+      return views[key] && list(views[key].rows).length > 0;
     });
-    if (!present.length) return null;
+  }
 
-    var first = views[present[0].key];
-    var card = d.card({ title: viewTitle(first, present[0]) });
-    var head = card.querySelector('.card-head');
-    var title = card.querySelector('.card-title');
-
-    /* Built here rather than through the card's own hint option so the element
-       exists whether or not the first view carries one, which is what lets the
-       heading and its hint both follow the selected tab. */
-    var hint = h('span', { className: 'card-hint', text: first.hint || '' });
-    hint.hidden = !first.hint;
-    head.appendChild(hint);
-
-    var body = d.cardBody();
-
-    if (present.length > 1) {
-      /* The heading names the grouping on screen, so it has to change with the
-         grouping. It is also the heading a screen reader lands on above these
-         rows, and leaving it on the first view meant the rows under "By
-         category" were resource groups on a pane whose whole claim is that
-         these are three different ways of cutting one bill. */
-      var built = d.tabbed({
-        label: 'How to group the bill',
-        idPrefix: 'spendview',
-        tabs: present.map(function (v) {
-          return { id: v.key, label: v.label, panel: viewPanel(views[v.key], data) };
-        }),
-        onSelect: function (key) {
-          var view = views[key];
-          if (!view) return;
-          var chosen = VIEWS.filter(function (v) { return v.key === key; })[0];
-          title.textContent = viewTitle(view, chosen);
-          hint.textContent = view.hint || '';
-          hint.hidden = !view.hint;
-        }
+  /* aria-pressed rather than two links: the switch changes what the card
+     below it says without navigating, and which one is on has to reach a
+     screen reader as state, not as a colour. */
+  function viewSwitch(keys, current, onPick) {
+    var row = h('div', {
+      className: 'sp-views', role: 'group', 'aria-label': 'Group the bill by'
+    });
+    keys.forEach(function (key) {
+      var on = key === current;
+      var button = h('button', {
+        className: 'btn btn-sm' + (on ? ' btn-primary' : ''),
+        type: 'button',
+        'aria-pressed': on ? 'true' : 'false',
+        text: VIEW_BUTTON[key] || key
       });
-      head.appendChild(h('div', { className: 'spacer' }));
-      head.appendChild(built.tablist);
-      body.appendChild(built.panels);
-    } else {
-      body.appendChild(viewPanel(first, data));
-    }
+      button.setAttribute('data-view', key);
+      button.addEventListener('click', function () { onPick(key); });
+      row.appendChild(button);
+    });
+    return row;
+  }
 
-    card.appendChild(body);
-    if (data.scopeNote) {
-      card.appendChild(d.cardFoot([h('span', { text: data.scopeNote })]));
-    }
+  /* One grouping of the bill, as rows with a share bar each.
+
+     The bar carries no label and is hidden from assistive technology: the
+     share it draws is printed as a figure in the same row, and a meter that
+     repeats a number printed beside it is the same fact twice. */
+  function viewCard(data, key, keys, onPick) {
+    var view = (data.views || {})[key] || {};
+    var rows = list(view.rows);
+    var card = S.card();
+    card.appendChild(S.cardHead(
+      text(view.label) || 'The bill',
+      text(view.hint),
+      keys.length > 1 ? [viewSwitch(keys, key, onPick)] : null
+    ));
+
+    var wrap = h('div', { className: 'sp-rows' });
+    rows.forEach(function (row) { wrap.appendChild(billRow(row, data)); });
+    card.appendChild(h('div', { className: 'card-body' }, [
+      wrap, reconciliation(rows, data, VIEW_NOUN[key] || ROW_NOUN)
+    ]));
     return card;
   }
 
-  function viewPanel(view, data) {
-    var wrap = h('div', {});
-    var currency = data.currency;
+  function billRow(row, data) {
+    var micros = num(row.micros);
+    var share = num(row.shareBasisPoints);
+    var ungrouped = row.ungrouped === true;
 
-    (view.rows || []).forEach(function (row) {
-      var line = h('div', { className: 'cat' });
-
-      /* Through seriesStroke, the same helper the daily legend and the lines
-         use, rather than the allowlist raw with a stylesheet default behind
-         it. Two fallbacks that are different colours is how a key stopped
-         matching its own chart in the first place. */
-      var swatch = h('span', { className: 'cat-swatch', 'aria-hidden': 'true' });
-      swatch.style.setProperty('background', d.seriesStroke(row.color));
-      line.appendChild(swatch);
-
-      var name = h('div', { className: 'cat-main' }, [
-        h('div', { className: 'cat-name', text: row.label })
-      ]);
-      if (row.description) {
-        name.appendChild(h('div', { className: 'cat-sub', text: row.description }));
-      }
-      /* An unmapped service is a real row with a warning, never folded into
-         whichever group looks closest. Guessing would make the grouping
-         quietly wrong in exactly the moment somebody is looking at it because
-         something changed. */
-      if (row.ungrouped) {
-        var flag = h('span', { className: 'badge badge-warn cat-flag' });
-        flag.appendChild(shell.icon('warn'));
-        flag.appendChild(h('span', { text: 'Not grouped yet' }));
-        name.appendChild(flag);
-      }
-      line.appendChild(name);
-
-      line.appendChild(h('div', { className: 'cat-amt mono', text: d.money(row.micros, currency) }));
-
-      var share = h('div', { className: 'cat-pct mono' }, [
-        h('span', { text: d.percent(row.shareBasisPoints) })
-      ]);
-      if (typeof row.changeBasisPoints === 'number') {
-        /* Thresholds rather than a gradient, because the reader is asking one
-           question of this column: is this line the reason the bill moved.
-           A change is also always a word or a signed number, never a colour on
-           its own. */
-        var tone = row.changeBasisPoints >= 2500 ? 'ink-crit'
-          : row.changeBasisPoints >= 1000 ? 'ink-warn' : 'muted';
-        share.appendChild(h('span', {
-          className: tone,
-          text: row.changeBasisPoints === 0 ? 'flat' : d.signedPercent(row.changeBasisPoints, 0)
-        }));
-      }
-      line.appendChild(share);
-
-      wrap.appendChild(line);
-    });
-
-    var check = reconciliation(view, data);
-    if (check) wrap.appendChild(check);
-    return wrap;
-  }
-
-  /* Adds the view up and compares it with the billed total.
-
-     This is the pane's central claim, so it is arithmetic rather than a
-     promise in a footer. Money is in integer micro-units precisely so this
-     comparison is exact: a float sum over a few hundred daily rows does not
-     reproduce an invoice total, and a near miss would be indistinguishable
-     from a real gap.
-
-     Which means a row that cannot be read makes the check unavailable, and is
-     neither zero nor automatically a mismatch. Every row goes through the same
-     shape-strict moneyMicros the total goes through. Counting an unreadable
-     row as zero mints the exact zero this pane refuses everywhere else, and
-     does it under the sentence "nothing is left over and nothing is counted
-     twice", which is a false green on the pane's central claim; a row of NaN
-     or Infinity satisfying `typeof === 'number'` failed the other way and
-     reported a permanent gap that was really a parse problem. Three outcomes,
-     not two: it adds up, it does not add up, or it cannot be checked. */
-  function reconciliation(view, data) {
-    var total = totalMicros(data);
-    if (total === null) return null;
-
-    var rows = view.rows || [];
-    /* No rows means there is nothing to add up, and "0 rows add up to the
-       bill exactly" is a vacuous green on the pane's central claim. Say
-       nothing rather than verify nothing. */
-    if (!rows.length) return null;
-    var sum = 0;
-    var unreadable = 0;
-    rows.forEach(function (row) {
-      var amount = moneyMicros(row);
-      if (amount === null) unreadable += 1;
-      else sum += amount;
-    });
-
-    var box;
-    if (unreadable) {
-      box = d.callout('warn', 'warn', [
-        d.strong('These rows cannot be checked against the bill.'),
-        ' ' + (unreadable === 1
-          ? 'One row here carries no readable amount'
-          : unreadable + ' rows here carry no readable amount') +
-          ', so the parts cannot be added up and compared with the billed ' +
-          d.money(total, data.currency) + '. Neither a match nor a gap is ' +
-          'something this answer supports, so the pane claims neither. Read ' +
-          'the grouping as incomplete until every row reports its own figure.'
-      ]);
-      box.classList.add('mt');
-      return box;
-    }
-    if (sum === total) {
-      box = d.callout('info', 'check', [
-        d.strong('These rows add up to the bill exactly.'),
-        ' ' + d.money(sum, data.currency) + ' across ' + rows.length +
-          (rows.length === 1 ? ' row' : ' rows') +
-          ', which is the billed total for the period. Nothing is left ' +
-          'over and nothing is counted twice.'
-      ]);
+    var words = h('div', {}, [
+      h('div', { className: 'sp-name', text: text(row.label) || 'Not named' })
+    ]);
+    /* A row the category mapping has never seen. Its own line with its own
+       words on it: the route sends it as an explicit category precisely so
+       the bill still adds up, and folding it into a neighbour would hide the
+       one row somebody has to go and map. */
+    if (ungrouped) {
+      words.appendChild(h('div', {
+        className: 'sp-desc',
+        text: 'Unmapped: no category covers these services yet'
+      }));
     } else {
-      /* Money renders to a fixed number of decimals, so a gap smaller than the
-         last place shown would print three figures that all agree while the
-         callout calls them a mismatch. Name the size of the gap in words
-         instead of printing a rendered zero.
-
-         The test is the gap against the rendering unit, not the rendered gap
-         against a rendered zero. Rendering rounds to nearest, so the string
-         test only caught the bottom half of the window: a gap of 6000 micros
-         renders as 0.01, so it was named as a printable difference even though
-         the two totals it sits between can still round to the same string. Any
-         gap below one whole rendering unit is a gap the reader cannot see,
-         whichever way the three figures happen to round. */
-      var gap = Math.abs(sum - total);
-      var gapText = d.money(gap, data.currency);
-      if (gap < d.RENDER_UNIT_MICROS) {
-        gapText = 'less than the smallest amount these totals can show';
-      }
-      box = d.callout('crit', 'warn', [
-        d.strong('These rows do not add up to the bill.'),
-        ' They come to ' + d.money(sum, data.currency) + ' against a billed ' +
-          d.money(total, data.currency) + ', a difference of ' + gapText +
-          '. Read the rows as incomplete until that is explained.'
-      ]);
+      var desc = text(row.description);
+      if (desc) words.appendChild(h('div', { className: 'sp-desc', text: desc }));
     }
-    box.classList.add('mt');
-    return box;
+    if (share !== null) {
+      var meter = h('div', { className: 'meter sp-bar', 'aria-hidden': 'true' }, [h('i')]);
+      meter.firstChild.style.setProperty('width', barWidth(share));
+      words.appendChild(meter);
+    }
+
+    var moneyCell = h('div', { className: 'sp-money' }, [
+      micros === null
+        ? h('div', { className: 'sp-amt sp-absent', text: NOT_REPORTED })
+        : h('div', { className: 'sp-amt sp-num', text: money(micros, data) })
+    ]);
+    if (share !== null) {
+      moneyCell.appendChild(h('div', {
+        className: 'sp-share sp-num', text: fmt.percent(share)
+      }));
+    }
+
+    var change = h('div', { className: 'sp-chg' });
+    var pill = changePill(row);
+    if (pill) change.appendChild(pill);
+
+    return h('div', {
+      className: 'sp-row ' + toneClass(text(row.color)) +
+        (ungrouped ? ' sp-row-ungrouped' : '')
+    }, [
+      h('span', { className: 'sp-mark', 'aria-hidden': 'true' }),
+      words,
+      moneyCell,
+      change
+    ]);
   }
 
-  /* -------------------------------------------------------- daily trend */
+  /* A share as a CSS length, clamped to the track. A negative or over-100
+     share is a shape the route cannot send, and drawing one would take the
+     bar out of its own card. */
+  function barWidth(basisPoints) {
+    return Math.max(0, Math.min(100, basisPoints / 100)).toFixed(2) + '%';
+  }
+
+  /* The pane's central claim, done as arithmetic on screen.
+
+     The route counts every row in the window exactly once with no top-N and
+     no dropped tail, so a grouping's rows sum to the billed total exactly.
+     That is what makes it safe to switch grouping mid-conversation, and it is
+     the one thing on this pane worth checking rather than asserting. The sum
+     is taken from the rows this card actually drew, so a row the pane itself
+     dropped shows up here as a gap instead of passing quietly.
+
+     A gap is stated as a figure, with a glyph and words beside it: never a
+     colour alone. */
+  function reconciliation(rows, data, noun) {
+    var one = (noun || ROW_NOUN)[0];
+    var many = (noun || ROW_NOUN)[1];
+    var total = num((data.total || {}).micros);
+    var summed = 0;
+    var unreadable = false;
+    rows.forEach(function (row) {
+      var micros = num(row.micros);
+      if (micros === null) unreadable = true;
+      else summed += micros;
+    });
+
+    if (total === null || unreadable) {
+      return h('div', { className: 'sp-recon sp-recon-off' }, [
+        S.icon('warn'),
+        h('span', {
+          className: 'sp-recon-gap',
+          text: unreadable
+            ? 'One of these rows carries no figure, so they cannot be added up'
+            : 'This answer carried no billed total to check these rows against'
+        })
+      ]);
+    }
+
+    var gap = summed - total;
+    if (gap === 0) {
+      return h('div', { className: 'sp-recon sp-recon-ok' }, [
+        S.icon('check'),
+        h('span', {
+          className: 'sp-recon-gap',
+          text: fmt.plural(rows.length, one, many) + ' adding up to the bill'
+        }),
+        h('span', { className: 'sp-recon-total sp-num', text: money(total, data) })
+      ]);
+    }
+
+    return h('div', { className: 'sp-recon sp-recon-off' }, [
+      S.icon('warn'),
+      h('span', {
+        className: 'sp-recon-gap',
+        text: fmt.plural(rows.length, one, many) + ' adding up to ' + money(summed, data) +
+          ', ' + money(Math.abs(gap), data) +
+          (gap > 0 ? ' more than' : ' short of') + ' the bill'
+      }),
+      h('span', { className: 'sp-recon-total sp-num', text: money(total, data) })
+    ]);
+  }
+
+  /* --------------------------------------------------------- the day line */
+
+  var CHART_W = 640;
+  var CHART_H = 220;
+  var PAD_L = 6;
+  var PAD_R = 6;
+  var PAD_T = 10;
+  var PAD_B = 10;
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    return el;
+  }
 
   function dailyCard(data) {
-    var daily = data.daily;
-    if (!daily || !(daily.series || []).length) return null;
-
-    var legend = h('div', { className: 'legend' });
-    daily.series.forEach(function (s) {
-      /* Through the same fallback the line takes, not through the allowlist
-         raw. A key that goes unpainted when a colour is unrecognised, beside a
-         line that falls back and is drawn anyway, is a legend that disagrees
-         with its own chart. */
-      var swatch = h('i', { 'aria-hidden': 'true' });
-      swatch.style.setProperty('background', d.seriesStroke(s.color));
-      legend.appendChild(h('span', {}, [swatch, h('span', { text: s.label })]));
+    var daily = data.daily || {};
+    var series = list(daily.series).filter(function (one) {
+      return list(one.values).length > 0;
     });
+    if (!series.length) return null;
 
-    var card = d.card({
-      title: 'Daily spend',
-      hint: daily.hint,
-      headExtra: legend
-    });
-    var body = d.cardBody();
-    body.appendChild(d.lineChart({
-      height: 190,
-      label: daily.label || 'Daily spend for this period against the previous one',
-      series: daily.series
-    }));
-    if ((daily.labels || []).length) {
-      var axis = h('div', { className: 'axis-x', 'aria-hidden': 'true' });
-      daily.labels.forEach(function (label) {
-        axis.appendChild(h('span', { text: label }));
-      });
+    var card = S.card();
+    card.appendChild(S.cardHead(
+      text(daily.label) || 'Daily spend',
+      text(daily.hint),
+      [legend(series)]
+    ));
+
+    var body = h('div', { className: 'card-body' }, [chart(series, daily, data)]);
+    var labels = list(daily.labels).filter(function (one) { return text(one); });
+    if (labels.length) {
+      var axis = h('div', { className: 'sp-xaxis', 'aria-hidden': 'true' });
+      labels.forEach(function (one) { axis.appendChild(h('span', { text: one })); });
       body.appendChild(axis);
     }
-    if (daily.note) {
-      body.appendChild(h('p', { className: 'axis-note mt-sm', text: daily.note }));
-    }
     card.appendChild(body);
+
+    /* The route's own note, and only when it sent one. It says either that
+       there is no comparison line and why, or that the two stretches are
+       different lengths -- both facts that appear nowhere else on the page
+       and that change how the picture should be read. */
+    var note = text(daily.note);
+    if (note) {
+      card.appendChild(h('div', { className: 'kpi-foot' }, [h('span', { text: note })]));
+    }
     return card;
   }
 
-  /* ---------------------------------------------------------- unit cost */
-
-  function unitCard(data) {
-    var unit = data.unitCosts;
-    if (!unit) return null;
-
-    var card = d.card({ title: 'Cost per person', hint: unit.hint });
-    var body = d.cardBody('stack-sm');
-    var currency = data.currency;
-
-    (unit.rows || []).forEach(function (row) {
-      body.appendChild(h('div', { className: 'row unit-row' }, [
-        h('span', { className: 'small', text: row.label }),
-        h('div', { className: 'spacer' }),
-        h('span', {
-          className: 'mono strong',
-          text: d.money(row.micros, currency, { digits: row.digits === undefined ? 3 : row.digits })
-        })
+  function legend(series) {
+    var row = h('div', { className: 'legend' });
+    series.forEach(function (one) {
+      row.appendChild(h('span', { className: toneClass(text(one.color)) }, [
+        h('i', { 'aria-hidden': 'true' }),
+        h('span', { text: text(one.label) || 'Series' })
       ]));
     });
+    return row;
+  }
 
-    var byType = unit.byRequestType;
-    if (byType && (byType.rows || []).length) {
-      body.appendChild(h('div', { className: 'rule', 'aria-hidden': 'true' }));
-      body.appendChild(h('h4', { className: 'tile-label', text: 'AI cost by request type' }));
-      body.appendChild(d.rankList(byType.rows.map(function (row) {
-        return {
-          label: row.label,
-          value: row.micros,
-          color: row.color,
-          note: typeof row.perRunMicros === 'number'
-            ? d.money(row.perRunMicros, currency, { digits: 3 }) + ' each'
-            : null
-        };
-      }), {
-        format: function (r) { return d.money(r.value, currency, { digits: 0 }); }
-      }));
-      if (byType.note) {
-        body.appendChild(h('p', { className: 'axis-note mt-sm', text: byType.note }));
-      }
+  function chart(series, daily, data) {
+    var iw = CHART_W - PAD_L - PAD_R;
+    var ih = CHART_H - PAD_T - PAD_B;
+
+    var hi = 0;
+    var span = 0;
+    series.forEach(function (one) {
+      var values = list(one.values);
+      if (values.length > span) span = values.length;
+      values.forEach(function (v) {
+        var n = num(v);
+        if (n !== null && n > hi) hi = n;
+      });
+    });
+    hi = hi * 1.14 || 1;
+
+    /* Stretched to the box rather than scaled to its own aspect, so the
+       drawing is as tall on a phone as it is on a laptop and the gridlines
+       keep the spacing the labels beside them are set in. Every stroke in
+       here carries non-scaling-stroke in CSS, which is what keeps a line 2px
+       wide and a dash pattern square under a scale that differs by axis. */
+    var svg = svgEl('svg', {
+      'class': 'chart',
+      viewBox: '0 0 ' + CHART_W + ' ' + CHART_H,
+      preserveAspectRatio: 'none',
+      role: 'img',
+      'aria-label': chartName(series, daily, data)
+    });
+
+    /* The scale is HTML beside the picture rather than <text> inside it, for
+       two reasons that both matter. The svg is stretched to the width of the
+       card, so text inside it is stretched with it; and role="img" is
+       children-presentational, so text inside one is announced to nobody
+       however large it is. Out here it is real text at a real size,
+       positioned against the same gridlines. */
+    var axis = h('div', { className: 'sp-axis', 'aria-hidden': 'true' });
+    var ticks = 4;
+    for (var i = 0; i <= ticks; i++) {
+      var y = PAD_T + ih - (i / ticks) * ih;
+      var gridline = svgEl('line', {
+        'class': 'sp-gridline', x1: PAD_L, y1: y.toFixed(1), x2: CHART_W - PAD_R, y2: y.toFixed(1)
+      });
+      if (i !== 0) gridline.setAttribute('stroke-dasharray', '2 4');
+      svg.appendChild(gridline);
+
+      /* Whole currency units on the scale. Cents on a gridline are four more
+         characters for a precision the drawing does not have. */
+      var label = h('span', {
+        className: 'sp-tick sp-num',
+        text: money(Math.round(hi * i / ticks), data, 0)
+      });
+      /* The gridline's own height in the viewBox, as a percentage. The scale
+         column is the height of the drawing beside it, so the two stay
+         registered at every width without measuring anything. */
+      label.style.setProperty('top', ((y / CHART_H) * 100).toFixed(2) + '%');
+      axis.appendChild(label);
     }
 
-    card.appendChild(body);
+    series.forEach(function (one) {
+      /* The stretch keys the group, so which line is this period and which is
+         the one before it is a fact in the document rather than only a dash
+         pattern. */
+      var group = svgEl('g', {
+        'class': toneClass(text(one.color)),
+        'data-series': text(one.label) || ''
+      });
+      var values = list(one.values);
+      var dashed = one.dashed === true;
+      var x = function (index) {
+        return PAD_L + (span > 1 ? (index / (span - 1)) * iw : iw / 2);
+      };
+      var y2 = function (v) { return PAD_T + ih - (v / hi) * ih; };
 
-    /* The unit figures are modelled from recorded token counts, so the footer
-       has to say how far the model is from the bill rather than imply it is
-       the bill. */
-    var rec = data.reconciliation;
-    if (rec && typeof rec.driftBasisPoints === 'number') {
-      var over = typeof rec.thresholdBasisPoints === 'number' &&
-        Math.abs(rec.driftBasisPoints) > rec.thresholdBasisPoints;
-      card.appendChild(d.cardFoot([
-        h('span', {
-          className: over ? 'ink-warn' : '',
-          text: 'Modelled from recorded usage and checked nightly against the ' +
-            'bill. Currently ' + d.percent(Math.abs(rec.driftBasisPoints)) +
-            ' apart' + (over ? ', which is past the point where it is raised as a problem.' : '.')
-        })
+      var run = [];
+      var flush = function () {
+        if (run.length > 1) {
+          group.appendChild(svgEl('path', {
+            'class': 'sp-ln' + (dashed ? ' sp-ln-prev' : ''),
+            d: run.map(function (point, index) {
+              return (index ? 'L' : 'M') + point[0].toFixed(2) + ' ' + point[1].toFixed(2);
+            }).join(' ')
+          }));
+        } else if (run.length === 1) {
+          /* A single billed day between two gaps has no line to belong to,
+             and drawing nothing for it would hide a day that was billed. A
+             zero-length path with a round cap rather than a circle: the
+             drawing is stretched to its box, and a circle would be drawn as
+             an ellipse while a stroke cap stays round. */
+          group.appendChild(svgEl('path', {
+            'class': 'sp-ln-pt' + (dashed ? ' sp-ln-prev' : ''),
+            d: 'M' + run[0][0].toFixed(2) + ' ' + run[0][1].toFixed(2) +
+              'L' + run[0][0].toFixed(2) + ' ' + run[0][1].toFixed(2)
+          }));
+        }
+        run = [];
+      };
+
+      values.forEach(function (v, index) {
+        var n = num(v);
+        if (n === null) { flush(); return; }
+        run.push([x(index), y2(n)]);
+      });
+      flush();
+      svg.appendChild(group);
+    });
+
+    return h('div', { className: 'sp-chart-wrap' }, [axis, svg]);
+  }
+
+  /* The chart's accessible name, and the only place its data is announced.
+
+     role="img" is children-presentational, so <text> inside the drawing is
+     announced to nobody and the name is the whole of what a screen reader
+     gets. Each line therefore says how many of its days carry a figure, its
+     low and high and what it ended at. A line with no billed day at all says
+     that rather than being left out of the name. */
+  function chartName(series, daily, data) {
+    return (text(daily.label) || 'Daily spend') + '. ' +
+      series.map(function (one) { return seriesSentence(one, data); }).join(' ');
+  }
+
+  function seriesSentence(one, data) {
+    var name = text(one.label) || 'This period';
+    var values = list(one.values);
+    var billed = [];
+    var lastIndex = -1;
+    values.forEach(function (v, index) {
+      var n = num(v);
+      if (n === null) return;
+      billed.push(n);
+      lastIndex = index;
+    });
+
+    if (!billed.length) {
+      return name + ': no billed day in ' + fmt.plural(values.length, 'day') + '.';
+    }
+    var lo = Math.min.apply(null, billed);
+    var high = Math.max.apply(null, billed);
+    return name + ': ' + fmt.int(billed.length) + ' of ' +
+      fmt.plural(values.length, 'day') + ' billed, ' +
+      (lo === high
+        ? 'flat at ' + money(lo, data)
+        : 'low ' + money(lo, data) + ', high ' + money(high, data)) +
+      ', ending ' + money(values[lastIndex], data) + '.';
+  }
+
+  /* ---------------------------------------------------- the service table */
+
+  /* Every service Azure billed, biggest first, in the route's own order.
+
+     A table rather than more rows with bars: at this length the share is not
+     the question, the name and the figure are, and forty bars is a picture of
+     a long tail nobody reads. The reconciliation line is here too, because
+     this grouping adds up to the same bill and that is the claim. */
+  function serviceCard(data) {
+    var view = (data.views || {}).service || {};
+    var rows = list(view.rows);
+    if (!rows.length) return null;
+
+    var card = S.card();
+    card.appendChild(S.cardHead(
+      text(view.label) || 'By service',
+      text(view.hint)
+    ));
+
+    var table = h('table', { className: 'sp-tbl' });
+    table.appendChild(h('thead', {}, [h('tr', {}, [
+      h('th', { scope: 'col', text: 'Service' }),
+      h('th', { scope: 'col', className: 'sp-r', text: 'Cost' }),
+      h('th', { scope: 'col', className: 'sp-r', text: 'Share' }),
+      h('th', { scope: 'col', className: 'sp-r', text: 'Change' })
+    ])]));
+
+    var body = h('tbody');
+    rows.forEach(function (row) {
+      var micros = num(row.micros);
+      var share = num(row.shareBasisPoints);
+      var change = h('td', { className: 'sp-r' });
+      var pill = changePill(row);
+      /* No change figure is not a flat month: the route withholds it when
+         the previous stretch billed nothing to compare against. */
+      change.appendChild(pill || h('span', { className: 'sp-absent', text: NOT_REPORTED }));
+
+      body.appendChild(h('tr', {}, [
+        h('th', { scope: 'row', text: text(row.label) || 'Not named' }),
+        h('td', {
+          className: 'sp-r ' + (micros === null ? 'sp-absent' : 'sp-num'),
+          text: micros === null ? NOT_REPORTED : money(micros, data)
+        }),
+        h('td', {
+          className: 'sp-r ' + (share === null ? 'sp-absent' : 'sp-num'),
+          text: share === null ? NOT_REPORTED : fmt.percent(share)
+        }),
+        change
       ]));
-    }
+    });
+    table.appendChild(body);
+
+    /* The box scrolls sideways on a phone and what it hides is a column, not
+       a margin: measured at 320px it is 314 wide inside 256, with the whole
+       Change column past the visible edge. So it is reachable from a keyboard
+       and it says which table it is -- a scroll region a keyboard cannot get
+       to fails WCAG 2.1.1, and Chrome's own tab-ordering of overflowing
+       scrollers is both engine-specific and nameless. Same treatment as the
+       Analytics, Evaluations, Releases and Settings panes give their wide
+       tables. */
+    card.appendChild(h('div', { className: 'card-body' }, [
+      h('div', {
+        className: 'sp-scroll',
+        tabindex: '0',
+        role: 'region',
+        'aria-label': text(view.label) || 'By service'
+      }, [table]),
+      reconciliation(rows, data, VIEW_NOUN.service)
+    ]));
     return card;
   }
 
-  /* --------------------------------------------------------------- ready */
+  /* ---------------------------------------------------------- the states */
 
-  function renderReady(data) {
-    var root = h('div', { className: 'stack' });
-
-    root.appendChild(budgetCard(data));
-
-    var unusual = anomalies(data);
-    if (unusual) root.appendChild(unusual);
-
-    root.appendChild(d.bandHead('Where the money goes', 'Three ways of looking at one bill'));
-
-    var grid = h('div', { className: 'grid g-main-b' });
-    var left = h('div', { className: 'stack' });
-    var right = h('div', { className: 'stack' });
-
-    [viewsCard(data), dailyCard(data)].forEach(function (c) { if (c) left.appendChild(c); });
-    [unitCard(data)].forEach(function (c) { if (c) right.appendChild(c); });
-
-    grid.appendChild(left);
-    grid.appendChild(right);
-    root.appendChild(grid);
-    return root;
+  function emptyCard(block) {
+    var card = S.card();
+    card.appendChild(block);
+    return card;
   }
 
-  /* The period has not published yet. Distinct from a fault and distinct from
-     nothing being spent: the export runs on a cycle, and the first hours of a
-     new period legitimately have nothing in them. */
-  /* A link to the last closed period, or null when this pane does not offer
-     that window.
+  /* Nothing billed, and which of the four reasons it is decides what the pane
+     says. The route's own `detail` is the sentence in every case, because it
+     is the only thing that knows; the title is the pane's, because these are
+     four different states and a title is how a state is named. */
+  var EMPTY_STATES = {
+    not_published: {
+      icon: 'clock',
+      title: 'Nothing published for this period yet',
+      fallback: 'The billing export has not published anything for this period.'
+    },
+    unconfigured: {
+      icon: 'plug',
+      title: 'Cost collection is not set up',
+      fallback: 'No subscription is configured for cost collection.'
+    },
+    disabled: {
+      icon: 'x',
+      title: 'Cost collection is switched off',
+      fallback: 'Cost collection is switched off for every subscription.'
+    },
+    mixed_currency: {
+      icon: 'warn',
+      title: 'Billed in more than one currency',
+      fallback: 'There is no single total to show, and the groupings cannot be added together.'
+    }
+  };
 
-     Built through the shell's filter state rather than by hand, so an operator
-     on Staging is not silently returned to Production by a link offering them
-     a different window. */
-  function lastClosedPeriodLink() {
-    var ranges = ((shell.panes[PANE_ID] || {}).range) || [];
-    if (ranges.indexOf('last-month') === -1) return null;
-    /* Offering to go where the operator already is makes a button that looks
-       like a way out and does nothing when pressed. The state it sits on is
-       reachable on the last closed period too, since that period can also have
-       published nothing yet. */
-    if ((shell.filters() || {}).range === 'last-month') return null;
-    var href = d.paneUrl(PANE_ID, { range: 'last-month' });
-    if (!href) return null;
-    return h('a', { className: 'btn', href: href, text: 'Show the last closed period' });
-  }
+  function notReady(data, region) {
+    var availability = data.availability || {};
+    var state = text(availability.state);
+    var known = state && Object.prototype.hasOwnProperty.call(EMPTY_STATES, state)
+      ? EMPTY_STATES[state]
+      : null;
+    var detail = text(availability.detail);
 
-  function renderNotPublished(data, onRetry) {
-    var detail = (data.availability && data.availability.detail) ||
-      'The billing export has not published for this period yet.';
-
-    var actions = [];
-    var earlier = lastClosedPeriodLink();
-    if (earlier) actions.push(earlier);
-
-    /* The export publishes on a cycle, so asking again is a real answer to
-       this state rather than the reload it used to need. */
-    if (onRetry) {
-      var again = h('button', { className: 'btn', type: 'button', text: 'Check again' });
-      again.addEventListener('click', onRetry);
-      actions.push(again);
+    if (!known) {
+      /* A state outside the route's vocabulary is not read as one of the
+         four. Picking the nearest would draw a guess with the same confidence
+         as a fact. */
+      region.empty(emptyCard(S.stateBlock('warn', 'This answer is not one this pane can read', [
+        detail || 'The cost route answered with a state this pane does not recognise, ' +
+          'so nothing here can be read as this period\u2019s bill.'
+      ])));
+      return;
     }
 
-    var node = d.stateCard('spend', 'Costs have not published for this period', [
-      detail,
-      'This is normal in the first hours of a new period. It means not yet ' +
-        'known, not nothing spent.'
-    ], actions);
-
-    /* Unconditional, because a state that shows no total still has to say when
-       it last looked. That rests on asOfLine printing its own fallback
-       sentence for a time it was not given, which in turn rests on parseUtc
-       treating every non-string, `null` and `0` included, as absent rather
-       than as the epoch. A div rather than a p, because the line it returns is
-       a flex row.
-
-       Appended INSIDE the card (stateCard returns the outer stack; its first
-       child is the card), because the line can carry the Stale badge and a
-       badge on the bare page background is the exact contrast pairing this
-       page's stylesheet has not fixed. Badges live inside cards here, and
-       this is the one state that was violating that. */
-    node.firstChild.appendChild(h('div', { className: 'axis-note' }, [asOfLine(data)]));
-    return node;
+    var block = S.stateBlock(known.icon, known.title, [detail || known.fallback]);
+    /* A closed month is the one window that is always fully published, so it
+       answers "is anything arriving at all" when this period's is not. Only
+       offered from a range that is not already it. */
+    if (state === 'not_published' && S.filters().range !== 'last-month') {
+      block.appendChild(h('div', { className: 'row mt-sm' }, [
+        S.link(hrefWith('range', 'last-month'), 'Try last month')
+      ]));
+    }
+    region.empty(emptyCard(block));
   }
 
-  /* The period was billed in more than one currency, so the route withheld the
-     total rather than adding amounts that cannot be added.
-
-     Its own state because neither of the two it used to fall into is true of
-     it. "Costs have not published for this period" says this is normal in the
-     first hours of a period, and this is not a timing question at all: the
-     figures were collected, in full, in two currencies. "Cost reporting is not
-     set up" says nothing has been collected, which is the opposite of what
-     happened. Both would have sent an operator looking for a fault that is not
-     there, and neither says the one thing that is actionable, which is that
-     the answer exists and is unaddable.
-
-     The currencies are named in the route's own detail sentence, which is why
-     it is rendered rather than summarised: this pane has no currency list of
-     its own here, because the response deliberately carries no `currency` when
-     there is more than one, and inventing the words "more than one currency"
-     without the codes would leave the reader unable to tell which bills these
-     were. */
-  function renderMixedCurrency(data) {
-    var detail = (data.availability && data.availability.detail) ||
-      'This period was billed in more than one currency, and the response did ' +
-      'not say which. The parts of a bill in different currencies cannot be ' +
-      'added together.';
-
-    var actions = [];
-    var earlier = lastClosedPeriodLink();
-    if (earlier) actions.push(earlier);
-
-    var node = d.stateCard('spend', 'This period was billed in more than one currency', [
-      detail,
-      'So there is no single total here, and the groupings are not shown ' +
-        'either: every one of them is a different way of cutting the same ' +
-        'bill, and each would have to add up to a total that does not exist. ' +
-        'Adding the parts anyway would produce the one number on this pane ' +
-        'that must never be wrong.',
-      'Nothing is missing and nothing is a zero. The spending was collected in ' +
-        'full. A period billed in a single currency, such as an earlier closed ' +
-        'one, shows its total normally.'
-    ], actions);
-
-    /* Inside the card, for the same reason the not-published state does it:
-       the line can carry the Stale badge, and a badge on the bare page
-       background is a contrast pairing this stylesheet has not fixed. */
-    node.firstChild.appendChild(h('div', { className: 'axis-note' }, [asOfLine(data)]));
-    return node;
+  /* A link to this pane under one changed filter, built from the shell's own
+     href so the rest of the selection travels with it. */
+  function hrefWith(key, value) {
+    var href = S.paneHref(PANE_ID);
+    var url;
+    try {
+      url = new global.URL(href, global.location.href);
+    } catch (e) {
+      return href;
+    }
+    url.searchParams.set(key, value);
+    return url.pathname + url.search;
   }
 
-  /* -------------------------------------------------------------- render */
+  /* ---------------------------------------------------------- the render */
 
-  function mount(content) {
-    var host = h('div', { className: 'pane' });
-    content.appendChild(host);
+  function render(data, viewKey, onPick) {
+    var wrap = h('div', { className: 'stack' });
 
-    var token = 0;
+    var first = S.band('What this period cost', null, answerNotes(data));
+    first.appendChild(headline(data));
+    wrap.appendChild(first);
 
-    /* Every state the pane lands in is announced, not only the skeleton. The
-       pane replaces its whole subtree on each filter change, so without this a
-       screen reader hears "Loading figures" and then silence, including when
-       what replaced it was the failure card.
-
-       Focus is carried across the replacement when it was inside the pane.
-       "Check again" and "Try again" both repaint, which removes the button
-       under the reader's own cursor, and a keyboard reader is then standing at
-       the top of the document with no idea the pane answered them. Reading it
-       before the subtree goes means the skeleton keeps the claim too, so it
-       survives the loading paint and lands on whatever the load resolved to. */
-    function paint(node, announcement) {
-      var held = host.contains(document.activeElement);
-      host.textContent = '';
-      host.appendChild(node);
-      shell.wireTabs(host);
-      if (held) d.refocus(host);
-      if (announcement) shell.announce(announcement);
+    var keys = availableViews(data);
+    if (keys.length) {
+      var key = keys.indexOf(viewKey) === -1 ? keys[0] : viewKey;
+      var second = S.band('Where the money goes');
+      second.appendChild(viewCard(data, key, keys, onPick));
+      wrap.appendChild(second);
     }
 
-    function refresh() {
-      var mine = ++token;
-      paint(d.loading([120, 260]));
+    var line = dailyCard(data);
+    var services = serviceCard(data);
+    if (line || services) {
+      var third = S.band('Day by day, and what Azure calls it');
+      if (line) third.appendChild(line);
+      if (services) third.appendChild(services);
+      wrap.appendChild(third);
+    }
+    return wrap;
+  }
 
-      d.load(source()).then(function (result) {
-        if (mine !== token) return;
+  S.definePane(PANE_ID, function (content) {
+    var region = S.region(content);
+    var inFlight = 0;
+    var latest = null;
+    var viewKey = DEFAULT_VIEW;
 
-        var data = (result.data && typeof result.data === 'object') ? result.data : null;
-        if (!data) { paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title); return; }
+    function skeleton() {
+      region.loading([
+        { type: 'block', height: 120 },
+        { type: 'rows', count: 5 },
+        { type: 'block', height: 240 }
+      ]);
+    }
 
-        var state = data.availability && data.availability.state;
-        if (state === 'not_published') {
-          paint(renderNotPublished(data, refresh), 'Costs have not published for this period');
+    /* Switching grouping redraws from the answer already in hand rather than
+       re-reading: it is two cuts of one bill, so a second request would
+       fetch the same bytes and put a skeleton over a question the page has
+       already answered. */
+    function pick(key) {
+      viewKey = key;
+      if (!latest) return;
+
+      /* The button that was just pressed is destroyed by the redraw below, so
+         a keyboard operator would be dropped to the top of the document on
+         every switch -- past the skip link, the rail and the filter bar --
+         for the pane's only interactive control. Only when focus WAS on the
+         switch: a pointer user has focus nowhere in particular and moving it
+         there would be a jump they did not ask for. */
+      var host = document.getElementById('content');
+      var live = document.activeElement;
+      var wasOnSwitch = !!(live && live.getAttribute
+        && live.getAttribute('data-view') !== null);
+
+      region.show(render(latest, viewKey, pick));
+
+      if (wasOnSwitch && host) {
+        var again = host.querySelectorAll('[data-view="' + key + '"]')[0];
+        if (again && again.focus) again.focus();
+      }
+      S.announce('The bill is now grouped by ' + (VIEW_BUTTON[key] || key) + '.');
+    }
+
+    function load() {
+      var token = ++inFlight;
+      skeleton();
+
+      S.read(source()).then(function (answer) {
+        if (token !== inFlight) return;
+        var data = (answer && answer.data) || {};
+        var availability = data.availability || {};
+
+        if (availability.state !== 'ready') {
+          latest = null;
+          notReady(data, region);
           return;
         }
-        if (state === 'mixed_currency') {
-          paint(renderMixedCurrency(data), 'This period was billed in more than one currency');
-          return;
-        }
-        if (state && state !== 'ready') {
-          paint(d.stateCard('spend', 'Cost reporting is not set up', [
-            (data.availability && data.availability.detail) ||
-              'No cost source is configured for this period.',
-            'This is a configuration fact, not a reading. A source that was ' +
-              'never set up reports nothing, which is not the same as a period ' +
-              'that cost nothing.'
-          ]), 'Cost reporting is not set up');
-          return;
-        }
-
-        /* A response with no availability and no billed total is not a ready
-           pane. Defaulting the state to ready was how a payload carrying
-           nothing became a confident "month to date, $0.00": the most
-           confident branch is the wrong default for an answer this pane cannot
-           read. The total is what the whole pane hangs off, so its absence is
-           the test rather than the presence of any one section. */
-        if (totalMicros(data) === null) { paint(d.noSource(NO_TOTAL), NO_TOTAL.title); return; }
-
-        paint(renderReady(data), 'Cost figures updated');
-      }).catch(function (err) {
-        if (mine !== token) return;
-        paint(d.failure(err, {
-          title: NOT_REPORTING.title,
-          detail: NOT_REPORTING.detail,
-          onRetry: refresh
-        }), 'Could not load these figures');
+        latest = data;
+        region.show(render(data, viewKey, pick));
+        S.announce('Cost figures updated for ' + periodLabel(data) + '.');
+      }).catch(function (error) {
+        if (token !== inFlight) return;
+        latest = null;
+        region.failed(error, load);
       });
     }
 
-    paint(d.loading([120, 260]));
-    global.addEventListener('ops:filters', refresh);
-  }
-
-  shell.definePane(PANE_ID, mount);
-})(window);
+    /* The bootstrap fires ops:filters with the starting selection once the
+       shell is in the document, so the first read is that event rather than a
+       call from here: reading twice on boot would double every request and
+       leave the two answers racing. The skeleton goes up now because the
+       listener is added before the event and the region would otherwise be
+       blank until the answer lands. */
+    skeleton();
+    global.addEventListener('ops:filters', load);
+  });
+}(window));

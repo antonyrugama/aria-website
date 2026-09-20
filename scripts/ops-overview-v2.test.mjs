@@ -758,6 +758,191 @@ test('a critical problem says critical in the queue row itself', async () => {
     'severity reached the queue row as a colour and nothing else: ' + allText(row));
 });
 
+/* ============ a severity this pane has never heard of ================== */
+
+/* Stadiora/Aria#10393. The queue row read the severity straight out of
+   alerts-model.js's label map with nothing behind it, so a problem whose
+   severity was not one of the three the map knows rendered the literal words
+   "undefined: Plan generation failing for Aria XII" on the operator's first
+   screen. The route emits only the three today, which is why this was filed
+   rather than fixed on an approved head, and why nothing here asserts the
+   route's shape: the pane has to hold on its own.
+
+   Two different absences, because they degrade to two different words. A
+   severity the pane does not recognise is shown VERBATIM — for a plain
+   unrecognised word that is the same thing the Problems pane prints for it
+   (pane-alerts.js:741), so the two panes describe that state the same way,
+   and neither pretends to have translated a word it has never seen. The two
+   panes do NOT agree on the other two cases: Problems prints a function for
+   `constructor` and an empty pill for a severity that never arrived, which is
+   the sibling defect this pane is being fixed of. A severity that did not
+   arrive at all has no word to show, so it falls to "Unknown" rather than to
+   a blank: a row whose prefix is silently dropped tells the operator nothing
+   arrived, which is the other way to get this wrong.
+
+   The rows carry a real workPane — one of the keys alerts-model.js:89-95
+   actually holds — so the doorway beside them is drawn. Spelled anything
+   else the queue row renders no doorway at all and every assertion about the
+   links on it reads an empty row (Stadiora/Aria#10461 is the same fixture
+   bug one pane over). */
+const ODD_SEVERITY_ROWS = [
+  {
+    id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open',
+    title: 'Generation queue is backing up',
+    summary: 'Nothing has drained for 40 minutes.',
+    firedAt: minutesAgo(40), workPane: 'jobs-live', workPaneLabel: 'Jobs running now',
+  },
+  {
+    id: 'p2', reference: 'PRB-105', severity: 'notice', status: 'open',
+    title: 'Plan generation failing for Aria XII',
+    summary: 'Three in a row.',
+    firedAt: minutesAgo(30), workPane: 'jobs-live', workPaneLabel: 'Jobs running now',
+  },
+  {
+    id: 'p3', reference: 'PRB-106', status: 'open',
+    title: 'A rule fired with no severity on it',
+    summary: 'The field did not arrive.',
+    firedAt: minutesAgo(20), workPane: 'jobs-live', workPaneLabel: 'Jobs running now',
+  },
+  /* Closed, and carrying an unrecognised severity. The chips break down what
+     is still open, so this one has to stay out of the count: counted, it
+     would put the chips back over a ribbon that disagrees with them, which is
+     the contradiction the unknown chip exists to remove. */
+  {
+    id: 'p4', reference: 'PRB-107', severity: 'notice', status: 'closed',
+    title: 'An unrecognised severity that was already closed',
+    summary: 'Closed an hour ago.',
+    firedAt: minutesAgo(90), closedAt: minutesAgo(60), closeReason: 'resolved',
+    workPane: 'jobs-live', workPaneLabel: 'Jobs running now',
+  },
+];
+
+const qTitles = (dom) =>
+  findAll(livePanel(dom), (n) => (n.className || '').indexOf('q-title') !== -1)
+    .map((n) => allText(n));
+
+/* The links on the queue rows themselves. Read off `.q-actions` rather than
+   off the panel: the panel always carries the card-head "All problems" link
+   and four KPI doorways, so a floor over the panel is satisfied by links that
+   have nothing to do with a problem row, and a sweep that lost the rows
+   entirely would still pass it. */
+const rowHrefs = (dom) =>
+  findAll(livePanel(dom), (n) => (n.className || '').indexOf('q-actions') !== -1)
+    .flatMap((row) => findAll(row, (n) => n.tagName === 'A'))
+    .map((n) => n.getAttribute('href') || '');
+
+test('a severity this pane does not know reaches the row as the word that arrived', async () => {
+  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
+
+  /* Read off the rows, not off whole-pane text: the chips beside the ribbon
+     count severities too, so a sweep of the panel passes while the row an
+     operator actually reads is the thing that is wrong. */
+  assert.deepEqual(qTitles(dom), [
+    'Critical: Generation queue is backing up',
+    'notice: Plan generation failing for Aria XII',
+    'Unknown: A rule fired with no severity on it',
+  ], 'a severity outside the three known ones did not reach the row intact');
+
+  /* A severity the pane cannot name must not cost the row its way out. Two
+     links per row: the pane where the work happens, and the problem. */
+  assert.equal(rowHrefs(dom).length, 6,
+    'the queue rows carry ' + rowHrefs(dom).length + ' links rather than six, so a row ' +
+    'lost its doorway: ' + JSON.stringify(rowHrefs(dom)));
+});
+
+test('nothing on the pane says "undefined" when a severity is not one of the three', async () => {
+  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
+  /* The panel, not the rows: the defect is a class, and the same unguarded
+     lookup in the ribbon, a chip or a link title would land here too. */
+  const text = allText(livePanel(dom));
+  assert.match(text, /Plan generation failing for Aria XII/,
+    'the odd-severity problem never reached the page, so this sweep covers nothing');
+  assert.doesNotMatch(text, /undefined|\bnull\b|\[object/,
+    'a value the pane could not translate was printed as a JavaScript word: ' +
+    JSON.stringify(text.replace(/\s+/g, ' ').slice(0, 400)));
+});
+
+/* The other half of degrading honestly: the ribbon counts every problem that
+   is still open, and the chips under it break that same set down by severity.
+   The breakdown counted the three known severities and dropped everything
+   else on the floor, so a ribbon reading "3 problems need a person" sat over
+   chips adding up to one, and the two problems the pane did not understand
+   vanished from the count rather than from the label. */
+test('a severity this pane does not know is still counted beside the ribbon', async () => {
+  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
+  const chips = HERO(dom, 'hero-chips').replace(/\s+/g, ' ');
+
+  assert.match(HERO(dom, 'hero-title'), /^3 problems need a person$/,
+    'the ribbon counted something other than the three problems it was given');
+  assert.match(chips, /(^|\s)1 critical(\s|$)/,
+    'the known severity left the chip row: ' + JSON.stringify(chips));
+  /* Two, not three: the fourth row carries an unrecognised severity and is
+     closed, and the ribbon it sits under counts only what is still open. */
+  assert.match(chips, /(^|\s)2 of unknown severity(\s|$)/,
+    'the chips do not add up to the ribbon above them: ' + JSON.stringify(chips));
+});
+
+/* The same lookup, keyed by a word every plain object in JavaScript already
+   answers to. `SEVERITY_LABEL['constructor']` is not undefined — it is
+   Object's constructor — so a guard written as a truthiness test on the map
+   hands a FUNCTION to the row, and `'' + fn` is that function's source code.
+   The same is true of the map from a problem's work pane to a file name, one
+   line below the severity, whose `if (file && ...)` guard reads as though it
+   has covered the absent case.
+
+   Not a realistic payload, and not the reachability argument: it is why the
+   two guards are written against the words the pane knows and against the
+   type it needs, rather than against "the lookup found something". */
+test('a severity that names an object built-in does not put JavaScript on the screen', async () => {
+  const dom = await boot({
+    problems: problemsFixture([{
+      id: 'p9', reference: 'PRB-109', severity: 'constructor', status: 'open',
+      title: 'A severity that is a word Object answers to',
+      summary: 'Arrived from the route.',
+      firedAt: minutesAgo(10), workPane: 'constructor', workPaneLabel: 'Nowhere',
+    }]),
+  });
+
+  assert.deepEqual(qTitles(dom),
+    ['constructor: A severity that is a word Object answers to'],
+    'a severity naming an object built-in was not shown as the word that arrived');
+
+  /* The chip row as well as the label. The tally tests a severity against the
+     three words the pane knows rather than against a lookup on a plain
+     object, and `SEVERITY_LABEL['constructor']` is not undefined — so a guard
+     written the other way counts this problem as one the pane can name, drops
+     it out of the breakdown, and leaves a ribbon reading "1 problem needs a
+     person" over chips that mention none. Nothing else in this file can see
+     the difference between the two spellings of that guard. */
+  assert.match(HERO(dom, 'hero-chips').replace(/\s+/g, ' '),
+    /(^|\s)1 of unknown severity(\s|$)/,
+    'a severity Object answers to was dropped from the chip breakdown');
+
+  const panel = livePanel(dom);
+  assert.doesNotMatch(allText(panel), /native code|function \w*\s*\(/,
+    'a function reached the page as text');
+  /* The doorway is left off rather than pointed at a function: an href is not
+     text, so no sweep of what is written on the page would see it.
+
+     `A`, not `a`: the harness stores an HTML tag name upper-cased, and the
+     lower-case spelling matched nothing, so this loop ran zero times and
+     passed while the defect it names was on the page. Caught by the mutation
+     battery, which is what a control exists for.
+
+     The count is over the links on the ROW, which is what makes it bind: a
+     floor over the panel is met by the card head and the tiles whatever the
+     row does. One link here, the problem's own, because this problem's work
+     pane is unrecognised too and that doorway is correctly left off. */
+  const hrefs = rowHrefs(dom);
+  assert.equal(hrefs.length, 1,
+    'the queue row carries ' + hrefs.length + ' links rather than the problem link alone: ' +
+    JSON.stringify(hrefs));
+  for (const href of hrefs) {
+    assert.doesNotMatch(href, /native code|function/,
+      'a link was built from a lookup that found an object built-in: ' + JSON.stringify(hrefs));
+  }
+});
+
 /* ============================== the states ============================= */
 
 test('empty needs both halves to be empty, not one quiet window', async () => {

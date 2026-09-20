@@ -40,7 +40,24 @@
        covered is what it sends and what it says.
      - whether ops/settings.html loads the right stylesheets in the right
        order. scripts/check-ops-shell-v2.mjs boots the real page in headless
-       Chrome and is where that is answered. */
+       Chrome and is where that is answered.
+     - the ++ in `var token = ++record.token;` in loadRecord(). Replacing it
+       with `var token = record.token;` leaves the whole suite green, and that
+       mutant is published on the pull request as a stated green rather than
+       left out: record.busy already means one record read at a time, so under
+       correct code no two record requests are ever in flight to tell the two
+       spellings apart. The line that carries the fix is the increment in
+       load(), and deleting that one turns this section red.
+     - a Load more issued BETWEEN load()'s reset and the render that answers
+       it. The token is bumped once per load(), at the reset, so a request
+       made inside that window is current when its answer arrives and lands on
+       top of the freshly-rendered first page. It is not reachable from the
+       pane: aria.css line 888 is
+       `[data-state]:not([data-shown]) { display: none !important; }`, and
+       region.loading() takes data-shown off the live panel for exactly that
+       window, so the Load more button is display:none while it lasts. The
+       stub has no layout and would let a test click it anyway, which is why
+       this is stated here instead of asserted. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -716,6 +733,284 @@ test('an empty record says that nothing has happened, not that recording is off'
   assert.match(text, /nothing recorded yet/i);
   assert.match(text, /not that recording is off/i);
 });
+
+/* ============================================== the record across a reload
+
+   Stadiora/Aria#10408. load() resets the record - it runs on boot, on the
+   failure-state retry and after a successful revoke - and a Load more page
+   already in flight when it does belongs to the window the pane has just
+   thrown away. Landing it appends rows from before the reload and advances
+   record.offset past them, so the next Load more asks for the wrong window
+   and a page of the record is skipped.
+
+   Nothing here is timed. The audit endpoint below HOLDS the page and hands
+   the test a promise to resolve, so the order the pane sees its answers in is
+   chosen rather than raced: a race reproduced by sleeping is a race
+   reproduced some of the time.
+
+   Both arms are bound, because a guard that drops everything drops Load more
+   with it and would pass an armless test:
+
+     - a page from before the reload must NOT land        (stale, drifting)
+     - a page asked for after the reload MUST land        (Load more works)
+     - a FAILURE from before the reload must not be shown (the other arm of
+       the same response)
+     - a page from before the reload must not make the pane think it is idle
+       while a newer read is in flight (the guard runs before the state it
+       protects, not after it) */
+
+/* The pane's page size. Stated here rather than read back off the pane: a
+   fixture sized from the pane's own request would agree with it whatever it
+   asked for. The first assertion in each test below checks the pane really
+   does ask for this many, so a change to the constant fails loudly instead of
+   quietly turning every window in this file into a short page - and a short
+   page is the end of the record, which hides Load more altogether. */
+const AUDIT_PAGE = 50;
+
+/* A full page of the record. The marker travels in the reason column, which
+   is the one column printed whole, so which window is on screen can be read
+   off the card rather than inferred from a count. */
+function auditWindow(prefix, count) {
+  const n = count === undefined ? AUDIT_PAGE : count;
+  return Array.from({ length: n }, (_, i) => ({
+    id: `${prefix}_${i}`,
+    occurredAt: back((i + 1) * MINUTE),
+    actorEmail: 'owner@ops.invalid',
+    actorRole: 'owner',
+    action: 'admin.login',
+    outcome: 'success',
+    targetType: null,
+    targetId: null,
+    reason: `${prefix}_${i}`,
+    ipAddress: '198.51.100.7',
+  }));
+}
+
+const HOLD = Symbol('hold');
+
+/* An audit endpoint that answers by offset and can be told to hold a page.
+   plan(offset, nth) returns the rows to answer with, or HOLD to hand back a
+   promise this test resolves by hand later.
+
+   It discriminates on the offset it is given: every request is recorded and
+   the plan branches on it, so an assertion about where the next page starts
+   is an assertion about what the pane asked for, not about a fixture handed
+   back regardless. */
+function auditServer(plan) {
+  const asked = [];
+  const holds = [];
+  return {
+    asked,
+    holdCount: () => holds.length,
+    land: (n, rows) => {
+      assert.ok(holds[n], `no page ${n} is being held`);
+      holds[n].resolve({ data: rows });
+    },
+    fail: (n, err) => {
+      assert.ok(holds[n], `no page ${n} is being held`);
+      holds[n].reject(err);
+    },
+    stub: (o) => {
+      const query = o && o.query;
+      assert.ok(query, 'the record was read with no querystring');
+      assert.equal(query.limit, AUDIT_PAGE,
+        'the pane no longer pages the record at the size these fixtures are built to');
+      asked.push(query.offset);
+      const answer = plan(query.offset, asked.length);
+      if (answer !== HOLD) return Promise.resolve({ data: answer });
+      let settle;
+      const promise = new Promise((resolve, reject) => { settle = { resolve, reject }; });
+      holds.push(settle);
+      return promise;
+    },
+  };
+}
+
+/* Boot, then hold a Load more page, then revoke - which is what makes load()
+   reset the record underneath it. Every step asserts the state it leaves
+   behind, so a test whose interleaving did not happen fails saying so instead
+   of quietly asserting something else. */
+async function reloadUnderAPage(server, options) {
+  const dom = await boot({ audit: server.stub, ...(options || {}) });
+  const card = () => cardByTitle(dom, 'What was done');
+  const rowsOn = () => card().querySelectorAll('tbody')[0].children.length;
+  const moreButton = () => buttonsIn(card()).filter((b) => /load more/i.test(allText(b)))[0];
+  const refreshButton = () => buttonsIn(card()).filter((b) => /refresh/i.test(allText(b)))[0];
+
+  assert.deepEqual(server.asked, [0], 'boot read something other than the first page');
+  assert.equal(rowsOn(), AUDIT_PAGE, 'the first window is not on screen');
+
+  const more = moreButton();
+  assert.equal(more.hidden, false,
+    'a whole page was sent and Load more was not offered, so nothing below can be clicked');
+  more.dispatch('click');
+  await dom.settle();
+  assert.deepEqual(server.asked, [0, AUDIT_PAGE], 'Load more asked for the wrong window');
+  assert.equal(server.holdCount(), 1, 'the second page was answered instead of held');
+
+  const accounts = cardByTitle(dom, 'Accounts');
+  buttonsIn(accounts).filter((b) => /revoke/i.test(allText(b)))[0].dispatch('click');
+  const form = dom.doc.querySelector('.modal');
+  form.querySelector('.modal-input').value = 'Laptop reported lost';
+  form.dispatch('submit');
+  await dom.settle();
+
+  assert.deepEqual(server.asked, [0, AUDIT_PAGE, 0],
+    'the revoke did not reload the record, so the page below is not in flight across a reset');
+  assert.equal(server.holdCount(), 1, 'the held page answered itself');
+  assert.match(allText(card()), /post_0\b/, 'the reloaded record is not the one on screen');
+
+  return { dom, card, rowsOn, moreButton, refreshButton };
+}
+
+/* The two windows every test in this section boots with: what was there
+   before the revoke, and what is there after it. Separate ids, so a row from
+   the first can be recognised on screen rather than counted. */
+const beforeWindow = () => auditWindow('boot');
+const afterWindow = () => auditWindow('post');
+
+function reloadingPlan(before, after) {
+  let zeroth = 0;
+  return (offset) => {
+    if (offset === 0) {
+      zeroth += 1;
+      return zeroth === 1 ? before : after;
+    }
+    return HOLD;
+  };
+}
+
+test('a Load more page in flight when a revoke reloads the pane does not land', async () => {
+  const before = beforeWindow();
+  const after = afterWindow();
+  const stale = auditWindow('stale');
+  const server = auditServer(reloadingPlan(before, after));
+  const { dom, card, rowsOn, moreButton } = await reloadUnderAPage(server);
+
+  /* Only now does the page asked for before the reload arrive. */
+  server.land(0, stale);
+  await dom.settle();
+
+  assert.doesNotMatch(allText(card()), /stale_/,
+    'a page from the window before the reload was appended to the one after it');
+  assert.equal(rowsOn(), after.length,
+    'the record is showing more rows than the window it was reloaded with holds');
+
+  /* Where the next page starts is the contract, and it is stated by the
+     fixture rather than read out of the pane: the window on screen is
+     after.length rows long, so the page after it starts there. */
+  const more = moreButton();
+  assert.equal(more.hidden, false, 'a whole page was sent and Load more is not offered');
+  more.dispatch('click');
+  await dom.settle();
+  assert.deepEqual(server.asked, [0, AUDIT_PAGE, 0, after.length],
+    'the offset drifted by a page the pane had already thrown away, so the next '
+    + 'Load more asks past rows nobody has seen');
+});
+
+test('Load more still pages the record after a revoke has reloaded the pane', async () => {
+  const before = beforeWindow();
+  const after = afterWindow();
+  const next = auditWindow('next');
+  let zeroth = 0;
+  const server = auditServer((offset) => {
+    if (offset === 0) {
+      zeroth += 1;
+      return zeroth === 1 ? before : after;
+    }
+    /* Held on the first ask, which is the page the reload orphans, and
+       answered on the second, which is the page the fresh card asks for. */
+    return zeroth === 1 ? HOLD : next;
+  });
+  const { dom, card, rowsOn, moreButton } = await reloadUnderAPage(server);
+
+  server.land(0, auditWindow('stale'));
+  await dom.settle();
+
+  /* The other arm. A guard that drops the orphaned page by dropping every
+     page passes the test above and takes Load more away from the pane
+     entirely, and nothing but this would notice. */
+  moreButton().dispatch('click');
+  await dom.settle();
+
+  assert.deepEqual(server.asked, [0, AUDIT_PAGE, 0, after.length],
+    'the page after the reloaded window was asked for at the wrong offset');
+  assert.equal(rowsOn(), after.length + next.length,
+    'Load more no longer adds anything to the record');
+  assert.match(allText(card()), /next_0\b/, 'the page that was asked for is not on screen');
+});
+
+test('a Load more page that fails after a revoke reloaded the pane is not reported',
+  async () => {
+    const server = auditServer(reloadingPlan(beforeWindow(), afterWindow()));
+    /* runTimers: false, or the stub runs a toast's own four-second removal the
+       moment it is scheduled and every toast this pane raises is gone before
+       it can be read. An assertion about toasts under the default stub is
+       vacuous in both directions. */
+    const { dom, card, rowsOn } = await reloadUnderAPage(server, { runTimers: false });
+    const after = afterWindow();
+
+    /* The revoke posts its own confirmation, so the record of what is on
+       screen is taken here and compared, rather than asserted to be empty. */
+    const toasts = () => dom.doc.querySelectorAll('.toast').map((t) => allText(t));
+    const before = toasts();
+    assert.ok(before.length,
+      'no toast survives in this stub, so comparing toasts before and after proves nothing');
+
+    server.fail(0, new Error('The operations API did not answer.'));
+    await dom.settle();
+
+    assert.deepEqual(toasts(), before,
+      'the pane complained about a page it had already thrown away');
+    assert.equal(rowsOn(), after.length,
+      'a failure belonging to the window before the reload disturbed the one after it');
+    assert.doesNotMatch(allText(card()), /could not be read|did not answer/i,
+      'the reloaded record was replaced by a failure it did not suffer');
+  });
+
+test('a Load more page from before a reload cannot make the pane think it is idle',
+  async () => {
+    const before = beforeWindow();
+    const after = afterWindow();
+    let zeroth = 0;
+    const server = auditServer((offset) => {
+      if (offset !== 0) return HOLD;
+      zeroth += 1;
+      if (zeroth === 1) return before;
+      if (zeroth === 2) return after;
+      /* Every reread after the reload is held too, so this test chooses when
+         the refresh below lands rather than having it answer itself. */
+      return HOLD;
+    });
+    const { dom, refreshButton } = await reloadUnderAPage(server);
+
+    /* Refresh is never disabled - only Load more is - so a reload asked for
+       while a read is in flight is reachable, and the pane holds it rather
+       than running a second read. */
+    refreshButton().dispatch('click');
+    await dom.settle();
+    assert.deepEqual(server.asked, [0, AUDIT_PAGE, 0, 0], 'Refresh did not reread the record');
+    assert.equal(server.holdCount(), 2, 'the refresh answered itself');
+
+    /* The orphaned page lands while that refresh is still in flight. It must
+       not clear the flag the refresh owns. */
+    server.land(0, auditWindow('stale'));
+    await dom.settle();
+
+    refreshButton().dispatch('click');
+    await dom.settle();
+    assert.deepEqual(server.asked, [0, AUDIT_PAGE, 0, 0],
+      'a page from before the reload unstuck the read in flight, so a second Refresh '
+      + 'ran a concurrent read instead of being held');
+
+    /* And the held reload really does run when the read it waited for lands:
+       the same flag that must not be cleared early must still be cleared. */
+    server.land(1, auditWindow('again'));
+    await dom.settle();
+    assert.deepEqual(server.asked, [0, AUDIT_PAGE, 0, 0, 0],
+      'the reload that was held never ran');
+    assert.equal(server.holdCount(), 3);
+  });
 
 /* ================================================================ the export */
 
