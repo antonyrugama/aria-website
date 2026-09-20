@@ -863,43 +863,6 @@
     return card;
   }
 
-  function funnelCard(funnel) {
-    var steps = list(funnel.steps).filter(function (step) {
-      return num(step.count) !== null;
-    });
-    var top = steps.length ? num(steps[0].count) : 0;
-    var card = S.card();
-    card.appendChild(S.cardHead('Getting started', funnel.hint || null, []));
-
-    card.appendChild(h('div', { className: 'card-body' }, [
-      h('div', { className: 'u-steps' }, steps.map(function (step) {
-        return h('div', { className: 'u-step' }, [
-          h('div', { className: 'u-step-top' }, [
-            h('span', { className: 'u-step-k', text: step.label }),
-            h('span', { className: 'u-step-v num', text: fmt.int(step.count) })
-          ]),
-          meter(top ? (step.count / top) * 100 : 0, step.tone)
-        ]);
-      }))
-    ]));
-
-    var note = funnel.note;
-    if (note && (note.title || note.detail)) {
-      var foot = h('div', { className: 'card-foot' }, [
-        S.icon('info'),
-        h('span', {
-          text: [note.title, note.detail].filter(function (part) {
-            return typeof part === 'string' && part;
-          }).join(' ')
-        })
-      ]);
-      var href = note.link && S.safeHref(note.link.href);
-      if (href && note.link.label) foot.appendChild(S.link(href, note.link.label));
-      card.appendChild(foot);
-    }
-    return card;
-  }
-
   function versionCard(coverage) {
     var card = S.card();
     card.appendChild(S.cardHead('Which versions report', null, []));
@@ -971,24 +934,19 @@
     }
 
     var features = data.features || {};
-    var funnel = data.funnel || {};
     var coverage = data.coverage || {};
     var hasFeatures = list(features.rows).length > 0;
-    var hasFunnel = list(funnel.steps).length > 0;
     var hasVersions = list(coverage.versions).length > 0;
 
-    if (hasFeatures || hasFunnel || hasVersions) {
+    if (hasFeatures || hasVersions) {
       var doing = S.band('What people do', null, []);
-      var side = h('div', { className: 'col' });
-      if (hasFunnel) side.appendChild(funnelCard(funnel));
-      if (hasVersions) side.appendChild(versionCard(coverage));
-
-      if (hasFeatures && (hasFunnel || hasVersions)) {
-        doing.appendChild(h('div', { className: 'grid g-main' }, [featureCard(features), side]));
+      if (hasFeatures && hasVersions) {
+        doing.appendChild(h('div', { className: 'grid g-main' },
+          [featureCard(features), versionCard(coverage)]));
       } else if (hasFeatures) {
         doing.appendChild(featureCard(features));
       } else {
-        doing.appendChild(side);
+        doing.appendChild(versionCard(coverage));
       }
       wrap.appendChild(doing);
     }

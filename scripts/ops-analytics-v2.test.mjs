@@ -118,15 +118,6 @@ function usageFixture(over) {
         },
       ],
     }],
-    funnel: {
-      hint: 'From signing up to a first program',
-      steps: [
-        { label: 'Signed up', count: 412, tone: 's1' },
-        { label: 'Finished onboarding', count: 318, tone: 's1' },
-        { label: 'Started a program', count: 204, tone: 's3' },
-      ],
-      note: { title: 'Biggest drop is onboarding.', detail: '94 people stopped there.' },
-    },
     features: {
       hint: 'Share of people who used it at least once',
       rows: [
@@ -142,7 +133,7 @@ function usageFixture(over) {
       coverageNote: 'Counted over people on a reporting app version.',
     },
     coverage: {
-      shortfall: { detail: 'Eight per cent of sessions are on a version that does not report.' },
+      shortfall: { detail: '8.0% of Mobile sessions in this window ran on an app version that does not report feature use.' },
       versions: [
         { label: '2.9.1', coverageBasisPoints: 10000, sessionShareBasisPoints: 7200 },
         { label: '2.8.4', coverageBasisPoints: 0, sessionShareBasisPoints: 800 },

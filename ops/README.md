@@ -583,8 +583,10 @@ The headline label follows the range in the answer rather than saying "Month to 
 the window is. That was invisible while the pane had no endpoint and would have put those words
 over a twelve month bill the day it got one.
 
-**People and usage** expects `asOf`, `window`, `coverage`, `apps`, `cohorts`, `funnel`, and
-`features`. `availability.state` is `ready`, `insufficient`, or `not_reporting`.
+**People and usage** expects `asOf`, `window`, `coverage`, `apps`, `cohorts` and `features`.
+`availability.state` is `ready`, `insufficient`, or `not_reporting`. There is no `funnel`:
+`OpsUsagePayload` has never carried one, and departure 9 below says why the pane stopped
+drawing one.
 
 `window` carries three separate facts about how much of the chosen span has figures behind it,
 and the pane renders all three as statements about the *window*, never about a column, because
@@ -1224,10 +1226,11 @@ for a fact already on screen. Wording and ordering differ in more places than ar
 the mock is a static page with hand-written sample text and the pane writes its words from the
 answer.
 
-1. **No week-over-week pill on a tile, and no "New signups this month" tile.** The response
-   carries one window and no previous one, and no signup count. Both are figures rather than
-   phrasing: a delta drawn from the window the pane already has would be a number nobody
-   measured.
+1. **No week-over-week pill on a tile.** The response carries one window and no previous one,
+   so a delta drawn from the window the pane already has would be a number nobody measured.
+   **No "New signups this month" tile** for a different reason: not absence but repetition —
+   the response does carry per-app active-people counts, and a signup total on a tile would be
+   the same population the band beneath it already breaks down.
 2. **No "Returning after 7 days" headline.** Retention arrives as a grid of signup groups, each
    with its own denominator. Collapsing them into one figure means choosing a group and an
    offset, and the pane would then be publishing a rate the answer never sent.
@@ -1251,6 +1254,13 @@ answer.
    screen reader.
 8. **The mock's explanatory captions are not reproduced.** The mocks encode one fact per slot,
    which is the rule that took the approved set from 7,240 words to 4,842.
+9. **No activation funnel card.** `OpsUsagePayload` carries no `funnel` member and the route's
+   own docblock says why: a funnel's second step is read against its first, so it is a rate over
+   people whether or not it says so, and the only counts available for one are not consent
+   gated. The v1 pane drew one anyway, from a field the server never sends — visible only when
+   a local fixture supplied it, and drawn without the reporting floor this pane otherwise
+   applies to every rate. The remodel drops the card rather than carrying dead code that
+   contradicts the pane's own contract; the mock does not draw one either.
 
 ### Problems on v2: where the pane departs from the mock
 
