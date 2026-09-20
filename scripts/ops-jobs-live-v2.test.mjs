@@ -286,6 +286,24 @@ function heroText(dom) {
   return hero ? allText(hero) : '';
 }
 
+/* The verdict sentence of a row, and of the hero, read on their own rather
+   than out of the surrounding text. Two tests assert these EQUAL a sentence
+   written out here, because a blacklist of phrasings pins the phrasings and
+   not the claim: the wrong sentence can always be spelled a fourth way. An
+   expected string stated independently of the source cannot be satisfied by a
+   rewrite, so any change to what the pane claims has to be made here too,
+   deliberately, in a diff a reviewer reads. */
+function rowSentence(row) {
+  const sub = findAll(row, (n) => hasClass(n, 't-sub'))[0];
+  return sub ? allText(sub) : '';
+}
+
+function heroSub(dom) {
+  const hero = findAll(livePanel(dom), (n) => hasClass(n, 'hero'))[0];
+  const sub = hero ? findAll(hero, (n) => hasClass(n, 'hero-sub'))[0] : null;
+  return sub ? allText(sub) : '';
+}
+
 function tileText(dom, heading) {
   const tile = findAll(livePanel(dom), (n) => (n.getAttribute('class') || '').indexOf('kpi') !== -1)
     .filter((n) => heading.test(allText(n)))[0];
@@ -317,17 +335,20 @@ test('a queue whose front is older than the breach reads not clearing', async ()
   assert.doesNotMatch(text, /Moving/, 'a queue holding its backlog was also called moving');
 });
 
-test('not clearing does not claim the front has stopped moving', async () => {
+test('not clearing claims exactly what oldest >= span proves, and no more', async () => {
   /* The boundary of what two numbers prove, and the reason this pane does not
      say "stuck". A burst that all arrived before the breach can drain one job
      at a time and satisfy oldest >= span the whole way, because every new
-     front is still older than the breach. This fixture IS that burst: the
-     front is 30m30s old and the queue has been over the line 20m, so the row
-     must not tell an operator the front has not moved.
+     front is still older than the breach — so most of that backlog can be
+     gone. This fixture IS that burst: the front is 30m30s old and the queue
+     has been over the line 20m. What survives is the existential, that the job
+     now at the front was already waiting when the line was crossed.
 
-     The mutation for this test is the sentence it reads: putting
-     MOVEMENT.holding.sentence back to "Nothing has left the front of this
-     queue since it went over the line." fails it. */
+     The sentence is asserted whole, not searched for phrases. Two earlier
+     drafts of it were false — "Nothing has left the front of this queue since
+     it went over the line" and "the backlog it had then is still there" — and
+     both were reached by rewording, which is the move an equality assertion
+     refuses and a blacklist does not. */
   const dom = await boot({
     problems: {
       problems: [queueProblem({
@@ -339,18 +360,53 @@ test('not clearing does not claim the front has stopped moving', async () => {
       summary: {},
     },
   });
-  const text = allText(queueRows(dom)[0]);
-  assert.match(text, /Not clearing/, 'the fixture did not reach the verdict under test');
-  assert.match(text, /already waiting/,
-    'the row stopped saying the one thing the two numbers do prove');
-  assert.doesNotMatch(text, /left the front|front has not moved|has not moved since/i,
-    'the row claimed the front has not moved, which these two numbers cannot prove: ' + text);
+  const row = queueRows(dom)[0];
+  assert.match(allText(row), /Not clearing/, 'the fixture did not reach the verdict under test');
+  assert.equal(rowSentence(row),
+    'Work that was already waiting when this queue went over the line is still waiting. ' +
+    'Nothing queued since has reached the front.',
+    'the row says something other than what oldest >= span proves');
+});
+
+test('moving, behind claims exactly what oldest < span proves, and no more', async () => {
+  /* The sibling limit, and the one round 2 of review found: oldest < span
+     proves the queue turned over, and counts nothing and times nothing, so it
+     cannot carry a rate. This fixture is that counter-example, kept consistent
+     with the alerting engine — the line is held throughout by a job enqueued
+     three minutes into the breach, five older jobs drained one a minute, and
+     then nothing left the queue for seven minutes:
+
+       depth 5 -> 1, arrivals 1, departures 5, stalled for 7 minutes,
+       oldest 22m < span 25m  ->  MOVING, BEHIND
+
+     Arrivals are strictly SLOWER than departures across the whole span and the
+     queue has not moved recently, so "they are arriving faster than they
+     leave" is false here in both readings. Told that, an operator adds
+     capacity while a worker is dead. */
+  const dom = await boot({
+    problems: {
+      problems: [queueProblem({
+        observedValue: 1320,
+        firstBreachedAt: at(25 * MINUTE),
+        firedAt: at(20 * MINUTE),
+        lastObservedAt: at(0),
+      })],
+      summary: {},
+    },
+  });
+  const row = queueRows(dom)[0];
+  assert.match(allText(row), /Moving, behind/, 'the fixture did not reach the verdict under test');
+  assert.equal(rowSentence(row),
+    'Everything this queue was holding when it went over the line has since left it. ' +
+    'What is waiting now arrived after that.',
+    'the row says something other than what oldest < span proves');
 });
 
 test('a queue whose front arrived after the breach reads moving, behind', async () => {
   /* Same 59 minute breach, but the job at the front has only been waiting 11
      minutes, so nothing the queue was holding when it crossed the line is
-     still there. Work is leaving; it is arriving faster. */
+     still in it, and everything in it now arrived after the line was
+     crossed. */
   const dom = await boot({
     problems: { problems: [queueProblem({ observedValue: 660 })], summary: {} },
   });
@@ -457,16 +513,24 @@ test('the hero names the fact, not just that something is wrong', async () => {
   const holding = await boot({
     problems: { problems: [queueProblem({ observedValue: 3600 })], summary: {} },
   });
-  const held = heroText(holding);
-  assert.match(held, /is not clearing/, 'the hero did not say the queue was not clearing');
-  /* The hero carries the same claim as the row and the same limit on it. */
-  assert.doesNotMatch(held, /left the front|has not moved|stuck/i,
-    'the hero claimed the front has not moved, which two numbers cannot prove: ' + held);
+  assert.match(heroText(holding), /is not clearing/,
+    'the hero did not say the queue was not clearing');
+  /* The hero carries the same two claims as the rows and the same limits on
+     them, so it is held to the same whole sentences. A pane that narrows its
+     rows and leaves its headline overclaiming has narrowed nothing: the
+     headline is the line somebody reads first. */
+  assert.equal(heroSub(holding),
+    'Work that was already waiting when it went over the line is still waiting.',
+    'the hero says something other than what oldest >= span proves');
 
   const behind = await boot({
     problems: { problems: [queueProblem({ observedValue: 660 })], summary: {} },
   });
   assert.match(heroText(behind), /is behind/, 'the hero did not say the queue was behind');
+  assert.equal(heroSub(behind),
+    'Everything it was holding when the line was crossed has since left. What is waiting now ' +
+    'arrived after that.',
+    'the hero says something other than what oldest < span proves');
   assert.doesNotMatch(heroText(behind), /is not clearing/,
     'the hero called a draining queue not clearing, which is the whole distinction collapsed');
 });
@@ -498,6 +562,23 @@ test('the failing figure is a percentage only while its unit says so', async () 
     'an observation whose unit is not basis points was printed as a percentage anyway');
   assert.doesNotMatch(text, /88\.0%|8800/,
     'the bare number reached the screen under a unit that does not fit it');
+
+  /* A number is not automatically a measurement, and this read is the sibling
+     of the seconds one: a success rate below zero is not a rate. Zero is,
+     which is why the guard here is >= 0 and the one on the age is > 0. */
+  const negative = await boot({
+    problems: { problems: [failingProblem({ observedValue: -500 })], summary: {} },
+  });
+  assert.match(liveText(negative), /finishing cleanly not readable/,
+    'a success rate below zero was printed as a percentage');
+  assert.doesNotMatch(liveText(negative), /-5\.0%|−5\.0%/,
+    'a negative percentage was set beside a real threshold as though it were a reading');
+
+  const zero = await boot({
+    problems: { problems: [failingProblem({ observedValue: 0 })], summary: {} },
+  });
+  assert.match(liveText(zero), /finishing cleanly 0\.0%/,
+    'nothing finishing cleanly is a real reading and was refused as though it were not');
 });
 
 test('a problem that belongs to another pane says so and does not become a queue', async () => {

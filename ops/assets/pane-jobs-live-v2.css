@@ -36,8 +36,8 @@
 
 /* ----------------------------------------------------------- queue rows
 
-   One row per request type: what it is, whether the front of it is moving,
-   and the two readings that decide the answer. It is a row rather than a table
+   One row per request type: what it is, whether it is clearing, and the two
+   readings that decide the answer. It is a row rather than a table
    because there are three or four of them at most, and the middle column is a
    sentence rather than a figure. */
 .queue-row {

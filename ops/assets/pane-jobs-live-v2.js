@@ -35,23 +35,32 @@
 
      oldest <  span   the job at the front arrived AFTER the breach began.
                       Everything the queue was holding when it crossed the line
-                      is therefore gone — a job older than the front cannot
-                      still be queued — so the queue has emptied past its whole
-                      backlog at least once while over the line. Work is
-                      leaving; it is arriving faster: MOVING, BEHIND.
+                      has therefore left it — a job older than the front cannot
+                      still be queued — and what is waiting now arrived after
+                      that: MOVING, BEHIND.
 
      oldest >= span   the front arrived at or before the breach began, so
                       nothing queued since then has reached the front and the
-                      backlog the queue had when it crossed the line is still
-                      there: NOT CLEARING.
+                      job at the front of that backlog is still waiting:
+                      NOT CLEARING.
 
-   What the second reading does NOT prove is that the front has not moved. A
-   burst that all arrived before the breach can drain one job at a time and
-   satisfy oldest >= span the whole way, because each new front is still older
-   than the breach. One sample of one figure cannot separate that from a queue
-   nothing is picking up, and the pane must not say it can. "Not clearing" is
-   the whole claim: work that was already waiting when it went over the line is
-   still waiting.
+   Neither reading is a rate, and neither is a statement about the whole queue.
+
+   NOT CLEARING does not prove the front has not moved. A burst that all
+   arrived before the breach can drain one job at a time and satisfy
+   oldest >= span the whole way, because each new front is still older than the
+   breach — so most of that backlog can be gone. What is left is the
+   existential: the job now at the front was already waiting when the line was
+   crossed, and still is.
+
+   MOVING, BEHIND does not prove work is arriving faster than it leaves. One
+   sample of one age counts nothing and times nothing, so a queue that shrank
+   from five jobs to one and then stalled for seven minutes still reads this
+   way. What is left is that the queue turned over during the breach — jobs
+   left it, because the ones it held are no longer in it — and that everything
+   in it now arrived after the line was crossed. "Left it" is also as far as it
+   goes: a job leaves a queue by being cancelled, expired or permanently failed
+   as well as by succeeding, and these two numbers cannot tell those apart.
 
    The unit is one reason the verdict can be unavailable. It lives on the rules
    read and not on the problem, which is the same reason the Problems pane
@@ -235,8 +244,8 @@
     behind: {
       label: 'Moving, behind',
       tone: 'warn',
-      sentence: 'Everything waiting when it went over the line has since been handled. Jobs ' +
-        'are leaving; they are arriving faster.'
+      sentence: 'Everything this queue was holding when it went over the line has since left ' +
+        'it. What is waiting now arrived after that.'
     },
     unknown: {
       label: 'Cannot tell',
@@ -446,8 +455,9 @@
         title = behind.length === 1
           ? coded(behind[0].problem.scopeLabel || 'A queue') + ' is behind'
           : behind.length + ' queues are behind';
-        sub = 'Everything waiting when the line was crossed has since been handled. Jobs ' +
-          'are arriving faster than they leave.';
+        sub = 'Everything ' + (behind.length === 1 ? 'it was' : 'they were') +
+          ' holding when the line was crossed has since left. What is waiting now arrived ' +
+          'after that.';
       } else if (unreadable.length) {
         tone = 'st-warn';
         title = unreadable.length === 1
@@ -703,7 +713,7 @@
 
         var facts = h('div', { className: 'queue-facts' });
         var observed = failingRule && failingRule.thresholdUnit === 'basis_points' &&
-          fmt.isNum(problem.observedValue)
+          fmt.isNum(problem.observedValue) && problem.observedValue >= 0
           ? fmt.percent(problem.observedValue)
           : null;
         facts.appendChild(factPill('check', 'finishing cleanly',

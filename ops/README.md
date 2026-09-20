@@ -406,6 +406,10 @@ queue against how long the queue has been over the line. A front younger than th
 the queue emptied past everything it held when it crossed the line; a front older than the breach
 proves only that nothing queued since has reached the front, and the pane claims no more than
 that — a burst that all arrived before the breach can drain steadily and still show an old front.
+Neither reading is a rate. One sample of one age counts nothing and times nothing, so **moving,
+behind** says the queue turned over and that everything in it now arrived after the line was
+crossed, and never that work is arriving faster than it leaves: a queue that shrank from five
+jobs to one and then stalled reads the same way.
 Where the unit of the observation, the observation itself, the breach start or the elapsed time is
 missing, the verdict is **cannot tell**, drawn in words — the two verdicts are never guessed at,
 and an unknown is never rounded up to the alarming one. A count of running
@@ -1235,7 +1239,9 @@ sections above, this is not a complete diff: it names the departures that carry 
    a queue is stuck. Two numbers cannot prove that, so the pane says less: it compares the age of
    the job at the front of the queue against how long the queue has been over the line, and calls
    the older front **not clearing** — work that was already waiting when it crossed the line is
-   still waiting — rather than stuck, which would claim the front has not moved. It prints
+   still waiting — rather than stuck, which would claim the front has not moved. The younger
+   front is **moving, behind**, which says the queue turned over and stops there: two numbers
+   carry no rate, so nothing on the pane says work is arriving faster than it leaves. It prints
    **cannot tell** when the unit, the observation, the breach start or the elapsed time is
    missing. The unit lives only on the rules read, so a failure of that read costs the verdict
    rather than producing a guessed one. The pane's question in `pane-registry.js` still reads
