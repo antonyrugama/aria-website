@@ -91,6 +91,30 @@
      - a computed attribute name on body      document.body.setAttribute(k, v)
        stops the judgement                    added to assets/shell.js: REFUSED
 
+   The analysis underneath those is proved the same way, by mutating the guard
+   itself and watching one named fixture test go red. Each of these survived
+   the suite until the fixture beside it was written, so each is a branch that
+   was load bearing and unproven:
+
+     - a @keyframes child is not a selector   ctx = 'rules' unconditionally in
+                                              the at-rule branch
+     - an unquoted url() is not a comment     the url( passthrough removed
+     - :where() is read as :is() is           the where arm of the pseudo gate
+                                              removed
+     - the attribute name is case-folded      m[1].toLowerCase() -> m[1]
+     - the type selector is case-folded       the type push's toLowerCase()
+                                              removed
+     - two values on one attribute is a       narrow()'s intersection replaced
+       contradiction, not a union             by a union
+     - >, + and ~ end a compound even         the compound boundary predicate
+       unspaced                               narrowed to whitespace
+     - a bare read of document.body.dataset   the DATASET_ON_DOCUMENT risk
+       stops the judgement                    push deleted
+     - documentElement counts as well as      the receiver alternation narrowed
+       body                                   to body
+     - removeAttribute and toggleAttribute    the method alternation narrowed
+       count as well as setAttribute          to setAttribute
+
    NOT COVERED, on purpose
 
      - A selector that is dead for any reason other than a body-attribute
@@ -108,13 +132,28 @@
        which can only under-report.
      - Whether a sheet a page DOES load is the right sheet for it, and whether
        a rule that is alive is also correct.
-     - Anything outside ops/: this guard is scoped to the dashboard.
+     - Anything outside ops/, and anything in a SUBDIRECTORY of it: the page
+       and sheet listings are one level deep, so ops/panes/foo.html would not
+       be read and a sheet only it linked would be reported orphaned.
+     - @import. The orphan arm reads <link> tags only, so a sheet reachable
+       only through an @import inside a linked sheet reads as orphaned. The
+       dashboard has no @import and its own comment says it deliberately has
+       none, which is why this is recorded rather than implemented.
+     - HTML character references in an attribute value. `data-page="a&amp;b"`
+       is read as the seven characters it is written with, so a selector
+       asking for `a&b` would be judged against the wrong string.
 
-   The direction of every uncertainty is the same. Anything this cannot parse,
-   resolve or intersect is treated as ALIVE, so the guard under-reports rather
-   than deleting something that is still on screen — except where a script
-   could be writing the attribute, which is the one case that becomes a
-   refusal instead, because there the safe answer is not "alive" but "stop". */
+   Three of those — the subdirectory, the @import and the character reference —
+   are shapes where the wrong answer would be DEAD rather than alive, so it is
+   worth being exact about the direction the rest of this leans. Within the
+   analysis it does perform, anything it cannot parse, resolve or intersect is
+   treated as ALIVE, so it under-reports rather than deleting something that is
+   still on screen; the exception is a script that could be writing the
+   attribute, which becomes a loud REFUSAL, because there the safe answer is
+   not "alive" but "stop". Outside that analysis, in the three input shapes
+   above, it would be wrong in the dangerous direction, and each is named here
+   rather than defended against because none of the three exists in this
+   repository and all three fail loudly rather than silently. */
 
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -737,6 +776,41 @@ test('a body-attribute scope no loading page carries is reported, by value not b
   const mixed = 'body:is([data-page="users"], .special)';
   assert.deepEqual(analyze({ pages, sheets: sheets(mixed), scripts: [] }).findings, []);
 
+  /* :where() is read as :is() is. Asserted on a DEAD union, because an alive
+     one stays alive whether the pseudo is understood or ignored. */
+  const deadWhere = 'body:where([data-page="users"], [data-page="releases"])';
+  assert.deepEqual(
+    analyze({ pages, sheets: sheets(deadWhere), scripts: [] }).findings.map((f) => f.kind),
+    ['dead-body-scope']);
+
+  /* The attribute NAME is matched case-insensitively, as HTML matches it. A
+     page carrying the value must keep the rule alive however it is spelled. */
+  const usersPage = [page('ops/users.html', html('data-page="users"', '<link rel="stylesheet" href="assets/x.css">'))];
+  assert.deepEqual(analyze({ pages: usersPage, sheets: sheets('body[DATA-PAGE="users"]'), scripts: [] }).findings, []);
+
+  /* The TYPE selector is matched case-insensitively too, asserted in the dead
+     direction: an uppercase BODY that went unrecognised would simply stop
+     reaching <body>, and the rule would read alive either way. */
+  assert.deepEqual(
+    analyze({ pages, sheets: sheets('BODY[data-page="users"]'), scripts: [] }).findings.map((f) => f.kind),
+    ['dead-body-scope']);
+
+  /* Two values demanded of one attribute is a contradiction, not a union. */
+  const contradiction = 'body[data-page="login"][data-page="users"]';
+  assert.deepEqual(
+    analyze({ pages, sheets: sheets(contradiction), scripts: [] }).findings.map((f) => f.kind),
+    ['dead-body-scope']);
+
+  /* A combinator with no space around it still ends the compound. Without
+     that, `body>[data-page="users"]` reads as ONE compound and the attribute
+     is credited to <body> — a wrong DEAD verdict on a rule that matches a
+     child of <body>. */
+  for (const combinator of ['>', '+', '~']) {
+    assert.deepEqual(analyze({
+      pages, sheets: sheets(`body${combinator}[data-page="users"]`), scripts: [],
+    }).findings, [], `an unspaced ${combinator} was read as part of the body compound`);
+  }
+
   /* Only a rule whose EVERY selector is dead is dead. */
   const oneAlive = 'body[data-page="users"] .a, body[data-page="login"] .b';
   assert.deepEqual(analyze({ pages, sheets: sheets(oneAlive), scripts: [] }).findings, []);
@@ -753,7 +827,11 @@ test('a script that could write the attribute turns the judgement into a refusal
   const cases = [
     ["document.body.setAttribute('data-page', 'users');", 'a literal write'],
     ['document.body.setAttribute(key, value);', 'a computed name on body'],
+    ['document.body.removeAttribute(key);', 'a computed removal on body'],
+    ['document.body.toggleAttribute(key);', 'a computed toggle on body'],
+    ['document.documentElement.setAttribute(key, value);', 'a computed name on <html>'],
     ['document.body.dataset.page = "users";', 'a dataset write'],
+    ['var p = document.body.dataset.page;', 'any reach into document.body.dataset'],
     ['el.dataset.page = "users";', 'a dataset write on anything'],
     ['document.write("<body data-page=users>");', 'a document rewrite'],
     ['document.body.outerHTML = markup;', 'an outerHTML replacement'],
@@ -773,10 +851,12 @@ test('the CSS is parsed, not grepped', () => {
     'a commented-out rule was read as a rule');
   assert.deepEqual(only('@media (min-width: 1px) { body[data-page="users"] { color: red; } }'),
     ['dead-body-scope'], 'a rule inside @media was not judged');
-  assert.deepEqual(only('@keyframes body { body { opacity: 0; } }'), [],
+  assert.deepEqual(only('@keyframes anim { body[data-page="users"] { opacity: 0; } }'), [],
     'a keyframe selector was read as a selector');
   assert.deepEqual(only('.a { content: "/*"; color: red; }\nbody[data-page="users"] { color: red; }'),
     ['dead-body-scope'], 'a comment opener inside a string swallowed the sheet');
+  assert.deepEqual(only('.a { background: url(x/*y.png); }\nbody[data-page="users"] { color: red; }'),
+    ['dead-body-scope'], 'a comment opener inside an unquoted url() swallowed the sheet');
   assert.deepEqual(only('@import url(other.css);\nbody[data-page="users"] { color: red; }'),
     ['dead-body-scope'], 'a semicolon at-rule confused the rule scanner');
 });
