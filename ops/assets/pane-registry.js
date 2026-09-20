@@ -48,10 +48,14 @@
      filterNote says so where the control would have been.
 
      scripts/ops-registry-filters.test.mjs holds this to the panes themselves.
-     It boots each pane once per value the registry offers and reads back the
-     call the pane made, so a filter declared here that never reaches a read,
-     and a value whose only answer is a refusal, both turn it red. Declaring
-     one is therefore a claim about behaviour rather than a line in a table. */
+     It boots every pane on the v2 bootstrap once per value the registry offers
+     and reads back the call the pane made, so a filter declared here that
+     never reaches a read, and a value whose only answer is a refusal, both
+     turn it red. Declaring one is therefore a claim about behaviour rather
+     than a line in a table — except for spend, which is still on the v1 shell
+     and which that file cannot boot at all: there it holds the declaration
+     still, by name and by value, and nothing yet holds the behaviour. That
+     file's own header lists what it does not cover. */
   var WAVES = {
     W2: 'Operate panes',
     W3: 'Understand panes',

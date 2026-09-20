@@ -54,6 +54,13 @@
        by name and by value, so a filter or a window added to spend turns this
        file red rather than widening the hole quietly. What the lock cannot
        see is whether the pane acts on any of them; that waits on v2.
+     - whether `alerts` acts on a window ADDED to its list. Rule 5 reaches
+       Problems, but its reading only catches a pane whose fallback for an
+       unrecognised window is too wide; Problems answers one on status instead
+       (pane-alerts.js:303), so the reading passes for a reason that has
+       nothing to do with the window. Its three windows are pinned by value in
+       ALSO_PINNED for that reason, so a fourth is red at the lock rather than
+       proved here — the same trade spend gets, arrived at differently.
      - whether the API acts on a filter the pane sends it. A client can
        promise that the operator's selection reached the request; what the
        route does with it is the route's own test.
@@ -117,6 +124,21 @@ const HONOURED = {
    lock red. */
 const NOT_BOOTED = {
   spend: { range: ['month', 'last-month', '3m', '12m'] },
+};
+
+/* A pane this file does boot whose windows are pinned by value anyway, because
+   rule 5 cannot see a value added to its list either. Rule 5 reads back a
+   record that lies outside every window a pane offers, which catches a
+   fallback that is too WIDE: What happened finds no entry for an unrecognised
+   window in its own table, falls through to no window at all, and draws the
+   far record. Problems falls the other way — pane-alerts.js:303 is
+   `if (!days) return problem.status !== 'closed';`, the same branch its own
+   'open' value uses — so the far record is dropped for a reason that has
+   nothing to do with the window, and rule 5 passes on a value nothing is
+   applying. Same consequence as spend's, different cause: a window added here
+   is watched by nobody, so it is pinned. */
+const ALSO_PINNED = {
+  alerts: { range: ['open', '7d', '30d'] },
 };
 
 /* ============================== fixtures =============================== */
@@ -540,20 +562,22 @@ test('every filter the registry declares is claimed by this file, and every clai
     assert.ok(PAGES[id], id + ' is claimed in HONOURED with no boot recipe behind it');
   }
 
-  /* A pane nothing here boots has nothing else watching it, so the excuse is
-     pinned down to the values as well. Everywhere else this is rule 5's job,
-     and rule 5 needs a page to read. */
+  /* The lists nothing below is watching, pinned down to the values. Everywhere
+     else this is rule 5's job, and rule 5 needs a page to read and a fallback
+     it can see; the two tables above say which pane fails which of those. */
   const reg = registry();
-  for (const id of Object.keys(NOT_BOOTED)) {
-    for (const filter of Object.keys(NOT_BOOTED[id])) {
+  const pinned = Object.assign({}, NOT_BOOTED, ALSO_PINNED);
+  for (const id of Object.keys(pinned)) {
+    for (const filter of Object.keys(pinned[id])) {
       /* Array.from, because the registry is read in its own realm and a bare
          deepEqual compares prototypes as well as contents. */
       const offered = Array.from(valuesFor(reg, PANES[id], filter));
       assert.deepEqual(
-        offered, NOT_BOOTED[id][filter],
+        offered, pinned[id][filter],
         id + ' offers ' + offered.join(', ') + ' for ' + filter
-        + ' and this file is excused only for ' + NOT_BOOTED[id][filter].join(', ')
-        + '. Nothing here can boot it, so a value added to it is proved by nobody.'
+        + ' and this file is proved only for ' + pinned[id][filter].join(', ')
+        + '. A value added to this list is watched by nobody, for the reason '
+        + 'written above the table it is pinned in.'
       );
     }
   }
@@ -772,15 +796,16 @@ test('a filter applied to the answer narrows what is on the page', async () => {
 
 /* The value-level defect, which the coverage lock cannot see on a pane this
    file boots: it compares filter NAMES there, so a window added to a list a
-   pane already declares walks past it. (`spend` is the exception, and only
-   because nothing here can boot it: the lock pins its windows by value too.)
+   pane already declares walks past it. (`spend` and `alerts` are the two
+   exceptions, for the two different reasons written above their tables: the
+   lock pins both of their window lists by value.)
    What happened offered 'custom' for a while, and the pane answered it with a
    refusal card; delete the refusal and leave the value, and the pane finds no
    entry for it in its own window table, falls through to no window at all, and
    draws every record it was given under a control that says Custom. That is
    the same overclaim one level down.
 
-   The reading that catches it without knowing what any window means: one
+   The reading that catches it on a pane whose fallback is too WIDE: one
    record placed far outside every window any pane here offers, and closed. It
    has to be closed for two separate reasons — What happened keeps a problem
    that is STILL OPEN inside today's window however long ago it fired, and
@@ -789,7 +814,16 @@ test('a filter applied to the answer narrows what is on the page', async () => {
    alone puts a closed four-hundred-day-old record on the page is a value
    nothing is applying. Each value is then asked the same question about a
    record from an hour ago, which must be on the page, or the absence above
-   would prove only that the fixture never drew. */
+   would prove only that the fixture never drew.
+
+   What this reading CANNOT catch is the other fallback: a pane that answers an
+   unrecognised window on some dimension of its own rather than on age drops
+   the far record for a reason that has nothing to do with the window, and
+   reads as clean. Problems is that pane — pane-alerts.js:303,
+   `if (!days) return problem.status !== 'closed';` — so a window added to its
+   list walks past this test as well as past the lock's name comparison. Its
+   windows are pinned by value in ALSO_PINNED instead, which is why the
+   exception above is spend AND alerts. */
 const MARKED = { scopeKey: 'coach_invites', scopeLabel: 'Coach invites' };
 const MARKER = /Coach invites/;
 
