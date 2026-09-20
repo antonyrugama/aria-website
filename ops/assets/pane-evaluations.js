@@ -399,13 +399,7 @@
   }
 
   function render(root) {
-    if (!session.hasRole(['owner', 'operator'])) {
-      root.appendChild(h('div', { className: 'stack' }, [
-        datasetValidationSection(),
-        h('p', { className: 'field-hint', text: 'Evidence import requires operator or owner access.' })
-      ]));
-      return;
-    }
+    var canMutateEvidence = session.hasRole(['owner', 'operator']);
     var fileInput = input('file');
     fileInput.setAttribute('accept', '.json,.txt,image/jpeg,image/png,audio/mpeg,audio/wav,video/mp4,video/quicktime');
     var source = select([
@@ -817,8 +811,31 @@
       });
     });
 
-    root.appendChild(h('div', { className: 'stack' }, [
-      datasetValidationSection(),
+    var approvalHeading = h('div', { className: 'section-head approval-section-head' }, [
+      h('div', {}, [
+        h('h2', { text: 'Qualified approval handoff' }),
+        h('p', {
+          className: 'muted small',
+          text: 'Bind exact quarantined bytes to an admission request. This workflow does not admit, reveal or export evidence.'
+        })
+      ])
+    ]);
+    var sections = [datasetValidationSection()];
+    if (!canMutateEvidence) {
+      sections.push(
+        h('p', { className: 'field-hint', text: 'Evidence import requires operator or owner access.' }),
+        approvalHeading,
+        approvalCard(
+          'Get approval state',
+          'Reads metadata for a request the current principal may inspect.',
+          approvalGetForm
+        ),
+        approvalResult
+      );
+      root.appendChild(h('div', { className: 'stack' }, sections));
+      return;
+    }
+    sections.push(
       h('div', { className: 'callout callout-warn' }, [
         icon('warn'),
         h('div', {}, [
@@ -830,15 +847,7 @@
       ]),
       form,
       status,
-      h('div', { className: 'section-head approval-section-head' }, [
-        h('div', {}, [
-          h('h2', { text: 'Qualified approval handoff' }),
-          h('p', {
-            className: 'muted small',
-            text: 'Bind exact quarantined bytes to an admission request. This workflow does not admit, reveal or export evidence.'
-          })
-        ])
-      ]),
+      approvalHeading,
       approvalTrustNote,
       approvalCard(
         'Request approval',
@@ -858,7 +867,8 @@
         )
       ]),
       approvalResult
-    ]));
+    );
+    root.appendChild(h('div', { className: 'stack' }, sections));
   }
 
   shell.definePane('evals', render);

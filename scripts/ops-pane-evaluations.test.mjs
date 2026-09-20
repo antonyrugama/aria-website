@@ -246,6 +246,46 @@ test('viewers can validate declarations without being offered evidence import', 
   assert.equal(findNode(root, node => node.className === 'card evidence-form'), null);
 });
 
+test('a viewer requester can submit approval lookup without mutation controls', async () => {
+  const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
+  const calls = [];
+  const view = renderedPane(async (path, options) => {
+    calls.push({ path, options: plain(options) });
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: options.body.requestId,
+      operationId: 'ciel.approval.get',
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.approval-request',
+        id: approvalRequestId,
+        revision: 1,
+        value: {
+          approvalRequestId,
+          revision: 1,
+          state: 'pending',
+          expiresAt: '2026-10-19T00:00:00.000Z',
+        },
+      },
+    };
+  }, Date, 'viewer');
+
+  assert.equal(view.byId('approval-request-form'), null);
+  assert.equal(view.byId('approval-decision-form'), null);
+  assert.equal(findNode(view.root, node => node.className === 'card evidence-form'), null);
+  const form = view.byId('approval-get-form');
+  assert.ok(form, 'viewer approval lookup form is missing');
+  view.byId('approval-get-id').value = approvalRequestId;
+  await form.dispatch('submit');
+  await waitFor(() => calls.length === 1, 'viewer approval lookup did not complete');
+
+  assert.equal(calls[0].path, '/api/ops/ciel/operations');
+  assert.deepEqual(calls[0].options.body.input, { approvalRequestId });
+  assert.equal(calls[0].options.body.operationId, 'ciel.approval.get');
+  assert.match(view.byId('approval-result').textContent, /pending/i);
+});
+
 test('dataset form reports local request preparation errors and restores the submit button', async () => {
   let calls = 0;
   const view = renderedPane(async () => { calls += 1; });
@@ -326,8 +366,8 @@ function findNode(root, predicate) {
   return null;
 }
 
-function renderedPane(call, Clock = Date) {
-  const pane = loadPane(call, Clock);
+function renderedPane(call, Clock = Date, role = 'operator') {
+  const pane = loadPane(call, Clock, role);
   const root = {
     children: [],
     appendChild(child) {
@@ -343,10 +383,12 @@ function renderedPane(call, Clock = Date) {
     root,
     byId,
     form,
-    error: findNode(form, node => node.className === 'field-error'),
+    error: form ? findNode(form, node => node.className === 'field-error') : null,
     result: findNode(root, node => node.className === 'evidence-result'),
-    submit: findNode(form, node => node.tag === 'button' && node.attributes.type === 'submit')
-      || findNode(form, node => node.tag === 'button'),
+    submit: form
+      ? findNode(form, node => node.tag === 'button' && node.attributes.type === 'submit')
+        || findNode(form, node => node.tag === 'button')
+      : null,
   };
 }
 
