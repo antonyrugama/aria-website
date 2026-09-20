@@ -1052,9 +1052,10 @@ The tool proves itself before it judges anything: `node scripts/check-ops-contra
 --self-test` runs seven parts against synthetic fixtures — the formula against published WebAIM
 values, the decode/plate/sample pipeline against declared swatch colours, plate integrity pixel
 by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
-read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), and the two boundary
+read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), and the three boundary
 censuses counted on a page that carries six spellings of a nested browsing context, an open
-author shadow root, a closed one and a user-agent one. If any part fails, nothing is measured
+author shadow root, a closed one, and five user-agent roots of which exactly one paints words no
+source reaches. If any part fails, nothing is measured
 and the run exits non-zero.
 
 **Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
@@ -1211,22 +1212,43 @@ in **self-test part G** rather than only on the shell: on a page with no shadow 
 that always returns nothing looks exactly like a working one. Part G's fixture carries an open
 author root, a closed one and a user-agent one, and requires exactly the first two.
 
-**User-agent shadow roots are excluded from that refusal, and the text they paint into the page
-is measured rather than skipped.** The shipped page has four — the browser's own rendering of one
-`<select>`, its two `<option>`s and one `<input>` — so failing on them would make this guard red
-on markup it is not able to fix and would say nothing true. `COLLECT` has a branch for exactly
-this case: it reads the `<select>`'s rendered value through `.selectedOptions` and the `<input>`'s
-placeholder through `::placeholder`, each over the control's own box, which is where those glyphs
-land. Both are proven by mutation — colouring `#sampleRange` `#E9EDF2` fails the run at `1.08:1`
-in four passes, and colouring the placeholder `#EDEFF2` fails it at `1.11:1` — and the failing
-select run samples a clean `#F2F6FA` backdrop with no glyph pixels in it, which is what says the
-plate lifts a user-agent-painted value too. Round 8 of this PR's review wrote the opposite here
-and in the guard, and filed it as an issue; round 9 disproved it from the code and from those
-mutations, so the claim is deleted and
+**A user-agent shadow root is refused when it paints words `COLLECT` has no source for, and
+measured when it does not.** `COLLECT` reads a control's words from its own text nodes, from
+`.selectedOptions`, from `.value` and from `.placeholder`. All four of the shipped page's
+user-agent roots — one `<select>`, its two `<option>`s and one `<input>` — fall inside those
+four sources and are measured, proven by mutation: colouring `#sampleRange` `#E9EDF2` fails the
+run at `1.08:1` in four passes, colouring the placeholder `#EDEFF2` fails it at `1.11:1`, and the
+failing select run samples a clean `#F2F6FA` backdrop with no glyph pixels in it, which is what
+says the plate lifts a user-agent-painted value too. Round 8 of this PR's review wrote that the
+`<select>`'s value was out of reach and filed it as an issue; round 9 disproved that from the
+code and from those mutations, so
 [Stadiora/Aria#10422](https://github.com/Stadiora/Aria/issues/10422) is closed as not a defect.
-What a user-agent root does keep out of reach is the `<option>` **list**, which the browser paints
-in a popup outside the page — there are no such glyphs in the screenshot, so there is nothing
-here to measure.
+
+Round 10 then showed that round 9 had stopped one step short. A user-agent root that paints words
+in **none** of those four sources used to leave the sweep with no site, no refusal and no census
+entry. Four of them are reachable from this shell with no change to the tool — `<input
+type="file">` ("Choose File / No file chosen"), `<input type="date">` with no value
+("mm/dd/yyyy"), `<input type="submit">` with no value ("Submit"), and `<img alt>` on a broken
+`src` — and each exited **0** while painting real text at about `1.13:1` in light. The control is
+what makes it a defect rather than a limit: the same element at the same anchor with the same
+ink, `<input type="date" value="2026-09-20">`, routes its identical glyphs through `.value` and
+exits 1 as an ordinary judged site.
+
+Those are now refused by name. The test is behavioural, not a tag list: `DOM.getDocument` with
+`pierce: true` returns the user-agent root's own text nodes, so "this root paints words" is
+answered by the browser. A host is refused only when its root's text is non-empty, `COLLECT`
+could not source that text, and the host is visible with a box of at least 2×2 — which is why
+the shipped page refuses **0**. A working `<img>`, `<input type="range">`, `<input type="color">`,
+`<progress>` and `<meter>` all report an empty root and are never censused; `<video controls>`
+and `<audio controls>` are refused, correctly, because their root paints a running time this tool
+cannot reach. Part G's fixture carries five user-agent roots — a sourced `<select>`, its
+`<option>`, a sourced `::placeholder`, a working `<img>` and a `display: none` file input — plus
+one visible `<input type="file">`, and requires exactly the last one to be refused: four
+exonerations and one catch, so a census that refused everything or nothing fails there.
+
+What a user-agent root still keeps out of reach is the `<option>` **list** of an open `<select>`,
+which the browser paints in a platform popup outside the page — there are no such glyphs in the
+screenshot, and nothing in the page's own styling decides its contrast.
 
 **Text inside a nested browsing context is refused, for the same reason and a worse one.** A
 frame is a separate document: the shell's `*` walks do not reach it, the plate stylesheet is not

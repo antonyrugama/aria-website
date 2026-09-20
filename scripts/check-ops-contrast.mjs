@@ -90,12 +90,13 @@ const MIME = {
 let fixtureHtml = '';
 
 /* Self-test part G's page: six spellings of a nested browsing context, two
-   author shadow roots and one user-agent root, so the two boundary censuses
-   are proven by an executed assertion instead of by this comment. Served,
-   not written to disk, for the same reason as the fixture above. The shell
-   cannot reach five of the six spellings — its default-src 'none' blocks
-   frame-src and object-src, and only about:srcdoc is exempt by spec — so
-   this page is the only place they are exercised. */
+   author shadow roots, and five user-agent roots of which exactly one paints
+   words no source reaches — so the three boundary censuses are proven by an
+   executed assertion instead of by this comment. Served, not written to disk,
+   for the same reason as the fixture above. The shell cannot reach five of the
+   six frame spellings — its default-src 'none' blocks frame-src and
+   object-src, and only about:srcdoc is exempt by spec — so this page is the
+   only place they are exercised. */
 const BOUNDARY_FRAG = '<!doctype html><html><body><p>framed text</p></body></html>';
 const BOUNDARY_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="20"><text x="2" y="14">svg</text></svg>';
@@ -109,6 +110,11 @@ const BOUNDARY_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>b
 <div id="shadowOpen"><template shadowrootmode="open">open root text</template></div>
 <div id="shadowClosed"><template shadowrootmode="closed">closed root text</template></div>
 <select><option>a user-agent root that must NOT be reported</option></select>
+<input type="search" placeholder="a sourced placeholder that must NOT be reported">
+<img alt="an empty user-agent root that must NOT be reported" width="20" height="20"
+  src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+<input type="file" style="display:none">
+<input type="file" id="uaUnsourced">
 </body></html>`;
 
 const server = http.createServer((req, res) => {
@@ -926,20 +932,12 @@ async function load(url, { settle = 900 } = {}) {
    which is analysis added mid-review. The shell carries no AUTHOR shadow root
    in any of the eight passes, so refusing them costs 0 sites.
 
-   USER-AGENT roots are a separate matter and are NOT refused here, because
-   the shipped page has four of them — the browser's own rendering of one
-   <select>, its two <option>s and one <input> — and failing on those would
-   make this guard red on code it cannot fix and would say nothing true. The
-   text they paint INTO THE PAGE is measured rather than skipped: COLLECT
-   reads the <select>'s rendered value through .selectedOptions and the
-   <input>'s through ::placeholder, each over the control's own box, which is
-   where those glyphs land. Round 8 of this review wrote here that the
-   <select>'s value was an uncovered site; round 9 disproved it from the code
-   40 lines up and from a mutation — colouring #sampleRange #E9EDF2 fails the
-   run at 1.08:1 in four passes — so the claim is deleted rather than
-   restated. What a user-agent root does keep out of reach is the <option>
-   LIST, which the browser paints in a popup outside the page: there are no
-   such glyphs in the screenshot, so there is nothing here to measure. */
+   USER-AGENT roots are not refused here. Every one of the shipped page's four
+   — one <select>, its two <option>s and one <input> — paints text COLLECT has
+   a source for, so refusing them would be red on code that is measured. The
+   ones that paint text COLLECT has NO source for are refused separately, by
+   uaTextNoSource() below; read that function for what this one leaves alone
+   and why. */
 async function shadowHosts() {
   const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
   const found = [];
@@ -953,6 +951,105 @@ async function shadowHosts() {
     for (const c of n.children || []) walk(c);
   };
   walk(root);
+  return found;
+}
+
+/* A USER-AGENT shadow root can paint text into the page that COLLECT has no
+   way to read. COLLECT sources a control's words from its own text nodes, from
+   .selectedOptions, from .value and from .placeholder; when the browser paints
+   words that are in none of those, the element leaves the sweep with no site,
+   no refusal and no census entry, and the judged count does not move — so
+   nothing about the run looks different.
+
+   Round 10 of this PR's review demonstrated four of them, each reachable from
+   shell-v2.html with no change to this tool and each painting at 1.13:1 in
+   light: <input type="file"> ("Choose File / No file chosen"), <input
+   type="date"> with no value ("mm/dd/yyyy"), <input type="submit"> with no
+   value ("Submit"), and <img alt> on a broken src. All four exited 0 at 1632
+   while the run printed that every text site it reaches meets AA. The control
+   is what makes it a defect rather than a limit: the same element at the same
+   anchor with the same ink, <input type="date" value="2026-09-20">, routes its
+   identical glyphs through .value and exits 1 at 1.08:1.
+
+   Refused, not measured — the words are in a tree the ranges, the plate and
+   the `*` walk do not enter, so there is no box this tool can honestly sample
+   for them.
+
+   The test is behavioural, not a tag list: DOM.getDocument with pierce: true
+   returns the user-agent root's own text nodes, so "this root paints words" is
+   answered by the browser rather than enumerated here. A host is refused only
+   when all of these hold, which is why the shipped page refuses none:
+
+     - its user-agent root's subtree carries non-whitespace text, so something
+       is painted. A working <img>, <input type="range">, <input type="color">,
+       <progress> and <meter> all report an empty root and are never censused;
+     - COLLECT could not source that text — no own text node, no
+       .selectedOptions, no .value, no .placeholder. This is what exonerates
+       the shipped <select>, its <input> and both <option>s, and it is the same
+       four sources COLLECT actually reads rather than a restatement of them;
+     - the host is visible and has a box of at least 2x2, the same gates
+       COLLECT applies, so a control the page has hidden is not reported.
+
+   <video controls> and <audio controls> are refused by this rule, correctly:
+   their user-agent root paints a running time and a row of labels that this
+   tool cannot reach. The shell carries neither.
+
+   What this still does not reach is text a user-agent root paints OUTSIDE the
+   page — the <option> list of an open <select>, which the browser draws in a
+   platform popup that is not in the screenshot. Nothing in the page's own
+   styling decides its contrast. */
+async function uaTextNoSource() {
+  const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+  const textOf = (n) => {
+    let t = n.nodeType === 3 ? String(n.nodeValue || '') : '';
+    for (const c of n.children || []) t += textOf(c);
+    for (const r of n.shadowRoots || []) t += textOf(r);
+    return t;
+  };
+  const hosts = [];
+  const walk = (n) => {
+    for (const r of n.shadowRoots || []) {
+      if (r.shadowRootType === 'user-agent') {
+        const text = textOf(r).replace(/\s+/g, ' ').trim();
+        if (text) hosts.push({ id: n.backendNodeId, name: String(n.nodeName || '?').toLowerCase(), text });
+      }
+      walk(r);
+    }
+    for (const c of n.children || []) walk(c);
+  };
+  walk(root);
+
+  /* The same four sources COLLECT reads, and the same visibility and box
+     gates, asked of the host itself rather than inferred from its tag. */
+  const SOURCED = `function () {
+    let own = '';
+    for (const node of this.childNodes) if (node.nodeType === 3) own += node.nodeValue;
+    if (own.trim()) return true;
+    if (this.tagName === 'SELECT') return !!((this.selectedOptions[0] || {}).textContent || '').trim();
+    if (this.tagName === 'INPUT' || this.tagName === 'TEXTAREA') return !!(this.value || this.placeholder);
+    return false;
+  }`;
+  const PAINTS = `function () {
+    const cs = getComputedStyle(this);
+    if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) return false;
+    const r = this.getBoundingClientRect();
+    return r.width >= 2 && r.height >= 2;
+  }`;
+
+  const found = [];
+  for (const host of hosts) {
+    const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: host.id });
+    const ask = async (fn) => {
+      const res = await cdp.send('Runtime.callFunctionOn',
+        { objectId: object.objectId, functionDeclaration: fn, returnByValue: true });
+      if (res.exceptionDetails) throw new Error(res.exceptionDetails.text);
+      return res.result.value;
+    };
+    const sourced = await ask(SOURCED);
+    const paints = sourced ? false : await ask(PAINTS);
+    await cdp.send('Runtime.releaseObject', { objectId: object.objectId });
+    if (paints) found.push(`${host.name} "${host.text.slice(0, 60)}"`);
+  }
   return found;
 }
 
@@ -1198,14 +1295,16 @@ async function measureSites(targets, where) {
  *      CSS Color 4 (a 50% mix of #FF0000 and #0000FF in sRGB is
  *      `color(srgb 0.5 0 0.5)`, which is rgb(127.5, 0, 127.5)), not computed
  *      here.
- *   G. THE TWO BOUNDARY CENSUSES, which decide whether a site is SEEN at all
- *      and so sit upstream of everything A-F measures. A page carrying six
- *      spellings of a nested browsing context must report six, which is what
- *      distinguishes a census of CONTEXTS from a tag-name list; and a page
+ *   G. THE THREE BOUNDARY CENSUSES, which decide whether a site is SEEN at
+ *      all and so sit upstream of everything A-F measures. A page carrying
+ *      six spellings of a nested browsing context must report six, which is
+ *      what distinguishes a census of CONTEXTS from a tag-name list; a page
  *      carrying an open author root, a closed author root and a user-agent
- *      root must report exactly the first two. Both are counted on a fixture
- *      because the shipped shell carries neither, so nothing on it can tell a
- *      working census from one that always returns nothing.
+ *      root must report exactly the first two; and a page carrying five
+ *      user-agent roots, four of them either sourced by COLLECT or painting
+ *      nothing, must refuse exactly the fifth. All three are counted on a
+ *      fixture because the shipped shell refuses nothing, so nothing on it
+ *      can tell a working census from one that always returns nothing.
  *
  * NOT COVERED, on purpose — this is the list of exclusions decided, not an
  * inventory of every blind spot, because one nobody has thought of is by
@@ -1381,11 +1480,12 @@ async function selfTest() {
       `${row ? (row.unjudgeable || `judged at ${row.ratio?.toFixed(2)}:1`) : 'nothing'}`);
   }
 
-  console.log('\n  G. boundary censuses — a frame and an author shadow root must be seen');
+  console.log('\n  G. boundary censuses — a frame, an author shadow root and unsourced user-agent text');
   {
     await load(origin + '/__contrast-boundary-test.html', { settle: 300 });
     const frames = await nestedFrames();
     const shadow = await shadowHosts();
+    const uaText = await uaTextNoSource();
     /* Six spellings on one page. Page.getFrameTree reports the CONTEXT and
        not the element that spells it, which is what stops this from being a
        tag-name list; six is the count that says so. A tag-name census would
@@ -1406,13 +1506,26 @@ async function selfTest() {
     console.log(`     ${okShadow ? 'ok  ' : 'FAIL'} 1 open + 1 closed author root, 1 user-agent ` +
       `root → ${shadow.length} censused: ${shadow.join('; ') || 'nothing'}\n          ` +
       'the user-agent root must not be among them');
+    /* Five user-agent roots on the page and exactly one of them is refused:
+       the <select> is sourced through .selectedOptions, the <option> through
+       its own text node, the <input type="search"> through .placeholder, the
+       working <img>'s root carries no text at all, and the display: none file
+       input paints nothing. Only the visible <input type="file"> paints words
+       with no source — which is why this is an assertion about four
+       exonerations and not just one catch. */
+    const okUa = uaText.length === 1 && uaText[0].startsWith('input "');
+    if (!okUa) bad++;
+    console.log(`     ${okUa ? 'ok  ' : 'FAIL'} 5 user-agent roots, 1 painting words with no ` +
+      `source → ${uaText.length} refused: ${uaText.join('; ') || 'nothing'}\n          ` +
+      'the sourced select, option and placeholder, the empty img root and the hidden ' +
+      'input must not be among them');
   }
 
   console.log(bad === 0
     ? '\n  self-test passed — the formula matches published values, pixels survive\n' +
       '  the pipeline, the plate lifts every glyph, inks are read from what paints,\n' +
       '  an ink that cannot be resolved is refused, color(srgb) is read, and the\n' +
-      '  two boundaries this tool refuses are both censused.\n'
+      '  three boundaries this tool refuses are all censused.\n'
     : `\n  self-test FAILED on ${bad} case(s); do not trust this tool's numbers.\n`);
   return bad === 0;
 }
@@ -1540,6 +1653,16 @@ try {
             'document, so the * walks miss its text, the plate stylesheet is not installed in ' +
             'it and no range can be taken over it — while it paints into the same screenshot, ' +
             `so the count below would be short by whatever it renders: ${frames.join('; ')}`);
+          continue;
+        }
+
+        const uaText = await uaTextNoSource();
+        if (uaText.length) {
+          failures.push(`${SHELL} (${theme}/${state}): ${uaText.length} element(s) whose ` +
+            'user-agent shadow root paints words this tool has no source for — not an own text ' +
+            'node, not .selectedOptions, not .value, not .placeholder — so they leave the sweep ' +
+            'with no site, no refusal and no census entry, and the count below does not move: ' +
+            `${uaText.join('; ')}`);
           continue;
         }
 
