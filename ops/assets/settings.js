@@ -456,9 +456,19 @@
 
     /* The access record pages in place, so its rows outlive a redraw of the
        card they sit in and the controls that describe the state of the record
-       stay put while the rows under them change. */
+       stay put while the rows under them change.
+
+       token is the record's own generation, and it is a separate one from
+       loadToken above. loadToken discards a whole-pane read that a newer one
+       has overtaken; this one discards a RECORD page that the window it was
+       asked for no longer exists in. A Load more page already in flight when
+       load() resets the record belongs to the window before the reset, and
+       landing it appends rows from before the reload and advances offset past
+       them, so the next Load more asks for the wrong window and a page is
+       skipped (Stadiora/Aria#10408). */
     var record = {
-      host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: null
+      host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: null,
+      token: 0
     };
 
     /* ---------------------------------------------------------------- reads */
@@ -498,6 +508,10 @@
       record.seen = null;
       record.busy = false;
       record.pending = false;
+      /* Whatever the record had in flight was asked for in the window this
+         line has just thrown away. Clearing busy without this hands that
+         response an unowned record to land in. */
+      record.token += 1;
 
       Promise.all([
         readAdmins(),
@@ -1121,6 +1135,7 @@
       }
       record.busy = true;
       record.pending = false;
+      var token = ++record.token;
 
       if (reset) {
         record.offset = 0;
@@ -1141,11 +1156,19 @@
 
       session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: record.offset } }).then(
         function (payload) {
+          /* Before anything else, both arms. A response the record has moved
+             past is not merely un-renderable: clearing busy first would hand
+             the flag a newer read owns to a page nobody is waiting for, and
+             the held-reload machinery below reads that flag to decide whether
+             to run or to wait. Freshness is checked before the state it
+             protects is touched, not after. */
+          if (token !== record.token) return;
           record.busy = false;
           acceptPage(Array.isArray(payload && payload.data) ? payload.data : [], false);
           drain();
         },
         function (err) {
+          if (token !== record.token) return;
           record.busy = false;
           if (record.rows.length) {
             /* Losing a later page is not a reason to throw away the rows
