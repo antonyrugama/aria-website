@@ -166,6 +166,9 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
   .h7:focus-visible ~ .h7far { background: #A5A5A5; }
   .hdash { background: #FFFFFF; }
   .hdash:focus-visible { outline: 4px dashed #767676; outline-offset: 6px; }
+  .hmot { background: #FFFFFF; outline: 4px solid #FFFFFF; outline-offset: 6px;
+    transition: outline-color 3s linear; }
+  .hmot:focus-visible { outline-color: #767676; }
   .h9wrap { position: relative; width: 140px; height: 60px; background: #CCCCCC; }
   .h9half { position: absolute; left: 0; top: 0; width: 70px; height: 60px; background: #FFFFFF; }
   .h9 { position: absolute; left: 50px; top: 18px; width: 40px; height: 24px; background: #FFFFFF; }
@@ -178,6 +181,7 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
 <div class="case"><div class="wrap"><button class="h4"></button></div></div>
 <div class="case"><div class="wrap"><button class="h5"></button></div></div>
 <div class="case"><div class="wrap"><button class="hdash"></button></div></div>
+<div class="case"><div class="wrap"><button class="hmot"></button></div></div>
 <div class="case"><div class="wrap"><button class="h6"></button></div></div>
 <div class="case"><div class="wrap"><button class="h8"></button></div></div>
 <div class="case"><div class="wrap"><div class="h7wrap"><button class="h7"></button><div class="h7far"></div></div></div></div>
@@ -1962,9 +1966,10 @@ async function measureFocusIndicators(where) {
  *      and one that straddles its edge, which are the two halves of the same
  *      condition — a case that repaints a near-ring-coloured strip on focus,
  *      to prove the adjacency is anchored on the ring and on the ring
- *      exactly, and a button straddling a colour seam, whose one ring lands
- *      on two surfaces at 2.83:1 and 4.54:1, to prove the worse of them
- *      decides (Stadiora/Aria#10634).
+ *      exactly, a button straddling a colour seam, whose one ring lands on
+ *      two surfaces at 2.83:1 and 4.54:1, to prove the worse of them decides,
+ *      and a ring three seconds into a colour transition, to prove the two
+ *      photographs are of the same page (Stadiora/Aria#10634).
  *
  * NOT COVERED, on purpose — this is the list of exclusions decided, not an
  * inventory of every blind spot, because one nobody has thought of is by
@@ -2483,20 +2488,34 @@ async function selfTest() {
       `${nine && !nine.refused ? nine.bg : '?'}, expected #CCCCCC — ` +
       'the white side of the same ring measures 4.54:1 and clears AA on its own');
 
-    /* The census itself: eleven buttons on the page, eleven reached by Tab,
+    /* HMOT — the ring has to be the colour the stylesheet says, not a
+       colour it is passing through. This ring takes three seconds to travel
+       from white to #767676, so with the transition suppressed it is #767676
+       in both the photograph and the computed style; left running it is some
+       near-white grey that differs between the two reads, and the tool finds
+       no pixel painted its ring colour at all. */
+    const mot = shows('hmot', 4.5426,
+      'spends three seconds travelling from a white ring to a #767676 one');
+    const stilled = !!mot && !mot.refused && mot.bg === '#FFFFFF';
+    if (!stilled) bad++;
+    console.log(`     ${stilled ? 'ok  ' : 'FAIL'} and it measured the ring at the END of that ` +
+      `transition against ${mot && !mot.refused ? mot.bg : '?'}, expected #FFFFFF — measured ` +
+      'live, the ring is a near-white grey the stylesheet never names');
+
+    /* The census itself: twelve buttons on the page, twelve reached by Tab,
        and every one of them carrying a row. A focus sweep that quietly
-       measured six of eleven would print six ok lines and nothing else. */
-    const okCensus = census.candidates === 11 && census.reached === 11 && rows.length === 11;
+       measured six of twelve would print six ok lines and nothing else. */
+    const okCensus = census.candidates === 12 && census.reached === 12 && rows.length === 12;
     if (!okCensus) bad++;
-    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 11 focusable buttons → ${census.candidates} ` +
+    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 12 focusable buttons → ${census.candidates} ` +
       `censused, ${census.reached} reached by real Tab presses, ${rows.length} judged or refused`);
     /* And that the Tab presses did their other job. Without keyboard modality
        every :focus-visible rule on this page is dead and the lot look like
-       h3 — eleven missing indicators and no ring measured anywhere. */
+       h3 — twelve missing indicators and no ring measured anywhere. */
     const modality = rows.filter((r) => r.focusVisible).length;
-    const okModality = modality === 11;
+    const okModality = modality === 12;
     if (!okModality) bad++;
-    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 11 ` +
+    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 12 ` +
       'after the Tab walk (scripted focus alone matches 0, and every ring here is behind it)');
   }
 
