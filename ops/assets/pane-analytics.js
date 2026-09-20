@@ -52,11 +52,14 @@
   var ENDPOINT = '/api/ops/usage';
 
   /* The reporting floor: a rate over fewer than this many people is not
-     published. The same floor ops/README.md documents for this route.
-     scripts/ops-analytics-v2.test.mjs pins both sides of the boundary, 49
-     withheld and 50 published, so the constant cannot drift without a test
-     saying so. */
+     published. The answer carries its own floor in `reportingFloor`, and that
+     is what the pane applies; this constant is the fallback for an answer that
+     does not send one, and a copy that would disagree with the route the day
+     the route moves it. scripts/ops-analytics-v2.test.mjs pins both sides of
+     the boundary, 49 withheld and 50 published, and pins that a floor sent in
+     the answer overrides this number. */
   var REPORTING_FLOOR = 50;
+  var floor = REPORTING_FLOOR;
 
   /* The recount runs nightly, so a recompute older than this has missed a
      whole run rather than having been read mid-run. */
@@ -94,7 +97,7 @@
 
   /* Whether a group is big enough for a rate over it to be published. */
   function reportable(size) {
-    return num(size) !== null && size >= REPORTING_FLOOR;
+    return num(size) !== null && size >= floor;
   }
 
   /* Anything measured over a group. The denominator is the signal rather than
@@ -124,7 +127,7 @@
      row in a table has no room for two lines and takes the whole of it. */
   function suppressionReason(size) {
     if (num(size) === null) return 'the group behind it was not given';
-    return people(size) + ' in the group, floor is ' + REPORTING_FLOOR;
+    return people(size) + ' in the group, floor is ' + floor;
   }
 
   var NOT_REPORTED = 'Not reported';
@@ -769,10 +772,18 @@
   function cohortCard(cohort) {
     var offsets = list(cohort.offsets);
     var card = S.card();
-    /* `label` is the app's name and `app` is the filter enum behind it, so the
-       note is the label and the title is the question. Printing `app` puts
-       `mobile` in front of an operator. */
-    card.appendChild(S.cardHead('Who comes back', cohort.label || null, []));
+    /* The note is the route's own definition of a group, which names its app
+       inside it - `label` would say the app and nothing else, and `app` is the
+       filter enum, which reaches an operator as `mobile`.
+
+       It is here rather than hand-written over the band because what the
+       figures are of is not visible anywhere else and cannot be inferred from
+       them: `size` is the accounts created that week which ALSO opened the app
+       that week, so calling the column sign-ups overstates it by the
+       activation rate, and the population excludes everyone who has not turned
+       usage analytics on. A retention share whose denominator silently drops
+       those people is a different number from the one the heading promises. */
+    card.appendChild(S.cardHead('Who comes back', cohort.note || cohort.label || null, []));
 
     var headRow = h('tr', {}, [
       h('th', { scope: 'col', className: 'u-when', text: 'Week joined' }),
@@ -903,17 +914,40 @@
       h('table', { className: 'tbl u-feat' }, [h('thead', {}, [headRow]), body])
     ]));
 
+    /* `features.coverageNote` carries two facts: that feature use is only
+       observed on app versions that report it, and this window's coverage
+       figure. The figure is already a pill in the split card, so only the
+       method survives, and it survives in nine words rather than twenty. */
     if (features.coverageNote) {
       card.appendChild(h('div', { className: 'card-foot' }, [
-        S.icon('info'), h('span', { text: features.coverageNote })
+        S.icon('info'),
+        h('span', { text: 'Only seen on app versions that report feature use' })
       ]));
     }
     return card;
   }
 
+  /* Whose sessions the Sessions column is a share of, taken from the rows
+     rather than written here. Each row's `note` names its own app because the
+     share is over that app's own sessions, so with two apps in the table the
+     column holds two denominators and four rows that sum to 200%. One note
+     over the table is that statement made once; the rows' own sentences would
+     be the same fact four times. When every row agrees - one app in the
+     selection - the route's own sentence is printed verbatim. */
+  function shareNote(versions) {
+    var notes = [];
+    versions.forEach(function (version) {
+      var note = typeof version.note === 'string' ? version.note.trim() : '';
+      if (note && notes.indexOf(note) === -1) notes.push(note);
+    });
+    if (!notes.length) return null;
+    return notes.length === 1 ? notes[0] : "Share is of each app's own sessions";
+  }
+
   function versionCard(coverage) {
+    var versions = list(coverage.versions);
     var card = S.card();
-    card.appendChild(S.cardHead('Which versions report', null, []));
+    card.appendChild(S.cardHead('Which versions report', shareNote(versions), []));
 
     var headRow = h('tr', {}, [
       h('th', { scope: 'col', text: 'Version' }),
@@ -922,7 +956,7 @@
     ]);
 
     var body = h('tbody');
-    list(coverage.versions).forEach(function (version) {
+    versions.forEach(function (version) {
       var share = num(version.sessionShareBasisPoints);
       var reports = num(version.coverageBasisPoints);
       var full = reports === 10000;
@@ -945,18 +979,20 @@
       h('table', { className: 'tbl u-vers' }, [h('thead', {}, [headRow]), body])
     ]));
 
-    var shortfall = coverage.shortfall;
-    if (shortfall && shortfall.detail) {
-      card.appendChild(h('div', { className: 'card-foot' }, [
-        S.icon('warn'), h('span', { text: shortfall.detail })
-      ]));
-    }
+    /* No footer. `coverage.shortfall.detail` is the complement of the
+       coverage pill the split card already prints - 30.7% did not report is
+       69.3% did - and the Reporting column beside it names which versions,
+       which is the part an operator acts on. A fact already on screen does not
+       also get a sentence. */
     return card;
   }
 
   /* ------------------------------------------------------------- assembly */
 
   function render(data) {
+    var sent = num(data.reportingFloor);
+    floor = sent !== null && sent > 0 ? sent : REPORTING_FLOOR;
+
     var wrap = h('div', { className: 'stack' });
 
     var headline = S.band('Who is using Aria', null, [freshness(data)]);
@@ -974,8 +1010,11 @@
       return list(cohort.rows).length > 0;
     });
     if (cohorts.length) {
+      /* The band note is the legend for the one symbol in the grid that is
+         not a figure. What a group IS comes from each card's own note, which
+         is the route's sentence and names its own app. */
       var back = S.band('Do people come back',
-        'Weekly signup groups; \u00b7 is a week they have not reached yet', []);
+        '\u00b7 is a week a group has not reached yet', []);
       back.appendChild(h('div', { className: cohorts.length > 1 ? 'grid g2' : 'grid' },
         cohorts.map(cohortCard)));
       wrap.appendChild(back);

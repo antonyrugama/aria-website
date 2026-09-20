@@ -1249,8 +1249,11 @@ answer.
 5. **The chart's scale is HTML beside the drawing rather than `<text>` inside it.** `role="img"`
    carries `children-presentational`, so text inside the picture is announced to nobody, and the
    drawing is stretched to the width of its card, which would render that text at about four
-   pixels on a phone. The picture keeps an accessible name that states the series, its window,
-   and each line's first, last, low and high.
+   pixels on a phone. The picture keeps an accessible name that states what the lines are of and
+   the window they cover, then, for each line, how many of the window's days have a reading, its
+   low and high — or that it is flat — and its last reading. A line with no reading at all says
+   that instead. (`chartName` and `seriesSentence` in `ops/assets/pane-analytics.js`; the
+   sentences are pinned in `scripts/ops-analytics-v2.test.mjs`.)
 6. **No Custom range**, which is the registry's decision and is stated in the bar where the
    control would have been: the bar carries a range name and no bounds, so a custom window
    reaches the usage API with no start and no end, and that route answers over the widest window
@@ -1260,8 +1263,18 @@ answer.
    tint to range is the same fact again; the one symbol that is not a number, `·` for a week a
    group has not reached yet, is named once in the band note and carries its own text for a
    screen reader.
-8. **The mock's explanatory captions are not reproduced.** The mocks encode one fact per slot,
-   which is the rule that took the approved set from 7,240 words to 4,842.
+8. **The mock's explanatory captions are not reproduced, and neither are three of the route's
+   own sentences**, under the same rule: the mocks encode one fact per slot, which is what took
+   the approved set from 7,240 words to 4,842. What was dropped, and why, since these are fields
+   the answer carries:
+   - `coverage.shortfall.detail` was the versions card's footer. It is the complement of the
+     coverage pill the split card already prints — 30.7% did not report *is* 69.3% did — and the
+     `Reporting` column beside it names which versions, which is the part an operator acts on.
+   - `features.coverageNote` was the feature card's footer, twenty words carrying that same
+     coverage figure a third time. The method survives as nine: *Only seen on app versions that
+     report feature use.* The number does not.
+   - `features.note` and `features.hint` both say the shares are of each app's own active people.
+     The card head prints `hint`, seven words; `note` is two sentences of the same thing.
 9. **No activation funnel card.** `OpsUsagePayload` carries no `funnel` member and the route's
    own docblock says why: a funnel's second step is read against its first, so it is a rate over
    people whether or not it says so, and the only counts available for one are not consent
@@ -1317,9 +1330,25 @@ dropping it.
     reported", so the fourth slot carries the share who opened a feature instead.
 11. **Week columns are headed `Week 1`, from offsets that arrive as `W1`.** The mock's wording,
     the route's value: `W3` set in a row of percentages reads as a figure rather than as a
-    heading. The cohort card is headed with the question it answers and noted with the app's
-    name — `label` in the payload — never with `app`, which is the value the filter sends and
-    reaches an operator as `mobile`.
+    heading. The cohort card is headed with the question it answers and noted with the route's
+    own definition of a group — `cohorts[].note`, which names its app inside it — never with
+    `app`, which is the value the filter sends and reaches an operator as `mobile`. That note is
+    the one place the pane says what the figures are *of*: `size` counts the accounts created
+    that week which also opened the app that week, not the week's sign-ups, and the population is
+    only people who have usage analytics on. Neither is inferable from a grid of percentages.
+
+12. **The retention grid scrolls sideways inside its card, at every width.** `offsets` is as long
+    as the widest group has aged weeks, so the 90-day range — one of the four the bar offers, and
+    where the insufficient state's own button sends you — sends eleven week columns, which do not
+    fit a half-width desktop card either. The alternative, a fixed table layout, does not overflow
+    when it runs out of room: it *overlaps*, printing each percentage over its neighbour while a
+    page-level measurement reads clean.
+
+13. **A `Which versions report` card, which the mock does not draw.** `coverage.versions` is the
+    only place an operator can see that a figure on this page is missing a slice of the estate,
+    and which build to chase; the split card's coverage pill says how much is missing but not
+    from where. The share column is of each app's own sessions — the route's own denominator — so
+    the card head carries that sentence once rather than repeating it on every row.
 
 ### Known contrast debt, inherited
 

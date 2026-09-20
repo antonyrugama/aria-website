@@ -158,12 +158,26 @@
 /* A real table rather than the mock's CSS grid: the cells are a matrix of
    figures with a heading on both axes, and a grid of divs cannot say which
    week and which signup group a cell belongs to. */
-/* Fixed layout so the weeks are columns of the same width. Left to itself the
-   browser hands the whole of the spare width to the first week, which draws
-   one week as four times the others and reads as a figure about that week. */
-.u-cohort { table-layout: fixed; }
-.u-cohort .u-when { width: 30%; }
-.u-cohort .u-size { width: 11%; }
+/* Sized by its own content, and scrolled sideways inside the card when there
+   is more of it than the card is wide.
+
+   It was `table-layout: fixed` with the two heading columns reserved at 30%
+   and 11%, on the reasoning that the browser otherwise hands the spare width
+   to the first week and draws one week four times the size of the others.
+   That reasoning holds for four columns and fails for eleven: `offsets` is as
+   long as the widest group has aged weeks, so a 90 day window - one of the
+   four ranges the bar offers, and the one the insufficient state's own button
+   navigates to - sends `W1` to `W11`, the remaining 59% divides to about 25px
+   a column, and a fixed table does not overflow, it OVERLAPS. Every
+   percentage printed over its neighbour, at every width, while the page
+   measured clean because the damage was inside the scroll box.
+
+   Auto layout cannot overlap: the columns take the width the figures need and
+   the card scrolls when they do not fit. The first-week-takes-everything
+   problem it was guarding against needs spare width to give away, and a table
+   wide enough to scroll has none. */
+.u-cohort { width: 100%; }
+.u-cohort th, .u-cohort td { white-space: nowrap; }
 
 .u-cohort th[scope="row"] {
   padding: 8px 14px 8px 0;
@@ -244,19 +258,44 @@
 
 /* A grid item's automatic minimum size is its own content, so a card holding
    anything wider than its track keeps the track that wide and takes the whole
-   page sideways with it — and a scroll box inside it never gets to clip,
+   page sideways with it - and a scroll box inside it never gets to clip,
    because its parent is already wider than the screen. The item has to be
    allowed to shrink first; only then does overflow-x mean anything. At every
    width, not only on a phone: the cause is a wide table, and a long version
    label overflows a two-column desktop grid exactly as it overflows one
-   column. */
+   column.
+
+   NOT independently proven at this head. Removing this line alone now measures
+   0px of page overflow at 320, 375, 768, 1024 and 1440 on all three fixtures,
+   because the two rules below it - the version row heading's own treatment,
+   and the cohort grid's scroll box - each keep their table inside the card
+   without it. It earned its place against a real 188px overflow before those
+   existed, and it is kept as the rule that makes `overflow-x` mean anything at
+   all, but the control is honest: today nothing here fails without it. */
 .grid > .card { min-width: 0; }
 
-/* Table headings are nowrap by default (aria.css), which is right for a short
-   column name and wrong for a row heading carrying a value: version labels
-   arrive as "Coaches Web version not reported", which no column is that wide
-   for. Wrapping keeps it a heading and keeps it inside the card. */
-.u-vers th[scope="row"] { white-space: normal; }
+/* The cohort grid is as wide as the answer's weeks make it, so the card
+   scrolls at every width rather than only on a phone: eleven weeks do not fit
+   a half-width desktop card either. Positioned, so that the screen-reader text
+   inside it is contained -- an absolutely positioned box is clipped by a
+   scroll container only when that container is its containing block, and with
+   a static parent the visually-hidden spans sat at the table's real width in
+   page coordinates and took the document sideways on their own, while the grid
+   they belong to was clipped correctly and every rect on the page measured
+   clean. */
+.u-scroll { overflow-x: auto; min-width: 0; position: relative; }
+
+/* A row heading here carries a value rather than a column name, so it drops
+   the whole `.tbl th` treatment (aria.css:667) the way the cohort and feature
+   tables do: 9.5px uppercase letter-spaced `--ink-3` turns `Coaches Web
+   version not reported` into shouted small print, and it is the only
+   identifier the row has. Wrapping for the same reason - nowrap is right for a
+   short column name and wrong for a label this long. */
+.u-vers th[scope="row"] {
+  font-size: 12.5px; font-weight: 520; letter-spacing: 0;
+  text-transform: none; color: var(--ink);
+  white-space: normal;
+}
 
 /* Below this the cohort grid has more columns than a phone has room for, so it
    scrolls sideways inside its card rather than squeezing every week to an
@@ -264,14 +303,6 @@
    scrolled still knows which signup group a cell belongs to. */
 @media (max-width: 760px) {
   .ln-wrap .chart { height: 168px; }
-  /* Positioned, so that the screen-reader text inside the grid is contained
-     by the scroll box. An absolutely positioned box is clipped by a scroll
-     container only when that container is its containing block, so with a
-     static parent the visually-hidden spans sat at the table's real width in
-     page coordinates and took the document sideways on their own — while the
-     grid they belong to was clipped correctly and every rect on the page
-     measured clean. */
-  .u-scroll { overflow-x: auto; min-width: 0; position: relative; }
   .u-cohort { min-width: 460px; }
   .u-bar-col { display: none; }
   /* Column headings are nowrap by default, which is right for a heading and

@@ -57,39 +57,76 @@ const MOBILE_TREND = [
 ];
 const WEB_TREND = MOBILE_TREND.map((v) => Math.round(v * 0.29));
 
-/* A whole, healthy answer, built to `OpsUsagePayload` in
-   `app-backend/server/services/opsUsage/opsUsageView.ts` rather than to what
-   reads well: every field here is a shape the route can actually send, down to
-   the `W1` offsets, the app-prefixed version labels, the four metric labels it
-   names and `rollupsComputedAt` carrying the freshness. A fixture the endpoint
-   cannot produce proves the pane against a payload that will never arrive.
+/* A whole, healthy answer.
 
-   Every test below starts here and takes something away or moves one field,
-   because the rules under test are rules about absence. */
+   Every member below is copied from `OpsUsagePayload` in
+   `app-backend/server/services/opsUsage/opsUsageView.ts`, and every literal
+   string that the route composes rather than passes through -- the cohort
+   note, the consent detail, the feature hint and note, the coverage note, the
+   shortfall detail, each version's note -- is the route's own text, character
+   for character, from the template that builds it. The enums are the route's
+   enums: `app` is the FILTER (`mobile`), not the source app (`mobile-app`);
+   `color` is `s1` or `s2` and there is no `s3`; feature labels come from
+   `FEATURE_LABELS`, so it is `Sprint video analysis` and never `Video
+   analysis`; a cohort row label is `shortUtcDay(week)`, which is `24 Aug`.
+
+   Two things it deliberately gets right that an eyeballed fixture gets wrong,
+   because both hid a defect for four review rounds:
+
+   - `sessionShareBasisPoints` is `basisPoints(entry.sessions, appSessions)`,
+     computed inside ONE app, so each app's rows sum to 10000 and two apps'
+     rows sum to 20000. A fixture whose four rows summed to 8000 made a column
+     of shares look like one denominator.
+   - `cohorts` is one entry PER APP, not one for the selection.
+
+   What this fixture is not is every shape: `usageFixture` is a healthy 30-day
+   `ready` answer with two apps. Absence, staleness, the reporting floor, the
+   90-day grid and the three non-ready states are separate cases below, each
+   one starting here and taking something away or moving one field, because
+   the rules under test are rules about absence. */
+
+const CONSENT_DETAIL =
+  'Product analytics is opt in and defaults off, and the gate is at ingest: a client batch from '
+  + 'an account that has not turned usage analytics on is refused before any event is stored. '
+  + 'Every figure here is built from client-origin events only, so it was never recorded for an '
+  + 'opted-out account. There is no read-time filter, because a filter would imply the rows exist.';
+
+const cohortNote = (app) =>
+  `A group is the accounts created in that UTC week which also opened ${app} `
+  + 'that week, and coming back means opening it again. Accounts that have not turned '
+  + 'usage analytics on are in no group, because their activity was never recorded.';
+
 function usageFixture(over) {
   const base = {
-    availability: { state: 'ready' },
     asOf: '2026-09-20T00:00:00.000Z',
     window: {
-      days: 30, daysCovered: 30,
-      reportingStart: '2026-08-22T00:00:00.000Z',
+      range: '30d',
+      start: '2026-08-21T00:00:00.000Z',
+      endExclusive: '2026-09-20T00:00:00.000Z',
+      days: 30, grain: 'day', timezone: 'UTC',
       rollupsComputedAt: hoursAgo(5),
+      reportingStart: '2026-08-21T00:00:00.000Z',
+      daysCovered: 30,
       daysMissingRollups: [],
     },
+    filters: { app: 'all', env: 'production' },
+    reportingFloor: 50,
+    consent: { enforcedAt: 'ingest', detail: CONSENT_DETAIL },
+    availability: { state: 'ready', detail: '' },
     apps: [
       {
-        app: 'mobile-app', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
+        app: 'mobile', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
         coverageBasisPoints: 9200,
         metrics: [
-          { label: 'Active people', value: 1061, kind: 'count' },
-          { label: 'Sessions', value: 8430, kind: 'count' },
+          { label: 'Active people', kind: 'count', value: 1061 },
+          { label: 'Sessions', kind: 'count', value: 8430 },
           {
-            label: 'Sessions per person', value: 7.9, kind: 'decimal',
-            digits: 1, numerator: 8430, denominator: 1061,
+            label: 'Sessions per person', kind: 'decimal',
+            digits: 1, value: 7.945334590009425, numerator: 8430, denominator: 1061,
           },
           {
-            label: 'Opened a feature', value: 6400, kind: 'rate',
-            numerator: 679, denominator: 1061,
+            label: 'Opened a feature', kind: 'rate',
+            value: 6400, numerator: 679, denominator: 1061,
           },
         ],
         trend: {
@@ -98,19 +135,19 @@ function usageFixture(over) {
         },
       },
       {
-        app: 'coaches-web', label: 'Coaches Web', tone: 'coaches',
+        app: 'coaches', label: 'Coaches Web', tone: 'coaches',
         subtitle: 'Coach workspace',
         coverageBasisPoints: 10000,
         metrics: [
-          { label: 'Active people', value: 308, kind: 'count' },
-          { label: 'Sessions', value: 1204, kind: 'count' },
+          { label: 'Active people', kind: 'count', value: 308 },
+          { label: 'Sessions', kind: 'count', value: 1204 },
           {
-            label: 'Sessions per person', value: 3.9, kind: 'decimal',
-            digits: 1, numerator: 1204, denominator: 308,
+            label: 'Sessions per person', kind: 'decimal',
+            digits: 1, value: 3.909090909090909, numerator: 1204, denominator: 308,
           },
           {
-            label: 'Opened a feature', value: 8100, kind: 'rate',
-            numerator: 249, denominator: 308,
+            label: 'Opened a feature', kind: 'rate',
+            value: 8084, numerator: 249, denominator: 308,
           },
         ],
         trend: {
@@ -119,49 +156,78 @@ function usageFixture(over) {
         },
       },
     ],
-    cohorts: [{
-      app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2', 'W3', 'W4'],
-      rows: [
-        {
-          label: 'Week of 24 Aug', size: 214,
-          cells: [
-            { basisPoints: 7100 }, { basisPoints: 5200 },
-            { basisPoints: 4100 }, { state: 'not_aged' },
-          ],
-        },
-        {
-          label: 'Week of 31 Aug', size: 31,
-          cells: [
-            { basisPoints: 8000 }, { basisPoints: 6000 },
-            { state: 'not_aged' }, { state: 'not_aged' },
-          ],
-        },
-      ],
-    }],
+    cohorts: [
+      {
+        app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2', 'W3', 'W4'],
+        rows: [
+          {
+            label: '24 Aug', size: 214,
+            cells: [
+              { basisPoints: 7103, returned: 152 }, { basisPoints: 5234, returned: 112 },
+              { basisPoints: 4112, returned: 88 }, { state: 'not_aged' },
+            ],
+          },
+          {
+            label: '31 Aug', size: 31,
+            cells: [
+              { basisPoints: 8065, returned: 25 }, { basisPoints: 6129, returned: 19 },
+              { state: 'not_aged' }, { state: 'not_aged' },
+            ],
+          },
+        ],
+        note: cohortNote('Mobile'),
+      },
+      {
+        app: 'coaches', label: 'Coaches Web', offsets: ['W1', 'W2', 'W3', 'W4'],
+        rows: [
+          {
+            label: '24 Aug', size: 96,
+            cells: [
+              { basisPoints: 6667, returned: 64 }, { basisPoints: 5313, returned: 51 },
+              { basisPoints: 4479, returned: 43 }, { state: 'not_aged' },
+            ],
+          },
+        ],
+        note: cohortNote('Coaches Web'),
+      },
+    ],
     features: {
-      hint: 'Share of people who used it at least once',
+      hint: "Share of each app's own active people",
       rows: [
         {
           label: 'Aria chat', app: 'Mobile', color: 's1',
           basisPoints: 6400, users: 679, denominator: 1061,
         },
         {
-          label: 'Video analysis', app: 'Mobile', color: 's3',
+          label: 'Sprint video analysis', app: 'Mobile', color: 's1',
           basisPoints: 1200, users: 5, denominator: 41,
         },
       ],
-      coverageNote: 'Counted over people on a reporting app version.',
+      note:
+        'Each feature is measured against the active people of the app it belongs to. A '
+        + 'shared denominator would understate a feature only one app has.',
+      coverageNote:
+        'Feature use is measured only on sessions from app versions that report it. '
+        + 'Mobile coverage in this window is 92.0%.',
     },
     coverage: {
-      shortfall: { detail: '8.0% of Mobile sessions in this window ran on an app version that does not report feature use.' },
+      shortfall: {
+        detail:
+          '8.0% of Mobile sessions in this window ran on an app version that does not '
+          + 'report feature use.',
+      },
       versions: [
         {
           label: 'Mobile 2.9.1', coverageBasisPoints: 10000,
           sessionShareBasisPoints: 7200, note: 'Share is of Mobile sessions.',
         },
         {
+          label: 'Mobile 2.8.4', coverageBasisPoints: 0,
+          sessionShareBasisPoints: 2800, note: 'Share is of Mobile sessions.',
+        },
+        {
           label: 'Coaches Web version not reported', coverageBasisPoints: 0,
-          sessionShareBasisPoints: 800, note: 'Share is of Coaches Web sessions.',
+          sessionShareBasisPoints: 10000, note: 'Share is of Coaches Web sessions.',
         },
       ],
     },
@@ -384,8 +450,8 @@ test('a signup group under the floor is withheld as a whole row, never cell by c
   const dom = await boot({});
   const cohort = card(dom, /Who comes back/);
   const rows = findAll(cohort, (n) => isTag(n, 'tr'));
-  const small = rows.filter((r) => /Week of 31 Aug/.test(allText(r)))[0];
-  const big = rows.filter((r) => /Week of 24 Aug/.test(allText(r)))[0];
+  const small = rows.filter((r) => /^31 Aug/m.test(allText(r)))[0];
+  const big = rows.filter((r) => /^24 Aug/m.test(allText(r)))[0];
 
   assert.ok(small, 'the small signup group left the table entirely');
   assert.match(allText(small), /Not reported, 31 people in the group, floor is 50/,
@@ -730,7 +796,7 @@ test('a week a group has not reached is not a zero', async () => {
   const dom = await boot({});
   const cohort = card(dom, /Who comes back/);
   const row = findAll(cohort, (n) => isTag(n, 'tr'))
-    .filter((r) => /Week of 24 Aug/.test(allText(r)))[0];
+    .filter((r) => /^24 Aug/m.test(allText(r)))[0];
   const cells = findAll(row, (n) => isTag(n, 'td'));
   const last = cells[cells.length - 1];
 
@@ -802,6 +868,215 @@ test('the tiles are the answer figures, in its order, and never more than four',
   assert.deepEqual(labels,
     ['Active people', 'Sessions', 'Sessions per person', 'Opened a feature'],
     'the tiles are not the answer figures in the answer order: ' + labels.join(' | '));
+});
+
+/* ========================== the widest answer ========================= */
+
+/* `offsets` is as long as the widest group has aged weeks, so the 90 day range
+   -- one of the four the bar offers, and where the insufficient state's own
+   button navigates to -- sends `W1` to `W11`. The 30 day fixture above sends
+   four, which is why four review rounds ran over a grid that was unreadable at
+   eleven. */
+function wideFixture(over) {
+  return usageFixture((u) => {
+    u.window.range = '90d';
+    u.window.days = 90;
+    u.window.daysCovered = 90;
+    u.window.start = '2026-06-22T00:00:00.000Z';
+    u.cohorts = u.cohorts.map((cohort, index) => {
+      const offsets = Array.from({ length: 11 }, (_, i) => `W${i + 1}`);
+      return {
+        ...cohort,
+        offsets,
+        rows: ['22 Jun', '29 Jun', '6 Jul', '13 Jul'].map((label, row) => ({
+          label,
+          size: 180 + row * 7 + index,
+          cells: offsets.map((_, i) => (
+            i > 10 - row ? { state: 'not_aged' } : { basisPoints: 7200 - i * 430, returned: 100 - i }
+          )),
+        })),
+      };
+    });
+    if (over) over(u);
+  });
+}
+
+test('the widest window draws every week it sends', async () => {
+  const dom = await boot({ usage: wideFixture() });
+  const cohort = card(dom, /Who comes back/);
+  const heads = findAll(cohort, (n) => isTag(n, 'th'))
+    .map(allText)
+    .filter((t) => /^Week \d+$/.test(t.trim()));
+
+  assert.deepEqual(heads.map((t) => t.trim()),
+    Array.from({ length: 11 }, (_, i) => `Week ${i + 1}`),
+    'a 90 day answer did not draw one column per offset it sent: ' + heads.join(', '));
+
+  /* Every row is as long as the heading row. A grid that drops or merges cells
+     to fit is a different defect from one that overlaps them, and both read as
+     "it fits now". */
+  const bodyRows = findAll(cohort, (n) => isTag(n, 'tr'))
+    .filter((r) => /^\d+ \w+/m.test(allText(r)));
+  assert.equal(bodyRows.length, 4, 'not every group was drawn');
+  for (const row of bodyRows) {
+    const cells = findAll(row, (n) => isTag(n, 'td') &&
+      /\bu-(cell|na)\b/.test(n.className || ''));
+    assert.equal(cells.length, 11,
+      'a group row is not as wide as the heading row: ' + allText(row));
+  }
+});
+
+test('the retention grid is sized by its content and scrolls, at every width', async () => {
+  /* WHAT THIS PINS, EXACTLY: two declarations in the stylesheet, not a
+     rendering. It cannot see an overlap -- `node:test` has no layout -- and it
+     is here because the rendering proof does not live in this file: the
+     measured matrix is in the pull request, 320px to 1680px in both themes,
+     with a control that puts `table-layout: fixed` back and reproduces ten
+     overlapping cell pairs at every width.
+
+     It is still worth its line, because the failure it guards is silent in
+     exactly the way a fixed table is: a fixed table does not overflow when it
+     runs out of room, it prints each column over its neighbour, and a
+     page-level overflow probe reads clean while the grid is unreadable. */
+  const css = readFileSync(new URL('assets/pane-analytics-v2.css', OPS), 'utf8');
+  const cohortRule = /\.u-cohort\s*\{[^}]*\}/g;
+  for (const rule of css.match(cohortRule) || []) {
+    assert.doesNotMatch(rule, /table-layout\s*:\s*fixed/,
+      'the cohort grid is back to a fixed layout, which overlaps rather than overflowing');
+  }
+
+  /* And the scroll box is outside every media query, because eleven columns do
+     not fit a half-width desktop card either. Every `@media` block is removed
+     first -- splitting on the first one would judge the rules above it and
+     call a phone-only declaration global the moment a rule moved. */
+  let unconditional = '';
+  let rest = css;
+  while (rest.includes('@media')) {
+    const at = rest.indexOf('@media');
+    unconditional += rest.slice(0, at);
+    let depth = 0;
+    let i = rest.indexOf('{', at);
+    for (; i < rest.length; i += 1) {
+      if (rest[i] === '{') depth += 1;
+      else if (rest[i] === '}') { depth -= 1; if (depth === 0) break; }
+    }
+    rest = rest.slice(i + 1);
+  }
+  unconditional += rest;
+  assert.match(unconditional, /\.u-scroll\s*\{[^}]*overflow-x\s*:\s*auto/,
+    'the scroll box is only declared inside a media query, so it is a phone-only fix');
+});
+
+/* ====================== what the figures are of ======================= */
+
+test('a group is defined by the answer, not by the pane', async () => {
+  const dom = await boot({});
+  const cohort = card(dom, /Who comes back/);
+  const text = allText(cohort);
+
+  /* The route's own sentence, which is the only place on the page that says
+     what `size` counts and that the population is consenting accounts only.
+     Both are load-bearing: `size` is the accounts created that week which also
+     OPENED the app that week, so reading the column as sign-ups overstates it
+     by the activation rate, and a retention share whose denominator quietly
+     drops non-consenting people is a different figure from the one the heading
+     promises. Neither is inferable from a grid of percentages. */
+  assert.match(text, /accounts created in that UTC week which also opened Mobile/,
+    'the card did not say what a group is: ' + text);
+  assert.match(text, /usage analytics on are in no group/,
+    'the card dropped the consent statement: ' + text);
+
+  /* And it is the answer's sentence, not a copy: move the note and the card
+     moves with it. */
+  const moved = await boot({
+    usage: usageFixture((u) => { u.cohorts[0].note = 'A group is whatever the route says.'; }),
+  });
+  assert.match(allText(card(moved, /Who comes back/)), /whatever the route says/,
+    'the card printed a definition of its own instead of the answer\'s');
+});
+
+test('the versions table says whose sessions the share is of', async () => {
+  /* `sessionShareBasisPoints` is computed inside one app, so with two apps in
+     the table the Sessions column holds two denominators and its rows sum to
+     200%. Unsaid, the column reads as one share of one thing. */
+  const dom = await boot({});
+  const versions = card(dom, /Which versions report/);
+  assert.match(allText(versions), /Share is of each app's own sessions/,
+    'a column with two denominators did not say so: ' + allText(versions));
+
+  /* One app selected is one denominator, and then the route's own sentence is
+     printed verbatim rather than being generalised away. */
+  const one = await boot({
+    usage: usageFixture((u) => {
+      u.coverage.versions = u.coverage.versions.filter((v) => /^Mobile/.test(v.label));
+    }),
+  });
+  const oneText = allText(card(one, /Which versions report/));
+  assert.match(oneText, /Share is of Mobile sessions\./,
+    'a single-app table did not carry the route\'s own note: ' + oneText);
+  assert.doesNotMatch(oneText, /each app's own/,
+    'a single-app table hedged a denominator it knows exactly: ' + oneText);
+});
+
+test('the coverage figure is printed once', async () => {
+  /* 69.3% report, 30.7% do not, and coverage is 92.0% are the same reading of
+     the same thing. The split card prints it as a pill; the two card footers
+     that restated it are gone, and what survives of the feature footer is the
+     method with no number in it. */
+  const dom = await boot({});
+  const live = livePanel(dom);
+  const feet = findAll(live, (n) => (n.className || '').includes('card-foot'));
+  const footText = feet.map(allText).join(' | ');
+
+  assert.doesNotMatch(footText, /\d/,
+    'a card footer carries a figure that is already drawn elsewhere: ' + footText);
+  assert.doesNotMatch(allText(live), /does not\s+report feature use/,
+    'the shortfall sentence is back, restating the coverage pill as its complement');
+  assert.match(footText, /Only seen on app versions that report feature use/,
+    'the method behind the feature figures is not stated anywhere: ' + footText);
+
+  /* The method line is conditional on the answer carrying one, not written
+     unconditionally: an answer whose versions all report has no caveat to
+     make. */
+  const clean = await boot({
+    usage: usageFixture((u) => { delete u.features.coverageNote; }),
+  });
+  assert.doesNotMatch(allText(livePanel(clean)), /Only seen on app versions/,
+    'the pane made a coverage caveat the answer did not');
+});
+
+test('the floor comes from the answer, and 50 is only the fallback', async () => {
+  /* The route sends `reportingFloor` on every answer. A constant here is a
+     second copy of a number that lives there, and it disagrees the day the
+     route moves it -- quietly, by withholding a figure the route considers
+     publishable or publishing one it does not. */
+  const raised = await boot({
+    usage: usageFixture((u) => { u.reportingFloor = 250; }),
+  });
+  const raisedRow = findAll(card(raised, /Who comes back/), (n) => isTag(n, 'tr'))
+    .filter((r) => /^24 Aug/m.test(allText(r)))[0];
+  assert.match(allText(raisedRow), /floor is 250/,
+    'the pane applied its own floor over the one the answer sent: ' + allText(raisedRow));
+  assert.doesNotMatch(allText(raisedRow), /71\.0%/,
+    'a group of 214 was published under a floor of 250');
+
+  /* The other direction: a lower floor publishes what 50 withheld. */
+  const lowered = await boot({
+    usage: usageFixture((u) => { u.reportingFloor = 10; }),
+  });
+  const small = findAll(card(lowered, /Who comes back/), (n) => isTag(n, 'tr'))
+    .filter((r) => /^31 Aug/m.test(allText(r)))[0];
+  assert.match(allText(small), /80\.7%/,
+    'a group of 31 stayed withheld under a floor of 10: ' + allText(small));
+
+  /* And an answer with no floor in it still has one. */
+  const missing = await boot({
+    usage: usageFixture((u) => { delete u.reportingFloor; }),
+  });
+  const fallback = findAll(card(missing, /Who comes back/), (n) => isTag(n, 'tr'))
+    .filter((r) => /^31 Aug/m.test(allText(r)))[0];
+  assert.match(allText(fallback), /floor is 50/,
+    'an answer with no floor left the pane without one: ' + allText(fallback));
 });
 
 /* ============================== the page ============================== */
