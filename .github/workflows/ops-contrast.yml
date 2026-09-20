@@ -1,0 +1,61 @@
+name: Ops v2 contrast
+
+# Measures WCAG AA at every rendered text site on ops/shell-v2.html, in both
+# themes and all four preview states.
+#
+# Why this is a browser check and not a stylesheet scan: the defect it exists
+# for is a USAGE-SITE swap. `color: var(--cyan-ink)` becoming `color:
+# var(--cyan)` leaves every token defined, every token holding its designed
+# value, and every existing check green — and paints a pill at 3.03:1. The
+# token is fine. The rule asking for it is not. Only the resolved pair of
+# colours at the site answers that, and on this page the backdrop is a
+# gradient under a translucent surface, so the resolved pair only exists in
+# pixels: the check hides the glyphs, screenshots the page and samples the
+# surface behind each run of text.
+#
+# The tool proves itself before it judges anything (`--self-test`) and exits
+# non-zero if that fails, so a run that cannot trust its own numbers reports
+# nothing rather than passing. Sites it cannot judge are failures too.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
+# ubuntu-latest ships google-chrome-stable, which is what ops-shell-v2.yml
+# already drives over the DevTools Protocol on this same runner image.
+
+on:
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-contrast.mjs'
+      - '.github/workflows/ops-contrast.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/**'
+      - 'scripts/check-ops-contrast.mjs'
+      - '.github/workflows/ops-contrast.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contrast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # Node 22 or newer, because the check drives headless Chrome over the
+      # DevTools Protocol through the global WebSocket rather than a package.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Fail here rather than deep inside the check if the image ever stops
+      # shipping a browser. A contrast guard with no browser has to stop, not
+      # skip: an exit 0 with nothing measured is the false green this whole
+      # check exists to remove.
+      - name: Confirm the runner has a browser
+        run: |
+          google-chrome --version || chromium --version
+      - name: Measure every text site against WCAG AA
+        run: node scripts/check-ops-contrast.mjs
