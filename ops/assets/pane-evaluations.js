@@ -32,16 +32,19 @@
        What the tests prove about that, exactly: every listed figure and
        phrase is printed inside the preview, and in TWO render states — the
        booted page, and the page after both working tools have been submitted
-       — no two-decimal score and no listed phrase appears anywhere under
-       <body> outside the preview, including in the shell's live region. No
-       stamp chip in those two states carries a digit.
+       — no two-decimal score and no listed phrase appears under <body>
+       outside the preview, in an element's text, in the shell's live region,
+       or in a placeholder, title, alt or aria-label. No stamp chip in those
+       two states carries a digit.
 
-       Two gaps the test file names and measures rather than implies. The
+       THREE gaps the test file names and measures rather than implies. The
        inventories are hand-written, so a made-up string in neither of them
        that is also not a two-decimal score can be added outside the preview
-       and go unseen. And the error branches are a THIRD render state that
-       nothing reads: a score printed into a validation or quarantine failure
-       message is not found.
+       and go unseen. The error branches are a third render state that nothing
+       reads: a score printed into a validation or quarantine failure message
+       is not found. And a figure split MID-TOKEN across two elements joins
+       with a space in the sweep and without one in a browser, so "0.8" and
+       "2" side by side read as 0.82 on screen and are not found.
      - previewBand() is the only way a band gets into the preview, and it
        stamps the band. workingBand() is the only way a band is built outside
        it, and it stamps that. Neither stamp is a colour: each carries a word.

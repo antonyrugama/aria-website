@@ -915,10 +915,12 @@ for (const scenario of [
        and again after each of the two working tools has been submitted and
        answered. The ERROR branches are a third state and nothing reads them:
        a two-decimal score and a listed phrase appended to the JSON-parse
-       message at pane-evaluations.js:402 leave the whole suite green, while
-       the same string on a boot-state hint at :551 turns three tests red. So
-       the gap is the render state, not the string. Both are published rows of
-       the battery on the PR.
+       catch in datasetValidationSection leave the whole suite green, while the
+       same string on a boot-state hint in evidenceQuarantineSection turns
+       three tests red. So the gap is the render state, not the string. Both
+       are published rows of the battery on the PR. Named by function rather
+       than by line, because a line number is the one citation that rots on
+       every edit above it, and this one already went stale once.
      - A FIGURE SPLIT MID-TOKEN across two elements. The sweeps read one
        string built from <body> with the preview subtree removed, joining
        element boundaries with a single space the way allText does. A phrase
@@ -1066,17 +1068,28 @@ const within = (node, ancestor) => {
      announce() is how a screen-reader operator receives every success message
      on this pane, and the stamps are visual chips; an invented figure announced
      there would reach a blind operator with nothing marking it invented.
+   - It collects the attributes that carry text a person receives, not only
+     textContent. A placeholder is painted on screen until the operator types;
+     an aria-label REPLACES the element's text for a screen reader, so a figure
+     there is worse than one in the live region — it also suppresses the real
+     words underneath it. This pane already uses both idioms.
    - There is one string and one place to be wrong, rather than a rule applied
      per node.
 
    Element boundaries join with a single space, the way allText does, so a
    figure split MID-TOKEN across two elements is not found. That is disclosed
    below rather than chased. */
+const SPOKEN_ATTRS = ['placeholder', 'title', 'aria-label', 'aria-description',
+  'aria-valuetext', 'alt', 'aria-roledescription'];
+
 function textOutside(node, excluded) {
   if (!node || node === excluded) return '';
   const own = node.textContent || '';
+  const spoken = node.getAttribute
+    ? SPOKEN_ATTRS.map(name => node.getAttribute(name) || '').join(' ')
+    : '';
   const kids = (node.childNodes || []).map(kid => textOutside(kid, excluded)).join(' ');
-  return (own + ' ' + kids).replace(/\s+/g, ' ').trim();
+  return (own + ' ' + spoken + ' ' + kids).replace(/\s+/g, ' ').trim();
 }
 
 /* A readable slice around a hit, so a failure names where to look. */
@@ -1470,7 +1483,11 @@ test('v2: the sweeps hold over the cards a submit draws, not only over the boot'
     node => (node.textContent || '') === 'Quarantined, review required');
   assert.ok(quarantined, 'the quarantine receipt never rendered, so this test sweeps nothing');
 
-  assert.equal(dom.snapshots.length, 2, 'one reading per submit, or a tool went unread');
+  /* True by construction today: bootPaneWithReceipts asserts two forms and
+     pushes one reading each, and THAT assertion is what catches an unread
+     tool. This one holds the shape if a future edit makes the push
+     conditional. */
+  assert.equal(dom.snapshots.length, 2, 'one reading per submit');
   for (const outside of dom.snapshots) {
     assert.deepEqual(scoresOutside(outside), [],
       'a two-decimal figure reached a card a submit drew, outside the preview');
