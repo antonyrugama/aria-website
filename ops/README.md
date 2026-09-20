@@ -803,9 +803,11 @@ in it were invented to draw the layout.
 inside the drawn panel is stamped `Invented figures` and none is stamped `Works now`, every band
 outside it is the reverse, **neither set is empty**, and **neither a two-decimal figure nor any
 string in the file's hand-written invented inventory reaches the page outside the panel**. Moving
-one band across the boundary turns six tests in that file red. Nothing real on this pane is
+one band across the boundary turns seven tests in that file red. Nothing real on this pane is
 written as a two-decimal figure, which is what makes that sweep a usable rule rather than a
-coincidence: the working half prints digests, byte counts and timestamps.
+coincidence: the working half prints digests, byte counts and timestamps. The same sweeps run a
+second time over a page that has submitted both working forms, so the receipt cards the server's
+answer draws are covered too and not only the boot.
 
 The sweep for scores alone was too narrow, and a review found four made-up strings that could
 leave the panel with the suite green — a duration, a case count, a timestamp and a test-case id.

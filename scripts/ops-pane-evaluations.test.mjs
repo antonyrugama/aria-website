@@ -881,7 +881,7 @@ for (const scenario of [
        inside the preview carries the invented stamp, every band outside it
        carries the working stamp, neither set is empty, and neither a
        two-decimal score nor a listed invented phrase reaches the document
-       outside the preview. Move one band across that boundary and six tests
+       outside the preview. Move one band across that boundary and seven tests
        in this file go red.
 
      - Role gating is asserted in BOTH directions: a viewer is refused the
@@ -891,10 +891,16 @@ for (const scenario of [
 
    NOT COVERED here, deliberately, and not implied to be:
 
-     - Laid-out geometry. The stub has no layout, so nothing about the dashed
-       hairline, the hatch, the contrast of the preview or its behaviour at a
-       phone width is asserted in this file. That is the browser checks'
-       job (scripts/check-ops-shell-v2.mjs) and the screenshots on the PR.
+     - Laid-out geometry, and it has NO automated guard anywhere. The stub has
+       no layout, so nothing about the dashed hairline, the hatch, the contrast
+       of the preview or its behaviour at a phone width is asserted here. Nor
+       is it asserted elsewhere: check-ops-shell-v2.mjs loads this page and
+       asserts it renders with no console error, which stays true when the
+       preview is widened past the viewport, and check-ops-narrow-overflow.mjs
+       sweeps the Problems pane, not this one. The 390px and 375px numbers on
+       the PR are MEASUREMENTS taken once by hand, not regression tests: a
+       later change can break this pane's narrow layout and every check in
+       this repository will stay green.
      - The CSS that draws the stamp. These assert the word and the class the
        pane writes, not what pane-evaluations-v2.css paints them.
      - That INVENTED_FIGURES and INVENTED_PHRASES are COMPLETE. They are two
@@ -997,6 +1003,8 @@ async function bootPane(options = {}) {
   dom.doc.body = body;
   buildEvalsPage(dom, body);
 
+  dom.window.crypto = webcrypto;
+  dom.window.btoa = value => Buffer.from(value, 'binary').toString('base64');
   dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
   dom.window.OpsSession = {
     state: {
@@ -1006,6 +1014,7 @@ async function bootPane(options = {}) {
     boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
     call: (endpoint, o) => {
       calls.push({ endpoint, method: o && o.method });
+      if (options.call) return options.call(endpoint, o);
       return Promise.reject(new Error('the pane must not read an API on boot'));
     },
     signOut: () => Promise.resolve(),
@@ -1305,4 +1314,133 @@ test('v2: no invented phrase reaches the page outside the preview', async () => 
   }
   assert.deepEqual(offenders, [],
     'a made-up string outside the preview is an unstamped claim');
+});
+
+/* Every sweep above reads the page as it boots, and the two working tools each
+   draw a card only AFTER a submit — a validation receipt and a quarantine
+   receipt. A reviewer printed round one's dated chip onto the receipt and the
+   whole suite stayed green: the partition was asserted over a DOM that does
+   not contain the half most likely to grow a claim, because that is where the
+   server's answer lands.
+
+   This boots the pane with a working transport, submits both forms, and runs
+   the three outward-facing sweeps again over the page that results. */
+async function bootPaneWithReceipts() {
+  const digest = 'b'.repeat(64);
+  const dom = await bootPane({
+    role: 'operator',
+    call: (endpoint, o) => {
+      const body = o && o.body;
+      const requestId = (body && body.requestId) || 'req_1';
+      if (body && body.operationId === 'ciel.dataset.validate') {
+        return Promise.resolve({
+          schemaVersion: 'ciel.operation.response.v1',
+          requestId,
+          operationId: 'ciel.dataset.validate',
+          status: 'success',
+          exitCode: 0,
+          resource: {
+            type: 'ciel.dataset-validation',
+            id: requestId,
+            revision: 1,
+            value: {
+              valid: true,
+              issues: [],
+              digests: [{ datasetId: 'dataset.example', revision: 1, sha256: digest }],
+            },
+          },
+        });
+      }
+      return Promise.resolve({
+        schemaVersion: 'ciel.operation.response.v1',
+        requestId,
+        operationId: 'ciel.evidence.quarantine',
+        status: 'success',
+        exitCode: 0,
+        resource: {
+          type: 'ciel.evidence',
+          id: 'evd_1',
+          revision: 2,
+          value: { artifactId: 'evd_1', state: 'quarantined', revision: 2 },
+        },
+      });
+    },
+  });
+
+  const input = dom.doc.getElementById('dataset-input');
+  assert.ok(input, 'the dataset input is gone');
+  input.value = JSON.stringify({
+    schemaVersion: 'ciel.dataset.declaration.v1',
+    datasets: [{
+      datasetId: 'dataset.example',
+      revision: 1,
+      purpose: 'evaluation',
+      minimization: 'aggregate',
+      retention: { policyId: 'ret.default', expiresAt: '2031-01-01T00:00:00.000Z' },
+    }],
+    fixtureDigests: [{ datasetId: 'dataset.example', revision: 1, sha256: digest }],
+  });
+  const bytes = new TextEncoder().encode('example');
+  const set = (id, value) => {
+    const node = dom.doc.getElementById(id);
+    assert.ok(node, `the ${id} control is gone`);
+    node.value = value;
+    return node;
+  };
+  set('evidence-source', 'synthetic');
+  set('evidence-profile', 'trace');
+  set('evidence-type', 'text/plain');
+  set('evidence-purpose', 'quality_review');
+  /* Inside the 90-day ceiling the form enforces, expressed in local wall-clock
+     fields the way the control does. */
+  const soon = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  set('evidence-expiry', `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-` +
+    `${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`);
+  const file = dom.doc.getElementById('evidence-file');
+  assert.ok(file, 'the evidence file control is gone');
+  file.files = [{ name: 'example.txt', async arrayBuffer() { return bytes.slice().buffer; } }];
+
+  const forms = findAll(dom.content, node => node.tagName.toLowerCase() === 'form');
+  assert.equal(forms.length, 2, `expected both working forms, saw ${forms.length}`);
+  for (const form of forms) form.dispatch('submit', { preventDefault() {} });
+  for (let i = 0; i < 24; i += 1) await new Promise(r => setImmediate(r));
+  return dom;
+}
+
+test('v2: the sweeps hold over the cards a submit draws, not only over the boot', async () => {
+  const dom = await bootPaneWithReceipts();
+  /* The receipt has to actually be on the page, or every assertion below is
+     about a DOM that never grew the thing it is sweeping for. */
+  const receipt = find(dom.content, node => (node.textContent || '') === 'Declarations valid');
+  assert.ok(receipt, 'the validation receipt never rendered, so this test sweeps nothing');
+  const quarantined = find(dom.content,
+    node => (node.textContent || '') === 'Quarantined, review required');
+  assert.ok(quarantined, 'the quarantine receipt never rendered, so this test sweeps nothing');
+
+  const preview = previewOf(dom);
+  const outside = findAll(dom.content, n => !within(n, preview) && n !== preview);
+
+  const scores = outside
+    .filter(node => SCORE.test(node.textContent || ''))
+    .map(node => `<${node.tagName.toLowerCase()}> ${node.textContent}`);
+  assert.deepEqual(scores, [],
+    'a two-decimal figure reached a card a submit drew, outside the preview');
+
+  const phrases = [];
+  for (const node of outside) {
+    const own = node.textContent || '';
+    for (const phrase of INVENTED_PHRASES) {
+      if (own.includes(phrase)) phrases.push(`${phrase} in <${node.tagName.toLowerCase()}>`);
+    }
+  }
+  assert.deepEqual(phrases, [],
+    'a made-up string reached a card a submit drew, outside the preview');
+
+  const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
+  assert.ok(chips.length >= 9,
+    `expected the boot stamps plus both receipt stamps, saw ${chips.length}`);
+  const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
+  assert.deepEqual(numeric, [],
+    'a stamp on a card a submit drew carries a figure');
 });
