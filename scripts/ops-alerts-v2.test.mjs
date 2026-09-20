@@ -2438,11 +2438,25 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
      real, but belongs to another suite. Those read as proof to a person and
      bind nothing. */
   const foreign = new Set();
+  const siblings = [];
   for (const name of readdirSync(new URL('.', import.meta.url))) {
     if (!/^ops-.*\.test\.mjs$/.test(name) || name === 'ops-alerts-v2.test.mjs') continue;
+    const before = foreign.size;
     for (const m of readFileSync(new URL(name, import.meta.url), 'utf8')
       .matchAll(/^test\('([^']+)'/gm)) foreign.add(m[1]);
+    siblings.push(name);
+    assert.ok(foreign.size > before, name + ' contributed no test title, so the title '
+      + 'pattern no longer matches how that suite registers its tests and every title in '
+      + 'it would pass through this check unnoticed');
   }
+  /* No number is asserted here on purpose: how many siblings exist depends on
+     what else is on the branch, and CI reads the PR's MERGE commit, so this
+     file sees suites that do not exist in the author's tree (measured: 363
+     titles locally, 459 in the Linux log for the same commit). What IS held
+     is that every sibling found yields at least one title -- a floor of zero
+     is the failure that would make the scan below silently vacuous. */
+  assert.ok(siblings.length > 0, 'no sibling ops-* suite was found at all, so the foreign '
+    + 'check below compares against an empty set and can never fire');
   /* Asked per known title rather than by scanning this file for quoted runs.
      A scan pairs quote characters in order, so ONE unbalanced " anywhere
      above shifts every pair after it -- this file holds 275 of them, an odd
@@ -2458,7 +2472,8 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
 
   console.log('machine-read docblock lines judged: '
     + JSON.stringify({ read: MACHINE_READ_PREFIXES.length, inSheet: headings.length,
-      proseFrames: frames, ownCitations: marked.length, foreignTitles: foreign.size }));
+      proseFrames: frames, ownCitations: marked.length,
+      siblingSuites: siblings.length, foreignTitles: foreign.size }));
 });
 
 test('every test the stylesheet cites by name is a test this file registers', () => {
