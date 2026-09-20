@@ -490,6 +490,15 @@ const COSTS = {
     changeBasisPoints: 618 },
   views: {
     category: { label: 'Category', hint: '3 categories', rows: COST_ROWS },
+    /* `resourceGroup` rather than `service` alone, because the pane on the
+       page reads `['category', 'resourceGroup']` (ops/assets/pane-spend.js:302)
+       and draws its Group-the-bill-by switch only when two of the views it
+       reads have rows. A fixture sending `service` gave the v2 pane ONE view,
+       no switch, and therefore none of the `aria-pressed` pair EXPECTED_PAIRS
+       says this result view declares. All three keys are shapes the route
+       sends: `'category' | 'resourceGroup' | 'service'`
+       (app-backend/server/ops/opsPanesRouter.ts:158 in the monorepo). */
+    resourceGroup: { label: 'Resource group', hint: '3 groups', rows: COST_ROWS },
     service: { label: 'Service', hint: '3 services', rows: COST_ROWS }
   },
   daily: {
@@ -747,10 +756,6 @@ const KNOWN_UNPAINTED = [
     why: 'no sheet in the repository defines it' },
   { pane: 'alerts', cls: 'rule-row', issue: 'Stadiora/Aria#10644',
     why: 'styled only in operate.css, which alerts.html deliberately does not load' },
-  { pane: 'analytics', cls: 'u-when', issue: 'Stadiora/Aria#10645',
-    why: 'no sheet in the repository defines it' },
-  { pane: 'analytics', cls: 'u-size', issue: 'Stadiora/Aria#10645',
-    why: 'no sheet in the repository defines it' },
   { pane: 'releases', cls: 'done', issue: 'Stadiora/Aria#10646',
     why: 'no sheet in the repository defines it' },
   { pane: 'evals', cls: 'dataset-form', issue: 'Stadiora/Aria#10647',

@@ -2123,3 +2123,144 @@ test('the page loads the v2 system and not the v1 one', () => {
   assert.ok(PAGE_HTML.indexOf('Content-Security-Policy') !== -1,
     'the page lost its content security policy');
 });
+
+/* Every class name the sheets this page loads can paint, taken from the
+   selector LISTS rather than from the file text. These stylesheets name
+   classes in their prose constantly -- the cohort block alone mentions
+   `.tbl th`, `.u-scroll` and `.u-cohort` inside comments -- and a class that
+   appears only in a comment paints nothing, so a scan of the raw bytes would
+   call the very defect this guards against painted. `cssRules` strips comments
+   before it splits, and `@media` bodies come back through it as rules of their
+   own, so a class defined only at one width still counts as painted. */
+const PAINTED = (() => {
+  const hrefs = (PAGE_HTML.match(/<link\b[^>]*\brel="stylesheet"[^>]*>/g) || [])
+    .map((tag) => (/\bhref="([^"]+)"/.exec(tag) || [])[1])
+    .filter(Boolean);
+  const bySheet = new Map();
+  for (const href of hrefs) {
+    for (const rule of cssRules(read(href))) {
+      for (const selector of rule.selectors) {
+        /* Leading digits cannot start a class name, which is what keeps
+           `padding: 0 .5em` out of this even when a selector carries one. */
+        for (const found of selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) {
+          if (!bySheet.has(found[1])) bySheet.set(found[1], href);
+        }
+      }
+    }
+  }
+  return { hrefs, bySheet };
+})();
+
+/* Classes the pane writes deliberately without a rule behind them. Empty
+   today, and kept as the place a query hook would be declared with its
+   reason: a class JS finds nodes by is not a defect, and a class nobody can
+   say a purpose for is. */
+const UNPAINTED_ON_PURPOSE = new Map([]);
+
+test('every class this pane draws is one a sheet the page loads can paint', async () => {
+  /* A guard that reads no stylesheet judges nothing and passes. */
+  assert.deepEqual(PAINTED.hrefs,
+    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css'],
+    'the page stopped loading the sheets this check reads: ' + JSON.stringify(PAINTED.hrefs));
+  /* Every sheet contributed, rather than one of them parsing to nothing and
+     the total still looking healthy on the strength of the other two. */
+  assert.deepEqual([...new Set(PAINTED.bySheet.values())].sort(), PAINTED.hrefs.slice().sort(),
+    'a sheet the page loads yielded no class at all: ' +
+    JSON.stringify([...new Set(PAINTED.bySheet.values())]));
+  assert.ok(PAINTED.bySheet.size > 150,
+    'only ' + PAINTED.bySheet.size + ' classes were read out of three stylesheets, ' +
+    'so the selector scan is finding a fraction of what is there');
+
+  /* Both states the pane can reach with figures on screen, plus the three it
+     reaches without them: `u-when` and `u-size` were on the cohort heading,
+     which only the populated states draw. */
+  const states = [
+    ['every app', {}],
+    ['one app', { search: '?scope=mobile' }],
+    ['a window the pipeline has only part of', { usage: partial90() }],
+    ['groups under the floor', { usage: usageFixture(null, { parts: YOUNG_PARTS }) }],
+    ['an answer that is not ready', {
+      usage: { availability: { state: 'not_reporting', detail: 'No app has reported since 3 Sep.' } },
+    }],
+    ['too little data', {
+      search: '?range=7d',
+      usage: { availability: { state: 'insufficient', detail: 'Fewer than 50 people in this window.' } },
+    }],
+    ['a read that failed', { usage: new Error('The operations API did not answer.') }],
+  ];
+
+  const unpainted = new Map();
+  let judged = 0;
+  for (const [name, options] of states) {
+    const dom = await boot(options);
+    const app = dom.doc.getElementById('app');
+    assert.ok(app, 'the page lost #app on ' + name);
+    const classed = findAll(app, (n) => (n.className || '').trim() !== '');
+
+    /* The sweep reads the whole of #app, which is the shell's chrome as well
+       as the pane's panels, because the pane writes into the filter bar too.
+       The floor below counts only what the PANE drew: a pane that never
+       mounted still leaves the rail, the topbar and the gate behind it, so a
+       floor over #app is a floor a broken pane walks under. The thinnest of
+       these states is the failed read, at 36 classed elements. */
+    const content = dom.doc.getElementById('content');
+    assert.ok(content, 'the pane drew no result region at all on ' + name);
+    const drew = findAll(content, (n) => (n.className || '').trim() !== '');
+    assert.ok(drew.length > 25,
+      'the pane drew only ' + drew.length + ' classed elements on ' + name +
+      ', so this state was judged empty');
+
+    for (const node of classed) {
+      for (const cls of node.className.trim().split(/\s+/)) {
+        judged += 1;
+        if (PAINTED.bySheet.has(cls) || UNPAINTED_ON_PURPOSE.has(cls)) continue;
+        const where = (node.tagName || '?').toLowerCase() + '.' +
+          node.className.trim().split(/\s+/).join('.');
+        if (!unpainted.has(cls)) unpainted.set(cls, name + ': <' + where + '>');
+      }
+    }
+  }
+
+  /* The heading row this check exists for has to be inside what it walked, or
+     a populated state that stopped drawing the grid would take the evidence
+     with it. */
+  const populated = await boot({});
+  const grid = findAll(populated.doc.getElementById('app'),
+    (n) => (n.className || '').split(/\s+/).indexOf('u-cohort') !== -1)[0];
+  assert.ok(grid, 'the retention grid is no longer drawn, so its heading was never judged');
+  const headings = findAll(grid, (n) => isTag(n, 'th') && n.getAttribute('scope') === 'col');
+  assert.ok(headings.length >= 3,
+    'the retention grid drew ' + headings.length + ' column headings');
+
+  assert.ok(judged > 400, 'only ' + judged + ' class names were judged across seven states');
+  assert.deepEqual([...unpainted.entries()], [],
+    'the pane draws classes no sheet the page loads defines, which paint nothing and ' +
+    'are invisible to every other check: ' + JSON.stringify([...unpainted.entries()]));
+});
+
+test('the retention grid keeps the heading class that paints and none that do not', async () => {
+  const dom = await boot({});
+  const grid = findAll(dom.doc.getElementById('app'),
+    (n) => (n.className || '').split(/\s+/).indexOf('u-cohort') !== -1)[0];
+  const headings = findAll(grid, (n) => isTag(n, 'th') && n.getAttribute('scope') === 'col');
+
+  const [when, size] = headings;
+  assert.equal(allText(when), 'Week joined', 'the first column is no longer the signup week');
+  assert.equal(allText(size), 'People', 'the second column is no longer the size of the group');
+
+  /* The week column is painted entirely by rules keyed on position --
+     `.tbl th` for the type and `.u-cohort th:first-child` for the gutter --
+     so a class on it can only be a name nothing reads. */
+  assert.equal((when.className || '').trim(), '',
+    'the signup-week heading carries a class again: ' + when.className);
+
+  /* The size column is right-aligned, and `r` is what does it: a figure
+     column headed on the left sits away from the numbers under it. */
+  assert.deepEqual((size.className || '').trim().split(/\s+/), ['r'],
+    'the People heading is no longer exactly the class that paints it: ' + size.className);
+  const aligns = cssRules(read('assets/aria.css'))
+    .filter((rule) => rule.targets(/\.tbl\s+th\.r\b/))
+    .filter((rule) => /text-align:\s*right/.test(rule.body));
+  assert.equal(aligns.length, 1,
+    'no rule in aria.css right-aligns .tbl th.r, so `r` on the heading paints nothing either');
+});
