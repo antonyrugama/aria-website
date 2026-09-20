@@ -448,14 +448,51 @@ const COLLECT = `(() => {
        rather than dropped, so nothing escapes the sweep by being marked
        disabled without anyone noticing.
 
-       aria-disabled is deliberately NOT here: it describes a component that
-       is still operable and still meant to be read, and it is an attribute
-       any container can carry, so honouring it would take arbitrary text out
-       of the sweep on one word of markup. Only the HTML disabled state, which
-       browsers apply to descendants of the control itself, exempts. */
-    const inactive = !!el.closest('[disabled], :disabled');
+       :disabled and nothing else. It matches only the elements HTML lets be
+       disabled, so the exemption cannot be reached from a container: the
+       attribute selector [disabled] matches ANY element carrying the word,
+       including a <div> the browser disables nothing about, and one word of
+       markup would then take a whole subtree out of the sweep. aria-disabled
+       is likewise absent: it describes a component that is still operable and
+       still meant to be read. */
+    const inactive = !!el.closest(':disabled');
+
+    /* String comparisons rather than a regex: this probe is a template literal,
+       so a backslash here is read twice and a regex written the obvious way
+       silently matches something else. */
+    const paintsOwn = (st) => st.backgroundImage !== 'none' ||
+      (st.backgroundColor !== 'rgba(0, 0, 0, 0)' && st.backgroundColor !== 'transparent');
+    const nameOf = (n) => n.tagName.toLowerCase() +
+      ((n.getAttribute('class') || '') ? '.' + n.getAttribute('class').trim().split(' ')[0] : '');
+
+    /* Properties other than colour and opacity that decide the pixel a glyph
+       paints. This tool models exactly two channels, so each of these is
+       REFUSED by name rather than approximated: under any of them the ink
+       still computes to the designed colour while the page paints something
+       else, and reporting the designed colour is the flattering direction for
+       an ink. Refusals fail the run, so nothing hides here.
+
+       Not a list of everything CSS can do to a glyph — a list of what this
+       tool will not stand behind. Modelling filter, blending and stroke would
+       be three more things to get wrong; refusing is one branch that cannot
+       be. backdrop-filter is deliberately absent: it alters the backdrop,
+       which the screenshot samples correctly. */
+    const unmodelled = (st, n) => {
+      if (st.filter && st.filter !== 'none') {
+        return 'filter "' + st.filter + '" on ' + nameOf(n);
+      }
+      if (st.mixBlendMode && st.mixBlendMode !== 'normal') {
+        return 'mix-blend-mode "' + st.mixBlendMode + '" on ' + nameOf(n);
+      }
+      const sw = parseFloat(st.webkitTextStrokeWidth);
+      if (Number.isFinite(sw) && sw > 0) {
+        return '-webkit-text-stroke ' + st.webkitTextStrokeWidth + ' on ' + nameOf(n);
+      }
+      return null;
+    };
 
     let alphaChain;
+    let unmodelledPaint = unmodelled(cs, el);
     {
       let alpha = Number(cs.opacity);
       if (isSvg) {
@@ -463,21 +500,24 @@ const COLLECT = `(() => {
         if (Number.isFinite(fo)) alpha *= fo;
       }
       let surface = null;
+      /* The innermost thing at or below the current ancestor that paints a
+         surface the glyphs sit on. Group opacity composites a subtree as a
+         unit: the glyphs blend with that surface FIRST and the pair is faded
+         together, so the product below is the true glyph alpha only while no
+         painter sits inside a fade. The painter need not be the faded element
+         and need not be faded itself. */
+      let painterInside = paintsOwn(cs) ? nameOf(el) : null;
       for (let a = el.parentElement; a; a = a.parentElement) {
         const acs = getComputedStyle(a);
+        if (!unmodelledPaint) unmodelledPaint = unmodelled(acs, a);
+        const paints = paintsOwn(acs);
         const ao = Number(acs.opacity);
-        if (!(ao < 1)) continue;
-        alpha *= ao;
-        /* String comparison rather than a regex: this probe is a template
-           literal, so a backslash here is read twice and a regex written the
-           obvious way silently matches something else. */
-        const bgc = acs.backgroundColor;
-        const paints = acs.backgroundImage !== 'none' ||
-          (bgc !== 'rgba(0, 0, 0, 0)' && bgc !== 'transparent');
-        if (paints && !surface) {
-          surface = a.tagName.toLowerCase() +
-            ((a.getAttribute('class') || '') ? '.' + a.getAttribute('class').trim().split(' ')[0] : '');
+        if (ao < 1) {
+          alpha *= ao;
+          const inside = painterInside || (paints ? nameOf(a) : null);
+          if (inside && !surface) surface = inside + ' inside the fade on ' + nameOf(a);
         }
+        if (paints && !painterInside) painterInside = nameOf(a);
       }
       alphaChain = { alpha: alpha, surface: surface };
     }
@@ -521,11 +561,15 @@ const COLLECT = `(() => {
          text and is likewise not covered by opacity.
 
          Group opacity composites a subtree as a unit, so the product is exact
-         only while no faded ancestor paints its own surface. fadedSurface
-         says whether one does; measureSites refuses those rather than
-         reporting a number it cannot stand behind. */
+         only while nothing inside a fade paints a surface under the text.
+         fadedSurface says whether something does; measureSites refuses those
+         rather than reporting a number it cannot stand behind. */
       opacity: alphaChain.alpha,
       fadedSurface: alphaChain.surface,
+      /* Set when this element or an ancestor uses a property that decides the
+         painted glyph and that this tool does not model. Named, not guessed
+         at: measureSites turns it into a refusal, and refusals fail the run. */
+      unmodelledPaint: unmodelledPaint,
       inactive: inactive,
       fontSize: parseFloat(inkStyle.fontSize) || parseFloat(cs.fontSize),
       fontWeight: Number(inkStyle.fontWeight) || Number(cs.fontWeight) || 400,
@@ -535,9 +579,10 @@ const COLLECT = `(() => {
       },
       /* One rect per line of this element's OWN text, from a Range over its
          direct text nodes — children's boxes excluded, wrapped lines kept
-         apart. Empty for a ::before/::after, whose content has no text node to
-         range over; the box is the fallback there, and a pseudo-element paints
-         inside its originating element's box. */
+         apart. Empty for a ::placeholder, whose glyphs have no node to range
+         over; the control's own box is the fallback there, and that is where
+         a placeholder paints. ::before and ::after are not collected at all —
+         GENERATED_TEXT fails the run on them instead. */
       rects: runs.length ? runs : [{
         x: rect.x + window.scrollX, y: rect.y + window.scrollY,
         width: rect.width, height: rect.height
@@ -785,7 +830,23 @@ async function measureSites(targets, where) {
       results.push({ ...t, unjudgeable: reason, ink });
       continue;
     }
-    /* A faded ancestor that also paints a surface composites its subtree as a
+    /* colour × opacity is the whole of this tool's ink model. filter, blending
+       and a text stroke each decide the painted pixel outside that model, and
+       under every one of them the ink still computes to the designed colour —
+       so measuring would report the value the stylesheet asked for while the
+       page paints something a reader cannot see, which is precisely the false
+       green this guard exists to stop. Refused by name instead. The shell has
+       one filter today, a :hover brightness the sweep never enters, so this
+       costs no coverage. */
+    if (t.unmodelledPaint) {
+      results.push({
+        ...t, unjudgeable: 'paint this tool does not model', ink: String(t.color),
+        detail: t.unmodelledPaint
+      });
+      continue;
+    }
+
+    /* A fade with a painted surface inside it composites its subtree as a
        group: the glyphs blend with THAT surface first and the result blends
        with what is behind. Compositing the ink straight onto the sampled
        backdrop is then an approximation whose error runs in either direction,
@@ -793,9 +854,9 @@ async function measureSites(targets, where) {
        which is why this costs no coverage. */
     if (t.fadedSurface) {
       results.push({
-        ...t, unjudgeable: 'faded ancestor paints its own surface', ink: String(t.color),
-        detail: `group opacity on ${t.fadedSurface} composites these glyphs with a surface ` +
-          'this tool samples separately'
+        ...t, unjudgeable: 'a painted surface sits inside a fade', ink: String(t.color),
+        detail: `${t.fadedSurface} composites these glyphs with a surface this tool ` +
+          'samples separately'
       });
       continue;
     }

@@ -1001,7 +1001,8 @@ the surface behind each **run of text**. Runs, not element boxes: a row that con
 12% chip, and the row's own words sit on none of it.
 
 Four things decide the answer, and each is chosen for the **role** the colour plays — an ink,
-not a fill:
+not a fill. Three of the four end in a refusal rather than a number, because a refusal fails
+the run and a wrong number does not:
 
 - **The ink decides against its worst surface**, with no minimum share. The hatch behind
   `.budget .fore` is 22% amber every 6px, so a letter crossing a stripe is read at the stripe's
@@ -1017,13 +1018,23 @@ not a fill:
   real failures among them (monorepo #10255). Anything it cannot read fails the run.
 - **The fade does not have to be on the text.** `opacity` does not inherit, so a faded ancestor
   leaves the text element reading `opacity: 1` while its glyphs composite at the ancestor's
-  alpha. The ink's alpha is the product of the whole chain, plus `fill-opacity` on SVG. That
-  product is only the true glyph alpha while no faded ancestor paints a surface of its own
-  underneath — where one does, the site is **refused by name** rather than guessed at.
-- **The ink is read from the channel that paints the glyph.** `-webkit-text-fill-color` beats
-  `color` for the glyph interior, and its initial value resolves to whatever `color` is, so
-  reading it is right in both cases. Reading `color` instead let an invisible ink measure as the
-  visible one, and defeated the plate's own integrity check with it.
+  alpha. The ink's alpha is the product of every `opacity` in the chain, plus `fill-opacity` on
+  SVG. That product is the true glyph alpha only while nothing **inside** a fade paints a
+  surface under the text — group opacity composites a subtree as a unit, so the glyphs blend
+  with that surface first and the pair is faded together. Where something does, the site is
+  **refused by name** rather than guessed at; the painter does not have to be the faded element
+  and does not have to be faded itself.
+- **The ink is `color` — or `-webkit-text-fill-color`, which beats it for the glyph interior —
+  times that alpha, and nothing else. So everything else is refused.** `filter`,
+  `mix-blend-mode` and `-webkit-text-stroke` each decide the pixel a glyph paints while the
+  computed colour still reads exactly as the stylesheet asked for, which is the flattering
+  direction for an ink: `filter: opacity(.06)` and `opacity: .06` paint identically and only
+  the second is in the model, and `mix-blend-mode: screen` erases black text that still
+  computes to `rgb(0, 0, 0)`. Set any of the three, on the text or on an ancestor, and the site
+  is **refused by name** and the run fails. Modelling them would be three more things to get
+  wrong; refusing is one branch that cannot be. `backdrop-filter` needs no refusal — it alters
+  the backdrop, which the screenshot samples correctly. The shell has one `filter` today, a
+  `:hover` brightness the sweep never enters, so this costs no coverage.
 
 The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
 --self-test` runs six parts against a synthetic fixture — the formula against published WebAIM
@@ -1045,6 +1056,11 @@ originating element's box and call that an answer, the run **fails** if any `::b
 quote keyword. `content: ''`, the decorative form this page uses everywhere, is not text and is
 not flagged. So generated text cannot pass unmeasured, but it also cannot be judged: a page that
 wants it has to either drop it or extend this tool.
+
+**Text painted through `filter`, `mix-blend-mode` or `-webkit-text-stroke` is not measured** —
+it is refused, which fails the run, so it can neither pass unmeasured nor be reported as a
+number the tool cannot stand behind. The same goes for a surface painted inside a fade. These
+are refusals, not coverage.
 
 **Text over a picture is not covered.** The plate hides `img` and `canvas` outright, so text
 over one would be measured against whatever is underneath rather than against the picture, and
