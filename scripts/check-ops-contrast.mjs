@@ -2099,7 +2099,15 @@ async function measureFocusIndicators(where) {
  * — a ring genuinely under 3:1 — and there is not one on this shell any more.
  * They are fail-closed and unproven, not proven. Raising FOCUS_RATIO to
  * manufacture one would fail the run for a different reason and prove
- * nothing, so it was not done.
+ * nothing, so it was not done — but that reason considers only one of the two
+ * places a frozen entry could live. The reconcile step is inline in the run
+ * loop; lifted out the way focusFindings was lifted, part H could freeze .h9
+ * at 2.83 / #CCCCCC and drive both branches off a fixture that stays under
+ * 3:1 by construction, with no shell and no threshold involved. That is the
+ * right shape and it is deliberately not done here: guard code written
+ * mid-review is itself unproven code, and this file would rather carry a
+ * named gap than an unproven closure of one. Whoever next needs those two
+ * branches proven — that is the seam, and it is already cut next door.
  *
  * Also NOT COVERED: the scroll refusal. preventScroll is asked for and the
  * two scroll positions are compared, but nothing on this page or the shell
@@ -2438,12 +2446,16 @@ async function selfTest() {
       `${lowParsed ? `rgb(${[lowParsed.r, lowParsed.g, lowParsed.b].map((v) => v.toFixed(3)).join(', ')})` : 'nothing'}` +
       `${lowParsed ? (lowClamped ? '' : ' — the LOWER clamp is not holding') : ' — refused, so the slack is under this part\'s low-literal floor and this says nothing about the clamp'}` +
       (edges
-        ? `\n          edges, computed from those serialisations and bracketed by calling the gate either side:` +
-          `\n            floor   ${edges.overshootFloor} (${mult(edges.overshootFloor)})  the overshoot stops fitting the window below this` +
-          `\n            floor   ${edges.lowLiteralFloor} (${mult(edges.lowLiteralFloor)})  the clamp literal is refused below this` +
-          `\n            ceiling ${edges.wideCeiling} (${mult(edges.wideCeiling)})  the wide-gamut mix starts being read at this, so the slack must stay under it` +
-          `\n            ceiling ${edges.byteCeiling} (${mult(edges.byteCeiling)})  one byte, the contract` +
+        ? `\n          edges — 2 read off the serialisations above, 2 typed in this file; 3 of the 4 bracketed by calling the gate either side:` +
+          `\n            floor   ${edges.overshootFloor} (${mult(edges.overshootFloor)})  the overshoot stops fitting the window below this — read off the serialisation` +
+          `\n            floor   ${edges.lowLiteralFloor} (${mult(edges.lowLiteralFloor)})  the clamp literal is refused below this — LOW_CLAMP_INK is typed here, the floor is measured off it` +
+          `\n            ceiling ${edges.wideCeiling} (${mult(edges.wideCeiling)})  the wide-gamut mix starts being read at this, so the slack must stay under it — read off the serialisation` +
+          `\n            ceiling ${edges.byteCeiling} (${mult(edges.byteCeiling)})  one byte, the contract — typed, not measured, and not bracketed` +
           `\n          so this part is green for GAMUT_SLACK in [${band.lo}, ${band.hi}] = [${mult(band.lo)}, ${mult(band.hi)}]` +
+      `\n          — and NEITHER end of that band comes from a browser serialisation, which is what` +
+      `\n          contractsBind asserts: a rounding allowance is bounded by this file, and the two` +
+      `\n          edges read off Chromium are the slack ones. If a serialisation ever moved inside` +
+      `\n          a contract, contractsBind would fail rather than the band quietly narrowing.` +
           `${bracketed ? '' : ' — AN EDGE IS NOT WHERE IT WAS COMPUTED TO BE'}` +
           `${inBand ? '' : ' — AND THE SHIPPED CONSTANT IS OUTSIDE IT'}` +
           `${contractsBind ? '' : ' — BOUND BY A BROWSER SERIALISATION RATHER THAN BY A CONTRACT'}`
@@ -2879,11 +2891,13 @@ const KNOWN_UNMEASURABLE_FOCUS = [
   }
 ];
 
-/* sameSurface's ±1 byte cannot distinguish two surfaces a byte apart, and
-   three pairs in the tables above are exactly that close. That is only safe
-   while an entry is asked about one site and one site only, so this asserts
-   it rather than trusting the tables to stay that way: every frozen focus
-   entry expands to one row per state, and no two rows may share a focusKey.
+/* sameSurface's ±1 byte cannot distinguish two surfaces a byte apart. How
+   many such pairs the tables above hold is not written down here — that count
+   is Stadiora/Aria#10365's exact shape, and it was already wrong once in this
+   comment. What matters is that the tolerance is only safe while an entry is
+   asked about one site and one site only, so this asserts that rather than
+   trusting the tables to stay that way: every frozen focus entry expands to
+   one row per state, and no two rows may share a focusKey.
    A duplicate key would let a measurement reconcile against the wrong entry's
    surface and ratio — which is the one way a ±1 tolerance could hide a real
    move. Thrown before anything is measured, because a freeze table that
@@ -2922,7 +2936,16 @@ let frozenFocusCount = 0;
    than at it — the exact census is a fact about today's shell and the run
    prints it every pass, so writing it here would only be one more number to
    drift — because a floor set far below what the page carries is a floor
-   that never fires. */
+   that never fires.
+
+   What this floor catches is a COLLAPSE, not one quiet pass. With eight
+   passes, losing one still clears 180 by a couple of sites; losing two does
+   not. One quiet pass IS caught today, but by KNOWN_UNMEASURABLE_FOCUS
+   happening to enumerate all eight theme/state combinations, so the
+   reconciler notices the four that stopped reproducing — cover that retires
+   when Stadiora/Aria#10686 and #10700 are fixed and those entries go. The
+   failure message below says collapse rather than pointing the reader at a
+   pass this assertion cannot see. */
 const FOCUS_SITE_FLOOR = 180;
 
 try {
@@ -3183,9 +3206,9 @@ try {
     if (focusChecked + focusRefused.length < FOCUS_SITE_FLOOR) {
       failures.push(`${SHELL}: only ${focusChecked + focusRefused.length} focus indicator(s) ` +
         `were looked at across ${THEMES.length} themes × ${STATES.length} states, so the ` +
-        `focus sweep measured almost nothing — the floor is ${FOCUS_SITE_FLOOR}. Every pass ` +
-        'above prints how many controls Tab reached; compare them to find the pass that ' +
-        'went quiet.');
+        `focus sweep has collapsed — the floor is ${FOCUS_SITE_FLOOR}, and it is set to catch ` +
+        'most of the sweep going missing rather than one pass going quiet. Every pass above ' +
+        'prints how many controls Tab reached.');
     }
 
     const frozenRefusals = new Map();
@@ -3202,7 +3225,16 @@ try {
          box-shadow indicator must not go on covering the same control when
          its indicator changes to something else this tool declines for a
          different reason — that is a new fact about the page, not the one
-         that was signed off. */
+         that was signed off.
+
+         A substring test, and nothing here constrains `because` to be
+         distinctive. Correct for the four live entries and mutation-proven
+         against a WRONG reason (F14, F27); NOT proven against an AMBIGUOUS
+         one. "beside its ring" is a substring of three different refusal
+         messages, so a `because` shortened to that would silently cover a
+         refusal nobody signed off. Named rather than closed, for the reason
+         in NOT COVERED: an assertion added here mid-review is guard code
+         with no mutation behind it. */
       if (e && r.refused.includes(e.because)) {
         if (!matchedRefusals.has(key)) matchedRefusals.set(key, []);
         matchedRefusals.get(key).push(r);
