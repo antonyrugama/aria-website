@@ -1001,15 +1001,21 @@ test('the all-quiet ribbon does not repeat the chip beside it', async () => {
 const FACT_FLOOR = 24;
 
 function leafRuns(root) {
-  return findAll(root, (n) => n.nodeType !== 3 &&
-    (n.childNodes || []).some((c) => c.nodeType === 3 && String(c.text || '').trim()))
-    .map((n) => allText(n).replace(/\s+/g, ' ').trim())
+  return findAll(root, () => true)
+    .map((n) => String(n.textContent || '').replace(/\s+/g, ' ').trim())
     .filter((t) => t.length >= FACT_FLOOR);
 }
 
-function assertNoRepeat(panel, state) {
+/* The first draft of this read `c.text`, which the DOM stub does not have, so
+   it collected nothing and could never fail. The floor below is what makes
+   that visible: an empty sweep is now a failure, not a pass. */
+function assertNoRepeat(panel, state, floor) {
+  const runs = leafRuns(panel);
+  assert.ok(runs.length >= floor,
+    'the ' + state + ' sweep found only ' + runs.length + ' runs of ' + FACT_FLOOR +
+    '+ characters, so it is not reading the page it claims to read');
   const seen = new Map();
-  for (const run of leafRuns(panel)) {
+  for (const run of runs) {
     if (seen.has(run)) {
       assert.fail('the ' + state + ' pane prints the same sentence in two slots: ' +
         JSON.stringify(run));
@@ -1034,7 +1040,7 @@ test('no state prints the same sentence in two slots', async () => {
   const quiet = livePanel(await boot({ problems: { problems: [], total: 0 } }));
   assert.match(allText(quiet), /Nothing needs attention/,
     'the all-quiet fixture did not reach the all-quiet state');
-  assertNoRepeat(quiet, 'all-quiet');
+  assertNoRepeat(quiet, 'all-quiet', 4);
 
   const unarmed = livePanel(await boot({
     problems: { problems: [], total: 0 }, rules: NEVER_RUN_RULES,
@@ -1043,14 +1049,14 @@ test('no state prints the same sentence in two slots', async () => {
     'the unarmed fixture did not reach the unarmed state');
   assert.match(allText(unarmed), /none has run yet/,
     'the unarmed fixture reached a different unarmed branch than the one under test');
-  assertNoRepeat(unarmed, 'unarmed');
+  assertNoRepeat(unarmed, 'unarmed', 4);
 
   const live = livePanel(await boot({}));
   assert.ok(findAll(live, (n) => /(^|\s)q-row(\s|$)/.test(n.className || '')).length,
     'the live fixture drew no queue rows, so it is not the state under test');
   assert.ok(findAll(live, (n) => /(^|\s)card-foot(\s|$)/.test(n.className || '')).length,
     'the live fixture drew no card footer, so the footer is not under test here');
-  assertNoRepeat(live, 'live');
+  assertNoRepeat(live, 'live', 8);
 });
 
 /* The page-wide guard above catches a sentence repeated character for
