@@ -1087,8 +1087,10 @@ async function openReauth(options) {  const opts = options || {};
    What it REFUSES BY NAME rather than skipping: an `!important` declaration
    in any of its spellings -- the flag is case-insensitive and the `!` need
    not touch the keyword -- a media feature or at-rule condition it cannot
-   evaluate, and any selector it cannot read that COULD still reach the
-   dialog — reachability judged by the loosest reading
+   evaluate, a SHORTHAND that outranks a longhand it has answered for the
+   same element -- expanding one means computing initial values, which is a
+   browser's job -- and any selector it cannot read that COULD still reach
+   the dialog — reachability judged by the loosest reading
    of each combinator in turn, `>` and descendant both read as "some
    ancestor", `+` and `~` both read as "some earlier sibling", every
    unreadable pseudo taken as matching, so a rule is only dismissed when no
@@ -1338,6 +1340,16 @@ function cssRules(src, sheet) {
     while (i < text.length) {
       const brace = text.indexOf('{', i);
       if (brace < 0) break;
+      /* A statement at-rule -- `@layer a, b;`, `@import …;`, `@charset …;` --
+         ends at a semicolon and has no block, so reading up to the next `{`
+         would take the FOLLOWING rule's prelude and body as its own. Consumed
+         and skipped here. Round six; the hole opened the moment cssRules
+         started recursing into `@layer` instead of refusing it. */
+      const semi = text.indexOf(';', i);
+      if (semi >= 0 && semi < brace && text.slice(i, semi).trim()[0] === '@') {
+        i = semi + 1;
+        continue;
+      }
       const prelude = text.slice(i, brace).trim();
       let depth = 1;
       let j = brace + 1;
@@ -1391,13 +1403,17 @@ function declarations(rule) {
     const at = part.indexOf(':');
     assert.ok(at > 0, 'REFUSED, unreadable declaration in ' + rule.sheet + ' ' + rule.selector + ': ' + part.trim());
     const value = part.slice(at + 1).trim();
+    /* Strings and url() are content, not syntax: `content: "!important"` and
+       `url(a!important.png)` carry no importance, and refusing them is a
+       false red. Round six. */
+    const bare = value.replace(/"[^"]*"|'[^']*'|url\([^)]*\)/g, '');
     /* CSS matches the important flag ASCII-case-insensitively and allows
        whitespace between the `!` and the keyword, so `!IMPORTANT` and
        `! important` are the same declaration as `!important`. Reading only
        the one spelling kept the others as ORDINARY declarations, which then
        lost on specificity -- a confident negative, because importance
        outranks specificity in a browser. Round five. */
-    assert.ok(!/!\s*important/i.test(value),
+    assert.ok(!/!\s*important/i.test(bare),
       'REFUSED, !important reaches the dialog from ' + rule.sheet + ' ' + rule.selector +
       ' and this resolver does not order importance');
     map.set(part.slice(0, at).trim(), value);
@@ -1451,6 +1467,63 @@ function rootOf(nodes) {
    alike, and a bare one matches in BOTH themes in a browser. So `cascade()`
    takes the theme, seeds the root itself, re-seeds on every resolve because
    two resolvers can be alive at once, and refuses to run without one. */
+/* Which longhands a shorthand resets. Not exhaustive CSS -- exhaustive
+   would be a browser -- but every shorthand that can reach any property this
+   suite asserts, plus `all`, which resets everything.
+
+   This resolver keys the cascade on the property name AS SPELLED, so a
+   shorthand and the longhand it overrides are two unrelated entries. Asked
+   for `font-size` while `font: inherit` wins in the browser, it answered the
+   stale longhand and the dialog rendered at 13.5px with the suite green
+   (round six). Expanding shorthands properly means computing initial values,
+   which is the browser's job; so where a shorthand OUTRANKS a longhand this
+   resolver has answered for the same element, it REFUSES by name instead.
+   `font: inherit` is this repo's own idiom -- ops/assets/operate.css:148. */
+const SHORTHANDS = {
+  all: '*',
+  font: ['font-style', 'font-variant', 'font-weight', 'font-stretch', 'font-size', 'line-height', 'font-family'],
+  background: ['background-color', 'background-image', 'background-position', 'background-size',
+    'background-repeat', 'background-origin', 'background-clip', 'background-attachment'],
+  padding: ['padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
+  margin: ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'],
+  inset: ['top', 'right', 'bottom', 'left'],
+  border: ['border-width', 'border-style', 'border-color', 'border-top', 'border-right',
+    'border-bottom', 'border-left', 'border-image'],
+  'border-width': ['border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width'],
+  'border-color': ['border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color'],
+  'border-radius': ['border-top-left-radius', 'border-top-right-radius',
+    'border-bottom-right-radius', 'border-bottom-left-radius'],
+  outline: ['outline-width', 'outline-style', 'outline-color'],
+  flex: ['flex-grow', 'flex-shrink', 'flex-basis'],
+  'flex-flow': ['flex-direction', 'flex-wrap'],
+  gap: ['row-gap', 'column-gap'],
+  'place-items': ['align-items', 'justify-items'],
+  'place-content': ['align-content', 'justify-content'],
+  'place-self': ['align-self', 'justify-self'],
+  overflow: ['overflow-x', 'overflow-y'],
+  transition: ['transition-property', 'transition-duration', 'transition-timing-function', 'transition-delay'],
+  animation: ['animation-name', 'animation-duration', 'animation-timing-function',
+    'animation-delay', 'animation-iteration-count', 'animation-direction',
+    'animation-fill-mode', 'animation-play-state'],
+  'list-style': ['list-style-type', 'list-style-position', 'list-style-image'],
+  'text-decoration': ['text-decoration-line', 'text-decoration-style', 'text-decoration-color',
+    'text-decoration-thickness'],
+  'grid-area': ['grid-row-start', 'grid-column-start', 'grid-row-end', 'grid-column-end'],
+};
+
+function resets(shorthand, longhand) {
+  const spread = SHORTHANDS[shorthand];
+  if (!spread) return false;
+  if (spread === '*') return shorthand !== longhand;
+  if (spread.indexOf(longhand) !== -1) return true;
+  /* One level of nesting: `border` resets `border-width`, which resets
+     `border-top-width`. Depth one is enough for the table above. */
+  return spread.some((mid) => {
+    const inner = SHORTHANDS[mid];
+    return Array.isArray(inner) && inner.indexOf(longhand) !== -1;
+  });
+}
+
 /* The set of names this tree carries, as one regex: a rule naming none of
    them cannot reach the dialog, which is the NOT COVERED stated above. Shared
    by BOTH sweeps. The pane sweep used to have no filter at all, so once the
@@ -1563,6 +1636,22 @@ function cascade(nodes, sheets, theme) {
         if (!prev || prev.specificity < rule.specificity
           || (prev.specificity === rule.specificity && prev.order < rule.order)) {
           won.set(name, { value, specificity: rule.specificity, order: rule.order, from: rule.sheet + ' { ' + rule.selector + ' }' });
+        }
+      }
+    }
+    /* A shorthand and the longhand it resets are two unrelated keys in the
+       map above, so the winner of `font-size` says nothing about a `font`
+       that outranks it. Refuse rather than answer: expanding a shorthand
+       means computing initial values, which is a browser's job. Only when
+       the shorthand actually WINS -- a losing one changes nothing. */
+    for (const [long, got] of won) {
+      for (const [short, beat] of won) {
+        if (short === long || !resets(short, long)) continue;
+        if (beat.specificity > got.specificity
+          || (beat.specificity === got.specificity && beat.order > got.order)) {
+          throw new Error('REFUSED, the shorthand `' + short + '` in ' + beat.from +
+            ' outranks `' + long + '` from ' + got.from +
+            ', and this resolver does not expand shorthands');
         }
       }
     }
