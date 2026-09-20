@@ -1,0 +1,100 @@
+/* What happened — the shapes this pane needs on top of assets/aria.css and
+   assets/shell-pane-v2.css.
+
+   One stylesheet per pane, holding only what that pane draws. Several panes
+   were remodelled onto the v2 system in parallel and a shared sheet would have
+   been several concurrent branches editing one file; the duplication between
+   them is cheap and a later change can fold it back in. Where a shape already
+   exists on another v2 pane — .locked, .field-label, .tbl-wrap, .omit — the
+   name and the declarations are that pane's rather than a second spelling of
+   the same idea.
+
+   Nothing here introduces a colour. Every value is a token from aria.css,
+   which is WCAG AA by construction, or a color-mix of one. */
+
+/* --------------------------------------------------------------- figures
+
+   A figure that is words rather than a number is still a figure, so it keeps
+   the tile it would have had. It changes typeface instead: the numeric face at
+   tile size reads as a quantity, and "Not recorded" set in it reads as one
+   too. Same rule, same declarations, as the Overview pane. */
+.kpi-val.words {
+  font-family: var(--sans);
+  font-size: 19px; font-weight: 560; letter-spacing: -.015em;
+  color: var(--ink-2);
+}
+
+/* aria.css lays the meta row out without wrapping, which fits a tile carrying
+   one short pill. These carry a short sentence instead. */
+.kpi-meta { flex-wrap: wrap; row-gap: 4px; }
+
+/* --------------------------------------------------------------- tables */
+
+/* A table wider than its card scrolls rather than pushing the page wide.
+   scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
+.tbl-wrap { overflow-x: auto; }
+
+/* The failure table's first column carries the rule name and the threshold it
+   crossed, which is the one cell that has to stay readable at every width. */
+.tbl td:first-child { min-width: 200px; }
+
+/* --------------------------------------------------------------- privacy
+
+   The band that says what is not here. Its rows are a field NAME and the fact
+   that the field is hidden, and there is deliberately no third column: no
+   value node exists in this markup, revealed or masked, so there is nothing
+   for a stylesheet to lay one out in. */
+.locked-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.locked-row:first-child { border-top: 0; padding-top: 2px; }
+.locked-row .field-label { flex: 1 1 200px; min-width: 0; }
+
+.field-label { font-size: 11.5px; font-weight: 540; color: var(--ink-3); }
+
+/* The mask carries the word as well as the hatching, so it is never the
+   texture alone that says a value is withheld. Same shape as the Look up a
+   user pane's, because it is the same statement. */
+.locked {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 11.5px; font-weight: 520;
+  color: var(--ink-2);
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--ink) 7%, transparent) 0 5px,
+    transparent 5px 10px);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.locked svg { width: 12px; height: 12px; flex: none; color: var(--ink-3); }
+
+/* Not .reveal-never: there is no reveal on this pane to be the never of. The
+   line says the field is never shown HERE, which is a different sentence from
+   the one the account pane draws beside a control. */
+.locked-never {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--ink-3);
+}
+.locked-never svg { width: 12px; height: 12px; flex: none; }
+
+/* The six guarantees, as sentences rather than as properties of the code. */
+.list-tick { display: flex; flex-direction: column; gap: 9px; margin-top: 6px; }
+.list-tick li {
+  display: flex; gap: 9px; align-items: flex-start;
+  list-style: none;
+  font-size: 12.5px; line-height: 1.55;
+  color: var(--ink-2);
+}
+.list-tick li svg { width: 13px; height: 13px; margin-top: 3px; flex: none; color: var(--ink-3); }
+
+/* ------------------------------------------------------- not drawn here
+
+   What no route serves yet, named in the same shape the Overview pane names
+   its omissions in, because it is the same admission. */
+.omit { display: flex; flex-direction: column; gap: 10px; }
+.omit-item { display: flex; align-items: flex-start; gap: 9px; }
+.omit-item svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--ink-3); }
+.omit-title { font-size: 12.5px; font-weight: 560; }
+.omit-desc { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }

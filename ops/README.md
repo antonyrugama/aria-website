@@ -237,7 +237,7 @@ ops/
     alerts-model.js     the problems API in plain words, shared by two panes
     pane-overview.js    Overview
     pane-alerts.js      Problems
-    pane-awaiting-data.js  Happening now and What happened
+    pane-awaiting-data.js  Happening now
     pane-data.js        shared plumbing for the understand panes and for
                         Overview's figures: source, formatting, states, charts
     pane-analytics.js   People and usage
@@ -259,6 +259,8 @@ ops/
     pane-releases-v2.css  App releases' own shapes
     pane-settings-v2.css  Settings' own shapes
     pane-users-v2.css     Look up a user's own shapes
+    pane-run-history-v2.js   What happened
+    pane-run-history-v2.css  What happened's own shapes
     pane-evaluations-v2.css  Aria quality's own shapes
 ```
 
@@ -394,10 +396,21 @@ same list is what replaced the old "Not on this page yet" block, and it is rende
 answer rather than from a list in the client, so a figure that gains a source leaves it without
 an edit here.
 
-**Happening now** and **What happened** are still not drawn. Their figures are being collected
-but nothing serves them to a page yet, so those pages say so in words instead of showing a zero.
-A tile reading zero and a tile with no pipeline behind it look identical, and that is the one
-thing an operations screen must never be.
+**Happening now** is still not drawn. Its figures are being collected but nothing serves them to
+a page yet, so the page says so in words instead of showing a zero. A tile reading zero and a
+tile with no pipeline behind it look identical, and that is the one thing an operations screen
+must never be.
+
+**What happened** draws the one record that does exist. There is still no per-run history — no
+route lists runs, their stages or their durations — so the pane answers from the alerting
+record, which is every failure anybody was watching for, and names the rest as missing in a band
+of its own. It applies the operator's window to the problems that came back, groups the failures
+by rule and request type so a reason shows how often it happened rather than once per row, and
+states how much of the window was actually being watched, because an empty window is good news
+only if something was in a position to notice. Its figures are floors when a page comes back
+full, for the reason in the paragraph below. What was asked and what Aria answered are not on
+the page at any role, the owner included: the privacy band names the three fields, says where a
+reveal is recorded, and offers no control here.
 
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
@@ -1165,6 +1178,34 @@ the end of `ops.css` is scoped `[data-theme="light"] body:is([data-page="release
 and this change takes the last one. The block now matches nothing. `ops.css` is not this change's
 to edit, so it is filed rather than deleted here.
 
+### What happened on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/run-history.html` in the Aria monorepo is the approved design. The
+pane follows the shape its README calls normative — the summary strip, the failure table read
+worst-first, the privacy band that locks content rather than offering to unlock it — and departs
+where nothing behind the page can answer what the mock draws. As with the sections above, this
+is not a complete diff: it names the departures that carry a decision.
+
+1. **Every figure about a *run* is absent, and named.** The mock draws runs, their durations, a
+   slowest-5% figure, a per-run view and a stage breakdown. No route lists runs at all, so there
+   is nothing to render them from. The pane names each missing thing in a band rather than
+   drawing an empty chart, because an empty chart and a quiet month look the same.
+2. **The record drawn is the alerting record.** The mock's "what happened" is every run; this
+   pane's is every failure something was watching for. The difference is printed on the page, in
+   the band and in the watching line, rather than left for the reader to infer.
+3. **No trend chart.** A chart needs a series, and the problems route answers one page ordered
+   worst-first — a shape that cannot be turned into a line over time without inventing the
+   missing part of it.
+4. **The app control narrows nothing, and says so.** The alerting record is kept per request
+   type, not per app. The registry gives this pane the control; the pane states the absence
+   rather than returning the same figures under a selection somebody made.
+5. **Staging is refused rather than answered.** There is no staging alerting record, so a staging
+   selection gets a named refusal instead of production figures under a staging label.
+6. **A custom window is refused and offers the way back.** Nothing on the page can supply a start
+   and an end for one, and a guessed window is worse than a stated refusal.
+
+`assets/pane-run-history-v2.css` carries this pane's own shapes.
+
 ### Known contrast debt, inherited
 
 Measured across both themes against composited backgrounds. **Every pairing rendered by the
@@ -1360,6 +1401,7 @@ stored reading — which on this pane is most of them.
 | `node --test scripts/*.test.mjs` | The accessible name every chart derives, that preview state is applied in **both** directions, and that the theme button re-resolves each chart's colours. Runs `scripts/ops-aria-shell.test.mjs` alongside the pane tests. |
 | `scripts/ops-shell-pane-v2.test.mjs` | That the rail cannot drift from the registry, that a pane is offered exactly the filters it declared and never one more, that a role without access gets a named refusal rather than a blank pane, that the three gates stay mutually exclusive, and that the v2 formatters still agree with the v1 ones they were ported from. |
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
+| `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that a selection the record cannot act on is refused rather than answered, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px, unchanged by the v2 layer. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
