@@ -539,13 +539,18 @@
        dashboard has a word for.
 
        An unrecognised severity is shown exactly as it arrived rather than
-       translated, which is what alerts-model.js says its lookups do and what
-       the Problems pane already prints for the same problem — two panes an
-       operator moves between during one incident say the same word for the
-       same state. Only a severity that did not arrive at all, or arrived as
-       something that is not a word, falls back to "Unknown", because there is
-       nothing to show and a row that silently drops its prefix tells the
-       operator nothing is missing.
+       translated, which is what alerts-model.js says its lookups do. For a
+       plain unrecognised word the Problems pane prints the same thing for the
+       same problem (pane-alerts.js:741), so two panes an operator moves
+       between during one incident say one word for one state. It does not
+       hold for the two cases below: that pane prints a function for
+       `constructor` and nothing at all for a severity that never arrived, and
+       fixing it is not in this pane's gift.
+
+       Only a severity that did not arrive at all, or arrived as something
+       that is not a word, falls back to "Unknown", because there is nothing
+       to show and a row that silently drops its prefix tells the operator
+       nothing is missing.
 
        Both lookups go through textOf(), so a severity of `constructor` or
        `toString` — words every plain object in JavaScript answers to — cannot
