@@ -485,10 +485,15 @@
     return h('div', { className: 'card' + (className ? ' ' + className : '') });
   }
 
+  /* The title is a heading, not a styled div, so a card cannot be a section a
+     screen reader navigating by heading jumps straight past. h3 because
+     bandHead is the h2 and the pane's own name is the h1 in the top bar.
+     shell-pane-v2.css resets the margin the tag brings with it, because
+     aria.css styles .card-title's type and not its box. */
   function cardHead(title, note, end) {
     var head = h('div', { className: 'card-head' });
     var words = h('div');
-    words.appendChild(h('div', { className: 'card-title', text: title }));
+    words.appendChild(h('h3', { className: 'card-title', text: title }));
     if (note) words.appendChild(h('div', { className: 'card-note', text: note }));
     head.appendChild(words);
     if (end && end.length) {

@@ -1047,7 +1047,7 @@ test('no state prints the same sentence in two slots', async () => {
   const quiet = livePanel(await boot({ problems: { problems: [], total: 0 } }));
   assert.match(allText(quiet), /Nothing needs attention/,
     'the all-quiet fixture did not reach the all-quiet state');
-  assertNoRepeat(quiet, 'all-quiet', 4);
+  assertNoRepeat(quiet, 'all-quiet', 13);
 
   const unarmed = livePanel(await boot({
     problems: { problems: [], total: 0 }, rules: NEVER_RUN_RULES,
@@ -1056,14 +1056,14 @@ test('no state prints the same sentence in two slots', async () => {
     'the unarmed fixture did not reach the unarmed state');
   assert.match(allText(unarmed), /none has run yet/,
     'the unarmed fixture reached a different unarmed branch than the one under test');
-  assertNoRepeat(unarmed, 'unarmed', 4);
+  assertNoRepeat(unarmed, 'unarmed', 14);
 
   const live = livePanel(await boot({}));
   assert.ok(findAll(live, (n) => /(^|\s)q-row(\s|$)/.test(n.className || '')).length,
     'the live fixture drew no queue rows, so it is not the state under test');
   assert.ok(findAll(live, (n) => /(^|\s)card-foot(\s|$)/.test(n.className || '')).length,
     'the live fixture drew no card footer, so the footer is not under test here');
-  assertNoRepeat(live, 'live', 8);
+  assertNoRepeat(live, 'live', 15);
 });
 
 /* The page-wide guard above catches a sentence repeated character for
@@ -1086,4 +1086,22 @@ test('the queue card never counts rules, because the chip already does', async (
   assert.ok(foot, 'the live queue drew no footer, so nothing here is under test');
   assert.doesNotMatch(allText(foot).replace(/\s+/g, ' '), COUNTS_RULES,
     'the queue footer counts rules, which the chip beside the ribbon already did');
+});
+
+/* Round seven: cardHead rendered its title as a div, so "Needs attention",
+   "People active each day" and "Not drawn here, and why" were absent from the
+   heading outline while the omission items inside one of those cards were
+   headings. A reader navigating by heading landed inside a card without its
+   title. The bootstrap is shared, so the three panes queued behind it inherit
+   whichever way this lands. */
+test('every card title is a heading, so no card is jumped past', async () => {
+  const panel = livePanel(await boot({}));
+  const titles = findAll(panel, (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''));
+  assert.ok(titles.length >= 3,
+    'only ' + titles.length + ' card titles were drawn, so this is not reading the page');
+  for (const t of titles) {
+    assert.match(String(t.tagName || ''), /^H[1-6]$/,
+      'a card title is a ' + t.tagName + ', so it is outside the heading outline: ' +
+      JSON.stringify(allText(t)));
+  }
 });
