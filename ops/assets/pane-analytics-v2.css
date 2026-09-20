@@ -229,12 +229,27 @@
 
 /* ---------------------------------------------------------- what they do */
 
+/* A row heading here carries a feature's name rather than a column name, so it
+   drops the `.tbl th` treatment for the same reason the version table does.
+
+   `overflow-wrap: anywhere` for the same reason as well, and it is not
+   theoretical: the route's label is `FEATURE_LABELS[row.featureKey] ??
+   row.featureKey` (`opsUsageView.ts:691`), so a key that outlives its member of
+   `TelemetryFeatureKey` prints as the raw telemetry key, and this table has no
+   `.u-scroll` box to catch it. Measured with two such labels,
+   `mental_activities_daily_checkin` and
+   `sprint_video_analysis_retrospective`: 83px of page overflow at 320 and 28px
+   at 375 without this declaration, 0px at 320, 375, 768 and 1440 with it, both
+   themes. Nothing in today's `FEATURE_LABELS` (`opsUsageView.ts:169-178`)
+   reaches it -- its longest key is `sprint_video_analysis`, 21 characters, and
+   every one of the eight has a mapped label with spaces in it -- so this is
+   the fallback's rule, not the map's. */
 .u-feat th[scope="row"] {
   padding: 11px 14px 11px 0;
   border-top: 1px solid var(--line);
   font-size: 12.5px; font-weight: 520; letter-spacing: 0;
   text-transform: none; color: var(--ink);
-  white-space: normal;
+  white-space: normal; overflow-wrap: anywhere;
 }
 .u-feat th:first-child, .u-feat td:first-of-type { padding-left: 0; }
 .u-bar-col { width: 34%; min-width: 90px; }
@@ -265,13 +280,27 @@
    label overflows a two-column desktop grid exactly as it overflows one
    column.
 
-   NOT independently proven at this head. Removing this line alone now measures
-   0px of page overflow at 320, 375, 768, 1024 and 1440 on all three fixtures,
-   because the two rules below it - the version row heading's own treatment,
-   and the cohort grid's scroll box - each keep their table inside the card
-   without it. It earned its place against a real 188px overflow before those
-   existed, and it is kept as the rule that makes `overflow-x` mean anything at
-   all, but the control is honest: today nothing here fails without it. */
+   PROVEN, on the answer that carries exactly ONE cohort. `pane-analytics.js`
+   builds that band as `grid g2` when more than one app has cohort rows and
+   plain `grid` when one does, and only the `g2`/`g3`/`g4` tracks are
+   `minmax(0, ...)` (`aria.css:367-372`) - plain `.grid` declares no
+   `grid-template-columns` at all, so its single implicit track is `auto` and
+   the item's automatic minimum size is its min-content contribution. That
+   contribution is not zero here: `.u-cohort` carries `min-width: 460px` inside
+   the `@media (max-width: 760px)` block below, so `overflow-x: auto` on
+   `.u-scroll` has nothing to clip against until the card itself is allowed to
+   shrink. Removing this one declaration and re-rendering that answer measures
+   194px of page overflow at 320 and 139px at 375, in both themes, the
+   overflowing run being the cohort card's `card-note`; 0px at 768, 1024 and
+   1440.
+
+   The four earlier fixtures - two cohorts, eleven offsets, 32 character
+   version labels, partial coverage - all measure 0px at every width without
+   it, because each has more than one cohort and lands on a `minmax(0, ...)`
+   track. That is why an earlier revision of this comment recorded the rule as
+   unproven: none of those four had the shape it protects. The single-cohort
+   answer is ordinary - one app with admissible signup weeks, or a scope filter
+   selecting one - and it is the case this declaration is load-bearing on. */
 .grid > .card { min-width: 0; }
 
 /* The cohort grid is as wide as the answer's weeks make it, so the card

@@ -48,6 +48,56 @@ const TOKENS = {
 const HOUR = 3600 * 1000;
 const hoursAgo = (n) => new Date(Date.now() - n * HOUR).toISOString();
 
+/* ------------------------------------------------------------ stylesheet */
+
+/* Every rule in a stylesheet, found by what its selector list targets rather
+   than by how the selector happens to be spelled.
+
+   This exists because the guards below used to match `/\.u-cohort\s*\{/` over
+   the raw file, which requires the class to be the WHOLE selector and the last
+   thing before the brace. `.u-cohort, .u-feat { ... }` is invisible to that,
+   and a `String.match` that finds nothing yields `null`, so the loop under it
+   swept zero rules and the file passed while the defect it names was live in
+   the page. Anchoring a guard on one syntactic shape is the failure; matching
+   on the selector LIST is the narrowing.
+
+   `media` is the `@media` prelude a rule was found under, or `null` at the top
+   level, so a guard can tell a global declaration from a phone-only one
+   without splitting the file on the first `@media` and judging only what is
+   above it. Nesting deeper than one level would come back as the inner
+   prelude, which no rule in this stylesheet uses. */
+function cssRules(css, media = null) {
+  const src = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = [];
+  let i = 0;
+  while (i < src.length) {
+    const open = src.indexOf('{', i);
+    if (open === -1) break;
+    const prelude = src.slice(i, open).trim();
+    let depth = 0;
+    let end = open;
+    for (; end < src.length; end += 1) {
+      if (src[end] === '{') depth += 1;
+      else if (src[end] === '}') { depth -= 1; if (depth === 0) break; }
+    }
+    const body = src.slice(open + 1, end);
+    if (prelude.startsWith('@')) {
+      if (/^@(media|supports)\b/.test(prelude)) out.push(...cssRules(body, prelude));
+    } else if (prelude) {
+      const selectors = prelude.split(',').map((s) => s.trim()).filter(Boolean);
+      out.push({
+        selectors, body, media,
+        /* True when ANY member of the list matches, which is the point: a rule
+           applies to everything its list names, so one member carrying the
+           class is enough for the declarations to reach it. */
+        targets: (re) => selectors.some((s) => re.test(s)),
+      });
+    }
+    i = end + 1;
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------- fixtures */
 
 const MOBILE_TREND = [
@@ -239,6 +289,38 @@ function usageFixture(over) {
      a payload that still had it. Both styles work. */
   const out = over(base);
   return out === undefined ? base : out;
+}
+
+/* A 90 day answer the pipeline has only reached the last 20 days of, with two
+   of those 20 days carrying no stored figures.
+
+   Built day by day rather than by hand because the three numbers it exists to
+   separate have to agree with each other the way the route makes them agree.
+   Days run `2026-06-22` (index 0) to `2026-09-19` (index 89); `reportingStart`
+   is index 70, so `daysCovered` is `90 - 70 = 20` exactly as
+   `opsUsageView.ts:586` computes it; `daysMissingRollups` are two days at or
+   after that index, so the series carries `20 - 2 = 18` readings and every day
+   before index 70 is `null` because no rollup row exists for it. Change one of
+   the three and the others move with it. */
+function partial90() {
+  const FIRST = Date.UTC(2026, 5, 22);
+  const day = (i) => new Date(FIRST + i * 86400000).toISOString().slice(0, 10);
+  const COVERED_FROM = 70;
+  const GAPS = [day(75), day(76)];
+  const series = (scale) => Array.from({ length: 90 }, (_, i) => {
+    if (i < COVERED_FROM || GAPS.indexOf(day(i)) !== -1) return null;
+    return Math.round(MOBILE_TREND[i % MOBILE_TREND.length] * scale);
+  });
+  return usageFixture((u) => {
+    u.window.range = '90d';
+    u.window.start = new Date(FIRST).toISOString();
+    u.window.days = 90;
+    u.window.reportingStart = day(COVERED_FROM);
+    u.window.daysCovered = 90 - COVERED_FROM;
+    u.window.daysMissingRollups = GAPS.slice();
+    u.apps[0].trend.values = series(1);
+    u.apps[1].trend.values = series(0.29);
+  });
 }
 
 /* -------------------------------------------------------------- the page */
@@ -798,20 +880,37 @@ test('a window the pipeline has only reached part of says so beside the figures'
      the figures rather than replacing them. A 90 day window opened today
      reaches back past the day the nightly job started writing rollups, so its
      session total is a sum over the covered span while the range name still
-     says 90 days. Without this the two answers draw the same screen. */
-  const partial = await boot({
-    usage: usageFixture((u) => {
-      u.window.range = '90d';
-      u.window.days = 90;
-      u.window.daysCovered = 20;
-      u.window.reportingStart = '2026-08-31';
-    }),
-  });
+     says 90 days. Without this the two answers draw the same screen.
+
+     Built at 90 days with two gap days INSIDE the covered span, because that is
+     the shape the two quantities come apart in. `daysCovered` is the distance
+     from `reportingStart` to the end of the window (`opsUsageView.ts:332`); the
+     days that carry figures are that distance minus `daysMissingRollups`. The
+     answer below has 20 and 18, and this test pins all three slots that print
+     one of them, so calling the span *stored* - which is what the days with a
+     reading are - makes the page contradict itself by the gap count and makes
+     this test red. */
+  const partial = await boot({ usage: partial90() });
   const text = liveText(partial);
-  assert.match(text, /20 of 90 days stored/,
+  assert.match(text, /20 of 90 days covered/,
     'a window covered for 20 of its 90 days did not say so: ' + text);
   assert.match(text, /from 31 Aug 2026/,
     'the covered span did not say where it starts: ' + text);
+
+  /* The span is not the count of days with figures, and the pill must not
+     print it as though it were. Both words appear on this page, on different
+     numbers: the chart's name says `with a reading` of 18, the trend foot
+     names the two gap days, and `stored` belongs to those, not to the span. */
+  assert.doesNotMatch(text, /20 of 90 days stored/,
+    'the covered span was labelled as the days that carry stored figures: ' + text);
+  assert.doesNotMatch(text, /18 of 90 days covered/,
+    'the covered span printed the days with a reading instead: ' + text);
+
+  const name = chart(partial).getAttribute('aria-label');
+  assert.match(name, /Mobile: 18 of 90 days with a reading/,
+    'the chart did not name the days that carry a reading: ' + name);
+  assert.match(text, /No stored figures on 5 Sep 2026, 6 Sep 2026/,
+    'the two gap days inside the covered span were not named: ' + text);
 
   /* The other direction, which is the one a hard-coded sentence passes on its
      own: a fully covered window must not carry the annotation. */
@@ -822,7 +921,7 @@ test('a window the pipeline has only reached part of says so beside the figures'
       u.window.daysCovered = 90;
     }),
   });
-  assert.doesNotMatch(liveText(whole), /of 90 days stored/,
+  assert.doesNotMatch(liveText(whole), /of 90 days covered/,
     'a fully covered window was annotated as short');
 
   /* And the figures still draw. Partial coverage is not the empty state. */
@@ -832,7 +931,7 @@ test('a window the pipeline has only reached part of says so beside the figures'
 test('a window with nothing stored says that once, not twice', async () => {
   /* `daysCovered: 0` with `reportingStart: null` arrives as `ready`, and every
      figure counted from stored days already reads NOT REPORTED with the reason
-     attached. A pill reading `0 of 90 days stored` beside them would be the
+     attached. A pill reading `0 of 90 days covered` beside them would be the
      same fact a second time, which is the rule this remodel exists for. */
   const none = await boot({
     usage: usageFixture((u) => {
@@ -849,7 +948,7 @@ test('a window with nothing stored says that once, not twice', async () => {
     }),
   });
   const text = liveText(none);
-  assert.doesNotMatch(text, /0 of 90 days stored/,
+  assert.doesNotMatch(text, /0 of 90 days covered/,
     'the empty covered span was drawn as a short one');
   assert.match(text, /no day in this window has stored figures/,
     'a window with nothing stored did not say so: ' + text);
@@ -1021,40 +1120,95 @@ test('the retention grid is sized by its content and scrolls, at every width', a
      rendering. It cannot see an overlap -- `node:test` has no layout -- and it
      is here because the rendering proof does not live in this file: the
      measured matrix is in the pull request, 320px to 1680px in both themes,
-     with a control that puts `table-layout: fixed` back and reproduces ten
-     overlapping cell pairs at every width.
+     with a control that puts `table-layout: fixed` back at
+     `pane-analytics-v2.css:179`. That control reproduces 67 / 20 / 69 / 64
+     overlapping cell pairs at 320 / 768 / 1024 / 1440 on an eleven-week answer,
+     with 0px of page overflow at every one of them.
 
      It is still worth its line, because the failure it guards is silent in
      exactly the way a fixed table is: a fixed table does not overflow when it
      runs out of room, it prints each column over its neighbour, and a
-     page-level overflow probe reads clean while the grid is unreadable. */
+     page-level overflow probe reads clean while the grid is unreadable.
+
+     Read through `cssRules`, which finds a rule by what its selector list
+     TARGETS rather than by how the selector is spelled. The earlier shape of
+     this guard matched `/\.u-cohort\s*\{/`, so `.u-cohort, .u-feat { ... }` --
+     one refactor, and the most ordinary way anyone would consolidate the two
+     table rules that live 50 lines apart in this file -- swept zero rules and
+     passed. */
   const css = readFileSync(new URL('assets/pane-analytics-v2.css', OPS), 'utf8');
-  const cohortRule = /\.u-cohort\s*\{[^}]*\}/g;
-  for (const rule of css.match(cohortRule) || []) {
-    assert.doesNotMatch(rule, /table-layout\s*:\s*fixed/,
-      'the cohort grid is back to a fixed layout, which overlaps rather than overflowing');
+  const cohortRules = cssRules(css).filter((rule) => rule.targets(/\.u-cohort(?![\w-])/));
+  /* A sweep that judged nothing is the failure shape this whole guard was
+     rewritten for, so it is red rather than silent -- and the site the defect
+     lands in is specifically a rule on the TABLE, since `table-layout` applies
+     to nothing else. Finding only the descendant rules would leave the loop
+     below sweeping cells and reporting clean. */
+  assert.ok(cohortRules.some((rule) => rule.selectors.some((s) => /^\.u-cohort$/.test(s))),
+    'no rule targets the cohort table itself, so this guard is sweeping only its cells: '
+    + cohortRules.map((rule) => rule.selectors.join(', ')).join(' | '));
+  for (const rule of cohortRules) {
+    assert.doesNotMatch(rule.body, /table-layout\s*:\s*fixed/,
+      'the cohort grid is back to a fixed layout, which overlaps rather than overflowing: '
+      + rule.selectors.join(', '));
   }
 
   /* And the scroll box is outside every media query, because eleven columns do
-     not fit a half-width desktop card either. Every `@media` block is removed
-     first -- splitting on the first one would judge the rules above it and
-     call a phone-only declaration global the moment a rule moved. */
-  let unconditional = '';
-  let rest = css;
-  while (rest.includes('@media')) {
-    const at = rest.indexOf('@media');
-    unconditional += rest.slice(0, at);
-    let depth = 0;
-    let i = rest.indexOf('{', at);
-    for (; i < rest.length; i += 1) {
-      if (rest[i] === '{') depth += 1;
-      else if (rest[i] === '}') { depth -= 1; if (depth === 0) break; }
-    }
-    rest = rest.slice(i + 1);
-  }
-  unconditional += rest;
-  assert.match(unconditional, /\.u-scroll\s*\{[^}]*overflow-x\s*:\s*auto/,
-    'the scroll box is only declared inside a media query, so it is a phone-only fix');
+     not fit a half-width desktop card either. `cssRules` carries the `@media`
+     prelude a rule was found under, so a phone-only declaration cannot be read
+     as a global one by being moved above the first media block. */
+  const scroll = cssRules(css)
+    .filter((rule) => rule.targets(/\.u-scroll(?![\w-])/) && /overflow-x\s*:\s*auto/.test(rule.body));
+  assert.ok(scroll.length, 'nothing declares the scroll box at all');
+  assert.ok(scroll.some((rule) => rule.media === null),
+    'the scroll box is only declared inside a media query, so it is a phone-only fix: '
+    + scroll.map((rule) => rule.media).join(' | '));
+});
+
+test('a card in a single-column grid is allowed to shrink under its table', async () => {
+  /* WHAT THIS PINS, EXACTLY: one declaration, plus the branch that decides
+     which grid track a cohort card lands on. Not a rendering -- the rendering
+     proof is in the pull request: removing `.grid > .card { min-width: 0 }`
+     alone, on a ONE-cohort answer, measures 194px of page overflow at 320 and
+     139px at 375 in both themes, and 0px on all four multi-cohort answers.
+
+     The two halves have to move together, which is why they are one test.
+     `g2`, `g3` and `g4` are `minmax(0, …)` tracks (`aria.css:367-372`), so a
+     card in one of those already has a zero floor and this declaration is
+     inert. Plain `.grid` declares no `grid-template-columns`, so its implicit
+     track is `auto` and the card's min-content contribution -- 460px, from
+     `.u-cohort`'s `min-width` in the narrow block -- becomes the page's width.
+     A change that gave plain `.grid` a `minmax(0, …)` track, or that sent a
+     single cohort to `g2`, would make the declaration inert; a change that
+     dropped the declaration while the branch still emits plain `grid` puts
+     194px back. */
+  const css = readFileSync(new URL('assets/pane-analytics-v2.css', OPS), 'utf8');
+  const shrink = cssRules(css)
+    .filter((rule) => rule.targets(/\.grid\s*>\s*\.card(?![\w-])/)
+      && /min-width\s*:\s*0/.test(rule.body));
+  assert.ok(shrink.length,
+    'nothing lets a grid card shrink under its own table');
+  assert.ok(shrink.some((rule) => rule.media === null),
+    'the card is only allowed to shrink inside a media query, and the cohort table is '
+    + 'wider than a half-width desktop card too: ' + shrink.map((r) => r.media).join(' | '));
+
+  /* And the branch really does send one cohort to a track with no zero floor,
+     so the declaration above is guarding a shape the page draws rather than a
+     hypothetical one. Asserted on the rendered class, not on the source. */
+  const gridHolding = (dom) => findAll(livePanel(dom),
+    (n) => /(^|\s)grid(\s|$)/.test(n.className || '')
+      && findAll(n, (c) => (c.className || '').includes('u-cohort')).length)[0];
+
+  const one = await boot({
+    usage: usageFixture((u) => { u.cohorts = [u.cohorts[0]]; }),
+  });
+  const holder = gridHolding(one);
+  assert.ok(holder, 'the cohort card is not in a grid at all');
+  assert.equal((holder.className || '').trim(), 'grid',
+    'one cohort no longer lands on the bare grid track this rule protects: ' + holder.className);
+
+  const wide = gridHolding(await boot({}));
+  assert.match(wide.className || '', /\bg2\b/,
+    'two cohorts stopped sharing a row: ' + wide.className);
 });
 
 test('a version label with no space in it can still break', async () => {
@@ -1074,10 +1228,34 @@ test('a version label with no space in it can still break', async () => {
      still goes sideways. A test that accepted either would pass over the
      defect. */
   const css = readFileSync(new URL('assets/pane-analytics-v2.css', OPS), 'utf8');
-  const rule = (css.match(/\.u-vers\s+th\[scope="row"\]\s*\{[^}]*\}/) || [''])[0];
-  assert.ok(rule, 'the version row heading has no rule of its own at all');
-  assert.match(rule, /overflow-wrap\s*:\s*anywhere/,
-    'an unbroken 32 character version token has nowhere to break: ' + rule);
+  /* Both row-heading tables, not only the versions one. A feature row's label
+     is `FEATURE_LABELS[row.featureKey] ?? row.featureKey` (opsUsageView.ts:691)
+     and the fallback is the raw telemetry key -- an unbroken `snake_case`
+     token, reachable whenever a key outlives its member of
+     `TelemetryFeatureKey` -- so `.u-feat` needs the same declaration and has no
+     scroll box to fall back on. Found through `cssRules` so that a grouped
+     selector is read for what it targets. */
+  for (const table of ['.u-vers', '.u-feat']) {
+    const re = new RegExp('\\' + table + '\\s+th\\[scope="row"\\]');
+    const rules = cssRules(css).filter((rule) => rule.targets(re));
+    assert.ok(rules.length, 'the row heading in ' + table + ' has no rule of its own at all');
+    /* The EFFECTIVE value, read in document order: a second rule setting
+       `break-word` later in the file would win in the browser, and a guard
+       that stopped at the first declaration would call that fixed. Document
+       order is the whole of it only because each of these selectors appears
+       once, outside every media query, which is asserted rather than assumed. */
+    assert.equal(rules.length, 1,
+      table + ' now declares its row heading in ' + rules.length
+      + ' places, so document order is no longer the whole story');
+    assert.equal(rules[0].media, null,
+      table + "'s row heading is declared inside " + rules[0].media);
+    const values = rules[0].body.match(/overflow-wrap\s*:\s*([\w-]+)/g) || [];
+    assert.ok(values.length,
+      'an unbroken 32 character token has nowhere to break in ' + table + ': ' + rules[0].body);
+    assert.match(values[values.length - 1], /overflow-wrap\s*:\s*anywhere/,
+      table + ' settles on ' + values[values.length - 1]
+      + ', which wraps the paint without lowering min-content size');
+  }
 
   /* And the label really is one token, so the rule above is not guarding a
      case the route cannot send. `app_version` is `varchar(32)`. */
@@ -1127,6 +1305,53 @@ test('a group is defined by the answer, not by the pane', async () => {
   });
   assert.match(allText(card(moved, /Who comes back/)), /whatever the route says/,
     'the card printed a definition of its own instead of the answer\'s');
+});
+
+test('the page never counts people without saying which people', async () => {
+  /* The consent statement rides on `cohorts[].note`, which is right -- it is
+     the route's own sentence, beside the groups it is about -- and it leaves
+     the page entirely when no group is drawn. `buildCohorts` skips an app with
+     no admissible week (`opsUsageView.ts:932`), and on a 7 day window no week
+     is ever admissible: the only start inside the window is the window's own,
+     and `floor(7d / 7d) - 1` is zero aged weeks. So one of the four ranges the
+     bar offers prints headcounts, session totals and per-feature shares of
+     people with nothing on screen saying they are consenting accounts only. */
+  const week = await boot({
+    usage: usageFixture((u) => {
+      u.window.range = '7d';
+      u.window.days = 7;
+      u.window.start = '2026-09-13T00:00:00.000Z';
+      u.window.reportingStart = '2026-09-13';
+      u.window.daysCovered = 7;
+      u.cohorts = [];
+    }),
+  });
+  const weekText = liveText(week);
+  assert.doesNotMatch(weekText, /usage analytics on are in no group/,
+    'the fixture still has a cohort, so this proves nothing: ' + weekText);
+  assert.match(weekText, /1,061/, 'the page stopped counting people, so there is nothing to say');
+  assert.match(weekText, /Consenting accounts only/,
+    'a range with no groups counted people and never said which people: ' + weekText);
+
+  /* Read from the answer, not written here: an answer that does not report the
+     gate at ingest does not get the pane asserting it. */
+  const unreported = await boot({
+    usage: usageFixture((u) => {
+      u.cohorts = [];
+      u.consent = { enforcedAt: 'unknown', detail: '' };
+    }),
+  });
+  assert.doesNotMatch(liveText(unreported), /Consenting accounts only/,
+    'the pane claimed a gate the answer did not report');
+
+  /* And the other direction, which is the one a hard-coded pill passes on its
+     own: where the groups ARE drawn, the route's fuller sentence is on the
+     page and the pill would be that fact twice. */
+  const whole = liveText(await boot({}));
+  assert.match(whole, /usage analytics on are in no group/,
+    'the ordinary answer lost the route sentence');
+  assert.doesNotMatch(whole, /Consenting accounts only/,
+    'the consent statement was printed twice on one screen');
 });
 
 test('the versions table says whose sessions the share is of', async () => {

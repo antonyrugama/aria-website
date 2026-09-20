@@ -572,18 +572,55 @@
 
      Only when the span is short and not empty: `daysCovered: 0` is a different
      statement, already made by every stored-day figure reading *not reported*,
-     and a pill saying `0 of 90 days stored` beside them would be that fact
+     and a pill saying `0 of 90 days covered` beside them would be that fact
      twice. Neutral, not a warning -- days outside the data's lifetime are not a
-     fault, and the route is explicit that this is not an availability state. */
+     fault, and the route is explicit that this is not an availability state.
+
+     *Covered*, never *stored*, and the two words are different numbers on the
+     same screen. `daysCovered` is the distance from `reportingStart` to the end
+     of the window (`opsUsageView.ts:332`), and `daysMissingRollups` are the days
+     inside that distance with nothing behind them, so the days that actually
+     carry figures are `covered - missing`. A 90 day window with `daysCovered:
+     20` and two gaps prints `20` here, `18 of 90 days with a reading` in the
+     chart's name, and names both gap days under the trend card: saying *stored*
+     in this pill makes those three slots contradict each other by exactly the
+     gap count, and the pill is the one that would be wrong. */
   function windowCoverage(data) {
     var span = windowSpan(data);
     if (!span || span.days === null) return null;
     if (span.covered <= 0 || span.covered >= span.days) return null;
-    var text = fmt.int(span.covered) + ' of ' + fmt.plural(span.days, 'day') + ' stored';
+    var text = fmt.int(span.covered) + ' of ' + fmt.plural(span.days, 'day') + ' covered';
     var from = span.start ? fmt.utcDay(span.start) : null;
     return h('span', { className: 'pill' }, [
       S.icon('history'),
       h('span', { text: from ? text + ', from ' + from : text })
+    ]);
+  }
+
+  /* Who the figures on this page are counted from, in the one case where
+     nothing else on the page says.
+
+     The statement lives in `cohorts[].note` -- the route's own sentence,
+     printed beside the groups it is about -- and that is where it belongs. But
+     `buildCohorts` drops every group whose week is not wholly inside the window
+     and then skips the app when none survives (`opsUsageView.ts:908`, `:932`),
+     and on a 7 day window no week ever survives: the only admissible start is
+     the window's own, and `floor(7d / 7d) - 1` is zero aged weeks. `7d` is one
+     of the four ranges the bar offers, so on that range the band does not
+     render and the page prints headcounts and per-feature shares of people with
+     nothing saying which people.
+
+     Four words rather than the route's four sentences (`consent.detail`),
+     because this is the slot's second job and not its own card, and the pane
+     does not restate a paragraph it has a shorter true form of. Read from
+     `consent.enforcedAt` rather than written here: the gate is at ingest and
+     stays there, and this prints what the answer reports about it. */
+  function consentNote(data) {
+    var consent = data.consent || {};
+    if (consent.enforcedAt !== 'ingest') return null;
+    if (list(data.cohorts).length) return null;
+    return h('span', { className: 'pill' }, [
+      S.icon('lock'), h('span', { text: 'Consenting accounts only' })
     ]);
   }
 
@@ -592,9 +629,10 @@
      hour ago over a window the pipeline only reaches a fifth of is fresh and
      short at the same time. */
   function answerNotes(data) {
-    return [freshness(data), windowCoverage(data)].filter(function (node) {
-      return !!node;
-    });
+    return [freshness(data), windowCoverage(data), consentNote(data)]
+      .filter(function (node) {
+        return !!node;
+      });
   }
 
   /* --------------------------------------------------------------- tiles */

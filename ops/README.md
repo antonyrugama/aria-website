@@ -603,9 +603,12 @@ each is a union across the selected apps:
 - `daysCovered` with `reportingStart` is the span that has ever been aggregated. A 90 day window
   opened today reaches back past the pipeline's own lifetime, and those earlier days are outside
   it rather than missing from it. Where the covered span is shorter than the window, the head of
-  the first band says how much of it is stored and from which day — `20 of 90 days stored, from
-  31 Aug 2026` — beside the figures that are summed over it, because the range name alone says
-  90 days either way. It does not say *why* the span is short: that the rollups began on a
+  the first band says how much of the window that span reaches and from which day — `20 of 90
+  days covered, from 31 Aug 2026` — beside the figures that are summed over it, because the range
+  name alone says 90 days either way. **Covered**, never *stored*: the span is the distance from
+  `reportingStart` to the end of the window, and the days inside it that carry figures are that
+  distance minus `daysMissingRollups`, so on the answer above the pill says 20, the chart's name
+  says `18 of 90 days with a reading` and the trend foot names the two gap days. It does not say *why* the span is short: that the rollups began on a
   particular day is a fact about the pipeline rather than about this answer, and a sentence
   explaining it is an argument, which the editorial rule keeps off the pane. Not a warning
   either — the route is explicit that partial coverage annotates the figures rather than
@@ -1260,19 +1263,23 @@ answer.
    low and high — or that it is flat — and its last reading. A line with no reading at all says
    that instead. (`chartName` and `seriesSentence` in `ops/assets/pane-analytics.js`; the
    sentences are pinned in `scripts/ops-analytics-v2.test.mjs`.)
-6. **No Custom range**, which is the registry's decision and is stated in the bar where the
-   control would have been: the bar carries a range name and no bounds, so a custom window
-   reaches the usage API with no start and no end, and that route answers over the widest window
-   retention allows rather than refusing it. The figures would be confident and for a window
-   nobody chose.
+6. **No Custom range**, which is the registry's decision, recorded in the comment above the
+   entry at `pane-registry.js:103-110`: the bar carries a range name and no bounds, so a custom
+   window reaches the usage API with no start and no end, and that route answers over the widest
+   window retention allows rather than refusing it. The figures would be confident and for a
+   window nobody chose. Nothing states this **on screen** — `shell-pane-v2.js` renders
+   `pane.filterNote` where a missing control would have been, and the `analytics` entry sets
+   none, unlike `spend`, which sets `scopeNote`. The absence is a decision about the bar, and the
+   bar belongs to a file this pane may not edit; adding the note is `Stadiora/Aria#10449`.
 7. **The retention grid has no legend.** Every cell prints its own percentage, so a key mapping
    tint to range is the same fact again; the one symbol that is not a number, `·` for a week a
    group has not reached yet, is named once in the band note and carries its own text for a
    screen reader.
-8. **The mock's explanatory captions are not reproduced, and neither are three of the route's
-   own sentences**, under the same rule: the mocks encode one fact per slot, which is what took
-   the approved set from 7,240 words to 4,842. What was dropped, and why, since these are fields
-   the answer carries:
+8. **The mock's explanatory captions are not reproduced, and neither are four of the route's
+   own sentences nor four of its counts**, under the same rule: the mocks encode one fact per
+   slot, which is what took the approved set from 7,240 words to 4,842. What was dropped, and
+   why, since these are fields the answer carries — read as a sweep of `OpsUsagePayload`, so
+   every non-optional member the pane does not read is on this list:
    - `coverage.shortfall.detail` was the versions card's footer. It is the complement of the
      coverage pill the split card already prints — 30.7% did not report *is* 69.3% did — and the
      `Reporting` column beside it names which versions, which is the part an operator acts on.
@@ -1281,6 +1288,23 @@ answer.
      report feature use.* The number does not.
    - `features.note` and `features.hint` both say the shares are of each app's own active people.
      The card head prints `hint`, seven words; `note` is two sentences of the same thing.
+   - `consent.detail` is four sentences saying the gate is at ingest. The pane prints the route's
+     shorter form of the same statement, the last sentence of `cohorts[].note`, beside the groups
+     it is about. Where no group is drawn the head of the first band carries
+     **Consenting accounts only** instead, so the page never prints headcounts without it.
+   - `metrics[].numerator`, `cohorts[].rows[].cells[].returned` and `features.rows[].users` are
+     each the count a printed rate was computed over — `679 of 1,061`, drawn by the v1 pane
+     beside every rate. One fact per slot: the rate is the fact, and the base it was taken over
+     is not withheld, because `denominator` is read for the reporting floor and a rate is
+     withheld outright when its base is under it. The counts come back in the day a cell grows a
+     hover or a detail view, which is where a second figure belongs.
+   - `apps[].subtitle` is `Athlete app` / `Coach workspace`. The split card already heads each
+     column with the app's own name, and there are two apps; a gloss on which is which is a
+     sentence restating a label.
+   - `apps[].tone` drives the v1 pane's `tag-` class and has no v2 equivalent — the series token
+     the pane needs is `trend.color`, which it reads. `window.grain` and `window.timezone` are
+     literal constants (`'day'`, `'UTC'`); `window.range`, `window.start`, `window.endExclusive`
+     and `filters` belong to the shell's bar, not to the pane.
 9. **No activation funnel card.** `OpsUsagePayload` carries no `funnel` member and the route's
    own docblock says why: a funnel's second step is read against its first, so it is a rate over
    people whether or not it says so, and the only counts available for one are not consent
@@ -1356,13 +1380,25 @@ dropping it.
     from where. The share column is of each app's own sessions — the route's own denominator — so
     the card head carries that sentence once rather than repeating it on every row.
 14. **A second pill in the first band's head, which the mock does not draw: how much of the
-    window is stored.** The mock's bar carries a range name and nothing behind it, and its
+    window the stored span reaches.** The mock's bar carries a range name and nothing behind it, and its
     sample answer is a window covered in full. A real one need not be: the nightly job began
     writing rollups on a particular day, so a 90 day window reaches back past the pipeline's own
-    lifetime and its session total is a sum over `daysCovered` days while the range name still
-    says 90. Drawn only when the covered span is shorter than the window and not empty —
+    lifetime and its session total is a sum over the covered span while the range name still says
+    90. The pill states that span and not the days that carry figures — those are the span minus
+    `daysMissingRollups`, and the chart's name and the trend foot already say both. Drawn only
+    when the covered span is shorter than the window and not empty —
     `daysCovered: 0` is a different statement, and every stored-day figure already reads
     **not reported** with its reason attached.
+15. **A third pill in that head on one range only: Consenting accounts only.** The consent
+    statement is the route's, and its home is the last sentence of `cohorts[].note`, beside the
+    groups it is about. `buildCohorts` skips an app with no admissible signup week
+    (`opsUsageView.ts:932`), and on a **7 day** window none is ever admissible — the only start
+    inside the window is the window's own, and `floor(7d / 7d) - 1` is zero aged weeks — so on
+    one of the four ranges the bar offers the band does not render and the statement leaves the
+    page while the headcounts stay. Drawn only where no group is drawn, and read from
+    `consent.enforcedAt` rather than written here. Four words rather than `consent.detail`'s
+    four sentences: the pane does not restate a paragraph it has a shorter true form of, and the
+    gate itself stays at ingest.
 
 ### Where this pane departs from the shared page furniture
 
