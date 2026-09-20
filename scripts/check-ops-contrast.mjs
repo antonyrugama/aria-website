@@ -1,4 +1,4 @@
-/* WCAG AA contrast guard for the v2 operations shell.
+/* WCAG AA contrast guard for the v2 operations shell — text, and focus rings.
  *
  * The token checks in check-ops-shell-v2.mjs pin every custom property to the
  * value the design writes, per theme. They cannot see a USAGE-SITE SWAP: a rule
@@ -16,6 +16,18 @@
  * type size: the large-text allowance is deliberately not implemented, for the
  * reasons at AA_RATIO below. That paint is the colour behind the glyphs only
  * while nothing paints ABOVE them; see NOT COVERED in ops/README.md.
+ *
+ * A SECOND SWEEP measures FOCUS INDICATORS against SC 1.4.11's 3:1, which is a
+ * different comparison and not a fifth preview state: a ring is judged against
+ * the surfaces BESIDE it, not the one behind it, and `outline-offset` decides
+ * which those are. Positive, and the ring lands outside the control on
+ * whatever the control sits on; negative, and it lands on the control itself.
+ * Nothing here models that geometry — each control is photographed twice,
+ * unfocused and focused, and the ring is read off the pixels that moved. See
+ * FOCUS_RATIO below and Stadiora/Aria#10634. (ops/README.md's NOT COVERED list
+ * still says focus rings are outside this check. That file belongs to another
+ * agent's PR in this wave and was not edited here; the statement is now too
+ * cautious rather than too generous.)
  *
  * Ported from the monorepo's docs/mocks/ops-dashboard-v2/scripts/
  * contrast-check.mjs, which took its own review rounds to become trustworthy.
@@ -118,11 +130,55 @@ const BOUNDARY_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>b
 <input type="file" id="uaUnsourced">
 </body></html>`;
 
+/* Self-test part H's page. Every case is a <button> because the focus sweep's
+   census is a real focusable census, and each one is isolated by 150px of
+   plain white so that one case's ring can never land on another case's paint.
+
+   The two H2 cases are the point of the page: ONE ring declaration, one
+   colour, one width, and two answers — 1.61:1 and 13.08:1 — decided entirely
+   by the sign of outline-offset. A tool that reads the focused element's own
+   background, or the page's, gives the same number twice and is wrong once. */
+const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focus</title>
+<style>
+  html, body { margin: 0; background: #FFFFFF; }
+  .case { margin: 150px; background: #FFFFFF; }
+  button { appearance: none; -webkit-appearance: none; border: 0; padding: 0; margin: 0;
+    width: 60px; height: 40px; font: 0/0 monospace; color: transparent; border-radius: 0; }
+  .wrap { background: #FFFFFF; padding: 40px; width: 140px; }
+  .h1 { background: #FFFFFF; }
+  .h1:focus-visible { outline: 4px solid #767676; outline-offset: 6px; }
+  .h2out, .h2in { background: #000000; }
+  .h2out:focus-visible { outline: 4px solid #CCCCCC; outline-offset: 8px; }
+  .h2in:focus-visible { outline: 4px solid #CCCCCC; outline-offset: -8px; }
+  .h3, .h3:focus, .h3:focus-visible { background: #FFFFFF; outline: none; }
+  .h4 { background: #FFFFFF; }
+  .h4:focus-visible { outline: none; box-shadow: 0 0 0 4px #767676; }
+  .h5 { background: #FFFFFF; }
+  .h5:focus-visible { outline: 4px solid rgba(118, 118, 118, 0.5); outline-offset: 6px; }
+  .h6 { background: #FFFFFF; }
+  .h6:focus-visible { outline: 4px solid #767676; outline-offset: 60px; }
+  .h7wrap { background: #B0B0B0; padding: 4px; width: 60px; }
+  .h7 { background: #000000; }
+  .h7:focus-visible { outline: 4px solid #999999; outline-offset: -8px; }
+  .h7far { width: 60px; height: 12px; background: #B0B0B0; margin-top: 4px; }
+  .h7:focus-visible ~ .h7far { background: #123456; }
+</style></head><body>
+<div class="case"><div class="wrap"><button class="h1"></button></div></div>
+<div class="case"><div class="wrap"><button class="h2out"></button></div></div>
+<div class="case"><div class="wrap"><button class="h2in"></button></div></div>
+<div class="case"><div class="wrap"><button class="h3"></button></div></div>
+<div class="case"><div class="wrap"><button class="h4"></button></div></div>
+<div class="case"><div class="wrap"><button class="h5"></button></div></div>
+<div class="case"><div class="wrap"><button class="h6"></button></div></div>
+<div class="case"><div class="wrap"><div class="h7wrap"><button class="h7"></button><div class="h7far"></div></div></div></div>
+</body></html>`;
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   const synthetic = {
     '/__contrast-self-test.html': [MIME['.html'], () => fixtureHtml],
     '/__contrast-boundary-test.html': [MIME['.html'], () => BOUNDARY_HTML],
+    '/__contrast-focus-test.html': [MIME['.html'], () => FOCUS_HTML],
     '/__contrast-boundary-frag.html': [MIME['.html'], () => BOUNDARY_FRAG],
     '/__contrast-boundary-frag.svg': ['image/svg+xml', () => BOUNDARY_SVG]
   }[url.pathname];
@@ -342,11 +398,19 @@ function over(fg, bg) {
    refuses that, which means it refuses pure white and fails the run on a
    colour nothing is wrong with. `oklab` and `lab` overshoot the same way; the
    largest seen is 4e-5, a twenty-five-thousandth of the window. Both ends are
-   pinned by literals in part F2 rather than by this paragraph — the shape
-   guards there bracket this constant from below, and a bound assertion caps it
-   at one byte from above, because a window written in terms of itself is not a
-   rounding allowance. The cap is a byte and not this half-byte on purpose:
-   asserting the constant equals itself proves nothing. */
+   pinned in part F2 rather than by this paragraph — the shape guards there
+   bracket this constant from below, and a bound assertion caps it at one byte
+   from above, because a window written in terms of itself is not a rounding
+   allowance. The cap is a byte and not this half-byte on purpose: asserting
+   the constant equals itself proves nothing.
+
+   HOW FAR THIS CONSTANT MAY MOVE BEFORE SOMETHING GOES RED IS NOT WRITTEN
+   DOWN, HERE OR IN F2. Part F2 works the band out from the browser's own
+   serialisations, brackets each edge by calling the real gate either side of
+   it, and prints the multiples. That is deliberate, and it is the whole of
+   Stadiora/Aria#10365: the sentence this replaces said where a bound bit, the
+   bound moved, and the sentence did not. A number a reader can rely on is a
+   number this file computes at run time. */
 const GAMUT_SLACK = 0.5 / 255;
 
 /* The two serialisations getComputedStyle actually returns on this page.
@@ -366,8 +430,13 @@ const GAMUT_SLACK = 0.5 / 255;
    be predicted, but that is a property of this rasteriser rather than of the
    stylesheet, and a predicted ink is the same confidently wrong number the
    paint-server refusal above exists to prevent. Carried across from the
-   monorepo's oracle (Stadiora/Aria#10293). */
-function parseColor(str) {
+   monorepo's oracle (Stadiora/Aria#10293).
+
+   `slack` is a parameter so that part F2 can locate the window's edges by
+   calling THIS gate either side of each candidate, rather than restating the
+   comparison in the assertion and pinning a restatement. Every caller outside
+   F2 takes the default. */
+function parseColor(str, slack = GAMUT_SLACK) {
   const s = String(str).trim();
   const num = (t) => (/%$/.test(t) ? Number(t.slice(0, -1)) / 100 : Number(t));
   let m = s.match(/^rgba?\(([^)]+)\)$/i);
@@ -386,7 +455,7 @@ function parseColor(str) {
     const [r, g, b] = parts.slice(0, 3).map(num);
     const a = parts.length > 3 ? num(parts[3]) : 1;
     if ([r, g, b, a].some((v) => Number.isNaN(v))) return null;
-    if ([r, g, b].some((v) => v < -GAMUT_SLACK || v > 1 + GAMUT_SLACK)) return null;
+    if ([r, g, b].some((v) => v < -slack || v > 1 + slack)) return null;
     /* Clamping is not the gate's job done twice. The gate lets a component
        through at 1.00003, and 1.00003 * 255 is 255.008 — a byte that cannot
        exist, fed to a luminance formula whose domain is 0..255. */
@@ -441,6 +510,11 @@ const hex = ({ r, g, b }) =>
    in both directions rather than granted silently. */
 const AA_RATIO = 4.5;
 
+/* The quantisation both sweeps sample surfaces at, in bytes per channel. One
+   constant because there is one decision: how near two shades have to be
+   before they are the same surface. */
+const BUCKET = 8;
+
 /* Every backdrop colour inside a rect on the plate, with the share of the box
    each one holds.
 
@@ -456,7 +530,6 @@ const AA_RATIO = 4.5;
    letter. A floor here reads as housekeeping and behaves as a hole — at 5%, a
    1px stripe every 40px sank a site measuring 1.63:1 without a word. */
 function sampleBackdrops(plate, rects, scale) {
-  const BUCKET = 8;
   const counts = new Map();
   let translucent = 0;
   let total = 0;
@@ -485,6 +558,133 @@ function sampleBackdrops(plate, rects, scale) {
     .sort((a, b) => b.share - a.share);
   return { all: all, translucent: translucent / total };
 }
+
+/* ------------------------------------------------- focus indicators, 1.4.11
+
+   A DIFFERENT COMPARISON from everything above, and the reason this is a
+   second sweep rather than a fifth preview state. Text is judged ink against
+   the surface BEHIND it; a focus ring is judged against the surfaces BESIDE
+   it — SC 1.4.11 asks for 3:1 between the indicator and its adjacent
+   colours. Nothing in the text sweep can answer that: `:focus-visible` paints
+   nothing until something is focused, the ring is not a text node so COLLECT
+   never sees it, and the plate that makes the text sweep honest would hide
+   the ring's own pixels.
+
+   Getting the ADJACENT SURFACE wrong is the classic error in this
+   measurement, and it was made once already in the numbers on aria-website
+   PR #72 before a reviewer caught it. `outline-offset` is why: a ring with a
+   positive offset is painted OUTSIDE the element's border box, so on a
+   flush-fitting control it lands wholly on the parent's surface and never
+   touches the element's own. A negative offset paints it inside, over the
+   element. The same declaration therefore has to be judged against two
+   different colours depending on one number in a stylesheet, and no amount
+   of reading `background-color` off the focused element answers it.
+
+   So nothing here models geometry. The ring is found by PHOTOGRAPHING the
+   same clip twice, unfocused and focused, and looking at which pixels moved.
+   Whatever the offset does, the pixels are where they are.
+
+   The two roles run the conservative direction the OTHER way round, which is
+   the lesson this file already carries for inks and fills:
+
+     the ring is an INK. An indicator this tool cannot resolve exactly — a
+       translucent outline colour, an indicator that is not an outline at all,
+       a computed outline that paints no pixel — is REFUSED BY NAME. Assuming
+       it opaque would invent a ratio in the flattering direction.
+
+     the adjacent surface is a FILL. Every bucket beside the ring counts, the
+       WORST one decides, and a surface holding a small share of the ring's
+       perimeter is still a place the ring disappears against. */
+const FOCUS_RATIO = 3;
+
+/* How far around the element to photograph, in CSS px, smallest first. The
+   clip has to contain the whole indicator AND a margin of the surfaces it
+   sits on, so every candidate is checked for the changed region touching its
+   own edge and the next size is tried when it does. The last entry is the
+   whole document, where there is nothing beyond the clip to have missed. */
+const FOCUS_PADS = [28, 120, Infinity];
+
+/* Chebyshev radius, in device pixels, for "beside the ring".
+   One, because one is what adjacent means. The pixels between the ring and
+   its surface on a curved corner are blends of the two, and they are excluded
+   from BOTH sides — a blend is neither the indicator nor the thing it has to
+   contrast with, and averaging it into either moves the answer towards a pass.
+   Sampling further than this reads a surface through the ring rather than
+   beside it. */
+const FOCUS_ADJACENT_RADIUS = 1;
+
+/* Below this many unchanged pixels beside the ring there is nothing to take a
+   worst-of over, so the site is refused instead of judged on a handful of
+   corner pixels. Fail-closed for a shape this page does not currently
+   produce: the thinnest ring it paints carries 119. */
+const FOCUS_MIN_ADJACENT = 8;
+
+/* Group a list of [r,g,b] pixels into surfaces the same way sampleBackdrops
+   groups a rect, and for the same reason: a gradient is one surface spread
+   over dozens of shades. Mean of the real pixels per bucket, every bucket
+   returned, no minimum share. */
+function bucketPixels(px) {
+  const counts = new Map();
+  for (const [r, g, b] of px) {
+    const key = ((r / BUCKET) | 0) * 65536 + ((g / BUCKET) | 0) * 256 + ((b / BUCKET) | 0);
+    let e = counts.get(key);
+    if (!e) counts.set(key, (e = { n: 0, r: 0, g: 0, b: 0 }));
+    e.n++; e.r += r; e.g += g; e.b += b;
+  }
+  return [...counts.values()]
+    .map((e) => ({ r: e.r / e.n, g: e.g / e.n, b: e.b / e.n, n: e.n }))
+    .sort((a, b) => b.n - a.n);
+}
+
+/* Transitions and animations off, through CSSOM rather than a <style> tag:
+   the page's CSP has no 'unsafe-inline', so an injected stylesheet element is
+   blocked and would fail silently. `--force-prefers-reduced-motion` is NOT
+   enough — it sets the media query, and a transition not written behind that
+   query still runs. Two photographs of the same element mid-transition differ
+   in pixels that have nothing to do with the indicator. */
+const NO_MOTION = `(() => {
+  const s = new CSSStyleSheet();
+  s.replaceSync('*, *::before, *::after { transition: none !important; animation: none !important; }');
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, s];
+  return JSON.stringify({ sheets: document.adoptedStyleSheets.length });
+})()`;
+
+/* Everything a keyboard could put a focus ring on, tagged so the measurement
+   below can find each one again after a navigation-free re-query. Elements
+   that paint nothing (display:none, zero box, disabled) are not focus sites;
+   everything else is, including tabindex="-1", which a script can focus even
+   though Tab does not reach it. */
+const FOCUS_CANDIDATES = `(() => {
+  const SEL = 'a[href],button,input,select,textarea,summary,[tabindex],[contenteditable]';
+  const out = [];
+  let i = 0;
+  for (const el of document.querySelectorAll(SEL)) {
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    if (cs.display === 'none' || cs.visibility === 'hidden' || el.disabled) continue;
+    if (r.width < 1 || r.height < 1) continue;
+    el.setAttribute('data-focus-site', String(i));
+    /* Something a human can find the control by, in the order the control
+       itself prefers: its own words, then its accessible name, then the words
+       a user-agent root paints for it, then its id. An empty string here
+       would make a freeze entry unreadable and two different inputs
+       indistinguishable. */
+    const label = (el.textContent || '').replace(/\\s+/g, ' ').trim() ||
+      (el.getAttribute('aria-label') || '').trim() ||
+      (el.getAttribute('placeholder') || '').trim() ||
+      (el.getAttribute('title') || '').trim() ||
+      (el.id ? '#' + el.id : '');
+    out.push({
+      i,
+      tag: el.tagName.toLowerCase(),
+      cls: typeof el.className === 'string' ? el.className.trim() : '',
+      tabindex: el.getAttribute('tabindex'),
+      text: label.slice(0, 40)
+    });
+    i++;
+  }
+  return JSON.stringify(out);
+})()`;
 
 /* Elements that paint their own text, with everything needed to judge them.
    A string because CDP evaluates expressions, not functions. */
@@ -1337,9 +1537,358 @@ async function measureSites(targets, where) {
   return results;
 }
 
+/* ------------------------------------------- the focus sweep's measurement */
+
+/* One clipped photograph, decoded. Same capture path as plateShot, clipped
+   rather than whole-page, because two photographs of the same rect subtract
+   and two photographs of the whole shell do not fit in memory 416 times. */
+async function focusShot(box) {
+  const shot = await cdp.send('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: true,
+    clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 }
+  });
+  return decodePNG(Buffer.from(shot.data, 'base64'));
+}
+
+/* Where a keyboard actually goes, in order, by dispatching real Tab presses.
+
+   Two jobs, and the second is the one that is easy to miss. The obvious job
+   is the census: the set this returns is the set a keyboard user can reach,
+   which is the set SC 1.4.11 is about. The other is MODALITY —
+   `:focus-visible` is a heuristic about how focus arrived, and in a headless
+   run that has never seen a key, `el.focus()` from script matches `:focus`
+   and NOT `:focus-visible` on every element on this page (measured: 0 of 26).
+   A sweep built on scripted focus alone would photograph 26 elements that
+   paint no ring, find no changed pixels, and either report 26 missing
+   indicators or — far worse — be "fixed" by relaxing the selector until it
+   measured something. One real Tab flips the document into keyboard modality
+   and scripted focus matches `:focus-visible` from then on (26 of 26).
+
+   Presses are bounded at twice the candidate count plus a margin, and the
+   walk stops when it returns to a stop it has already made. */
+async function tabWalk(candidates) {
+  const key = (type) => cdp.send('Input.dispatchKeyEvent', {
+    type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9
+  });
+  const order = [];
+  const seen = new Set();
+  const budget = candidates.length * 2 + 8;
+  let offPage = 0;
+  for (let n = 0; n < budget; n++) {
+    await key('rawKeyDown');
+    await key('keyUp');
+    const at = await evaluate(`(() => {
+      const el = document.activeElement;
+      return JSON.stringify({
+        site: el && el.getAttribute ? el.getAttribute('data-focus-site') : null,
+        body: el === document.body || el === document.documentElement || !el
+      });
+    })()`);
+    if (at.body) { offPage++; continue; }
+    if (at.site === null) { order.push(null); continue; }
+    const i = Number(at.site);
+    if (seen.has(i)) break;
+    seen.add(i);
+    order.push(i);
+  }
+  return { order, offPage };
+}
+
+/* Judge every focus indicator on the page as it currently stands.
+
+   Per element: photograph the clip unfocused, focus it, photograph the SAME
+   clip, subtract. `changed` is where the indicator is. Then:
+
+     - the clip must contain the change. A changed pixel on the clip's own
+       edge means the indicator continues outside the photograph, so the pad
+       escalates and the pair is retaken. Measuring a truncated ring would
+       miss whichever surface it runs onto next, which is exactly the surface
+       a positive outline-offset puts it on.
+
+     - the RING CORE is the changed pixels painted EXACTLY the resolved
+       outline colour. Exactly, byte for byte: a pixel that is nearly the
+       outline colour is a blend of the ring and something else, and the
+       something else is the surface this is trying to measure. The core is
+       the large majority of the change (measured: 959 of 1104 on a nav item),
+       so this is not a thin slice of a ring, it is the ring.
+
+     - the ADJACENT SURFACES are the UNCHANGED pixels within one pixel of a
+       core pixel, bucketed, worst bucket deciding. Anchoring this on the core
+       rather than on the whole changed region is load-bearing and was got
+       wrong first: the skip link's own box moves when it is focused, so
+       anchoring on `changed` sampled the link against ITSELF and reported
+       1.07:1 against a colour no ring touches.
+
+   Everything this cannot resolve is refused BY NAME and the run fails on it,
+   the same as the text sweep: a focus site that leaves the sweep quietly
+   would keep the closing count looking identical. */
+async function measureFocusIndicators(where) {
+  await evaluate(NO_MOTION);
+  const candidates = await evaluate(FOCUS_CANDIDATES);
+  if (!candidates.length) {
+    return { rows: [], census: { candidates: 0, reached: 0, order: [], offPage: 0 } };
+  }
+
+  await evaluate(`(() => {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    window.scrollTo(0, 0);
+    return JSON.stringify({ ok: 1 });
+  })()`);
+  const walk = await tabWalk(candidates);
+  await evaluate(`(() => {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    window.scrollTo(0, 0);
+    return JSON.stringify({ ok: 1 });
+  })()`);
+
+  const rows = [];
+  for (const c of candidates) {
+    const row = { ...c, where };
+    let measured = null;
+    let refusal = null;
+
+    for (const pad of FOCUS_PADS) {
+      const geom = await evaluate(`(() => {
+        const el = document.querySelector('[data-focus-site="${c.i}"]');
+        if (!el) return JSON.stringify({ gone: true });
+        const r = el.getBoundingClientRect();
+        return JSON.stringify({
+          x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height,
+          docW: document.documentElement.scrollWidth,
+          docH: document.documentElement.scrollHeight,
+          sx: scrollX, sy: scrollY
+        });
+      })()`);
+      if (geom.gone) { refusal = 'the element left the document between census and measurement'; break; }
+
+      const box = pad === Infinity
+        ? { x: 0, y: 0, width: geom.docW, height: geom.docH }
+        : (() => {
+            const x = Math.max(0, Math.floor(geom.x - pad));
+            const y = Math.max(0, Math.floor(geom.y - pad));
+            return {
+              x, y,
+              width: Math.min(geom.docW - x, Math.ceil(geom.x + geom.w + pad) - x),
+              height: Math.min(geom.docH - y, Math.ceil(geom.y + geom.h + pad) - y)
+            };
+          })();
+      if (box.width < 1 || box.height < 1) { refusal = 'the element has no photographable box'; break; }
+
+      const before = await focusShot(box);
+      const focused = await evaluate(`(() => {
+        const el = document.querySelector('[data-focus-site="${c.i}"]');
+        el.focus({ preventScroll: true });
+        const chain = [];
+        for (let n = el; n; n = n.parentElement) {
+          const cs = getComputedStyle(n);
+          chain.push({
+            name: n.tagName.toLowerCase() +
+              (n.getAttribute('class') ? '.' + n.getAttribute('class').trim().split(/\\s+/)[0] : ''),
+            style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) || 0,
+            color: cs.outlineColor, offset: cs.outlineOffset
+          });
+          if (n === document.documentElement) break;
+        }
+        return JSON.stringify({
+          took: document.activeElement === el,
+          focusVisible: el.matches(':focus-visible'),
+          sx: scrollX, sy: scrollY, chain
+        });
+      })()`);
+      const after = await focusShot(box);
+      await evaluate(`(() => {
+        const el = document.querySelector('[data-focus-site="${c.i}"]');
+        if (el) el.blur();
+        window.scrollTo(0, 0);
+        return JSON.stringify({ ok: 1 });
+      })()`);
+
+      /* The rail is position:sticky, so a scroll between the two shots moves
+         it and every pixel under it reads as changed. preventScroll should
+         stop that; this says so rather than assuming it. */
+      if (focused.sx !== geom.sx || focused.sy !== geom.sy) {
+        refusal = `focusing it scrolled the page from ${geom.sx},${geom.sy} to ` +
+          `${focused.sx},${focused.sy}, so the two photographs are not of the same pixels`;
+        break;
+      }
+      if (!focused.took) { refusal = 'the element refused focus, so nothing could be photographed'; break; }
+      if (before.width !== after.width || before.height !== after.height) {
+        refusal = 'the two photographs came back different sizes';
+        break;
+      }
+
+      const W = before.width, H = before.height;
+      const changed = new Uint8Array(W * H);
+      let nChanged = 0;
+      for (let p = 0; p < W * H; p++) {
+        const q = p * 4;
+        if (before.data[q] !== after.data[q] || before.data[q + 1] !== after.data[q + 1] ||
+            before.data[q + 2] !== after.data[q + 2]) { changed[p] = 1; nChanged++; }
+      }
+
+      let onEdge = false;
+      for (let x = 0; x < W && !onEdge; x++) if (changed[x] || changed[(H - 1) * W + x]) onEdge = true;
+      for (let y = 0; y < H && !onEdge; y++) if (changed[y * W] || changed[y * W + W - 1]) onEdge = true;
+      /* Widen for BOTH shapes of "this clip is too small", not just the
+         obvious one. A ring that touches the edge is truncated; a clip that
+         sees NO change at all may simply be smaller than the offset — at
+         outline-offset: 60px the whole ring lands outside a 28px pad, and
+         stopping here would report a control that has a perfectly good focus
+         ring as having none. Both are the same question, so both escalate,
+         and only the whole-document clip is allowed to answer it. */
+      const last = FOCUS_PADS[FOCUS_PADS.length - 1];
+      if ((onEdge || !nChanged) && pad !== last) continue;
+
+      measured = { box, pad, nChanged, changed, after, W, H, focused, onEdge };
+      break;
+    }
+
+    if (refusal) { rows.push({ ...row, refused: refusal }); continue; }
+    if (!measured) { rows.push({ ...row, refused: 'no photograph could be taken' }); continue; }
+
+    const { nChanged, changed, after, W, H, focused } = measured;
+    row.focusVisible = focused.focusVisible;
+    row.pad = measured.pad === Infinity ? 'whole document' : `${measured.pad}px`;
+    row.changedPx = nChanged;
+
+    /* No moving pixel is not a measurement problem. It is the finding: this
+       control shows a keyboard user nothing when it is focused. */
+    if (!nChanged) {
+      rows.push({ ...row, refused: 'focusing it changes no pixel, so it has no visible focus indicator' });
+      continue;
+    }
+    if (measured.onEdge) {
+      rows.push({ ...row, refused: `its focus indicator reaches the edge of a whole-document photograph, ` +
+        'so part of it could not be seen' });
+      continue;
+    }
+
+    /* Innermost ancestor-or-self carrying an outline. Ancestor-or-self
+       because `:focus-within` on a wrapper is a legitimate way to indicate
+       focus and the ring is then not on the focused element at all. */
+    const ring = focused.chain.find((n) => n.style !== 'none' && n.width > 0);
+    if (!ring) {
+      rows.push({ ...row, refused: 'its focus indicator is not an outline — this tool measures ' +
+        'outlines, and an indicator drawn some other way (box-shadow, a border swap, a ' +
+        'background change) is not something it can name the edges of' });
+      continue;
+    }
+    row.ring = `${ring.name} outline ${ring.width}px ${ring.style} ${ring.color} offset ${ring.offset}`;
+    row.ringOn = ring.name;
+    row.offset = ring.offset;
+    if (ring.style !== 'solid') {
+      rows.push({ ...row, refused: `its outline-style is ${ring.style}; this tool reads the ring ` +
+        'from pixels painted exactly the outline colour, which a gapped or doubled stroke ' +
+        'does not produce evenly' });
+      continue;
+    }
+
+    /* INK ROLE: refuse rather than assume. An outline at alpha 0.6 paints a
+       blend of itself and whatever is behind it, and "assume opaque" here
+       reports the ring as more contrasty than the pixels are. */
+    const ringColor = parseColor(ring.color);
+    if (!ringColor) {
+      rows.push({ ...row, refused: `its outline-color reads "${ring.color}", which this tool cannot resolve` });
+      continue;
+    }
+    if (ringColor.a !== 1) {
+      rows.push({ ...row, refused: `its outline-color is translucent (alpha ${ringColor.a}), so the ring ` +
+        'is a blend of itself and whatever it is over, and this tool would be assuming the ' +
+        'flattering half of that blend' });
+      continue;
+    }
+    const ringRGB = { r: Math.round(ringColor.r), g: Math.round(ringColor.g), b: Math.round(ringColor.b) };
+    row.ringHex = hex(ringRGB);
+
+    const core = new Uint8Array(W * H);
+    let nCore = 0;
+    for (let p = 0; p < W * H; p++) {
+      if (!changed[p]) continue;
+      const q = p * 4;
+      if (after.data[q] === ringRGB.r && after.data[q + 1] === ringRGB.g &&
+          after.data[q + 2] === ringRGB.b) { core[p] = 1; nCore++; }
+    }
+    row.corePx = nCore;
+    if (!nCore) {
+      rows.push({ ...row, refused: `its computed outline is ${row.ringHex} but no pixel that moved is ` +
+        'that colour, so the ring this tool would measure is not the ring on the screen' });
+      continue;
+    }
+
+    const D = FOCUS_ADJACENT_RADIUS;
+    const adjacent = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const p = y * W + x;
+        if (changed[p]) continue;
+        let near = false;
+        for (let dy = -D; dy <= D && !near; dy++) {
+          for (let dx = -D; dx <= D && !near; dx++) {
+            const yy = y + dy, xx = x + dx;
+            if (yy < 0 || yy >= H || xx < 0 || xx >= W) continue;
+            if (core[yy * W + xx]) near = true;
+          }
+        }
+        if (near) adjacent.push([after.data[p * 4], after.data[p * 4 + 1], after.data[p * 4 + 2]]);
+      }
+    }
+    row.adjacentPx = adjacent.length;
+    if (adjacent.length < FOCUS_MIN_ADJACENT) {
+      rows.push({ ...row, refused: `only ${adjacent.length} unchanged pixel(s) sit beside its ring, ` +
+        `which is under the ${FOCUS_MIN_ADJACENT} this tool will take a worst-of over` });
+      continue;
+    }
+    /* Fail-closed and currently unexercised: Page.captureScreenshot decodes
+       as PNG colour type 2 here, which has no alpha channel at all, so this
+       cannot fire today. It is here because a decoder change that started
+       handing back type 6 would otherwise let a translucent surface through
+       as though it were the colour it is composited over. */
+    let translucent = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const p = y * W + x;
+        if (!changed[p] && after.data[p * 4 + 3] !== 255) translucent++;
+      }
+    }
+    if (translucent) {
+      rows.push({ ...row, refused: `${translucent} pixel(s) beside its ring are translucent, so their ` +
+        'colour depends on something this photograph does not contain' });
+      continue;
+    }
+
+    /* FILL ROLE: every surface beside the ring counts and the worst decides. */
+    const buckets = bucketPixels(adjacent);
+    let worstAt = null, bestAt = null;
+    for (const s of buckets) {
+      const r = contrast(ringRGB, s);
+      if (!worstAt || r < worstAt.ratio) worstAt = { ratio: r, surface: s };
+      if (!bestAt || r > bestAt.ratio) bestAt = { ratio: r, surface: s };
+    }
+    rows.push({
+      ...row,
+      surfaces: buckets.length,
+      ratio: worstAt.ratio, need: FOCUS_RATIO,
+      bg: hex(worstAt.surface), bgPx: worstAt.surface.n,
+      best: bestAt.ratio, bestBg: hex(bestAt.surface)
+    });
+  }
+
+  return {
+    rows,
+    census: {
+      candidates: candidates.length,
+      reached: walk.order.filter((v) => v !== null).length,
+      unknownStops: walk.order.filter((v) => v === null).length,
+      order: walk.order,
+      offPage: walk.offPage
+    }
+  };
+}
+
 /* ------------------------------------------------------------- self-test */
 
-/* Proves the tool before it judges anything, in eight parts that do not share a
+/* Proves the tool before it judges anything, in nine parts that do not share a
    mechanism. Asserting "this pair measures 3.95:1" against a number this same
    file computed would be circular — the expectation would move with the bug —
    so each part binds something a different way:
@@ -1376,7 +1925,10 @@ async function measureSites(targets, where) {
  *      wide-gamut mix far outside 0..1, and scaling THAT by 255 invents a
  *      colour and a confident ratio to go with it. The fixture carries one of
  *      each and asserts the two shapes still exist before asserting how they
- *      are routed.
+ *      are routed. It then WORKS OUT where each edge of the window is, from
+ *      those same serialisations, and brackets every computed edge by calling
+ *      the gate a hair either side of it — so the part reports how far the
+ *      constant may move instead of a sentence saying so (Stadiora/Aria#10365).
  *   G. THE THREE BOUNDARY CENSUSES, which decide whether a site is SEEN at
  *      all and so sit upstream of everything A-F2 measures. A page carrying
  *      six spellings of a nested browsing context must report six, which is
@@ -1387,6 +1939,17 @@ async function measureSites(targets, where) {
  *      nothing, must refuse exactly the fifth. All three are counted on a
  *      fixture because the shipped shell refuses nothing, so nothing on it
  *      can tell a working census from one that always returns nothing.
+ *   H. THE FOCUS SWEEP, driven through measureFocusIndicators rather than
+ *      re-implemented, on a fixture built so that one ring declaration has to
+ *      produce two different answers. The same #CCCCCC outline on the same
+ *      black button reads 1.61:1 against the white card at outline-offset:
+ *      8px and 13.08:1 against the button itself at -8px, so a tool that
+ *      reads a colour off the focused element or off the page fails one of
+ *      them. Beside that: a published ratio to pin the pipeline, the three
+ *      indicators this tool declines to model, a ring far enough out that the
+ *      clip must widen to see it at all, and a case that repaints a distant
+ *      strip on focus to prove the adjacency is anchored on the ring and not
+ *      on everything that moved (Stadiora/Aria#10634).
  *
  * NOT COVERED, on purpose — this is the list of exclusions decided, not an
  * inventory of every blind spot, because one nobody has thought of is by
@@ -1396,8 +1959,14 @@ async function measureSites(targets, where) {
  * that is what the per-pass counts and the mutation battery in the PR are
  * for); the background-sampling METHOD, i.e. that the modal bucket is the
  * colour under the glyphs rather than merely the commonest colour in the box
- * (B and C prove only that the sampler returns what was painted); and the
- * accounting in the run loop below, which no part reaches.
+ * (B and C prove only that the sampler returns what was painted); the
+ * accounting in the run loop below, which no part reaches; and, for the focus
+ * sweep specifically, that a ring is judged against a surface it only touches
+ * round a CURVED corner — every fixture ring here is square, the adjacency
+ * radius is one pixel, and a surface reachable only across a corner blend
+ * could go unsampled. The page's thinnest measured ring carries 119 adjacent
+ * pixels and the sweep refuses anything under 8, so a starved sample is named
+ * rather than judged, but "named" is the whole of the claim.
  */
 const FIXTURE_CASES = [
   { bg: '#ffffff', expect: [255, 255, 255] },
@@ -1575,10 +2144,11 @@ async function selfTest() {
   {
     /* Both ends are asserted on the SERIALISED string first, so a parser that
        stopped refusing cannot be mistaken for a browser that stopped
-       overshooting. The literals are Chromium's own output, measured: white
-       through oklch overshoots to 1.00004 (inside GAMUT_SLACK, 0.00196), and
-       a display-p3 red mixed 90% with white lands at 1.08372 / -0.104021
-       (outside it by more than fifty times the window). */
+       overshooting. The strings are Chromium's own output: white through
+       oklch overshoots 1 by less than the slack, and a display-p3 red mixed
+       90% with white lands outside it on two channels at once. How far
+       outside is not stated here — it is computed at the end of this part
+       from the serialisations themselves. */
     const over = judged.find((r) => r.text.startsWith('an in-gamut overshoot'));
     const wide = judged.find((r) => r.text.startsWith('a wide-gamut mix'));
     const overInk = over ? String(over.ink ?? over.color) : '(not collected)';
@@ -1596,19 +2166,29 @@ async function selfTest() {
     const overIsOvershoot = !!overC && overC.some((v) => v > 1) &&
       overC.every((v) => v >= -GAMUT_SLACK && v <= 1 + GAMUT_SLACK);
     const wideIsOutside = !!wideC && wideC.some((v) => v < -GAMUT_SLACK || v > 1 + GAMUT_SLACK);
-    /* Both guards above are written in terms of GAMUT_SLACK, so they move with
-       it: they bracket the constant rather than pin it. The lower bracket is
-       real — a slack under 4e-5 stops the overshoot fitting inside the window
-       and `overIsOvershoot` goes false — but the upper one only bites at 0.084,
-       where 1.08372 falls inside and the wide span starts being judged. So a
-       slack twenty-five times too wide passed this part. The bound below is
-       ONE byte, not the half-byte the constant is written at, and deliberately
-       so: asserting `GAMUT_SLACK === 0.5 / 255` would be the constant checking
-       itself. A byte is the independent contract — a slack this small can only
-       be a rounding allowance on a value that should have landed in gamut,
-       where one at 0.05 is a gamut policy wearing a rounding allowance's
-       name. So `0.9 / 255` passes here, and that is the bound doing what it
-       claims rather than a gap in it. */
+    /* Both guards above are written in terms of GAMUT_SLACK, so they move
+       with it: they bracket the constant rather than pin it. WHERE each one
+       bites is not stated here. It is computed below from the same
+       serialisations these guards read, and each computed edge is then
+       BRACKETED — parseColor is called at the edge and a hair either side of
+       it, so a wrongly derived edge reds instead of printing.
+
+       Stadiora/Aria#10365 is why. The sentence this replaces said the upper
+       shape guard bit at 0.084 — the red channel's 1.08372 falling back
+       inside the window. It does not: the green channel is -0.104021, and a
+       component below -slack is outside the window too, so `wideIsOutside`
+       survives to 0.104021. One channel was read, three exist, and the
+       sentence outlived the value by four review rounds because nothing in
+       the file could contradict it. Nothing here is typed, so nothing here
+       can drift.
+
+       The BOUND is a different thing from the brackets and is still written
+       down: ONE byte, not the half-byte the constant is set at, because
+       asserting `GAMUT_SLACK === 0.5 / 255` would be the constant checking
+       itself. A byte is the independent contract — a slack this small can
+       only be a rounding allowance on a value that should have landed in
+       gamut, where one at 0.05 is a gamut policy wearing a rounding
+       allowance's name. */
     const slackIsAtMostAByte = GAMUT_SLACK <= 1 / 255;
     const overRead = !!over && !over.unjudgeable && typeof over.ratio === 'number' &&
       !!parseColor(overInk);
@@ -1626,24 +2206,84 @@ async function selfTest() {
        not about this file's model of colour, so a literal is not circular
        here the way it would be for the gate.
 
-       It is coupled to GAMUT_SLACK, and the coupling is worth naming: this
-       literal parses only while the slack is at least 0.0019, so the green
-       band for the constant is [0.0019, 1/255] and not the 4e-5 floor the
-       shape guards above impose. Which assertion catches a narrowed slack
-       depends on how far it is narrowed, and only the bottom of that range
-       reaches `overIsOvershoot`: from 0.0019 down to 4e-5 the literal is
-       refused and THIS line is what reds, while below 4e-5 the overshoot
-       stops fitting the window and `overIsOvershoot` reds too. Either way the
-       part reds, which is why the message below distinguishes a refused
-       literal from an unclamped one -- a reader who sees the clamp blamed for
-       a slack problem is chasing the wrong bound. */
-    const lowParsed = parseColor('color(srgb -0.0019 0.5 0.5)');
+       It is coupled to GAMUT_SLACK — narrow the slack far enough and the
+       literal is refused before the clamp runs, so this line reds for a
+       reason that is not the clamp. How far is one of the edges computed
+       below, and the message at the end of this part distinguishes a refused
+       literal from an unclamped one so that a reader is not sent after the
+       wrong bound. */
+    const LOW_CLAMP_INK = 'color(srgb -0.0019 0.5 0.5)';
+    const lowParsed = parseColor(LOW_CLAMP_INK);
     const lowClamped = !!lowParsed && lowParsed.r === 0 &&
       Math.abs(lowParsed.g - 127.5) < 1e-9;
     const wideRefused = !!wide && wide.unjudgeable === 'unreadable ink syntax' &&
       wide.ratio === undefined && parseColor(wideInk) === null;
+
+    /* ---- where the window's edges actually are, worked out rather than typed
+
+       One function, because there is only one question. A component above 1
+       needs `v - 1` of slack to fit, one below 0 needs `-v`, one already
+       inside needs nothing, and a colour fits when its WORST component does —
+       so `admits(c)` is the smallest slack at which parseColor reads c. Read
+       every channel. Reading one is the whole of #10365.
+
+       The same number is a floor or a ceiling depending on what the colour is
+       there to prove:
+
+         a colour that must be READ  — floor. Refused strictly below it.
+         a colour that must be REFUSED — ceiling. Read at it and above, so the
+                                         slack has to stay strictly under.
+
+       Floors: the browser's in-gamut overshoot (which the shape guard
+       `overIsOvershoot` needs to fit) and the literal pinning the clamp's
+       lower half. Ceilings: the wide-gamut mix, plus the one-byte contract
+       above. The band runs from the highest floor to the lowest ceiling, and
+       the shipped constant has to be inside it.
+
+       Which bound is binding is asserted rather than narrated. If Chromium's
+       serialisations ever moved far enough for a shape guard to become the
+       binding edge, this constant would be held in place by a fact about a
+       browser instead of by a contract, and that is worth a red run. It also
+       keeps the ceiling's exclusivity from mattering: the byte contract is
+       inclusive and binds, the wide mix is exclusive and does not. */
+    const excess = (v) => (v > 1 ? v - 1 : v < 0 ? -v : 0);
+    const admits = (c) => Math.max(...c.map(excess));
+    const lowC = comps(LOW_CLAMP_INK);
+    const edges = overC && wideC && lowC ? {
+      overshootFloor: admits(overC),
+      lowLiteralFloor: admits(lowC),
+      wideCeiling: admits(wideC),
+      byteCeiling: 1 / 255
+    } : null;
+    /* A hair, in the units of the edge itself, and far above the double
+       precision of numbers this size — so "just below" and "just above" are
+       real evaluations of the gate and not the same evaluation twice. */
+    const hair = (x) => Math.max(Math.abs(x) * 1e-9, Number.MIN_VALUE);
+    /* Each computed edge, checked by CALLING THE GATE either side of it: at
+       the edge and a hair below. A wrongly derived edge reds here instead of
+       printing a wrong number — which is not hypothetical, it is how the
+       first draft of `admits` was caught taking a min over the channels that
+       were outside rather than a max over all of them. */
+    const bracketed = !!edges &&
+      parseColor(overInk, edges.overshootFloor) !== null &&
+      parseColor(overInk, edges.overshootFloor - hair(edges.overshootFloor)) === null &&
+      parseColor(LOW_CLAMP_INK, edges.lowLiteralFloor) !== null &&
+      parseColor(LOW_CLAMP_INK, edges.lowLiteralFloor - hair(edges.lowLiteralFloor)) === null &&
+      parseColor(wideInk, edges.wideCeiling) !== null &&
+      parseColor(wideInk, edges.wideCeiling - hair(edges.wideCeiling)) === null;
+    const band = edges
+      ? { lo: Math.max(edges.overshootFloor, edges.lowLiteralFloor),
+          hi: Math.min(edges.wideCeiling, edges.byteCeiling) }
+      : null;
+    const inBand = !!band && GAMUT_SLACK >= band.lo && GAMUT_SLACK <= band.hi;
+    /* The contracts bind, not the browser — and the binding ceiling being the
+       inclusive one is what lets the band above be written closed. */
+    const contractsBind = !!edges && band.lo === edges.lowLiteralFloor &&
+      band.hi === edges.byteCeiling && edges.byteCeiling < edges.wideCeiling;
+    const mult = (v) => (v / GAMUT_SLACK).toFixed(3) + 'x';
+
     const ok = overIsOvershoot && wideIsOutside && slackIsAtMostAByte && overRead &&
-      clamped && lowClamped && wideRefused;
+      clamped && lowClamped && wideRefused && bracketed && inBand && contractsBind;
     if (!ok) bad++;
     console.log(`     ${ok ? 'ok  ' : 'FAIL'} <span style="color: color-mix(in srgb, oklch(1 0 0) 50%, white)">` +
       ` ${overInk}\n          ${overIsOvershoot ? 'overshoots 1 and sits inside the slack' : 'is NOT the overshoot this case needs'}` +
@@ -1654,9 +2294,20 @@ async function selfTest() {
       `\n          ${wideIsOutside ? 'sits outside the slack' : 'is NOT outside the slack'}` +
       `; routed as ${wide ? (wide.unjudgeable || `JUDGED at ${wide.ratio?.toFixed(2)}:1`) : 'nothing'}` +
       `\n          GAMUT_SLACK is ${GAMUT_SLACK} — ${slackIsAtMostAByte ? 'at most a byte, so it is a rounding allowance' : 'WIDER THAN A BYTE, so the window is a gamut policy and not a rounding allowance'}` +
-      `; color(srgb -0.0019 0.5 0.5) parses to ` +
+      `; ${LOW_CLAMP_INK} parses to ` +
       `${lowParsed ? `rgb(${[lowParsed.r, lowParsed.g, lowParsed.b].map((v) => v.toFixed(3)).join(', ')})` : 'nothing'}` +
-      `${lowParsed ? (lowClamped ? '' : ' — the LOWER clamp is not holding') : ' — refused, so the slack is under 0.0019 and this says nothing about the clamp'}`);
+      `${lowParsed ? (lowClamped ? '' : ' — the LOWER clamp is not holding') : ' — refused, so the slack is under this part\'s low-literal floor and this says nothing about the clamp'}` +
+      (edges
+        ? `\n          edges, computed from those serialisations and bracketed by calling the gate either side:` +
+          `\n            floor   ${edges.overshootFloor} (${mult(edges.overshootFloor)})  the overshoot stops fitting the window below this` +
+          `\n            floor   ${edges.lowLiteralFloor} (${mult(edges.lowLiteralFloor)})  the clamp literal is refused below this` +
+          `\n            ceiling ${edges.wideCeiling} (${mult(edges.wideCeiling)})  the wide-gamut mix starts being read at this, so the slack must stay under it` +
+          `\n            ceiling ${edges.byteCeiling} (${mult(edges.byteCeiling)})  one byte, the contract` +
+          `\n          so this part is green for GAMUT_SLACK in [${band.lo}, ${band.hi}] = [${mult(band.lo)}, ${mult(band.hi)}]` +
+          `${bracketed ? '' : ' — AN EDGE IS NOT WHERE IT WAS COMPUTED TO BE'}` +
+          `${inBand ? '' : ' — AND THE SHIPPED CONSTANT IS OUTSIDE IT'}` +
+          `${contractsBind ? '' : ' — BOUND BY A BROWSER SERIALISATION RATHER THAN BY A CONTRACT'}`
+        : '\n          the edges could not be computed: a fixture ink did not serialise as color(srgb ...)'));
   }
 
   console.log('\n  G. boundary censuses — a frame, an author shadow root and unsourced user-agent text');
@@ -1703,12 +2354,110 @@ async function selfTest() {
       'and the zero-box submit must not be among them');
   }
 
+  console.log('\n  H. focus indicators — the same ring, judged against two different surfaces');
+  {
+    await load(origin + '/__contrast-focus-test.html', { settle: 200 });
+    const { rows, census } = await measureFocusIndicators('the focus fixture');
+    const at = (cls) => rows.find((r) => r.cls === cls);
+
+    /* Every expectation on this page is stated from the WCAG formula and the
+       fixture's own declared hexes, not from anything this file measured:
+         #767676 on #FFFFFF  4.54:1   (WebAIM's published figure)
+         #CCCCCC on #FFFFFF  1.61:1   (L 0.60383, 1.00000)
+         #CCCCCC on #000000 13.08:1   (L 0.60383, 0.00000)
+         #999999 on #000000  7.37:1   (L 0.31855, 0.00000)
+         #999999 on #B0B0B0  1.31:1   (L 0.31855, 0.43415) — the WRONG answer
+                                       for h7, and what it measures if the
+                                       adjacency is anchored on the changed
+                                       region instead of on the ring core. */
+    const near = (r, want) => !!r && !r.refused && Math.abs(r.ratio - want) < 0.02;
+    const shows = (cls, want, note) => {
+      const r = at(cls);
+      const ok = near(r, want);
+      if (!ok) bad++;
+      console.log(`     ${ok ? 'ok  ' : 'FAIL'} .${cls} ${note}\n          measured ` +
+        `${r ? (r.refused ? `REFUSED: ${r.refused}` : `${r.ratio.toFixed(2)}:1 against ` +
+          `${r.bg} (${r.bgPx}px, ${r.surfaces} surface(s) beside the ring, pad ${r.pad})`) : 'nothing at all'}` +
+        `, expected ${want.toFixed(2)}:1`);
+      return r;
+    };
+    const refuses = (cls, fragment, note) => {
+      const r = at(cls);
+      const ok = !!r && typeof r.refused === 'string' && r.refused.includes(fragment);
+      if (!ok) bad++;
+      console.log(`     ${ok ? 'ok  ' : 'FAIL'} .${cls} ${note}\n          ` +
+        `${r ? (r.refused ? `refused: ${r.refused}` : `JUDGED at ${r.ratio.toFixed(2)}:1 — it should not have been`) : 'was not censused at all'}`);
+    };
+
+    /* H1 — a published number, so the pipeline is pinned to something outside
+       this file before any of the harder cases are believed. */
+    shows('h1', 4.5426, 'a #767676 ring 6px outside a white button on a white card → WebAIM\'s 4.54:1');
+
+    /* H2 — THE case. One declaration, one ring colour, opposite offsets. The
+       black button is identical in both; only the sign changes, and the
+       answer moves by a factor of eight. Nothing that reads a colour off the
+       focused element, or off the page, can produce both of these. */
+    const out = shows('h2out', 1.6060,
+      'the SAME #CCCCCC ring 8px OUTSIDE a black button → it lands on the white card');
+    const inn = shows('h2in', 13.0766,
+      'the SAME #CCCCCC ring 8px INSIDE that black button → it lands on the button itself');
+    const opposite = !!out && !!inn && !out.refused && !inn.refused &&
+      out.bg === '#FFFFFF' && inn.bg === '#000000';
+    if (!opposite) bad++;
+    console.log(`     ${opposite ? 'ok  ' : 'FAIL'} and it NAMED the two surfaces differently: ` +
+      `${out && !out.refused ? out.bg : '?'} outside, ${inn && !inn.refused ? inn.bg : '?'} inside` +
+      '\n          (a tool that reports the same surface for both has not measured offset at all)');
+
+    /* H3-H5 — the three ways this tool declines, each by name. An indicator
+       it cannot model must never be silently absent from the count. */
+    refuses('h3', 'no visible focus indicator', 'has outline:none and changes nothing on focus');
+    refuses('h4', 'is not an outline', 'indicates focus with a box-shadow');
+    refuses('h5', 'translucent', 'has a 50% alpha outline-color');
+
+    /* H6 — the clip escalates rather than measuring a truncated ring. At the
+       first pad this ring is entirely outside the photograph's edge. */
+    const six = shows('h6', 4.5426, 'puts the same ring 60px out, past the first clip');
+    const escalated = !!six && !six.refused && six.pad === '120px';
+    if (!escalated) bad++;
+    console.log(`     ${escalated ? 'ok  ' : 'FAIL'} and it escalated the clip to see it: pad ` +
+      `${six ? six.pad : '?'}, expected 120px (the ring lands 64px out, past the 28px first try)`);
+
+    /* H7 — the adjacency is anchored on the RING, not on everything that
+       moved. Focusing .h7 also repaints a strip below it, whose own
+       neighbours are #B0B0B0; anchor on the changed region and that strip
+       drags the answer down to 1.31:1 against a colour no ring touches. */
+    const seven = shows('h7', 7.3713,
+      'draws its ring inside a black button while ALSO repainting a strip below it');
+    const notDragged = !!seven && !seven.refused && seven.bg === '#000000';
+    if (!notDragged) bad++;
+    console.log(`     ${notDragged ? 'ok  ' : 'FAIL'} and the surface it named is ` +
+      `${seven && !seven.refused ? seven.bg : '?'}, expected #000000 — not the #B0B0B0 beside ` +
+      'the strip, which is what anchoring on the changed region reports (1.31:1)');
+
+    /* The census itself: eight buttons on the page, eight reached by Tab, and
+       every one of them carrying a row. A focus sweep that quietly measured
+       six of eight would print six ok lines and nothing else. */
+    const okCensus = census.candidates === 8 && census.reached === 8 && rows.length === 8;
+    if (!okCensus) bad++;
+    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 8 focusable buttons → ${census.candidates} ` +
+      `censused, ${census.reached} reached by real Tab presses, ${rows.length} judged or refused`);
+    /* And that the Tab presses did their other job. Without keyboard modality
+       every :focus-visible rule on this page is dead and h1..h7 all look like
+       h3 — eight missing indicators and no ring measured anywhere. */
+    const modality = rows.filter((r) => r.focusVisible).length;
+    const okModality = modality === 8;
+    if (!okModality) bad++;
+    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 8 ` +
+      'after the Tab walk (scripted focus alone matches 0, and every ring here is behind it)');
+  }
+
   console.log(bad === 0
     ? '\n  self-test passed — the formula matches published values, pixels survive\n' +
       '  the pipeline, the plate lifts every glyph, inks are read from what paints,\n' +
       '  an ink that cannot be resolved is refused, color(srgb) is read to the\n' +
-      '  edge of gamut and refused past it, and the\n' +
-      '  three boundaries this tool refuses are all censused.\n'
+      '  edge of gamut and refused past it, the three boundaries this tool\n' +
+      '  refuses are all censused, and one focus ring is judged against two\n' +
+      '  different surfaces according to which side of the box it lands on.\n'
     : `\n  self-test FAILED on ${bad} case(s); do not trust this tool's numbers.\n`);
   return bad === 0;
 }
@@ -1759,10 +2508,261 @@ const KNOWN_BELOW_AA = [
 
 /* ------------------------------------------------------------------ main */
 
+/* The one key a focus site is recognised by. Same per-site shape as siteKey
+   and for the same reason, with the tab index deliberately left OUT: a
+   control that moves earlier in the tab order is the same control, and
+   keying on its position would retire the entry every time a button is added
+   above it. */
+function focusKey(r) {
+  return `${r.theme}/${r.state} ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}` +
+    ` "${r.text}"`;
+}
+
+/* Two frozen surface hexes are the same surface if no channel differs by more
+   than a byte. Not an equality test, because a bucket's mean is taken over
+   real pixels and a renderer that antialiases a rounded corner differently
+   moves it a fraction of a level — and not a loose one either: the greys this
+   page's rings actually land between are three bytes apart, so a genuine move
+   from one to another is still caught. */
+function sameSurface(a, b) {
+  const rgb = (s) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16));
+  const [x, y] = [rgb(a), rgb(b)];
+  return x.every((v, i) => Math.abs(v - y[i]) <= 1);
+}
+
+/* Focus rings that are below 3:1 on the page as it stands, and focus
+   indicators this tool cannot measure at all, frozen one at a time so this
+   sweep can land on a page that is not yet clean.
+
+   Every entry here is in ops/assets/aria.css, which is shared by four pane
+   agents and is not this PR's to edit — so each is filed as its own issue and
+   enumerated here, never skipped silently. The reconciler below fails in both
+   directions exactly as KNOWN_BELOW_AA's does: an entry that stops
+   reproducing, an entry matching anything other than one site, or a ratio
+   that drifts past FREEZE_TOLERANCE. */
+const KNOWN_BELOW_FOCUS = [
+  {
+    theme: 'light',
+    states: ['loading', 'empty'],
+    selector: 'button.btn.btn-primary',
+    text: "Primary",
+    ratio: 2.64,
+    ring: '#0891B2',
+    against: '#BCE0EA',
+    issue: 'https://github.com/Stadiora/Aria/issues/10650',
+    why: 'The primary button paints its own cyan glow, and the focus ring is the same cyan 2px out — so the ring sits on pixels the button tinted itself.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'degraded'],
+    selector: 'button.btn.btn-primary',
+    text: "Primary",
+    ratio: 2.65,
+    ring: '#0891B2',
+    against: '#BDE1EA',
+    issue: 'https://github.com/Stadiora/Aria/issues/10650',
+    why: 'The primary button paints its own cyan glow, and the focus ring is the same cyan 2px out — so the ring sits on pixels the button tinted itself.'
+  },
+  {
+    theme: 'light',
+    states: ['degraded'],
+    selector: 'button.on',
+    text: "Degraded",
+    ratio: 2.73,
+    ring: '#0891B2',
+    against: '#DBDEE4',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['live'],
+    selector: 'button.on',
+    text: "Live data",
+    ratio: 2.73,
+    ring: '#0891B2',
+    against: '#DBDEE4',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['loading'],
+    selector: 'button.on',
+    text: "Loading",
+    ratio: 2.73,
+    ring: '#0891B2',
+    against: '#DBDEE4',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['empty'],
+    selector: 'button.on',
+    text: "No data",
+    ratio: 2.73,
+    ring: '#0891B2',
+    against: '#DBDEE4',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['empty'],
+    selector: 'button',
+    text: "Mobile",
+    ratio: 2.75,
+    ring: '#0891B2',
+    against: '#D7E0E5',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['empty'],
+    selector: 'button.on',
+    text: "All",
+    ratio: 2.75,
+    ring: '#0891B2',
+    against: '#D7E0E5',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'loading', 'empty'],
+    selector: 'button',
+    text: "Degraded",
+    ratio: 2.81,
+    ring: '#0891B2',
+    against: '#DEE1E7',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['loading', 'empty', 'degraded'],
+    selector: 'button',
+    text: "Live data",
+    ratio: 2.81,
+    ring: '#0891B2',
+    against: '#DEE1E7',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'empty', 'degraded'],
+    selector: 'button',
+    text: "Loading",
+    ratio: 2.81,
+    ring: '#0891B2',
+    against: '#DEE1E7',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'loading', 'degraded'],
+    selector: 'button',
+    text: "No data",
+    ratio: 2.81,
+    ring: '#0891B2',
+    against: '#DEE1E7',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'loading', 'degraded'],
+    selector: 'button.on',
+    text: "All",
+    ratio: 2.81,
+    ring: '#0891B2',
+    against: '#DEE1E6',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['empty'],
+    selector: 'button',
+    text: "Coaches Web",
+    ratio: 2.89,
+    ring: '#0891B2',
+    against: '#E1E4E9',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'loading', 'degraded'],
+    selector: 'button',
+    text: "Mobile",
+    ratio: 2.89,
+    ring: '#0891B2',
+    against: '#E1E4E9',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'loading', 'degraded'],
+    selector: 'button',
+    text: "Coaches Web",
+    ratio: 2.91,
+    ring: '#0891B2',
+    against: '#E1E5E9',
+    issue: 'https://github.com/Stadiora/Aria/issues/10649',
+    why: 'outline-offset: 2px puts the ring outside the button, on the segmented control\'s own surface rather than on the page behind it.'
+  }
+];
+
+/* Focus indicators this tool refuses to measure, enumerated for the same
+   reason: a refusal that is not named is a site that left the sweep. Each
+   entry carries the REASON as well as the control, so an exemption written
+   for one thing this tool declines cannot go on covering the same control
+   once its indicator changes to something else it declines. */
+const KNOWN_UNMEASURABLE_FOCUS = [
+  {
+    theme: 'dark',
+    states: ['live', 'loading', 'empty', 'degraded'],
+    selector: 'input',
+    text: 'Search a coded reference',
+    because: 'is not an outline',
+    issue: 'https://github.com/Stadiora/Aria/issues/10651',
+    why: 'The search field indicates focus with .field:focus-within box-shadow, and both of ' +
+      'its layers are translucent color-mix()es of --cyan. There is no outline in the ' +
+      'ancestor chain to find edges from, and an ink this tool cannot resolve exactly is ' +
+      'refused rather than assumed opaque. Nothing here says the indicator fails — only ' +
+      'that this tool will not claim it passes.'
+  },
+  {
+    theme: 'light',
+    states: ['live', 'loading', 'empty', 'degraded'],
+    selector: 'input',
+    text: 'Search a coded reference',
+    because: 'is not an outline',
+    issue: 'https://github.com/Stadiora/Aria/issues/10651',
+    why: 'The light-theme half of the same field. Same indicator, same refusal.'
+  }
+];
 /* How many measured sites were below AA and exempted by KNOWN_BELOW_AA. Held
    out of the passing count and named in the closing line, so a page carrying
    known failures never reports itself clean. */
 let frozenCount = 0;
+/* Same, for focus rings below 3:1. */
+let frozenFocusCount = 0;
+
+/* The focus sweep's floor, and it is a floor on how many controls were LOOKED
+   at rather than on how many were judged: a change that turned every ring on
+   the page into a refusal would leave "judged" at zero while the run still
+   failed for the right reason, and a floor on judged sites alone would fire
+   twice for the same event. Set just under the real census — 26 a pass, 208
+   across the eight — because a floor set far below what the page carries is a
+   floor that never fires. */
+const FOCUS_SITE_FLOOR = 180;
 
 try {
   const cdpPort = await devtoolsPort(profile);
@@ -1788,6 +2788,10 @@ try {
     const unjudged = new Map();
     const worst = new Map();
     const belowAA = [];
+    let focusChecked = 0;
+    const focusWorst = new Map();
+    const focusBelow = [];
+    const focusRefused = [];
 
     for (const theme of THEMES) {
       await setTheme(theme);
@@ -1887,6 +2891,43 @@ try {
         if (verbose) {
           console.log(`  walked ${SHELL} [${theme}/${state}] — ${results.length} text sites`);
         }
+
+        /* The focus sweep runs after the text sweep on the same loaded page,
+           and never before it: the Tab walk leaves focus somewhere, and a
+           focused control paints differently. */
+        const focus = await measureFocusIndicators(`${SHELL} (${theme}/${state})`);
+        /* Everything Tab can reach must be something this sweep judged.
+           tabindex="-1" is the one legitimate way to be focusable and not
+           tab-reachable, so it is subtracted rather than ignored — and a
+           stop Tab makes on something the census never tagged is a site with
+           no row at all, which is the shape this whole file exists to stop. */
+        const reachable = focus.census.candidates -
+          (await evaluate(`(() => JSON.stringify({
+            n: [...document.querySelectorAll('[data-focus-site][tabindex="-1"]')].length
+          }))()`)).n;
+        if (focus.census.reached !== reachable) {
+          failures.push(`${SHELL} (${theme}/${state}): Tab reaches ${focus.census.reached} ` +
+            `control(s) but ${reachable} of the ${focus.census.candidates} censused are ` +
+            'tab-reachable. A control the census misses is measured by nothing here, and a ' +
+            'control Tab cannot reach has no focus ring to measure.');
+        }
+        if (focus.census.unknownStops) {
+          failures.push(`${SHELL} (${theme}/${state}): Tab stopped ${focus.census.unknownStops} ` +
+            'time(s) on something the focus census never tagged, so that control is reachable ' +
+            'by keyboard and judged by nothing.');
+        }
+        for (const r of focus.rows) {
+          if (r.refused) { focusRefused.push({ ...r, theme, state }); continue; }
+          focusChecked++;
+          const key = `${r.cls || r.tag}|${theme}`;
+          const prev = focusWorst.get(key);
+          if (!prev || r.ratio < prev.ratio) focusWorst.set(key, { ...r, theme, state });
+          if (r.ratio + 0.005 < r.need) focusBelow.push({ ...r, theme, state });
+        }
+        if (verbose) {
+          console.log(`  focused ${SHELL} [${theme}/${state}] — ${focus.rows.length} controls, ` +
+            `${focus.census.reached} reached by Tab`);
+        }
       }
     }
 
@@ -1966,6 +3007,114 @@ try {
         'KNOWN_BELOW_AA with the issue that tracks it');
     }
 
+    /* ------------------------------------------- the focus sweep's accounts
+
+       Same shape as the text sweep's, because the failure modes are the same
+       ones: a sweep that measured almost nothing prints the same closing line
+       as one that measured everything, a refusal that is not named is a site
+       that left, and a freeze list asserted in one direction rots in the
+       other. */
+    if (focusChecked + focusRefused.length < FOCUS_SITE_FLOOR) {
+      failures.push(`${SHELL}: only ${focusChecked + focusRefused.length} focus indicator(s) ` +
+        `were looked at across ${THEMES.length} themes × ${STATES.length} states, so the ` +
+        'focus sweep measured almost nothing. The shell carries 26 focusable controls a ' +
+        'pass, 208 in total.');
+    }
+
+    const frozenRefusals = new Map();
+    for (const e of KNOWN_UNMEASURABLE_FOCUS) {
+      for (const st of e.states) {
+        frozenRefusals.set(`${e.theme}/${st} ${e.selector} "${e.text}"`, e);
+      }
+    }
+    const matchedRefusals = new Map();
+    for (const r of focusRefused) {
+      const key = focusKey(r);
+      const e = frozenRefusals.get(key);
+      /* The REASON is part of the entry. An exemption written for a
+         box-shadow indicator must not go on covering the same control when
+         its indicator changes to something else this tool declines for a
+         different reason — that is a new fact about the page, not the one
+         that was signed off. */
+      if (e && r.refused.includes(e.because)) {
+        if (!matchedRefusals.has(key)) matchedRefusals.set(key, []);
+        matchedRefusals.get(key).push(r);
+        continue;
+      }
+      failures.push(`${SHELL} (${r.theme}/${r.state}): the focus indicator on ` +
+        `${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''} "${r.text}" could not be ` +
+        `judged — ${r.refused}` +
+        `${e ? `. There IS a frozen entry for this control, but it was frozen for "${e.because}"` +
+          ` and this is a different reason (${e.issue})` : ''}` +
+        '. Nothing here speaks for it: teach the tool the case or fix the indicator.');
+    }
+    for (const [key, e] of frozenRefusals) {
+      const rows = matchedRefusals.get(key) || [];
+      if (rows.length !== 1) {
+        failures.push(`${SHELL}: the frozen unmeasurable focus indicator ${key} matched ` +
+          `${rows.length} refused site(s), not 1. That entry exempts a control from this ` +
+          'sweep, so it may not outlive what it exempts: delete it if the indicator was ' +
+          'fixed or the control removed, or correct it if it moved. (' + e.issue + ')');
+      }
+    }
+
+    const frozenFocus = new Map();
+    for (const e of KNOWN_BELOW_FOCUS) {
+      for (const st of e.states) frozenFocus.set(`${e.theme}/${st} ${e.selector} "${e.text}"`, e);
+    }
+    const matchedFocus = new Map();
+    for (const r of focusBelow.sort((a, b) => a.ratio - b.ratio)) {
+      const key = focusKey(r);
+      if (frozenFocus.has(key)) {
+        if (!matchedFocus.has(key)) matchedFocus.set(key, []);
+        matchedFocus.get(key).push(r);
+        continue;
+      }
+      failures.push(`${SHELL} (${r.theme}/${r.state}): focus ring ${r.ratio.toFixed(2)}:1 needs ` +
+        `${r.need.toFixed(1)}:1 — ${r.ringHex} against ${r.bg}` +
+        `${r.surfaces > 1 ? ` (worst of ${r.surfaces} surfaces beside the ring; ` +
+          `best ${r.best.toFixed(2)}:1 on ${r.bestBg})` : ''}` +
+        `, ${r.ring} on ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''} "${r.text}"`);
+    }
+    for (const [key, e] of frozenFocus) {
+      const rows = matchedFocus.get(key) || [];
+      if (rows.length !== 1) {
+        failures.push(`${SHELL}: the frozen below-3:1 focus ring ${key} matched ${rows.length} ` +
+          'measured ring(s), not 1. That entry exempts a ring from this sweep, so it may not ' +
+          'outlive what it exempts: delete it if the ring was fixed or removed, or correct ' +
+          'it if it moved. (' + e.issue + ')');
+        continue;
+      }
+      const got = rows[0];
+      if (Math.abs(got.ratio - e.ratio) > FREEZE_TOLERANCE) {
+        failures.push(`${SHELL}: the frozen below-3:1 focus ring ${key} measures ` +
+          `${got.ratio.toFixed(2)}:1, not the ${e.ratio.toFixed(2)}:1 it was frozen at. ` +
+          `${got.ratio < e.ratio ? 'It got worse' : 'It improved'} — re-measure it, and ` +
+          'either move the number or drop the entry. (' + e.issue + ')');
+      } else if (!sameSurface(got.bg, e.against)) {
+        /* The adjacent surface is half the measurement, so a ring that is
+           still 2.73:1 against a DIFFERENT colour is a different fact and the
+           entry no longer describes it. One byte per channel of slack, which
+           is renderer noise in the mean over a bucket, and far under the
+           three-byte gap between the two greys this page actually produces. */
+        failures.push(`${SHELL}: the frozen below-3:1 focus ring ${key} now lands on ` +
+          `${got.bg}, not the ${e.against} it was frozen against. The ratio is unchanged, so ` +
+          'this is the ring moving to another surface rather than the surface changing ' +
+          'colour. Re-measure it. (' + e.issue + ')');
+      } else if (got.ringHex !== e.ring) {
+        failures.push(`${SHELL}: the frozen below-3:1 focus ring ${key} is now painted ` +
+          `${got.ringHex}, not the ${e.ring} it was frozen at. (` + e.issue + ')');
+      }
+    }
+    frozenFocusCount = [...matchedFocus.values()].reduce((n, r) => n + r.length, 0);
+    const frozenRefusalCount = [...matchedRefusals.values()].reduce((n, r) => n + r.length, 0);
+    if (frozenFocusCount || frozenRefusalCount) {
+      note(`${frozenFocusCount} focus ring(s) are below ${FOCUS_RATIO.toFixed(1)}:1 and ` +
+        `${frozenRefusalCount} focus indicator(s) cannot be measured at all — frozen, NOT part ` +
+        'of the passing count below, each listed in KNOWN_BELOW_FOCUS or ' +
+        'KNOWN_UNMEASURABLE_FOCUS with the issue that tracks it');
+    }
+
     if (!failures.length && !unjudgedTotal) {
       note(`${checked - frozenCount} rendered text sites across ${THEMES.length} themes × ` +
         `${STATES.length} states meet WCAG AA, ${exempt} exempt as inactive controls`);
@@ -1975,6 +3124,17 @@ try {
         console.log(`      ${r.ratio.toFixed(2)}:1 (needs ${r.need.toFixed(1)})  ${r.theme.padEnd(5)}` +
           ` ${r.fg} on ${r.bg}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}  "${r.text}"` +
           `${frozen.has(siteKey(r)) ? '   [frozen, below AA]' : ''}`);
+      }
+      note(`${focusChecked - frozenFocusCount} rendered focus indicators across ` +
+        `${THEMES.length} themes × ${STATES.length} states meet WCAG ` +
+        `${FOCUS_RATIO.toFixed(1)}:1 against the surfaces they land on`);
+      const focusFloor = [...focusWorst.values()].sort((a, b) => a.ratio - b.ratio).slice(0, 5);
+      console.log('    closest five focus rings to their threshold:');
+      for (const r of focusFloor) {
+        console.log(`      ${r.ratio.toFixed(2)}:1 (needs ${r.need.toFixed(1)})  ${r.theme.padEnd(5)}` +
+          ` ${r.ringHex} beside ${r.bg}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}` +
+          `  "${r.text}"  offset ${r.offset}` +
+          `${frozenFocus.has(focusKey(r)) ? '   [frozen, below 3:1]' : ''}`);
       }
     }
   }
@@ -1995,7 +3155,9 @@ if (failures.length) {
 }
 console.log(selfTestOnly
   ? '\nSelf-test only: the tool proved itself and measured no page.\n'
-  : '\nEvery text site this tool reaches on the v2 shell meets WCAG AA, in both themes and ' +
-    `all four states${frozenCount ? `, except the ${frozenCount} frozen in KNOWN_BELOW_AA` : ''}. ` +
+  : '\nEvery text site this tool reaches on the v2 shell meets WCAG AA, and every focus ring ' +
+    'it can measure meets SC 1.4.11, in both themes and ' +
+    `all four states${frozenCount ? `, except the ${frozenCount} frozen in KNOWN_BELOW_AA` : ''}` +
+    `${frozenFocusCount ? ` and the ${frozenFocusCount} in KNOWN_BELOW_FOCUS` : ''}. ` +
     'What it does not reach is in NOT COVERED in ops/README.md, and the sweep fails rather ' +
     'than shrinks when it meets something new.\n');
