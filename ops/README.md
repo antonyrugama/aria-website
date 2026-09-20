@@ -259,6 +259,7 @@ ops/
     pane-releases-v2.css  App releases' own shapes
     pane-settings-v2.css  Settings' own shapes
     pane-users-v2.css     Look up a user's own shapes
+    pane-evaluations-v2.css  Aria quality's own shapes
 ```
 
 ### The v2 layer
@@ -410,26 +411,9 @@ whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET
 and land on an honest state rather than a zero wherever an answer carries no figure.
 
 **Settings** is built, and is the one pane that can change something rather than only report it.
-The section on it below is worth reading before the page is used. **Aria quality** lets
-viewers, operators and owners validate synthetic dataset declarations. Paste an input object
-containing `datasets` and `fixtureDigests`; the page supplies the operation envelope. The server
-returns manifest digests or field paths and reason codes. Editing the input clears the old
-result. Validation stores no dataset, inspects no referenced bytes, verifies no qualification
-and grants no evidence access or release approval.
-
-Owners and operators can also submit a local synthetic
-or exactly authorised production-derived file to the shared Ciel operation. The page sends no
-credential or endpoint in request data, renders no raw evidence or storage location, and never
-describes quarantine as admission, evaluation consent, training consent, export permission, or
-proof of de-identification.
-
-The retention field shows the browser's local timezone and submits UTC. Its default starts
-30 elapsed days ahead and uses the offset at that future instant, including DST changes,
-rather than writing UTC clock text into a local-time input. The control has minute precision:
-seconds and milliseconds are omitted. A repeated fall-back hour cannot encode which occurrence
-was intended; native JavaScript parsing selects the earlier occurrence, so this is not an exact
-instant round-trip for the later occurrence. Manual edits still use the displayed local time,
-and the future-date and 90-day retention bounds are unchanged.
+The section on it below is worth reading before the page is used. **Aria quality** is half built
+and says so: the section below it covers what the two working tools do, and what the rest of the
+page is a drawing of.
 
 **App releases** and **Look up a user** are built. Everything either of them shows comes from the
 operations API; neither holds any data of its own, and where the API answers with nothing the
@@ -794,6 +778,108 @@ refused sign in.
   audience is an owner who asked for them.
 - There is **no filter bar**. The registry gives Settings no scope, range or environment, and the
   shell draws a bar only for the filters a pane's own reads can honour.
+
+## The Aria quality pane
+
+`evaluations.html` runs on the v2 shell and loads `aria.css`, `shell-pane-v2.css` and
+`pane-evaluations-v2.css`. It is the one pane where **most of what is on screen is a drawing**,
+and everything about how it is built follows from that.
+
+**Two tools work. The scoring half does not exist.** Dataset declaration validation and evidence
+quarantine both call the shared Ciel operation and act on what the operator supplies. Below them
+is a design for a scoring harness that has no code, no endpoint and no stored score. The numbers
+in it were invented to draw the layout.
+
+**How a reader tells one from the other**, three ways over, never once in colour alone:
+
+1. **A stamp in every band's status slot**, carrying a word and a glyph: `Works now` on the two
+   tools, `Invented figures` on all three drawn bands. Same chip, same slot, so they read against
+   each other, and a screenshot of any one band still carries its own stamp.
+2. **A banner above the drawn half**, headed *The scoring harness is not built yet*, which states
+   in one sentence that every figure below it was made up.
+3. **The surface.** The drawn half sits on a flat, dashed, hatched panel with none of the lit top
+   edge that makes a working card read as a raised object — the same treatment Settings uses for
+   a card with no API behind it, so the two panes teach one vocabulary rather than two.
+
+`scripts/ops-pane-evaluations.test.mjs` holds that partition in both directions: every band
+inside the drawn panel is stamped `Invented figures` and none is stamped `Works now`, every band
+outside it is the reverse, **neither set is empty**, and **neither a two-decimal figure nor any
+string in the file's hand-written invented inventory appears outside the panel in the two render
+states it sweeps**. Moving one band across the boundary turns seven tests in that file red.
+Nothing real on this pane is written as a two-decimal figure, which is what makes that sweep a
+usable rule rather than a coincidence: the working half prints digests, byte counts and timestamps.
+
+The sweep reads one string taken from `<body>` with the panel's subtree removed, so it covers the
+shell's live region — `announce()` is how a screen-reader operator hears every success here, and
+the stamps are visual chips — and it finds a phrase split across sibling elements, which bolding a
+number inside a sentence produces and which a per-element sweep walked past. It also reads text
+carried on attributes, listed once as `SPOKEN_ATTRS` in that file and nowhere else, because an
+enumeration repeated in prose goes stale the round after the list is widened — **and separately
+the live `value` a control is holding**, which is a property rather than an attribute: this pane
+assigns `expiry.value` and `mediaType.value` in JS, where `getAttribute('value')` returns nothing
+and the box on screen is full. Two shapes qualify: text painted on screen, like a field's value or
+a placeholder shown until the operator types, and text a screen reader substitutes for the
+element's own, like an `aria-label` — a figure in the second is worse than one in the live region,
+because it suppresses the real words underneath it as well. The two states are the booted page and
+the page after both working forms have been submitted and answered.
+
+Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
+inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in
+a new sentence, is invisible to it. **The error branches are a third render state nothing reads**:
+a score in a validation failure message leaves the suite green, while the same string on a
+boot-state hint turns three tests red. **A figure split mid-token** across two elements joins with
+a space here and without one in a browser. Adding invented data to this pane means adding it to
+the inventory by hand, and the test file says so where a reader will meet it.
+
+**What the two working tools do.** Validation takes an input object containing `datasets` and
+`fixtureDigests`; the page supplies the operation envelope. The server returns manifest digests
+or field paths and reason codes. Editing the input clears the old result. Validation stores no
+dataset, inspects no referenced bytes, verifies no qualification and grants no evidence access or
+release approval.
+
+Owners and operators can also submit a local synthetic or exactly authorised production-derived
+file to the shared Ciel operation. The page sends no credential or endpoint in request data,
+renders no raw evidence or storage location, and never describes quarantine as admission,
+evaluation consent, training consent, export permission, or proof of de-identification. A viewer
+is told in a named block that the import needs operator access, rather than being shown a gap
+where a form was.
+
+The retention field shows the browser's local timezone and submits UTC. Its default starts
+30 elapsed days ahead and uses the offset at that future instant, including DST changes,
+rather than writing UTC clock text into a local-time input. The control has minute precision:
+seconds and milliseconds are omitted. A repeated fall-back hour cannot encode which occurrence
+was intended; native JavaScript parsing selects the earlier occurrence, so this is not an exact
+instant round-trip for the later occurrence. Manual edits still use the displayed local time,
+and the future-date and 90-day retention bounds are unchanged.
+
+**Where the pane departs from `docs/mocks/ops-dashboard-v2/evaluations.html`:**
+
+- **The working tools come first, then the banner, then the drawing.** The mock opens with the
+  banner, because the mock is a drawing of a pane where nothing is built. Here two tools are, so
+  a page that opens by saying it is not built would be false. The banner sits directly above the
+  half it describes and its claim is scoped to that half.
+- **The drawn half is not faded.** The mock sets `opacity: .55` over it, which multiplies every
+  ink in the panel and takes text the v2 palette places at 4.5:1 down below 3:1. The dashed
+  hairline, the flat fill and the hatch carry the same "this is not a thing yet" reading without
+  moving a single colour.
+- **The drawn half is not `aria-hidden`.** The mock hides it from assistive technology, which
+  hides the warning too. Every drawn band carries a real, announced stamp instead: the mock's own
+  stated reason for per-band stamps was that a screenshot of one card still carries the warning,
+  and a screen reader user has the same problem.
+- **The drawn half holds no control.** The mock keeps `Open run` buttons in it under
+  `pointer-events: none`, which leaves them in the tab order inside a hidden subtree. A control
+  that changes nothing is worse than no control; they are gone. The test asserts the panel holds
+  no control at all and exactly one focus stop — the table that scrolls sideways on a phone,
+  which is named and reachable because a scroll region a keyboard cannot get to fails WCAG
+  2.1.1 — while every working band contains at least one control.
+- **No sparkline over the version list.** Both draw the same seven figures; that is one fact
+  captioned twice.
+- **No `including the 0.82 on Overview`.** Overview prints no quality figure, so the sentence
+  describes something that is not there.
+- **No `.why` annotation blocks.** They are the mock's design commentary, gated behind its own
+  notes toggle, and are not part of the pane.
+- **No filter bar controls.** The registry gives this pane no scope, range or environment and
+  carries a note saying why; the shell prints the note where the controls would have been.
 
 ## Departures from the approved mocks
 
