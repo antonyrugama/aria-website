@@ -879,9 +879,10 @@ for (const scenario of [
        A stamp assertion stays green if every band is stamped, if none is, or
        if the wrong ones are. What is asserted is the PARTITION: every band
        inside the preview carries the invented stamp, every band outside it
-       carries the working stamp, neither set is empty, and no two-decimal
-       score reaches the document outside the preview. Move one band across
-       that boundary and three of them go red.
+       carries the working stamp, neither set is empty, and neither a
+       two-decimal score nor a listed invented phrase reaches the document
+       outside the preview. Move one band across that boundary and six tests
+       in this file go red.
 
      - Role gating is asserted in BOTH directions: a viewer is refused the
        evidence form and told why, AND an operator gets the real form. A
@@ -896,6 +897,14 @@ for (const scenario of [
        job (scripts/check-ops-shell-v2.mjs) and the screenshots on the PR.
      - The CSS that draws the stamp. These assert the word and the class the
        pane writes, not what pane-evaluations-v2.css paints them.
+     - That INVENTED_FIGURES and INVENTED_PHRASES are COMPLETE. They are two
+       hand-written inventories, and the sweeps can only look for what is in
+       them plus any two-decimal score plus a digit inside a stamp. A made-up
+       string outside all three of those shapes — a bare count like the "3"
+       and "11" in the comparison panel, a new sentence with a round number
+       in it — can be printed outside the preview and nothing here will see
+       it. Adding invented data to the pane means adding it to an inventory
+       by hand; there is no mechanism that notices you did not.
      - The dataset and quarantine transports, which the block above owns. */
 
 const OPS = new URL('../ops/', import.meta.url);
@@ -925,8 +934,28 @@ const INVENTED_FIGURES = [
      announces and a tint are not a direction. */
   '-0.29', '-0.17', '-0.14', '-0.13', '-0.08', '-0.06', '-0.02', '-0.03',
   '-0.01', '-0.09', '+0.03', '+0.02',
-  /* The threshold in the regressions band note is a made-up figure too. */
-  '0.05',
+  /* Two more that live inside a sentence rather than in a cell: the
+     regressions threshold, and the safety floor. Dropping either went
+     unnoticed until a reviewer looked for them. */
+  '0.05', '0.95',
+];
+
+/* Made-up strings that are NOT two-decimal scores. The sweep below sees a
+   score and nothing else, so a duration, a case count, a timestamp or a
+   made-up case id walks straight past it — which is how a banner chip reading
+   "Last scored 29 Jul, 180 cases, 41 minutes" could sit above the boundary
+   with this whole file green.
+
+   Written out by hand, like the figures, and deliberately restricted to
+   strings distinctive enough that a real value from the working half cannot
+   collide with one. Bare counts the design prints in the comparison panel
+   ("3" and "11" cases below 0.70) are NOT here for that reason, and are named
+   in the NOT COVERED block above. */
+const INVENTED_PHRASES = [
+  '180 cases', '41 minutes', '02:14 UTC', '$3.18', '73% of sessions',
+  'Held since 29 Jul', 'first scored', 'Cases below 0.70',
+  'tc_0147', 'tc_0312', 'tc_0208', 'tc_0455', 'tc_0091',
+  '14 Jul', '30 Jun', '12 Jun', '28 May', '14 May', '2 May',
 ];
 
 /* A score is written to two decimals everywhere on this pane, so this is the
@@ -1200,6 +1229,16 @@ test('v2: the banner states no figure and claims nothing that runs', async () =>
   assert.ok(!/\d/.test(text),
     `the banner prints a figure, and a figure above the boundary is a claim: ${text}`);
 
+  /* And no stamp chip anywhere on the pane carries a figure. A stamp is a
+     status marker, so a digit inside one is a claim wearing a status. Every
+     chip the pane draws is a word: "Works now", "Invented figures",
+     "No access granted", "No harness", "No stored scores", "No alerting". */
+  const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
+  assert.ok(chips.length >= 6, `expected the drawn stamps, saw ${chips.length}`);
+  const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
+  assert.deepEqual(numeric, [],
+    'a stamp carries a figure, which is a claim wearing a status marker');
+
   const preview = previewOf(dom);
   const bands = findAll(dom.content, isBand);
   const working = bands.filter(section => !within(section, preview));
@@ -1235,4 +1274,35 @@ test('v2: a rise and a fall do not announce the same thing', async () => {
     'a rising change does not announce its sign');
   assert.deepEqual(falls.filter(text => !text.startsWith('-')), [],
     'a falling change does not announce its sign');
+});
+
+/* The sweep for two-decimal scores is the narrowest possible reading of "no
+   invented figure escapes the preview". A reviewer showed four made-up strings
+   leaving it with the suite green: a duration, a case count, a timestamp and a
+   made-up case id. These two tests widen it to the inventory, in both
+   directions, and the NOT COVERED block above states what is still outside
+   them. */
+test('v2: every invented phrase the design prints is inside the preview', async () => {
+  const dom = await bootPane();
+  const text = allText(previewOf(dom));
+  const missing = INVENTED_PHRASES.filter(phrase => !text.includes(phrase));
+  assert.deepEqual(missing, [],
+    'the drawn design stopped printing a made-up string, or moved it out of the preview');
+});
+
+test('v2: no invented phrase reaches the page outside the preview', async () => {
+  const dom = await bootPane();
+  const preview = previewOf(dom);
+  /* Own text, not allText: in this harness textContent is a node's own text,
+     which is what lets an ancestor of the preview be asked the question
+     without the preview's own words answering for it. */
+  const offenders = [];
+  for (const node of findAll(dom.content, n => !within(n, preview) && n !== preview)) {
+    const own = node.textContent || '';
+    for (const phrase of INVENTED_PHRASES) {
+      if (own.includes(phrase)) offenders.push(`${phrase} in <${node.tagName.toLowerCase()}>`);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    'a made-up string outside the preview is an unstamped claim');
 });

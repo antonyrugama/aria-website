@@ -801,11 +801,18 @@ in it were invented to draw the layout.
 
 `scripts/ops-pane-evaluations.test.mjs` holds that partition in both directions: every band
 inside the drawn panel is stamped `Invented figures` and none is stamped `Works now`, every band
-outside it is the reverse, **neither set is empty**, and **no two-decimal figure reaches the page
-outside the panel at all**. Moving one band across the boundary turns four tests in that file red.
-Nothing real on this pane is written as a two-decimal figure, which is what makes that last sweep
-a usable rule rather than a coincidence: the working half prints digests, byte counts and
-timestamps.
+outside it is the reverse, **neither set is empty**, and **neither a two-decimal figure nor any
+string in the file's hand-written invented inventory reaches the page outside the panel**. Moving
+one band across the boundary turns six tests in that file red. Nothing real on this pane is
+written as a two-decimal figure, which is what makes that sweep a usable rule rather than a
+coincidence: the working half prints digests, byte counts and timestamps.
+
+The sweep for scores alone was too narrow, and a review found four made-up strings that could
+leave the panel with the suite green — a duration, a case count, a timestamp and a test-case id.
+The inventory closes those, and a stamp chip may now carry no digit at all, anywhere on the pane.
+**The inventory is hand-written and nothing proves it is complete**: a bare count, or a round
+number in a new sentence, is still invisible to it. Adding invented data to this pane means adding
+it to the inventory by hand, and the test file says so where a reader will meet it.
 
 **What the two working tools do.** Validation takes an input object containing `datasets` and
 `fixtureDigests`; the page supplies the operation envelope. The server returns manifest digests

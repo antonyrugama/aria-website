@@ -23,12 +23,19 @@
    screenshotted and quoted — and the whole of the honesty apparatus here is
    paying for it:
 
-     - INVENTED below is every made-up figure on this pane, in one list, down
-       to the threshold in a band note. Version labels like 1.2.0 are not in
-       it, because they name the invented rows rather than being figures a
-       reader could quote. The test holds every one of them inside the
-       preview, and sweeps for any two-decimal figure that reaches the page
-       outside it.
+     - INVENTED below holds the made-up data in one place, so that "is this
+       figure stamped" is a question about a list rather than about a reader's
+       memory. The test file keeps its OWN hand-written inventory and holds
+       every entry inside the preview; it does not read this object, because
+       an expectation derived from the thing under test moves with it.
+
+       What the tests prove about that, exactly: every listed figure and
+       phrase is printed inside the preview, no two-decimal score and no
+       listed phrase reaches the page outside it, and no stamp chip anywhere
+       carries a digit. What they do NOT prove is that this object is
+       complete — a made-up string that is in neither inventory, is not a
+       two-decimal score and is not in a stamp can still be added outside the
+       preview and go unseen. The test file names that gap.
      - previewBand() is the only way a band gets into the preview, and it
        stamps the band. workingBand() is the only way a band is built outside
        it, and it stamps that. Neither stamp is a colour: each carries a word.
