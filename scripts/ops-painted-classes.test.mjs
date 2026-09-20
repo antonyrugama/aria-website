@@ -418,6 +418,14 @@ test('a stage the build is past draws a different rail from one it has not reach
      reading rather than carrying it. */
   assert.strictEqual(rail.on.left, '22px', 'the done rail should start where the 22px node ends');
   assert.strictEqual(rail.off.left, '11px', 'the base rail runs from the node centre');
+  /* Both ends, not one. `.pipe-node` is a 16% tint rather than an opaque disc,
+     so a rail that runs past the far node is drawn straight through its
+     checkmark. Asserted as the resolved value rather than as a difference from
+     the base rail, because the height and background differ anyway and an
+     inequality would pass with this end unchanged. */
+  assert.strictEqual(rail.on.right, '0px',
+    `the done rail should stop at the next node's edge, and ends at ${rail.on.right}`);
+  assert.strictEqual(rail.off.right, '-11px', 'the base rail runs on to the next node centre');
 
   /* And it is opaque, where the base rail is 38% of the tone. Deleting only the
      background line of the rule would leave the height and still be caught. */
@@ -673,6 +681,11 @@ test('every surface a person types into or reads an answer off takes one measure
        those would assert nothing. */
     bind('approval-card', [...document.querySelectorAll('.approval-card')]
       .find((el) => !el.parentElement.classList.contains('approval-workflow-grid')), 'approval-card');
+    /* The handoff grid carries the same cap in a rule of its own, two rules
+       down. Bound here rather than beside its alignment, because deleting that
+       whole rule takes both declarations and would not tell the two apart. */
+    bind('approval-workflow-grid', document.querySelector('.approval-workflow-grid'),
+      'approval-workflow-grid');
     return out;
   })()`);
 
@@ -764,25 +777,47 @@ test('the approval field grid holds two columns to the same width as the evidenc
   await show(EVALS_940);
   const seen = await evaluate(`(() => {
     const grid = document.querySelector('.evidence-form-grid');
-    const columns = () => getComputedStyle(grid).gridTemplateColumns.split(' ').length;
-    const on = columns();
+    const read = () => {
+      const s = getComputedStyle(grid);
+      return { columns: s.gridTemplateColumns.split(' ').length,
+        col: s.columnGap, row: s.rowGap };
+    };
+    const on = read();
     grid.classList.remove('evidence-form-grid');
     grid.getBoundingClientRect();
-    const off = columns();
+    const off = read();
     grid.classList.add('evidence-form-grid');
     const q = document.querySelector('.q-grid');
-    return { on, off, q: q ? getComputedStyle(q).gridTemplateColumns.split(' ').length : null,
+    const qs = q ? getComputedStyle(q) : null;
+    return { on, off,
+      q: qs ? { columns: qs.gridTemplateColumns.split(' ').length,
+        col: qs.columnGap, row: qs.rowGap } : null,
       viewport: document.documentElement.clientWidth };
   })()`);
 
   assert.strictEqual(seen.viewport, 940, 'this test only says anything between 900 and 980px');
-  assert.strictEqual(seen.on, 2, 'the approval field grid should still be two columns at 940px');
-  assert.strictEqual(seen.off, 1,
+  assert.strictEqual(seen.on.columns, 2, 'the approval field grid should still be two columns at 940px');
+  assert.strictEqual(seen.off.columns, 1,
     'aria.css collapses .g2 at 980px, so with `evidence-form-grid` taken off this ' +
     'grid should fall to one column at 940px — it did not, so the rule is not what ' +
     'is holding it open');
-  assert.strictEqual(seen.q, seen.on,
+  assert.strictEqual(seen.q.columns, seen.on.columns,
     'the two field grids on this pane should behave the same way at the same width');
+
+  /* The gutter is a second declaration in the same rule and needs its own
+     reading: deleting `gap` alone leaves the column count untouched, so a
+     column-count assertion passes over it. The claim is that this grid takes
+     the same gutter as the `.q-grid` beside it, and that the rule is what
+     sets it. */
+  assert.strictEqual(seen.on.col, seen.q.col,
+    `the approval field grid's column gutter is ${seen.on.col} and the evidence ` +
+    `grid's beside it is ${seen.q.col}`);
+  assert.strictEqual(seen.on.row, seen.q.row,
+    `the approval field grid's row gutter is ${seen.on.row} and the evidence ` +
+    `grid's beside it is ${seen.q.row}`);
+  assert.notStrictEqual(seen.off.col, seen.on.col,
+    `the gutter is ${seen.off.col} with \`evidence-form-grid\` taken off as well, so ` +
+    'the rule under that selector is not what is setting it');
 
   /* The other end of the same claim. Holding the grid open at 940px is the
      rule; collapsing it at 880px is the media block, and each of the two can
