@@ -31,6 +31,12 @@
    NOT COVERED, deliberately and named rather than implied:
 
      - Layout. Nothing here measures anything, in any browser, at any width.
+     - Every reader of the sheet. The line below enumerates the PREFIXED
+       docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the two regex frames
+       over its prose; what is not enumerated anywhere is the rest, the
+       twenty-odd places this file reads the sheet's RULES through
+       declarations(). Those are read as CSS, not as prose about CSS, so
+       nothing they say can overclaim -- but no test counts them.
      - What the stylesheet LOOKS like. Nothing here renders it. The lines it
        reads as data are NON-TOKEN PAINT, AVATAR INK TOKEN, SAME FOCUS RING
        AS and DIFFERENT FOCUS RING; the rest of what THREE sections of this
@@ -46,10 +52,14 @@
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
        monorepo.
-     - That no value becomes markup. "the pane module writes no markup and no
-       style attribute" pins three spellings and nothing more; it is a
-       prohibition, not a proof. It is not the last test in the file, which
-       is what this line said until the third review of #75 read it.
+     - That no value becomes markup. The test "the pane never spells
+       innerHTML, outerHTML or insertAdjacentHTML" pins three spellings and
+       nothing more; it is a prohibition, not a proof. It is not the last
+       test in the file, which is what this line said until the third review
+       of #75 read it -- and the title it then cited belonged to three OTHER
+       suites, which the fourth review read. Citations in THIS file now carry
+       the words `The test` before the quote and are resolved, the way the
+       stylesheet's are.
      - That a browser moves focus to <body> when the focused element is
        REMOVED, or when it is DISABLED. Both are true in Chrome and neither is
        true in this harness, which has no focus model to lose. Both halves
@@ -123,15 +133,40 @@ const PANE_CSS = read('assets/pane-alerts-v2.css');
 const ARIA_CSS = read('assets/aria.css');
 const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
 
-/* The docblock lines this file reads as DATA rather than as prose. Every
-   reader goes through machineLine(), which refuses a prefix that is not
-   listed, and the NOT COVERED bullet at the top of this file is checked
-   against the list rather than counting them by hand -- it said "three"
-   while four were read, and the fourth arrived in the same commit as the
-   word three (found in the third review of antonyrugama/aria-website#75). */
+/* The PREFIXED docblock lines this file reads as DATA rather than as prose.
+   Every reader OF A PREFIXED LINE goes through machineLine(), which refuses a
+   prefix that is not listed, and the NOT COVERED bullet at the top of this
+   file is checked against the list rather than counting them by hand -- it
+   said "three" while four were read, and the fourth arrived in the same
+   commit as the word three (found in the third review of
+   antonyrugama/aria-website#75).
+
+   It said "every reader" until the fourth review, which found that the next
+   reader added after it was written -- the regex frame over the paint-stem
+   sentence -- does not read a prefixed line and so cannot go through this.
+   The other kind is enumerated separately, below. */
 const MACHINE_READ_PREFIXES = [
   'NON-TOKEN PAINT', 'AVATAR INK TOKEN', 'SAME FOCUS RING AS', 'DIFFERENT FOCUS RING',
 ];
+/* The OTHER way this file reads the sheet's docblock as data: a regex frame
+   over a PROSE sentence, which has no prefix and so cannot go through
+   machineLine(). Two exist, both over the same sentence. Enumerated, because
+   a test named for a class has to say which class -- the fourth review of #75
+   added a third frame and the suite stayed green.
+
+   The shape this catches is the whitespace-collapsing spelling below, which
+   every frame needs, because the sheet's docblock is hard-wrapped and no
+   sentence in it survives on one line. The shapes it MISSES: a frame written
+   over the raw text with `[\s\S]` or `\s+` in the pattern instead, a frame
+   over a copy taken before the collapse, and any reading of the sheet outside
+   this file. */
+const PROSE_FRAMES_OVER_THE_SHEET = [
+  'the paint stems the reader has',
+  'the stemless properties a keyword walks past on',
+  'the double-quoted test titles the sheet cites',
+];
+const FRAME_SPELLING = /PANE_CSS\.replace\(\/\\s\+\/g, ' '\)/g;
+
 const machineLine = (prefix, tail = '(.*)') => {
   assert.ok(MACHINE_READ_PREFIXES.includes(prefix),
     prefix + ' is read as data but is not on MACHINE_READ_PREFIXES');
@@ -420,11 +455,18 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
    answer from a guard is worse than no guard.
 
    NOT MODELLED, and answered anyway rather than refused, because none of it
-   is legible from the markup: focusability that CSS decides (display: none,
-   visibility: hidden), shadow DOM, and Chrome's extra tab stop for a
-   scrollable box that contains nothing focusable, which Safari does not
-   grant. The rules table depends on none of them: it carries its own
-   tabindex. */
+   is legible from ONE node's markup: focusability that CSS decides
+   (display: none, visibility: hidden), shadow DOM, and Chrome's extra tab
+   stop for a scrollable box that contains nothing focusable, which Safari
+   does not grant. The rules table depends on none of them: it carries its
+   own tabindex.
+
+   That sentence used to read "none of it is legible from the markup", which
+   was false of a fourth case it was covering: a radio group's one stop IS
+   decided by type, name and checked. The fourth review of #75 measured four
+   members this helper called tab stops that Chrome gives none to. A NAMED
+   radio is now refused rather than answered, because the group is the owner
+   form's business and not one node's; an unnamed one is answered. */
 const FOCUSABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'];
 const DISABLEABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'FIELDSET', 'OPTGROUP', 'OPTION'];
 const HREF_TAGS = ['A', 'AREA'];
@@ -570,6 +612,20 @@ function focusable(node) {
     if (!parent || parent.tagName !== 'DETAILS') return false;
     return Array.from(parent.children).find((child) => child.tagName === 'SUMMARY') === node;
   }
+  /* A radio GROUP takes one sequential tab stop between all its members --
+     the checked member, or the first member in tree order when none is
+     checked -- and every other member takes none. Which members are in the
+     group is decided by the owner FORM (two forms are two groups, and a
+     form= attribute can put a radio in a form it does not sit inside), so a
+     single node cannot answer it. This helper said `true` for every member
+     until the fourth review of #75 measured Chrome. An UNNAMED radio, or one
+     with name="", is in no group at all and always takes its own stop --
+     measured, not assumed -- so it is answered rather than refused. */
+  if (node.tagName === 'INPUT' && (attr(node, 'type') || '').toLowerCase() === 'radio'
+    && attr(node, 'name')) {
+    throw new Error('focusable() cannot tell: a radio group takes one tab stop between all '
+      + 'its members, and which members are in the group is decided by the owner form');
+  }
   return FOCUSABLE_TAGS.includes(node.tagName);
 }
 
@@ -683,6 +739,27 @@ const FOCUSABLE_PROBES = [
     note: 'FOUND IN REVIEW: true. and this is why the refusal stays BELOW the non-negative '
       + 'case: measured, bare it takes no stop and with a loaded data= it does, so the '
       + 'attribute alone does not decide it' },
+  /* Chrome, full ring walks over HTTP, fourth review of #75: of two radios
+     named the same, only ONE takes a stop -- the checked one, else the first
+     -- and two forms are two groups. All four were answered `true`. */
+  { name: '<input type="radio" name="g">', tag: 'input',
+    attrs: { type: 'radio', name: 'g' }, answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. first of an unchecked group takes the stop and every '
+      + 'other member takes none, and which members are in the group is the owner form\'s' },
+  { name: '<input type="radio" name="g" checked>', tag: 'input',
+    attrs: { type: 'radio', name: 'g', checked: '' }, answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. measured it DOES take the stop, but only because it is '
+      + 'the checked member of its group, which one node cannot see' },
+  { name: '<input type="radio">', tag: 'input', attrs: { type: 'radio' }, answer: true,
+    why: 'no name, so no group: measured, two nameless radios both take a stop' },
+  { name: '<input type="radio" name="">', tag: 'input', attrs: { type: 'radio', name: '' },
+    answer: true, why: 'name="" is no group either -- measured, both members take a stop' },
+  { name: '<input type="radio" name="g" disabled>', tag: 'input',
+    attrs: { type: 'radio', name: 'g' }, props: { disabled: true }, answer: false,
+    why: 'disabled is decided above the refusal, so the group never comes into it' },
+  { name: '<input type="radio" name="g" tabindex="-1">', tag: 'input',
+    attrs: { type: 'radio', name: 'g', tabindex: '-1' }, answer: false,
+    why: 'a negative tabindex is out of the ring whatever the group does' },
   { name: '<area href>', tag: 'area', attrs: { href: '/ops/alerts.html' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. a stop only inside a <map> a rendered <img usemap> uses' },
   { name: '<area> with no href', tag: 'area', answer: false,
@@ -763,7 +840,7 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 66, takesATabStop: 24, doesNot: 35, refused: 7, wereWrongBefore: 7, foundInReview: 19 });
+    { cases: 72, takesATabStop: 26, doesNot: 37, refused: 9, wereWrongBefore: 7, foundInReview: 21 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -2216,12 +2293,20 @@ const SHEET_QUOTES_THAT_ARE_NOT_CITATIONS = ['Still happening'];
    sheet up, not how many sentences say so. One entry is generated rather
    than typed, because the title it names is generated: it counts the sites
    on the NON-TOKEN PAINT line, so the sheet's own citation of it goes red
-   when that line changes size, and typing it here would have taken that
-   property away. */
+   when that line changes size. What generating it buys is one fewer place to
+   edit, not that property -- see the note above NON_TOKEN_PAINT_TITLE, which
+   is where that was measured. */
 /* What this binds: the named test is registered. What it does NOT bind: that
    the named test is rigorous -- gut its body and the citation still resolves
    (mutation M4-R2 on #75). Each cited test carries its own mutations; this one
-   only stops the sheet naming a test that no longer exists. */
+   only stops the sheet naming a test that no longer exists.
+
+   Two more shapes it does not see, both latent today. The scan reads STRAIGHT
+   double quotes, so a citation respelled with typographic quotes leaves the
+   set; that is caught by the identity below UNLESS the same title is cited
+   from two places, which the set comparison deliberately allows -- then one
+   of the two sites silently stops being checked. No title is doubly cited
+   at the moment. */
 const SHEET_CITATIONS = [
   'a problem card carries one severity, in the accent and both inks alike',
   'every rule switch is a real checkbox, reachable, stateful and named',
@@ -2237,6 +2322,13 @@ const SHEET_CITATIONS = [
   'the rules the sheet justifies by what the page draws name what it draws',
 ];
 
+/* The tests this file's own comments cite, pinned by identity for the same
+   reason SHEET_CITATIONS is. The bullet at the top cited a title that three
+   OTHER ops suites register and this one does not, and nothing moved, because
+   the resolver read the stylesheet and never this file (found in the fourth
+   review of #75). */
+const FILE_CITATIONS = ['the pane never spells innerHTML, outerHTML or insertAdjacentHTML'];
+
 /* The NOT COVERED bullet at the top of this file used to count the
    machine-read lines by hand, and it was one short from the commit that
    added the fourth. The count is gone: the bullet NAMES them, and the names
@@ -2251,7 +2343,8 @@ const SHEET_CITATIONS = [
    The hyphen is in that class because leaving it out made the scan blind to
    NON-TOKEN PAINT, which is the FIRST of the four; a character class is a
    shape, and a guard that anchors on one shape cannot see the others. */
-test('the NOT COVERED bullet names every docblock line this file reads as data', () => {
+test('the NOT COVERED bullet names every prefixed docblock line this file reads as data, '
+  + 'and every prose frame over it', () => {
   const bullet = /reads as data are ([\s\S]*?);/.exec(THIS_FILE);
   assert.ok(bullet, 'the NOT COVERED bullet no longer names the lines read as data');
   const namedThere = bullet[1].replace(/\s+/g, ' ').split(/, | and /);
@@ -2264,8 +2357,45 @@ test('the NOT COVERED bullet names every docblock line this file reads as data',
   assert.deepEqual([...new Set(headings)].sort(), [...MACHINE_READ_PREFIXES].sort(),
     'the sheet carries a line shaped like a machine-read one that nothing reads: '
     + headings.join(' / '));
+  /* The unprefixed kind, counted off the code rather than typed in prose. */
+  const frames = (THIS_FILE.match(FRAME_SPELLING) || []).length;
+  assert.equal(frames, PROSE_FRAMES_OVER_THE_SHEET.length,
+    'this file reads the sheet through ' + frames + ' prose frames and names '
+    + PROSE_FRAMES_OVER_THE_SHEET.length + ': a frame was added or removed without saying '
+    + 'which sentence it reads');
+
+  /* This file's OWN citations, resolved the way the stylesheet's are. The
+     marker is the words "The test" before the quote; a citation written
+     without it is invisible here, which is the shape this misses and the
+     reason FILE_CITATIONS is pinned by identity rather than by a floor. */
+  /* Built from parts rather than written as one literal, or the pattern
+     matches its own source text and this file cites `([^`. */
+  const marker = new RegExp('The' + ' test "([^"]+)"', 'g');
+  const marked = [...THIS_FILE.replace(/\s+/g, ' ').matchAll(marker)].map((m) => m[1]);
+  assert.deepEqual([...new Set(marked)].sort(), FILE_CITATIONS.slice().sort(),
+    'a comment in this file cites a test FILE_CITATIONS does not list, or stopped citing '
+    + 'one it does');
+  assert.deepEqual(marked.filter((title) => !TEST_TITLES.has(title)), [],
+    'a comment in this file names a test this file does not register, so the sentence '
+    + 'around it is prose wearing a proof pointer');
+
+  /* And the failure that got here: an UNMARKED quotation of a title that is
+     real, but belongs to another suite. Those read as proof to a person and
+     bind nothing. */
+  const foreign = new Set();
+  for (const name of readdirSync(new URL('.', import.meta.url))) {
+    if (!/^ops-.*\.test\.mjs$/.test(name) || name === 'ops-alerts-v2.test.mjs') continue;
+    for (const m of readFileSync(new URL(name, import.meta.url), 'utf8')
+      .matchAll(/^test\('([^']+)'/gm)) foreign.add(m[1]);
+  }
+  const quotedHere = [...THIS_FILE.replace(/\s+/g, ' ').matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(quotedHere.filter((q) => foreign.has(q) && !TEST_TITLES.has(q)), [],
+    'a comment in this file quotes a test title that belongs to a DIFFERENT ops suite, '
+    + 'which reads as a proof pointer and is not one');
+
   console.log('machine-read docblock lines judged: '
-    + JSON.stringify({ read: MACHINE_READ_PREFIXES.length, inSheet: headings.length }));
+    + JSON.stringify({ read: MACHINE_READ_PREFIXES.length, inSheet: headings.length,
+      proseFrames: frames, ownCitations: marked.length }));
 });
 
 test('every test the stylesheet cites by name is a test this file registers', () => {
@@ -2751,6 +2881,19 @@ test('the reader refuses what READER_PROBES says it refuses, and walks past what
       .map((probe) => probe.stemless).sort(),
       'the sheet names a stemless property this file never probes, or stops naming one it '
       + 'does -- the prose and the probes have drifted apart');
+
+    /* The OTHER half of the same sentence enumerates PAINT_STEMS, and it was
+       unread for exactly as long as the stemless half was: the sheet could
+       name a stem the reader does not have, or the reader could lose one the
+       sheet names, and nothing moved (found in the fourth review of #75).
+       Same device, same frame caveat. */
+    const stems = PANE_CSS.replace(/\s+/g, ' ')
+      .match(/carries a paint stem \(([a-z, -]+)\), so a keyword/);
+    assert.ok(stems, 'the sheet no longer names the paint stems in the frame this test '
+      + 'reads, so nothing is checking that list either');
+    assert.deepEqual(stems[1].split(', ').sort(), PAINT_STEMS.slice().sort(),
+      'the sheet names a paint stem the reader does not use, or the reader uses one the '
+      + 'sheet does not name');
   });
 
 /* Every atom this sheet paints with that is NOT a token aria.css declares,
@@ -3009,7 +3152,16 @@ const blend = (a, b, t) => a.map((v, i) => v * (1 - t) + b[i] * t);
 /* The two theme blocks aria.css declares, with one level of var() resolved:
    the dark theme writes --cyan-ink: var(--cyan) and the light one writes a
    hex. A token that is not an opaque hex -- --line is an rgba() -- comes back
-   null and is not offered as an ink. */
+   null.
+
+   `readable` is the set the AA sweep below can actually try: a null is NOT a
+   rejection, and scoring it as one is how the sweep used to report "no token
+   could have made this ink" while never having looked at thirteen of them.
+   UNREADABLE_TOKENS names every one it cannot read, so a new token in a
+   spelling this resolver does not handle fails the suite instead of being
+   silently counted as tried (found in the fourth review of
+   antonyrugama/aria-website#75, with --rv-stand: rgb(0, 0, 0) -- the same
+   colour as #000000, which IS read and DOES stand in). */
 function themeTokens(css) {
   const rows = declarations(css).filter((d) => d.property.startsWith('--'));
   const of = (selector) => new Map(
@@ -3023,12 +3175,36 @@ function themeTokens(css) {
     if (ref) return resolve(table, ref[1], (depth || 0) + 1);
     return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(raw) ? rgbOf(raw) : null;
   };
+  const names = [...new Set([...dark.keys(), ...light.keys()])];
   return {
-    names: [...new Set([...dark.keys(), ...light.keys()])],
+    names,
+    readable: names.filter((name) => resolve(dark, name) && resolve(light, name)),
     dark: (name) => resolve(dark, name),
     light: (name) => resolve(light, name),
   };
 }
+
+/* Every token aria.css declares that the resolver above cannot turn into a
+   colour, and why. deepEqual, so adding a token in an unhandled spelling is a
+   red suite rather than a thirteenth silent drop. Three of these ARE colours
+   -- CSS would take them in a color-mix() perfectly well; they are here
+   because the resolver reads opaque hex only, not because the mix would
+   refuse them. */
+const UNREADABLE_TOKENS = [
+  { name: '--line', why: 'a colour, but a translucent rgba()' },
+  { name: '--line-2', why: 'a colour, but a translucent rgba()' },
+  { name: '--edge', why: 'a colour, but a translucent rgba()' },
+  { name: '--shadow-1', why: 'a shadow list: offsets, a blur and an rgba()' },
+  { name: '--shadow-2', why: 'a shadow list, two of them' },
+  { name: '--shadow-3', why: 'a shadow list, two of them' },
+  { name: '--r-sm', why: 'a length' },
+  { name: '--r', why: 'a length' },
+  { name: '--r-lg', why: 'a length' },
+  { name: '--r-xl', why: 'a length' },
+  { name: '--rail', why: 'a length' },
+  { name: '--sans', why: 'a font stack' },
+  { name: '--mono', why: 'a font stack' },
+];
 
 /* The only raw colour word the sheet is allowed. Spelled out so that changing
    the exception to a different keyword fails here rather than going
@@ -3111,17 +3287,23 @@ test('the avatar ink is the one paint no aria.css token could have made', () => 
      behind the card cannot rescue any of them. */
   /* The sweep's EXTENT, not only its verdict: "the same test tries every one
      of them" is green over an empty list too, so the candidate set is pinned
-     before it is filtered. aria.css declares 33 custom properties; the ones
-     dropped here are radii, fonts, the rail width and the translucent
-     hairlines, which are not colours a mix could take. */
-  assert.ok(tokens.names.length > 20,
-    'the AA sweep is down to ' + tokens.names.length + ' candidate tokens, so passing it '
-    + 'no longer means what the sheet says it means');
+     before it is filtered -- and pinned on the tokens actually TRIED, not on
+     the tokens declared, which is a number thirteen unreadable tokens cannot
+     move. Every name the resolver drops is enumerated and named, rather than
+     described by a category. */
+  const notRead = tokens.names.filter((name) => !tokens.readable.includes(name));
+  assert.deepEqual(notRead.slice().sort(), UNREADABLE_TOKENS.map((t) => t.name).sort(),
+    'aria.css declares a token this resolver cannot read and UNREADABLE_TOKENS does not '
+    + 'name, so the sweep would score it as rejected without ever trying it');
+  const sweep = { declared: tokens.names.length, tried: tokens.readable.length,
+    notRead: notRead.length };
+  assert.deepEqual(sweep, { declared: 33, tried: 20, notRead: 13 });
+  console.log('avatar ink sweep judged: ' + JSON.stringify(sweep));
 
-  const couldStandIn = tokens.names.filter((name) => ['dark', 'light'].every((theme) => {
+  const couldStandIn = tokens.readable.filter((name) => ['dark', 'light'].every((theme) => {
     const toward = tokens[theme](name);
     const base = tokens[theme](inkToken);
-    if (!toward || !base) return false;
+    assert.ok(toward && base, 'a token on the readable list did not resolve: ' + name);
     return ratio(blend(toward, base, share), worstTile(theme)) >= AA;
   }));
   assert.deepEqual(couldStandIn, [],

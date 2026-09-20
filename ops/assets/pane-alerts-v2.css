@@ -52,9 +52,12 @@
    passing as the same entry. And `.av`'s ink mixes the token on the second
    line toward `black`, which is the one real exception. The avatar tile is an
    opaque gradient of that same token in BOTH themes and its ink has to clear
-   AA against both, and no token aria.css declares can do that — every one of
-   them is tried in that mix to say so ("the avatar ink is the one paint no
-   aria.css token could have made"), rather than being asserted here. Both
+   AA against both, and no token aria.css declares can do that — every token
+   the sweep can read is tried in that mix to say so ("the avatar ink is the
+   one paint no aria.css token could have made"), rather than being asserted
+   here. The ones it cannot read are named one by one in UNREADABLE_TOKENS,
+   so a new token in an unhandled spelling fails the suite instead of being
+   counted as tried. Both
    lines are deepEqual to what the sheet paints, so on a paint-named property
    a third spelling, a moved one or a renamed token fails the suite rather
    than joining the list quietly.
@@ -91,8 +94,10 @@
      - that :focus-visible, spelled exactly so and in one origin, is where
        aria.css's global ring comes from. The width and offset read below are
        resolved by importance and then by order within that; a ring painted
-       by some other selector, or by a user or agent sheet, is not modelled
-       and would not be noticed;
+       by some other selector, by a user or agent sheet, or inside an
+       @media block — whose condition the reader discards, so a gated rule
+       would be read as an ungated later one — is not modelled and would not
+       be noticed;
      - every layout rule below, bar three: .scrollx's own overflow-x, which
        the focus-ring test reads to find the box it belongs to, and the two
        justified by what the page draws — six columns and the words in the
