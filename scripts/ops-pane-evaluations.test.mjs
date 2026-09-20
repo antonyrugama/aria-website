@@ -891,16 +891,20 @@ for (const scenario of [
 
    NOT COVERED here, deliberately, and not implied to be:
 
-     - Laid-out geometry, and it has NO automated guard anywhere. The stub has
-       no layout, so nothing about the dashed hairline, the hatch, the contrast
-       of the preview or its behaviour at a phone width is asserted here. Nor
-       is it asserted elsewhere: check-ops-shell-v2.mjs loads this page and
-       asserts it renders with no console error, which stays true when the
-       preview is widened past the viewport, and check-ops-narrow-overflow.mjs
-       sweeps the Problems pane, not this one. The 390px and 375px numbers on
-       the PR are MEASUREMENTS taken once by hand, not regression tests: a
-       later change can break this pane's narrow layout and every check in
-       this repository will stay green.
+     - Laid-out geometry, except the width of the document. The stub has no
+       layout, so nothing about the dashed hairline, the hatch or the contrast
+       of the preview is asserted here, and check-ops-shell-v2.mjs only asserts
+       this page renders with no console error, which stays true when the
+       preview is widened past the viewport. One thing is guarded, since
+       Stadiora/Aria#10492: check-ops-narrow-overflow.mjs lays this page out at
+       375px and 360px in both themes and fails if the DOCUMENT scrolls
+       sideways, which is what this pane's 95-character registry filterNote
+       does when shell-pane-v2.css's `.filter-note { white-space: normal }` is
+       taken away — measured, scrollWidth 514 against a 375px viewport, the
+       note named as the offender. Anything finer than the document width — an
+       element that overruns inside a container that clips it, the 390px
+       reading on the PR — is still a hand-run number and not a regression
+       test.
      - The CSS that draws the stamp. These assert the word and the class the
        pane writes, not what pane-evaluations-v2.css paints them.
      - That INVENTED_FIGURES and INVENTED_PHRASES are COMPLETE. They are two

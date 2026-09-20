@@ -77,9 +77,11 @@
 
      - anything about layout, width, overflow or contrast. Nothing here
        measures anything; scripts/check-ops-narrow-overflow.mjs measures, and
-       it is pinned to /ops/alerts.html and does not visit this page. The
-       narrow-width readings for this pane are in the pull request as hand-run
-       numbers, not as a guard.
+       since Stadiora/Aria#10492 it does lay this page out — at 375px and
+       360px, in both themes, in the state it has before a lookup is
+       submitted, which is the only state it serves without one. Nothing
+       measures a result view, and nothing anywhere measures contrast on this
+       pane.
      - whether a CSS rule RENDERS. Node has no layout engine, so nothing here
        can tell a rule that applies from one that is overridden, and no
        assertion in this file reads a computed style. What the pane draws is

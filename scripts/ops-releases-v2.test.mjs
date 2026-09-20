@@ -48,10 +48,12 @@
    NOT COVERED by any published mutation, and stated rather than implied:
 
      - anything about layout, width or overflow. Nothing here measures
-       anything; scripts/check-ops-narrow-overflow.mjs measures, and it is
-       pinned to /ops/alerts.html and does not visit this page. The 320px and
-       375px readings for this pane are in the pull request as hand-run
-       numbers, not as a guard.
+       anything; scripts/check-ops-narrow-overflow.mjs measures, and since
+       Stadiora/Aria#10492 it does lay this page out — at 375px and 360px, in
+       both themes, against a stub of the release shapes below. What it reads
+       is the width of the document, so an overflow of the page is caught and
+       nothing finer is. The 320px readings for this pane are in the pull
+       request as hand-run numbers, not as a guard.
      - whether a CSS rule RENDERS. Node has no layout engine. The rule that
        drops the duplicate share from a key whose bucket already carries a
        chip is half markup and half stylesheet, and the test below proves only

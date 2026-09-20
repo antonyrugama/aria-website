@@ -85,6 +85,16 @@
      before any operation is submitted**. Both panes start as forms with no
      result, which is their real loaded state; neither result view is laid out
      here.
+   - **An overflow a container clips.** The verdict is the width of the
+     document, so an element that overruns inside an ancestor that clips it
+     never reaches the document and is invisible here on every pane. Measured:
+     deleting the four per-pane copies of `.hero > .hero-chips { grid-column:
+     1 / -1 }` collapses the hero's title column to 0px on three panes and to
+     41px on App releases, and `.hero` itself then reports scrollWidth 398
+     against clientWidth 343 — while `documentElement.scrollWidth` stays 375
+     and this check stays green, byte-identically, in both states. That defect
+     class needs an element-level check and is filed as Stadiora/Aria#10397
+     rather than folded in.
    - **Sub-pixel overflow.** The verdict is `documentElement.scrollWidth`
      against `documentElement.clientWidth`, and both are integers, so overflow
      below about half a pixel is not visible to it. The per-element report
@@ -419,7 +429,12 @@ const PROBLEM = {
    something is submitted, so their markers pin the pane's own static prose and
    nothing more. People and usage and Cloud costs are measured in the empty
    state their stubbed read produces, which is what WHAT THIS DOES NOT COVER
-   above already says; their markers pin that empty card, not a populated one. */
+   above already says; their markers pin that empty card, not a populated one.
+
+   A pane that changes these words turns this red. That is the mechanism, not a
+   side effect: the markers are kept in step by hand, on the same terms as the
+   fixtures they are taken from, and a pane remodel that moves one is meant to
+   come past this file. */
 const PROOF = {
   /* SUMMARY.people.platform.active and SUMMARY.release.platforms[0].versionName,
      both of which the failure card replaces with "Not reported". */
@@ -430,7 +445,7 @@ const PROOF = {
      reference. Both sit in the action row this check measures. */
   alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
   analytics: ['No app reported over this window'],
-  spend: ['This answer carried no billed total'],
+  spend: ['carried no billed total'],
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
