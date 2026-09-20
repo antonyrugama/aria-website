@@ -1125,6 +1125,19 @@ test('the day chart carries an x axis of the dates the route labelled', async ()
   const row = byClass(livePanel(dom), 'sp-xaxis-row')[0];
   assert.ok(row, 'the strip sits in the row that carries the drawing\'s own gutter');
   assert.ok(findAll(row, (n) => n === axis).length === 1, 'and the dates are inside it');
+
+  /* In that order. The empty cell reserves the width of the money scale, so
+     the strip after it starts where the drawing's plot starts. Swap the two
+     and the strip is still exactly as wide as the plot -- every width
+     assertion below still holds -- but it starts a whole gutter plus gap to
+     the left of it, and every date is 66.0px off its day at 1440px, 60.0px
+     at 320px, measured in Chrome. Membership is not order. */
+  const cells = row.children;
+  assert.equal(cells.length, 2, 'the row is the reserved cell and the strip, nothing else');
+  assert.match(cells[0].getAttribute('class') || '', /\bsp-xaxis-gutter\b/,
+    'the reserved cell comes first, or the strip does not start where the plot starts');
+  assert.equal(cells[1], axis, 'and the dates are the cell after it');
+
   assert.equal(row.getAttribute('aria-hidden'), 'true',
     'and it is hidden from the reader, because the chart\'s own name already carries the dates');
 });
@@ -1385,25 +1398,88 @@ test('a percentage on a date is a position at all only because of five declarati
                                          instead of centred: +8.45% at 320px
 
      Nothing in this file can see any of that -- the harness does not lay out.
-     What it can do is refuse to let the five leave silently. */
+     What it can do is refuse to let the five stop applying. Not "leave":
+     a declaration does not have to be deleted to stop applying. Appending
+     `.sp-xaxis { position: static }` to this sheet, or adding `position:
+     static` to the `.sp-xaxis` rule in the 420px block, each produce geometry
+     byte-identical to deleting `position: relative` outright -- 7.75% at
+     1440px, 38.34% at 320px, the same pixels either way. So these are
+     resolved rather than found: every rule whose subject is one of the three
+     elements, in the base sheet AND in every media block, must agree. There
+     is no width at which the strip stops placing its dates, so there is no
+     media block in which one of the five may say something else. */
+
+  /* The subject of a selector is its last compound -- `.sp-xaxis span` and
+     `.sp-xaxis-loose span` both style a span, but only the first styles a
+     span of the positioned strip, and `.sp-xaxis-row` is not `.sp-xaxis`
+     however much of it the string shares. */
+  const CLASS_END = '(?![-\\w])';
+  const lastCompound = (selector) => selector.split(/[\s>+~]+/).filter(Boolean).pop() || '';
+  const subject = (className, tail) => (rule) => rule.selectors.some((raw) => {
+    const sel = raw.trim();
+    const own = new RegExp('(^|[^-\\w])\\.' + className + CLASS_END);
+    if (tail) return own.test(sel) && /(^|[\s>+~])span(?![-\w])/.test(lastCompound(sel));
+    return own.test(lastCompound(sel));
+  });
+
+  const declarations = (body) => {
+    const out = new Map();
+    body.split(';').forEach((chunk) => {
+      const at = chunk.indexOf(':');
+      if (at === -1) return;
+      const prop = chunk.slice(0, at).trim().toLowerCase();
+      const value = chunk.slice(at + 1).trim();
+      if (/^[-a-z]+$/.test(prop) && value) out.set(prop, value);
+    });
+    return out;
+  };
+
   const REQUIRED = [
-    ['.sp-xaxis-row', /^\.sp-xaxis-row$/, /(?:^|[;{\s])display:\s*flex\b/,
+    ['.sp-xaxis-row', subject('sp-xaxis-row'), 'display', /^flex$/,
       'the row is a flex row, so its first cell can reserve the scale column'],
-    ['.sp-xaxis', /^\.sp-xaxis$/, /(?:^|[;{\s])position:\s*relative\b/,
+    ['.sp-xaxis', subject('sp-xaxis'), 'position', /^relative$/,
       'the strip is what a percentage inside it resolves against'],
-    ['.sp-xaxis', /^\.sp-xaxis$/, /(?:^|[;{\s])flex:\s*1\b/,
+    ['.sp-xaxis', subject('sp-xaxis'), 'flex', /^1(\s|$)/,
       'the strip fills the rest of the row, which is what makes it the plot\'s width'],
-    ['.sp-xaxis span', /^\.sp-xaxis span$/, /(?:^|[;{\s])position:\s*absolute\b/,
+    ['a date', subject('sp-xaxis', 'span'), 'position', /^absolute$/,
       'a date is placed by its own left, not by the date before it'],
-    ['.sp-xaxis span', /^\.sp-xaxis span$/, /transform:\s*translateX\(-50%\)/,
+    ['a date', subject('sp-xaxis', 'span'), 'transform', /^translateX\(-50%\)$/,
       'and sits centred on its day rather than starting at it'],
   ];
 
-  REQUIRED.forEach(([name, selector, declaration, why]) => {
-    const rules = RULES.filter((r) => !r.media && r.targets(selector));
-    assert.ok(rules.length > 0, 'the base stylesheet styles ' + name);
-    assert.ok(rules.some((r) => declaration.test(r.body)),
-      name + ' has lost ' + declaration.source + ': ' + why);
+  REQUIRED.forEach(([name, matches, property, wanted, why]) => {
+    const rules = RULES.filter(matches);
+    assert.ok(rules.length > 0, 'the stylesheet styles ' + name);
+    const said = rules
+      .map((r) => ({ media: r.media, value: declarations(r.body).get(property) }))
+      .filter((one) => one.value !== undefined);
+    assert.ok(said.length > 0,
+      name + ' has lost ' + property + ': ' + why);
+    said.forEach((one) => {
+      assert.match(one.value, wanted,
+        name + ' is given ' + property + ': ' + one.value + ' in '
+        + (one.media || 'the base sheet') + ', so ' + why.replace(/^the |^a /, 'the ')
+        + ' stops being true at that width');
+    });
+    assert.ok(said.some((one) => !one.media),
+      name + ' is only given ' + property + ' inside a media block, so it is unset '
+      + 'at every other width: ' + why);
+  });
+
+  /* Six, not five: every date is out of flow, so the strip's content gives
+     its box no height at all. Deleting this takes the row from 14.17px to 0
+     and puts the lowest date 1.75px past the card's own bottom edge. In em,
+     so it follows the font size the same rule sets rather than a pixel guess
+     that stops matching it. */
+  const heights = RULES.filter(subject('sp-xaxis'))
+    .map((r) => ({ media: r.media, value: declarations(r.body).get('min-height') }))
+    .filter((one) => one.value !== undefined);
+  assert.ok(heights.some((one) => !one.media),
+    'the strip reserves its own height in the base sheet, or the row collapses to nothing');
+  heights.forEach((one) => {
+    assert.match(one.value, /em$/,
+      'the strip\'s height is stated in em in ' + (one.media || 'the base sheet')
+      + ', so it follows the font size rather than a fixed pixel guess');
   });
 
   /* And the fallback strip, which claims no position, must undo exactly the
@@ -1413,6 +1489,21 @@ test('a percentage on a date is a position at all only because of five declarati
   assert.ok(loose, 'the unpositioned strip restyles its dates');
   assert.match(loose.body, /position:\s*static/);
   assert.match(loose.body, /transform:\s*none/);
+
+  /* The fallback's own box, too. h() appends its children with no whitespace
+     between them, so in that state the gap is the only thing separating one
+     date from the next: delete these three and six dates render as one
+     unbroken string (measured 12px between adjacent dates, 0px without). */
+  const looseBox = RULES.filter((r) => !r.media && r.targets(/^\.sp-xaxis-loose$/))[0];
+  assert.ok(looseBox, 'the unpositioned strip has a box of its own');
+  const looseDecls = declarations(looseBox.body);
+  assert.equal(looseDecls.get('display'), 'flex',
+    'the unpositioned strip lays its dates out in a row');
+  assert.equal(looseDecls.get('flex-wrap'), 'wrap',
+    'that wraps, because it has no width to spread over');
+  const looseGap = /(\d*\.?\d+)\s*px\s*$/.exec(looseDecls.get('gap') || '');
+  assert.ok(looseGap && Number(looseGap[1]) > 0,
+    'and separates one date from the next, which nothing else in that state does');
 });
 
 test('the date strip is laid out in the same box as the drawing it labels', () => {
@@ -1440,15 +1531,29 @@ test('the date strip is laid out in the same box as the drawing it labels', () =
       + ', so the strip under it no longer starts where the drawing starts');
   });
 
-  const declared = (selector) => {
-    const rule = RULES.filter((r) => !r.media && r.targets(selector))[0];
-    assert.ok(rule, 'the stylesheet styles ' + selector);
-    const gap = /(?:^|[;{\s])gap:\s*([^;]+)/.exec(rule.body);
-    assert.ok(gap, selector + ' sets the gap between the gutter and what follows it');
-    return gap[1].trim();
+  /* The gap, in every media context either row declares one -- the strip and
+     the drawing must put the SAME gap after their gutter cell at every width,
+     not only in the base sheet. Adding `.sp-chart-wrap { gap: 4px }` to the
+     720px block drifts every date 4.0px from its day below that breakpoint,
+     which the base-sheet-only version of this assertion could not see. */
+  const gapsOf = (selector) => {
+    const found = RULES.filter((r) => r.targets(selector))
+      .map((r) => ({ media: r.media, gap: /(?:^|[;{\s])gap:\s*([^;]+)/.exec(r.body) }))
+      .filter((one) => one.gap)
+      .map((one) => [one.media || '', one.gap[1].trim()]);
+    assert.ok(found.length > 0, selector + ' sets the gap between the gutter and what follows it');
+    return new Map(found);
   };
-  assert.equal(declared(/^\.sp-xaxis-row$/), declared(/^\.sp-chart-wrap$/),
-    'the strip and the drawing put the same gap after their gutter cell');
+  const rowGaps = gapsOf(/^\.sp-xaxis-row$/);
+  const chartGaps = gapsOf(/^\.sp-chart-wrap$/);
+  assert.ok(rowGaps.has('') && chartGaps.has(''),
+    'both rows state their gap in the base sheet, or one of them inherits nothing');
+  const contexts = new Set([...rowGaps.keys(), ...chartGaps.keys()]);
+  contexts.forEach((media) => {
+    assert.equal(rowGaps.get(media) || rowGaps.get(''), chartGaps.get(media) || chartGaps.get(''),
+      'the strip and the drawing put the same gap after their gutter cell in '
+      + (media || 'the base sheet'));
+  });
 });
 
 test('both lines on the day chart are named, so the dashed one is not just a texture', async () => {
