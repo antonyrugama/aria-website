@@ -1,0 +1,248 @@
+/* =========================================================================
+   Aria Operations — Problems pane (v2)
+   Loaded after assets/aria.css and assets/shell-pane-v2.css, on
+   ops/alerts.html and nowhere else.
+
+   Adapted from docs/mocks/ops-dashboard-v2/assets/pane-operate.css in the Aria
+   monorepo, narrowed to the shapes this one pane uses. The mock groups pane
+   CSS by workflow band; four panes are being remodelled at once, so each takes
+   its own file instead and a later issue can consolidate. Anything aria.css
+   already declares is used from there rather than copied.
+
+   No new colour value. Every rule here paints in a token aria.css declares,
+   which is the palette that was made WCAG AA by construction (monorepo
+   #10042). Status text takes the -ink variant of its tone, because the base
+   colour is the tint and the -ink is the text on that tint.
+
+   Nothing here carries a status by colour alone. Every tinted thing on this
+   page — a card's accent, a severity in ink, a switch, a dot — sits beside the
+   same fact in words, written by assets/pane-alerts.js.
+   ========================================================================= */
+
+/* --------------------------------------------------------------- the hero */
+
+/* aria.css drops the hero to two columns below 980px and moves its third
+   child to a row of its own — written against the mock, where that child is a
+   .row. Here it is the chip strip. */
+@media (max-width: 980px) {
+  .hero > .hero-chips { grid-column: 1 / -1; }
+}
+
+/* ------------------------------------------------------------ severity ink
+
+   The accent down a problem card, the ink on its title and the glyph beside
+   it are three sightings of one fact, so assets/pane-alerts.js derives all
+   three from the model's severity tone rather than setting them apart. */
+
+.is-crit { color: var(--rose-ink); }
+.is-warn { color: var(--amber-ink); }
+.is-info { color: var(--blue-ink); }
+
+/* aria.css declares .acc-bad and .acc-warn; info problems need the blue. */
+.acc-blue { --acc: var(--blue); }
+
+/* ------------------------------------------------------------ the problems
+
+   One card per problem, in a column. The card is the accent shape aria.css
+   already has, so only the inside of it is declared here. */
+
+.p-list { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+.p-item .card-body { display: flex; flex-direction: column; gap: 13px; }
+.p-body { padding: 15px 16px 15px 18px; }
+
+.p-head { display: flex; align-items: flex-start; gap: 10px; }
+.p-ico { width: 16px; height: 16px; flex: none; margin-top: 3px; }
+.p-title { font-size: 14px; font-weight: 580; line-height: 1.35; }
+.p-desc { font-size: 11.5px; color: var(--ink-3); line-height: 1.55; }
+
+/* The condition pill sits at the end of the head row and keeps its width:
+   "Still happening" wrapping to two words over a long title is the one piece
+   of the row that must stay readable at a glance. */
+.p-head > .pill { flex: none; margin-left: auto; }
+.p-live { white-space: nowrap; }
+
+/* --------------------------------------------------------- what it measured
+
+   Three columns of label-and-value rows. No meter: the answer carries an
+   observed value and a threshold, and the bar between them would need a full
+   scale nothing sends. */
+
+.p-facts { gap: 12px; }
+.p-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.p-col-label { font-size: 11.5px; color: var(--ink-3); }
+.p-fact {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px;
+  font-size: 11.5px;
+}
+.p-fact-v { color: var(--ink-2); text-align: right; }
+
+/* ------------------------------------------------------------- who has it */
+
+.p-foot { display: flex; flex-direction: column; }
+.p-foot-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.p-actions { margin-left: auto; }
+
+.av {
+  width: 24px; height: 24px; flex: none;
+  border-radius: 8px;
+  display: grid; place-items: center;
+  font-size: 9.5px; font-weight: 640; letter-spacing: .02em;
+  color: color-mix(in srgb, var(--cyan) 20%, black);
+  background: linear-gradient(145deg, var(--cyan-lit), var(--cyan));
+}
+
+/* ----------------------------------------------------------- the details */
+
+.p-detail {
+  margin-top: 11px;
+  padding: 13px 14px;
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.p-detail-title {
+  font-size: 9.5px; font-weight: 620; letter-spacing: .11em;
+  text-transform: uppercase; color: var(--ink-3);
+  margin-bottom: 7px;
+}
+.p-detail-title:not(:first-child) { margin-top: 15px; }
+
+.p-steps {
+  margin: 0; padding-left: 18px;
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 11.5px; color: var(--ink-2); line-height: 1.55;
+}
+
+.p-log {
+  margin: 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.p-log-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 11px;
+  font-size: 11.5px; color: var(--ink-2); line-height: 1.55;
+}
+.p-log-when { color: var(--ink-3); white-space: nowrap; }
+
+/* The note somebody wrote when they closed it. Set apart because it is the
+   one line in the record that is a person talking rather than the system
+   reporting. */
+.p-log-note {
+  margin-top: 4px;
+  padding-left: 9px;
+  border-left: 2px solid var(--line-2);
+  color: var(--ink);
+  line-height: 1.55;
+}
+
+@media (max-width: 560px) {
+  .p-log-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
+/* ---------------------------------------------------------- closing one */
+
+.p-close {
+  margin-top: 11px;
+  padding: 13px 14px;
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+  display: flex; flex-direction: column; gap: 11px;
+}
+.p-field { display: flex; flex-direction: column; gap: 6px; }
+.p-label { font-size: 11.5px; color: var(--ink-3); }
+.p-close textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.p-close textarea:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------- footnotes */
+
+.p-notes { display: flex; flex-direction: column; gap: 6px; }
+.note-line { font-size: 11.5px; color: var(--ink-3); line-height: 1.55; }
+
+/* ---------------------------------------------------------- the rules table
+
+   A wide table scrolls rather than crushing its own columns. .rules-card
+   allows that: a grid or flex item refuses to shrink below its content by
+   default, so without min-width the card grows to the table's width and takes
+   the page with it. scripts/check-ops-narrow-overflow.mjs measures exactly
+   this at 375px. */
+
+.rules-card { min-width: 0; }
+.scrollx { overflow-x: auto; }
+.scrollx > .tbl { min-width: 760px; }
+
+/* Six columns in 760px leaves the rule's name in a strip barely wider than
+   one word, which turns every row into a paragraph. Percentage widths do not
+   fix it: `table-layout: auto` treats them as hints and keeps shrinking the
+   column to its longest word. Refusing to break the name raises the column's
+   own minimum instead, which the auto algorithm has to honour. */
+.rules-card .tbl td:first-child .t-main { white-space: nowrap; }
+.rules-card .tbl td:nth-child(2) { min-width: 150px; }
+
+/* ---------------------------------------------------------------- switch
+
+   A real checkbox carrying role="switch", so it is focusable, announced with
+   its state and named by the rule it belongs to. The mock draws a <button>
+   with an <i> inside; an input cannot hold a child, so the knob is ::after. */
+
+.sw {
+  position: relative;
+  appearance: none; -webkit-appearance: none;
+  width: 34px; height: 19px; flex: none;
+  margin: 0; padding: 0; border: 0; border-radius: 20px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+  cursor: pointer;
+  transition: background .16s, box-shadow .16s;
+}
+.sw::after {
+  content: '';
+  position: absolute; top: 2.5px; left: 2.5px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--ink-3);
+  transition: transform .16s, background .16s;
+}
+.sw:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--line-2); }
+.sw:checked {
+  background: color-mix(in srgb, var(--cyan) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 45%, transparent);
+}
+.sw:checked::after {
+  transform: translateX(15px);
+  background: var(--cyan);
+}
+.sw:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.sw:disabled { opacity: .55; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sw, .sw::after { transition: none; }
+}
+
+/* ------------------------------------------------- closed, and the watching */
+
+.c-side { display: flex; flex-direction: column; gap: 16px; }
+.c-list { display: flex; flex-direction: column; }
+.c-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; }
+.c-row > .dot { margin-top: 6px; }
+.c-title { font-size: 12.5px; font-weight: 580; line-height: 1.35; }
+
+.w-rows { display: flex; flex-direction: column; gap: 7px; }
+.c-route { display: flex; align-items: center; gap: 10px; }
+.c-route > .pill { flex: none; }

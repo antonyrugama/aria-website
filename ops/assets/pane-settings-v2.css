@@ -1,0 +1,197 @@
+/* =========================================================================
+   Aria Operations — Settings pane (v2)
+   Loaded after assets/aria.css and assets/shell-pane-v2.css, on
+   ops/settings.html and nowhere else.
+
+   Adapted from docs/mocks/ops-dashboard-v2/assets/pane-ship.css in the Aria
+   monorepo, narrowed to the shapes this one pane uses. The mock groups pane
+   CSS by workflow band; several panes are being remodelled at once, so each
+   takes its own file instead and a later issue can consolidate. Anything
+   aria.css already declares is used from there rather than copied.
+
+   No new colour value. Every rule here paints in a token aria.css declares,
+   which is the palette that was made WCAG AA by construction (monorepo
+   #10042 and #10293). Status text takes the -ink variant of its tone, because
+   the base colour is the tint and the -ink is the text on that tint.
+   ========================================================================= */
+
+/* ------------------------------------------------- live against not wired
+
+   The one thing this pane must never do is make a card with an API behind it
+   and a card with nothing behind it look the same. Six areas are on screen and
+   only three of them are read from anywhere, so the distinction is drawn three
+   times over and never once in colour alone:
+
+     1. the source chip in every card head says the word, "Live" or "No API yet";
+     2. a card with no source behind it is hatched rather than lit — no top
+        edge, a dashed hairline, and a flat surface instead of the gradient
+        that makes a live panel read as a raised object;
+     3. a card with no source behind it prints no figure at all. It says what
+        is missing and why, and a number nobody can read is a number nobody
+        invents.
+
+   Colour carries none of it. Both chips are the same neutral ghost pill, so a
+   person who cannot tell the two panels apart still reads the word. */
+
+.card[data-source='static'] {
+  background: none;
+  background-color: color-mix(in srgb, var(--bg) 45%, transparent);
+  box-shadow: none;
+  border: 1px dashed var(--line-2);
+}
+/* The lit top edge is what makes a live panel read as a raised object, so the
+   panel with nothing behind it does not get one. */
+.card[data-source='static']::before { display: none; }
+
+/* Hatching, behind the content rather than over it, so nothing it sits under
+   loses contrast. The stripe is ink at 4%, which is lighter than the 6% of
+   .state-icon's own fill in aria.css, so the block reads on top of it. */
+.card[data-source='static'] > .card-body {
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--ink) 4%, transparent) 0 6px,
+    transparent 6px 14px);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+
+.src-chip { white-space: nowrap; }
+
+/* What a card with nothing behind it says instead of a figure: which of "not
+   built" and "not reported" applies, and where the answer does live. Sized
+   below the body default, because it is the explanation of an absence rather
+   than a finding. */
+.static-line {
+  font-size: 12.5px; line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 62ch;
+}
+.static-line + .static-line { margin-top: 9px; }
+
+/* ------------------------------------------------------------ wide tables
+
+   Each of the three tables on this pane carries five or six columns of an
+   administrator's record, and .tbl th is nowrap, so on a phone a table is
+   wider than its card whatever the copy says. Scrolling the table inside its
+   own card is the alternative to scrolling the whole document sideways.
+
+   A scrollable box has to be reachable from a keyboard, or the rows past the
+   edge belong to a pointer only, so every one of these is a labelled region
+   with a tab stop. */
+.tbl-wrap { overflow-x: auto; }
+.tbl-wrap:focus-visible { outline-offset: -2px; }
+
+/* A table flush against the top of a card has no head above it to space it
+   off; one that follows a card head does. */
+.card-head + .tbl-wrap .tbl th { padding-top: 14px; }
+
+/* ------------------------------------------------------------ table cells */
+
+/* The written reason on an access-record row is the only free text on the
+   pane and the only column worth reading in full. Everything else in .tbl is
+   laid out to stay on one line. */
+.cell-wrap { white-space: normal; min-width: 160px; }
+.cell-nowrap { white-space: nowrap; }
+
+/* A row's actions sit at the right edge, under a right-aligned header. */
+.cell-act { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+
+/* ------------------------------------------------------------- rule lists
+
+   What holds true about a window whose number nobody can read yet. Rendered as
+   a list rather than as more sentences, because these are the rules that
+   survive the trim and a reader has to be able to find them again. */
+.rules {
+  display: flex; flex-direction: column; gap: 9px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.rules li {
+  display: flex; gap: 9px; align-items: flex-start;
+  list-style: none;
+  font-size: 12.5px; line-height: 1.55;
+  color: var(--ink-2);
+}
+.rules li svg { margin-top: 3px; color: var(--ink-3); }
+
+/* ------------------------------------------------------------ the dialog
+
+   Nothing destructive on this pane fires without a confirmation carrying a
+   written reason, and the session layer's own re-authentication prompt is the
+   shape it follows. aria.css declares .scrim for the phone rail drawer and
+   nothing for a modal, so the panel itself is here.
+
+   Wired as a dialog rather than styled as one: focus is trapped, Escape
+   closes, focus goes back where it came from, and everything behind it is
+   inert. assets/settings.js owns that half. */
+.modal {
+  position: fixed;
+  z-index: 60;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border-radius: var(--r-lg);
+  padding: 20px 22px;
+  background: linear-gradient(168deg, var(--surface-2), var(--surface) 62%);
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--shadow-3);
+}
+.modal-title { font-size: 15px; font-weight: 580; letter-spacing: -.012em; }
+.modal-line { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; margin-top: 8px; }
+.modal-label { display: block; font-size: 12px; color: var(--ink-2); margin-top: 16px; }
+.modal-input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: var(--r);
+  font-size: 13px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.modal-input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+.modal-hint { font-size: 11.5px; color: var(--ink-3); margin-top: 7px; line-height: 1.5; }
+
+/* The refusal the server sent, in the dialog that asked for it, so the reason
+   already typed is still on screen to correct. */
+.modal-alert {
+  display: flex; align-items: flex-start; gap: 9px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  font-size: 12.5px; line-height: 1.55;
+  color: var(--rose-ink);
+  background: color-mix(in srgb, var(--rose) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose) 26%, transparent);
+}
+.modal-alert svg { margin-top: 2px; }
+.modal-alert[hidden] { display: none; }
+
+.btn-danger {
+  color: var(--rose-ink);
+  background: color-mix(in srgb, var(--rose) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose) 28%, transparent);
+}
+.btn-danger:hover {
+  color: var(--rose-ink);
+  background: color-mix(in srgb, var(--rose) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose) 44%, transparent);
+}
+
+/* ------------------------------------------------------------ responsive */
+
+@media (max-width: 980px) {
+  /* aria.css drops the hero to two columns below 980px and moves its third
+     child to a row of its own — written against the mock, where that child is
+     a .row. Here it is the chip strip. */
+  .hero > .hero-chips { grid-column: 1 / -1; }
+}
+
+@media (max-width: 720px) {
+  /* A card head with a title, a subtitle and a source chip does not fit a
+     phone on one line, and the chip is the half that must stay legible. */
+  .card-head { flex-wrap: wrap; }
+  .card-end { margin-left: 0; }
+  .band-end { margin-left: 0; flex-wrap: wrap; }
+}

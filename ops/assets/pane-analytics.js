@@ -1,280 +1,212 @@
-/* People and usage.
+/* People and usage: who is using Aria, is that growing, do they come back.
 
-   The pane owns one question: who is using the app, and is that growing. It
-   carries no system health and no AI job state; those belong to Overview and
-   the job panes, and a pane that answers two questions answers neither.
+   Drawn on the v2 design system through assets/shell-pane-v2.js. The pane
+   holds no session, filter or navigation logic of its own, and it reads
+   GET /api/ops/usage unchanged: this is a surface remodel, not a contract
+   change. Nothing on screen is computed from a field the route does not send.
 
-   Three rules from the approved design are load bearing here rather than
-   decorative, so they are enforced in code rather than left to whoever writes
-   the next card:
+   Five rules from that contract are load bearing here rather than decorative,
+   and four of them are rules about NOT drawing something:
 
-     1. Mobile and Coaches Web are never summed. They are two columns, and
-        there is no code path that adds them, because a coach session and an
-        athlete session measure different work.
-     2. A rate whose denominator is under the reporting floor is not drawn. The
-        pane says why and offers the raw counts, which are always safe.
-     3. Coverage is the honest denominator. Where a figure is limited by app
-        versions that do not report the event it needs, the limit is shown next
-        to the figure rather than in a footnote nobody reads.
+     1. **A rate over a small group is not drawn at all.** Anything measured
+        over a group carries its denominator, and under the reporting floor the
+        pane prints why instead of a percentage. What makes a figure a rate is
+        the denominator travelling with it, not the label the pipeline gave it:
+        a ratio delivered as a decimal is still a ratio, and in the first build
+        of this pane that walked straight past the guard.
+     2. **Empty never means zero.** `availability.state` gates the whole pane,
+        and a window with no stored days shows its stored-day figures as not
+        reported rather than as 0 - a zero there says the apps ran and nobody
+        did anything.
+     3. **Mobile and Coaches Web are never summed.** The chart is one line per
+        app over a shared x scale and the split card is independent columns;
+        no row anywhere adds them. Somebody who used both is one person.
+     4. **A missing day breaks the line** instead of dropping it to the floor,
+        and the days themselves are named under the chart.
+     5. **How old the answer is travels with the figures**, read from
+        `window.rollupsComputedAt` and never from `asOf`. The recount is
+        nightly, so a poller a run behind would otherwise serve yesterday's
+        figures as today's with nothing on screen saying so - and `asOf` is the
+        window's exclusive end, recomputed to last midnight on every request,
+        so an answer whose rollups last ran a week ago still carries a fresh
+        one. The age sits in the head of the band the headline numbers are in,
+        and turns from a plain stamp into a warning past STALE_AFTER_HOURS.
 
-   Accounts that have not opted in to usage analytics are absent from every
-   figure here, because the consent gate is enforced where the events are
-   accepted rather than where they are drawn. There is no client-side filter to
-   get wrong: an event from a non-consenting account was never stored. */
+   Consent gating is not here. It happens at ingest, and a second gate on the
+   display side would be a second place that decision is made and a second
+   place it can be made differently.
+
+   Charts are drawn in this file rather than by assets/aria.js, and painted
+   from CSS classes rather than from custom properties resolved in script, so
+   they follow the theme button with no redraw pass at all. The accessible NAME
+   carries the data: role="img" is children-presentational, so the <text> inside
+   one of these is announced to nobody. */
 (function (global) {
   'use strict';
 
-  var shell = global.OpsShell;
-  var d = global.OpsPaneData;
-  var h = shell.h;
+  var S = global.OpsPaneShell;
+  var h = S.h;
+  var fmt = S.fmt;
 
   var PANE_ID = 'analytics';
-
   var ENDPOINT = '/api/ops/usage';
 
-  /* Where the figures come from, built at the moment of the call.
+  /* The reporting floor: a rate over fewer than this many people is not
+     published. The answer carries its own floor in `reportingFloor`, and that
+     is what the pane applies; this constant is the fallback for an answer that
+     does not send one, and a copy that would disagree with the route the day
+     the route moves it. scripts/ops-analytics-v2.test.mjs pins both sides of
+     the boundary, 49 withheld and 50 published, and pins that a floor sent in
+     the answer overrides this number. */
+  var REPORTING_FLOOR = 50;
+  var floor = REPORTING_FLOOR;
 
-     All three of this pane's registered controls are real reads, so all three
-     have to travel. None of them is optional in the way an absent parameter
-     usually is: the route answers a request with no querystring for every app,
-     over thirty days, on production, which is a complete and confident answer
-     to a question the operator did not ask. Picking Coaches Web on Staging and
-     being shown both apps on production, with both selections sitting in the
-     bar as though they had been applied, is the exact failure the filter bar
-     exists to prevent.
+  /* The recount runs nightly, so a recompute older than this has missed a
+     whole run rather than having been read mid-run. */
+  var STALE_AFTER_HOURS = 36;
 
-     The parameter is `scope`, not `app`. The route accepts `app` as an alias
-     for callers written against the issue's wording, but `scope` is what this
-     shell writes into the querystring and carries between panes, and sending
-     the name the operator's own URL uses keeps one spelling from the address
-     bar through to the read. */
-  function source() {
-    var now = shell.filters();
-    return {
-      paneId: PANE_ID,
-      endpoint: ENDPOINT,
-      query: { scope: now.scope, range: now.range, env: now.env }
-    };
-  }
+  /* Most days named in full before the list is summarised: long enough to be
+     useful on a week with a couple of holes, short enough that a 90 day window
+     with a stalled job does not print a paragraph of dates. */
+  var MAX_LISTED_GAP_DAYS = 8;
 
-  var NOT_REPORTING = {
-    title: 'Usage reporting has not started yet',
-    detail: 'Nobody is being counted yet, so there is no share, no rate, and ' +
-      'no trend to draw. The apps have to be reporting before this pane has ' +
-      'anything to say.'
+  /* The palette names the route sends, against the tone classes in
+     assets/aria.css. An unknown name falls back rather than keying a custom
+     property that does not exist, which is what an unpainted shape is. */
+  var SERIES_TONE = {
+    s1: 'cyan', s2: 'violet', s3: 'emerald', s4: 'amber', s5: 'rose', s6: 'blue',
+    muted: 'muted'
   };
+  var FALLBACK_TONE = 'cyan';
 
-  /* -------------------------------------------------------------- header */
-
-  /* The coverage warning. Only drawn where coverage is genuinely short, and it
-     names the share it is short by, because "some data is missing" is a
-     sentence that tells a reader nothing they can act on. */
-  function coverageWarning(coverage, onJump) {
-    if (!coverage || !coverage.shortfall) return null;
-
-    var box = d.callout('warn', 'warn', [
-      d.strong('Some app versions are not reporting in this window.'),
-      ' ' + coverage.shortfall.detail + ' The usage figures below count only ' +
-        'people whose app reports it, and anything affected is labelled.'
-    ]);
-
-    /* Offered only when there is a per-version card to jump to. A shortfall
-       can be reported without the breakdown behind it, and a button that
-       silently does nothing is worse than no button. */
-    if (onJump) {
-      var row = h('div', { className: 'row mt-sm' });
-      var jump = h('button', {
-        className: 'btn btn-sm', type: 'button', text: 'Show coverage by version'
-      });
-      jump.addEventListener('click', onJump);
-      row.appendChild(jump);
-      box.lastChild.appendChild(row);
-    }
-    return box;
+  function toneClass(name) {
+    return 'tone-' + (Object.prototype.hasOwnProperty.call(SERIES_TONE, name)
+      ? SERIES_TONE[name]
+      : FALLBACK_TONE);
   }
 
-  /* ------------------------------------------------- what the window covers */
+  /* --------------------------------------------------------------- values */
 
-  /* How much of the chosen window has stored figures behind it, or null when
-     the answer did not say.
+  function num(value) {
+    return (typeof value === 'number' && isFinite(value)) ? value : null;
+  }
 
-     Three separate facts, and the payload keeps them separate because they are
-     answered differently. `window.days` is what the operator asked for.
-     `window.daysCovered` is how much of it this pipeline has ever been able to
-     write: the nightly aggregation started on a particular day, so a 90 day
-     window opened today reaches back past its own lifetime, and calling those
-     earlier days missing is a claim about days on which there was never
-     anything to aggregate. `window.daysMissingRollups` is the real gap: days
-     at or after the first covered one that carry no stored figures. */
+  function list(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  /* Whether a group is big enough for a rate over it to be published. */
+  function reportable(size) {
+    return num(size) !== null && size >= floor;
+  }
+
+  /* Anything measured over a group. The denominator is the signal rather than
+     the kind, because a ratio arriving as a decimal is still a ratio. */
+  function overGroup(metric) {
+    return metric.kind === 'rate' || num(metric.denominator) !== null;
+  }
+
+  function metricValue(metric) {
+    var value = num(metric.value);
+    if (value === null) return fmt.none;
+    if (metric.kind === 'rate') return fmt.percent(value, metric.digits);
+    if (metric.kind === 'decimal') {
+      return value.toFixed(num(metric.digits) === null ? 1 : metric.digits);
+    }
+    return fmt.int(value);
+  }
+
+  function people(size) {
+    return fmt.plural(num(size) === null ? 0 : size, 'person', 'people');
+  }
+
+  /* Why a figure is missing, in the place the figure would have been. */
+  /* Why a figure is not on screen, as a phrase rather than a sentence: the
+     tile prints "Not reported" above it and repeating the two words in the
+     line underneath spends a whole slot saying the same thing twice, while a
+     row in a table has no room for two lines and takes the whole of it. */
+  function suppressionReason(size) {
+    if (num(size) === null) return 'the group behind it was not given';
+    return people(size) + ' in the group, floor is ' + floor;
+  }
+
+  var NOT_REPORTED = 'Not reported';
+
+  function notReported(reason) {
+    return NOT_REPORTED + ', ' + reason;
+  }
+
+  /* The same phrase standing on its own, under a value that already says the
+     figure is not there. */
+  function sentence(phrase) {
+    return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+  }
+
+  /* ----------------------------------------------------------- the window */
+
+  /* Three separate facts, kept separate because they are answered differently.
+     `days` is what the operator asked for. `daysCovered` is how much of it this
+     pipeline has ever been able to write, because the nightly aggregation
+     started on a particular day and a 90 day window opened today reaches back
+     past its own lifetime. `daysMissingRollups` is the real gap: days at or
+     after the first covered one that carry no stored figures. */
   function windowSpan(data) {
     var w = data.window;
     if (!w || typeof w !== 'object') return null;
-    var covered = w.daysCovered;
-    if (typeof covered !== 'number' || !isFinite(covered)) return null;
+    var covered = num(w.daysCovered);
+    if (covered === null) return null;
     return {
       covered: covered,
-      days: (typeof w.days === 'number' && isFinite(w.days)) ? w.days : null,
+      days: num(w.days),
       start: typeof w.reportingStart === 'string' ? w.reportingStart : null,
-      missing: Array.isArray(w.daysMissingRollups)
-        ? w.daysMissingRollups.filter(function (day) { return typeof day === 'string'; })
-        : []
+      missing: list(w.daysMissingRollups).filter(function (day) {
+        return typeof day === 'string';
+      })
     };
   }
 
-  /* Nothing in this window has stored figures. Its own question rather than a
-     shade of the one above, because it is the case the payload reports as
-     `reportingStart: null` with `daysCovered: 0` and still calls ready: the
-     people figures are read live from accounts and can clear the reporting
-     floor while not one day of the window has been aggregated. */
+  /* Not one day of the chosen window has been aggregated. Its own question
+     rather than a shade of the one above: the route reports this as
+     `reportingStart: null` with `daysCovered: 0` and still calls itself ready,
+     because the people figures are read live from accounts and can clear the
+     floor while nothing at all has been rolled up. */
   function hasNoStoredDays(data) {
     var span = windowSpan(data);
     return !!span && span.covered === 0;
   }
 
-  /* Most days named in full before the list is summarised. Long enough to be
-     useful on a week with a couple of holes, short enough that a 90 day window
-     with a stalled job does not print a paragraph of dates. */
-  var MAX_LISTED_GAP_DAYS = 8;
+  function windowPhrase(data) {
+    var span = windowSpan(data);
+    var days = span ? span.days : null;
+    return days === null ? 'the selected window' : 'the last ' + fmt.plural(days, 'day');
+  }
+
+  /* The same window as a caption: the chart's only one. */
+  function windowNote(data) {
+    var span = windowSpan(data);
+    var days = span ? span.days : null;
+    return days === null ? 'Selected window' : 'Last ' + fmt.plural(days, 'day');
+  }
 
   function listDays(days) {
     var shown = days.slice(0, MAX_LISTED_GAP_DAYS).map(function (day) {
-      return d.utcDay(day) || day;
+      return fmt.utcDay(day) || day;
     });
     var rest = days.length - shown.length;
-    return shown.join(', ') + (rest > 0
-      ? ', and ' + d.count(rest) + ' more'
-      : '');
+    return shown.join(', ') + (rest > 0 ? ', and ' + fmt.int(rest) + ' more' : '');
   }
 
-  function dayCount(n) {
-    return d.count(n) + (n === 1 ? ' day' : ' days');
-  }
-
-  /* What the window covers, in display order, or an empty list when the answer
-     did not say.
-
-     Every sentence here is about the WINDOW rather than about an app, and is
-     worded that way on purpose: `reportingStart` is the earliest day ANY
-     selected app reported and the gap list is the days NO selected app
-     reported, so both are a union across the columns on screen. Read as a
-     per-app statement they would be wrong in both directions, promising that
-     Mobile reported on a day only Coaches Web did, and denying a Coaches Web
-     reading on a day Mobile was silent. */
-  function windowNotes(data) {
-    var span = windowSpan(data);
-    if (!span) return [];
-    var notes = [];
-
-    if (span.missing.length) {
-      notes.push(d.callout('warn', 'warn', [
-        d.strong(span.missing.length === 1
-          ? 'One day inside the covered span has no stored figures.'
-          : dayCount(span.missing.length) + ' inside the covered span have no stored figures.'),
-        ' ' + listDays(span.missing) + '. These are gaps rather than days ' +
-          'outside the reporting, so the session and coverage figures below ' +
-          'are short by them. The figures counted from accounts, active people ' +
-          'and feature use, are read live and are not. This is a statement ' +
-          'about the window as a whole: a listed day is one no selected app ' +
-          'reported.'
-      ]));
-    }
-
-    if (span.covered === 0) {
-      notes.push(d.callout('warn', 'warn', [
-        d.strong('No day in this window has stored figures.'),
-        ' Nothing has been aggregated for the window you chose, so the figures ' +
-          'counted from stored days are shown as not reported rather than as ' +
-          'zero: a zero would say the apps ran and nobody did anything. The ' +
-          'figures counted from accounts are read live and are unaffected, so ' +
-          'they are shown as they are.'
-      ]));
-      return notes;
-    }
-
-    var sentence = 'These figures cover the last ' + dayCount(span.covered) + ' of this window';
-    var from = span.start ? d.utcDay(span.start) : null;
-    sentence += from ? ', from ' + from + ' onwards.' : '.';
-    if (span.days !== null && span.covered < span.days) {
-      sentence += ' The ' + dayCount(span.days) + ' you asked for reaches back before ' +
-        'this reporting began, so the earlier days are outside its lifetime ' +
-        'rather than gaps in it.';
-    }
-    sentence += ' That is a property of the window rather than of any one ' +
-      'column: it starts at the earliest day any selected app reported.';
-
-    notes.push(h('p', { className: 'axis-note', text: sentence }));
-    return notes;
-  }
-
-  /* ------------------------------------------------------- app comparison */
-
-  /* One column per app. Never a blend, never a total: the wrapper is a grid of
-     independent columns and there is no row that adds them. */
-  function appColumns(data, opts) {
-    var section = h('section', { className: 'vs', 'aria-labelledby': 'vsHeading' });
-    section.appendChild(h('h2', { className: 'sr-only', id: 'vsHeading', text: 'Usage by app' }));
-
-    (data.apps || []).forEach(function (app) {
-      var col = h('div', { className: 'vs-col' });
-
-      var head = h('div', { className: 'vs-head' }, [
-        h('h3', {}, [
-          h('span', { className: 'tag tag-' + (app.tone || 'mobile'), text: app.label })
-        ]),
-        h('span', { className: 'small muted', text: app.subtitle || '' }),
-        h('div', { className: 'spacer' })
-      ]);
-
-      /* Coverage is a share of sessions on a reporting app version, not a rate
-         over people, so the reporting floor does not apply to it. What does
-         apply is that an unreported coverage is not a shortfall: it says so
-         rather than rendering as a figure. */
-      var known = typeof app.coverageBasisPoints === 'number' &&
-        isFinite(app.coverageBasisPoints);
-      var full = app.coverageBasisPoints === 10000;
-      var badge = h('span', { className: 'badge ' + (full ? 'badge-ok' : 'badge-warn') });
-      badge.appendChild(shell.icon(full ? 'check' : 'warn'));
-      badge.appendChild(h('span', {
-        text: full ? 'Full coverage'
-          : known ? d.percent(app.coverageBasisPoints) + ' coverage'
-          : 'Coverage not reported'
-      }));
-      head.appendChild(badge);
-      col.appendChild(head);
-
-      (app.metrics || []).forEach(function (metric) {
-        col.appendChild(metricRow(metric, opts));
-      });
-
-      if (app.trend && app.trend.values && app.trend.values.length > 1) {
-        var trend = h('div', { className: 'vs-trend' }, [
-          d.sparkline(app.trend.values, { label: app.trend.label, color: app.trend.color })
-        ]);
-        col.appendChild(trend);
-      }
-
-      section.appendChild(col);
-    });
-
-    return section;
-  }
-
-  /* Whether a figure is counted from the stored day-grain rollups.
+  /* Which figures are counted from the stored day grain.
 
      Matched on the label because that is the only signal there is: the metric
      union carries a kind and, for anything over a group, a denominator, and
-     neither says where the number came from. Named exactly, not by substring,
-     so a future figure that merely mentions sessions in its label is not
-     silently withheld.
-
-     Only consulted when the window has no stored days at all, and only when
-     the value is zero, so a mislabelled or relabelled metric fails towards
-     showing the figure rather than towards hiding one. The callout above the
-     columns says the same thing in words for that reason: if this list ever
-     goes stale the reader is still told the window has nothing stored, which
-     is the fact that matters. Where this really belongs is a provenance field
-     in the payload, and that is the change to make if a third such figure
-     arrives. */
+     neither says where the number came from. Named exactly rather than by
+     substring, so a future figure that merely mentions sessions in its label is
+     not silently withheld. Consulted only when the window has no stored days at
+     all AND the value is zero, so a relabelled metric fails towards showing the
+     figure rather than towards hiding one. Where this belongs is a provenance
+     field in the payload, and that is the change to make when a third such
+     figure arrives. */
   var FROM_STORED_DAYS = ['Sessions', 'Sessions per person'];
 
   function fromStoredDays(metric) {
@@ -282,570 +214,1043 @@
       FROM_STORED_DAYS.indexOf(metric.label) !== -1;
   }
 
-  /* One figure in a column.
-
-     Anything measured over a group goes through the floor first, and what
-     makes it one is the denominator travelling with it rather than the label
-     the pipeline happened to give it: a ratio delivered as a decimal is still
-     a ratio, and used to walk straight past the guard. Everything left is a
-     count, and a count is always reportable. */
-  function metricRow(metric, opts) {
-    var row = h('div', { className: 'vs-metric' }, [
-      h('span', { text: metric.label })
-    ]);
-
-    if (opts && opts.noStoredDays && fromStoredDays(metric) && metric.value === 0) {
-      row.classList.add('is-suppressed');
-      row.appendChild(h('div', { className: 'small suppressed right' }, [
-        h('span', { text: 'Not reported, no day in this window has stored figures' })
-      ]));
-      return row;
-    }
-
-    var overGroup = metric.kind === 'rate' || typeof metric.denominator === 'number';
-    if (overGroup && !d.reportable(metric.denominator)) {
-      row.classList.add('is-suppressed');
-      /* An absent denominator is an unknown group, not an empty one. Printing
-         it as "0 in group" asserted a size nobody had reported, next to a
-         column that was busy stating real ones. */
-      var known = typeof metric.denominator === 'number' && isFinite(metric.denominator);
-      var said = h('div', { className: 'small suppressed right' }, [
-        h('span', {
-          text: known
-            ? 'Not reported, ' + d.count(metric.denominator) + ' in group, ' +
-              'under the ' + d.REPORTING_FLOOR + ' we report rates from'
-            : 'Not reported, the size of this group was not given'
-        })
-      ]);
-      /* Raw counts are always safe, so they are offered here as they are in
-         the cohort and feature cards, whenever the payload carries one. Under
-         the sentence rather than beside it, so a narrow column keeps two
-         columns rather than growing a third. */
-      if (known && typeof metric.numerator === 'number') {
-        said.appendChild(h('div', {
-          className: 'mono',
-          text: d.count(metric.numerator) + ' of ' + d.count(metric.denominator)
-        }));
-      }
-      row.appendChild(said);
-      return row;
-    }
-
-    var value = h('b', { className: 'mono', text: d.metricValue(metric) });
-    if (metric.tone) value.classList.add('ink-' + metric.tone);
-    row.appendChild(value);
-    return row;
+  function storedDayGap(metric, noStoredDays) {
+    return noStoredDays && fromStoredDays(metric) && metric.value === 0;
   }
 
-  /* ---------------------------------------------------- retention cohorts */
+  /* Whether this figure is withheld, and why, in one answer so that the tile,
+     the column and the footnote cannot disagree about it. */
+  function withheld(metric, noStoredDays) {
+    if (storedDayGap(metric, noStoredDays)) {
+      return 'no day in this window has stored figures';
+    }
+    if (overGroup(metric) && !reportable(metric.denominator)) {
+      return suppressionReason(metric.denominator);
+    }
+    return null;
+  }
 
-  /* The cohort grid, one per app, behind a real tablist.
+  /* ------------------------------------------------------------ the read */
 
-     Every row is checked against the floor before a single cell is drawn.
-     Suppression is per signup group rather than per cell because the group
-     size is the denominator of all of them: if the week is too small, no
-     offset in it is reportable. */
-  function cohortCard(data) {
-    var cohorts = data.cohorts || [];
-    if (!cohorts.length) return null;
+  function source() {
+    var now = S.filters();
+    return {
+      paneId: PANE_ID,
+      endpoint: ENDPOINT,
+      query: { scope: now.scope, range: now.range, env: now.env }
+    };
+  }
 
-    var card = d.card({
-      title: 'How many keep coming back',
-      hint: 'Weekly signup groups, share returning',
-      id: 'cohortCard'
+  /* A link to this pane with one part of the selection changed. The only
+     navigation this pane performs, and both uses of it are an offer to widen a
+     selection that is itself the reason a block has nothing in it. */
+  function hrefWith(key, value) {
+    var now = S.filters();
+    var query = { scope: now.scope, range: now.range, env: now.env };
+    query[key] = value;
+    var parts = [];
+    Object.keys(query).forEach(function (name) {
+      if (query[name]) {
+        parts.push(encodeURIComponent(name) + '=' + encodeURIComponent(query[name]));
+      }
+    });
+    return (S.panes[PANE_ID] || {}).file + (parts.length ? '?' + parts.join('&') : '');
+  }
+
+  function widestRange() {
+    var ranges = list((S.panes[PANE_ID] || {}).range);
+    return ranges.length ? ranges[ranges.length - 1] : null;
+  }
+
+  /* ---------------------------------------------------------------- charts */
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function svgEl(tag, attrs) {
+    var node = global.document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (key) {
+      node.setAttribute(key, String(attrs[key]));
+    });
+    return node;
+  }
+
+  var CHART_W = 720;
+  var CHART_H = 210;
+  var PAD_L = 8, PAD_R = 10, PAD_T = 10, PAD_B = 8;
+
+  /* One line per app over a shared x scale. Consecutive readings become one
+     path; a gap ends the path and the next reading starts a new one, so a day
+     with no reading is the absence of a stroke rather than a stroke drawn
+     through nothing. */
+  function lineChart(series, data) {
+    var iw = CHART_W - PAD_L - PAD_R;
+    var ih = CHART_H - PAD_T - PAD_B;
+
+    var hi = 0;
+    var span = 0;
+    series.forEach(function (one) {
+      var values = list(one.values);
+      if (values.length > span) span = values.length;
+      values.forEach(function (v) {
+        var n = num(v);
+        if (n !== null && n > hi) hi = n;
+      });
+    });
+    hi = hi * 1.14 || 1;
+
+    /* Stretched to the box rather than scaled to its own aspect, so the
+       drawing is as tall on a phone as it is on a laptop and the gridlines
+       keep the spacing the labels beside them are set in. Every stroke in
+       here carries non-scaling-stroke in CSS, which is what keeps a line 2px
+       wide and a dash pattern square under a scale that is not the same in
+       both directions. */
+    var svg = svgEl('svg', {
+      'class': 'chart',
+      viewBox: '0 0 ' + CHART_W + ' ' + CHART_H,
+      preserveAspectRatio: 'none',
+      role: 'img',
+      'aria-label': chartName(series, data)
     });
 
-    /* One app is not a choice, so it does not get a switcher. */
-    var body = d.cardBody();
-    if (cohorts.length > 1) {
-      var built = d.tabbed({
-        label: 'Signup group app',
-        idPrefix: 'cohort',
-        tabs: cohorts.map(function (c) {
-          return { id: c.app, label: c.label, panel: cohortTable(c) };
-        })
+    /* The scale is HTML beside the picture rather than <text> inside it, for
+       two reasons that both matter. The svg is scaled to the width of the card,
+       so text inside it is scaled with it and lands at about four pixels on a
+       375px screen; and role="img" is children-presentational, so text inside
+       one is announced to nobody however large it is. Out here it is real text
+       at a real size, positioned against the same gridlines. */
+    var axis = h('div', { className: 'ln-axis', 'aria-hidden': 'true' });
+
+    var ticks = 4;
+    for (var i = 0; i <= ticks; i++) {
+      var y = PAD_T + ih - (i / ticks) * ih;
+      var gridline = svgEl('line', {
+        'class': 'gridline', x1: PAD_L, y1: y.toFixed(1), x2: CHART_W - PAD_R, y2: y.toFixed(1)
       });
-      var head = card.querySelector('.card-head');
-      head.appendChild(h('div', { className: 'spacer' }));
-      head.appendChild(built.tablist);
-      body.appendChild(built.panels);
-    } else {
-      body.appendChild(cohortTable(cohorts[0]));
+      if (i !== 0) gridline.setAttribute('stroke-dasharray', '2 4');
+      svg.appendChild(gridline);
+
+      var label = h('span', {
+        className: 'ln-tick num',
+        text: fmt.int(Math.round(hi * i / ticks))
+      });
+      /* The gridline's own height in the viewBox, as a percentage. The scale
+         column is the height of the drawing beside it, so the two stay
+         registered at every width without measuring anything. */
+      label.style.setProperty('top', ((y / CHART_H) * 100).toFixed(2) + '%');
+      axis.appendChild(label);
     }
+
+    series.forEach(function (one) {
+      /* The app keys the group, so which line belongs to which app is a fact in
+         the document rather than only a colour: the tones repeat across panes
+         and two apps can be sent the same one. */
+      var group = svgEl('g', {
+        'class': toneClass(one.color),
+        'data-series': one.label || ''
+      });
+      var values = list(one.values);
+      var x = function (index) {
+        return PAD_L + (span > 1 ? (index / (span - 1)) * iw : iw / 2);
+      };
+      var y2 = function (v) { return PAD_T + ih - (v / hi) * ih; };
+
+      var run = [];
+      var flush = function () {
+        if (run.length > 1) {
+          group.appendChild(svgEl('path', {
+            'class': 'ln',
+            d: run.map(function (point, index) {
+              return (index ? 'L' : 'M') + point[0].toFixed(2) + ' ' + point[1].toFixed(2);
+            }).join(' ')
+          }));
+        } else if (run.length === 1) {
+          /* A single reading between two gaps has no line to belong to, and
+             drawing nothing for it would hide a day that was measured. A
+             zero-length path with a round cap rather than a circle: the
+             drawing is stretched to its box, and a circle would be drawn as
+             an ellipse while a stroke cap stays round. */
+          group.appendChild(svgEl('path', {
+            'class': 'ln-pt',
+            d: 'M' + run[0][0].toFixed(2) + ' ' + run[0][1].toFixed(2)
+              + 'L' + run[0][0].toFixed(2) + ' ' + run[0][1].toFixed(2)
+          }));
+        }
+        run = [];
+      };
+
+      values.forEach(function (v, index) {
+        var n = num(v);
+        if (n === null) { flush(); return; }
+        run.push([x(index), y2(n)]);
+      });
+      flush();
+      svg.appendChild(group);
+    });
+
+    return h('div', { className: 'ln-wrap' }, [axis, svg]);
+  }
+
+  /* The chart's accessible name, and the only place its data is announced.
+
+     Every series says how much of the window it has a reading for, its range
+     and its last reading, because none of that reaches a screen reader from the
+     <text> nodes inside a role="img". A series with no reading at all says so
+     rather than being left out of the name. */
+  function chartName(series, data) {
+    return trendLabel(series) + ', one line per app, over ' + windowPhrase(data) + '. ' +
+      series.map(seriesSentence).join(' ');
+  }
+
+  function seriesSentence(one) {
+    var name = one.label || 'This app';
+    var values = list(one.values);
+    var reported = [];
+    var lastIndex = -1;
+    values.forEach(function (v, index) {
+      var n = num(v);
+      if (n === null) return;
+      reported.push(n);
+      lastIndex = index;
+    });
+
+    if (!reported.length) {
+      return name + ': no reading on any of ' + fmt.plural(values.length, 'day') + '.';
+    }
+    var lo = Math.min.apply(null, reported);
+    var high = Math.max.apply(null, reported);
+    return name + ': ' + fmt.int(reported.length) + ' of ' +
+      fmt.plural(values.length, 'day') + ' with a reading, ' +
+      (lo === high ? 'flat at ' + fmt.int(lo) : 'low ' + fmt.int(lo) + ', high ' + fmt.int(high)) +
+      ', ending ' + fmt.int(values[lastIndex]) + '.';
+  }
+
+  /* What the lines are of, taken from the answer rather than written here. The
+     route names each series after the figure and then qualifies it with the
+     app it belongs to -- `Active people per day, Mobile` -- so the qualifier
+     comes off before the apps are compared. Without that every real answer has
+     two labels that disagree, and a chart of active people is announced as
+     "Daily activity by app": the name stops carrying the data, which is the
+     whole reason a role="img" chart needs one. The apps still have to agree on
+     what is left before it can be said once over the whole chart. */
+  function trendLabel(series) {
+    var labels = series.map(function (one) { return unqualified(one); })
+      .filter(function (label) { return !!label; });
+    var first = labels[0] || 'Daily activity';
+    var agreed = labels.length === series.length && labels.every(function (label) {
+      return label === first;
+    });
+    return agreed ? first : 'Daily activity by app';
+  }
+
+  /* One series' label with its own app's name taken off the end, and only its
+     own: a label qualified with a different app is left alone, so two series
+     that really are of different things still disagree. */
+  function unqualified(one) {
+    var label = one.trendLabel || '';
+    var suffix = ', ' + (one.label || '');
+    if (one.label && label.length > suffix.length &&
+      label.lastIndexOf(suffix) === label.length - suffix.length) {
+      return label.slice(0, label.length - suffix.length);
+    }
+    return label;
+  }
+
+  /* Whether a daily series is the day-by-day of this figure, so the tile may
+     draw it. The route names the series after the figure, makes it a rate per
+     day and then qualifies it with the app -- `Active people per day, Mobile`
+     against a figure called `Active people` -- so an exact match draws no
+     sparkline at all on a real answer. Matched on the whole of what is left
+     after the app comes off, never by prefix: `Active people who churned per
+     day` starts with `Active people` and is a different figure. */
+  function trendIsOf(app, metric) {
+    var of = typeof metric.label === 'string' ? metric.label : '';
+    var label = unqualified({ trendLabel: (app.trend || {}).label, label: app.label });
+    if (!of || !label) return false;
+    return label === of || label === of + ' per day';
+  }
+
+  function chartSeries(data) {
+    return list(data.apps).filter(function (app) {
+      return app.trend && list(app.trend.values).length > 0;
+    }).map(function (app) {
+      return {
+        label: app.label,
+        color: app.trend.color,
+        values: list(app.trend.values),
+        trendLabel: app.trend.label
+      };
+    });
+  }
+
+  function drawable(series) {
+    return series.some(function (one) {
+      return one.values.filter(function (v) { return num(v) !== null; }).length > 1;
+    });
+  }
+
+  /* A tile's sparkline: the same series the chart below names in full, which is
+     why it is hidden from the accessible tree rather than named again here.
+     Drawn only when every day has a reading, because a line this small has no
+     room for a break and a stroke drawn straight through a gap is a claim about
+     a day on which nothing was measured. */
+  function spark(values, color) {
+    var points = list(values);
+    if (points.length < 2) return null;
+    if (points.some(function (v) { return num(v) === null; })) return null;
+
+    var w = 132, height = 34, pad = 3;
+    var hi = Math.max.apply(null, points);
+    var lo = Math.min.apply(null, points);
+    var range = (hi - lo) || 1;
+    var svg = svgEl('svg', {
+      'class': 'chart spark ' + toneClass(color),
+      viewBox: '0 0 ' + w + ' ' + height,
+      preserveAspectRatio: 'none',
+      'aria-hidden': 'true',
+      focusable: 'false'
+    });
+    svg.appendChild(svgEl('path', {
+      'class': 'ln',
+      d: points.map(function (v, index) {
+        var x = pad + (index / (points.length - 1)) * (w - pad * 2);
+        var y = pad + (1 - (v - lo) / range) * (height - pad * 2);
+        return (index ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
+      }).join(' ')
+    }));
+    return svg;
+  }
+
+  /* --------------------------------------------------------- how old it is */
+
+  /* The age of the answer, in the head of the band its figures are in.
+
+     Read from `window.rollupsComputedAt`, the freshest recompute behind the
+     summed figures, and never from `asOf`: the route sets `asOf` to the
+     window's exclusive end, which is the last UTC midnight recomputed on every
+     request, so it says when the window ended and not when anything was
+     counted. An answer a week stale carries a fresh `asOf`.
+
+     Four outcomes, and they are different statements: nothing has ever been
+     computed, a time that cannot be read, a recompute from the last run, and
+     one old enough that a whole run has been missed. The last one carries the
+     age in words, not a colour. */
+  function freshness(data) {
+    var computedAt = (data.window || {}).rollupsComputedAt;
+    if (computedAt === null || computedAt === undefined || computedAt === '') {
+      return h('span', { className: 'pill warn' }, [
+        S.icon('warn'), h('span', { text: 'Nothing counted yet' })
+      ]);
+    }
+    var hours = fmt.hoursSince(computedAt);
+    var stamp = fmt.utcStamp(computedAt);
+    if (hours === null || stamp === null) {
+      return h('span', { className: 'pill warn' }, [
+        S.icon('warn'), h('span', { text: 'Counted at an unreported time' })
+      ]);
+    }
+    if (hours >= STALE_AFTER_HOURS) {
+      return h('span', { className: 'pill warn' }, [
+        S.icon('warn'),
+        h('span', { text: fmt.hours(hours) + ' behind, counted ' + stamp })
+      ]);
+    }
+    return h('span', { className: 'pill' }, [
+      S.icon('clock'), h('span', { text: 'Counted ' + stamp })
+    ]);
+  }
+
+  /* How much of the chosen window has ever been aggregated, beside the figures
+     that are summed over it.
+
+     A window is not always covered. The nightly job started writing rollups on
+     a particular day, so a 90 day window opened today reaches back past the
+     pipeline's own lifetime, and the route reports that as `daysCovered` with
+     `reportingStart` -- an annotation on the figures rather than a state that
+     replaces them. Without it a 90 day window with 20 covered days draws a
+     sessions total identical to one covered in full, and nothing on screen says
+     the total is over a fifth of the days the range name claims.
+
+     Only when the span is short and not empty: `daysCovered: 0` is a different
+     statement, already made by every stored-day figure reading *not reported*,
+     and a pill saying `0 of 90 days covered` beside them would be that fact
+     twice. Neutral, not a warning -- days outside the data's lifetime are not a
+     fault, and the route is explicit that this is not an availability state.
+
+     *Covered*, never *stored*, and the two words are different numbers on the
+     same screen. `daysCovered` is the distance from `reportingStart` to the end
+     of the window (`opsUsageView.ts:332`), and `daysMissingRollups` are the days
+     inside that distance with nothing behind them, so the days that actually
+     carry figures are `covered - missing`. A 90 day window with `daysCovered:
+     20` and two gaps prints `20` here, `18 of 90 days with a reading` in the
+     chart's name, and names both gap days under the trend card: saying *stored*
+     in this pill makes those three slots contradict each other by exactly the
+     gap count, and the pill is the one that would be wrong. */
+  function windowCoverage(data) {
+    var span = windowSpan(data);
+    if (!span || span.days === null) return null;
+    if (span.covered <= 0 || span.covered >= span.days) return null;
+    var text = fmt.int(span.covered) + ' of ' + fmt.plural(span.days, 'day') + ' covered';
+    var from = span.start ? fmt.utcDay(span.start) : null;
+    return h('span', { className: 'pill' }, [
+      S.icon('history'),
+      h('span', { text: from ? text + ', from ' + from : text })
+    ]);
+  }
+
+  /* Who the figures on this page are counted from, in the one case where
+     nothing else on the page says.
+
+     The statement lives in `cohorts[].note` -- the route's own sentence,
+     printed beside the groups it is about -- and that is where it belongs. But
+     `buildCohorts` drops every group whose week is not wholly inside the window
+     and then skips the app when the widest survivor has aged into nothing
+     (`opsUsageView.ts:908-909`, `:932`), and two of the bar's four ranges hit
+     that:
+
+       7d  -- the only admissible signup week is the window's own, and
+              `floor(7d / 7d) - 1` is zero aged weeks. No groups, every day.
+       14d -- the admissible interval is eight days wide, so it holds two
+              signup weeks only when the window ends ON one. On the other six
+              weekdays it holds one, aged zero, and the app is skipped.
+
+     So the band is missing on 13 of the 28 range-and-weekday combinations, not
+     on one range, and the gate below is `cohorts.length`, which is the fact
+     that decides it, rather than the range, which is not. Round 8 raised this
+     comment: the code was right and the sentence was not.
+
+     Where it happens, the page prints headcounts and per-feature shares of
+     people with nothing saying which people.
+
+     Four words rather than the route's four sentences (`consent.detail`),
+     because this is the slot's second job and not its own card, and the pane
+     does not restate a paragraph it has a shorter true form of. Read from
+     `consent.enforcedAt` rather than written here: the gate is at ingest and
+     stays there, and this prints what the answer reports about it. */
+  function consentNote(data) {
+    var consent = data.consent || {};
+    if (consent.enforcedAt !== 'ingest') return null;
+    if (list(data.cohorts).length) return null;
+    return h('span', { className: 'pill' }, [
+      S.icon('lock'), h('span', { text: 'Consenting accounts only' })
+    ]);
+  }
+
+  /* The head of the first band: how old the answer is, and how much of the
+     window is behind it. Two facts, never merged -- an answer recomputed an
+     hour ago over a window the pipeline only reaches a fifth of is fresh and
+     short at the same time. */
+  function answerNotes(data) {
+    return [freshness(data), windowCoverage(data), consentNote(data)]
+      .filter(function (node) {
+        return !!node;
+      });
+  }
+
+  /* --------------------------------------------------------------- tiles */
+
+  /* The headline figures, taken from the first app in the answer and labelled
+     with it. A tile is one app's figure with the other apps' readings under it,
+     never a total: somebody who used both apps is one person. */
+  function tiles(data) {
+    var apps = list(data.apps);
+    var lead = apps[0];
+    if (!lead) return null;
+    var noStored = hasNoStoredDays(data);
+
+    var grid = h('div', { className: 'grid g4' });
+    list(lead.metrics).slice(0, 4).forEach(function (metric) {
+      grid.appendChild(tile(metric, lead, apps.slice(1), noStored));
+    });
+    return grid;
+  }
+
+  function tile(metric, lead, others, noStored) {
+    var card = S.card('kpi');
+    var body = h('div', { className: 'card-body' }, [
+      h('h3', { className: 'kpi-label', text: metric.label })
+    ]);
     card.appendChild(body);
+
+    var reason = withheld(metric, noStored);
+    if (reason) {
+      /* Words, not a number, and the reason in the place the comparison would
+         have been. The other apps' readings are left out of this tile on
+         purpose: a figure printed under "Not reported" is read as the tile's
+         own. Every app's copy of this figure, withheld or not, is in the split
+         card below. */
+      body.appendChild(h('div', { className: 'kpi-val is-absent', text: NOT_REPORTED }));
+      card.appendChild(h('div', { className: 'kpi-foot' }, [
+        h('span', { text: sentence(reason) })
+      ]));
+      return card;
+    }
+
+    body.appendChild(h('div', { className: 'kpi-val num', text: metricValue(metric) }));
+
+    var meta = h('div', { className: 'kpi-meta' }, [
+      h('span', { className: 'pill', text: lead.label })
+    ]);
+    if (lead.trend && trendIsOf(lead, metric)) {
+      var line = spark(lead.trend.values, lead.trend.color);
+      if (line) meta.appendChild(h('span', { className: 'kpi-spark' }, [line]));
+    }
+    body.appendChild(meta);
+
+    var rest = others.map(function (app) {
+      var match = list(app.metrics).filter(function (one) {
+        return one.label === metric.label;
+      })[0];
+      if (!match) return null;
+      return app.label + ' ' + (withheld(match, noStored)
+        ? NOT_REPORTED.toLowerCase()
+        : metricValue(match));
+    }).filter(function (text) { return !!text; });
+
+    if (rest.length) {
+      card.appendChild(h('div', { className: 'kpi-foot' }, [
+        h('span', { text: rest.join(' \u00b7 ') })
+      ]));
+    }
     return card;
   }
 
-  function cohortTable(cohort) {
-    var wrap = h('div', { className: 'table-wrap' });
-    var table = h('table', { className: 'cohort' });
+  /* ---------------------------------------------------------- the trend */
 
-    var head = h('thead');
-    var headRow = h('tr', {}, [
-      h('th', { scope: 'col', className: 'cohort-lbl', text: 'Signed up' }),
-      h('th', { scope: 'col', text: 'Size' })
-    ]);
-    (cohort.offsets || []).forEach(function (o) {
-      headRow.appendChild(h('th', { scope: 'col', text: o }));
-    });
-    head.appendChild(headRow);
-    table.appendChild(head);
+  function trendCard(data) {
+    var series = chartSeries(data);
+    var span = windowSpan(data);
+    var card = S.card();
 
-    var body = h('tbody');
-    (cohort.rows || []).forEach(function (row) {
-      body.appendChild(cohortRow(row, cohort));
-    });
-    table.appendChild(body);
-    wrap.appendChild(table);
+    var legend = h('div', { className: 'legend' }, series.map(function (one) {
+      return h('span', { className: toneClass(one.color) }, [
+        h('i', { 'aria-hidden': 'true' }), h('span', { text: one.label })
+      ]);
+    }));
 
-    if (cohort.note) {
-      wrap.appendChild(h('p', { className: 'axis-note mt-sm', text: cohort.note }));
+    card.appendChild(S.cardHead(trendLabel(series), windowNote(data),
+      series.length ? [legend] : []));
+
+    var body = h('div', { className: 'card-body' });
+    if (drawable(series)) {
+      body.appendChild(lineChart(series, data));
+    } else {
+      body.appendChild(S.stateBlock('chart', 'Not enough days to draw a line', [
+        'Two days with a reading are needed before a line means anything.'
+      ], 4));
     }
-    return wrap;
+    card.appendChild(body);
+
+    if (span && span.missing.length) {
+      card.appendChild(h('div', { className: 'card-foot' }, [
+        S.icon('warn'),
+        h('span', { text: 'No stored figures on ' + listDays(span.missing) })
+      ]));
+    }
+    return card;
   }
 
-  function cohortRow(row, cohort) {
-    var tr = h('tr');
-    tr.appendChild(h('th', { scope: 'row', className: 'cohort-lbl', text: row.label }));
-    tr.appendChild(h('td', { className: 'na mono', text: d.count(row.size) }));
+  /* ------------------------------------------------------------ the split */
 
-    if (!d.reportable(row.size)) {
-      /* The whole group collapses into one cell carrying the reason and the
-         raw counts, which are what is left that can be shown honestly. */
-      var cell = h('td', {
-        className: 'na cohort-suppressed',
-        colspan: String((cohort.offsets || []).length)
-      });
-      cell.appendChild(h('div', {
-        text: d.suppressionReason(row.size, 'people signed up', 'person signed up')
-      }));
+  /* Coverage is a share of sessions on a reporting app version rather than a
+     rate over people, so the reporting floor does not apply to it. What does
+     apply is that an unreported coverage is not a shortfall: it says so.
 
-      var raw = rawCounts(row, cohort);
-      if (raw) {
-        var toggle = h('button', {
-          className: 'btn btn-sm mt-xs', type: 'button',
-          'aria-expanded': 'false', text: 'Show raw counts instead'
-        });
-        raw.hidden = true;
-        toggle.addEventListener('click', function () {
-          var open = toggle.getAttribute('aria-expanded') === 'true';
-          toggle.setAttribute('aria-expanded', String(!open));
-          toggle.textContent = open ? 'Show raw counts instead' : 'Hide raw counts';
-          raw.hidden = open;
-        });
-        cell.appendChild(toggle);
-        cell.appendChild(raw);
+     This pill is the pane's ONLY printing of the figure -- the version card's
+     footer and the feature card's coverage sentence are both dropped on the
+     ground that it is already on screen -- so it has to appear on every answer
+     that carries one, including the answers that have no columns to hang it
+     on. `scope=mobile` and `scope=coaches` are two of the three values the
+     bar offers and both send one app. */
+  function coveragePill(app) {
+    var coverage = num(app.coverageBasisPoints);
+    return h('span', {
+      className: 'pill' + (coverage !== null && coverage < 10000 ? ' warn' : ''),
+      text: coverage === null ? 'Coverage not reported'
+        : coverage === 10000 ? 'Every session reports'
+        : fmt.percent(coverage) + ' of sessions report'
+    });
+  }
+
+  /* One column per app: independent columns with no row that adds them.
+     A single app is not an empty comparison, it is a comparison that cannot
+     exist, so it says that rather than drawing one column and calling it a
+     split. The app's own figures are not repeated here because the headline
+     tiles are that one app when it is the whole selection -- except its
+     coverage, which the tiles do not carry and nothing else prints. */
+  function splitCard(data) {
+    var apps = list(data.apps);
+    var noStored = hasNoStoredDays(data);
+    var card = S.card();
+
+    if (apps.length < 2) {
+      var block = S.stateBlock('layers', 'No split to draw', [
+        apps.length === 1
+          ? 'Only ' + apps[0].label + ' is in this selection, so there is nothing to compare it with.'
+          : 'No app reported over this window.'
+      ], 3);
+      if (apps.length === 1) {
+        block.appendChild(h('div', { className: 'row mt-sm' }, [coveragePill(apps[0])]));
+        if (S.filters().scope !== 'all') {
+          block.appendChild(h('div', { className: 'row mt-sm' }, [
+            S.link(hrefWith('scope', 'all'), 'Show every app')
+          ]));
+        }
       }
-      tr.appendChild(cell);
+      card.appendChild(block);
+      return card;
+    }
+
+    card.appendChild(S.cardHead('Side by side', null, []));
+    card.appendChild(h('div', { className: 'card-body' }, [
+      h('div', { className: 'u-vs' }, apps.map(function (app) {
+        return appColumn(app, noStored);
+      }))
+    ]));
+    return card;
+  }
+
+  function appColumn(app, noStored) {
+    var metrics = list(app.metrics);
+    var lead = metrics[0];
+
+    var head = h('div', { className: 'u-vs-head' }, [
+      h('h4', { className: 'u-vs-name' }, [
+        h('i', {
+          className: 'dot ' + toneClass(app.trend && app.trend.color),
+          'aria-hidden': 'true'
+        }),
+        h('span', { text: app.label })
+      ])
+    ]);
+
+    /* Coverage: drawn by `coveragePill`, whose docblock carries the reason
+       this is the figure's only slot. */
+    head.appendChild(coveragePill(app));
+
+    var column = h('div', { className: 'u-vs-side' }, [head]);
+
+    if (lead) {
+      var leadReason = withheld(lead, noStored);
+      column.appendChild(h('div', { className: 'u-vs-big' }, [
+        h('div', {
+          className: 'u-vs-val num' + (leadReason ? ' is-absent' : ''),
+          text: leadReason ? NOT_REPORTED : metricValue(lead)
+        }),
+        h('div', { className: 'u-vs-cap', text: leadReason ? sentence(leadReason) : lead.label })
+      ]));
+    }
+
+    var rows = h('div', { className: 'u-vs-rows' });
+    metrics.slice(1).forEach(function (metric) {
+      var reason = withheld(metric, noStored);
+      /* The reason is the value when there is no figure: a bare "Not reported"
+         beside a label the operator can see a figure for in the other column
+         reads as a gap in the pipeline rather than as a decision this pane
+         made, and a title attribute is not on screen at all. */
+      rows.appendChild(h('div', { className: 'u-vs-row' }, [
+        h('span', { className: 'u-vs-k', text: metric.label }),
+        h('span', {
+          className: 'u-vs-v num' + (reason ? ' is-absent' : ''),
+          text: reason ? notReported(reason) : metricValue(metric)
+        })
+      ]));
+    });
+    column.appendChild(rows);
+    return column;
+  }
+
+  /* --------------------------------------------------------- do they return */
+
+  /* The tint bands the cells are shaded in. The number is printed in every
+     cell, so the shade is a second reading of a figure that is already there
+     rather than the only way to read it. */
+  var COHORT_BANDS = [4000, 5000, 6000, 7000];
+
+  function intensity(basisPoints) {
+    var level = 1;
+    COHORT_BANDS.forEach(function (edge) {
+      if (basisPoints >= edge) level += 1;
+    });
+    return 'u-i' + level;
+  }
+
+  function cohortCard(cohort) {
+    var offsets = list(cohort.offsets);
+    var card = S.card();
+    /* The note is the route's own definition of a group, which names its app
+       inside it - `label` would say the app and nothing else, and `app` is the
+       filter enum, which reaches an operator as `mobile`.
+
+       It is here rather than hand-written over the band because what the
+       figures are of is not visible anywhere else and cannot be inferred from
+       them: `size` is the accounts created that week which ALSO opened the app
+       that week, so calling the column sign-ups overstates it by the
+       activation rate, and the population excludes everyone who has not turned
+       usage analytics on. A retention share whose denominator silently drops
+       those people is a different number from the one the heading promises. */
+    card.appendChild(S.cardHead('Who comes back', cohort.note || cohort.label || null, []));
+
+    var headRow = h('tr', {}, [
+      h('th', { scope: 'col', className: 'u-when', text: 'Week joined' }),
+      h('th', { scope: 'col', className: 'r u-size', text: 'People' })
+    ]);
+    offsets.forEach(function (offset) {
+      headRow.appendChild(h('th', {
+        scope: 'col', className: 'r', text: offsetLabel(offset)
+      }));
+    });
+
+    var body = h('tbody');
+    list(cohort.rows).forEach(function (row) {
+      body.appendChild(cohortRow(row, offsets.length));
+    });
+
+    /* The grid is as wide as the answer's weeks make it and the box around it
+       scrolls, so the weeks past the edge have to be reachable without a
+       pointer. Chrome does not put a scroll container in the tab order on its
+       own. Same treatment as the Settings pane's wide tables
+       (ops/assets/settings.js), named so the region says which app's grid it
+       is rather than announcing an unlabelled region. */
+    card.appendChild(h('div', { className: 'card-body' }, [
+      h('div', {
+        className: 'u-scroll',
+        tabindex: '0',
+        role: 'region',
+        'aria-label': 'Retention by signup week' +
+          (typeof cohort.label === 'string' && cohort.label ? ', ' + cohort.label : '')
+      }, [
+        h('table', { className: 'tbl u-cohort' }, [h('thead', {}, [headRow]), body])
+      ])
+    ]));
+    return card;
+  }
+
+  /* Offsets travel as `W1`...`Wn`. The column says the week in words, because
+     `W3` in a row of numbers reads as a figure rather than as a heading. */
+  function offsetLabel(offset) {
+    var text = String(offset === null || offset === undefined ? '' : offset);
+    var week = /^W(\d+)$/i.exec(text);
+    if (week) return 'Week ' + week[1];
+    var n = num(offset);
+    return n === null ? text : 'Week ' + n;
+  }
+
+  function cohortRow(row, cells) {
+    var tr = h('tr', {}, [
+      h('th', { scope: 'row', text: row.label }),
+      h('td', {
+        className: 'r num',
+        text: num(row.size) === null ? fmt.none : fmt.int(row.size)
+      })
+    ]);
+
+    /* A group under the floor is withheld as a whole row rather than cell by
+       cell: every cell in it is a rate over the same handful of people. */
+    if (!reportable(row.size)) {
+      tr.appendChild(h('td', {
+        className: 'u-sup', colspan: String(Math.max(cells, 1))
+      }, [
+        /* The flex row is inside the cell rather than on it: a td laid out as
+           a flex container is no longer a table cell, and a colspan on a box
+           that is not a table cell spans nothing. */
+        h('div', { className: 'u-sup-in' }, [
+          S.icon('lock'),
+          h('span', { text: notReported(suppressionReason(row.size)) })
+        ])
+      ]));
       return tr;
     }
 
-    (cohort.offsets || []).forEach(function (_, i) {
-      var cellData = (row.cells || [])[i];
-      if (!cellData || cellData.state === 'not_aged') {
-        var na = h('td', { className: 'na' });
-        na.appendChild(h('span', { 'aria-hidden': 'true', text: 'n/a' }));
-        na.appendChild(h('span', { className: 'sr-only', text: 'Not aged into this week yet' }));
-        tr.appendChild(na);
+    list(row.cells).slice(0, cells).forEach(function (cell) {
+      var basisPoints = num(cell && cell.basisPoints);
+      if (!cell || cell.state === 'not_aged' || basisPoints === null) {
+        tr.appendChild(h('td', { className: 'r u-na' }, [
+          h('span', { 'aria-hidden': 'true', text: '\u00b7' }),
+          h('span', { className: 'sr', text: 'Not aged into this week yet' })
+        ]));
         return;
       }
-      var td = h('td', { className: 'mono is-tinted', text: d.percent(cellData.basisPoints, 0) });
-      /* The wash behind a cell repeats the number it sits behind, so it is
-         never the only thing carrying the value. Capped well short of opaque
-         so the ink on top stays readable at the strongest tint. */
-      var tint = Math.max(0, Math.min(42, Math.round((cellData.basisPoints || 0) / 240)));
-      td.style.setProperty('--cell-tint', tint + '%');
-      tr.appendChild(td);
+      tr.appendChild(h('td', { className: 'r u-cell ' + intensity(basisPoints) }, [
+        h('span', { className: 'num', text: fmt.percent(basisPoints) })
+      ]));
     });
-
     return tr;
   }
 
-  /* Raw counts for a suppressed group. A count is not a rate, so nothing here
-     is at risk of being read as a trend one person moved. */
-  function rawCounts(row, cohort) {
-    var cells = (row.cells || []).filter(function (c) {
-      return c && typeof c.returned === 'number';
-    });
-    if (!cells.length) return null;
+  /* ------------------------------------------------------- what people do */
 
-    var list = h('dl', { className: 'raw-counts' });
-    (cohort.offsets || []).forEach(function (offset, i) {
-      var cell = (row.cells || [])[i];
-      if (!cell || typeof cell.returned !== 'number') return;
-      list.appendChild(h('dt', { text: offset }));
-      list.appendChild(h('dd', { className: 'mono', text: d.count(cell.returned) }));
-    });
-    return list;
+  function meter(shareOfWidth, tone) {
+    var track = h('div', { className: 'meter ' + toneClass(tone) });
+    var fill = h('i');
+    /* A length computed from data, so it goes through CSSOM: the page's policy
+       is style-src 'self' with no 'unsafe-inline' and a style attribute written
+       into markup would not apply. */
+    fill.style.setProperty('width', Math.max(0, Math.min(100, shareOfWidth)) + '%');
+    track.appendChild(fill);
+    return track;
   }
 
-  /* ----------------------------------------------------------- the funnel */
+  function featureCard(features) {
+    var card = S.card();
+    card.appendChild(S.cardHead('Most used features', features.hint || null, []));
 
-  function funnelCard(data) {
-    var funnel = data.funnel;
-    if (!funnel || !(funnel.steps || []).length) return null;
+    var headRow = h('tr', {}, [
+      h('th', { scope: 'col', text: 'What they did' }),
+      h('th', { scope: 'col', text: 'App' }),
+      h('th', { scope: 'col', className: 'r', text: 'Share of people' }),
+      h('th', { scope: 'col', className: 'u-bar-col' }, [
+        h('span', { className: 'sr', text: 'Share, drawn' })
+      ])
+    ]);
 
-    var card = d.card({ title: 'Getting to a first program', hint: funnel.hint });
-    var body = d.cardBody();
+    var body = h('tbody');
+    list(features.rows).forEach(function (row) {
+      var basisPoints = num(row.basisPoints);
+      var tr = h('tr', {}, [
+        h('th', { scope: 'row', text: row.label }),
+        h('td', { text: row.app || fmt.none })
+      ]);
 
-    var top = funnel.steps[0].count || 1;
-    var list = h('ol', { className: 'funnel', role: 'list' });
+      if (!reportable(row.denominator) || basisPoints === null) {
+        tr.appendChild(h('td', { className: 'u-sup', colspan: '2' }, [
+          h('div', { className: 'u-sup-in' }, [
+            S.icon('lock'),
+            h('span', { text: notReported(suppressionReason(row.denominator)) })
+          ])
+        ]));
+      } else {
+        tr.appendChild(h('td', { className: 'r num', text: fmt.percent(basisPoints) }));
+        tr.appendChild(h('td', { className: 'u-bar-col' }, [
+          meter(basisPoints / 100, row.color)
+        ]));
+      }
+      body.appendChild(tr);
+    });
 
-    funnel.steps.forEach(function (step) {
-      var bar = h('i', { 'aria-hidden': 'true' });
-      bar.style.setProperty('width', Math.max(1, (step.count / top) * 100).toFixed(2) + '%');
+    card.appendChild(h('div', { className: 'card-body' }, [
+      h('table', { className: 'tbl u-feat' }, [h('thead', {}, [headRow]), body])
+    ]));
 
-      var track = h('div', {
-        className: 'funnel-bar' + (step.tone === 'crit' ? ' is-crit' : ''),
-        'aria-hidden': 'true'
-      }, [bar]);
+    /* `features.coverageNote` carries two facts: that feature use is only
+       observed on app versions that report it, and the worst app's coverage
+       figure. The figure is `coveragePill`, which draws on every answer that
+       carries one, so only the method survives here, and it survives in nine
+       words rather than twenty. */
+    if (features.coverageNote) {
+      card.appendChild(h('div', { className: 'card-foot' }, [
+        S.icon('info'),
+        h('span', { text: 'Only seen on app versions that report feature use' })
+      ]));
+    }
+    return card;
+  }
 
-      var label = h('span', { className: 'small', text: step.label });
-      if (step.tone === 'crit') label.classList.add('ink-crit');
+  /* Whose sessions the Sessions column is a share of, taken from the rows
+     rather than written here. Each row's `note` names its own app because the
+     share is over that app's own sessions, so with two apps in the table the
+     column holds two denominators and four rows that sum to 200%. One note
+     over the table is that statement made once; the rows' own sentences would
+     be the same fact four times.
 
-      list.appendChild(h('li', { className: 'funnel-step' }, [
-        label, track, h('span', { className: 'mono right', text: d.count(step.count) })
+     Verbatim only when every row says the same thing, which is narrower than
+     "one app in the selection": past the twelfth version of an app the route
+     adds a summed remainder row whose note carries a second sentence about
+     the summing, so one app with thirteen versions has two notes and takes the
+     general sentence. That is the right outcome -- both notes name the same
+     denominator, and printing one of the two would drop the summing -- but it
+     is not the one an "every row agrees means one app" reading predicts. */
+  function shareNote(versions) {
+    var notes = [];
+    versions.forEach(function (version) {
+      var note = typeof version.note === 'string' ? version.note.trim() : '';
+      if (note && notes.indexOf(note) === -1) notes.push(note);
+    });
+    if (!notes.length) return null;
+    return notes.length === 1 ? notes[0] : "Share is of each app's own sessions";
+  }
+
+  function versionCard(coverage) {
+    var versions = list(coverage.versions);
+    var card = S.card();
+    card.appendChild(S.cardHead('Which versions report', shareNote(versions), []));
+
+    var headRow = h('tr', {}, [
+      h('th', { scope: 'col', text: 'Version' }),
+      h('th', { scope: 'col', className: 'r', text: 'Sessions' }),
+      h('th', { scope: 'col', className: 'r', text: 'Reporting' })
+    ]);
+
+    var body = h('tbody');
+    versions.forEach(function (version) {
+      var share = num(version.sessionShareBasisPoints);
+      var reports = num(version.coverageBasisPoints);
+      var full = reports === 10000;
+      body.appendChild(h('tr', {}, [
+        h('th', { scope: 'row', text: version.label }),
+        h('td', {
+          className: 'r num',
+          text: share === null ? fmt.none : fmt.percent(share)
+        }),
+        h('td', { className: 'r' }, [
+          h('span', { className: 'pill' + (full ? '' : ' warn') }, [
+            S.icon(full ? 'check' : 'warn'),
+            h('span', { text: reports === null ? 'Not reported' : fmt.percent(reports) })
+          ])
+        ])
       ]));
     });
-    body.appendChild(list);
 
-    if (funnel.note) {
-      var note = d.callout('warn', 'warn', [
-        d.strong(funnel.note.title), ' ' + funnel.note.detail
-      ]);
-      note.classList.add('mt');
-      var link = d.payloadLink(funnel.note.link);
-      if (link) note.lastChild.appendChild(h('div', { className: 'row mt-sm' }, [link]));
-      body.appendChild(note);
-    }
-
-    card.appendChild(body);
-    return card;
-  }
-
-  /* ------------------------------------------------------- feature usage */
-
-  function featureCard(data) {
-    var features = data.features;
-    if (!features || !(features.rows || []).length) return null;
-
-    var card = d.card({ title: 'Which features get used', hint: features.hint });
-    var body = d.cardBody();
-
-    var reportable = [];
-    var suppressed = [];
-    features.rows.forEach(function (row) {
-      if (d.reportable(row.denominator)) reportable.push(row);
-      else suppressed.push(row);
-    });
-
-    if (reportable.length) {
-      body.appendChild(d.rankList(reportable.map(function (row) {
-        return {
-          label: row.label,
-          value: row.basisPoints,
-          note: row.app,
-          color: row.color
-        };
-      }), {
-        format: function (r) { return d.percent(r.value, 0); }
-      }));
-    }
-
-    if (suppressed.length) {
-      var box = d.callout(null, 'info', [
-        d.strong(suppressed.length === 1
-          ? 'One feature is not reported here.'
-          : suppressed.length + ' features are not reported here.'),
-        ' Their app had fewer than ' + d.REPORTING_FLOOR + ' active users in ' +
-          'this window, so a share would move by several points on one person. ' +
-          'The raw counts are below.'
-      ]);
-      box.classList.add('mt-sm');
-      var list = h('dl', { className: 'raw-counts' });
-      suppressed.forEach(function (row) {
-        list.appendChild(h('dt', { text: row.label }));
-        list.appendChild(h('dd', {
-          className: 'mono',
-          text: d.count(row.users) + ' of ' + d.count(row.denominator)
-        }));
-      });
-      box.lastChild.appendChild(list);
-      body.appendChild(box);
-    }
-
-    if (features.note) {
-      body.appendChild(h('p', { className: 'axis-note mt-sm', text: features.note }));
-    }
-    card.appendChild(body);
-
-    if (features.coverageNote) {
-      card.appendChild(d.cardFoot([h('span', { text: features.coverageNote })]));
-    }
-    return card;
-  }
-
-  /* -------------------------------------------------- metric definitions */
-
-  /* The glossary, and the one thing on this pane that is not a figure.
-
-     It is static because it is a definition rather than a measurement, and
-     because a number without a definition is a rumour. The wording follows the
-     operations metric definitions, which are the contract this surface is held
-     to; the design mock's glossary is not. */
-  var DEFINITIONS = [
-    ['Active user', 'One authenticated account with at least one foreground session in the window, counted once per app no matter how many devices it used.'],
-    ['Session', 'Foreground activity with gaps under 30 minutes. A background sync is not a session, and a session that crosses midnight is counted on the day it started.'],
-    ['Coming back', 'Of the people who signed up in one week, how many were active again in a later week.'],
-    ['Feature use', "Share of that app's own active users who opened the feature at least once. A shared denominator would understate a feature only one app has."],
-    ['Coverage', 'Share of sessions on an app version that reports the event a figure needs. Shown next to any figure it limits.']
-  ];
-
-  function definitionsCard() {
-    var card = d.card({ title: 'What these numbers mean' });
-    var body = d.cardBody();
-
-    var dl = h('dl', { className: 'dl dl-narrow' });
-    DEFINITIONS.forEach(function (pair) {
-      dl.appendChild(h('dt', { text: pair[0] }));
-      dl.appendChild(h('dd', { className: 'plain', text: pair[1] }));
-    });
-    body.appendChild(dl);
-    card.appendChild(body);
-
-    card.appendChild(d.cardFoot([
-      h('span', {
-        text: 'Every period is counted in UTC. People who have not turned on ' +
-          'usage analytics are in none of these figures: their activity is ' +
-          'never recorded, so there is nothing to leave out later.'
-      })
+    card.appendChild(h('div', { className: 'card-body' }, [
+      h('table', { className: 'tbl u-vers' }, [h('thead', {}, [headRow]), body])
     ]));
+
+    /* No footer. `coverage.shortfall.detail` is the complement of the figure
+       `coveragePill` prints - 30.7% did not report is 69.3% did - and the
+       Reporting column beside it names which versions, which is the part an
+       operator acts on. A fact already on screen does not also get a
+       sentence. The pill is what makes "already on screen" true here: the
+       route sends `shortfall` for the worst app whether or not there are two
+       apps to compare, so before the pill moved out of the column head this
+       drop left one-app answers with the caveat and not the magnitude. */
     return card;
   }
 
-  /* ------------------------------------------------------ coverage panel */
+  /* ------------------------------------------------------------- assembly */
 
-  function coverageCard(data) {
-    var coverage = data.coverage;
-    if (!coverage || !(coverage.versions || []).length) return null;
+  function render(data) {
+    var sent = num(data.reportingFloor);
+    floor = sent !== null && sent > 0 ? sent : REPORTING_FLOOR;
 
-    var card = d.card({ title: 'Which app versions report data', id: 'coverageCard' });
-    card.setAttribute('tabindex', '-1');
+    var wrap = h('div', { className: 'stack' });
 
-    var body = d.cardBody('stack-sm');
-    coverage.versions.forEach(function (version) {
-      /* The meter draws coverage, so the text beside it has to be coverage.
-         It used to read the session share, a different quantity, which left
-         the number this card exists to show carried by the length and the
-         colour of a bar that is hidden from assistive technology: nowhere in
-         text, and invisible to anybody who cannot compare bar lengths. The
-         session share is still here, as the sentence underneath. */
-      var known = typeof version.coverageBasisPoints === 'number' &&
-        isFinite(version.coverageBasisPoints);
-      var short = known && version.coverageBasisPoints < 10000;
+    var headline = S.band('Who is using Aria', null, answerNotes(data));
+    var grid = tiles(data);
+    if (grid) headline.appendChild(grid);
+    wrap.appendChild(headline);
 
-      var notes = [];
-      if (typeof version.sessionShareBasisPoints === 'number') {
-        notes.push(d.percent(version.sessionShareBasisPoints, 0) +
-          ' of sessions in this window ran on it.');
+    var growth = S.band('Is that growing', null, []);
+    growth.appendChild(h('div', { className: 'grid g-main' }, [
+      trendCard(data), splitCard(data)
+    ]));
+    wrap.appendChild(growth);
+
+    var cohorts = list(data.cohorts).filter(function (cohort) {
+      return list(cohort.rows).length > 0;
+    });
+    if (cohorts.length) {
+      /* The band note is the legend for the one symbol in the grid that is
+         not a figure. What a group IS comes from each card's own note, which
+         is the route's sentence and names its own app. */
+      var back = S.band('Do people come back',
+        '\u00b7 is a week a group has not reached yet', []);
+      back.appendChild(h('div', { className: cohorts.length > 1 ? 'grid g2' : 'grid' },
+        cohorts.map(cohortCard)));
+      wrap.appendChild(back);
+    }
+
+    var features = data.features || {};
+    var coverage = data.coverage || {};
+    var hasFeatures = list(features.rows).length > 0;
+    var hasVersions = list(coverage.versions).length > 0;
+
+    if (hasFeatures || hasVersions) {
+      var doing = S.band('What people do', null, []);
+      if (hasFeatures && hasVersions) {
+        doing.appendChild(h('div', { className: 'grid g-main' },
+          [featureCard(features), versionCard(coverage)]));
+      } else if (hasFeatures) {
+        doing.appendChild(featureCard(features));
+      } else {
+        doing.appendChild(versionCard(coverage));
       }
-      if (version.note) notes.push(version.note);
-
-      body.appendChild(d.meterRow({
-        label: version.label,
-        value: known
-          ? d.percent(version.coverageBasisPoints, 0) + ' of its sessions report'
-          : 'Reporting not measured',
-        fillPercent: known ? version.coverageBasisPoints / 100 : 0,
-        tone: short || !known ? 'warn' : 'ok',
-        note: notes.join(' ')
-      }));
-    });
-    card.appendChild(body);
-
-    card.appendChild(d.cardFoot([
-      h('span', {
-        text: 'Coverage is the honest denominator. A version that does not ' +
-          'report an event is not evidence that its users do nothing.'
-      })
-    ]));
-    return card;
-  }
-
-  /* --------------------------------------------------------------- ready */
-
-  function renderReady(data) {
-    var root = h('div', { className: 'stack' });
-
-    var coverage = coverageCard(data);
-    var warning = coverageWarning(data.coverage, coverage ? function () {
-      var target = document.getElementById('coverageCard');
-      if (!target) return;
-      target.scrollIntoView({ block: 'nearest' });
-      target.focus();
-    } : null);
-    if (warning) root.appendChild(warning);
-
-    /* Above the columns rather than in a footnote under them. Both notes
-       change how the figures immediately below are read, and one of them says
-       that some of those figures are absent, so a reader who stops at the
-       numbers has to have met it first. */
-    windowNotes(data).forEach(function (note) { root.appendChild(note); });
-
-    root.appendChild(appColumns(data, { noStoredDays: hasNoStoredDays(data) }));
-
-    root.appendChild(d.callout('info', 'info', [
-      d.strong('These columns are never added together.'),
-      ' A coach session and an athlete session measure different work. ' +
-        'Coaches Web shows longer visits and more regular use because it is a ' +
-        'work tool, not because it is a better product. Combined totals appear ' +
-        'only for counts that share a unit.'
-    ]));
-
-    /* The cards below are peers of the app comparison, not parts of it. Their
-       titles are h3, so without a heading of their own they read to anybody
-       navigating by headings as subsections of "Usage by app", which is a
-       section they have nothing to do with. Silent, because the band it names
-       is already obvious on screen from the layout. */
-    root.appendChild(h('h2', {
-      className: 'sr-only', text: 'Behaviour, features and coverage'
-    }));
-
-    var grid = h('div', { className: 'grid g-main' });
-    var left = h('div', { className: 'stack' });
-    var right = h('div', { className: 'stack' });
-
-    [cohortCard(data), funnelCard(data)].forEach(function (c) {
-      if (c) left.appendChild(c);
-    });
-    [featureCard(data), definitionsCard(), coverage].forEach(function (c) {
-      if (c) right.appendChild(c);
-    });
-
-    grid.appendChild(left);
-    grid.appendChild(right);
-    root.appendChild(grid);
-
-    /* No guard in front of the call: utcStamp answers null for a time it was
-       not given, `null` and `0` included, so one test covers absent, empty and
-       unreadable rather than three spellings of the same fact. */
-    var stamp = d.utcStamp(data.asOf);
-    root.appendChild(h('p', {
-      className: 'axis-note',
-      text: stamp
-        ? 'Counted up to ' + stamp + '.'
-        : 'The window these figures were counted up to was not reported, so ' +
-          'they cannot be trusted as current.'
-    }));
-    return root;
-  }
-
-  /* The pane-level too-small state. Distinct from a suppressed row: this is
-     the whole window being under the floor, which usually means the window is
-     too narrow rather than that nothing happened. */
-  function renderInsufficient(data) {
-    var actions = [];
-    var ranges = ((shell.panes[PANE_ID] || {}).range) || [];
-    var widest = ranges.filter(function (r) { return r !== 'custom'; }).pop();
-    /* Through the shell's filter state, so widening the window does not also
-       silently move the operator off the app and environment they were
-       looking at. */
-    var href = widest && d.paneUrl(PANE_ID, { range: widest });
-    if (href) {
-      actions.push(h('a', {
-        className: 'btn btn-primary',
-        href: href,
-        text: 'Try the widest window'
-      }));
+      wrap.appendChild(doing);
     }
 
-    var detail = (data.availability && data.availability.detail) ||
-      'Fewer than ' + d.REPORTING_FLOOR + ' people were active in this window.';
-
-    return d.stateCard('analytics', 'Not enough data to report', [
-      detail,
-      'We do not report rates below ' + d.REPORTING_FLOOR + '. With a group ' +
-        'this small one person moves the figure by several points, which would ' +
-        'read as a change rather than as noise. Raw counts are always safe and ' +
-        'are shown wherever they exist.'
-    ], actions);
+    return wrap;
   }
 
-  /* -------------------------------------------------------------- render */
+  /* ---------------------------------------------------------------- states */
 
-  function mount(content) {
-    var host = h('div', { className: 'pane' });
-    content.appendChild(host);
+  function emptyCard(block) {
+    var box = S.card();
+    box.appendChild(block);
+    return box;
+  }
 
-    var token = 0;
+  /* Not ready is not empty, and the two states the route distinguishes are
+     answered differently: too little data is a window the operator can widen,
+     nothing reporting at all is not. */
+  function notReady(data, region) {
+    var availability = data.availability || {};
+    var detail = typeof availability.detail === 'string' && availability.detail
+      ? availability.detail
+      : null;
 
-    /* Every state the pane lands in is announced, not only the skeleton. The
-       pane replaces its whole subtree on each filter change, so without this a
-       screen reader hears "Loading figures" and then silence, including when
-       what replaced it was the failure card.
-
-       Focus is carried across the replacement when it was inside the pane, so
-       a reader who activated "Try again" from the keyboard lands on what
-       answered them rather than at the top of the document. */
-    function paint(node, announcement) {
-      var held = host.contains(document.activeElement);
-      host.textContent = '';
-      host.appendChild(node);
-      shell.wireTabs(host);
-      if (held) d.refocus(host);
-      if (announcement) shell.announce(announcement);
+    if (availability.state === 'insufficient') {
+      var block = S.stateBlock('chart', 'Not enough usage to report yet', [
+        detail || 'This window has too few people behind it to publish a figure.'
+      ]);
+      var widest = widestRange();
+      if (widest && S.filters().range !== widest) {
+        block.appendChild(h('div', { className: 'row mt-sm' }, [
+          S.link(hrefWith('range', widest), 'Try the widest window')
+        ]));
+      }
+      region.empty(emptyCard(block));
+      return;
     }
 
-    function refresh() {
-      var mine = ++token;
-      paint(d.loading([132, 220]));
+    region.empty(emptyCard(S.stateBlock('plug', 'Usage is not being reported', [
+      detail || 'Nothing is arriving from the apps for this selection.'
+    ])));
+  }
 
-      d.load(source()).then(function (result) {
-        if (mine !== token) return;
+  S.definePane(PANE_ID, function (content) {
+    var region = S.region(content);
+    var inFlight = 0;
 
-        var data = (result.data && typeof result.data === 'object') ? result.data : null;
-        if (!data) { paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title); return; }
+    function skeleton() {
+      region.loading([
+        { type: 'tiles', count: 4 },
+        { type: 'block', height: 240 },
+        { type: 'rows', count: 6 }
+      ]);
+    }
 
-        var state = data.availability && data.availability.state;
-        if (state === 'insufficient') {
-          paint(renderInsufficient(data), 'Not enough data to report');
+    function load() {
+      var token = ++inFlight;
+      skeleton();
+
+      S.read(source()).then(function (answer) {
+        if (token !== inFlight) return;
+        var data = (answer && answer.data) || {};
+        var availability = data.availability || {};
+
+        if (availability.state && availability.state !== 'ready') {
+          notReady(data, region);
           return;
         }
-        if (state && state !== 'ready') {
-          paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title);
+        if (!list(data.apps).length) {
+          region.empty(emptyCard(S.stateBlock('empty', 'No app reported over this window', [
+            'Widen the window or change the app filter to see figures.'
+          ])));
           return;
         }
-
-        /* An answer carrying no app columns is not a ready pane. Defaulting
-           the state to ready meant a payload with nothing in it drew the
-           "these columns are never added together" callout and the glossary
-           over no figures at all, which reads as a measured result rather than
-           as an empty answer. The columns are the pane; without them there is
-           nothing to be ready about. */
-        if (!(data.apps || []).length) {
-          paint(d.noSource(NOT_REPORTING), NOT_REPORTING.title);
-          return;
-        }
-
-        paint(renderReady(data), 'Usage figures updated');
-      }).catch(function (err) {
-        if (mine !== token) return;
-        paint(d.failure(err, {
-          title: NOT_REPORTING.title,
-          detail: NOT_REPORTING.detail,
-          onRetry: refresh
-        }), 'Could not load these figures');
+        region.show(render(data));
+        S.announce('Usage figures updated for ' + windowPhrase(data) + '.');
+      }).catch(function (error) {
+        if (token !== inFlight) return;
+        region.failed(error, load);
       });
     }
 
-    /* The shell fires the starting selection as an ordinary change, once the
-       shell is in the document and before anything else can happen, so there
-       is one path into a load rather than one for the first selection and one
-       for every later one. The skeleton goes up now so the pane is never blank
-       between being mounted and that event arriving. */
-    paint(d.loading([132, 220]));
-    global.addEventListener('ops:filters', refresh);
-  }
-
-  shell.definePane(PANE_ID, mount);
-})(window);
+    /* The bootstrap fires ops:filters with the starting selection once the
+       shell is in the document, so the first read is that event rather than a
+       call from here: reading twice on boot would double every request and
+       leave the two answers racing. The skeleton goes up now because the
+       listener is added before the event and the region would otherwise be
+       blank until the answer lands. */
+    skeleton();
+    global.addEventListener('ops:filters', load);
+  });
+}(window));

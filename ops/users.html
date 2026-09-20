@@ -7,13 +7,19 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.runwitharia.com; base-uri 'none'; form-action 'none'">
 <title>Look up a user | Aria Operations</title>
 <script src="assets/theme.js"></script>
-<link rel="stylesheet" href="assets/ops.css">
+<!-- The v2 design system, the pane chrome around it, and this pane's own
+     shapes. ops.css and operate.css are deliberately absent: both stylesheets
+     define .card, .rail, .topbar, .btn, .seg, .pill and .tbl from different
+     token sets, so a page loads one system or the other, never both. -->
+<link rel="stylesheet" href="assets/aria.css">
+<link rel="stylesheet" href="assets/shell-pane-v2.css">
+<link rel="stylesheet" href="assets/pane-users-v2.css">
 </head>
-<body data-page="users" class="is-booting">
+<body data-pane="users" class="is-booting">
 
 <!-- Hidden until the shell exists, because there is nothing to skip past in
      the boot and failure states: each is a single card. -->
-<a class="skip-link" href="#content">Skip to content</a>
+<a class="skip" href="#content">Skip to content</a>
 
 <!-- Nothing below is rendered until the operations API has confirmed a
      session. The three gates are mutually exclusive, so there is no state in
@@ -22,10 +28,10 @@
 
 <main class="gate gate-boot gate-center">
   <div>
-    <h1 class="sr-only">Aria Operations</h1>
+    <h1 class="sr">Aria Operations</h1>
     <div class="boot-mark" aria-hidden="true"><img src="assets/aria-mark.png" alt="" width="22" height="22"></div>
-    <p class="muted small" role="status">Checking your session</p>
-    <div class="skel skel-boot mt-sm" aria-hidden="true"></div>
+    <p class="boot-line" role="status">Checking your session</p>
+    <div class="skel skel-boot" aria-hidden="true"></div>
   </div>
 </main>
 
@@ -36,8 +42,8 @@
 </div>
 
 <noscript>
-  <div class="auth-wrap">
-    <div class="card auth-card">
+  <div class="noscript-wrap">
+    <div class="card">
       <p>The operations dashboard needs JavaScript. It reads everything from an
         authenticated API rather than from a server that renders pages, so with
         scripting switched off there is nothing here.</p>
@@ -45,10 +51,11 @@
   </div>
 </noscript>
 
-<script src="assets/icons.js"></script>
+<script src="assets/pane-registry.js"></script>
 <script src="assets/api.js"></script>
 <script src="assets/session.js"></script>
-<script src="assets/shell.js"></script>
+<script src="assets/aria.js"></script>
+<script src="assets/shell-pane-v2.js"></script>
 <script src="assets/pane-users.js"></script>
 </body>
 </html>
