@@ -1000,17 +1000,30 @@ blocked by the page's `style-src 'self'`, CSSOM is not — screenshots the full 
 the surface behind each **run of text**. Runs, not element boxes: a row that contains a chip is
 12% chip, and the row's own words sit on none of it.
 
-Two things decide the answer, and both are per **role**:
+Four things decide the answer, and each is chosen for the **role** the colour plays — an ink,
+not a fill:
 
-- **The ink decides against its worst surface.** The hatch behind `.budget .fore` is 22% amber
-  every 6px, so a letter crossing a stripe is read at the stripe's ratio whatever the rest of
-  the run does. Judging the widest surface instead lets a minority one hide a failure — with
-  that one line changed, the below-AA site the page carries today reads 6.01:1 and passes.
+- **The ink decides against its worst surface**, with no minimum share. The hatch behind
+  `.budget .fore` is 22% amber every 6px, so a letter crossing a stripe is read at the stripe's
+  4.49:1 and not at the 6.01:1 of the gap. Put a 5% floor on surfaces and a real 1.63:1 site
+  sinks below it unseen. Judge the widest surface instead and the site the page carries today
+  stops failing altogether — what catches *that* is the freeze list below, which requires every
+  frozen site to still reproduce and reports 0 matches where it needs 1. On a page with nothing
+  frozen, judging the widest surface would be silent; the freeze entry is load-bearing here.
 - **An ink it cannot resolve is refused, never assumed.** Assuming opaque is the flattering
   direction for an ink: a faded ink read as solid clears AA. `color(srgb …)` — how Chromium
   serialises `color-mix()` — is read as the 0..1 floats CSS Color 4 says it is, because the
   parser this one was ported from understood only `rgb()` and silently dropped 40 sites with 10
   real failures among them (monorepo #10255). Anything it cannot read fails the run.
+- **The fade does not have to be on the text.** `opacity` does not inherit, so a faded ancestor
+  leaves the text element reading `opacity: 1` while its glyphs composite at the ancestor's
+  alpha. The ink's alpha is the product of the whole chain, plus `fill-opacity` on SVG. That
+  product is only the true glyph alpha while no faded ancestor paints a surface of its own
+  underneath — where one does, the site is **refused by name** rather than guessed at.
+- **The ink is read from the channel that paints the glyph.** `-webkit-text-fill-color` beats
+  `color` for the glyph interior, and its initial value resolves to whatever `color` is, so
+  reading it is right in both cases. Reading `color` instead let an invisible ink measure as the
+  visible one, and defeated the plate's own integrity check with it.
 
 The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
 --self-test` runs six parts against a synthetic fixture — the formula against published WebAIM
@@ -1023,9 +1036,24 @@ fails, nothing is measured and the run exits non-zero.
 geometry against its card — is outside this check; 1.4.11 is a different requirement and this
 tool measures text only. A skip link parked off-canvas is skipped, so its focused appearance is
 unmeasured. Only `shell-v2.html` is walked, at one viewport, in the four states `applyState`
-exposes. `::before`/`::after` content is measured against its originating element's box rather
-than its own, because a pseudo-element has no text node to range over. And the check answers
-"can this be read", not "is this the designed colour" — the token pins in
+exposes.
+
+**Text painted by `::before`/`::after` is not measured at all.** A pseudo-element has no text
+node to range over, so there is nothing to sample the surface behind. Rather than measure the
+originating element's box and call that an answer, the run **fails** if any `::before` or
+`::after` on the page paints text — a quoted string, `counter()`, `counters()`, `attr()` or a
+quote keyword. `content: ''`, the decorative form this page uses everywhere, is not text and is
+not flagged. So generated text cannot pass unmeasured, but it also cannot be judged: a page that
+wants it has to either drop it or extend this tool.
+
+**Text over a picture is not covered.** The plate hides `img` and `canvas` outright, so text
+over one would be measured against whatever is underneath rather than against the picture, and
+`video` is not hidden at all. `shell-v2.html` contains none of the three, so nothing here
+exercises that path and no mutation proves it either way — read it as not covered, not as
+handled. Text that a transform rotates or skews is sampled from its axis-aligned bounding box,
+which is wider than the glyphs.
+
+And the check answers "can this be read", not "is this the designed colour" — the token pins in
 `check-ops-shell-v2.mjs` answer that, and the two are complementary.
 
 Sites that are below AA on the page today are frozen one at a time in `KNOWN_BELOW_AA`, keyed

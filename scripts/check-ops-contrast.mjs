@@ -345,11 +345,6 @@ function threshold(fontSize, fontWeight) {
   return big ? 3.0 : 4.5;
 }
 
-/* How much of a box a backdrop colour has to hold before it counts as part of
-   what the glyphs sit on. Below this it is an edge, an anti-aliased corner or
-   a sliver of the element behind — not a surface anyone reads text against. */
-const SIGNIFICANT = 0.05;
-
 /* Every backdrop colour inside a rect on the plate, with the share of the box
    each one holds.
 
@@ -360,9 +355,10 @@ const SIGNIFICANT = 0.05;
    MEAN of its real pixels, so bucketing decides which pixels to average and
    never rounds the answer itself.
 
-   Returning the set rather than the winner is what lets the caller be
-   conservative per role: a box whose backdrop is two surfaces is judged on the
-   worse of them, and only when the two disagree about AA is it refused. */
+   EVERY bucket is returned and every bucket counts, with no minimum share: a
+   surface that covers a small part of a run is still painted under part of a
+   letter. A floor here reads as housekeeping and behaves as a hole — at 5%, a
+   1px stripe every 40px sank a site measuring 1.63:1 without a word. */
 function sampleBackdrops(plate, rects, scale) {
   const BUCKET = 8;
   const counts = new Map();
@@ -391,13 +387,7 @@ function sampleBackdrops(plate, rects, scale) {
   const all = [...counts.values()]
     .map((e) => ({ r: e.r / e.n, g: e.g / e.n, b: e.b / e.n, share: e.n / total }))
     .sort((a, b) => b.share - a.share);
-  const significant = all.filter((c) => c.share >= SIGNIFICANT);
-  return {
-    all: all,
-    significant: significant,
-    covered: significant.reduce((n, c) => n + c.share, 0),
-    translucent: translucent / total
-  };
+  return { all: all, translucent: translucent / total };
 }
 
 /* Elements that paint their own text, with everything needed to judge them.
@@ -456,8 +446,41 @@ const COLLECT = `(() => {
 
     /* WCAG 1.4.3 exempts text that is part of an inactive component. Counted
        rather than dropped, so nothing escapes the sweep by being marked
-       disabled without anyone noticing. */
-    const inactive = !!el.closest('[disabled], :disabled, [aria-disabled="true"]');
+       disabled without anyone noticing.
+
+       aria-disabled is deliberately NOT here: it describes a component that
+       is still operable and still meant to be read, and it is an attribute
+       any container can carry, so honouring it would take arbitrary text out
+       of the sweep on one word of markup. Only the HTML disabled state, which
+       browsers apply to descendants of the control itself, exempts. */
+    const inactive = !!el.closest('[disabled], :disabled');
+
+    let alphaChain;
+    {
+      let alpha = Number(cs.opacity);
+      if (isSvg) {
+        const fo = Number(inkStyle.fillOpacity);
+        if (Number.isFinite(fo)) alpha *= fo;
+      }
+      let surface = null;
+      for (let a = el.parentElement; a; a = a.parentElement) {
+        const acs = getComputedStyle(a);
+        const ao = Number(acs.opacity);
+        if (!(ao < 1)) continue;
+        alpha *= ao;
+        /* String comparison rather than a regex: this probe is a template
+           literal, so a backslash here is read twice and a regex written the
+           obvious way silently matches something else. */
+        const bgc = acs.backgroundColor;
+        const paints = acs.backgroundImage !== 'none' ||
+          (bgc !== 'rgba(0, 0, 0, 0)' && bgc !== 'transparent');
+        if (paints && !surface) {
+          surface = a.tagName.toLowerCase() +
+            ((a.getAttribute('class') || '') ? '.' + a.getAttribute('class').trim().split(' ')[0] : '');
+        }
+      }
+      alphaChain = { alpha: alpha, surface: surface };
+    }
 
     const runs = [];
     if (!pseudo) {
@@ -486,8 +509,23 @@ const COLLECT = `(() => {
       cls: (isSvg ? el.getAttribute('class')
         : (typeof el.className === 'string' ? el.className : '')) || '',
       text: text.length > 42 ? text.slice(0, 42) + '\\u2026' : text,
-      color: isSvg ? inkStyle.fill : inkStyle.color,
-      opacity: Number(cs.opacity),
+      /* -webkit-text-fill-color, not color: it beats color for the glyph
+         interior and its initial value resolves to the same colour, so
+         reading it is correct whether or not the page sets it. */
+      color: isSvg ? inkStyle.fill : (inkStyle.webkitTextFillColor || inkStyle.color),
+      /* The alpha the glyphs are actually composited at, not this element's
+         own opacity. opacity does not inherit, so a fade on an ANCESTOR
+         leaves cs.opacity at 1 here while the glyphs are painted through it —
+         and reading an ink as solid is the flattering direction, which is the
+         one that hides a defect. fill-opacity is the same channel for SVG
+         text and is likewise not covered by opacity.
+
+         Group opacity composites a subtree as a unit, so the product is exact
+         only while no faded ancestor paints its own surface. fadedSurface
+         says whether one does; measureSites refuses those rather than
+         reporting a number it cannot stand behind. */
+      opacity: alphaChain.alpha,
+      fadedSurface: alphaChain.surface,
       inactive: inactive,
       fontSize: parseFloat(inkStyle.fontSize) || parseFloat(cs.fontSize),
       fontWeight: Number(inkStyle.fontWeight) || Number(cs.fontWeight) || 400,
@@ -509,12 +547,46 @@ const COLLECT = `(() => {
   return JSON.stringify(out);
 })()`;
 
+/* Text this tool cannot reach: generated content.
+
+   A ::before or ::after carrying words has no text node to range over and no
+   box of its own that getBoundingClientRect will hand back, so the collector
+   never sees it and the sweep would be silently short by one site. Rather
+   than measure it badly, the run FAILS if the page paints any — an unreadable
+   pseudo-element would otherwise ship with the sweep reporting the same
+   "every site meets AA" it reports when there is none.
+
+   `content: ''` — the decorative case this page actually uses for rings and
+   glows — carries no text and is not flagged. */
+const GENERATED_TEXT = `(() => {
+  const found = [];
+  for (const el of document.querySelectorAll('*')) {
+    for (const where of ['::before', '::after']) {
+      const cs = getComputedStyle(el, where);
+      const content = cs.content;
+      if (!content || content === 'none' || content === 'normal') continue;
+      if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
+      const quoted = [...content.matchAll(/"((?:[^"\\\\]|\\\\.)*)"/g)].map((m) => m[1]).join('');
+      const computed = /counter\\(|counters\\(|attr\\(|open-quote|close-quote/.test(content);
+      if (!quoted.trim() && !computed) continue;
+      found.push(el.tagName.toLowerCase() +
+        ((el.getAttribute('class') || '') ? '.' + el.getAttribute('class').trim().split(/\\s+/).join('.') : '') +
+        where + ' paints ' + content);
+    }
+  }
+  return JSON.stringify({ found: found.slice(0, 8), count: found.length });
+})()`;
+
 /* Hide every glyph so a screenshot shows only what is painted behind them.
    Colour and visibility do not affect layout, so the plate lines up with the
    real page pixel for pixel. */
 const PLATE_CSS = `
   *, *::before, *::after {
     color: transparent !important;
+    /* -webkit-text-fill-color beats color for the glyph INTERIOR, so a plate
+       that clears only color leaves the glyphs painted wherever this is set —
+       and PLATE_HOLDS, reading color, would report the plate held. */
+    -webkit-text-fill-color: transparent !important;
     text-shadow: none !important;
     -webkit-text-stroke-color: transparent !important;
     caret-color: transparent !important;
@@ -568,7 +640,9 @@ const PLATE_HOLDS = `(() => {
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
     const isSvg = el.namespaceURI === 'http://www.w3.org/2000/svg';
-    const ink = isSvg ? cs.fill : cs.color;
+    /* Read the same channel the glyph interior is painted from, or this
+       assertion answers about a property the page is not using. */
+    const ink = isSvg ? cs.fill : (cs.webkitTextFillColor || cs.color);
     const clear = ink === 'rgba(0, 0, 0, 0)' || ink === 'transparent' ||
       /^color\\(srgb [^)]*\\/ 0\\)$/.test(ink);
     if (!clear) {
@@ -711,8 +785,23 @@ async function measureSites(targets, where) {
       results.push({ ...t, unjudgeable: reason, ink });
       continue;
     }
+    /* A faded ancestor that also paints a surface composites its subtree as a
+       group: the glyphs blend with THAT surface first and the result blends
+       with what is behind. Compositing the ink straight onto the sampled
+       backdrop is then an approximation whose error runs in either direction,
+       so it is refused by name instead. Nothing on the shell does this today,
+       which is why this costs no coverage. */
+    if (t.fadedSurface) {
+      results.push({
+        ...t, unjudgeable: 'faded ancestor paints its own surface', ink: String(t.color),
+        detail: `group opacity on ${t.fadedSurface} composites these glyphs with a surface ` +
+          'this tool samples separately'
+      });
+      continue;
+    }
     const parsed = parseColor(ink);
-    /* Element opacity multiplies the text alpha against the same backdrop. */
+    /* Ink alpha, element opacity, ancestor opacity and fill-opacity all
+       multiply into the alpha the glyphs are composited at. */
     const alpha = (parsed.a === undefined ? 1 : parsed.a) *
       (Number.isFinite(t.opacity) ? t.opacity : 1);
     const need = threshold(t.fontSize, t.fontWeight);
@@ -727,29 +816,22 @@ async function measureSites(targets, where) {
        the ink-role direction of the per-role rule — for an INK the unsafe
        assumption is the flattering one, so the worst surface decides.
 
-       The cost is a false positive where a glyph run genuinely overlaps
-       something its text does not sit on. That is why the collector ranges
-       over text nodes: a row that contains a cyan chip no longer contributes
-       the chip's pixels, because the chip is not inside the run. */
+       Every surface counts, however little of the run it covers. The cost is
+       a false positive where a glyph run genuinely overlaps something its
+       text does not sit on. That is why the collector ranges over text nodes:
+       a row that contains a cyan chip no longer contributes the chip's
+       pixels, because the chip is not inside the run. */
     let worstAt = null, bestAt = null;
-    for (const c of bg.significant) {
+    for (const c of bg.all) {
       const fg = over({ ...parsed, a: alpha }, c);
       const r = contrast(fg, c);
       if (!worstAt || r < worstAt.ratio) worstAt = { ratio: r, bg: c, fg };
       if (!bestAt || r > bestAt.ratio) bestAt = { ratio: r, bg: c, fg };
     }
-    if (!worstAt) {
-      results.push({
-        ...t, unjudgeable: 'backdrop has no surface', ink,
-        detail: `no colour holds ${(SIGNIFICANT * 100).toFixed(0)}% of the band ` +
-          `(${bg.all.length} shades, widest ${(bg.all[0].share * 100).toFixed(0)}%)`
-      });
-      continue;
-    }
     results.push({
       ...t,
       fg: hex(worstAt.fg), bg: hex(worstAt.bg), bgShare: worstAt.bg.share,
-      surfaces: bg.significant.length,
+      surfaces: bg.all.length,
       best: bestAt.ratio, bestBg: hex(bestAt.bg),
       ratio: worstAt.ratio, need
     });
@@ -869,19 +951,19 @@ async function selfTest() {
     const t = targets.find((t) => t.text.startsWith(`swatch ${i} `));
     if (!t) { console.log(`     FAIL case ${i}: element was not collected`); bad++; continue; }
     const bg = sampleBackdrops(plate, [t.rect], scale);
-    if (!bg || !bg.significant.length) {
+    if (!bg || !bg.all.length) {
       console.log(`     FAIL case ${i}: nothing sampled`); bad++; continue;
     }
-    const got = [bg.significant[0].r, bg.significant[0].g, bg.significant[0].b].map(Math.round);
+    const got = [bg.all[0].r, bg.all[0].g, bg.all[0].b].map(Math.round);
     /* Exact, not approximate. The magenta text is the tell: a plate that
        failed to lift the glyphs pulls the mean off the declared value. And
        one surface, not several: a solid box that arrives as two surfaces
        means the significance filter is shredding what it samples, which would
        turn every judged site into a straddle. */
-    const ok = got.every((v, k) => v === c.expect[k]) && bg.significant.length === 1;
+    const ok = got.every((v, k) => v === c.expect[k]) && bg.all.length === 1;
     if (!ok) bad++;
     console.log(`     ${ok ? 'ok  ' : 'FAIL'} ${c.bg.padEnd(34)} sampled rgb(${got.join(',')})` +
-      ` expected rgb(${c.expect.join(',')}) in ${bg.significant.length} surface(s)`);
+      ` expected rgb(${c.expect.join(',')}) in ${bg.all.length} surface(s)`);
   }
 
   console.log('\n  C. plate integrity — every pixel in a solid box must be the box\'s colour');
@@ -1080,6 +1162,15 @@ try {
           continue;
         }
 
+        const generated = await evaluate(GENERATED_TEXT);
+        if (generated.count) {
+          failures.push(`${SHELL} (${theme}/${state}): ${generated.count} element(s) paint ` +
+            'generated text, which this tool cannot measure — it has no text node to range ' +
+            'over and no box of its own. Put the words in the document, or this sweep is ' +
+            `short by ${generated.count} site(s) and says nothing about them: ` +
+            generated.found.join('; '));
+        }
+
         const targets = await evaluate(COLLECT);
         const results = await measureSites(targets, `${SHELL} (${theme}/${state})`);
         for (const r of results) {
@@ -1095,6 +1186,10 @@ try {
           const key = `${r.cls || r.tag}|${theme}`;
           const prev = worst.get(key);
           if (!prev || r.ratio < prev.ratio) worst.set(key, { ...r, theme, state });
+          /* Half a hundredth of slack, which is the rounding of the printed
+             number: a site that reports "4.50:1 needs 4.5:1" must not fail on
+             a difference no reader of this output can see. The page's own
+             worst site sits 0.0085 under its requirement and is caught. */
           if (r.ratio + 0.005 < r.need) belowAA.push({ ...r, theme, state });
         }
         if (verbose) {
@@ -1105,11 +1200,13 @@ try {
 
     /* A sweep that measured almost nothing reports the same "all good" as one
        that measured everything, so the floor is an assertion rather than a
-       note. The shell carries roughly 150 judged sites per pass. */
-    if (checked < 600) {
+       note. Set just under the real count — 1636 across the eight passes, 203
+       to 206 in each — because a floor set far below what the page carries is
+       a floor that never fires. */
+    if (checked < 1400) {
       failures.push(`${SHELL}: only ${checked} text sites were judged across ` +
         `${THEMES.length} themes × ${STATES.length} states, so the sweep measured almost ` +
-        'nothing. The shell carries about 150 a pass.');
+        'nothing. The shell carries 203 to 206 a pass, 1636 in total.');
     }
 
     /* Refused sites are failures, not footnotes. A guard that prints a skip
