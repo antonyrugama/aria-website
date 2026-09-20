@@ -922,7 +922,14 @@ svg { display: block; }
   .g2, .g3 { grid-template-columns: minmax(0, 1fr); }
   .content, .topbar, .filters { padding-left: 16px; padding-right: 16px; }
   .hero { grid-template-columns: auto minmax(0, 1fr); }
+  /* Both shapes a hero can end with, because the first track is `auto` and so
+     sizes to the widest thing left in it. The approved design ends a hero with
+     .hero-chips; auto-placed, the chips land in column 1 beside the 46px orb,
+     the track grows to the chips, and the title column -- minmax(0, 1fr) --
+     gives up whatever they took. Panes carry their own copies of the
+     .hero-chips line today; this is the shared rule they were standing in for. */
   .hero > .row:last-child { grid-column: 1 / -1; }
+  .hero > .hero-chips { grid-column: 1 / -1; }
 }
 @media (max-width: 560px) {
   .g4 { grid-template-columns: minmax(0, 1fr); }
