@@ -1049,11 +1049,13 @@ the run and a wrong number does not:
   paragraph below — and likewise match nothing on the shell today.
 
 The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
---self-test` runs six parts against a synthetic fixture — the formula against published WebAIM
+--self-test` runs seven parts against synthetic fixtures — the formula against published WebAIM
 values, the decode/plate/sample pipeline against declared swatch colours, plate integrity pixel
 by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
-read as its fallback, and `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5). If any part
-fails, nothing is measured and the run exits non-zero.
+read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), and the two boundary
+censuses counted on a page that carries six spellings of a nested browsing context, an open
+author shadow root, a closed one and a user-agent one. If any part fails, nothing is measured
+and the run exits non-zero.
 
 **Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
 geometry against its card — is outside this check; 1.4.11 is a different requirement and this
@@ -1162,10 +1164,11 @@ list — and the refusal check runs **before** the exemption, so "refusals fail 
 exception. The exempt count is printed on every run and is `0` today, and the shell carries no
 `:disabled` element and no `<fieldset>` at all.
 
-**Text over a picture is not covered.** The plate hides `img` and `canvas` outright, so text
-over one would be measured against whatever is underneath rather than against the picture, and
-`video` is not hidden at all. `shell-v2.html` contains none of the three, so nothing here
-exercises that path and no mutation proves it either way — read it as not covered, not as
+**Text over a picture is not covered.** The plate hides `img`, `canvas` and text-free `<svg>`
+outright — the last is every `Aria.icon()` on the page — so text over one would be measured
+against whatever is underneath rather than against the picture, and `video` is not hidden at
+all. `shell-v2.html` carries no `img`, `canvas` or `video` element, so nothing here exercises
+that path for those three and no mutation proves it either way — read it as not covered, not as
 handled.
 
 **WCAG's large-text allowance is not implemented: every text site needs 4.5:1.** The allowance
@@ -1203,18 +1206,51 @@ root is invisible to the in-page read and reports `shadowRootType: "closed"` to 
 in-page census would have covered half the class while reading as though it covered all of it.
 It refuses rather than measures — piercing the sweep into shadow trees means ranges, plate rules
 and the `*` selector all crossing the boundary — and it costs **0** sites: the shell carries no
-author shadow root in any of the eight passes.
+author shadow root in any of the eight passes. That last fact is also why the census is asserted
+in **self-test part G** rather than only on the shell: on a page with no shadow root, a census
+that always returns nothing looks exactly like a working one. Part G's fixture carries an open
+author root, a closed one and a user-agent one, and requires exactly the first two.
 
-**User-agent shadow roots are excluded from that refusal, and one of them hides a real site.**
-The shipped page has four — the browser's own rendering of one `<select>`, its two `<option>`s
-and one `<input>` — so failing on them would make this guard red on markup it is not able to fix
-and would say nothing true. What is inside them is not uniformly unreachable: the `<input>`'s
-placeholder **is** measured, through `::placeholder` with its own ink read. The `<select>`'s
-rendered value is **not**. Measured: the `<select>` has no text node of its own, so the collector
-skips it; its `<option>` children have a `0 × 0` rect, so the size gate drops them; and the words
-a reader actually sees — `Last 7 days` — are painted inside the user-agent root. That is an
-uncovered site on the shipped page, not a handled one, and it is tracked by
-[Stadiora/Aria#10422](https://github.com/Stadiora/Aria/issues/10422).
+**User-agent shadow roots are excluded from that refusal, and the text they paint into the page
+is measured rather than skipped.** The shipped page has four — the browser's own rendering of one
+`<select>`, its two `<option>`s and one `<input>` — so failing on them would make this guard red
+on markup it is not able to fix and would say nothing true. `COLLECT` has a branch for exactly
+this case: it reads the `<select>`'s rendered value through `.selectedOptions` and the `<input>`'s
+placeholder through `::placeholder`, each over the control's own box, which is where those glyphs
+land. Both are proven by mutation — colouring `#sampleRange` `#E9EDF2` fails the run at `1.08:1`
+in four passes, and colouring the placeholder `#EDEFF2` fails it at `1.11:1` — and the failing
+select run samples a clean `#F2F6FA` backdrop with no glyph pixels in it, which is what says the
+plate lifts a user-agent-painted value too. Round 8 of this PR's review wrote the opposite here
+and in the guard, and filed it as an issue; round 9 disproved it from the code and from those
+mutations, so the claim is deleted and
+[Stadiora/Aria#10422](https://github.com/Stadiora/Aria/issues/10422) is closed as not a defect.
+What a user-agent root does keep out of reach is the `<option>` **list**, which the browser paints
+in a popup outside the page — there are no such glyphs in the screenshot, so there is nothing
+here to measure.
+
+**Text inside a nested browsing context is refused, for the same reason and a worse one.** A
+frame is a separate document: the shell's `*` walks do not reach it, the plate stylesheet is not
+installed in it, and no `Range` can be taken over its text — while it paints into the same
+screenshot at full size. Round 9 of this PR's review replaced the pill span with an
+`<iframe srcdoc>` rendering the same pill from the same stylesheet, with the headline token swap
+applied: the sweep went from `1632` sites to `1624`, **exited 0**, and still printed that every
+text site it reaches meets AA, while the pill inside the frame painted at `2.89:1` — worse than
+the `3.03:1` this guard exists for. CSP does not prevent it: `shell-v2.html` is
+`default-src 'none'` with no `frame-src`, and `about:srcdoc` is exempt from CSP by spec. The
+census is `Page.getFrameTree` over CDP, not a tag-name list, so a different spelling does not
+walk through it — and that is asserted in **self-test part G**, whose fixture carries
+`<iframe srcdoc>`, `<iframe src>`, `<object type=text/html>`, `<embed type=text/html>`,
+`<object type=image/svg+xml>` and `<embed type=image/svg+xml>` and requires all six to be
+reported. An in-page census would miss two of those outright: `embed.contentDocument` reads
+`null` to script in the page even for HTML the `<embed>` is hosting. It refuses rather than
+measures, and it costs **0** sites: the shell carries no nested browsing context in any of the
+eight passes.
+
+On the shipped page, CSP narrows which spellings can even create a context: `default-src 'none'`
+with no `frame-src` and no `object-src` blocks `<object>` and `<embed>` entirely — they create no
+context and paint nothing — and blocks `<iframe src>`, which still appears in the frame tree as a
+`chrome-error://` child and is still refused. `about:srcdoc` is exempt from CSP by spec, which is
+why it is the spelling that reached the sweep.
 
 And the check answers "is the ink readable against the paint at its own run", which is "can this
 be read" only while nothing paints over the glyphs — not "is this the designed colour". The token

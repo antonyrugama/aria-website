@@ -12,8 +12,10 @@
  * text-bearing element on the shell, in both themes and all four preview
  * states, it computes the contrast between the element's resolved text colour
  * and the topmost paint at that text with the glyphs lifted, and fails under
- * the WCAG AA threshold for that text's size. That is the colour behind the
- * glyphs only while nothing paints ABOVE them; see NOT COVERED in ops/README.md.
+ * 4.5:1. That is WCAG AA for body text, applied to every site regardless of
+ * type size: the large-text allowance is deliberately not implemented, for the
+ * reasons at AA_RATIO below. That paint is the colour behind the glyphs only
+ * while nothing paints ABOVE them; see NOT COVERED in ops/README.md.
  *
  * Ported from the monorepo's docs/mocks/ops-dashboard-v2/scripts/
  * contrast-check.mjs, which took its own review rounds to become trustworthy.
@@ -87,11 +89,39 @@ const MIME = {
    can leak into what the tool measures. */
 let fixtureHtml = '';
 
+/* Self-test part G's page: six spellings of a nested browsing context, two
+   author shadow roots and one user-agent root, so the two boundary censuses
+   are proven by an executed assertion instead of by this comment. Served,
+   not written to disk, for the same reason as the fixture above. The shell
+   cannot reach five of the six spellings — its default-src 'none' blocks
+   frame-src and object-src, and only about:srcdoc is exempt by spec — so
+   this page is the only place they are exercised. */
+const BOUNDARY_FRAG = '<!doctype html><html><body><p>framed text</p></body></html>';
+const BOUNDARY_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="20"><text x="2" y="14">svg</text></svg>';
+const BOUNDARY_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>boundaries</title></head><body>
+<iframe width="60" height="20" srcdoc="&lt;p&gt;srcdoc text&lt;/p&gt;"></iframe>
+<iframe width="60" height="20" src="/__contrast-boundary-frag.html"></iframe>
+<object type="text/html" data="/__contrast-boundary-frag.html" width="60" height="20"></object>
+<embed type="text/html" src="/__contrast-boundary-frag.html" width="60" height="20">
+<object type="image/svg+xml" data="/__contrast-boundary-frag.svg" width="60" height="20"></object>
+<embed type="image/svg+xml" src="/__contrast-boundary-frag.svg" width="60" height="20">
+<div id="shadowOpen"><template shadowrootmode="open">open root text</template></div>
+<div id="shadowClosed"><template shadowrootmode="closed">closed root text</template></div>
+<select><option>a user-agent root that must NOT be reported</option></select>
+</body></html>`;
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
-  if (url.pathname === '/__contrast-self-test.html') {
-    res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
-    res.end(fixtureHtml);
+  const synthetic = {
+    '/__contrast-self-test.html': [MIME['.html'], () => fixtureHtml],
+    '/__contrast-boundary-test.html': [MIME['.html'], () => BOUNDARY_HTML],
+    '/__contrast-boundary-frag.html': [MIME['.html'], () => BOUNDARY_FRAG],
+    '/__contrast-boundary-frag.svg': ['image/svg+xml', () => BOUNDARY_SVG]
+  }[url.pathname];
+  if (synthetic) {
+    res.writeHead(200, { 'Content-Type': synthetic[0], 'Cache-Control': 'no-store' });
+    res.end(synthetic[1]());
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));
@@ -521,10 +551,6 @@ const COLLECT = `(() => {
        a disabled control whose text is painted by something unmodelled is
        reported, not waved through.
 
-       Two of them — transform and zoom — are here for a different reason
-       than the rest: they do not repaint the glyph, they resize it, and the
-       WCAG threshold this tool picks comes from the DECLARED font-size.
-
        Not a list of everything CSS can do to a glyph — a list of what this
        tool will not stand behind, and it does not close. mask-image and
        clip-path are two more ways to spell a fade and are NOT here: they are
@@ -668,7 +694,6 @@ const COLLECT = `(() => {
       boxless: boxless,
       inactive: inactive,
       fontSize: parseFloat(inkStyle.fontSize) || parseFloat(cs.fontSize),
-      fontWeight: Number(inkStyle.fontWeight) || Number(cs.fontWeight) || 400,
       rect: {
         x: rect.x + window.scrollX, y: rect.y + window.scrollY,
         width: rect.width, height: rect.height
@@ -904,13 +929,17 @@ async function load(url, { settle = 900 } = {}) {
    USER-AGENT roots are a separate matter and are NOT refused here, because
    the shipped page has four of them — the browser's own rendering of one
    <select>, its two <option>s and one <input> — and failing on those would
-   make this guard red on code it cannot fix and would say nothing true. What
-   is inside them is not uniformly unreachable either: the <input>'s
-   placeholder IS measured, through ::placeholder with its own ink read. The
-   <select>'s rendered value is NOT, and that is a real uncovered site rather
-   than a handled one; it is in NOT COVERED in
-   ops/README.md and filed as Stadiora/Aria#10422. Do not
-   read this branch as covering the user-agent half. */
+   make this guard red on code it cannot fix and would say nothing true. The
+   text they paint INTO THE PAGE is measured rather than skipped: COLLECT
+   reads the <select>'s rendered value through .selectedOptions and the
+   <input>'s through ::placeholder, each over the control's own box, which is
+   where those glyphs land. Round 8 of this review wrote here that the
+   <select>'s value was an uncovered site; round 9 disproved it from the code
+   40 lines up and from a mutation — colouring #sampleRange #E9EDF2 fails the
+   run at 1.08:1 in four passes — so the claim is deleted rather than
+   restated. What a user-agent root does keep out of reach is the <option>
+   LIST, which the browser paints in a popup outside the page: there are no
+   such glyphs in the screenshot, so there is nothing here to measure. */
 async function shadowHosts() {
   const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
   const found = [];
@@ -924,6 +953,45 @@ async function shadowHosts() {
     for (const c of n.children || []) walk(c);
   };
   walk(root);
+  return found;
+}
+
+/* A NESTED BROWSING CONTEXT is the other boundary these walks cannot cross,
+   and it is worse than a shadow root: a frame is a separate document, so the
+   shell's querySelectorAll('*') does not reach it, the plate stylesheet is
+   not installed in it and no Range can be taken over its text — while it
+   paints into the same screenshot, at full size, on top of the page.
+
+   Round 9 of this PR's review replaced the pill span with an <iframe srcdoc>
+   rendering the same pill from the same stylesheet and swapped .pill.acc to
+   the wrong token: the sweep dropped from 1632 sites to 1624, exited 0, and
+   still printed that every text site it reaches meets AA — while the pill in
+   the frame painted at 2.89:1, worse than the 3.03:1 this guard exists for.
+   CSP does not prevent this: shell-v2.html is default-src 'none' with no
+   frame-src, and about:srcdoc is exempt from CSP by spec.
+
+   Censused over CDP for the same reason as shadow roots, and a stronger one:
+   <embed> reports contentDocument === null to script in the page even for
+   HTML it is hosting, so an in-page census reads it as empty. Page.getFrameTree
+   reports the CONTEXT rather than the element that spells it, so this is not a
+   tag-name list and does not walk through a different spelling — which is
+   asserted, not asserted-in-a-comment: self-test part G carries six spellings
+   on one page and requires six.
+
+   This refuses; it does not measure. The shell carries no nested browsing
+   context in any of the eight passes, so refusing costs 0 sites — which is
+   also why part G exists: on a page with no frame, a census that always
+   returns nothing is indistinguishable from a working one. */
+async function nestedFrames() {
+  const { frameTree } = await cdp.send('Page.getFrameTree');
+  const found = [];
+  const walk = (node) => {
+    for (const child of node.childFrames || []) {
+      found.push(child.frame.url || '(no url)');
+      walk(child);
+    }
+  };
+  walk(frameTree);
   return found;
 }
 
@@ -1099,7 +1167,7 @@ async function measureSites(targets, where) {
 
 /* ------------------------------------------------------------- self-test */
 
-/* Proves the tool before it judges anything, in six parts that do not share a
+/* Proves the tool before it judges anything, in seven parts that do not share a
    mechanism. Asserting "this pair measures 3.95:1" against a number this same
    file computed would be circular — the expectation would move with the bug —
    so each part binds something a different way:
@@ -1130,6 +1198,14 @@ async function measureSites(targets, where) {
  *      CSS Color 4 (a 50% mix of #FF0000 and #0000FF in sRGB is
  *      `color(srgb 0.5 0 0.5)`, which is rgb(127.5, 0, 127.5)), not computed
  *      here.
+ *   G. THE TWO BOUNDARY CENSUSES, which decide whether a site is SEEN at all
+ *      and so sit upstream of everything A-F measures. A page carrying six
+ *      spellings of a nested browsing context must report six, which is what
+ *      distinguishes a census of CONTEXTS from a tag-name list; and a page
+ *      carrying an open author root, a closed author root and a user-agent
+ *      root must report exactly the first two. Both are counted on a fixture
+ *      because the shipped shell carries neither, so nothing on it can tell a
+ *      working census from one that always returns nothing.
  *
  * NOT COVERED, on purpose — this is the list of exclusions decided, not an
  * inventory of every blind spot, because one nobody has thought of is by
@@ -1305,10 +1381,38 @@ async function selfTest() {
       `${row ? (row.unjudgeable || `judged at ${row.ratio?.toFixed(2)}:1`) : 'nothing'}`);
   }
 
+  console.log('\n  G. boundary censuses — a frame and an author shadow root must be seen');
+  {
+    await load(origin + '/__contrast-boundary-test.html', { settle: 300 });
+    const frames = await nestedFrames();
+    const shadow = await shadowHosts();
+    /* Six spellings on one page. Page.getFrameTree reports the CONTEXT and
+       not the element that spells it, which is what stops this from being a
+       tag-name list; six is the count that says so. A tag-name census would
+       also miss two of these outright: embed.contentDocument reads null to
+       script in the page even for HTML it is hosting. */
+    const okFrames = frames.length === 6;
+    if (!okFrames) bad++;
+    console.log(`     ${okFrames ? 'ok  ' : 'FAIL'} 6 spellings of a nested browsing context ` +
+      `→ ${frames.length} censused\n          ` +
+      'iframe srcdoc, iframe src, object text/html, embed text/html, object svg, embed svg');
+    /* Both author roots, and NOT the <select>'s user-agent root, which is on
+       the same page precisely so that the exclusion is exercised rather than
+       asserted in prose. el.shadowRoot is null for the closed one, so an
+       in-page census would report 1 here and read as though it reported all. */
+    const kinds = shadow.map((s) => s.replace(/^.*\(|\)$/g, '')).sort();
+    const okShadow = shadow.length === 2 && kinds.join(',') === 'closed,open';
+    if (!okShadow) bad++;
+    console.log(`     ${okShadow ? 'ok  ' : 'FAIL'} 1 open + 1 closed author root, 1 user-agent ` +
+      `root → ${shadow.length} censused: ${shadow.join('; ') || 'nothing'}\n          ` +
+      'the user-agent root must not be among them');
+  }
+
   console.log(bad === 0
     ? '\n  self-test passed — the formula matches published values, pixels survive\n' +
       '  the pipeline, the plate lifts every glyph, inks are read from what paints,\n' +
-      '  an ink that cannot be resolved is refused, and color(srgb) is read.\n'
+      '  an ink that cannot be resolved is refused, color(srgb) is read, and the\n' +
+      '  two boundaries this tool refuses are both censused.\n'
     : `\n  self-test FAILED on ${bad} case(s); do not trust this tool's numbers.\n`);
   return bad === 0;
 }
@@ -1429,6 +1533,16 @@ try {
           continue;
         }
 
+        const frames = await nestedFrames();
+        if (frames.length) {
+          failures.push(`${SHELL} (${theme}/${state}): ${frames.length} nested browsing ` +
+            'context(s) on the page. Nothing in this tool enters one — a frame is a separate ' +
+            'document, so the * walks miss its text, the plate stylesheet is not installed in ' +
+            'it and no range can be taken over it — while it paints into the same screenshot, ' +
+            `so the count below would be short by whatever it renders: ${frames.join('; ')}`);
+          continue;
+        }
+
         const generated = await evaluate(GENERATED_TEXT);
         if (generated.count) {
           failures.push(`${SHELL} (${theme}/${state}): ${generated.count} element(s) paint ` +
@@ -1534,8 +1648,9 @@ try {
           'either move the number or drop the entry. (' + e.issue + ')');
       } else if (got.need !== e.need) {
         failures.push(`${SHELL}: the frozen below-AA site ${key} now needs ` +
-          `${got.need.toFixed(1)}:1, not the ${e.need.toFixed(1)}:1 it was frozen at, so its ` +
-          'type size or weight changed under the entry. Re-measure it. (' + e.issue + ')');
+          `${got.need.toFixed(1)}:1, not the ${e.need.toFixed(1)}:1 it was frozen at. Every ` +
+          'site needs AA_RATIO, so this fires only if that constant moved under the entry. ' +
+          'Re-measure it. (' + e.issue + ')');
       }
     }
     frozenCount = [...matched.values()].reduce((n, r) => n + r.length, 0);
