@@ -138,12 +138,17 @@
        file
      - the body of a <script src> is read     the src skip reinstated in
        too                                   inlineScripts
-     - a <script type> a browser does not     the isExecutedScript gate
-       run is not read as code               removed
+     - a <script type> that says DATA is     'application/json' deleted from
+       not read as code, and any other       DATA_SCRIPT_TYPE / the whole
+       type still is                         isExecutedScript gate removed
      - a repeated attribute keeps the        the hasOwnProperty guard in
        FIRST spelling, as HTML does          parseTagAttributes removed
      - markup this cannot read stops the     any one detector's detect()
        judgement rather than being judged    returning false
+     - a reflected IDL property write is     className deleted from
+       a write                               REFLECTED_MEMBER
+     - a member this check does not          the unrecognised-member push
+       recognise refuses everything          deleted
 
    NOT COVERED, on purpose
 
@@ -184,37 +189,61 @@
    two tables in the code — MARKUP_REFUSALS and WRONG_DEAD_NOT_COVERED — by
    `the header's counts block is the code's tables, not a typed claim`. Every
    refuses-to-read entry has a demonstration driven through analyze() that
-   must produce a refusal, and every wrong-dead-not-covered entry has one that
-   must still produce the WRONG verdict. So neither count is typed, no entry's
-   wording can drift from the code, a shape that gets fixed cannot stay on the
-   list, and a detector cannot be added without being demonstrated.
+   must produce a refusal under that entry's own id. Every
+   wrong-dead-not-covered entry has a demonstration that must still produce
+   the WRONG answer — through analyze() where the shape lives inside the
+   analysis, and through the listing helper that mis-reads it where it does
+   not, which is true of exactly one entry and said so in its own wording. A
+   line in the block that is neither a header, an entry nor a continuation is
+   reported rather than dropped, so prose cannot be typed into it either. So
+   neither count is typed, no entry's wording can drift from the code, a shape
+   that gets fixed cannot stay on the list, and a detector cannot be added
+   without being demonstrated.
+
+   Round 1 of review on the change that added this block found four more
+   wrong-DEAD shapes anyway, three of them in the code that change had just
+   written. Three became refusals and one became a wider gate; the count below
+   moved in both directions as a result. Read it as the current state of an
+   estimate that has never yet been final, not as a bound.
 
    None of the refuses-to-read shapes and none of the wrong-dead-not-covered
    shapes exists in ops/ today.
 
    ```counts
-   refuses-to-read: 3
-   - comment-in-script: An HTML comment opener or closer inside a <script>
-     element. stripHtmlComments runs over the whole page, so a `<!--` in a
-     JavaScript string blanks everything up to the next `-->` anywhere later,
-     including a following script and any <link> or <body> between them.
+   refuses-to-read: 4
+   - comment-swallows-markup: A comment, as this guard delimits one,
+     containing a <link, <body or <script. stripHtmlComments is a single
+     lazy regex over the whole page, and every way of opening or closing a
+     comment that it reads differently from a browser ends the same way:
+     markup this analysis depends on is blanked. A `<!--` written inside a
+     script, a <style>, RCDATA or a quoted attribute value; a `<!-->`, which
+     is a complete comment for a browser and unterminated for the regex; a
+     `--!>`, which closes one for a browser and not for the regex; or a
+     comment never closed at all. Rather than ask where the comment came
+     from, this asks what the blanking ate, so it needs no opinion about the
+     parser it is standing in for.
    - quoted-gt-in-tag: A `>` inside a quoted attribute value of <body>,
-     <link> or <script>. Every tag reader here stops at the first `>`, so the
-     rest of the tag is read as though it were page text: the body attribute
-     map comes back wrong, and an href after the quote disappears, which
-     orphans a sheet the page really loads.
+     <link> or <script>. Every tag reader here stops at the first `>`, so
+     the rest of the tag is read as though it were page text: the body
+     attribute map comes back wrong, and an href after the quote disappears,
+     which orphans a sheet the page really loads.
+   - repeated-body-tag: More than one `<body` in the page as written. A
+     browser merges the attributes of a second <body> start tag onto the one
+     body element it already has, and a `<body` that is only text — inside a
+     <template>, a <noscript>, a bogus comment such as <![CDATA[, a quoted
+     attribute value or a string literal — is not a start tag at all. This
+     guard takes the first one and cannot tell those apart, so either
+     reading makes every body-attribute rule on that page answerable from
+     attributes the page may not carry.
    - script-end-tag: A `</script` that the end-tag pattern `</script\s*>`
      does not match, such as `</script/>`. The element never closes for this
      guard and its body is never scanned, while a browser closes the element
      there and runs it.
-   wrong-dead-not-covered: 7
+   wrong-dead-not-covered: 6
    - aliased-body-write: The refusal check reads text, so a write through a
      reference to <body> that is not textually document.body or
-     document.documentElement — an alias, a closest("body"), an argument — is
-     invisible unless it also names the attribute in quotes.
-   - body-in-template: The first `<body` outside an HTML comment wins, so one
-     inside a <template> or a string literal is read as the page's own and
-     the real one is never seen.
+     document.documentElement — an alias, a closest("body"), an argument —
+     is invisible unless it also names the attribute in quotes.
    - character-reference: An HTML character reference in an attribute value
      is read as the characters it is written with, so `data-page="a&amp;b"`
      is compared against the selector as seven characters rather than the
@@ -228,8 +257,12 @@
    - script-injected-link: The orphan arm reads <link> tags only, so a
      stylesheet a script builds and appends at runtime reads as orphaned.
    - subdirectory-page: The page and sheet listings are one level deep, so
-     ops/panes/foo.html would not be read and a sheet only it linked would be
-     reported orphaned.
+     ops/panes/foo.html would not be read and a sheet only it linked would
+     be reported orphaned. This is the one entry whose shape lives in how
+     the repository run is BUILT rather than inside analyze(), so its
+     demonstration has two halves: the listing really is one level deep, and
+     a sheet whose only loader is missing from the page set really does come
+     back orphaned.
    ```
 
    Read that block as the least trustworthy part of this file rather than the
@@ -572,16 +605,32 @@ export function bodyAttributes(html) {
    <script src>, which a browser ignores: reading it can only add refusals,
    and a refusal is the loud direction.
 
-   A <script> whose type is neither absent nor a JavaScript type is NOT read,
-   because a browser does not execute it either. attributeWriteRisks only asks
-   whether the attribute name appears in quotes, so a JSON island whose keys
-   happen to be attribute names would otherwise be reported as a script that
-   could write <body> — a permanently red assertion over a data block. */
-const JAVASCRIPT_TYPE = /^(?:module|(?:text|application)\/(?:x-)?(?:java|ecma)script)$/;
+   A <script> whose type says it carries DATA is NOT read, because a browser
+   does not execute it either. attributeWriteRisks only asks whether the
+   attribute name appears in quotes, so a JSON island whose keys happen to be
+   attribute names would otherwise be reported as a script that could write
+   <body> — a permanently red assertion over a data block.
+
+   The test is a DENYLIST of data types, not an allowlist of JavaScript ones.
+   Round 1 of review found the allowlist spelling of this gate skipping eight
+   of the sixteen JavaScript MIME types the HTML spec lists — text/jscript,
+   text/livescript and text/javascript1.0 … 1.5 — which Chromium runs. Not
+   reading them made a script that writes the attribute invisible and turned a
+   refusal into a DEAD: this gate had introduced a wrong DEAD of its own. An
+   unrecognised type is therefore READ, which can only add refusals, and a
+   refusal is the loud direction. An allowlist would have to be kept in sync
+   with WHATWG forever; this one is wrong only about types nobody executes. */
+const DATA_SCRIPT_TYPE = new Set([
+  'application/json',
+  'application/ld+json',
+  'importmap',
+  'speculationrules',
+  'text/template',
+]);
 
 function isExecutedScript(tagBody) {
   const type = (parseTagAttributes(tagBody).type || '').toLowerCase().split(';')[0].trim();
-  return type === '' || JAVASCRIPT_TYPE.test(type);
+  return !DATA_SCRIPT_TYPE.has(type);
 }
 
 export function inlineScripts(html, pagePath) {
@@ -627,19 +676,36 @@ export function endsInsideQuote(text) {
   return quote !== null;
 }
 
+/* The spans stripHtmlComments blanks, delimited the way it delimits them, with
+   an unterminated `<!--` running to the end of the page as its regex does not.
+   Reading the spans rather than the openers is what lets one detector cover
+   every way this guard's idea of a comment can differ from a browser's. */
+export function commentSpans(html) {
+  const spans = [];
+  const re = /<!--/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const close = html.indexOf('-->', m.index + 4);
+    const stop = close === -1 ? html.length : close + 3;
+    spans.push(html.slice(m.index, stop));
+    re.lastIndex = stop;
+  }
+  return spans;
+}
+
 export const MARKUP_REFUSALS = [
   {
-    id: 'comment-in-script',
-    why: 'An HTML comment opener or closer inside a <script> element. stripHtmlComments '
-      + 'runs over the whole page, so a `<!--` in a JavaScript string blanks everything '
-      + 'up to the next `-->` anywhere later, including a following script and any '
-      + '<link> or <body> between them.',
-    detect(html) {
-      const re = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
-      let m;
-      while ((m = re.exec(html)) !== null) if (/<!--|-->/.test(m[1])) return true;
-      return false;
-    },
+    id: 'comment-swallows-markup',
+    why: 'A comment, as this guard delimits one, containing a <link, <body or <script. '
+      + 'stripHtmlComments is a single lazy regex over the whole page, and every way of '
+      + 'opening or closing a comment that it reads differently from a browser ends the '
+      + 'same way: markup this analysis depends on is blanked. A `<!--` written inside a '
+      + 'script, a <style>, RCDATA or a quoted attribute value; a `<!-->`, which is a '
+      + 'complete comment for a browser and unterminated for the regex; a `--!>`, which '
+      + 'closes one for a browser and not for the regex; or a comment never closed at '
+      + 'all. Rather than ask where the comment came from, this asks what the blanking '
+      + 'ate, so it needs no opinion about the parser it is standing in for.',
+    detect: (html) => commentSpans(html).some((s) => /<(?:link|body|script)\b/i.test(s)),
   },
   {
     id: 'quoted-gt-in-tag',
@@ -653,6 +719,17 @@ export const MARKUP_REFUSALS = [
       while ((m = re.exec(html)) !== null) if (endsInsideQuote(m[1])) return true;
       return false;
     },
+  },
+  {
+    id: 'repeated-body-tag',
+    why: 'More than one `<body` in the page as written. A browser merges the attributes '
+      + 'of a second <body> start tag onto the one body element it already has, and a '
+      + '`<body` that is only text — inside a <template>, a <noscript>, a bogus comment '
+      + 'such as <![CDATA[, a quoted attribute value or a string literal — is not a '
+      + 'start tag at all. This guard takes the first one and cannot tell those apart, '
+      + 'so either reading makes every body-attribute rule on that page answerable from '
+      + 'attributes the page may not carry.',
+    detect: (html) => (html.match(/<body\b/gi) || []).length > 1,
   },
   {
     id: 'script-end-tag',
@@ -693,6 +770,54 @@ const DATASET_ON_DOCUMENT =
 
 const READ_CALL = /(?:get|has)Attribute\s*\(\s*$/;
 
+/* A write to <body> does not have to name the attribute, and does not have to
+   go through setAttribute: document.body.className, .classList.add, .id, .dir
+   and .lang all write one through a reflected IDL property, and round 1 of
+   review found every one of them read as DEAD while Chromium applied them.
+   Two are in this repository today (shell.js and shell-pane-v2.js both do
+   document.body.className = ...), so only the selector spelling was missing.
+
+   The default is therefore loud: any member reached on document.body or
+   document.documentElement is a risk unless it is on one of the two lists
+   below. REFLECTED keeps the precision that matters — a className write is a
+   reason to refuse `class`, not a reason to refuse `data-page` — and an
+   unrecognised member, including the whole ARIA reflection family and
+   whatever the platform adds next, refuses EVERY attribute rather than being
+   quietly trusted. That is the inversion the MIME gate above needed too. */
+const READ_ONLY_ON_DOCUMENT = new Set([
+  'getAttribute', 'hasAttribute', 'getAttributeNames', 'getAttributeNode',
+  'querySelector', 'querySelectorAll', 'closest', 'matches', 'contains', 'compareDocumentPosition',
+  'appendChild', 'removeChild', 'insertBefore', 'replaceChild', 'replaceChildren',
+  'append', 'prepend', 'innerHTML', 'innerText', 'textContent',
+  'children', 'childNodes', 'firstChild', 'lastChild', 'firstElementChild', 'lastElementChild',
+  'parentNode', 'parentElement', 'ownerDocument', 'nodeName', 'tagName', 'localName',
+  'addEventListener', 'removeEventListener', 'dispatchEvent',
+  'focus', 'blur', 'click', 'scrollIntoView', 'scrollTo', 'scrollBy',
+  'getBoundingClientRect', 'getClientRects', 'animate',
+  'clientWidth', 'clientHeight', 'clientTop', 'clientLeft',
+  'offsetWidth', 'offsetHeight', 'offsetTop', 'offsetLeft', 'offsetParent',
+  'scrollTop', 'scrollLeft', 'scrollWidth', 'scrollHeight',
+]);
+
+/* Handled precisely elsewhere in this function: a quoted name through the
+   literal scan, a computed one through COMPUTED_ON_DOCUMENT, dataset through
+   DATASET_ON_DOCUMENT. Re-reporting them here would refuse every attribute on
+   every page that loads theme.js, which would switch the whole arm off. */
+const ATTRIBUTE_API_ON_DOCUMENT = new Set([
+  'setAttribute', 'removeAttribute', 'toggleAttribute', 'setAttributeNode', 'dataset',
+]);
+
+const REFLECTED_MEMBER = {
+  className: 'class', classList: 'class', id: 'id', dir: 'dir', lang: 'lang',
+  title: 'title', slot: 'slot', hidden: 'hidden', translate: 'translate',
+  tabIndex: 'tabindex', accessKey: 'accesskey', spellcheck: 'spellcheck',
+  draggable: 'draggable', contentEditable: 'contenteditable', inputMode: 'inputmode',
+  autocapitalize: 'autocapitalize', enterKeyHint: 'enterkeyhint', nonce: 'nonce',
+  style: 'style', popover: 'popover',
+};
+
+const MEMBER_ON_DOCUMENT = /\bdocument\s*\.\s*(body|documentElement)\s*\.\s*([A-Za-z_$][\w$]*)/g;
+
 function camel(attrName) {
   return attrName.replace(/^data-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 }
@@ -718,6 +843,17 @@ export function attributeWriteRisks(attrName, scripts) {
     }
     if (datasetWrite.test(source)) risks.push(`${name} assigns to dataset.${prop}`);
     if (DATASET_ON_DOCUMENT.test(source)) risks.push(`${name} touches document.body.dataset`);
+    MEMBER_ON_DOCUMENT.lastIndex = 0;
+    while ((m = MEMBER_ON_DOCUMENT.exec(source)) !== null) {
+      const member = m[2];
+      if (READ_ONLY_ON_DOCUMENT.has(member) || ATTRIBUTE_API_ON_DOCUMENT.has(member)) continue;
+      const reflects = REFLECTED_MEMBER[member];
+      if (reflects && reflects !== attrName) continue;
+      const line = source.slice(0, m.index).split('\n').length;
+      risks.push(`${name}:${line} reaches document.${m[1]}.${member}, which ${reflects
+        ? `writes the ${reflects} attribute`
+        : 'this check cannot show is not an attribute write'}`);
+    }
     if (COMPUTED_ON_DOCUMENT.test(source)) {
       risks.push(`${name} sets an attribute on document.body under a computed name`);
     }
@@ -1208,6 +1344,39 @@ test('the pieces the analysis is built from behave', () => {
   assert.deepEqual(
     inlineScripts('<script type="application/json">{"data-page":"x"}</script>', 'ops/a.html'), [],
     'a JSON data block is data, not code');
+  assert.deepEqual(
+    inlineScripts('<script type="text/jscript">go();</script>', 'ops/a.html'),
+    [{ name: 'ops/a.html (inline script)', source: 'go();' }],
+    'text/jscript is one of the eight JavaScript MIME types an allowlist spelling of the '
+    + 'type gate missed; a browser runs it, so not reading it turns a refusal into a DEAD');
+  assert.deepEqual(
+    inlineScripts('<script type="text/javascript1.5">go();</script>', 'ops/a.html'),
+    [{ name: 'ops/a.html (inline script)', source: 'go();' }],
+    'an unrecognised type must be READ, which can only add refusals');
+
+  assert.deepEqual(commentSpans('a<!--b-->c<!--d-->e'), ['<!--b-->', '<!--d-->']);
+  assert.deepEqual(commentSpans('a<!--b'), ['<!--b'],
+    'a comment this guard never closes runs to the end of the page, as its regex does');
+  assert.deepEqual(commentSpans('<!--><link rel="stylesheet" href="a.css"><!-- x -->'),
+    ['<!--><link rel="stylesheet" href="a.css"><!-- x -->'],
+    '<!--> is a complete comment for a browser and unterminated here, so the span this '
+    + 'guard blanks swallows the <link> between it and the next `-->`');
+
+  assert.deepEqual(attributeWriteRisks('class',
+    [{ name: 'ops/assets/s.js', source: "document.body.className = 'is-' + n;" }]),
+  ['ops/assets/s.js:1 reaches document.body.className, which writes the class attribute'],
+  'a reflected IDL property writes an attribute without ever naming it');
+  assert.deepEqual(attributeWriteRisks('data-page',
+    [{ name: 'ops/assets/s.js', source: "document.body.className = 'is-' + n;" }]), [],
+  'and it is a reason to refuse the attribute it reflects, not every attribute');
+  assert.deepEqual(attributeWriteRisks('data-page',
+    [{ name: 'ops/assets/s.js', source: 'document.body.ariaLabel = v;' }]),
+  ['ops/assets/s.js:1 reaches document.body.ariaLabel, which this check cannot show is '
+    + 'not an attribute write'],
+  'a member this check does not recognise refuses every attribute, rather than being trusted');
+  assert.deepEqual(attributeWriteRisks('data-page',
+    [{ name: 'ops/assets/s.js', source: "var p = document.body.getAttribute('data-pane');" }]), [],
+  'a read is not a write, or theme.js would switch the whole arm off');
 
   assert.deepEqual(parseAttrSelector('[data-page="x"]'), { name: 'data-page', op: '=', value: 'x' });
   assert.deepEqual(parseAttrSelector('[data-page]'), { name: 'data-page', op: 'exists', value: null });
@@ -1273,16 +1442,6 @@ export const WRONG_DEAD_NOT_COVERED = [
     expected: ['dead-body-scope ops/assets/x.css:1'],
   },
   {
-    id: 'body-in-template',
-    why: 'The first `<body` outside an HTML comment wins, so one inside a <template> '
-      + 'or a string literal is read as the page\'s own and the real one is never seen.',
-    wrongAnswer: () => verdicts(
-      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
-        + '<template><body data-page="users"></template><body data-page="login">x</body></html>')],
-      wantsLogin),
-    expected: ['dead-body-scope ops/assets/x.css:1'],
-  },
-  {
     id: 'character-reference',
     why: 'An HTML character reference in an attribute value is read as the characters it '
       + 'is written with, so `data-page="a&amp;b"` is compared against the selector as '
@@ -1329,9 +1488,16 @@ export const WRONG_DEAD_NOT_COVERED = [
   {
     id: 'subdirectory-page',
     why: 'The page and sheet listings are one level deep, so ops/panes/foo.html would not '
-      + 'be read and a sheet only it linked would be reported orphaned.',
-    wrongAnswer: () => listing('ops', '.css').map((s) => s.name),
-    expected: [],
+      + 'be read and a sheet only it linked would be reported orphaned. This is the one '
+      + 'entry whose shape lives in how the repository run is BUILT rather than inside '
+      + 'analyze(), so its demonstration has two halves: the listing really is one level '
+      + 'deep, and a sheet whose only loader is missing from the page set really does '
+      + 'come back orphaned.',
+    wrongAnswer: () => [
+      ...listing('ops', '.css').map((s) => s.name),
+      ...verdicts([], [sheet('ops/assets/x.css', '.a { color: red; }')]),
+    ],
+    expected: ['orphan-sheet ops/assets/x.css'],
   },
 ];
 
@@ -1350,16 +1516,49 @@ test('every shape this guard is documented to get wrong still gets it wrong', ()
    id, driven through analyze() rather than through detect(). A detector that
    fires but does not stop the judgement would be a refusal in name only. */
 const REFUSAL_DEMOS = {
-  'comment-in-script': [
+  'comment-swallows-markup': [
+    /* the `<!--` is inside a script, and what it swallows is the next script */
     '<!doctype html><html><head><script>var s = "<!--";</script>'
     + `<script>${WRITE}</script>${LINK}<!-- ordinary comment -->`
     + '</head><body data-page="login">x</body></html>',
+    /* the span swallows a <script> and NOTHING else: the <link> is before it,
+       so a detector that looked only for <link and <body would judge this page
+       while blind to the script that writes the attribute it judges on */
+    `<!doctype html><html><head>${LINK}</head><body data-page="login">x`
+    + `<script>var s = "<!--";</script><script>${WRITE}</script>`
+    + '<!-- ordinary comment --></body></html>',
+    /* the `<!--` is inside a <style>, where a browser sees no comment at all */
+    '<!doctype html><html><head><style>/* <!-- */ .q { color: red; }</style>'
+    + `${LINK}<!-- ordinary comment --></head><body data-page="login">x</body></html>`,
+    /* the `<!--` is inside a quoted attribute value of another tag */
+    '<!doctype html><html><head><meta name="note" content="use <!-- with care">'
+    + `${LINK}<!-- ordinary comment --></head><body data-page="login">x</body></html>`,
+    /* <!--> is a complete empty comment for a browser, unterminated for the regex */
+    `<!doctype html><html><head><!-->${LINK}<!-- ordinary comment -->`
+    + '</head><body data-page="login">x</body></html>',
+    /* --!> closes a comment for a browser, and does not for the regex */
+    `<!doctype html><html><head><!-- a --!>${LINK}<!-- ordinary comment -->`
+    + '</head><body data-page="login">x</body></html>',
+    /* never closed at all: the regex blanks nothing, a browser blanks the rest */
+    `<!doctype html><html><head><!-- a ${LINK}</head>`
+    + '<body data-page="login">x</body></html>',
   ],
   'quoted-gt-in-tag': [
     `<!doctype html><html><head>${LINK}</head>`
     + '<body data-x="a>b" data-page="login">x</body></html>',
     '<!doctype html><html><head><link rel="stylesheet" title="a>b" href="assets/x.css">'
     + '</head><body data-page="login">x</body></html>',
+  ],
+  'repeated-body-tag': [
+    /* a browser merges the second start tag's attributes onto the first body */
+    `<!doctype html><html><head>${LINK}</head><body>x<body data-page="login"></body></html>`,
+    /* a <body that is only text: this guard reads it as the page's own */
+    `<!doctype html><html><head>${LINK}</head>`
+    + '<template><body data-page="users"></template><body data-page="login">x</body></html>',
+    `<!doctype html><html><head>${LINK}<noscript><body data-page="users"></noscript></head>`
+    + '<body data-page="login">x</body></html>',
+    `<!doctype html><html><head>${LINK}</head>`
+    + '<div title="<body data-page=\'users\'>"></div><body data-page="login">x</body></html>',
   ],
   'script-end-tag': [
     `<!doctype html><html><head>${LINK}</head>`
@@ -1374,8 +1573,12 @@ test('markup this guard cannot read is refused, and stops the judgement', () => 
   for (const [id, markups] of Object.entries(REFUSAL_DEMOS)) {
     for (const markup of markups) {
       /* The sheet asks for a value the page does not carry AND the page is the
-         sheet's only loader, so without the refusal this run produces a
-         dead-body-scope or an orphan-sheet — a deletion instruction. */
+         sheet's only loader, so a judged run produces a dead-body-scope or an
+         orphan-sheet. For most of these markups that verdict is WRONG in a
+         browser, which is why they are refused; for a few — an unterminated
+         comment, or a quoted `>` on a page that really does carry the other
+         value — it would have come out right by luck. What this asserts is
+         the refusal and the stop, not that every one of them was a near miss. */
       const out = analyze({ pages: [page('ops/login.html', markup)], sheets: wantsUsers, scripts: [] });
       assert.deepEqual(out.findings.map((f) => `${f.kind} ${f.where}`),
         [`unreadable-markup ops/login.html`],
@@ -1400,17 +1603,28 @@ export function parseCountsBlock(fileText) {
   if (end === -1) return null;
   const lines = fileText.slice(start + FENCE.length, end).split('\n')
     .map((l) => l.replace(/^\s{0,5}/, '').trimEnd()).filter((l) => l.trim());
-  const out = {};
+  const sections = {};
+  const strays = [];
   let section = null;
   let entry = null;
   for (const line of lines) {
     const head = line.match(/^([a-z-]+): (\d+)$/);
-    if (head) { section = { count: Number(head[2]), entries: [] }; out[head[1]] = section; entry = null; continue; }
+    if (head) {
+      section = { count: Number(head[2]), entries: [] };
+      sections[head[1]] = section;
+      entry = null;
+      continue;
+    }
     const item = line.match(/^- ([a-z-]+): (.*)$/);
     if (item && section) { entry = { id: item[1], why: item[2] }; section.entries.push(entry); continue; }
-    if (entry) entry.why += ` ${line.trim()}`;
+    /* A continuation line belongs to the entry above it. Anywhere else — before
+       the first section, or between a section header and its first entry — it
+       is prose typed into the one block whose whole purpose is that nothing in
+       it is typed, and round 1 of review proved it vanished silently. */
+    if (entry) { entry.why += ` ${line.trim()}`; continue; }
+    strays.push(line.trim());
   }
-  return out;
+  return { sections, strays };
 }
 
 const flat = (s) => s.replace(/\s+/g, ' ').trim();
@@ -1424,13 +1638,26 @@ test('the header\'s counts block is the code\'s tables, not a typed claim', () =
   assert.ok(parsed, 'the header carries no machine-checked ' + FENCE + ' block, so its ' +
     'lists are typed prose. The code carries ' +
     Object.entries(tables).map(([k, t]) => `${k}: ${t.map((e) => e.id).join(', ')}`).join('; '));
-  assert.deepEqual(Object.keys(parsed).sort(), Object.keys(tables).sort(),
+  assert.deepEqual(parsed.strays, [],
+    'a line in the block that is neither a section header, an entry, nor a continuation '
+    + 'of the entry above it is prose nothing checks — which is what this block exists '
+    + 'to make impossible');
+  /* and that the stray report is not vacuous. The position below — between a
+     section header and its first entry — is the one round 1 of review proved
+     vanished silently, and an exhaustiveness claim is exactly what a later
+     round would type there. */
+  assert.deepEqual(
+    parseCountsBlock([FENCE, '   demo: 1', '   and that is all of them.', '   - a: b', '```']
+      .join('\n')).strays,
+    ['and that is all of them.'],
+    'a line between a section header and its first entry must be reported, not dropped');
+  assert.deepEqual(Object.keys(parsed.sections).sort(), Object.keys(tables).sort(),
     'the block and the code do not carry the same sections');
   for (const [name, table] of Object.entries(tables)) {
     const codeSays = table.map((e) => ({ id: e.id, why: flat(e.why) }));
-    assert.deepEqual(parsed[name].entries.map((e) => ({ id: e.id, why: flat(e.why) })), codeSays,
-      `the header and the code disagree about ${name}`);
-    assert.equal(parsed[name].count, codeSays.length,
+    assert.deepEqual(parsed.sections[name].entries.map((e) => ({ id: e.id, why: flat(e.why) })),
+      codeSays, `the header and the code disagree about ${name}`);
+    assert.equal(parsed.sections[name].count, codeSays.length,
       `the ${name} count in the header is not the number of entries below it`);
   }
 });
