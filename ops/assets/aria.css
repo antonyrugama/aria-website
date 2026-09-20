@@ -171,8 +171,14 @@ svg { display: block; }
 
 ::selection { background: color-mix(in srgb, var(--cyan) 30%, transparent); }
 
+/* The ring is judged against what it touches, not against the page: WCAG 2.2
+   SC 1.4.11 wants 3:1 there. In light, --cyan lands at 2.97:1 on the pale
+   surfaces these controls sit in and 2.65:1 on .btn-primary's own glow, so the
+   ring the keyboard depends on all but vanishes on the controls it marks.
+   --cyan-ink is the same hue carried down until it clears; in dark it IS
+   --cyan, so dark is untouched. Stadiora/Aria#10649, #10650. */
 :focus-visible {
-  outline: 2px solid var(--cyan);
+  outline: 2px solid var(--cyan-ink);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -584,6 +590,14 @@ svg { display: block; }
   font-weight: 580;
 }
 .btn-primary:hover { filter: brightness(1.07); box-shadow: 0 0 0 1px var(--cyan), 0 8px 22px -6px color-mix(in srgb, var(--cyan) 70%, transparent); }
+/* This button carries a cyan halo of its own, and the ring was being judged
+   against that halo rather than against the page: 2.65:1 in light, 2.09:1 in
+   dark. Recolouring cannot answer it — the halo sits at mid luminance, so even
+   a pure white ring reaches only 3.79:1 against it in dark. The halo is what
+   swallows the ring, so the halo stands down while the ring is up; the button
+   keeps its fill, and the ring is then read against the card like every other
+   control's. Stadiora/Aria#10650. */
+.btn-primary:focus-visible { box-shadow: none; }
 /* The light theme used to flip this label to white, which put white on a
    saturated cyan fill at 3.1:1. The dark ink the dark theme already uses reads
    at 6.1:1 on the same fill and keeps one treatment for both themes. */
@@ -650,9 +664,17 @@ svg { display: block; }
   box-shadow: inset 0 0 0 1px var(--line);
   transition: box-shadow .15s;
 }
+/* Focus was two translucent cyan shadows over whatever the field sat on, which
+   no contrast oracle can resolve to a colour and therefore cannot check — an
+   indicator nothing can measure is one that rots unnoticed. An opaque outline
+   can be measured. The offset is negative on purpose: the field sits flush
+   inside its card, and a positive offset paints the ring outside the card
+   (measured at 21,234 pixels of ring outside the card in PR #72), where it is
+   judged against a different surface than the one it marks.
+   Stadiora/Aria#10651. */
 .field:focus-within {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 55%, transparent),
-              0 0 0 3px color-mix(in srgb, var(--cyan) 12%, transparent);
+  outline: 2px solid var(--cyan-ink);
+  outline-offset: -2px;
 }
 .field svg { width: 15px; height: 15px; color: var(--ink-3); flex: none; }
 .field input {
