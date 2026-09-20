@@ -211,6 +211,15 @@ function chartOf(dom) {
     || findAll(livePanel(dom), (n) => n.tagName === 'svg' && !n.getAttribute('aria-hidden'))[0];
 }
 
+/* One tile, by its heading. Whole-pane text is the wrong instrument for a
+   rule about one figure's label: another sentence elsewhere can carry the
+   same words and the assertion passes without the tile being right. */
+function tileText(dom, heading) {
+  const tile = findAll(livePanel(dom), (n) => (n.className || '').indexOf('kpi') !== -1)
+    .filter((n) => heading.test(allText(n)))[0];
+  return tile ? allText(tile) : '';
+}
+
 /* Every numeral on screen, so a rule about never printing one can be checked
    without guessing which element it would have landed in. */
 function numerals(text) {
@@ -221,7 +230,7 @@ function numerals(text) {
 
 test('every figure says the window the answer covered, taken from the answer', async () => {
   const seven = await boot({});
-  assert.match(liveText(seven), /7 days/,
+  assert.match(tileText(seven, /Active people/), /Last 7 whole UTC days/,
     'a 7-day answer was not labelled 7 days');
 
   /* The same pane, the same code, a different answer. If the window were
@@ -237,10 +246,13 @@ test('every figure says the window the answer covered, taken from the answer', a
       return s;
     }),
   });
-  const text = liveText(three);
-  assert.match(text, /3 days/, 'a 3-day answer was still labelled something else');
-  assert.doesNotMatch(text, /(over|last) 7 days/,
+  const text = tileText(three, /Active people/);
+  assert.match(text, /Last 3 whole UTC days/,
+    'a 3-day answer was still labelled something else: ' + text);
+  assert.doesNotMatch(text, /7 whole UTC days/,
     'the pane printed a 7-day window for a 3-day answer');
+  assert.doesNotMatch(liveText(three), /Last 7 whole UTC days/,
+    'another block kept the old window while the answer moved');
 });
 
 test('the pane never claims a 24 hour window the pipeline cannot answer', async () => {
@@ -288,6 +300,35 @@ for (const { block, heading } of BLOCKS) {
     }
   });
 }
+
+test('a state that is not ready prints words even when a figure came with it', async () => {
+  /* The route drops the figures when the state is not `ready`, so a pane can
+     pass the test above while ignoring availability altogether. This is the
+     same answer with the figures left in: the state alone has to decide. */
+  const dom = await boot({
+    summary: summaryFixture((s) => {
+      s.people.availability = { state: 'not_reporting' };
+      return s;
+    }),
+  });
+  const tile = tileText(dom, /Active people/);
+  assert.equal(numerals(tile.replace(/7 days|7 whole UTC days/g, '')), 0,
+    'a stale figure was printed for a block that is not reporting: ' + tile);
+  assert.match(tile, /No reading/, 'the state was not named');
+});
+
+test('a ready block with no figure in it says so rather than printing zero', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => {
+      delete s.people.platform;
+      return s;
+    }),
+  });
+  const tile = tileText(dom, /Active people/);
+  assert.doesNotMatch(tile, /\b0\b/,
+    'a missing figure was drawn as a measured zero: ' + tile);
+  assert.match(tile, /Not reported|No reading/, 'a missing figure was drawn as nothing at all');
+});
 
 test('a block that is not reporting is never drawn as a zero', async () => {
   const dom = await boot({
@@ -483,10 +524,15 @@ test('every status on the pane is carried in words, not only in a tone class', a
   }
 });
 
-test('a critical problem says critical in words', async () => {
+test('a critical problem says critical in the queue row itself', async () => {
   const dom = await boot({});
-  assert.match(liveText(dom), /critical/i,
-    'severity reached the queue as a colour and nothing else');
+  const row = findAll(livePanel(dom), (n) => (n.className || '').indexOf('q-title') !== -1)[0];
+  assert.ok(row, 'the needs-attention queue has no rows on it');
+  /* On the row, not merely somewhere on the pane: the ribbon above counts
+     severities too, so whole-pane text passes while the row that an operator
+     reads carries severity as an accent colour and nothing else. */
+  assert.match(allText(row), /^Critical: /,
+    'severity reached the queue row as a colour and nothing else: ' + allText(row));
 });
 
 /* ============================== the states ============================= */
