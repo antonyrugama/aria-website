@@ -249,6 +249,16 @@ DERIVED['browser-guards'] = () => SCRIPTS
 /* The focus ring on every sideways-scrolling box a v2 pane sheet declares.
    The box is found by its own `overflow-x: auto`, never by its class name, so
    a renamed box is still judged. */
+/* The ring a box with no rule of its own is left with: aria.css's global
+   :focus-visible, read from the sheet rather than named in a sentence here. */
+function globalRing() {
+  const rule = cssRules(read('ops/assets/aria.css')).find((r) => r.selectors.includes(':focus-visible'));
+  assert.ok(rule, 'ops/assets/aria.css declares no bare :focus-visible rule');
+  const own = declarations(rule.body).filter((d) => /^outline/.test(d)).sort();
+  assert.ok(own.length > 0, 'ops/assets/aria.css: the global :focus-visible rule sets no outline');
+  return `aria.css's ring, ${own.join('; ')}`;
+}
+
 DERIVED['table-focus-rings'] = () => {
   const out = [];
   for (const sheet of ASSETS.filter((a) => /^pane-.*-v2\.css$/.test(a))) {
@@ -263,7 +273,7 @@ DERIVED['table-focus-rings'] = () => {
         .filter((r) => r.selectors.includes(`${box}:focus-visible`))
         .flatMap((r) => declarations(r.body))
         .sort();
-      out.push(`${sheet} ${box} = ${own.length ? own.join('; ') : "(no rule of its own; aria.css's ring, 2px outside)"}`);
+      out.push(`${sheet} ${box} = ${own.length ? own.join('; ') : `(no rule of its own; ${globalRing()})`}`);
     }
   }
   return out;

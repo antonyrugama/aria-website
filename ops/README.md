@@ -1591,12 +1591,13 @@ device pixels of ring painted entirely beyond the box and none of its four edges
 inside it, all of that outside the card it belongs to.
 
 Same three attributes as App releases' `.tbl-scroll` and Settings' `tableWrap()`
-(`Stadiora/Aria#10459`) — but **not the same one CSS line**, and there never was one. This pane
-and Settings each set `outline-offset: -2px` in their own sheet; App releases sets that and a
-`border-radius: 0` beside it; and the four other sideways-scrolling boxes on the v2 panes set
-nothing of their own and take `aria.css`'s ring 2px outside. Which box carries which rule is
-read out of the sheets rather than stated here, because that sentence is the one that was
-wrong.
+(`Stadiora/Aria#10459`) — but **not the same one CSS line**, and there never was one. Some of the
+sideways-scrolling boxes on the v2 panes pull the ring inside with an `outline-offset` of their
+own, one of those adds a `border-radius` beside it, and the rest declare nothing and take
+`aria.css`'s ring wherever that sheet puts it. Which box does which is the block below, read out
+of the sheets and out of `aria.css`, and deliberately **not** counted or listed in this sentence:
+a sentence enumerating them is what was wrong here before, and a second one would rot the same
+way.
 
 Which boxes carry a ring of their own is read out of the v2 pane sheets — every box that
 declares `overflow-x: auto`, found by that declaration and not by its class name, with whatever
@@ -1604,13 +1605,13 @@ its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is 
 
 ```claims id=table-focus-rings
 pane-alerts-v2.css .scrollx = outline-offset: -2px
-pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, 2px outside)
+pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
 pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
-pane-run-history-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, 2px outside)
+pane-run-history-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
-pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, 2px outside)
-pane-users-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, 2px outside)
+pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
+pane-users-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 ```
 
 ### People and usage on v2: where the pane departs from the mock
