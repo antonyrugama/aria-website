@@ -190,12 +190,11 @@
       var wrap = h('div', { className: 'stack' });
       wrap.appendChild(ribbon(problems, armed, capped));
 
-      var attention = S.band('What needs a person',
-        'Each one opens the pane that owns the work');
+      var attention = S.band('What needs a person');
       attention.appendChild(queueCard(problems, armed, capped));
       wrap.appendChild(attention);
 
-      var going = S.band('How things are going', 'Every figure says its window');
+      var going = S.band('How things are going');
       figuresSection(going, data.summary);
       wrap.appendChild(going);
 
@@ -329,10 +328,6 @@
       else {
         bits.push('Somebody is on ' + (active.length === 1 ? 'it' : 'each of them') +
           ', still open.');
-      }
-      if (needing.length && taken > 0) {
-        bits.push(fmt.plural(taken, 'other problem') +
-          (taken === 1 ? ' has somebody on it.' : ' have somebody on them.'));
       }
       if (capped) bits.push(cappedSentence());
       return bits.join(' ');

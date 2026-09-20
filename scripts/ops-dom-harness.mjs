@@ -21,6 +21,14 @@ export function makeDom(options) {
   function parseSelector(sel) {
     const groups = sel.split(',').map((one) => one.trim()).filter(Boolean);
     const matchers = groups.map((group) => {
+      /* A descendant combinator would split into parts carrying a trailing
+         space, and a class test for "card " can never match — so the stub
+         would return nothing and an assertion of zero would pass vacuously.
+         Refuse it loudly instead; the stub supports compound and comma
+         selectors only. */
+      if (/\s/.test(group.replace(/\[[^\]]*\]/g, ''))) {
+        throw new Error('descendant selectors are not supported by the stub: ' + sel);
+      }
       const parts = group.split(/(?=[.[#])/);
       const tests = [];
       for (const part of parts) {

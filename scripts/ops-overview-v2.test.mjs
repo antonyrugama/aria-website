@@ -543,17 +543,46 @@ test('a comparison over too small a group prints no rate', async () => {
 
 /* ======================= status, never colour alone ===================== */
 
-/* The class families this pane paints a state in. A family prefix rather than
-   an enumeration: `st-bad`, `is-crit` and `acc-blue` are three spellings of
-   one idea, and a hand-listed set of whole class names went blind to five of
-   them at the first review. A new tone in any of these families is caught
-   without editing this line.
+/* The class names a state can be painted in, read from the stylesheets that
+   paint them rather than listed here. Two sources, because a tone reaches the
+   DOM by two routes: `aria.css` publishes the shared vocabulary as compound
+   rules (`.dot.bad`, `.pill.up`), and this pane's own sheet adds its shapes.
+   A hand-listed set of whole class names went blind to five spellings at the
+   first review, and the enumeration that replaced it went blind to `.dot.bad`
+   and `.dot.live` at the second — both times because the list was written
+   from what the pane happened to use that day.
 
-   Proof pointer: widening this from /\b(hot|warn|ok|soon|pill)\b/ is what
-   makes the hero visible to the scan at all. The scan alone still does not
-   kill a blanked hero, because the hero element contains the severity chips
-   and their words satisfy it — that is what the next test is for. */
-const TONE_CLASS = /(^|\s)(st-[a-z]+|is-[a-z]+|acc|acc-[a-z]+|tone-[a-z]+|vio|hot|warn|ok|soon|up|down|info|pill)(\s|$)/;
+   Family prefixes stay, for classes no compound rule declares (`st-bad`,
+   `is-crit`, `tone-rose`).
+
+   Proof pointer: the derivation is bound by the next test, which reinstates a
+   tone class in the sheet and requires the scan to see it. The scan alone
+   does not kill a blanked hero, because the hero element contains the
+   severity chips and their words satisfy it — that is what the ribbon test
+   further down is for. NOT COVERED: a tone painted by a rule in neither
+   sheet, and a tone class outside every family prefix. */
+const SHEETS = ['ops/assets/aria.css', 'ops/assets/pane-overview-v2.css'];
+const TONE_WORDS = [...new Set(SHEETS.flatMap((f) => [
+  ...readFileSync(new URL('../' + f, import.meta.url), 'utf8')
+    .matchAll(/\.(?:dot|pill|chip|tag|st|bar|ln|seg)\.([a-z][a-z0-9-]*)/g),
+].map((m) => m[1])))].sort();
+const TONE_CLASS = new RegExp(
+  '(^|\\s)(st-[a-z]+|is-[a-z]+|acc|acc-[a-z]+|tone-[a-z]+|' +
+  TONE_WORDS.join('|') + ')(\\s|$)');
+
+test('the tone vocabulary is read from the sheets, not from a list here', () => {
+  for (const want of ['bad', 'live', 'ok', 'warn', 'vio', 'up', 'down', 'info']) {
+    assert.ok(TONE_WORDS.includes(want),
+      want + ' is declared as a tone in the sheets but the scan cannot see it');
+  }
+  assert.ok(TONE_CLASS.test('dot bad'), 'a tone the sheets declare escaped the scan');
+  assert.ok(TONE_CLASS.test('dot live'), 'a tone the sheets declare escaped the scan');
+  assert.ok(!TONE_CLASS.test('kpi-label'), 'the scan matches a class that paints no state');
+  /* `.pill.ghost` is a shape rather than a state, and the derivation picks it
+     up anyway. Kept: over-reading costs a false alarm on an element that
+     already carries words, under-reading is the defect this scan exists for. */
+  assert.ok(TONE_CLASS.test('pill ghost'), 'the derivation stopped reading the sheet');
+});
 
 test('every status on the pane is carried in words, not only in a tone class', async () => {
   const dom = await boot({});
