@@ -711,7 +711,10 @@
 
       var where = h('div', { className: 'p-col' });
       var chips = h('div', { className: 'row wrap gap-sm' });
-      [problem.scopeLabel, problem.categoryLabel, problem.workPaneLabel]
+      /* The work pane is NOT a chip here. It is the link in the actions row
+         below, and a name that is already a doorway does not also need to be
+         a label: one fact, one slot. */
+      [problem.scopeLabel, problem.categoryLabel]
         .filter(function (label) { return textOf(label); })
         .forEach(function (label) {
           chips.appendChild(h('span', { className: 'pill ghost', text: label }));

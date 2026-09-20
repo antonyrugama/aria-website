@@ -188,6 +188,14 @@
 .scrollx { overflow-x: auto; }
 .scrollx > .tbl { min-width: 760px; }
 
+/* Six columns in 760px leaves the rule's name in a strip barely wider than
+   one word, which turns every row into a paragraph. Percentage widths do not
+   fix it: `table-layout: auto` treats them as hints and keeps shrinking the
+   column to its longest word. Refusing to break the name raises the column's
+   own minimum instead, which the auto algorithm has to honour. */
+.rules-card .tbl td:first-child .t-main { white-space: nowrap; }
+.rules-card .tbl td:nth-child(2) { min-width: 150px; }
+
 /* ---------------------------------------------------------------- switch
 
    A real checkbox carrying role="switch", so it is focusable, announced with

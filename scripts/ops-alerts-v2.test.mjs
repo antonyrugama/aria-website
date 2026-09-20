@@ -853,6 +853,23 @@ test('a problem links to the pane the answer named, at the file the registry giv
     'a work pane nothing knows about was drawn as a link anyway');
 });
 
+/* The work pane's name is a doorway, so it is not also a label. This is the
+   editorial rule the remodel exists for: a fact that is already on the card
+   as something you can act on does not get restated as something you read. */
+test('the pane that owns the detail is named once on a card, and it is the way out', async () => {
+  const dom = await boot({});
+  const card = problemCards(dom)[0];
+  const named = findAll(card, (n) =>
+    allText(n) === 'Happening now'
+    && !(n.childNodes || []).some((child) => child.tagName));
+  assert.equal(named.length, 1,
+    'the work pane is named ' + named.length + ' times on one card; it belongs '
+    + 'in the actions as a doorway, not also in the facts as a chip');
+  assert.equal(named[0].tagName, 'A',
+    'the one place the work pane is named is a ' + named[0].tagName
+    + ', so the name is a label rather than a way to get there');
+});
+
 /* ============================= dated timestamps ======================== */
 
 test('a problem carries the dated time it started, not only how long ago', async () => {
