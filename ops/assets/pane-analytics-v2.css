@@ -187,11 +187,17 @@
   color: var(--ink);
   box-shadow: inset 0 0 0 1px var(--line);
 }
-.u-i1 .num { background: color-mix(in srgb, var(--cyan) 13%, transparent); }
-.u-i2 .num { background: color-mix(in srgb, var(--cyan) 22%, transparent); }
-.u-i3 .num { background: color-mix(in srgb, var(--cyan) 32%, transparent); }
-.u-i4 .num { background: color-mix(in srgb, var(--cyan) 43%, transparent); }
-.u-i5 .num { background: color-mix(in srgb, var(--cyan) 56%, transparent); }
+/* The ramp stops where --ink stops clearing 4.5:1 over it. In the dark theme
+   --cyan is a bright cyan and --ink is nearly white, so every step of tint
+   moves the cell background towards the text: at 56% the figure measured
+   4.32:1, below AA, on the retention the fixture itself draws. Measured
+   composited against the real ancestor chain in both themes; the figures are
+   in the pull request. */
+.u-i1 .num { background: color-mix(in srgb, var(--cyan) 11%, transparent); }
+.u-i2 .num { background: color-mix(in srgb, var(--cyan) 17%, transparent); }
+.u-i3 .num { background: color-mix(in srgb, var(--cyan) 24%, transparent); }
+.u-i4 .num { background: color-mix(in srgb, var(--cyan) 31%, transparent); }
+.u-i5 .num { background: color-mix(in srgb, var(--cyan) 38%, transparent); }
 
 /* Not enough time has passed for this group to reach this week. Deliberately
    unlike a zero, and named in text for anything that does not read the tint. */
@@ -250,7 +256,25 @@
    scrolled still knows which signup group a cell belongs to. */
 @media (max-width: 760px) {
   .ln-wrap .chart { height: 168px; }
-  .u-scroll { overflow-x: auto; }
+  /* A grid item's automatic minimum size is its own content, so the card
+     holding the grid keeps the track 460px wide and takes the page sideways
+     with it — and the scroll box inside never gets to clip, because its parent
+     is already wider than the screen. The item has to be allowed to shrink
+     first; only then does overflow-x mean anything. */
+  .grid > .card { min-width: 0; }
+  /* Positioned, so that the screen-reader text inside the grid is contained
+     by the scroll box. An absolutely positioned box is clipped by a scroll
+     container only when that container is its containing block, so with a
+     static parent the visually-hidden spans sat at the table's real width in
+     page coordinates and took the document sideways on their own — while the
+     grid they belong to was clipped correctly and every rect on the page
+     measured clean. */
+  .u-scroll { overflow-x: auto; min-width: 0; position: relative; }
   .u-cohort { min-width: 460px; }
   .u-bar-col { display: none; }
+  /* Column headings are nowrap by default, which is right for a heading and
+     wrong for the narrowest phone: "Share of people" set in caps with letter
+     spacing is wider than the column it names, and a table whose own minimum
+     is wider than the screen takes the page with it. */
+  .u-feat thead th { white-space: normal; }
 }
