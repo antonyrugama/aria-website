@@ -41,7 +41,15 @@
    straight across a missing point. A day an app has no stored reading for
    arrives as null, and both alternatives are a lie about a real quantity:
    joining across it draws people who were never counted, and plotting it as
-   zero draws a day the app was open and nobody used it. */
+   zero draws a day the app was open and nobody used it.
+
+   The colour is a CSS declaration rather than a value resolved in JS at draw
+   time, so the theme attribute repaints it and nothing has to call redraw.
+   Measured in Chrome, both directions: dark rgb(34,211,238)/rgb(52,211,153)
+   becomes light rgb(8,145,178)/rgb(5,150,105) on pressing the theme button,
+   and back. scripts/check-ops-theme-redraw.mjs guards aria.js's charts, which
+   do resolve at draw time; it does not cover this file, and the measurement
+   above is a one-off, not a standing check. */
 .ln {
   fill: none;
   stroke: var(--c, var(--cyan));
