@@ -9,10 +9,19 @@
    its own file instead and a later issue can consolidate. Anything aria.css
    already declares is used from there rather than copied.
 
-   No new colour value. Every rule here paints in a token aria.css declares,
-   which is the palette that was made WCAG AA by construction (monorepo
-   #10042). Status text takes the -ink variant of its tone, because the base
-   colour is the tint and the -ink is the text on that tint.
+   Every colour here comes from a token aria.css declares — the palette made
+   WCAG AA by construction (monorepo #10042) — with two spellings that do not.
+   `transparent` adds no colour of its own: it is what a color-mix() lays a
+   token over. And `.av`'s ink mixes var(--cyan) toward `black`, which is the
+   one real exception. The avatar tile is an opaque cyan gradient in BOTH
+   themes and its ink has to clear AA against both, and no token aria.css
+   declares can do that — scripts/ops-alerts-v2.test.mjs tries every one of
+   them in that mix to say so, rather than leaving it asserted here. Both
+   spellings are pinned there per site (NON_TOKEN_PAINT), so a third fails the
+   suite rather than joining the list quietly.
+
+   Status text takes the -ink variant of its tone, because the base colour is
+   the tint and the -ink is the text on that tint.
 
    Nothing here carries a status by colour alone. Every tinted thing on this
    page — a card's accent, a severity in ink, a switch, a dot — sits beside the
@@ -187,6 +196,14 @@
 .rules-card { min-width: 0; }
 .scrollx { overflow-x: auto; }
 .scrollx > .tbl { min-width: 760px; }
+
+/* The box carries a tab stop (pane-alerts.js), so it takes a focus ring, and
+   aria.css's global :focus-visible sits 2px OUTSIDE the element. This box is
+   a full-width child of a card, so 2px outside it is 2px into the card's own
+   edge and the ring is clipped there. Pulling the offset inside draws the
+   whole ring on the table's own surface. Same line as pane-releases-v2.css
+   .tbl-scroll and pane-settings-v2.css .tbl-wrap. */
+.scrollx:focus-visible { outline-offset: -2px; }
 
 /* Six columns in 760px leaves the rule's name in a strip barely wider than
    one word, which turns every row into a paragraph. Percentage widths do not
