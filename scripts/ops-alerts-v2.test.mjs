@@ -45,19 +45,23 @@
        (disabling) of this pull request's independent review.
 
        What the tests below CAN decide, and do: that the severity control is
-       still the same node after it is pressed; that a reload started with
-       nothing focused ends with the content region focused; and that a
-       refused write started with nothing focused ends with the control
-       focused. The second and third work because the harness leaves focus
-       where it was, so "started at nothing, ended at the right place" is the
-       same discriminating signal there as in a browser -- what differs is
-       only whether the start state is null or <body>.
+       still the same node after it is pressed, and that a re-read or a
+       refused write which STARTS with focus parked on <body> ends with focus
+       on the right node. That is the same start state a browser produces when
+       a control is disabled or removed, which is why focusAfter() parks there
+       rather than resting at null -- resting at null exercised the half of
+       the pane's guard that a browser can never reach, and left the half it
+       always reaches free to be deleted over a green suite. Round 7 of this
+       pull request's review demonstrated exactly that.
 
        The class is every control that is DISABLED OR DESTROYED by being used,
-       which is not the same as every re-read: rounds 4, 5 and 6 each found
-       members the round before had missed, in that order -- three re-reads,
-       three more re-reads, three refused writes. The enumeration below is the
-       part of this file a reader should distrust first. */
+       which is not the same as every re-read, and not the same as every
+       control handler either: rounds 4, 5, 6 and 7 each found members the
+       round before had missed -- three re-reads, three more re-reads, three
+       refused writes, and then the two writes that SUCCEED, whose re-read
+       arrives through afterChange() rather than from a control's own handler.
+       The enumeration below is the part of this file a reader should distrust
+       first. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -373,13 +377,24 @@ test('picking a severity does not replace the control being picked', async () =>
     'the button that was pressed before stayed pressed');
 });
 
-/* Start from nothing focused, do the thing, report where focus ended up.
-   Blurring first is load-bearing: if something already holds focus then the
+/* Park focus on <body>, do the thing, report where focus ended up.
+
+   Parking first is load-bearing: if something already holds focus then the
    assertion afterwards is satisfied by the state the test started in rather
-   than by anything the pane did. */
+   than by anything the pane did.
+
+   Parking on <body> RATHER THAN null is equally load-bearing, and was a false
+   green for three rounds. The pane's guard reads `!live || live ===
+   document.body`, and only the second half can ever be true in a browser: a
+   disabled or removed control blurs to <body>, never to null. Resting at null
+   exercised the branch that cannot happen and left the branch that does free
+   to be deleted -- narrowing the guard to `!live` kept the whole suite green
+   while dropping focus at every site in Chrome. */
 async function focusAfter(dom, act) {
   if (dom.doc.activeElement) dom.doc.activeElement.blur();
-  assert.equal(dom.doc.activeElement, null, 'something already held focus');
+  dom.doc.body.focus();
+  assert.equal(dom.doc.activeElement, dom.doc.body,
+    'the test could not park focus on <body>, so it is not measuring the browser case');
   act();
   await settle();
   return dom.doc.activeElement;
@@ -479,6 +494,20 @@ test('a write the server refuses hands the control back rather than dropping it'
     'a refused acknowledge left the operator nowhere, at the top of the document');
   assert.equal(take.disabled, false, 'the refused acknowledge button was left unusable');
 
+  /* "Nowhere" has two spellings and the guard accepts both. Chrome produces
+     <body>, which is what focusAfter() rests on because it is the reachable
+     one; a document with nothing focused at all produces null, which is
+     defensive and is this scenario. Both branches of the guard are pinned, or
+     the unpinned one is free to be deleted -- which is exactly how the <body>
+     half survived three rounds. */
+  const nulled = await boot({ acknowledge: refused });
+  const nowhere = buttonNamed(problemCards(nulled)[0], /I am on it/);
+  assert.equal(nulled.doc.activeElement, null, 'the page did not start with focus nowhere');
+  nowhere.dispatch('click');
+  await settle();
+  assert.equal(nulled.doc.activeElement, nowhere,
+    'a refused acknowledge with focus nowhere at all left it nowhere');
+
   const rule = await boot({ patch: refused });
   const sw = withClass(rule.doc.body, 'sw')[0];
   assert.ok(sw, 'the rules table drew no switch');
@@ -523,6 +552,33 @@ test('a write the server refuses hands the control back rather than dropping it'
   await settle();
   assert.equal(typing.doc.activeElement, note,
     'a refused close took the operator out of the note they were writing');
+});
+
+/* The re-reads a WRITE starts, which are neither of the two halves above: the
+   control is destroyed by the rebuild exactly as a read control is, but the
+   call arrives through afterChange() rather than from the control's own
+   handler, so an enumeration walked from the control handlers misses both.
+   Six review rounds did.
+
+   Acknowledging and closing each have a second path -- the server answering
+   ops_problem_moved -- which lands in the same afterChange(), so the two
+   scenarios below reach all four call sites. */
+test('a write that lands hands focus back too, not only one that is refused', async () => {
+  const ack = await boot({});
+  const take = buttonNamed(problemCards(ack)[0], /I am on it/);
+  assert.ok(take, 'the open problem was offered no acknowledge button');
+  assert.equal(await focusAfter(ack, () => take.dispatch('click')),
+    ack.doc.getElementById('content'),
+    'acknowledging a problem left the operator nowhere once the card was rebuilt');
+
+  const closing = await boot({});
+  buttonNamed(problemCards(closing)[0], /Close/).dispatch('click');
+  await settle();
+  const form = findAll(problemCards(closing)[0], (n) => n.tagName === 'FORM')[0];
+  assert.ok(form, 'pressing Close opened no form');
+  assert.equal(await focusAfter(closing, () => form.dispatch('submit')),
+    closing.doc.getElementById('content'),
+    'closing a problem left the operator nowhere once the queue was rebuilt');
 });
 
 /* One fact, one slot: the queue's footer answers "would we know", and the
@@ -1225,6 +1281,38 @@ test('a record with no note prints no empty quotation', async () => {
   await settle();
   assert.doesNotMatch(allText(card), /“/,
     'a problem closed without a note was drawn as though it had one');
+});
+
+/* The record read is the only request on the page whose failure is written
+   into a disclosed region instead of toasted, so it is the only one a screen
+   reader can miss entirely, and v1 offered a retry that the first draft of
+   this pane dropped. Its retry is also a member of the focus class: it sits
+   inside the region it replaces. */
+test('a record that cannot be read says so out loud and can be asked again', async () => {
+  const dom = await boot({ detail: new Error('The operations API did not answer.') });
+  const card = problemCards(dom)[0];
+  const details = buttonNamed(card, /Details/);
+  details.dispatch('click');
+  await settle();
+
+  const said = findAll(card, (n) => n.getAttribute && n.getAttribute('role') === 'alert');
+  assert.equal(said.length, 1, 'the failed record read has ' + said.length + ' live regions, not one');
+  assert.match(allText(said[0]), /did not answer/,
+    'the failure was written outside the live region, so nobody is told the record is missing');
+
+  const again = buttonNamed(said[0], /Try again/);
+  assert.ok(again, 'a record that could not be read offered no way to ask again');
+
+  /* It really re-reads: the second answer lands, so the button is wired to
+     the read rather than being a control that does nothing. */
+  dom.answers.detail = { runbook: [], timeline: [], ruleHistory: [] };
+  dom.doc.body.focus();
+  again.dispatch('click');
+  await settle();
+  assert.doesNotMatch(allText(card), /did not answer/,
+    'pressing Try again left the failure on screen, so it re-read nothing');
+  assert.equal(dom.doc.activeElement, details,
+    'the retry destroyed itself and left the operator nowhere');
 });
 
 test('the closed list says where the note is rather than leaving it out silently', async () => {

@@ -983,11 +983,8 @@
         'aria-expanded': 'false', 'aria-controls': id
       });
       button.appendChild(h('span', { className: 'sr', text: ' of ' + problem.reference }));
-      button.addEventListener('click', function () {
-        var open = button.getAttribute('aria-expanded') === 'true';
-        button.setAttribute('aria-expanded', open ? 'false' : 'true');
+      function read() {
         clear(host);
-        if (open) return;
         host.appendChild(h('p', { className: 'tiny muted', text: 'Reading the record…' }));
         session.call('/api/ops/alerts/problems/' + encodeURIComponent(problem.id))
           .then(function (payload) {
@@ -1001,8 +998,35 @@
           .catch(function (err) {
             if (button.getAttribute('aria-expanded') !== 'true') return;
             clear(host);
-            host.appendChild(h('p', { className: 'tiny is-warn', text: S.failureMessage(err) }));
+            /* Nothing else reports this read. It is the only request on the
+               page whose failure is written into a disclosed region rather
+               than toasted, so without a live role a screen reader is told
+               nothing at all, and without the retry v1 offered the only way
+               to ask again is to collapse the record and re-open it. */
+            var failed = h('div', { role: 'alert' });
+            failed.appendChild(h('p', {
+              className: 'tiny is-warn', text: S.failureMessage(err)
+            }));
+            var again = h('button', {
+              className: 'btn btn-sm', type: 'button', text: 'Try again'
+            });
+            again.appendChild(h('span', {
+              className: 'sr', text: ' reading ' + problem.reference
+            }));
+            /* The retry is inside the region it replaces, so pressing it
+               destroys it: the same class as every other control here, and
+               the Details button that owns the region is what survives. */
+            again.addEventListener('click', function () { read(); handBack(button); });
+            failed.appendChild(again);
+            host.appendChild(failed);
           });
+      }
+
+      button.addEventListener('click', function () {
+        var open = button.getAttribute('aria-expanded') === 'true';
+        button.setAttribute('aria-expanded', open ? 'false' : 'true');
+        if (open) { clear(host); return; }
+        read();
       });
       return button;
     }
@@ -1196,8 +1220,10 @@
        load() is called directly in exactly one place -- the first read, at the
        bottom of this file, which is not a re-read and must not move focus off
        whatever the page loaded with. Every other call is a re-read and comes
-       through here, because a read control destroys itself exactly as a write
-       control does: both sit inside the region the re-read replaces.
+       through here. Most of those controls sit inside the region the re-read
+       replaces and are destroyed by it, exactly as a write control is; the
+       severity and category controls do not, which is why they are marked in
+       place instead (see severityControl() above) rather than protected here.
 
        This covers the RE-READS only. The class is every control that is
        disabled or destroyed by being used, and a refused write is disabled
