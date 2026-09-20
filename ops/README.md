@@ -1051,17 +1051,27 @@ fails, nothing is measured and the run exits non-zero.
 
 **Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
 geometry against its card — is outside this check; 1.4.11 is a different requirement and this
-tool measures text only. A skip link parked off-canvas is skipped, so its focused appearance is
+tool measures text only. Text over a picture is likewise outside it: the plate hides `img`,
+`canvas` and text-free `<svg>` outright, so a word sitting on an icon or an image would be
+sampled against the surface *behind* it rather than against the picture, and `video` is not
+hidden at all. The shell has no `img`, `canvas` or `video`, and its text-free SVGs paint nothing
+under any text band (measured in round 4 of this PR's independent review: a plate that keeps them
+visible differs from the shipped plate by **0 pixels** across the four text bands their boxes
+contain), so this bites nowhere today. A skip link parked off-canvas is skipped, so its focused appearance is
 unmeasured. Only `shell-v2.html` is walked, at one viewport, in the four states `applyState`
 exposes.
 
-**Text painted by `::before`/`::after` is not measured at all.** A pseudo-element has no text
-node to range over, so there is nothing to sample the surface behind. Rather than measure the
-originating element's box and call that an answer, the run **fails** if any `::before` or
-`::after` on the page paints text — a quoted string, `counter()`, `counters()`, `attr()` or a
-quote keyword. `content: ''`, the decorative form this page uses everywhere, is not text and is
-not flagged. So generated text cannot pass unmeasured, but it also cannot be judged: a page that
-wants it has to either drop it or extend this tool.
+**Text painted by `::before`, `::after` or `::marker` is not measured at all.** A
+pseudo-element has no text node to range over, so there is nothing to sample the surface behind.
+Rather than measure the originating element's box and call that an answer, the run **fails** if
+any of the three paints text — for `::before`/`::after` a quoted string, `counter()`,
+`counters()`, `attr()` or a quote keyword; for `::marker`, `display: list-item` with a
+`list-style-type` other than `none`, because a marker's `content` computes to `normal` whatever
+the page asks for and the words come from the type. `content: ''`, the decorative form this page
+uses everywhere, is not text and is not flagged. **Those three are the pseudo-elements CSS
+defines as painting text today; a fourth would walk straight through, exactly as `::marker` did
+until round 4 of this PR's review caught it.** What is claimed is that these three cannot pass
+unmeasured — not that generated text in general cannot.
 
 **Text painted through `filter`, `mix-blend-mode`, `-webkit-text-stroke` or an SVG `stroke` is
 not measured** — it is refused, which fails the run, so it can neither pass unmeasured nor be
@@ -1081,6 +1091,15 @@ screenshot as PNG colour type 2, which has no alpha channel, so the "a backdrop 
 as one opaque colour is refused" half of the per-role rule is structurally unreachable on this
 decode path and no mutation drives it. It is a fail-closed guard against that path changing,
 claimed as nothing.
+
+**Text on an element with no box of its own is refused, and only `display: contents` is
+named.** The collector drops anything whose box is smaller than a glyph, which is how this page
+spells "not shown" — `.sr` clips its text to 1×1 and paints nothing. `display: contents` gives
+the same zero rect and means the opposite: no box, while the text paints in full. That case is
+**refused by name**, which fails the run. Other ways to have no box while text paints — a
+zero-sized block with `overflow: visible`, for one — are **still dropped in silence**, and the
+gate cannot tell them apart without letting `.sr` into the sweep at its full text width. Naming
+one member of a class is not covering the class.
 
 **A refusal inside a `:disabled` control is counted as exempt, not failed.** WCAG 1.4.3's
 inactive-component exemption is applied before the refusal check, so "refusals fail the run"

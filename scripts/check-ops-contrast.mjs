@@ -24,9 +24,9 @@
  *      Nothing here is cloned or re-parented.
  *
  *   2. DO NOT GUESS THE BACKGROUND FROM COMPUTED STYLES. This page is built on
- *      layered gradients and color-mix alpha: 60 of its 61 icons sit under a
- *      `background-image`, and no single ancestor holds the colour under the
- *      text. Instead this takes a PLATE — a second screenshot of the same page
+ *      layered gradients and color-mix alpha, and no single ancestor holds the
+ *      colour under the text — the surface behind a given word is a stack, not
+ *      a value. Instead this takes a PLATE — a second screenshot of the same page
  *      with every glyph made transparent — and samples the element's own box on
  *      it. That is the real painted backdrop, gradients and all, with no text
  *      pixels left to pull the average.
@@ -426,13 +426,26 @@ const COLLECT = `(() => {
     const inkStyle = pseudo ? getComputedStyle(el, pseudo) : cs;
     if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
     const rect = el.getBoundingClientRect();
-    if (rect.width < 2 || rect.height < 2) continue;
+    /* A box smaller than a glyph is how this page spells "not shown" — .sr
+       clips its text to 1x1 and paints nothing. display: contents produces
+       the SAME zero rect and means the opposite: no box of its own while its
+       text paints in full. Told apart by name, not merged — the run rects
+       hand back .sr at its full text width, so gating on them instead would
+       walk the clipped text straight into the sweep.
+
+       Only display: contents is named here. Other ways to have no box while
+       text paints (a zero-sized block with overflow: visible, for one) are
+       still dropped in silence; see NOT COVERED. */
+    const boxless = (rect.width < 2 || rect.height < 2) && cs.display === 'contents'
+      ? 'display: contents — no box of its own, and its text paints in full'
+      : null;
+    if (!boxless && (rect.width < 2 || rect.height < 2)) continue;
     /* offsetParent is an HTMLElement member and is undefined — not null — on
        every SVGElement, so gating SVG on it drops every chart label. For SVG
        the display, visibility, opacity and rect gates above cover the same
        ground. */
     const isSvg = el.namespaceURI === 'http://www.w3.org/2000/svg';
-    if (!isSvg && !el.offsetParent && cs.position !== 'fixed') continue;
+    if (!boxless && !isSvg && !el.offsetParent && cs.position !== 'fixed') continue;
 
     /* Parked off the canvas — a skip link at left:-9999px until it takes
        focus. It paints nowhere the screenshot covers, so there is no backdrop
@@ -441,7 +454,7 @@ const COLLECT = `(() => {
     const ax = rect.x + window.scrollX, ay = rect.y + window.scrollY;
     const docW = document.documentElement.scrollWidth;
     const docH = document.documentElement.scrollHeight;
-    if (ax + rect.width <= 0 || ay + rect.height <= 0 || ax >= docW || ay >= docH) continue;
+    if (!boxless && (ax + rect.width <= 0 || ay + rect.height <= 0 || ax >= docW || ay >= docH)) continue;
 
     const key = el.tagName + (pseudo || '') + ':' + rect.x + ':' + rect.y + ':' + text;
     if (seen.has(key)) continue;
@@ -589,6 +602,9 @@ const COLLECT = `(() => {
          painted glyph and that this tool does not model. Named, not guessed
          at: measureSites turns it into a refusal, and refusals fail the run. */
       unmodelledPaint: unmodelledPaint,
+      /* Set when the element has no box to sample or gate on while its text
+         is painted. measureSites refuses it; it is never dropped. */
+      boxless: boxless,
       inactive: inactive,
       fontSize: parseFloat(inkStyle.fontSize) || parseFloat(cs.fontSize),
       fontWeight: Number(inkStyle.fontWeight) || Number(cs.fontWeight) || 400,
@@ -620,11 +636,31 @@ const COLLECT = `(() => {
    pseudo-element would otherwise ship with the sweep reporting the same
    "every site meets AA" it reports when there is none.
 
+   ::marker is the third pseudo-element that paints text and it is censused
+   too, by a different signal: its content computes to "normal" whatever the
+   page says, and the words come from list-style-type. So the test is
+   display: list-item with a list-style-type other than none.
+
+   Three pseudo-elements, which is what CSS defines as painting text today.
+   Not a claim that a fourth cannot exist — if one does, it walks through
+   here exactly as ::marker did. See NOT COVERED.
+
    `content: ''` — the decorative case this page actually uses for rings and
    glows — carries no text and is not flagged. */
 const GENERATED_TEXT = `(() => {
   const found = [];
+  const nameOf = (el) => el.tagName.toLowerCase() +
+    ((el.getAttribute('class') || '') ? '.' + el.getAttribute('class').trim().split(' ').filter(Boolean).join('.') : '');
   for (const el of document.querySelectorAll('*')) {
+    /* display is "list-item", or a two-value form like "inline list-item".
+       Split on a literal space rather than a regex: this probe is a template
+       literal, so a backslash class here would be read twice. */
+    const own = getComputedStyle(el);
+    if (own.display.split(' ').includes('list-item') &&
+        own.listStyleType !== 'none' &&
+        own.visibility !== 'hidden' && Number(own.opacity) !== 0) {
+      found.push(nameOf(el) + '::marker paints ' + own.listStyleType);
+    }
     for (const where of ['::before', '::after']) {
       const cs = getComputedStyle(el, where);
       const content = cs.content;
@@ -818,6 +854,17 @@ async function measureSites(targets, where) {
 
   const results = [];
   for (const t of targets) {
+    /* No box means nothing to sample, and this tool's backdrop comes from a
+       rect. Refused by name rather than dropped: a site that leaves the sweep
+       without saying so is the shape lesson 3 above was ported to stop — the
+       run would print the same "every site meets AA" with the site gone. */
+    if (t.boxless) {
+      results.push({
+        ...t, unjudgeable: 'text with no box to sample',
+        ink: String(t.color), detail: t.boxless
+      });
+      continue;
+    }
     /* Sample where the GLYPHS are, not the element box. An element box holds
        its children's surfaces too — a row that contains a cyan chip is 12%
        cyan, and the row's own words sit on none of it — so a box sample asks
