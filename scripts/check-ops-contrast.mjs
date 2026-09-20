@@ -157,6 +157,8 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
   .h5:focus-visible { outline: 4px solid rgba(118, 118, 118, 0.5); outline-offset: 6px; }
   .h6 { background: #FFFFFF; }
   .h6:focus-visible { outline: 4px solid #767676; outline-offset: 60px; }
+  .h8 { background: #FFFFFF; }
+  .h8:focus-visible { outline: 4px solid #767676; outline-offset: 26px; }
   .h7wrap { background: #B0B0B0; padding: 4px; width: 60px; }
   .h7 { background: #000000; }
   .h7:focus-visible { outline: 4px solid #999999; outline-offset: -8px; }
@@ -170,6 +172,7 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
 <div class="case"><div class="wrap"><button class="h4"></button></div></div>
 <div class="case"><div class="wrap"><button class="h5"></button></div></div>
 <div class="case"><div class="wrap"><button class="h6"></button></div></div>
+<div class="case"><div class="wrap"><button class="h8"></button></div></div>
 <div class="case"><div class="wrap"><div class="h7wrap"><button class="h7"></button><div class="h7far"></div></div></div></div>
 </body></html>`;
 
@@ -2434,20 +2437,33 @@ async function selfTest() {
       `${seven && !seven.refused ? seven.bg : '?'}, expected #000000 — not the #B0B0B0 beside ` +
       'the strip, which is what anchoring on the changed region reports (1.31:1)');
 
-    /* The census itself: eight buttons on the page, eight reached by Tab, and
+    /* H8 — the OTHER reason a clip is too small, and it needs its own case.
+       H6's ring misses the first photograph entirely, so it escalates on
+       "nothing changed"; H8's ring at 26px is PARTLY inside a 28px pad and
+       runs off the edge, so it escalates on "the change touches the border".
+       Delete either half of that condition and exactly one of these two goes
+       red, which is the only way to tell them apart. */
+    const eight = shows('h8', 4.5426,
+      'puts the same ring 26px out, straddling the first clip\'s edge');
+    const straddle = !!eight && !eight.refused && eight.pad === '120px';
+    if (!straddle) bad++;
+    console.log(`     ${straddle ? 'ok  ' : 'FAIL'} and it widened rather than measuring a ` +
+      `truncated ring: pad ${eight ? eight.pad : '?'}, expected 120px`);
+
+    /* The census itself: nine buttons on the page, nine reached by Tab, and
        every one of them carrying a row. A focus sweep that quietly measured
-       six of eight would print six ok lines and nothing else. */
-    const okCensus = census.candidates === 8 && census.reached === 8 && rows.length === 8;
+       six of nine would print six ok lines and nothing else. */
+    const okCensus = census.candidates === 9 && census.reached === 9 && rows.length === 9;
     if (!okCensus) bad++;
-    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 8 focusable buttons → ${census.candidates} ` +
+    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 9 focusable buttons → ${census.candidates} ` +
       `censused, ${census.reached} reached by real Tab presses, ${rows.length} judged or refused`);
     /* And that the Tab presses did their other job. Without keyboard modality
-       every :focus-visible rule on this page is dead and h1..h7 all look like
-       h3 — eight missing indicators and no ring measured anywhere. */
+       every :focus-visible rule on this page is dead and the lot look like
+       h3 — nine missing indicators and no ring measured anywhere. */
     const modality = rows.filter((r) => r.focusVisible).length;
-    const okModality = modality === 8;
+    const okModality = modality === 9;
     if (!okModality) bad++;
-    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 8 ` +
+    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 9 ` +
       'after the Tab walk (scripted focus alone matches 0, and every ring here is behind it)');
   }
 
