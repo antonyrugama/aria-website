@@ -1,10 +1,11 @@
-/* Aria quality: two working tools, and a drawing of the pane this one is named for.
+/* Aria quality: working tools, and a drawing of the pane this one is named for.
 
    Dataset validation checks supplied declarations without reading referenced
    files or storing a dataset. Evidence import places bytes behind the server's
    private, immutable quarantine boundary. Neither successful operation is
    admission, evaluation consent, training consent, export permission,
-   provider-transfer permission, or proof of de-identification.
+   provider-transfer permission, or proof of de-identification. Approval
+   handoffs expose metadata only and leave qualification checks to the server.
 
    The selected file exists only in this page's memory until the operator
    submits it. The page displays file metadata before submission and the
@@ -299,6 +300,57 @@
     };
   }
 
+  function approvalEnvelope(operationId, requestId, input) {
+    return {
+      schemaVersion: 'ciel.operation.request.v1',
+      requestId: requestId,
+      operationId: operationId,
+      mode: 'remote',
+      client: {
+        name: 'aria-operations-dashboard',
+        version: '1.0.0',
+        contractVersions: ['ciel.operations.v1']
+      },
+      input: input
+    };
+  }
+
+  function buildApprovalRequest(draft, requestId) {
+    var request = approvalEnvelope('ciel.approval.request', requestId, {
+      targetOperationId: 'ciel.artifact.admit',
+      targetRequestDigest: draft.targetRequestDigest,
+      artifact: {
+        artifactId: draft.artifactId,
+        revision: draft.artifactRevision,
+        sourceDigest: draft.sourceDigest,
+        retainedDigest: draft.retainedDigest
+      },
+      purpose: draft.purpose,
+      policyRevision: draft.policyRevision,
+      expiresAt: draft.expiresAt
+    });
+    request.idempotencyKey =
+      draft.idempotencyKey || 'dashboard-approval-request-' + requestId;
+    return request;
+  }
+
+  function buildApprovalGet(draft, requestId) {
+    return approvalEnvelope('ciel.approval.get', requestId, {
+      approvalRequestId: draft.approvalRequestId
+    });
+  }
+
+  function buildApprovalDecision(draft, requestId) {
+    var request = approvalEnvelope('ciel.approval.decide', requestId, {
+      approvalRequestId: draft.approvalRequestId,
+      decision: draft.decision,
+      reason: draft.reason
+    });
+    request.expectedRevision = draft.expectedRevision;
+    request.idempotencyKey =
+      draft.idempotencyKey || 'dashboard-approval-decision-' + requestId;
+    return request;
+  }
   /* ------------------------------------------------------------ the stamps */
 
   /* A chip carrying a word, in the slot a band's status lives in. The colour
@@ -700,6 +752,276 @@
     return section;
   }
 
+  function approvalSection() {
+    var canMutateEvidence = session.hasRole(['owner', 'operator']);
+    var approvalArtifactId = input('text');
+    var approvalArtifactRevision = input('number', '1');
+    var approvalSourceDigest = input('text');
+    var approvalRetainedDigest = input('text');
+    var approvalTargetDigest = input('text');
+    var approvalPurpose = select([
+      option('regression_evaluation', 'Regression evaluation'),
+      option('incident_reproduction', 'Incident reproduction'),
+      option('quality_review', 'Quality review')
+    ]);
+    var approvalPolicyRevision = input('text');
+    var approvalExpiry = input('datetime-local');
+    var defaultExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    approvalExpiry.value = new Date(defaultExpiry.getTime() -
+      defaultExpiry.getTimezoneOffset() * 60 * 1000).toISOString().slice(0, 16);
+    var approvalRequestKey = input('text');
+    var approvalRequestError = h('div', { className: 'field-error', role: 'alert' });
+    var approvalRequestSubmit = h('button', {
+      className: 'btn btn-primary',
+      type: 'submit',
+      text: 'Create pending request'
+    });
+    var approvalRequestForm = h('form', { className: 'stack' }, [
+      h('div', { className: 'grid g2 evidence-form-grid' }, [
+        field('approval-artifact-id', 'Artifact ID', approvalArtifactId),
+        field('approval-artifact-revision', 'Artifact revision', approvalArtifactRevision),
+        field('approval-source-digest', 'Source SHA-256', approvalSourceDigest),
+        field('approval-retained-digest', 'Retained SHA-256', approvalRetainedDigest),
+        field('approval-target-digest', 'Canonical admission request SHA-256', approvalTargetDigest),
+        field('approval-purpose', 'Purpose', approvalPurpose),
+        field('approval-policy-revision', 'Policy revision', approvalPolicyRevision),
+        field('approval-expiry', 'Approval expires at', approvalExpiry,
+          'Local time; submitted as UTC. Expiry never grants evidence access.'),
+        field('approval-request-key', 'Idempotency key', approvalRequestKey,
+          'Optional. Reuse only for the same exact digest binding.')
+      ]),
+      approvalRequestError,
+      h('div', { className: 'row evidence-actions' }, [approvalRequestSubmit])
+    ]);
+    approvalRequestForm.setAttribute('id', 'approval-request-form');
+    approvalRequestForm.setAttribute('novalidate', '');
+
+    var approvalGetId = input('text');
+    var approvalGetError = h('div', { className: 'field-error', role: 'alert' });
+    var approvalGetSubmit = h('button', {
+      className: 'btn btn-secondary',
+      type: 'submit',
+      text: 'Load request'
+    });
+    var approvalGetForm = h('form', { className: 'stack' }, [
+      field('approval-get-id', 'Approval request ID', approvalGetId),
+      approvalGetError,
+      h('div', { className: 'row evidence-actions' }, [approvalGetSubmit])
+    ]);
+    approvalGetForm.setAttribute('id', 'approval-get-form');
+    approvalGetForm.setAttribute('novalidate', '');
+
+    var approvalDecisionId = input('text');
+    var approvalExpectedRevision = input('number', '1');
+    var approvalDecision = select([
+      option('approved', 'Approve'),
+      option('rejected', 'Reject')
+    ]);
+    var approvalReason = input('text');
+    var approvalDecisionKey = input('text');
+    var approvalDecisionError = h('div', { className: 'field-error', role: 'alert' });
+    var approvalDecisionSubmit = h('button', {
+      className: 'btn btn-primary',
+      type: 'submit',
+      text: 'Record decision'
+    });
+    var approvalDecisionForm = h('form', { className: 'stack' }, [
+      h('div', { className: 'grid g2 evidence-form-grid' }, [
+        field('approval-decision-id', 'Approval request ID', approvalDecisionId),
+        field('approval-expected-revision', 'Expected revision', approvalExpectedRevision),
+        field('approval-decision', 'Decision', approvalDecision),
+        field('approval-reason', 'Decision reason', approvalReason,
+          'Concise rationale only; do not paste evidence content.'),
+        field('approval-decision-key', 'Idempotency key', approvalDecisionKey,
+          'Optional. Reuse only for the same decision.')
+      ]),
+      approvalDecisionError,
+      h('div', { className: 'row evidence-actions' }, [approvalDecisionSubmit])
+    ]);
+    approvalDecisionForm.setAttribute('id', 'approval-decision-form');
+    approvalDecisionForm.setAttribute('novalidate', '');
+
+    var approvalResult = h('div', {
+      className: 'form-alert is-ok',
+      role: 'status'
+    });
+    approvalResult.setAttribute('id', 'approval-result');
+    approvalResult.hidden = true;
+    var approvalTrustNote = h('div', {
+      className: 'callout callout-warn'
+    }, [
+      icon('warn'),
+      h('div', {}, [
+        h('strong', { text: 'Qualification comes from an external trust record.' }),
+        h('p', {
+          text: 'This dashboard cannot provision qualification. Owner role and fresh authentication remain necessary but do not make a reviewer qualified.'
+        })
+      ])
+    ]);
+    approvalTrustNote.setAttribute('id', 'approval-trust-note');
+
+    function approvalCard(title, hint, approvalForm) {
+      return h('div', { className: 'card approval-card' }, [
+        h('div', { className: 'card-head' }, [
+          h('div', {}, [
+            h('h3', { className: 'card-title', text: title }),
+            h('p', { className: 'card-hint', text: hint })
+          ])
+        ]),
+        h('div', { className: 'card-body' }, [approvalForm])
+      ]);
+    }
+
+    function showApprovalResult(response) {
+      var resource = response && response.resource;
+      var value = resource && resource.value;
+      if (!value) throw new Error('The approval operation did not return a resource.');
+      approvalResult.hidden = false;
+      approvalResult.textContent = 'Approval request ' +
+        String(value.approvalRequestId || resource.id) + ' is ' +
+        String(value.state) + ' at revision ' +
+        String(value.revision || resource.revision) + '.';
+      if (resource.id) {
+        approvalGetId.value = resource.id;
+        approvalDecisionId.value = resource.id;
+      }
+      if (resource.revision) approvalExpectedRevision.value = String(resource.revision);
+    }
+
+    approvalRequestForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      approvalRequestError.textContent = '';
+      approvalRequestSubmit.disabled = true;
+      approvalRequestSubmit.textContent = 'Creating…';
+      var request;
+      try {
+        request = buildApprovalRequest({
+          artifactId: approvalArtifactId.value.trim(),
+          artifactRevision: Number(approvalArtifactRevision.value),
+          sourceDigest: approvalSourceDigest.value.trim(),
+          retainedDigest: approvalRetainedDigest.value.trim(),
+          targetRequestDigest: approvalTargetDigest.value.trim(),
+          purpose: approvalPurpose.value,
+          policyRevision: approvalPolicyRevision.value.trim(),
+          expiresAt: new Date(approvalExpiry.value).toISOString(),
+          idempotencyKey: approvalRequestKey.value.trim()
+        }, global.crypto.randomUUID());
+      } catch (caught) {
+        approvalRequestError.textContent = caught && caught.message
+          ? caught.message
+          : 'The approval request is invalid.';
+        approvalRequestSubmit.disabled = false;
+        approvalRequestSubmit.textContent = 'Create pending request';
+        return;
+      }
+      session.call('/api/ops/ciel/operations', {
+        method: 'POST',
+        body: request
+      }).then(function (response) {
+        showApprovalResult(response);
+        shell.announce('Approval request created.');
+      }).catch(function (caught) {
+        approvalRequestError.textContent = caught && caught.message
+          ? caught.message
+          : 'The approval request failed.';
+      }).finally(function () {
+        approvalRequestSubmit.disabled = false;
+        approvalRequestSubmit.textContent = 'Create pending request';
+      });
+    });
+
+    approvalGetForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      approvalGetError.textContent = '';
+      approvalGetSubmit.disabled = true;
+      approvalGetSubmit.textContent = 'Loading…';
+      session.call('/api/ops/ciel/operations', {
+        method: 'POST',
+        body: buildApprovalGet({
+          approvalRequestId: approvalGetId.value.trim()
+        }, global.crypto.randomUUID())
+      }).then(function (response) {
+        showApprovalResult(response);
+      }).catch(function (caught) {
+        approvalGetError.textContent = caught && caught.message
+          ? caught.message
+          : 'The approval request could not be loaded.';
+      }).finally(function () {
+        approvalGetSubmit.disabled = false;
+        approvalGetSubmit.textContent = 'Load request';
+      });
+    });
+
+    approvalDecisionForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      approvalDecisionError.textContent = '';
+      approvalDecisionSubmit.disabled = true;
+      approvalDecisionSubmit.textContent = 'Recording…';
+      session.call('/api/ops/ciel/operations', {
+        method: 'POST',
+        body: buildApprovalDecision({
+          approvalRequestId: approvalDecisionId.value.trim(),
+          expectedRevision: Number(approvalExpectedRevision.value),
+          decision: approvalDecision.value,
+          reason: approvalReason.value.trim(),
+          idempotencyKey: approvalDecisionKey.value.trim()
+        }, global.crypto.randomUUID())
+      }).then(function (response) {
+        showApprovalResult(response);
+        shell.announce('Approval decision recorded.');
+      }).catch(function (caught) {
+        approvalDecisionError.textContent = caught && caught.message
+          ? caught.message
+          : 'The approval decision failed.';
+      }).finally(function () {
+        approvalDecisionSubmit.disabled = false;
+        approvalDecisionSubmit.textContent = 'Record decision';
+      });
+    });
+
+    var section = workingBand('Qualified approval handoff', 'Metadata only; the backend enforces qualification');
+    section.appendChild(h('p', {
+      className: 'field-hint',
+      text: 'Bind exact quarantined bytes to an admission request. This workflow does not admit, reveal or export evidence.'
+    }));
+    var sections = [];
+    if (!canMutateEvidence) {
+      sections.push(
+        approvalCard(
+          'Get approval state',
+          'Reads metadata for a request the current principal may inspect.',
+          approvalGetForm
+        ),
+        approvalResult
+      );
+      section.appendChild(h('div', { className: 'stack' }, sections));
+      return section;
+    }
+    sections.push(
+      approvalTrustNote,
+      approvalCard(
+        'Request approval',
+        'Creates a pending digest-bound handoff.',
+        approvalRequestForm
+      ),
+      h('div', { className: 'grid g2 approval-workflow-grid' }, [
+        approvalCard(
+          'Get approval state',
+          'Reads metadata for a request the current principal may inspect.',
+          approvalGetForm
+        ),
+        approvalCard(
+          'Decide request',
+          'Requires fresh authentication, independence and current verified qualification.',
+          approvalDecisionForm
+        )
+      ]),
+      approvalResult
+    );
+    section.appendChild(h('div', { className: 'stack' }, sections));
+    return section;
+  }
+
   /* ---------------------------------------------------- the deferred half */
 
   function soonBanner() {
@@ -941,6 +1263,7 @@
     root.appendChild(h('div', { className: 'stack' }, [
       datasetValidationSection(),
       evidenceQuarantineSection(),
+      approvalSection(),
       soonBanner(),
       scoringPreview()
     ]));

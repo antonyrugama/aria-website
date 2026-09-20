@@ -217,7 +217,7 @@ ops/
   alerts.html           Problems
   analytics.html        People and usage
   spend.html            Cloud costs
-  evaluations.html      Aria quality: dataset declarations and evidence quarantine
+  evaluations.html      Aria quality: dataset declarations, quarantine and approval handoffs
   releases.html         App releases
   users.html            Look up a user
   settings.html         Settings (owner only)
@@ -241,7 +241,7 @@ ops/
                         Overview's figures: source, formatting, states, charts
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
-    pane-evaluations.js dataset declaration validation and private quarantine import
+    pane-evaluations.js dataset validation, private quarantine import and approval handoffs
     pane-releases.js    App releases
     pane-users.js       Look up a user
     settings.js         Settings
@@ -451,9 +451,33 @@ whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET
 and land on an honest state rather than a zero wherever an answer carries no figure.
 
 **Settings** is built, and is the one pane that can change something rather than only report it.
-The section on it below is worth reading before the page is used. **Aria quality** is half built
-and says so: the section below it covers what the two working tools do, and what the rest of the
-page is a drawing of.
+The section on it below is worth reading before the page is used. **Aria quality** lets
+viewers, operators and owners validate synthetic dataset declarations. Paste an input object
+containing `datasets` and `fixtureDigests`; the page supplies the operation envelope. The server
+returns manifest digests or field paths and reason codes. Editing the input clears the old
+result. Validation stores no dataset, inspects no referenced bytes, verifies no qualification
+and grants no evidence access or release approval.
+
+Owners and operators can also submit a local synthetic
+or exactly authorised production-derived file to the shared Ciel operation. The page sends no
+credential or endpoint in request data, renders no raw evidence or storage location, and never
+describes quarantine or approval as admission, evaluation consent, training consent, access,
+export permission, or proof of de-identification.
+
+The same pane provides metadata-only approval request, lookup, and decision handoffs. Approval
+controls bind exact artifact, source, retained, request, purpose, policy, revision, and expiry
+values. Qualification is resolved server-side from an external verified record; the dashboard
+cannot provision or assert it.
+
+The retention field shows the browser's local timezone and submits UTC. Its default starts
+30 elapsed days ahead and uses the offset at that future instant, including DST changes,
+rather than writing UTC clock text into a local-time input. The control has minute precision:
+seconds and milliseconds are omitted. A repeated fall-back hour cannot encode which occurrence
+was intended; native JavaScript parsing selects the earlier occurrence, so this is not an exact
+instant round-trip for the later occurrence. Manual edits still use the displayed local time,
+and the future-date and 90-day retention bounds are unchanged.
+The scoring portion remains an explicitly labelled drawing with invented figures. The section
+below describes that preview separately from the working declaration, quarantine and approval tools.
 
 **App releases** and **Look up a user** are built. Everything either of them shows comes from the
 operations API; neither holds any data of its own, and where the API answers with nothing the
@@ -871,14 +895,14 @@ refused sign in.
 `pane-evaluations-v2.css`. It is the one pane where **most of what is on screen is a drawing**,
 and everything about how it is built follows from that.
 
-**Two tools work. The scoring half does not exist.** Dataset declaration validation and evidence
-quarantine both call the shared Ciel operation and act on what the operator supplies. Below them
+**The operation tools work. The scoring half does not exist.** Dataset declaration validation,
+evidence quarantine and approval handoffs call the shared Ciel operation using supplied inputs. Below them
 is a design for a scoring harness that has no code, no endpoint and no stored score. The numbers
 in it were invented to draw the layout.
 
 **How a reader tells one from the other**, three ways over, never once in colour alone:
 
-1. **A stamp in every band's status slot**, carrying a word and a glyph: `Works now` on the two
+1. **A stamp in every band's status slot**, carrying a word and a glyph: `Works now` on the operation
    tools, `Invented figures` on all three drawn bands. Same chip, same slot, so they read against
    each other, and a screenshot of any one band still carries its own stamp.
 2. **A banner above the drawn half**, headed *The scoring harness is not built yet*, which states
@@ -907,7 +931,8 @@ and the box on screen is full. Two shapes qualify: text painted on screen, like 
 a placeholder shown until the operator types, and text a screen reader substitutes for the
 element's own, like an `aria-label` — a figure in the second is worse than one in the live region,
 because it suppresses the real words underneath it as well. The two states are the booted page and
-the page after both working forms have been submitted and answered.
+the page after the dataset and quarantine forms have been submitted and answered. This sweep
+does not cover post-submission approval states.
 
 Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
 inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in
@@ -917,7 +942,7 @@ boot-state hint turns three tests red. **A figure split mid-token** across two e
 a space here and without one in a browser. Adding invented data to this pane means adding it to
 the inventory by hand, and the test file says so where a reader will meet it.
 
-**What the two working tools do.** Validation takes an input object containing `datasets` and
+**What the working tools do.** Validation takes an input object containing `datasets` and
 `fixtureDigests`; the page supplies the operation envelope. The server returns manifest digests
 or field paths and reason codes. Editing the input clears the old result. Validation stores no
 dataset, inspects no referenced bytes, verifies no qualification and grants no evidence access or
@@ -930,6 +955,10 @@ evaluation consent, training consent, export permission, or proof of de-identifi
 is told in a named block that the import needs operator access, rather than being shown a gap
 where a form was.
 
+Approval lookup remains available to viewers. Operators and owners also see request and decision
+forms. The backend checks record access, fresh authentication, independence and verified qualification;
+the page cannot grant qualification or admit evidence. An unconfigured authority remains unavailable.
+
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,
 rather than writing UTC clock text into a local-time input. The control has minute precision:
@@ -941,7 +970,7 @@ and the future-date and 90-day retention bounds are unchanged.
 **Where the pane departs from `docs/mocks/ops-dashboard-v2/evaluations.html`:**
 
 - **The working tools come first, then the banner, then the drawing.** The mock opens with the
-  banner, because the mock is a drawing of a pane where nothing is built. Here two tools are, so
+  banner, because the mock is a drawing of a pane where nothing is built. Here operation tools are, so
   a page that opens by saying it is not built would be false. The banner sits directly above the
   half it describes and its claim is scoped to that half.
 - **The drawn half is not faded.** The mock sets `opacity: .55` over it, which multiplies every
