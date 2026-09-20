@@ -410,7 +410,7 @@
          to list, from reads that landed. A read that never landed has not
          earned the sentence "there is nothing here". */
       if (!openFailed && !queue.length) {
-        region.empty(emptyState(data, armed, rulesFailed));
+        region.empty(emptyState(data, armed, queueCapped, rulesFailed));
         return;
       }
 
@@ -1670,7 +1670,7 @@
        rules are checking and found nothing, or the rules are not in a
        position to find anything. Only the second is a statement about the
        health of the system, and it is the only one allowed to make it. */
-    function emptyState(data, armed, rulesFailed) {
+    function emptyState(data, armed, queueCapped, rulesFailed) {
       var wrap = h('div', { className: 'stack' });
       var box = S.card();
       var block;
@@ -1695,8 +1695,10 @@
           missLines.push(notArmedSentence(armed) +
             ' That is the case whatever these filters are set to.');
         }
-        if (model.capped(problemsOf(data.open)) ||
-            (model.capped(problemsOf(data.closed)) && RANGE_DAYS[filters.range])) {
+        /* The same flag the hero hedges its count with, taken rather than
+           recomputed: two spellings of one rule drift apart the first time
+           only one of them is edited. */
+        if (queueCapped) {
           missLines.push('Only ' + PAGE + ' problems could be read, worst first and then ' +
             'oldest, so the most recent ones were not looked at either.');
         }
