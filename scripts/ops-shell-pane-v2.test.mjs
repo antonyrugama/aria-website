@@ -1052,8 +1052,15 @@ async function openReauth(options) {  const opts = options || {};
    element tree, so a rule that exists but cannot reach the dialog counts for
    nothing.
 
-   What it reads: class, type and attribute selectors, `:empty`, descendant
-   combinators, and `@media` width queries.
+   What it reads: class, id, type and attribute selectors, `:empty`,
+   descendant combinators, and `@media` width queries. `[data-theme="light"]`
+   is read the same way a browser reads it, against the attribute the harness
+   root actually carries, so the caller resolves the sheet once per theme
+   rather than once. Review round two found this pass resolving the dark
+   theme ONLY, with every light-theme rule aimed at the dialog dismissed in
+   silence, and found a readable `[attr]` or `#id` compound matched STRICTLY
+   inside a pass documented as loose — the same unsafe direction as the
+   sibling-combinator hole above, in a different token type.
 
    What it REFUSES BY NAME rather than skipping: an `!important` declaration,
    a media feature it cannot evaluate, and any selector it cannot read that
@@ -1070,11 +1077,21 @@ async function openReauth(options) {  const opts = options || {};
    NOT COVERED: interaction and structural state — `:hover`, `:focus-visible`,
    `:disabled`, `::before` and the like are excluded from the resting cascade
    by design, so nothing here says what the dialog looks like while a control
-   is hovered or focused. NOT COVERED: a declaration that reaches the dialog
-   through a type or universal selector carrying none of its classes; the
-   candidate filter below never considers those rules. NOT COVERED: anything
-   only a layout engine can answer — computed size, wrapping, overlap. The
-   pixels are measured in a browser and reported on the pull request. */
+   is hovered or focused, and the outranking sweep below skips every rule
+   carrying a `:` for the same reason.
+
+   NOT COVERED: a declaration that reaches the dialog through a selector
+   naming NONE of the classes, ids or attribute names this tree carries — a
+   bare type selector (`input { … }`), a universal, or an attribute this tree
+   does not have. The candidate filter below never considers those rules. It
+   reads ids and attribute names as well as classes, and collects them from
+   the dialog's ancestors as well as from the dialog, because `#reauthPassword`
+   and `[type="password"]` are on the field and `[data-theme]` is on <html>;
+   a classes-only filter dropped all three.
+
+   NOT COVERED: anything only a layout engine can answer — computed size,
+   wrapping, overlap. The pixels are measured in a browser and reported on the
+   pull request. */
 
 const STATE_PSEUDO = /^:(hover|focus|focus-visible|focus-within|active|disabled|checked|visited|target|placeholder)$/;
 
@@ -1093,6 +1110,20 @@ function tokenise(compound) {
 
 function classesOf(el) { return (el.getAttribute('class') || '').split(/\s+/).filter(Boolean); }
 
+/* A browser reflects `el.id = 'x'` and `el.type = 'password'` back onto the
+   attribute; the harness keeps them as plain properties, so a rule aimed at
+   either would be invisible here for a reason that does not exist in the
+   product. session.js writes both onto the password field (`session.js:1040`
+   and `:1041`), which is the element this suite asserts a font size on. */
+const REFLECTED = { id: 'id', class: 'className', type: 'type', for: 'htmlFor' };
+
+function attrOf(el, name) {
+  if (el.hasAttribute && el.hasAttribute(name)) return el.getAttribute(name);
+  const prop = REFLECTED[name];
+  const got = prop ? el[prop] : undefined;
+  return got === undefined || got === null || got === '' ? null : String(got);
+}
+
 /* `:has(> .x)` and `:has(.x)` only — one compound, one optional child
    combinator. Anything richer is refused by name rather than guessed at. */
 const HAS_ARG = /^:has\(\s*(>\s*)?([^\s()>+~,]+)\s*\)$/;
@@ -1104,15 +1135,15 @@ function descendants(el, out = []) {
 
 function matchToken(token, el, loose) {
   if (token[0] === '.') return classesOf(el).indexOf(token.slice(1)) !== -1;
-  if (token[0] === '#') return (el.getAttribute('id') || el.id || null) === token.slice(1);
+  if (token[0] === '#') return attrOf(el, 'id') === token.slice(1);
   if (token[0] === '[') {
     const m = /^\[([^\]=~]+)(?:([~]?)=(?:"([^"]*)"|'([^']*)'|([^\]]*)))?\]$/.exec(token);
     if (!m) return !!loose;
     const [, name, fuzzy, dq, sq, bare] = m;
-    if (!el.hasAttribute(name)) return false;
+    const got = attrOf(el, name);
+    if (got === null) return false;
     const want = dq !== undefined ? dq : sq !== undefined ? sq : bare;
     if (want === undefined) return true;
-    const got = el.getAttribute(name);
     return fuzzy === '~' ? got.split(/\s+/).indexOf(want) !== -1 : got === want;
   }
   if (token[0] === ':') {
@@ -1322,15 +1353,34 @@ function dialogTree(root) {
 }
 
 function cascade(nodes, sheets) {
-  const onTree = new Set();
-  for (const el of nodes) for (const c of classesOf(el)) onTree.add(c);
+  /* The candidate filter. A rule is considered when it names something this
+     tree actually carries. Classes alone are not enough: session.js writes
+     `id="reauthPassword"` and `type="password"` onto the password field, and
+     shell-pane-v2.css themes the dialog through `[data-theme="light"]` on
+     <html>, so ids and attribute names count too, and they are collected from
+     the dialog's ANCESTORS as well as from the dialog itself. */
+  const named = new Set();
+  const seen = new Set();
+  for (const start of nodes) {
+    for (let el = start; el && el.tagName; el = el.parentNode) {
+      if (seen.has(el)) break;
+      seen.add(el);
+      for (const c of classesOf(el)) named.add('\\.' + c + '(?![-\\w])');
+      const id = attrOf(el, 'id');
+      if (id) named.add('#' + id + '(?![-\\w])');
+      for (const a of (el.attributeNames || [])) named.add('\\[\\s*' + a + '(?=[\\]~^$*|=\\s])');
+      for (const a of Object.keys(REFLECTED)) {
+        if (attrOf(el, a) !== null) named.add('\\[\\s*' + a + '(?=[\\]~^$*|=\\s])');
+      }
+    }
+  }
+  const CANDIDATE = new RegExp([...named].join('|'));
 
   const rules = [];
   let order = 0;
   for (const [sheet, src] of sheets) {
     for (const rule of cssRules(src, sheet)) {
-      const mentions = [...onTree].some((c) => new RegExp('\\.' + c + '(?![-\\w])').test(rule.selector));
-      if (!mentions) continue;
+      if (!CANDIDATE.test(rule.selector)) continue;
       rule.order = order;
       order += 1;
 
@@ -1399,8 +1449,12 @@ function styledClasses(nodes, sheets) {
         if (!new RegExp('\\.' + cls + '(?![-\\w])').test(last)) return false;
         if (!selectorReaches(rule.selector, el)) return false;
         /* A rule that reaches the class but declares nothing paints nothing,
-           so it must not count as the class being styled. */
-        return declarations(rule).size > 0;
+           so it must not count as the class being styled. Nor does one whose
+           at-rule condition can never match at a width the product is used
+           at — `@media (min-width: 5000px)` is a rule that exists and never
+           applies, which is the same nothing wearing a selector. */
+        if (!declarations(rule).size) return false;
+        return [1440, 375].some((width) => mediaMatches(rule.media, { width }));
       });
       if (!hit) out.set(cls, el.tagName.toLowerCase());
     }
@@ -1438,17 +1492,25 @@ test('every class the re-authentication dialog writes is styled by a sheet every
   assert.equal(unstyled.get('is-open'), 'div', 'is-open moved off the scrim, so its exemption no longer describes it');
 });
 
-test('the dialog is painted as a dialog: over the page, on its own surface, bounded, at both widths', async () => {
-  const { modal, scrim, card, input, alert, title, hint } = await openReauth();
+test('the dialog is painted as a dialog: over the page, on its own surface, bounded, at both widths and in both themes', async () => {
+  const { root, modal, scrim, card, input, alert, title, hint } = await openReauth();
   const nodes = [scrim, modal, ...dialogTree([modal])];
-  const resolve = cascade(nodes, SHARED_SHEETS);
   const padding = {};
 
+  /* Both themes, not one. This sheet themes the dialog through
+     `[data-theme="light"]` on <html>, so a cascade resolved against a root
+     carrying no theme answers for dark only and a light-theme rule aimed at
+     the dialog goes unread. Seeding the root is what a page does before
+     paint, and it puts the other half of the sheet on test. */
+  for (const theme of ['dark', 'light']) {
+    root.setAttribute('data-theme', theme);
+    const resolve = cascade(nodes, SHARED_SHEETS);
+
   for (const width of [1440, 375]) {
-    const env = { width };
+    const env = { width, theme };
     const at = (el) => resolve(el, env);
     const value = (el, prop) => { const d = at(el).get(prop); return d ? d.value : null; };
-    const where = ' at ' + width + 'px';
+    const where = ' at ' + width + 'px in the ' + theme + ' theme';
 
     assert.equal(value(modal, 'position'), 'fixed', 'the dialog does not sit over the page' + where);
     for (const side of ['top', 'right', 'bottom', 'left']) {
@@ -1511,15 +1573,22 @@ test('the dialog is painted as a dialog: over the page, on its own surface, boun
     assert.notEqual(value(alert, 'color'), value(card, 'color'),
       'the refusal message reads exactly like the prose above it' + where);
 
-    padding[width] = { layer: value(modal, 'padding'), card: value(card, 'padding') };
+    padding[theme + width] = { layer: value(modal, 'padding'), card: value(card, 'padding') };
   }
 
   /* The breakpoint has to bind, not merely exist: a phone gives up less of a
      420px card to margin than a desktop does, so both boxes come in. */
-  assert.ok(Number.parseFloat(padding[375].layer) < Number.parseFloat(padding[1440].layer),
-    'the layer keeps its ' + padding[1440].layer + ' gutter at 375px, so the card is narrower than it needs to be');
-  assert.ok(Number.parseFloat(padding[375].card) < Number.parseFloat(padding[1440].card),
-    'the card keeps its ' + padding[1440].card + ' padding at 375px, so less of the phone is the dialog');
+  assert.ok(Number.parseFloat(padding[theme + 375].layer) < Number.parseFloat(padding[theme + 1440].layer),
+    'the layer keeps its ' + padding[theme + 1440].layer + ' gutter at 375px in the ' + theme +
+    ' theme, so the card is narrower than it needs to be');
+  assert.ok(Number.parseFloat(padding[theme + 375].card) < Number.parseFloat(padding[theme + 1440].card),
+    'the card keeps its ' + padding[theme + 1440].card + ' padding at 375px in the ' + theme +
+    ' theme, so less of the phone is the dialog');
+  }
+
+  /* Both themes were actually resolved, so a future root that stops carrying
+     the attribute cannot quietly collapse this test back to one of them. */
+  assert.deepEqual(Object.keys(padding).sort(), ['dark1440', 'dark375', 'light1440', 'light375']);
 });
 
 test('the dialog reserves no box while its alert is empty, and stays in the document either way', async () => {
