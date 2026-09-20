@@ -63,9 +63,11 @@
    REFUSES — fails the run by name — rather than judging, whenever a script
    mentions the attribute outside a read, touches document.body.dataset, sets
    an attribute on document.body or document.documentElement under a computed
-   name, or replaces the document wholesale. A refusal is loud. A wrong
-   judgement would be silent, and silence is the failure this guard cannot
-   afford.
+   name, or replaces the document wholesale. Inline <script> blocks in the
+   pages are read alongside ops/assets/*.js, because a net that covered only
+   the files would have a hole the width of a script tag. A refusal is loud. A
+   wrong judgement would be silent, and silence is the failure this guard
+   cannot afford.
 
    COVERED, each with the mutation that proves it
 
@@ -114,6 +116,16 @@
        body                                   to body
      - removeAttribute and toggleAttribute    the method alternation narrowed
        count as well as setAttribute          to setAttribute
+     - a case-insensitivity flag leaves the   parseAttrSelector reporting op
+       rule ALIVE, not dead                   '=' for the flagged shape
+     - the markup side is case-folded too     the body attribute map's
+                                              toLowerCase() removed
+     - a hasAttribute read is a read          READ_CALL narrowed to
+                                              getAttribute
+     - documentElement.innerHTML is a         that entry deleted from
+       document replacement                   DOCUMENT_REPLACERS
+     - an inline script is scanned like a     inlineScripts returning []
+       file
 
    NOT COVERED, on purpose
 
@@ -129,7 +141,11 @@
        reads text and cannot resolve those.
      - An attribute selector with an operator other than `=`, a case-insensitive
        flag, or a bare [attr] presence test. These are read and then ignored,
-       which can only under-report.
+       which can only under-report. That "ignored" is enforced in one place:
+       parseAttrSelector reports an operator the callers do not act on, rather
+       than an `=` with a value it could not resolve. Round 2 of review found
+       the flag case reporting `=`, which made every caller record a
+       requirement for a value no page can carry.
      - Whether a sheet a page DOES load is the right sheet for it, and whether
        a rule that is alive is also correct.
      - Anything outside ops/, and anything in a SUBDIRECTORY of it: the page
@@ -142,18 +158,28 @@
      - HTML character references in an attribute value. `data-page="a&amp;b"`
        is read as the seven characters it is written with, so a selector
        asking for `a&b` would be judged against the wrong string.
+     - CSS escapes in a selector's value, which is the same shape on the other
+       side: `[data-page="lo\67 in"]` matches `login` and is compared as the
+       characters it is written with.
+     - Which <body> is the page's <body>. The first match for `<body` outside
+       an HTML comment wins, so one inside a <template> or a string literal
+       would be read as the page's own.
 
-   Three of those — the subdirectory, the @import and the character reference —
-   are shapes where the wrong answer would be DEAD rather than alive, so it is
-   worth being exact about the direction the rest of this leans. Within the
-   analysis it does perform, anything it cannot parse, resolve or intersect is
-   treated as ALIVE, so it under-reports rather than deleting something that is
-   still on screen; the exception is a script that could be writing the
-   attribute, which becomes a loud REFUSAL, because there the safe answer is
-   not "alive" but "stop". Outside that analysis, in the three input shapes
-   above, it would be wrong in the dangerous direction, and each is named here
-   rather than defended against because none of the three exists in this
-   repository and all three fail loudly rather than silently. */
+   Five of those — the subdirectory, the @import, the character reference, the
+   CSS escape and the wrong <body> — are shapes where the wrong answer would be
+   DEAD rather than alive, so it is worth being exact about the direction the
+   rest of this leans. Within the analysis it does perform, anything it cannot
+   parse, resolve or intersect is treated as ALIVE, so it under-reports rather
+   than deleting something that is still on screen; the exception is a script
+   that could be writing the attribute, which becomes a loud REFUSAL, because
+   there the safe answer is not "alive" but "stop". Outside that analysis, in
+   the five input shapes above, it would be wrong in the dangerous direction,
+   and each is named here rather than defended against because none of the five
+   exists in this repository and all five fail loudly rather than silently.
+
+   That list is where two rounds of review put their findings, and both rounds
+   found it overclaiming. It is worth reading as the least trustworthy part of
+   this file rather than the most. */
 
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -340,9 +366,13 @@ export function simpleSelectors(compound) {
   return out;
 }
 
-/* [data-page="users"] -> { name, op, value }. Only `=` carries a value; every
-   other operator, and the case-insensitivity flag, is reported with a null
-   value and then ignored by the caller. */
+/* [data-page="users"] -> { name, op, value }. Only a flagless `=` resolves to
+   a value. Every other shape comes back with a null value AND an operator the
+   callers do not act on, which is load bearing: both callers key on `=` alone,
+   so reporting `=` for a value this did not resolve would record a requirement
+   for the value null, which no page can carry — a deletion instruction against
+   a rule that matches. A case-insensitivity flag is the shape that makes that
+   concrete, since matching it needs a case fold this does not perform. */
 export function parseAttrSelector(text) {
   const inner = text.slice(1, -1).trim();
   const m = inner.match(
@@ -351,7 +381,8 @@ export function parseAttrSelector(text) {
   if (!m) return null;
   const name = m[1].toLowerCase();
   if (!m[2]) return { name, op: 'exists', value: null };
-  if (m[2] !== '=' || m[6]) return { name, op: m[2], value: null };
+  if (m[6]) return { name, op: 'unresolved', value: null };
+  if (m[2] !== '=') return { name, op: m[2], value: null };
   return { name, op: '=', value: m[3] ?? m[4] ?? m[5] ?? '' };
 }
 
@@ -471,6 +502,23 @@ export function bodyAttributes(html) {
   return m ? parseTagAttributes(m[1]) : null;
 }
 
+/* Script text written INTO a page. The refusal check is the guard's safety
+   net, and a net that only covers ops/assets/*.js has a hole the width of a
+   <script> tag: the same source that is refused in a file would be invisible
+   inline. Every script body is read, including the body of a <script src>,
+   which a browser ignores: reading it can only add refusals, and a refusal is
+   the loud direction. */
+export function inlineScripts(html, pagePath) {
+  const out = [];
+  const re = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+  let m;
+  const clean = stripHtmlComments(html);
+  while ((m = re.exec(clean)) !== null) {
+    if (m[1].trim()) out.push({ name: `${pagePath} (inline script)`, source: m[1] });
+  }
+  return out;
+}
+
 /* ================= can a script write this attribute? =================== */
 
 const DOCUMENT_REPLACERS = [
@@ -541,6 +589,8 @@ export function analyze(input) {
       body: body || {},
     };
   });
+  const scripts = input.scripts.concat(
+    ...input.pages.map((p) => inlineScripts(p.source, p.name)));
 
   const findings = [];
   const counts = {
@@ -589,7 +639,7 @@ export function analyze(input) {
       const verdicts = perSelector.map((reqs) => {
         for (const [attrName, values] of reqs) {
           counts.attributesJudged.add(attrName);
-          const risks = attributeWriteRisks(attrName, input.scripts);
+          const risks = attributeWriteRisks(attrName, scripts);
           if (risks.length) return { refused: risks };
           const reached = loaders.some((p) => values.has(p.body[attrName]));
           if (!reached) {
@@ -811,6 +861,32 @@ test('a body-attribute scope no loading page carries is reported, by value not b
     }).findings, [], `an unspaced ${combinator} was read as part of the body compound`);
   }
 
+  /* A case-insensitivity flag leaves the value unresolved. The rule must stay
+     ALIVE: recording a requirement for the value the parse did not produce is
+     a deletion instruction against a rule that matches. Every shape here is
+     live on the login page. */
+  for (const flagged of [
+    'body[data-page="login" i]',
+    'body[data-page="login" I]',
+    'body[data-page="login" s]',
+    "body[data-page='login' i]",
+    'body[data-page=login i]',
+    'body[data-page="login"][data-page="login" i]',
+    'body:is([data-page="login" i], [data-page="users"])',
+  ]) {
+    assert.deepEqual(analyze({ pages, sheets: sheets(flagged), scripts: [] }).findings, [],
+      `a case-insensitivity flag was read as a value requirement: ${flagged}`);
+  }
+
+  /* The MARKUP side is case-folded too, asserted in the dead direction: an
+     unfolded attribute name would simply go missing from the body map, and a
+     rule asking for a value the page carries would be reported dead. */
+  const shouty = [page('ops/users.html',
+    '<!doctype html><html><head><link rel="stylesheet" href="assets/x.css"></head>'
+    + '<BODY DATA-PAGE="users">x</BODY></html>')];
+  assert.deepEqual(analyze({ pages: shouty, sheets: sheets('body[data-page="users"]'), scripts: [] }).findings, [],
+    'the body attribute name was not case-folded on the markup side');
+
   /* Only a rule whose EVERY selector is dead is dead. */
   const oneAlive = 'body[data-page="users"] .a, body[data-page="login"] .b';
   assert.deepEqual(analyze({ pages, sheets: sheets(oneAlive), scripts: [] }).findings, []);
@@ -824,6 +900,13 @@ test('a script that could write the attribute turns the judgement into a refusal
   assert.deepEqual(analyze({ pages, sheets, scripts: reading }).findings.map((f) => f.kind),
     ['dead-body-scope']);
 
+  /* hasAttribute is a read too. Asserted because narrowing READ_CALL to
+     getAttribute alone would turn this into a refusal, which fails safe and so
+     would never be noticed by an assertion in the refusal direction. */
+  const testing = [{ name: 'r.js', source: "if (document.body.hasAttribute('data-page')) go();" }];
+  assert.deepEqual(analyze({ pages, sheets, scripts: testing }).findings.map((f) => f.kind),
+    ['dead-body-scope'], 'a hasAttribute read was mistaken for a write');
+
   const cases = [
     ["document.body.setAttribute('data-page', 'users');", 'a literal write'],
     ['document.body.setAttribute(key, value);', 'a computed name on body'],
@@ -835,11 +918,31 @@ test('a script that could write the attribute turns the judgement into a refusal
     ['el.dataset.page = "users";', 'a dataset write on anything'],
     ['document.write("<body data-page=users>");', 'a document rewrite'],
     ['document.body.outerHTML = markup;', 'an outerHTML replacement'],
+    ['document.documentElement.innerHTML = markup;', 'an innerHTML replacement of <html>'],
   ];
   for (const [source, why] of cases) {
     const out = analyze({ pages, sheets, scripts: [{ name: 'w.js', source }] });
     assert.deepEqual(out.findings.map((f) => f.kind), ['refused'], `${why} was not refused`);
   }
+
+  /* The same source INLINE in the page. A refusal check that only reads
+     ops/assets/*.js has a hole the width of a <script> tag. */
+  const inline = [page('ops/login.html', `<!doctype html><html><head>`
+    + `<link rel="stylesheet" href="assets/x.css">`
+    + `<script>document.body.dataset.page = "users";</script>`
+    + `</head><body data-page="login">x</body></html>`)];
+  assert.deepEqual(analyze({ pages: inline, sheets, scripts: [] }).findings.map((f) => f.kind),
+    ['refused'], 'an inline script was never scanned');
+
+  /* A <script src> with an empty body contributes nothing. Asserted because
+     the real pages are full of them and a scan that tripped over one would
+     refuse everything. */
+  const external = [page('ops/login.html', `<!doctype html><html><head>`
+    + `<link rel="stylesheet" href="assets/x.css">`
+    + `<script src="assets/w.js"></script>`
+    + `</head><body data-page="login">x</body></html>`)];
+  assert.deepEqual(analyze({ pages: external, sheets, scripts: [] }).findings.map((f) => f.kind),
+    ['dead-body-scope']);
 });
 
 test('the CSS is parsed, not grepped', () => {
@@ -887,7 +990,9 @@ test('the pieces the analysis is built from behave', () => {
   assert.deepEqual(parseAttrSelector('[data-page="x"]'), { name: 'data-page', op: '=', value: 'x' });
   assert.deepEqual(parseAttrSelector('[data-page]'), { name: 'data-page', op: 'exists', value: null });
   assert.deepEqual(parseAttrSelector('[data-page~="x"]'), { name: 'data-page', op: '~=', value: null });
-  assert.deepEqual(parseAttrSelector('[data-page="x" i]'), { name: 'data-page', op: '=', value: null });
+  assert.deepEqual(parseAttrSelector('[data-page="x" i]'),
+    { name: 'data-page', op: 'unresolved', value: null },
+    'a flagged value must not come back as an `=` the callers will act on');
 
   const reqs = (sel) => {
     const r = bodyAttributeRequirements(sel);
