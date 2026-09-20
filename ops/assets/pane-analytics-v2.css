@@ -225,14 +225,6 @@
 .u-feat th:first-child, .u-feat td:first-of-type { padding-left: 0; }
 .u-bar-col { width: 34%; min-width: 90px; }
 
-.u-steps { display: flex; flex-direction: column; gap: 13px; }
-.u-step-top {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-  margin-bottom: 6px;
-}
-.u-step-k { font-size: 12.5px; color: var(--ink-2); }
-.u-step-v { font-size: 13px; }
-
 /* A card is as tall as what is in it. Left to stretch, the shorter of two
    cards in a row grows a band of empty surface under its last row, which reads
    as something that failed to load. */
@@ -277,4 +269,10 @@
      spacing is wider than the column it names, and a table whose own minimum
      is wider than the screen takes the page with it. */
   .u-feat thead th { white-space: normal; }
+  /* A pill is nowrap so a status never breaks mid-phrase, which is right until
+     the phrase is longer than the screen. The band head already wraps, but a
+     nowrap child cannot be what wraps, so the age of a late answer — the
+     longest string this pane puts in a pill — took the page sideways at 320px
+     in the state the pane exists to make visible. */
+  .band-head .pill { white-space: normal; }
 }
