@@ -936,13 +936,27 @@ test('a script that could write the attribute turns the judgement into a refusal
 
   /* A <script src> with an empty body contributes nothing. Asserted because
      the real pages are full of them and a scan that tripped over one would
-     refuse everything. */
+     refuse everything. This one passes in BOTH directions on its own — it is
+     here to pin the quiet direction, and the assertion that can fail is the
+     one below it. */
   const external = [page('ops/login.html', `<!doctype html><html><head>`
     + `<link rel="stylesheet" href="assets/x.css">`
     + `<script src="assets/w.js"></script>`
     + `</head><body data-page="login">x</body></html>`)];
   assert.deepEqual(analyze({ pages: external, sheets, scripts: [] }).findings.map((f) => f.kind),
     ['dead-body-scope']);
+
+  /* The BODY of a <script src> is read too. A browser ignores it, so reading
+     it can only add refusals, and a refusal is the loud direction. Asserted in
+     the refusal direction because that is the direction a src skip would
+     change: reinstating `if (/\bsrc\s*=/i.test(...)) continue` in
+     inlineScripts makes this rule read dead again. */
+  const srcWithBody = [page('ops/login.html', `<!doctype html><html><head>`
+    + `<link rel="stylesheet" href="assets/x.css">`
+    + `<script src="assets/w.js">document.body.dataset.page = "users";</script>`
+    + `</head><body data-page="login">x</body></html>`)];
+  assert.deepEqual(analyze({ pages: srcWithBody, sheets, scripts: [] }).findings.map((f) => f.kind),
+    ['refused'], 'the body of a <script src> was skipped rather than read');
 });
 
 test('the CSS is parsed, not grepped', () => {
@@ -987,6 +1001,19 @@ test('the pieces the analysis is built from behave', () => {
   assert.deepEqual(bodyAttributes('<body data-page="x" class="y">'), { 'data-page': 'x', class: 'y' });
   assert.equal(bodyAttributes('<!-- <body data-page="x"> -->'), null);
 
+  /* inlineScripts, on its own values rather than through a fixture whose
+     verdict is the same either way. Each of the three assertions below is red
+     under a different one of the three payloads published on
+     antonyrugama/aria-website#74 that the <script src> fixture survived. */
+  assert.deepEqual(inlineScripts('<script src="a.js"></script>', 'ops/a.html'), [],
+    'an empty script body is not script source');
+  assert.deepEqual(inlineScripts('<script src="a.js">go();</script>', 'ops/a.html'),
+    [{ name: 'ops/a.html (inline script)', source: 'go();' }],
+    'the body of a <script src> is read, and what is read is the body, not the tag');
+  assert.deepEqual(
+    inlineScripts('<script type="application/json">{"data-page":"x"}</script>', 'ops/a.html'), [],
+    'a JSON data block is data, not code');
+
   assert.deepEqual(parseAttrSelector('[data-page="x"]'), { name: 'data-page', op: '=', value: 'x' });
   assert.deepEqual(parseAttrSelector('[data-page]'), { name: 'data-page', op: 'exists', value: null });
   assert.deepEqual(parseAttrSelector('[data-page~="x"]'), { name: 'data-page', op: '~=', value: null });
@@ -1008,4 +1035,217 @@ test('the pieces the analysis is built from behave', () => {
   assert.deepEqual(reqs('body[data-page="x"] body[data-page="y"]'), null,
     'two body compounds are not analysed');
   assert.deepEqual(reqs('body[data-page]'), [], 'a presence test carries no value');
+});
+
+/* ================= what this guard gets wrong, demonstrated =============
+
+   The NOT COVERED list at the head of this file is a coverage claim, and a
+   coverage claim written in prose rots. Three rounds of review on the commit
+   that added this file each found that list short or its count wrong, every
+   time by reading past the bullet the previous round had named. So the half of
+   it that matters — the shapes where the wrong answer is DEAD, which is an
+   instruction to delete live CSS — is a TABLE, and every entry is a
+   demonstration that runs on every run.
+
+   The ratchet works in both directions. An entry that stops reproducing fails
+   the run, so a shape that gets fixed cannot stay on the list; and the count
+   and the text in the header are parsed back out of this file and deepEqual'd
+   against this table, so neither the number nor the wording can be typed. */
+
+const SELF = fileURLToPath(import.meta.url);
+
+/* Every finding, as `kind where`, for one hand-built dashboard. */
+const verdicts = (pages, sheets, scripts = []) =>
+  analyze({ pages, sheets, scripts }).findings.map((f) => `${f.kind} ${f.where}`);
+
+const LINK = '<link rel="stylesheet" href="assets/x.css">';
+const WRITE = 'document.body.dataset.page = "users";';
+const wantsUsers = [sheet('ops/assets/x.css', 'body[data-page="users"] { color: red; }')];
+const wantsLogin = [sheet('ops/assets/x.css', 'body[data-page="login"] { color: red; }')];
+
+export const WRONG_DEAD_NOT_COVERED = [
+  {
+    id: 'aliased-body-write',
+    why: 'The refusal check reads text, so a write through a reference to <body> that is '
+      + 'not textually document.body or document.documentElement — an alias, a '
+      + 'closest("body"), an argument — is invisible unless it also names the attribute '
+      + 'in quotes.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+        + '<body data-page="login">x</body></html>')],
+      wantsUsers,
+      [{ name: 'ops/assets/s.js', source: 'var b = document.body; b.setAttribute(k, val);' }]),
+    expected: ['dead-body-scope ops/assets/x.css:1'],
+  },
+  {
+    id: 'body-in-template',
+    why: 'The first `<body` outside an HTML comment wins, so one inside a <template> '
+      + 'or a string literal is read as the page\'s own and the real one is never seen.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+        + '<template><body data-page="users"></template><body data-page="login">x</body></html>')],
+      wantsLogin),
+    expected: ['dead-body-scope ops/assets/x.css:1'],
+  },
+  {
+    id: 'character-reference',
+    why: 'An HTML character reference in an attribute value is read as the characters it '
+      + 'is written with, so `data-page="a&amp;b"` is compared against the selector as '
+      + 'seven characters rather than the three the browser resolves it to.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+        + '<body data-page="a&amp;b">x</body></html>')],
+      [sheet('ops/assets/x.css', 'body[data-page="a&b"] { color: red; }')]),
+    expected: ['dead-body-scope ops/assets/x.css:1'],
+  },
+  {
+    id: 'comment-in-script',
+    why: 'stripHtmlComments runs over the whole page, so `<!--` inside a JavaScript string '
+      + 'blanks everything up to the next `-->` anywhere later, including a following '
+      + 'script and any <link> or <body> between them.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', '<!doctype html><html><head>'
+        + '<script>var s = "<!--";</script>'
+        + `<script>${WRITE}</script>${LINK}<!-- ordinary comment -->`
+        + '</head><body data-page="login">x</body></html>')],
+      wantsUsers),
+    expected: ['orphan-sheet ops/assets/x.css'],
+  },
+  {
+    id: 'css-escape',
+    why: 'A CSS escape in a selector value is compared as the characters it is written '
+      + 'with, so `[data-page="lo\\67 in"]`, which matches login, is not read as login.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+        + '<body data-page="login">x</body></html>')],
+      [sheet('ops/assets/x.css', 'body[data-page="lo\\67 in"] { color: red; }')]),
+    expected: ['dead-body-scope ops/assets/x.css:1'],
+  },
+  {
+    id: 'duplicate-body-attribute',
+    why: 'parseTagAttributes keeps the LAST spelling of a repeated attribute and HTML keeps '
+      + 'the first, so `<body data-page="login" data-page="users">` is read as users.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+        + '<body data-page="login" data-page="users">x</body></html>')],
+      wantsLogin),
+    expected: ['dead-body-scope ops/assets/x.css:1'],
+  },
+  {
+    id: 'import-only-sheet',
+    why: 'The orphan arm reads <link> tags only, so a sheet reachable only through an '
+      + '@import inside a linked sheet reads as orphaned.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+        + '<body data-page="login">x</body></html>')],
+      [sheet('ops/assets/x.css', '@import url(y.css);\n.a { color: red; }'),
+        sheet('ops/assets/y.css', '.b { color: red; }')]),
+    expected: ['orphan-sheet ops/assets/y.css'],
+  },
+  {
+    id: 'quoted-gt-in-body-tag',
+    why: 'The <body> reader stops at the first `>`, so `<body data-x="a>b" '
+      + 'data-page="login">` parses as two empty attributes named data-x and a.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+        + '<body data-x="a>b" data-page="login">x</body></html>')],
+      wantsLogin),
+    expected: ['dead-body-scope ops/assets/x.css:1'],
+  },
+  {
+    id: 'quoted-gt-in-link-tag',
+    why: 'The <link> reader stops at the first `>` the same way, so a `>` in any quoted '
+      + 'attribute before href hides the href and the sheet the page really loads '
+      + 'reads as orphaned.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', '<!doctype html><html><head>'
+        + '<link rel="stylesheet" title="a>b" href="assets/x.css"></head>'
+        + '<body data-page="login">x</body></html>')],
+      wantsLogin),
+    expected: ['orphan-sheet ops/assets/x.css'],
+  },
+  {
+    id: 'script-end-tag',
+    why: 'The end-tag pattern is `</script\\s*>`, so `</script/>` does not close the '
+      + 'element for this guard and the script body is never read, while a browser '
+      + 'closes the element there and runs it.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', `<!doctype html><html><head>${LINK}</head>`
+        + `<body data-page="login">x<script>${WRITE}</script/></body></html>`)],
+      wantsUsers),
+    expected: ['dead-body-scope ops/assets/x.css:1'],
+  },
+  {
+    id: 'script-injected-link',
+    why: 'The orphan arm reads <link> tags only, so a stylesheet a script builds and '
+      + 'appends at runtime reads as orphaned.',
+    wrongAnswer: () => verdicts(
+      [page('ops/login.html', '<!doctype html><html><head></head>'
+        + '<body data-page="login">x</body></html>')],
+      [sheet('ops/assets/x.css', '.a { color: red; }')],
+      [{ name: 'ops/assets/s.js', source: "var l = document.createElement('link');"
+        + " l.rel = 'stylesheet'; l.href = 'assets/x.css'; document.head.appendChild(l);" }]),
+    expected: ['orphan-sheet ops/assets/x.css'],
+  },
+  {
+    id: 'subdirectory-page',
+    why: 'The page and sheet listings are one level deep, so ops/panes/foo.html would not '
+      + 'be read and a sheet only it linked would be reported orphaned.',
+    wrongAnswer: () => listing('ops', '.css').map((s) => s.name),
+    expected: [],
+  },
+];
+
+test('every shape this guard is documented to get wrong still gets it wrong', () => {
+  for (const entry of WRONG_DEAD_NOT_COVERED) {
+    assert.deepEqual(entry.wrongAnswer(), entry.expected,
+      `${entry.id} no longer reproduces. A shape that has been fixed must leave this ` +
+      `table, or the list stops describing the guard: ${entry.why}`);
+  }
+  const ids = WRONG_DEAD_NOT_COVERED.map((e) => e.id);
+  assert.deepEqual(ids, [...ids].sort(), 'keep the table in id order');
+  assert.equal(new Set(ids).size, ids.length, 'duplicate id');
+});
+
+/* The header's machine-checked block, parsed back out of this file. This is
+   not a source grep: nothing here asserts that the file contains a string. It
+   reads the documented table out of the prose and deepEquals it against the
+   table the code actually carries, so the count and the wording of every
+   entry are derived rather than typed. */
+const FENCE = '```' + 'counts';
+
+export function parseCountsBlock(fileText) {
+  const start = fileText.indexOf(FENCE);
+  if (start === -1) return null;
+  const end = fileText.indexOf('```', start + FENCE.length);
+  if (end === -1) return null;
+  const lines = fileText.slice(start + FENCE.length, end).split('\n')
+    .map((l) => l.replace(/^\s{0,5}/, '').trimEnd()).filter((l) => l.trim());
+  const out = {};
+  let section = null;
+  let entry = null;
+  for (const line of lines) {
+    const head = line.match(/^([a-z-]+): (\d+)$/);
+    if (head) { section = { count: Number(head[2]), entries: [] }; out[head[1]] = section; entry = null; continue; }
+    const item = line.match(/^- ([a-z-]+): (.*)$/);
+    if (item && section) { entry = { id: item[1], why: item[2] }; section.entries.push(entry); continue; }
+    if (entry) entry.why += ` ${line.trim()}`;
+  }
+  return out;
+}
+
+const flat = (s) => s.replace(/\s+/g, ' ').trim();
+
+test('the header\'s counts block is the code\'s tables, not a typed claim', () => {
+  const parsed = parseCountsBlock(readFileSync(SELF, 'utf8'));
+  const codeSays = WRONG_DEAD_NOT_COVERED.map((e) => ({ id: e.id, why: flat(e.why) }));
+  assert.ok(parsed, 'the header carries no machine-checked ' + FENCE + ' block, so its ' +
+    `list of wrong-DEAD shapes is typed prose. The code demonstrates ${codeSays.length}: ` +
+    codeSays.map((e) => e.id).join(', '));
+  const section = parsed['wrong-dead-not-covered'];
+  assert.ok(section, 'the block has no wrong-dead-not-covered section');
+  assert.deepEqual(section.entries.map((e) => ({ id: e.id, why: flat(e.why) })), codeSays,
+    'the header and the table disagree about which shapes produce a wrong DEAD');
+  assert.equal(section.count, codeSays.length,
+    'the count in the header is not the number of entries below it');
 });
