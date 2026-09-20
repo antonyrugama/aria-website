@@ -1,0 +1,307 @@
+/* =========================================================================
+   Aria Operations — App releases pane (v2)
+   Loaded after assets/aria.css and assets/shell-pane-v2.css, on
+   ops/releases.html and nowhere else.
+
+   Adapted from docs/mocks/ops-dashboard-v2/assets/pane-ship.css in the Aria
+   monorepo, narrowed to the shapes this one pane uses. That file serves three
+   mock panes at once; three panes are being remodelled here in parallel, so
+   each takes its own stylesheet and a later issue can consolidate what turns
+   out to be shared. Anything aria.css already declares is used from there
+   rather than copied.
+
+   No new colour value. Every rule paints in a token aria.css declares, which
+   is the palette made WCAG AA by construction (monorepo #10042). Text on a
+   tone takes the -ink variant, because the base colour is the tint and the
+   -ink is the ink for it.
+   ========================================================================= */
+
+/* ------------------------------------------------------- release pipeline
+
+   One row per platform: where it is, the four stages, and the verdict. The
+   stages are a grid rather than a flex chain so every platform's "Released"
+   node sits on the same vertical line and the rows read down a column. */
+.pipe { display: flex; flex-direction: column; }
+
+.pipe-row {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr) 210px;
+  gap: 18px;
+  align-items: center;
+  padding: 15px 0;
+  border-top: 1px solid var(--line);
+}
+.pipe-row:first-child { border-top: 0; padding-top: 2px; }
+.pipe-row:last-child { padding-bottom: 2px; }
+
+.pipe-app .t-main { font-weight: 540; font-size: 13px; }
+.pipe-app .t-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+
+.pipe-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+}
+.pipe-step { position: relative; padding-right: 12px; }
+/* Connector from this node's centre to the next node's centre. */
+.pipe-step::before {
+  content: '';
+  position: absolute;
+  left: 11px; right: -11px; top: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--n, var(--ink-3)) 38%, transparent);
+}
+.pipe-step:last-child::before { display: none; }
+.pipe-step.todo::before {
+  background: repeating-linear-gradient(90deg, var(--line-2) 0 4px, transparent 4px 8px);
+}
+
+.pipe-node {
+  position: relative; z-index: 1;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  color: var(--n-ink, var(--ink-3));
+  background: color-mix(in srgb, var(--n, var(--ink-3)) 16%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--n, var(--ink-3)) 45%, transparent);
+}
+.pipe-node svg { width: 12px; height: 12px; }
+.pipe-step.todo .pipe-node {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  color: var(--ink-3);
+}
+.pipe-step.now .pipe-node {
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--n, var(--cyan)) 70%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--n, var(--cyan)) 14%, transparent);
+  animation: pipepulse 2.6s ease-in-out infinite;
+}
+@keyframes pipepulse {
+  0%, 100% { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--n, var(--cyan)) 70%, transparent), 0 0 0 3px color-mix(in srgb, var(--n, var(--cyan)) 16%, transparent); }
+  50%      { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--n, var(--cyan)) 70%, transparent), 0 0 0 7px color-mix(in srgb, var(--n, var(--cyan)) 3%, transparent); }
+}
+
+/* A person who has switched motion off is told not to animate anything that
+   is not essential, and a pulsing ring is not: the node it decorates already
+   carries a glyph and the stage beside it is named in words. */
+@media (prefers-reduced-motion: reduce) {
+  .pipe-step.now .pipe-node { animation: none; }
+}
+
+/* The node fill is a tint of the tone; the glyph inside it and the label
+   under it are the -ink variant, which is the readable ink for that tone on
+   this surface in both themes. */
+.n-ok   { --n: var(--emerald); --n-ink: var(--emerald-ink); }
+.n-warn { --n: var(--amber);   --n-ink: var(--amber-ink); }
+.n-info { --n: var(--blue);    --n-ink: var(--blue-ink); }
+.n-bad  { --n: var(--rose);    --n-ink: var(--rose-ink); }
+
+.pipe-label { font-size: 11.5px; font-weight: 540; margin-top: 8px; }
+.pipe-step.now .pipe-label { color: var(--n-ink, var(--ink)); }
+.pipe-step.todo .pipe-label { color: var(--ink-3); font-weight: 480; }
+.pipe-date { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.pipe-end { display: flex; justify-content: flex-end; }
+
+/* The tracks a platform holds outside the production one. Real builds with
+   real testers on them, so they are named rather than dropped; compact,
+   because the question this pane owns is where production is. */
+.pipe-also {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+/* ------------------------------------------------------------ stacked bar
+
+   Version share across the whole field. Labels sit inside a segment only when
+   the segment is wide enough to hold one; everything else reads off the
+   legend. */
+.stackbar {
+  display: flex;
+  height: 28px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.stackbar > i {
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; font-style: normal;
+  width: var(--w, 0%);
+  background: linear-gradient(180deg,
+    var(--c, var(--cyan)),
+    color-mix(in srgb, var(--c, var(--cyan)) 72%, transparent));
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--bg) 55%, transparent);
+  min-width: 0;
+}
+.stackbar > i:last-child { box-shadow: none; }
+
+/* A segment fill is a DATA fill, and it cannot also be a text surface. The
+   label used to paint straight onto it in an ink derived from --bg, on the
+   premise that a light theme's series colours are dark enough to carry a pale
+   ink. They are — but the gradient's 72% bottom stop washes every segment
+   toward the page, and the washed tone is what the eye and the sampler both
+   land on. Ten sites failed AA that way, 2.06:1 to 4.32:1 (monorepo #10255,
+   fixed in #10293).
+
+   No ink swap fixes it honestly: against the five washed fills the guard
+   sampled, the inks that clear AA on all five are 70 of the 16.7M in sRGB,
+   every one of them under luminance 0.0004. The label therefore takes a
+   surface of its own — the same --surface/--ink pair every other reading
+   surface in this dashboard uses — and the fill is left exactly as it was, so
+   the bar and the legend still read as one colour key. Re-toning the segments
+   until an ink fitted would have broken that key in both themes. */
+.stackbar > i > b {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-weight: 540;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line), var(--shadow-1);
+  max-width: calc(100% - 6px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* aria.css declares a .tone-* class for every series colour in the palette.
+   The oldest-versions bucket is the residue rather than a version, so it takes
+   an ink tone, and that is the one tone with no class of its own. Declared
+   here so the pane never writes a colour value through the CSSOM: only the
+   segment WIDTH takes that route, because only the width comes from data. */
+.tone-older { --c: var(--ink-3); }
+
+/* aria.css's .grid stretches its children to the tallest, which is right for
+   two cards of comparable length and leaves a void under a short one. These
+   two are a bar and a list of stores, so they are never the same height. */
+.share-grid { align-items: start; }
+
+/* aria.css's .col is a stack at 8px, which is right for a pair of rows and too
+   tight for a bar, its key and the sentence that reads them together. */
+.share-stack { display: flex; flex-direction: column; gap: 16px; }
+.share-line { font-size: 12px; color: var(--ink-2); line-height: 1.55; }
+
+/* ------------------------------------------------------------- key/value */
+.kv { display: flex; flex-direction: column; }
+.kv > div {
+  display: flex; align-items: center; gap: 14px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.kv > div:first-child { border-top: 0; padding-top: 0; }
+.kv > div:last-child { padding-bottom: 0; }
+.kv .k { color: var(--ink-3); flex: none; }
+.kv .v {
+  margin-left: auto; text-align: right;
+  display: flex; align-items: center; gap: 8px;
+  justify-content: flex-end; flex-wrap: wrap;
+}
+.kv .v.is-warn { color: var(--amber-ink); }
+
+/* ---------------------------------------------------------- inset panel */
+.inset {
+  border-radius: var(--r);
+  padding: 12px 13px;
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.inset-title { font-size: 12.5px; font-weight: 560; }
+
+/* ----------------------------------------------------------- the figures */
+.figure-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.figure-val {
+  font-family: var(--mono);
+  font-size: 30px; font-weight: 480; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+}
+.figure-note { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.figure-note svg { width: 13px; height: 13px; flex: none; }
+.figure-note.is-warn { color: var(--amber-ink); }
+.figure-note.is-ok { color: var(--emerald-ink); }
+
+/* A table that follows a card body needs a little air the body's padding does
+   not give it. */
+.card-body + .tbl-scroll .tbl th { padding-top: 6px; }
+
+/* Four columns that do not wrap have a minimum width, and under about 360px
+   that minimum is wider than a phone. The table scrolls inside this box
+   rather than taking the document sideways with it.
+
+   outline-offset is pulled inside the box because aria.css's global
+   :focus-visible sits 2px outside it, and 2px outside a full-width child of a
+   card is 2px into the card's own edge. */
+.tbl-scroll { overflow-x: auto; }
+.tbl-scroll:focus-visible { outline-offset: -2px; border-radius: 0; }
+
+/* aria.css styles .tbl th as a column header: uppercase, 9.5px, tracked out.
+   A row header is a row's name, so it reads as a cell in the row it names. */
+.tbl tbody th {
+  text-align: left;
+  padding: 11px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 13px; font-weight: 520; letter-spacing: 0;
+  text-transform: none; color: var(--ink);
+  white-space: normal;
+}
+
+/* A verdict is a word in a pill. The ink on the figure beside it is a second
+   reading of the same comparison, never the only one. */
+.v-worse { color: var(--rose-ink); }
+.v-better { color: var(--emerald-ink); }
+
+/* ------------------------------------------------------------- callouts */
+.callout {
+  display: flex; gap: 10px; align-items: flex-start;
+  border-radius: var(--r);
+  padding: 11px 13px;
+  font-size: 12px; line-height: 1.55; color: var(--ink-2);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 26%, transparent);
+}
+.callout svg { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--amber-ink); }
+.callout b { color: var(--ink); font-weight: 560; }
+
+/* ------------------------------------------------------------ responsive */
+
+/* aria.css drops the hero to two columns under 980px and pulls its last child
+   onto a row of its own — but only where that child is a `.row`, and the
+   approved design's last child is `.hero-chips`. Left in the auto column, the
+   chips set that column's width, and at 375px the title was squeezed into
+   about 90px and broke mid-word. This pane's page measured 377px against a
+   375px document because of it.
+
+   Scoped here rather than fixed in aria.css, which this pane does not own.
+   Filed for the shared stylesheet as Stadiora/Aria#10397. */
+@media (max-width: 980px) {
+  .hero > .hero-chips { grid-column: 1 / -1; }
+}
+
+/* shell-pane-v2.css gives the filter note the pill's shape and aria.css gives
+   .pill `white-space: nowrap`, so a note longer than the viewport pushes the
+   whole page sideways instead of wrapping. A note is a sentence, not a chip
+   label, and this pane's is the longest in the registry.
+
+   Same reason as above: filed for shell-pane-v2.css as Stadiora/Aria#10397. */
+.filters .filter-note { white-space: normal; }
+
+@media (max-width: 1280px) {
+  .pipe-row { grid-template-columns: 172px minmax(0, 1fr); row-gap: 12px; }
+  .pipe-end { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 980px) {
+  .pipe-row { grid-template-columns: minmax(0, 1fr); }
+  .pipe-track { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 14px; }
+  .pipe-step:nth-child(2)::before { display: none; }
+}
+
+/* On a phone the widest segment holds about eight characters, so the chip
+   arrives truncated — "1.1.1 · …", which is a label that has stopped being a
+   label. The legend directly beneath carries every bucket with its share, and
+   the bar's accessible name carries all of them regardless, so the chips go
+   rather than shrink. */
+@media (max-width: 560px) {
+  .stackbar > i > b { display: none; }
+}

@@ -1,165 +1,177 @@
 /* App releases: which app version is where, and is the newest one healthy?
 
-   The ladder is the pane. Each platform's tracks stack in promotion order, so
-   "what is where" is answered by the shape of the thing rather than by reading
-   a number out of a table. Everything else exists to answer the follow up: is
-   this build behaving worse than the one before it.
+   Remodelled onto the v2 design system through assets/shell-pane-v2.js. The
+   surface changed; the read did not. GET /api/ops/releases is untouched, and
+   every field drawn here is a field the v1 pane already drew.
 
-   Two rules from the approved mock are load bearing and are the reason several
-   things here are more awkward than they would otherwise be:
+   THE ONE CLAIM THIS PANE MAKES
 
-     - Store truth and field truth are never merged. The store reports intent
-       (this track is set to 20% of people); usage data reports reality (73% of
-       sessions are on the newest build). Both are shown as their own number.
-       A single blended figure would be neither.
-     - A source that is stale shows its last successful poll time rather than
-       hiding its rows. A failed poll leaves the previous rows exactly where
-       they are, so "as of 4 hours ago" is the honest label for them, and a
-       blank card is not.
+   A version sitting at 20% of the field because the Play rollout is
+   deliberately staged at 20% is a completely different fact from a version
+   sitting at 20% because nobody is updating, and this pane has to say which.
+   The two numbers that answer it come from different places and are never
+   merged into one:
+
+     store truth   track.rolloutBasisPoints, the share of people the store is
+                   releasing to, and rolloutObservedSince, the day that share
+                   last moved. Per platform.
+     field truth   adoption.buckets, the share of sessions that reported each
+                   version. One figure across the whole field, because that is
+                   the shape the contract defines: the reading is dimensioned
+                   by app version, not by version and platform.
+
+   So the pipeline's fourth stage carries the store's number, the version
+   share band carries the field's, and shareReading() is the one sentence that
+   reads the two together. A single blended "adoption" figure would answer
+   neither question, and a field share drawn without its store ceiling invites
+   the wrong one: a build the store is holding at 20% CANNOT be on more than
+   20% of the field, and reading that as "nobody is updating" sends somebody
+   to chase a problem that does not exist.
 
    WHAT THIS PANE READS
 
      GET /api/ops/releases
 
-   answering { data: { ... } } with, all fields optional except platforms and
-   sources, and null meaning "not reported" rather than zero.
-
-   Each field is marked with whether anything stores it today, because this
-   block is the only specification a backend author has and a shape that reads
-   as uniformly available is a shape that gets half-filled. "stored" means
-   ops_release_snapshots or a shipped poller in Stadiora/Aria main holds it;
-   "no source yet" means the pane renders it if it ever arrives and says "not
-   reported" until then. Nothing here is speculative in the client: every
-   marked-future field already degrades honestly.
-
-   The route accepts a range and echoes it, and no field in the response varies
-   by it: ops_release_snapshots is upserted per track, so it holds current state
-   and no history. This pane therefore sends none and offers no range control,
-   rather than drawing one that repaints the same figures. See the registry
-   entry in shell.js.
+   answering { data: { ... } }, every field optional, and null meaning "not
+   reported" rather than zero. Each is marked with whether anything stores it
+   today, because this block is the only specification a backend author has
+   and a list that reads as uniformly available is a list that gets
+   half-filled.
 
      generatedAt   stored. ISO time the response was assembled
-     platforms[]   { platform: 'ios'|'android', label, appIdentifier,
+     platforms[]   stored. { platform: 'ios'|'android', label, appIdentifier,
                      sourceKey, tracks[], unknownTracks[] }
        unknownTracks[] stored. Track names the store reported that are not
-                     rungs of the ladder this pane draws. Listed under the
-                     ladder rather than dropped, and counted as builds in
-                     flight, so a store reporting only an unknown track is not
-                     read as a store with nothing on it.
+                     rungs of the ladder this pane knows. Named rather than
+                     dropped, and counted as builds in flight, so a store
+                     reporting only an unknown track is not read as a store
+                     with nothing on it.
        tracks[]    { track, versionName, versionCode, state,
                      rolloutBasisPoints, rolloutObservedSince, testerCount,
                      releasedAt, fetchedAt }               all stored
-                   { installCount, activeCount }           no source yet:
-                     ops_release_snapshots stores testerCount and nothing
-                     beside it. The rollout line draws them when they arrive
-                     and omits them otherwise.
+                   { installCount, activeCount }           no source yet
      sources[]     stored. { key, label, description, status, lastSuccessAt,
                      lastAttemptAt, failureReason, pollSeconds, mode }
-     production    stored, derived from the production track of each platform.
+     production    stored, derived from each platform's production track.
                    { versionName, builds[{ platform, versionCode }] }
-     adoption      derivable. coverage_sessions is dimensioned by app version,
-                   so the split exists even though no endpoint assembles it
-                   yet. { latestVersion, sampleSessions,
-                   buckets[{ key, label, basisPoints }] }
-     crashFree     no source yet. There is no crash poller in opsPollerKeys
-                   and no crash metric in telemetryMetricKeys, so this stays
-                   "Not reported" until one ships.
-                   { basisPoints, floorBasisPoints, windowHours }
-     health        no source yet, for the same reason: signals[] has nothing
-                   feeding it. { platform, current, previous, signals[] }
+     adoption      derivable, not yet assembled by any route.
+                   { latestVersion, sampleSessions,
+                     buckets[{ key, label, basisPoints }] }
+     crashFree     no source yet. { basisPoints, floorBasisPoints,
+                     windowHours }
+     health        no source yet. { platform, current, previous, signals[] }
        signals[]   { key, label, unit, previous, current, verdict }
-                   unit is one of percent_bp, rate_bp, seconds, millis,
-                   per_1k. verdict is one of better, worse, slightly_worse,
-                   no_change, unknown.
-     candidate     no source yet. Aria quality is a separate project.
-                   { versionName, status, reason, checkLabel, checkValue,
-                     href }. href is followed only when it stays on this
-                     origin.
+     candidate     no source yet. { versionName, status, reason, checkLabel,
+                     checkValue, href }
 
-   track.state is one of the normalized store states the backend already
-   defines (processing, in_review, rejected, ready_for_release, rolling_out,
-   halted, live, unknown), because the two stores describe the same ladder in
-   different words and the dashboard shows one ladder. source.status is one of
-   ok, failed, disabled, unconfigured, and the difference between the last two
-   matters on this pane more than anywhere else: App Store Connect is
-   unconfigured until somebody issues an API key for it, which is not the same
-   fact as a poll that ran and was refused.
+   track.state is one of the normalised store states the backend defines
+   (processing, in_review, rejected, ready_for_release, rolling_out, halted,
+   live, unknown), because the two stores describe one ladder in different
+   words. source.status is one of ok, failed, disabled, unconfigured, and the
+   difference between the last two matters more here than anywhere else: App
+   Store Connect is unconfigured until somebody issues an API key for it,
+   which is not the same fact as a poll that ran and was refused.
 
-   Nothing here uses innerHTML. Widths that have to be computed are written as
-   a custom property through the CSSOM, style.setProperty, and the stylesheet
-   turns that into a width. Be exact about why that works, because the obvious
-   "simplification" breaks it: the write does serialize into a style attribute
-   in the DOM, but CSP style-src governs styles that arrive as markup, not
-   programmatic CSSOM writes, so this path is not policed. Rewriting it as
-   setAttribute('style', ...) would be, and would be blocked. */
+   NO RANGE, AND NO CHART. The release snapshot table is upserted per track,
+   so it holds what is on that track now and no history to window. The
+   registry therefore gives this pane no range control and says so where one
+   would have been, and the mock's adoption curve is not drawn: a curve needs
+   a series and there is no stored series to draw one from. Every departure
+   from the mock is listed in ops/README.md under "App releases on v2".
+
+   Nothing here uses innerHTML and no style attribute is written into markup.
+   One value on the page comes from data and lands in CSS — a segment width —
+   so it is written through the CSSOM as a custom property and the stylesheet
+   turns it into a width. That is not a workaround: style-src 'self' governs
+   styles arriving as markup, and a CSSOM property write is not one. The same
+   value passed through h() as a style key would be dropped, and written with
+   setAttribute('style', ...) would be blocked. Colours never take that route
+   at all: a tone is a class aria.css already declares. */
 (function (global) {
   'use strict';
 
-  var shell = global.OpsShell;
-  var session = global.OpsSession;
-  var h = shell.h;
-  var icon = shell.icon;
+  var S = global.OpsPaneShell;
+  var h = S.h;
+  var icon = S.icon;
+  var fmt = S.fmt;
+
+  var ENDPOINT = '/api/ops/releases';
 
   /* ------------------------------------------------------- vocabulary */
 
-  /* Track names as an operator says them, in promotion order. The order is
-     the backend's (opsReleaseTracksByPlatform); the words are the mock's,
-     because "Closed" and "Open" are what the Play console calls those tracks
-     and "alpha" and "beta" are what the API calls them. */
+  var PLATFORMS = {
+    ios: { label: 'iOS', store: 'the App Store', sourceKey: 'app_store_connect' },
+    android: { label: 'Android', store: 'the Play Store', sourceKey: 'google_play' }
+  };
+
+  /* The promotion path each store ships through, in order, production last.
+     Non-production tracks hold real builds with real testers on them, so they
+     are named under the pipeline rather than dropped. */
   var TRACKS = {
     ios: [
-      { key: 'internal', label: 'Internal', hint: 'TestFlight, team' },
-      { key: 'external', label: 'External', hint: 'TestFlight, beta group' },
-      { key: 'production', label: 'Production', hint: 'App Store' }
+      { key: 'internal', label: 'Internal' },
+      { key: 'external', label: 'External' },
+      { key: 'production', label: 'Production' }
     ],
     android: [
-      { key: 'internal', label: 'Internal', hint: 'internal testing' },
-      { key: 'alpha', label: 'Closed', hint: 'alpha track' },
-      { key: 'beta', label: 'Open', hint: 'beta track' },
-      { key: 'production', label: 'Production', hint: 'Play Store' }
+      { key: 'internal', label: 'Internal' },
+      { key: 'alpha', label: 'Closed' },
+      { key: 'beta', label: 'Open' },
+      { key: 'production', label: 'Production' }
     ]
   };
 
-  var PLATFORMS = {
-    ios: { label: 'iOS, App Store Connect', sourceKey: 'app_store_connect' },
-    android: { label: 'Android, Google Play', sourceKey: 'google_play' }
-  };
+  var PRODUCTION = 'production';
 
-  /* tone drives the badge class and, with it, the glyph. Status is never the
-     colour on its own: every one of these carries its own words. */
+  /* Where each normalised store state sits on the four-stage pipeline, and
+     what to call it there. `stage` is the stage the build has reached.
+
+     Tone is never the whole message. Every state carries a glyph and a word
+     as well, so the pane reads the same with no colour at all. */
   var STATES = {
-    processing: { label: 'Processing', tone: 'info', icon: 'clock', chip: 'is-rolling' },
-    in_review: { label: 'In review', tone: 'info', icon: 'clock', chip: 'is-rolling' },
-    rejected: { label: 'Rejected', tone: 'crit', icon: 'warn', chip: 'is-blocked' },
-    ready_for_release: { label: 'Ready for release', tone: 'ok', icon: 'check', chip: 'is-live' },
-    rolling_out: { label: 'Rolling out', tone: 'info', icon: 'clock', chip: 'is-rolling' },
-    halted: { label: 'Release stopped', tone: 'crit', icon: 'warn', chip: 'is-blocked' },
-    live: { label: 'Live', tone: 'ok', icon: 'check', chip: 'is-live' },
-    unknown: { label: 'Not reported', tone: '', icon: 'info', chip: '' }
+    processing: { stage: 0, label: 'Processing', verdict: 'Processing', tone: 'info', glyph: 'clock' },
+    in_review: { stage: 1, label: 'In review', verdict: 'In review', tone: 'info', glyph: 'clock' },
+    rejected: { stage: 1, label: 'Rejected', verdict: 'Rejected', tone: 'bad', glyph: 'x' },
+    ready_for_release: { stage: 2, label: 'Ready', verdict: 'Ready to release', tone: 'ok', glyph: 'check' },
+    rolling_out: { stage: 3, label: 'Rolling out', verdict: 'Rolling out', tone: 'info', glyph: 'clock' },
+    halted: { stage: 2, label: 'Stopped', verdict: 'Release stopped', tone: 'bad', glyph: 'warn' },
+    live: { stage: 3, label: 'Live', verdict: 'Live', tone: 'ok', glyph: 'check' },
+    unknown: { stage: 0, label: 'Not reported', verdict: 'Not reported', tone: '', glyph: 'info' }
   };
 
-  var SOURCE_STATUS = {
-    ok: { tone: 'ok', icon: 'check' },
-    failed: { tone: 'warn', icon: 'warn' },
-    disabled: { tone: '', icon: 'info' },
-    unconfigured: { tone: '', icon: 'info' }
-  };
+  var STAGES = ['Built', 'In review', 'Released', 'Rolled out'];
+  var ROLLED_OUT = 3;
+
+  /* Pill and pipeline-node classes per tone, as a table so an unrecognised
+     tone draws a plain pill rather than no pill at all. */
+  var PILL = { ok: 'pill up', warn: 'pill warn', bad: 'pill down', info: 'pill info', '': 'pill' };
+  var NODE = { ok: 'n-ok', warn: 'n-warn', bad: 'n-bad', info: 'n-info', '': '' };
 
   var VERDICTS = {
-    better: { label: 'Better', tone: 'ok', cls: 'verdict-better' },
-    worse: { label: 'Worse', tone: 'crit', cls: 'verdict-worse' },
-    slightly_worse: { label: 'Slightly worse', tone: 'warn', cls: 'verdict-slightly-worse' },
+    better: { label: 'Better', tone: 'ok', cls: 'v-better' },
+    worse: { label: 'Worse', tone: 'bad', cls: 'v-worse' },
+    slightly_worse: { label: 'Slightly worse', tone: 'warn', cls: 'v-worse' },
     no_change: { label: 'No change', tone: '', cls: '' },
     unknown: { label: 'Not comparable', tone: '', cls: '' }
   };
 
-  /* The mock's rule, kept as its own constant so it is one number rather than
-     a sentence and an arithmetic that can drift apart. When the alert engine
-     grows a rule for a stalled rollout this moves to the API, so that the pane
-     and the alert cannot disagree about what stalled means. */
+  /* A staged rollout that has not moved in this many days is called stalled.
+     One number rather than a sentence and an arithmetic that can drift apart.
+     When the alert engine grows a rule for a stalled rollout this moves to
+     the API, so the pane and the alert cannot disagree about what stalled
+     means. */
   var STALL_DAYS = 6;
-
   var FULL_ROLLOUT_BP = 10000;
+
+  /* The share buckets in the order the bar draws them, each taking a tone
+     class aria.css declares. `older` is the residue rather than a version, so
+     it takes an ink tone, which is the one tone with no .tone-* class of its
+     own and is declared in this pane's stylesheet. */
+  var BUCKET_TONE = { latest: 'tone-cyan', previous: 'tone-violet', older: 'tone-older' };
+  var BUCKET_ORDER = ['latest', 'previous', 'older'];
+
+  /* A label fits inside a segment at roughly this share and not below it. */
+  var LABEL_MIN_BP = 1500;
 
   /* --------------------------------------------------------- formatting */
 
@@ -172,722 +184,920 @@
     return (decimals ? value.toFixed(decimals) : String(Math.round(value))) + '%';
   }
 
-  /* Total by construction: every caller here renders "not reported" from null,
-     so a payload that sends a time as an object, an array, or anything else
-     the Date constructor would coerce through its own toString has to leave by
-     that door rather than by throwing. */
-  function parseTime(iso) {
-    if (typeof iso !== 'string' && typeof iso !== 'number') return null;
-    if (iso === '') return null;
-    var t;
-    try { t = new Date(iso).getTime(); } catch (e) { return null; }
-    return isFinite(t) ? t : null;
-  }
-
-  /* "12m ago", "4h ago", "6 days ago". Deliberately coarse: this is used to
-     answer "is this fresh", and a to-the-second answer invites reading it as
-     more precise than a fifteen minute poll can be. */
-  function ago(iso) {
-    var t = parseTime(iso);
-    if (t === null) return null;
-    var mins = Math.max(0, Math.round((Date.now() - t) / 60000));
-    if (mins < 1) return 'just now';
-    if (mins < 60) return mins + 'm ago';
-    var hours = Math.round(mins / 60);
-    if (hours < 24) return hours + 'h ago';
-    var days = Math.round(hours / 24);
-    return days === 1 ? '1 day ago' : days + ' days ago';
-  }
-
   function daysSince(iso) {
-    var t = parseTime(iso);
-    if (t === null) return null;
-    return Math.floor((Date.now() - t) / 86400000);
+    var hoursAgo = fmt.hoursSince(iso);
+    return hoursAgo === null ? null : Math.floor(hoursAgo / 24);
   }
 
-  /* "22 Jul". The year is added once the date is not in the current one, so
-     an old build cannot read as a recent one. */
-  function shortDate(iso) {
-    var t = parseTime(iso);
-    if (t === null) return null;
-    var d = new Date(t);
-    var opts = { day: 'numeric', month: 'short' };
-    if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-    try { return d.toLocaleDateString(undefined, opts); } catch (e) { return d.toISOString().slice(0, 10); }
+  function days(n) { return n + (n === 1 ? ' day' : ' days'); }
+
+  function state(track) {
+    var key = track && track.state;
+    return (typeof key === 'string' &&
+      Object.prototype.hasOwnProperty.call(STATES, key)) ? STATES[key] : STATES.unknown;
   }
 
-  function count(v) {
-    var n = num(v);
-    if (n === null) return null;
-    try { return n.toLocaleString(); } catch (e) { return String(n); }
+  function hasBuild(track) {
+    return !!(track && (track.versionName || track.versionCode));
   }
 
-  /* 'seconds' meant milliseconds here, which is a figure a thousand times too
-     small for a backend author who read the contract and sent what it asked
-     for. The unit now means what it says, and 'millis' exists for the value
-     the divisor was written for. */
-  function signalValue(unit, value) {
-    var n = num(value);
-    if (n === null) return null;
-    if (unit === 'percent_bp') return pct(n, 2);
-    if (unit === 'rate_bp') return pct(n, 2);
-    if (unit === 'seconds') return n.toFixed(1) + 's';
-    if (unit === 'millis') return (n / 1000).toFixed(1) + 's';
-    if (unit === 'per_1k') return (Math.round(n * 10) / 10).toFixed(1);
-    return String(n);
+  function pill(tone, glyph, text) {
+    var node = h('span', { className: PILL[tone] || PILL[''] });
+    if (glyph) node.appendChild(icon(glyph));
+    node.appendChild(h('span', { text: text }));
+    return node;
   }
 
-  /* An API supplied link is followed only when it stays on this origin. The
-     only destination one is ever meant to name is another pane in this
-     dashboard, and this is what makes that a constraint rather than a comment.
-     Anything else renders as a plain badge instead of a link. */
-  function safeHref(href) {
-    if (typeof href !== 'string' || !href) return null;
-    try {
-      var url = new URL(href, global.location.href);
-      if (url.origin !== global.location.origin) return null;
-      return url.pathname + url.search + url.hash;
-    } catch (e) { return null; }
+  function words(list) {
+    if (!list.length) return '';
+    if (list.length === 1) return list[0];
+    return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
   }
 
-  /* ------------------------------------------------------- small pieces */
+  /* ------------------------------------------------- reading the payload */
 
-  function badge(tone, iconName, text) {
-    var b = h('span', { className: 'badge' + (tone ? ' badge-' + tone : '') });
-    if (iconName) b.appendChild(icon(iconName));
-    b.appendChild(h('span', { text: text }));
-    return b;
-  }
-
-  /* A meter whose width is data. Set through the CSSOM rather than as a style
-     attribute, because the page's CSP forbids the attribute. */
-  function meter(basisPoints, tone) {
-    var bp = Math.max(0, Math.min(FULL_ROLLOUT_BP, num(basisPoints) || 0));
-    var wrap = h('div', { className: 'meter' });
-    var fill = h('div', { className: 'meter-fill is-set' + (tone ? ' ' + tone : '') });
-    fill.style.setProperty('--fill', String(bp / 100));
-    wrap.appendChild(fill);
-    return wrap;
-  }
-
-  /* The tile grid sits above the first band heading, so a tile label is the
-     first heading under the pane title in the top bar and has to be an h2 for
-     the levels to run in order. It takes its size from the class, as every
-     heading in this stylesheet does. */
-  function tile(label) {
-    var card = h('div', { className: 'card tile' });
-    card.appendChild(h('h2', { className: 'tile-label', text: label }));
-    return card;
-  }
-
-  function metaLine(text) {
-    return h('div', { className: 'tile-meta' }, [h('span', { text: text })]);
-  }
-
-  function notReported(reason) {
-    var wrap = h('div', {});
-    wrap.appendChild(h('div', { className: 'tile-value sm muted', text: 'Not reported' }));
-    wrap.appendChild(metaLine(reason));
-    return wrap;
-  }
-
-  /* --------------------------------------------------------- the ladder */
-
-  function trackLabelsFor(platform) {
-    return TRACKS[platform] || [];
-  }
-
-  function buildChip(track) {
-    var state = STATES[track && track.state] || STATES.unknown;
-    var hasBuild = !!(track && (track.versionName || track.versionCode));
-
-    var chip = h('div', {
-      className: 'build ' + (hasBuild ? state.chip : 'is-none')
-    });
-
-    if (!hasBuild) {
-      chip.appendChild(h('span', { className: 'v', text: 'Nothing on this track' }));
-      return chip;
-    }
-
-    var version = track.versionName || 'Unknown version';
-    if (track.versionCode) version += ' (' + track.versionCode + ')';
-    chip.appendChild(h('span', { className: 'v', text: version }));
-    chip.appendChild(badge(state.tone, state.icon, state.label));
-
-    var when = track.releasedAt ? shortDate(track.releasedAt) : null;
-    if (when) chip.appendChild(h('span', { className: 'tiny muted', text: 'since ' + when }));
-
-    return chip;
-  }
-
-  /* The line under the build: how much of the audience has it, and for how
-     long that has been true. This is where a stalled gradual release becomes
-     visible, which is the whole reason rolloutObservedSince is stored. */
-  function rolloutLine(track) {
-    var row = h('div', { className: 'rollout' });
-    var bp = num(track && track.rolloutBasisPoints);
-
-    var testers = count(track && track.testerCount);
-    var installs = count(track && track.installCount);
-    var active = count(track && track.activeCount);
-
-    if (bp === null) {
-      /* No staged rollout concept on this track, which is not the same as 0%.
-         Tester counts are what a TestFlight or internal track has instead. */
-      if (testers) {
-        row.appendChild(h('span', { className: 'mono', text: testers }));
-        /* Agreeing with the count beside it. A track with one tester on it is
-           an ordinary state of an internal track, and "1 testers" is the same
-           defect as "1 day ago" would be below. */
-        row.appendChild(h('span', {
-          className: 'muted', text: track.testerCount === 1 ? 'tester' : 'testers'
-        }));
-        if (installs) {
-          row.appendChild(h('span', { className: 'mono', text: installs }));
-          row.appendChild(h('span', { className: 'muted', text: 'installed' }));
-        }
-        if (active) {
-          row.appendChild(h('span', { className: 'mono', text: active }));
-          row.appendChild(h('span', { className: 'muted', text: 'active this week' }));
-        }
-      } else {
-        row.appendChild(h('span', { className: 'muted', text: 'No staged rollout on this track. Tester numbers are not reported.' }));
+  /* Both known platforms always, then anything else the payload named. A
+     platform the response omits entirely is still drawn, because "iOS is
+     missing from the answer" is a fact about the pane's own coverage and an
+     absent row states it by saying nothing at all. */
+  function platformsOf(data) {
+    var order = ['ios', 'android'];
+    ((data && data.platforms) || []).forEach(function (p) {
+      if (p && typeof p.platform === 'string' && p.platform && order.indexOf(p.platform) === -1) {
+        order.push(p.platform);
       }
-      return row;
-    }
-
-    if (bp >= FULL_ROLLOUT_BP) {
-      row.appendChild(h('span', { className: 'muted', text: 'Everyone has it.' }));
-      row.appendChild(meter(bp, 'ok'));
-      row.appendChild(h('span', { className: 'mono', text: '100%' }));
-      return row;
-    }
-
-    var stalledDays = daysSince(track.rolloutObservedSince);
-    var stalled = stalledDays !== null && stalledDays >= STALL_DAYS;
-
-    row.appendChild(meter(bp, stalled ? 'warn' : ''));
-    row.appendChild(h('span', { className: 'mono', text: pct(bp) }));
-    if (stalledDays !== null) {
-      row.appendChild(h('span', {
-        className: stalled ? '' : 'muted',
-        text: stalledDays === 0
-          ? 'moved today'
-          : 'no change for ' + stalledDays + (stalledDays === 1 ? ' day' : ' days')
-      }));
-    }
-    if (stalled) row.appendChild(badge('warn', 'warn', 'Rollout stalled'));
-    return row;
-  }
-
-  /* Tracks the store reported that are not rungs of the ladder above.
-
-     The ladder is a fixed set per platform, because the whole point of drawing
-     it is that promotion runs in one order. A store is free to report a track
-     outside that set, and one arrived on this response, so there are exactly
-     two honest things to do with it: leave it off the ladder, where it has no
-     rung, and say it exists. Dropping it silently is what would make a build
-     invisible on the pane whose only question is where the builds are. */
-  function unknownTracksOf(payload) {
-    var list = payload && payload.unknownTracks;
-    if (!Array.isArray(list)) return [];
-    return list.filter(function (track) {
-      return typeof track === 'string' && track !== '';
     });
+    return order;
   }
 
-  function unknownTracksNote(tracks) {
-    var box = h('div', { className: 'callout callout-warn' });
-    box.appendChild(icon('warn'));
-    var body = h('div');
-    body.appendChild(h('strong', {
-      text: tracks.length === 1
-        ? 'This store also reports a track the ladder does not have.'
-        : 'This store also reports ' + tracks.length + ' tracks the ladder does not have.'
-    }));
-    body.appendChild(document.createTextNode(
-      ' ' + tracks.join(', ') + '. The ladder shows the promotion path this app ' +
-      'ships through, so a track outside it has no rung to sit on and is named ' +
-      'here instead of being dropped. Whatever is on it is a real build: open ' +
-      'the store console to see it.'
-    ));
-    box.appendChild(body);
-    return box;
-  }
-
-  function ladderCard(platform, data) {
-    var meta = PLATFORMS[platform];
-    var payload = null;
-    (data.platforms || []).forEach(function (p) { if (p && p.platform === platform) payload = p; });
-
-    var source = sourceFor(data, (payload && payload.sourceKey) || meta.sourceKey);
-    var card = h('div', { className: 'card' });
-
-    var head = h('div', { className: 'card-head' });
-    head.appendChild(h('h3', { className: 'card-title', text: (payload && payload.label) || meta.label }));
-    if (payload && payload.appIdentifier) {
-      head.appendChild(h('span', { className: 'card-hint mono', text: payload.appIdentifier }));
-    }
-    head.appendChild(h('div', { className: 'spacer', 'aria-hidden': 'true' }));
-    head.appendChild(freshnessBadge(source));
-    card.appendChild(head);
-
-    /* A source nobody has configured has no ladder to draw and no failure to
-       report. Saying which of those it is, in the pane, is the difference
-       between "we cannot see iOS" and "iOS is broken". */
-    if (source && source.status === 'unconfigured') {
-      card.appendChild(unconfiguredBlock(source, meta));
-      return card;
-    }
-
-    var tracks = {};
-    ((payload && payload.tracks) || []).forEach(function (t) { if (t && t.track) tracks[t.track] = t; });
-
-    var ladder = h('div', { className: 'ladder' });
-    trackLabelsFor(platform).forEach(function (def) {
-      var row = h('div', { className: 'ladder-row' });
-      row.appendChild(h('div', { className: 'ladder-track' }, [
-        h('b', { text: def.label }),
-        h('span', { className: 'tiny muted', text: def.hint })
-      ]));
-
-      var cell = h('div', { className: 'ladder-cell' });
-      cell.appendChild(buildChip(tracks[def.key]));
-      if (tracks[def.key]) cell.appendChild(rolloutLine(tracks[def.key]));
-      row.appendChild(cell);
-      ladder.appendChild(row);
-    });
-    card.appendChild(ladder);
-
-    /* Inside a card body, because the ladder above it is a full-bleed grid and
-       a callout appended straight to the card would sit flush against both
-       edges. */
-    var unknown = unknownTracksOf(payload);
-    if (unknown.length) {
-      card.appendChild(h('div', { className: 'card-body' }, [unknownTracksNote(unknown)]));
-    }
-
-    var foot = h('div', { className: 'card-foot' });
-    foot.appendChild(icon('info'));
-    foot.appendChild(h('span', {
-      text: 'A rollout that has not moved in ' + STALL_DAYS + ' days is flagged. Gradual releases ' +
-        'stall silently in the store, and a stalled rollout is indistinguishable from a ' +
-        'forgotten one unless something says so. Starting, pausing, or resuming a rollout is ' +
-        'done in the store console: this dashboard holds read-only access to both stores and ' +
-        'has no button that would change one.'
-    }));
-    card.appendChild(foot);
-    return card;
-  }
-
-  /* --------------------------------------------------------- freshness */
-
-  function sourceFor(data, key) {
+  function payloadFor(data, platform) {
     var found = null;
-    (data.sources || []).forEach(function (s) { if (s && s.key === key) found = s; });
+    ((data && data.platforms) || []).forEach(function (p) {
+      if (p && p.platform === platform) found = p;
+    });
     return found;
   }
 
-  /* Order matters here. "Nothing is configured", "we chose not to poll" and
-     "we polled and it failed" are three different facts and only the last one
-     is a problem, so each is answered before the generic freshness wording is
-     reached. */
-  function freshnessBadge(source) {
-    if (!source) return badge('', 'info', 'Freshness not reported');
-    if (source.status === 'unconfigured') return badge('', 'info', 'Not connected');
-    if (source.status === 'disabled') return badge('', 'info', 'Not polled');
-
-    var when = ago(source.lastSuccessAt);
-    if (source.status === 'failed') {
-      return badge('warn', 'warn', when ? 'Sync stale, last poll ' + when : 'Sync failing, never polled');
-    }
-    if (source.mode === 'stream') return badge('ok', 'check', 'Streaming');
-
-    var meta = SOURCE_STATUS[source.status] || SOURCE_STATUS.ok;
-    return badge(meta.tone, meta.icon, when ? 'Synced ' + when : 'Synced, time not reported');
-  }
-
-  function unconfiguredBlock(source, meta) {
-    var block = shell.stateBlock('lock', 'Not connected yet', [
-      source.label + ' has no credential to poll with, so there is nothing stored for this ' +
-        'platform and nothing is being hidden from you. This is not a failed poll: nothing has ' +
-        'been tried and refused.',
-      'It starts reporting as soon as an App Store Connect API key is issued and given to the ' +
-        'operations API. Until then the ' + meta.label.split(',')[0] + ' ladder is blank rather ' +
-        'than wrong.'
-    ], 4);
-    return block;
-  }
-
-  function sourcesCard(data) {
-    var card = h('div', { className: 'card' });
-    card.appendChild(h('div', { className: 'card-head' }, [
-      h('h3', { className: 'card-title', text: 'Data sources and freshness' })
-    ]));
-
-    var body = h('div', { className: 'card-body' });
-    var sources = data.sources || [];
-
-    if (!sources.length) {
-      body.appendChild(h('p', { className: 'state-desc', text: 'The operations API reported no data sources for this pane.' }));
-      card.appendChild(body);
-      return card;
-    }
-
-    sources.forEach(function (s) {
-      var row = h('div', { className: 'sync-row' });
-      row.appendChild(h('div', {}, [
-        h('div', { className: 'strong', text: s.label || s.key }),
-        h('div', { className: 'tiny muted', text: s.description || '' })
-      ]));
-
-      var meta = h('div', { className: 'sync-meta' });
-      meta.appendChild(freshnessBadge(s));
-      if (s.mode === 'stream') {
-        meta.appendChild(h('span', { className: 'tiny muted mono', text: 'live' }));
-      } else if (num(s.pollSeconds)) {
-        meta.appendChild(h('span', { className: 'tiny muted mono', text: 'poll ' + Math.round(s.pollSeconds / 60) + 'm' }));
-      }
-      row.appendChild(meta);
-      body.appendChild(row);
+  function trackOf(payload, key) {
+    var found = null;
+    ((payload && payload.tracks) || []).forEach(function (t) {
+      if (t && t.track === key) found = t;
     });
-
-    /* Named in the issue and in the mock: the two numbers stay two numbers.
-       Only worth saying while there are two numbers to keep apart. */
-    if (data.adoption) {
-      var callout = h('div', { className: 'callout callout-info mt' });
-      callout.appendChild(icon('info'));
-      var text = h('div');
-      text.appendChild(h('strong', { text: 'Store truth and field truth disagree, and that is useful.' }));
-      text.appendChild(document.createTextNode(
-        ' The store reports what a track is set to. Usage data reports what people actually have. ' +
-        'Both are on this page as their own figure and neither is folded into the other, because a ' +
-        'blended number would answer neither question.'
-      ));
-      callout.appendChild(text);
-      body.appendChild(callout);
-    }
-
-    /* One callout per stale or failing source, each naming its own last
-       successful poll, because "something is stale" is not actionable. */
-    sources.forEach(function (s) {
-      if (s.status !== 'failed') return;
-      var when = ago(s.lastSuccessAt);
-      var warn = h('div', { className: 'callout callout-warn mt-sm' });
-      warn.appendChild(icon('warn'));
-      warn.appendChild(h('div', {
-        text: (s.label || s.key) + ' last polled successfully ' + (when || 'at a time it did not report') +
-          '. The figures it feeds are from that poll and are labelled with it rather than hidden. ' +
-          'Nothing has been lost: the previous rows are exactly where they were.'
-      }));
-      body.appendChild(warn);
-    });
-
-    card.appendChild(body);
-    return card;
+    return found;
   }
 
-  /* ------------------------------------------------------------- tiles */
+  function sourceFor(data, key) {
+    var found = null;
+    ((data && data.sources) || []).forEach(function (s) { if (s && s.key === key) found = s; });
+    return found;
+  }
 
-  function productionTile(data) {
-    var card = tile('Production version');
-    var prod = data.production;
+  function sourceOfPlatform(data, platform) {
+    var payload = payloadFor(data, platform);
+    var key = (payload && payload.sourceKey) ||
+      (PLATFORMS[platform] && PLATFORMS[platform].sourceKey) || platform;
+    return sourceFor(data, key);
+  }
 
-    if (!prod || !prod.versionName) {
-      card.appendChild(notReported('No production build was reported by either store.'));
-      return card;
-    }
+  function platformName(platform) {
+    return (PLATFORMS[platform] && PLATFORMS[platform].label) || platform;
+  }
 
-    card.appendChild(h('div', { className: 'tile-value sm', text: prod.versionName }));
+  function storeName(platform) {
+    return (PLATFORMS[platform] && PLATFORMS[platform].store) || platformName(platform);
+  }
 
-    /* A build with no versionCode says so rather than printing "build null".
-       Every other number on this pane falls back to words, and the empty-array
-       fallback below never covered the case where the array is there and the
-       number inside it is not. */
-    var builds = (prod.builds || []).map(function (b) {
-      var name = b.platform === 'ios' ? 'iOS' : b.platform === 'android' ? 'Android' : b.platform;
-      var code = b.versionCode;
-      var reported = code !== null && code !== undefined && code !== '';
-      return reported ? name + ' build ' + code : name + ' build not reported';
-    }).join(', ');
-    card.appendChild(metaLine(builds || 'Build numbers not reported'));
+  function unknownTracksOf(payload) {
+    var list = payload && payload.unknownTracks;
+    if (!Array.isArray(list)) return [];
+    return list.filter(function (t) { return typeof t === 'string' && t !== ''; });
+  }
 
-    var row = h('div', { className: 'row row-wrap mt-sm' });
-    ['ios', 'android'].forEach(function (platform) {
-      var payload = null;
-      (data.platforms || []).forEach(function (p) { if (p && p.platform === platform) payload = p; });
-      var source = sourceFor(data, (payload && payload.sourceKey) || PLATFORMS[platform].sourceKey);
-      var store = platform === 'ios' ? 'App Store' : 'Play';
+  /* Whether either store reports a build anywhere, which is what decides
+     between the pane and the empty state.
 
-      if (source && source.status === 'unconfigured') {
-        row.appendChild(badge('', 'info', store + ', not connected'));
-        return;
-      }
+     Unknown tracks count. They are not rungs, so they are not in tracks[],
+     and walking only the rungs meant a store whose single build sat on a
+     track outside the ladder produced the empty state — whose whole sentence
+     is that both stores answered and both are empty. That is precisely the
+     payload the unknownTracks field exists to describe. */
+  function hasAnyBuild(data) {
+    var found = false;
+    ((data && data.platforms) || []).forEach(function (p) {
+      ((p && p.tracks) || []).forEach(function (t) { if (hasBuild(t)) found = true; });
+      if (unknownTracksOf(p).length) found = true;
+    });
+    return found;
+  }
 
-      var track = null;
-      ((payload && payload.tracks) || []).forEach(function (t) {
-        if (t && t.track === 'production') track = t;
-      });
-      if (!track) { row.appendChild(badge('', 'info', store + ', not reported')); return; }
+  /* ------------------------------------------------- the rollout reading
 
-      var bp = num(track.rolloutBasisPoints);
-      if (bp !== null && bp < FULL_ROLLOUT_BP) {
-        row.appendChild(badge('warn', 'warn', store + ', ' + pct(bp)));
-      } else {
-        row.appendChild(badge('ok', 'check', store));
+     Everything the pane says about one platform's production rollout, derived
+     once so the pipeline stage, the end pill, the hero line and the share
+     sentence cannot disagree with each other.
+
+       kind    'none'    the store reports no staged rollout on this track,
+                         which is not the same fact as 0%
+               'full'    the whole field is being served this build
+               'staged'  the store is holding it at a share of the field
+               'stalled' staged, and that share has not moved in STALL_DAYS */
+  function rolloutReading(track) {
+    var bp = num(track && track.rolloutBasisPoints);
+    if (bp === null) return { kind: 'none', bp: null, sinceDays: null };
+    var sinceDays = daysSince(track && track.rolloutObservedSince);
+    if (bp >= FULL_ROLLOUT_BP) return { kind: 'full', bp: bp, sinceDays: sinceDays };
+    return {
+      kind: (sinceDays !== null && sinceDays >= STALL_DAYS) ? 'stalled' : 'staged',
+      bp: bp,
+      sinceDays: sinceDays
+    };
+  }
+
+  /* ---------------------------------------------------------- the hero */
+
+  function heroTone(rows) {
+    var tone = 'st-ok';
+    rows.forEach(function (row) {
+      if (row.state.tone === 'bad') tone = 'st-bad';
+      else if (tone !== 'st-bad' && (row.state.tone === 'warn' || row.rollout.kind === 'stalled')) {
+        tone = 'st-warn';
       }
     });
-    card.appendChild(row);
-    return card;
+    return tone;
   }
 
-  function adoptionTile(data) {
-    var card = tile('On the newest version');
-    var adoption = data.adoption;
+  function heroTitle(data, rows) {
+    var version = data.production && data.production.versionName;
+    if (!version) return 'No production build is reported';
 
-    if (!adoption || !(adoption.buckets || []).length) {
-      card.appendChild(notReported(
-        'Version usage is reported by the apps themselves. No usage data has arrived for this window.'
-      ));
-      return card;
-    }
-
-    var latest = null;
-    adoption.buckets.forEach(function (b) { if (b && b.key === 'latest') latest = b; });
-    card.appendChild(h('div', {
-      className: 'tile-value sm',
-      text: latest ? pct(latest.basisPoints) : 'Not reported'
-    }));
-
-    var bar = h('div', { className: 'stackbar mt-sm' });
-    var toneFor = { latest: 'seg-ok', previous: 'seg-info', older: 'seg-idle' };
-    adoption.buckets.forEach(function (b) {
-      var seg = h('span', { className: 'is-set ' + (toneFor[b.key] || 'seg-idle') });
-      seg.style.setProperty('--seg', String(Math.max(0, num(b.basisPoints) || 0) / 100));
-      bar.appendChild(seg);
+    /* "Live on the Play Store" is a claim about the whole field, so a store
+       still holding the build back at a share of it does not qualify however
+       the store labels the track. Android sitting at 20% is the case this
+       pane exists to show, and a headline reading "live on both stores" over
+       it is the flattening the remodel is meant to prevent. */
+    var out = rows.filter(function (row) {
+      return hasBuild(row.track) && row.state.stage >= ROLLED_OUT &&
+        (row.rollout.kind === 'full' || row.rollout.kind === 'none');
     });
-    card.appendChild(bar);
-
-    /* The bar is decoration on its own, so the same split is written out. */
-    card.appendChild(h('div', { className: 'tile-meta mt-sm' }, [
-      h('span', {
-        text: adoption.buckets.map(function (b) {
-          return b.label + ' ' + (pct(b.basisPoints) || 'not reported');
-        }).join(', ')
-      })
-    ]));
-
-    if (num(adoption.sampleSessions)) {
-      card.appendChild(h('p', {
-        className: 'tiny muted',
-        text: 'From ' + count(adoption.sampleSessions) +
-          (adoption.sampleSessions === 1 ? ' session' : ' sessions') +
-          ' that reported a version.'
+    if (out.length && out.length === rows.length) {
+      return version + ' is live on ' + words(out.map(function (row) {
+        return storeName(row.platform);
       }));
     }
-    return card;
+    return version + ' is the production build';
   }
 
-  function crashTile(data) {
-    var card = tile('Sessions with no crash');
+  /* The one line under the title. Only facts that were reported reach it, and
+     it is absent rather than padded when none were. */
+  function heroSub(data, rows) {
+    var parts = [];
+
+    var latest = latestBucket(data);
+    if (latest) parts.push(pct(latest.basisPoints) + ' of sessions');
+
     var cf = data.crashFree;
+    if (cf && num(cf.basisPoints) !== null) parts.push('crash free ' + pct(cf.basisPoints, 1));
 
-    if (!cf || num(cf.basisPoints) === null) {
-      card.appendChild(notReported('Crash reporting has not sent a figure for this window.'));
-      return card;
-    }
+    rows.forEach(function (row) {
+      if (row.rollout.kind === 'stalled') {
+        parts.push(platformName(row.platform) + ' held at ' + pct(row.rollout.bp) +
+          ' for ' + days(row.rollout.sinceDays));
+      } else if (row.rollout.kind === 'staged') {
+        parts.push(platformName(row.platform) + ' staged at ' + pct(row.rollout.bp));
+      }
+    });
 
-    var floor = num(cf.floorBasisPoints);
-    /* A verdict colour is the outcome of a comparison, so with no floor to
-       compare against the figure carries no colour. Painting it green while
-       the line underneath says "No floor is set for this figure" told the
-       operator something had passed when nothing had been checked. */
-    var below = floor !== null && cf.basisPoints < floor;
-    var verdictClass = floor === null ? '' : (below ? ' verdict-worse' : ' verdict-better');
-    card.appendChild(h('div', {
-      className: 'tile-value sm' + verdictClass,
-      text: pct(cf.basisPoints, 2)
-    }));
-
-    var line = h('div', { className: 'tile-meta' });
-    if (floor === null) {
-      line.appendChild(h('span', { text: 'No floor is set for this figure.' }));
-    } else {
-      /* Above or below, in words, because the colour is not the message. */
-      line.appendChild(icon(below ? 'warn' : 'check'));
-      line.appendChild(h('span', {
-        className: below ? 'verdict-worse' : '',
-        text: (below ? 'Below' : 'Above') + ' the ' + pct(floor, 1) + ' floor'
-      }));
-    }
-    card.appendChild(line);
-
-    if (num(cf.windowHours)) {
-      card.appendChild(h('p', { className: 'tiny muted', text: 'Last ' + cf.windowHours + ' hours.' }));
-    }
-    return card;
+    return parts.join(' · ');
   }
 
-  function candidateTile(data) {
-    var c = data.candidate;
-    var card = tile(c && c.versionName ? 'Candidate ' + c.versionName : 'Candidate build');
+  function hero(data, rows) {
+    var section = h('section', { className: 'hero ' + heroTone(rows) });
+    section.appendChild(h('div', { className: 'hero-orb', 'aria-hidden': 'true' }, [
+      h('i'), h('i'), h('b')
+    ]));
 
-    if (!c) {
-      card.appendChild(h('div', { className: 'tile-value sm muted', text: 'Not checked' }));
-      card.appendChild(metaLine('No quality gate is reporting yet'));
-      card.appendChild(h('p', {
-        className: 'tiny muted',
-        text: 'Aria quality, the pane that would answer this, ships after the first dashboard ' +
-          'release as its own project.'
-      }));
-      return card;
-    }
+    var middle = h('div');
+    middle.appendChild(h('div', { className: 'hero-title', text: heroTitle(data, rows) }));
+    var sub = heroSub(data, rows);
+    if (sub) middle.appendChild(h('div', { className: 'hero-sub', text: sub }));
+    section.appendChild(middle);
 
-    var blocked = c.status === 'blocked';
-    card.appendChild(h('div', {
-      className: 'tile-value sm ' + (blocked ? 'verdict-worse' : ''),
-      text: blocked ? 'Blocked' : c.status === 'clear' ? 'Clear' : 'Not checked'
-    }));
-    card.appendChild(metaLine(c.reason || (blocked ? 'A quality check has not passed' : 'Every quality check passed')));
-
-    if (c.checkLabel) {
-      var row = h('div', { className: 'row mt-sm' });
-      var text = c.checkLabel + (c.checkValue ? ' ' + c.checkValue : '');
-      /* Only a link when the API gave one. A hard-coded destination here
-         would point at a pane that is deferred. */
-      var href = safeHref(c.href);
-      if (href) row.appendChild(h('a', { className: 'btn btn-sm', href: href, text: text }));
-      else row.appendChild(h('span', { className: 'badge', text: text }));
-      card.appendChild(row);
-    }
-    return card;
+    var chips = h('div', { className: 'hero-chips' });
+    rows.forEach(function (row) {
+      chips.appendChild(pill(row.state.tone, row.state.glyph,
+        platformName(row.platform) + ' · ' + row.state.verdict));
+    });
+    section.appendChild(chips);
+    return section;
   }
 
-  /* -------------------------------------------------------- health card */
+  /* ------------------------------------------------------- the pipeline */
 
-  function healthCard(data) {
-    var card = h('div', { className: 'card' });
-    var health = data.health;
+  /* One row per platform, describing that platform's production track: where
+     the build is, how far it has got, and the verdict. */
+  function pipeRow(data, row) {
+    var payload = payloadFor(data, row.platform);
+    var source = sourceOfPlatform(data, row.platform);
 
-    var head = h('div', { className: 'card-head' });
-    head.appendChild(h('h3', { className: 'card-title', text: 'Release health' }));
-    head.appendChild(h('span', {
-      className: 'card-hint',
-      text: 'Does this build behave worse than the one before it?'
-    }));
-    card.appendChild(head);
+    var el = h('div', { className: 'pipe-row' });
+
+    var who = h('div', { className: 'pipe-app' });
+    who.appendChild(h('div', { className: 't-main', text: platformName(row.platform) }));
+    who.appendChild(h('div', { className: 't-sub', text: subtitleFor(payload, row.track, source) }));
+    var stale = staleMark(row, source);
+    if (stale) who.appendChild(stale);
+    el.appendChild(who);
+
+    el.appendChild(pipeTrack(row));
+
+    var end = h('div', { className: 'pipe-end' });
+    end.appendChild(verdictPill(row, source));
+    el.appendChild(end);
+    return el;
+  }
+
+  /* The age of the numbers, attached to the numbers.
+     Every figure on this row was read from one store poller, so when that
+     poller is failing the row is a photograph of the past and has to say so
+     where it is read rather than in a card further down the page. "6 days
+     unchanged" from a reading taken two days ago is a claim about last
+     Thursday, and an operator who takes it for today will wait on a rollout
+     that may already have moved. */
+  function staleMark(row, source) {
+    if (!source || source.status !== 'failed') return null;
+    if (!hasBuild(row.track)) return null;
+    var since = source.lastSuccessAt ? fmt.since(source.lastSuccessAt) : null;
+    return h('div', { className: 'mt-xs' }, [
+      pill('warn', 'warn', (since && since !== fmt.none)
+        ? 'Read ' + since + ' ago'
+        : 'Never read')
+    ]);
+  }
+
+  function subtitleFor(payload, track, source) {
+    if (track && track.versionName) {
+      return track.versionName + (track.versionCode ? ' · build ' + track.versionCode : '');
+    }
+    if (track && track.versionCode) return 'build ' + track.versionCode;
+    if (source && source.status === 'unconfigured') return 'Store not connected';
+    if (!payload) return 'Not in the answer';
+    return 'No production build reported';
+  }
+
+  /* The four stages. `reached` is the last stage this build has got to, so
+     everything before it is done, the stage itself is current, and everything
+     after it is still to come. A stage carries a figure only where one is
+     stored: an empty line is the absence, not a sentence about it. */
+  function pipeTrack(row) {
+    var ol = h('ol', { className: 'pipe-track' });
+    var reached = hasBuild(row.track) ? row.state.stage : -1;
+
+    STAGES.forEach(function (label, i) {
+      var isNow = i === reached;
+      var done = i < reached;
+      var tone = done ? 'ok' : isNow ? row.state.tone : '';
+      if (isNow && i === ROLLED_OUT && row.rollout.kind === 'stalled') tone = 'warn';
+
+      var step = h('li', {
+        className: 'pipe-step ' + (done ? 'done' : isNow ? 'now' : 'todo') +
+          (NODE[tone] ? ' ' + NODE[tone] : '')
+      });
+
+      var glyph = null;
+      if (done) glyph = 'check';
+      else if (isNow) {
+        glyph = i === ROLLED_OUT
+          ? (row.rollout.kind === 'stalled' ? 'warn' : 'person')
+          : row.state.glyph;
+      }
+      step.appendChild(h('div', { className: 'pipe-node' }, [glyph ? icon(glyph) : null]));
+
+      /* The stage name is what the node means. The current stage names the
+         store's own word for it instead where the two differ, because "In
+         review" and "Rejected" are the same stage and opposite facts. */
+      step.appendChild(h('div', {
+        className: 'pipe-label',
+        text: (isNow && row.state.label !== label) ? row.state.label : label
+      }));
+
+      var figure = stageFigure(i, row, done || isNow);
+      if (figure) step.appendChild(h('div', { className: 'pipe-date', text: figure }));
+      ol.appendChild(step);
+    });
+    return ol;
+  }
+
+  /* The store's number, on the stage it belongs to. Stage 4 carries the share
+     the store is serving and the day it last moved; the pill beside the row
+     carries the verdict word. Neither repeats the other. */
+  function stageFigure(i, row, active) {
+    if (!active) return null;
+    var track = row.track;
+    if (i === 0) return track && track.versionCode ? 'build ' + track.versionCode : null;
+    if (i === 2) return (track && fmt.utcDay(track.releasedAt)) || null;
+    if (i === ROLLED_OUT) {
+      if (row.rollout.kind === 'none') return 'share not reported';
+      if (row.rollout.kind === 'full') return '100% of devices';
+      return pct(row.rollout.bp) + ' of devices' + (row.rollout.sinceDays === null
+        ? ''
+        : row.rollout.sinceDays === 0
+          ? ' · moved today'
+          : ' · ' + days(row.rollout.sinceDays) + ' unchanged');
+    }
+    return null;
+  }
+
+  /* The verdict, in a word or three. It never restates the figure the stage
+     beside it already carries.
+
+     Staged and stalled are two words for one number because they are the two
+     readings this pane exists to tell apart, and "Stalled" alone reads as
+     "nobody is updating" — which is the wrong one. A rollout the store has
+     parked says so first, and says it has not moved second. */
+  function verdictPill(row, source) {
+    if (!hasBuild(row.track)) {
+      if (source && source.status === 'unconfigured') return pill('', 'lock', 'Not connected');
+      if (source && source.status === 'failed') return pill('warn', 'warn', 'Cannot be read');
+      if (source && source.status === 'disabled') return pill('', 'info', 'Not polled');
+      return pill('', 'info', 'Nothing reported');
+    }
+    if (row.state.tone === 'bad') return pill('bad', row.state.glyph, row.state.verdict);
+    if (row.rollout.kind === 'stalled') return pill('warn', 'warn', 'Staged, not moving');
+    if (row.rollout.kind === 'staged') return pill('info', 'clock', 'Staged by the store');
+    if (row.state.stage >= ROLLED_OUT) return pill('ok', 'check', 'Rolled out');
+    return pill(row.state.tone, row.state.glyph, row.state.verdict);
+  }
+
+  /* Tracks below production that hold a build: real builds with real testers,
+     so they are named. Compact, because the question this pane owns is where
+     production is. */
+  function testTracks(data, platform) {
+    var payload = payloadFor(data, platform);
+    var rows = [];
+    (TRACKS[platform] || []).forEach(function (def) {
+      if (def.key === PRODUCTION) return;
+      var track = trackOf(payload, def.key);
+      if (!hasBuild(track)) return;
+      rows.push({ platform: platform, label: def.label, track: track });
+    });
+    return rows;
+  }
+
+  function testTracksBlock(data, platforms) {
+    var rows = [];
+    platforms.forEach(function (platform) {
+      testTracks(data, platform).forEach(function (row) { rows.push(row); });
+    });
+    if (!rows.length) return null;
+
+    var wrap = h('div', { className: 'pipe-also' });
+    wrap.appendChild(h('h4', { className: 'inset-title', text: 'Also on test tracks' }));
+    var kv = h('div', { className: 'kv mt-sm' });
+    rows.forEach(function (row) {
+      var st = state(row.track);
+      var value = h('span', { className: 'v' });
+      value.appendChild(h('span', { className: 'code', text: versionWords(row.track) }));
+      value.appendChild(pill(st.tone, st.glyph, st.verdict));
+      if (num(row.track.testerCount) !== null) {
+        value.appendChild(h('span', {
+          className: 'tiny muted',
+          text: fmt.plural(row.track.testerCount, 'tester')
+        }));
+      }
+      kv.appendChild(kvRow(platformName(row.platform) + ' · ' + row.label, value));
+    });
+    wrap.appendChild(kv);
+    return wrap;
+  }
+
+  function versionWords(track) {
+    if (track && track.versionName) {
+      return track.versionName + (track.versionCode ? ' · ' + track.versionCode : '');
+    }
+    if (track && track.versionCode) return 'build ' + track.versionCode;
+    return 'version not reported';
+  }
+
+  /* A store is free to report a track outside the ladder, and one does. There
+     are exactly two honest things to do with it: leave it off the ladder,
+     where it has no rung, and say that it exists. */
+  function unknownTracksBlock(data, platforms) {
+    var named = [];
+    platforms.forEach(function (platform) {
+      unknownTracksOf(payloadFor(data, platform)).forEach(function (track) {
+        named.push(platformName(platform) + ' ' + track);
+      });
+    });
+    if (!named.length) return null;
+
+    var box = h('div', { className: 'callout mt' });
+    box.appendChild(icon('warn'));
+    box.appendChild(h('div', {}, [
+      h('b', {
+        text: named.length === 1
+          ? 'One track has no rung on this ladder: '
+          : named.length + ' tracks have no rung on this ladder: '
+      }),
+      h('span', { text: words(named) + '. Open the store console to see what is on them.' })
+    ]));
+    return box;
+  }
+
+  /* ---------------------------------------------------- the version share */
+
+  function adoptionOf(data) {
+    var adoption = data && data.adoption;
+    if (!adoption || !Array.isArray(adoption.buckets)) return null;
+    var usable = adoption.buckets.filter(function (b) {
+      return b && num(b.basisPoints) !== null;
+    });
+    return usable.length ? adoption : null;
+  }
+
+  function latestBucket(data) {
+    var adoption = adoptionOf(data);
+    if (!adoption) return null;
+    var latest = null;
+    adoption.buckets.forEach(function (b) {
+      if (b && b.key === 'latest' && num(b.basisPoints) !== null) latest = b;
+    });
+    return latest;
+  }
+
+  /* Known buckets in drawing order, then anything else the payload named. */
+  function bucketOrder(adoption) {
+    var known = [];
+    var extra = [];
+    BUCKET_ORDER.forEach(function (key) {
+      adoption.buckets.forEach(function (b) { if (b && b.key === key) known.push(b); });
+    });
+    adoption.buckets.forEach(function (b) {
+      if (b && BUCKET_ORDER.indexOf(b.key) === -1) extra.push(b);
+    });
+    return known.concat(extra);
+  }
+
+  function bucketLabel(bucket) {
+    return bucket.label || bucket.key || 'unnamed';
+  }
+
+  function shareCard(data, rows) {
+    var card = S.card();
+    var adoption = adoptionOf(data);
+
+    card.appendChild(S.cardHead('Version share',
+      adoption && adoption.latestVersion ? 'Newest is ' + adoption.latestVersion : null));
 
     var body = h('div', { className: 'card-body' });
 
-    if (!health || !(health.signals || []).length) {
-      body.appendChild(shell.stateBlock('empty', 'No comparison yet', [
-        'A health comparison needs two builds with usage data on the same platform. ' +
-          'One or both of those is missing, so there is nothing to compare rather than ' +
-          'nothing to worry about.'
+    if (!adoption) {
+      body.appendChild(S.stateBlock('empty', 'Version share is not reported', [
+        'Version usage is reported by the apps themselves and no usage figures ' +
+          'have arrived, so nothing here is a zero.'
       ], 4));
       card.appendChild(body);
       return card;
     }
 
-    var wrap = h('div', { className: 'table-wrap' });
-    var table = h('table', { className: 'data' });
-    /* Same fallbacks as the visible column headers below. Interpolating the
-       raw values read "undefined compared with undefined" to a screen reader
-       on exactly the payloads the headers handle. */
-    var platformName = health.platform === 'ios' ? 'iOS'
-      : health.platform === 'android' ? 'Android' : 'the reported platform';
-    var caption = h('caption', {
-      className: 'sr-only',
-      text: 'Release health, ' + (health.previous || 'the previous build') + ' compared with ' +
-        (health.current || 'the current build') + ' on ' + platformName
-    });
-    table.appendChild(caption);
+    var buckets = bucketOrder(adoption);
+    var stack = h('div', { className: 'share-stack' });
+    stack.appendChild(shareBar(buckets));
+    stack.appendChild(shareLegend(buckets));
 
-    var thead = h('thead');
-    thead.appendChild(h('tr', {}, [
-      h('th', { scope: 'col', text: 'Signal' }),
-      h('th', { scope: 'col', className: 'right', text: health.previous || 'Previous' }),
-      h('th', { scope: 'col', className: 'right', text: health.current || 'Current' }),
-      h('th', { scope: 'col', text: 'Verdict' })
-    ]));
-    table.appendChild(thead);
+    var reading = shareReading(data, rows);
+    if (reading) stack.appendChild(h('p', { className: 'share-line', text: reading }));
 
-    var tbody = h('tbody');
-    health.signals.forEach(function (s) {
-      var verdict = VERDICTS[s.verdict] || VERDICTS.unknown;
-      var tr = h('tr');
-      /* A row header, not a cell. Five rows of two numbers each are unreadable
-         without one, and the stylesheet un-styles a tbody th back to a cell so
-         the approved look is unchanged. */
-      tr.appendChild(h('th', { scope: 'row', className: 'cell-strong', text: s.label || s.key }));
-      tr.appendChild(h('td', { className: 'num', text: signalValue(s.unit, s.previous) || 'not reported' }));
-      tr.appendChild(h('td', {
-        className: 'num ' + verdict.cls,
-        text: signalValue(s.unit, s.current) || 'not reported'
-      }));
-      tr.appendChild(h('td', {}, [badge(verdict.tone, null, verdict.label)]));
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    body.appendChild(wrap);
+    body.appendChild(stack);
     card.appendChild(body);
 
-    card.appendChild(h('div', { className: 'card-foot' }, [
-      h('span', {
-        text: 'Health is always a comparison against the previous build on the same platform. ' +
-          'An absolute crash rate tells you nothing about whether shipping was a good idea.'
-      })
-    ]));
+    if (num(adoption.sampleSessions) !== null) {
+      card.appendChild(h('div', { className: 'card-foot' }, [
+        icon('info'),
+        h('span', {
+          text: 'From ' + fmt.plural(adoption.sampleSessions, 'session') +
+            ' that reported a version.'
+        })
+      ]));
+    }
     return card;
   }
 
-  /* ------------------------------------------------------------- states */
+  /* role="img" is children-presentational, so anything inside this bar is
+     announced to nobody and the accessible NAME has to carry the reading.
+     It is built from the same buckets the segments are, so a bucket cannot
+     appear in one and not the other. */
+  function shareBar(buckets) {
+    var bar = h('div', {
+      className: 'stackbar',
+      role: 'img',
+      'aria-label': 'Version share: ' + words(buckets.map(function (bucket) {
+        return bucketLabel(bucket) + ' ' + (pct(bucket.basisPoints) || 'not reported');
+      }))
+    });
 
-  function skeleton() {
-    var stack = h('div', { className: 'stack' });
-    var grid = h('div', { className: 'grid g4' });
-    for (var i = 0; i < 4; i++) {
-      grid.appendChild(h('div', { className: 'card' }, [
-        h('div', { className: 'card-body' }, [h('div', { className: 'skel skel-tile', 'aria-hidden': 'true' })])
-      ]));
-    }
-    stack.appendChild(grid);
-    for (var j = 0; j < 2; j++) {
-      stack.appendChild(h('div', { className: 'card' }, [
-        h('div', { className: 'card-body' }, [
-          h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }),
-          h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }),
-          h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }),
-          h('div', { className: 'skel skel-row', 'aria-hidden': 'true' })
-        ])
-      ]));
-    }
-    return stack;
+    buckets.forEach(function (bucket) {
+      var bp = Math.max(0, Math.min(FULL_ROLLOUT_BP, num(bucket.basisPoints) || 0));
+      var seg = h('i', {
+        className: BUCKET_TONE[bucket.key] || 'tone-older',
+        'aria-hidden': 'true'
+      });
+      /* Through the CSSOM, because the page's CSP refuses a style attribute.
+         The stylesheet reads --w and turns it into the width; the colour is
+         the class above and is never written from here. */
+      seg.style.setProperty('--w', (bp / 100) + '%');
+      /* The chip is a reading surface with its own --surface fill: a segment
+         fill is data and cannot also carry ink (monorepo #10293). Only where
+         the segment is wide enough to hold one; the rest read off the
+         legend. */
+      if (bp >= LABEL_MIN_BP) {
+        seg.appendChild(h('b', { text: bucketLabel(bucket) + ' · ' + pct(bp) }));
+      }
+      bar.appendChild(seg);
+    });
+    return bar;
   }
 
-  /* Which stores actually answered, in the words this pane uses for them
-     elsewhere. An empty ladder means "there are no builds" only when both
-     sources were asked and both said nothing; when one is not connected, or
-     polled and was refused, the empty ladder is a store that cannot be seen
-     and says nothing about what is on it. */
-  function sourceStanding(data) {
+  function shareLegend(buckets) {
+    var legend = h('div', { className: 'legend' });
+    buckets.forEach(function (bucket) {
+      legend.appendChild(h('span', {}, [
+        h('i', { className: BUCKET_TONE[bucket.key] || 'tone-older', 'aria-hidden': 'true' }),
+        h('span', {
+          text: bucketLabel(bucket) + ' ' + (pct(bucket.basisPoints) || 'not reported')
+        })
+      ]));
+    });
+    return legend;
+  }
+
+  /* THE SENTENCE: store truth and field truth, read together, once.
+
+     A share the store is capping and a share nobody is taking up are the same
+     number and opposite problems, and this is the only place on the pane that
+     says which one is on screen. It is derived from the two figures rather
+     than written, so it cannot claim a ceiling that is not there — and it
+     names the ceiling on the platform that has it rather than on this bar,
+     because the bar is every platform at once and one store capping its own
+     devices does not cap the whole field. */
+  function shareReading(data, rows) {
+    if (!latestBucket(data)) return null;
+
+    var capped = rows.filter(function (row) {
+      return row.rollout.kind === 'staged' || row.rollout.kind === 'stalled';
+    });
+    if (capped.length) {
+      return words(capped.map(function (row) {
+        return platformName(row.platform) + ' at ' + pct(row.rollout.bp);
+      })) + ': a ceiling the store set, so that part of the share is not take-up.';
+    }
+
+    var full = rows.filter(function (row) { return row.rollout.kind === 'full'; });
+    if (full.length) {
+      return words(full.map(function (row) { return platformName(row.platform); })) +
+        ' at 100%: no store is capping the rollout, so this share is take-up.';
+    }
+    return null;
+  }
+
+  /* -------------------------------------------------------- the stores */
+
+  function storesCard(data) {
+    var card = S.card();
+    var note = pollNote(data);
+    card.appendChild(S.cardHead('What the stores say', null, note ? [note] : null));
+
+    var body = h('div', { className: 'card-body col' });
+    var sources = (data && data.sources) || [];
+
+    if (!sources.length) {
+      body.appendChild(S.stateBlock('plug', 'No store connection is reported', [
+        'The operations API named no data source for this pane, so nothing on ' +
+          'it is dated and nothing here is a zero.'
+      ], 4));
+      card.appendChild(body);
+      return card;
+    }
+
+    sources.forEach(function (source) { body.appendChild(storeBlock(data, source)); });
+    card.appendChild(body);
+    return card;
+  }
+
+  function pollNote(data) {
+    var seconds = null;
+    ((data && data.sources) || []).forEach(function (s) {
+      if (seconds === null && num(s && s.pollSeconds) !== null) seconds = s.pollSeconds;
+    });
+    if (seconds === null) return null;
+    return pill('', 'clock', 'Polled every ' + Math.round(seconds / 60) + ' min');
+  }
+
+  /* Status words first, then freshness. "Nothing is configured", "we chose not
+     to poll it" and "we polled it and were refused" are three different facts
+     and only the last is a problem, so each is answered before the generic
+     freshness wording is reached.
+
+     A failing source states only that it is failing. How old its numbers are
+     is carried once, as a stamp on the block below, and the relative age rides
+     with the figures themselves on the pipeline; the pill saying it too would
+     be the third telling of one fact. */
+  function freshness(source) {
+    if (!source) return { dot: '', pill: pill('', 'info', 'Freshness not reported') };
+    if (source.status === 'unconfigured') return { dot: '', pill: pill('', 'lock', 'Not connected') };
+    if (source.status === 'disabled') return { dot: '', pill: pill('', 'info', 'Not polled') };
+    if (source.status === 'failed') {
+      return {
+        dot: 'warn',
+        pill: pill('warn', 'warn', source.lastSuccessAt ? 'Failing' : 'Failing · never read')
+      };
+    }
+    if (source.mode === 'stream') return { dot: 'ok', pill: pill('ok', 'check', 'Streaming') };
+    var when = source.lastSuccessAt ? fmt.ago(source.lastSuccessAt) : null;
+    return {
+      dot: 'ok',
+      pill: pill('ok', 'check', (when && when !== fmt.none)
+        ? 'Read ' + when
+        : 'Read, time not reported')
+    };
+  }
+
+  function storeBlock(data, source) {
+    var box = h('div', { className: 'inset' });
+    var fresh = freshness(source);
+
+    var head = h('div', { className: 'row' });
+    head.appendChild(h('span', {
+      className: 'dot' + (fresh.dot ? ' ' + fresh.dot : ''),
+      'aria-hidden': 'true'
+    }));
+    head.appendChild(h('h4', { className: 'inset-title', text: source.label || source.key }));
+    head.appendChild(h('span', { className: 'sp' }, [fresh.pill]));
+    box.appendChild(head);
+
+    var kv = h('div', { className: 'kv mt-sm' });
+    var platform = platformOfSource(data, source);
+    var track = platform ? trackOf(payloadFor(data, platform), PRODUCTION) : null;
+
+    if (source.status === 'unconfigured') {
+      kv.appendChild(kvRow('Production', h('span', {
+        className: 'v dim',
+        text: 'No credential has been issued, so this store has never been read'
+      })));
+    } else if (hasBuild(track)) {
+      var st = state(track);
+      var version = h('span', { className: 'v' });
+      version.appendChild(h('span', { className: 'code', text: versionWords(track) }));
+      version.appendChild(pill(st.tone, st.glyph, st.verdict));
+      kv.appendChild(kvRow('Production', version));
+      kv.appendChild(kvRow('Staged rollout', h('span', {
+        className: 'v dim', text: rolloutWords(rolloutReading(track), track)
+      })));
+    } else {
+      kv.appendChild(kvRow('Production', h('span', {
+        className: 'v dim', text: 'No build reported on this track'
+      })));
+    }
+
+    /* Only where the pill above does not already carry the age. A source
+       reading normally says "Read a minute ago" up there, and the same instant
+       spelled out to the minute below it is the same fact twice. */
+    if (source.status !== 'ok' && source.lastSuccessAt && fmt.utcStamp(source.lastSuccessAt)) {
+      kv.appendChild(kvRow('Last good read', h('span', {
+        className: 'v num dim', text: fmt.utcStamp(source.lastSuccessAt)
+      })));
+    }
+    if (source.status === 'failed' && source.failureReason) {
+      kv.appendChild(kvRow('Since then', h('span', {
+        className: 'v is-warn', text: source.failureReason
+      })));
+    }
+    box.appendChild(kv);
+    return box;
+  }
+
+  function kvRow(key, value) {
+    return h('div', {}, [h('span', { className: 'k', text: key }), value]);
+  }
+
+  function rolloutWords(rollout, track) {
+    if (rollout.kind === 'none') return 'Not reported on this track';
+    if (rollout.kind === 'full') {
+      var since = fmt.utcDay(track && track.rolloutObservedSince);
+      return '100%' + (since ? ', since ' + since : '');
+    }
+    return pct(rollout.bp) + (rollout.sinceDays === null
+      ? ''
+      : rollout.sinceDays === 0 ? ', moved today' : ', unchanged for ' + days(rollout.sinceDays));
+  }
+
+  function platformOfSource(data, source) {
+    var found = null;
+    ((data && data.platforms) || []).forEach(function (p) {
+      if (!found && p && p.sourceKey && p.sourceKey === source.key) found = p.platform;
+    });
+    if (found) return found;
+    Object.keys(PLATFORMS).forEach(function (key) {
+      if (!found && PLATFORMS[key].sourceKey === source.key) found = key;
+    });
+    return found;
+  }
+
+  /* ------------------------------------------------------ is it healthy */
+
+  function healthCard(data) {
+    var card = S.card();
+    var cf = data && data.crashFree;
+
+    /* No card head: the band above carries the question and its window, and
+       a card that repeats its own section's title is the double captioning
+       this remodel exists to remove. */
+    var body = h('div', { className: 'card-body col' });
+    body.appendChild(crashFreeRow(cf));
+
+    var health = data && data.health;
+    var comparable = health && Array.isArray(health.signals) && health.signals.length;
+    if (!comparable) {
+      body.appendChild(S.stateBlock('empty', 'No comparison yet', [
+        'A comparison needs two builds with usage figures on one platform. One ' +
+          'or both is missing, so there is nothing to compare rather than ' +
+          'nothing to worry about.'
+      ], 3));
+    }
+    card.appendChild(body);
+
+    if (comparable) card.appendChild(healthTable(health));
+    appendCandidate(card, data);
+    return card;
+  }
+  function healthWindow(data) {
+    var cf = data && data.crashFree;
+    return (cf && num(cf.windowHours) !== null) ? 'Last ' + fmt.hours(cf.windowHours) : null;
+  }
+
+  function crashFreeRow(cf) {
+    if (!cf || num(cf.basisPoints) === null) {
+      return h('p', {
+        className: 'figure-note',
+        text: 'Crash reporting has sent no figure, so no crash-free rate is drawn.'
+      });
+    }
+
+    var floor = num(cf.floorBasisPoints);
+    var below = floor !== null && cf.basisPoints < floor;
+    var row = h('div', { className: 'figure-row' });
+
+    /* A verdict colour is the outcome of a comparison, so with no floor to
+       compare against, the figure carries none. Painting it green beside "no
+       floor is set" told the operator something had passed when nothing had
+       been checked. */
+    row.appendChild(h('div', {
+      className: 'figure-val' + (floor === null ? '' : below ? ' v-worse' : ' v-better'),
+      text: pct(cf.basisPoints, 2)
+    }));
+    row.appendChild(h('span', { className: 'muted tiny', text: 'sessions with no crash' }));
+
+    var note = h('div', {
+      className: 'figure-note' + (floor === null ? '' : below ? ' is-warn' : ' is-ok')
+    });
+    if (floor === null) {
+      note.appendChild(h('span', { text: 'No floor is set for this figure' }));
+    } else {
+      note.appendChild(icon(below ? 'warn' : 'check'));
+      note.appendChild(h('span', {
+        text: (below ? 'Below' : 'Above') + ' the ' + pct(floor, 1) + ' floor'
+      }));
+    }
+    row.appendChild(note);
+    return row;
+  }
+
+  var HEALTH_CAPTION_ID = 'releasesHealthCaption';
+
+  /* Four columns of which three are numbers and a pill, and none of them
+     wraps. Under about 360px the table's own minimum is wider than the
+     viewport, and a table that will not shrink takes the whole document
+     sideways with it. So it scrolls inside its own box instead.
+
+     A box that scrolls has to be reachable from a keyboard, or the columns
+     past the edge belong to pointer users only. tabindex makes it focusable
+     and role="region" gives the focus stop a name, which is the table's own
+     caption rather than a second sentence that could drift from it. */
+  function healthTable(health) {
+    var table = h('table', { className: 'tbl' });
+    /* The same fallbacks the visible headers use. Interpolating the raw values
+       read "undefined compared with undefined" to a screen reader on exactly
+       the payloads the headers below handle. */
+    table.appendChild(h('caption', {
+      className: 'sr',
+      id: HEALTH_CAPTION_ID,
+      text: 'Release health: ' + (health.previous || 'the previous build') +
+        ' compared with ' + (health.current || 'the current build') + ' on ' +
+        (health.platform ? platformName(health.platform) : 'the reported platform')
+    }));
+
+    table.appendChild(h('thead', {}, [
+      h('tr', {}, [
+        h('th', { scope: 'col', text: 'Signal' }),
+        h('th', { scope: 'col', className: 'r', text: health.previous || 'Previous' }),
+        h('th', { scope: 'col', className: 'r', text: health.current || 'Current' }),
+        h('th', { scope: 'col', text: 'Verdict' })
+      ])
+    ]));
+
+    var tbody = h('tbody');
+    health.signals.forEach(function (signal) {
+      var verdict = VERDICTS[signal.verdict] || VERDICTS.unknown;
+      var tr = h('tr');
+      /* A row header, not a cell: a row of two bare numbers is unreadable
+         without one. */
+      tr.appendChild(h('th', {
+        scope: 'row', className: 't-main', text: signal.label || signal.key || 'Unnamed signal'
+      }));
+      tr.appendChild(h('td', {
+        className: 'r num', text: signalValue(signal.unit, signal.previous) || 'not reported'
+      }));
+      tr.appendChild(h('td', {
+        className: 'r num' + (verdict.cls ? ' ' + verdict.cls : ''),
+        text: signalValue(signal.unit, signal.current) || 'not reported'
+      }));
+      tr.appendChild(h('td', {}, [pill(verdict.tone, null, verdict.label)]));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    return h('div', {
+      className: 'tbl-scroll',
+      tabindex: '0',
+      role: 'region',
+      'aria-labelledby': HEALTH_CAPTION_ID
+    }, [table]);
+  }
+
+  /* 'seconds' meant milliseconds once, which is a figure a thousand times too
+     small for a backend author who read the contract and sent what it asked
+     for. The unit means what it says, and 'millis' exists for the other. */
+  function signalValue(unit, value) {
+    var n = num(value);
+    if (n === null) return null;
+    if (unit === 'percent_bp' || unit === 'rate_bp') return pct(n, 2);
+    if (unit === 'seconds') return n.toFixed(1) + 's';
+    if (unit === 'millis') return (n / 1000).toFixed(1) + 's';
+    if (unit === 'per_1k') return (Math.round(n * 10) / 10).toFixed(1);
+    return fmt.int(n);
+  }
+
+  /* Drawn only when the answer carries one. Nothing feeds this field today,
+     and a permanent "not checked" tile is a caption for a fact nobody asked
+     about; if a candidate ever arrives it is real, and it is drawn. */
+  function appendCandidate(card, data) {
+    var candidate = data && data.candidate;
+    if (!candidate) return;
+
+    var blocked = candidate.status === 'blocked';
+    var foot = h('div', { className: 'card-foot' });
+    foot.appendChild(icon(blocked ? 'warn' : 'info'));
+    foot.appendChild(h('span', {
+      text: (candidate.versionName ? candidate.versionName + ': ' : 'Next build: ') +
+        (blocked ? 'blocked' : candidate.status === 'clear' ? 'clear to ship' : 'not checked') +
+        (candidate.reason ? ' · ' + candidate.reason : '')
+    }));
+
+    if (candidate.checkLabel) {
+      var label = candidate.checkLabel + (candidate.checkValue ? ' ' + candidate.checkValue : '');
+      /* A link only where the API gave one that stays on this origin. */
+      var href = S.safeHref(candidate.href);
+      foot.appendChild(h('span', { className: 'sp' }, [
+        href ? S.link(href, label) : h('span', { className: 'pill', text: label })
+      ]));
+    }
+    card.appendChild(foot);
+  }
+
+  /* -------------------------------------------------------- empty state */
+
+  /* Which stores actually answered. An empty ladder means "there are no
+     builds" only when both sources were asked and both said nothing; when one
+     is not connected, or polled and was refused, the empty ladder is a store
+     that cannot be seen and says nothing about what is on it. */
+  function sourceStanding(data, platforms) {
     var answered = [];
     var silent = [];
 
-    ['ios', 'android'].forEach(function (platform) {
-      var payload = null;
-      (data.platforms || []).forEach(function (p) { if (p && p.platform === platform) payload = p; });
-      var source = sourceFor(data, (payload && payload.sourceKey) || PLATFORMS[platform].sourceKey);
-      var name = (source && source.label) || PLATFORMS[platform].label.split(',')[0];
+    platforms.forEach(function (platform) {
+      var source = sourceOfPlatform(data, platform);
+      var name = (source && source.label) || platformName(platform);
 
       if (!source) { silent.push(name + ' is not reporting a status at all'); return; }
-      if (source.status === 'unconfigured') { silent.push(name + ' is not connected yet, so it has never been polled'); return; }
+      if (source.status === 'unconfigured') {
+        silent.push(name + ' is not connected yet, so it has never been read');
+        return;
+      }
       if (source.status === 'disabled') { silent.push(name + ' is not being polled'); return; }
       if (source.status === 'failed') {
-        var when = ago(source.lastSuccessAt);
-        silent.push(name + (when ? ' last polled successfully ' + when : ' has never polled successfully'));
+        var when = source.lastSuccessAt ? fmt.ago(source.lastSuccessAt) : null;
+        silent.push(name + ((when && when !== fmt.none)
+          ? ' was last read successfully ' + when
+          : ' has never been read successfully'));
         return;
       }
       answered.push(name);
@@ -896,253 +1106,152 @@
     return { answered: answered, silent: silent };
   }
 
-  function sentence(parts) {
-    if (parts.length === 1) return parts[0] + '.';
-    return parts.join('. ') + '.';
-  }
+  function sentence(parts) { return parts.join('. ') + '.'; }
 
-  /* "Empty never means zero." The headline used to assert that both sources
-     answered without checking whether either had, so a page with App Store
-     Connect not connected and Google Play failing rendered "both sources
-     answered, and both are empty" directly above two cards saying otherwise.
-     The sentence is derived from the statuses now, so it can only say what the
-     evidence underneath it says. */
-  function emptyState(data) {
-    var wrap = h('div', { className: 'stack' });
-    var card = h('div', { className: 'card' });
-    var standing = sourceStanding(data);
-
+  /* Empty never means zero. The headline is derived from the statuses, so it
+     can only claim what the evidence underneath it says: a page with App Store
+     Connect not connected and Google Play failing once rendered "both sources
+     answered, and both are empty" directly above two cards saying otherwise. */
+  function emptyState(data, platforms) {
+    var standing = sourceStanding(data, platforms);
     var block;
+
     if (!standing.silent.length) {
-      block = shell.stateBlock('release', 'No builds in flight', [
-        'Neither store reports a build on any track. That is a real answer rather than a missing ' +
-          'one: both sources answered, and both are empty.'
+      block = S.stateBlock('ship', 'No builds in flight', [
+        'Neither store reports a build on any track. That is a real answer ' +
+          'rather than a missing one: both sources answered, and both are empty.'
       ]);
     } else if (!standing.answered.length) {
-      block = shell.stateBlock('warn', 'Neither store can be seen', [
-        'There is nothing on the ladders because no store answered, not because there are no ' +
-          'builds. ' + sentence(standing.silent),
-        'Whatever is on those tracks right now, this page cannot tell you. Fix the sources below ' +
-          'and this becomes a real answer.'
+      block = S.stateBlock('warn', 'Neither store can be read', [
+        'There is nothing here because no store answered, not because there are ' +
+          'no builds. ' + sentence(standing.silent),
+        'Whatever is on those tracks right now, this page cannot tell you.'
       ]);
     } else {
-      block = shell.stateBlock('warn', 'One store answered, one could not be seen', [
-        standing.answered.join(' and ') + ' answered and reports no build on any track. ' +
+      block = S.stateBlock('warn', 'One store answered, one could not be read', [
+        words(standing.answered) + ' answered and reports no build on any track. ' +
           sentence(standing.silent),
-        'So this is not "there are no builds". It is one empty store and one that cannot be read, ' +
-          'and the half that cannot be read could have anything on it.'
+        'So this is not "there are no builds". It is one empty store and one ' +
+          'that cannot be read.'
       ]);
     }
 
-    card.appendChild(block);
-    wrap.appendChild(card);
-    wrap.appendChild(sourcesCard(data));
+    var box = S.card();
+    box.appendChild(block);
+
+    var wrap = h('div', { className: 'stack' });
+    wrap.appendChild(box);
+    wrap.appendChild(storesCard(data));
     return wrap;
   }
 
-  /* Two failures that need different sentences. A 404 means this pane's API is
-     not deployed yet, which is a release fact; anything else is a fault. */
-  function errorState(err, retry) {
-    var wrap = h('div', { className: 'notbuilt' });
-    var card = h('div', { className: 'card' });
-    var missing = err && err.code === 'ops_route_missing';
+  function failedSources(data) {
+    return ((data && data.sources) || []).filter(function (s) {
+      return s && s.status === 'failed';
+    });
+  }
 
-    var block = missing
-      ? shell.stateBlock('build', 'This pane has no API yet', [
-        'The operations API does not answer /api/ops/releases on this deployment. The page is ' +
-          'built and is asking for the right thing; the endpoint behind it has not shipped.',
-        'Nothing is wrong with your session and nothing is being hidden.'
-      ])
-      : shell.stateBlock('warn', 'Could not load app releases', [
-        (err && err.message) || 'The operations API did not answer.',
-        'Nothing has been signed out. The stored store data is untouched.'
+  /* ------------------------------------------------------------- the pane */
+
+  S.definePane('releases', function (content) {
+    var region = S.region(content);
+    var loadToken = 0;
+
+    /* This pane listens for no filter change, because the registry gives it
+       none: a store track carries the state it is in now, and there is no
+       window to choose over a table that holds no history. The filter bar
+       states that absence where the control would have been. */
+
+    function load() {
+      var token = ++loadToken;
+      region.loading([
+        { type: 'block', height: 78 },
+        { type: 'rows', count: 4 },
+        { type: 'block', height: 190 }
       ]);
 
-    var row = h('div', { className: 'row mt' });
-    var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
-    again.addEventListener('click', retry);
-    row.appendChild(again);
-    block.appendChild(row);
-
-    card.appendChild(block);
-    wrap.appendChild(card);
-    return wrap;
-  }
-
-  /* ------------------------------------------------------------ the pane */
-
-  /* Whether either store reports a build anywhere, which decides between the
-     pane and the empty state.
-
-     Unknown tracks count. They are not rungs, so they are not in `tracks`, and
-     walking only the rungs meant a store whose single build sat on a track
-     outside the ladder produced the empty state, whose whole sentence is that
-     both stores answered and both are empty. That is precisely the payload
-     that field exists to describe, and the answer was the one thing it is not.
-     Counted here, the pane draws and the ladder card names the track. */
-  function hasAnyBuild(data) {
-    var found = false;
-    (data.platforms || []).forEach(function (p) {
-      ((p && p.tracks) || []).forEach(function (t) {
-        if (t && (t.versionName || t.versionCode)) found = true;
-      });
-      if (unknownTracksOf(p).length) found = true;
-    });
-    return found;
-  }
-
-  function render(data, platformFilter) {
-    var stack = h('div', { className: 'stack' });
-
-    if (!hasAnyBuild(data)) return emptyState(data);
-
-    var grid = h('div', { className: 'grid g4' });
-    grid.appendChild(productionTile(data));
-    grid.appendChild(adoptionTile(data));
-    grid.appendChild(crashTile(data));
-    grid.appendChild(candidateTile(data));
-    stack.appendChild(grid);
-
-    var band = h('div', { className: 'band-head' });
-    band.appendChild(h('h2', { className: 'band-title', text: 'Which version is where' }));
-    stack.appendChild(band);
-
-    ['ios', 'android'].forEach(function (platform) {
-      if (platformFilter !== 'both' && platformFilter !== platform) return;
-      stack.appendChild(ladderCard(platform, data));
-    });
-
-    var band2 = h('div', { className: 'band-head' });
-    band2.appendChild(h('h2', { className: 'band-title', text: 'Is the newest one healthy?' }));
-    stack.appendChild(band2);
-
-    var pair = h('div', { className: 'grid g2' });
-    pair.appendChild(healthCard(data));
-    pair.appendChild(sourcesCard(data));
-    stack.appendChild(pair);
-
-    if (data.generatedAt) {
-      stack.appendChild(h('p', {
-        className: 'tiny muted',
-        text: 'Read from the operations API ' + (ago(data.generatedAt) || 'at an unreported time') +
-          '. The stores are polled on their own cadence, shown above.'
-      }));
-    }
-    return stack;
-  }
-
-  /* ------------------------------------------------------------- wiring */
-
-  var content = null;
-  var platformFilter = 'both';
-  var lastData = null;
-  var requestSeq = 0;
-
-  function paint(node) {
-    if (!content) return;
-    content.textContent = '';
-    content.appendChild(node);
-  }
-
-  /* No querystring. This pane registers no shell filter, and the platform
-     switch below is a view of what has already been fetched rather than a
-     second read, so there is nothing to send. A range would be accepted and
-     echoed and would change no field in the answer. */
-  function load() {
-    var seq = ++requestSeq;
-    if (!content) return;
-
-    content.setAttribute('aria-busy', 'true');
-    paint(h('div', {}, [
-      h('p', { className: 'sr-only', role: 'status', text: 'Loading app releases' }),
-      skeleton()
-    ]));
-
-    session.call('/api/ops/releases')
-      .then(function (payload) {
-        if (seq !== requestSeq) return;
-        content.removeAttribute('aria-busy');
-        lastData = (payload && payload.data) || {};
-        paint(render(lastData, platformFilter));
-      })
-      .catch(function (err) {
-        if (seq !== requestSeq) return;
-        content.removeAttribute('aria-busy');
-        lastData = null;
-        paint(errorState(err, function () { load(); }));
-      });
-  }
-
-  /* This pane's own control goes beside the shell's rather than into a second
-     bar underneath the first. The shell builds the filter bar before it asks a
-     pane for its contents, but it does not put the shell in the document until
-     afterwards, so the bar is not reachable while this runs and the append
-     waits for ops:ready.
-
-     That is the same small move OpsOperate.paneFilters makes for the operate
-     panes. It is written out here rather than reached for across operate.js,
-     because this page loads none of the rest of that file and a shared module
-     pulled in for six lines is a dependency it does not need. */
-  function paneFilters(nodes) {
-    function install() {
-      var bar = document.querySelector('.filterbar');
-      if (!bar) return;
-      nodes.forEach(function (n) { if (n) bar.appendChild(n); });
-    }
-    if (document.querySelector('.filterbar')) install();
-    else global.addEventListener('ops:ready', install, { once: true });
-  }
-
-  /* The platform switch is a view of what has already been fetched, so it
-     repaints rather than reloading. Both platforms are always requested,
-     because the tiles above the ladders are cross-platform. */
-  function platformControl() {
-    var wrap = h('div', { className: 'filter-item filter-gap' });
-    wrap.appendChild(h('span', { className: 'filter-label', text: 'Platform' }));
-    var seg = h('div', { className: 'seg', role: 'group', 'aria-label': 'Platform' });
-    [
-      { v: 'both', l: 'Both' },
-      { v: 'ios', l: 'iOS' },
-      { v: 'android', l: 'Android' }
-    ].forEach(function (o) {
-      var b = h('button', { type: 'button', text: o.l, 'aria-pressed': String(o.v === platformFilter) });
-      b.addEventListener('click', function () {
-        Array.prototype.forEach.call(seg.querySelectorAll('button'), function (x) {
-          x.setAttribute('aria-pressed', 'false');
+      /* No querystring: the registry gives this pane no filter and the route
+         takes no parameter. Through the shell's reader, so the same-origin
+         fixture hook covers the states a live API will not produce on demand,
+         which here is most of them — a store that has never been connected, a
+         poll that was refused, a rollout stalled for a week. */
+      S.read({ paneId: 'releases', endpoint: ENDPOINT })
+        .then(function (result) {
+          if (token !== loadToken) return;
+          render(result.data || {});
+        })
+        .catch(function (err) {
+          if (token !== loadToken) return;
+          region.failed(err, load);
         });
-        b.setAttribute('aria-pressed', 'true');
-        platformFilter = o.v;
-        if (lastData) paint(render(lastData, platformFilter));
-        shell.announce('Showing ' + o.l.toLowerCase() + ' releases');
+    }
+
+    function render(data) {
+      var platforms = platformsOf(data);
+
+      /* Empty is a real state with a real trigger and a narrow one: no store
+         reports a build on any track, including the tracks this pane has no
+         rung for. */
+      if (!hasAnyBuild(data)) {
+        region.empty(emptyState(data, platforms));
+        return;
+      }
+
+      /* Read once, so the hero, the pipeline, the end pill and the share
+         sentence cannot disagree about one platform's rollout. */
+      var rows = platforms.map(function (platform) {
+        var track = trackOf(payloadFor(data, platform), PRODUCTION);
+        return {
+          platform: platform,
+          track: track,
+          state: state(track),
+          rollout: rolloutReading(track)
+        };
       });
-      seg.appendChild(b);
-    });
-    wrap.appendChild(seg);
-    return wrap;
-  }
 
-  function refreshControl() {
-    var b = h('button', { className: 'btn btn-sm filter-gap', type: 'button' });
-    b.appendChild(icon('refresh'));
-    b.appendChild(h('span', { text: 'Refresh' }));
-    b.addEventListener('click', function () {
-      shell.announce('Reloading app releases');
-      load();
-    });
-    return b;
-  }
+      var wrap = h('div', { className: 'stack' });
+      wrap.appendChild(hero(data, rows));
 
-  /* The shell calls this once, with the pane's content region, after the
-     session is confirmed and the document has finished parsing. A pane with no
-     registration renders the not-built state, so there is no flag anywhere
-     claiming this pane is built: the fact is this file being on the page. */
-  shell.definePane('releases', function (host) {
-    content = host;
-    paneFilters([
-      platformControl(),
-      h('div', { className: 'spacer', 'aria-hidden': 'true' }),
-      refreshControl()
-    ]);
+      var where = S.band('Where each app is');
+      var pipeCard = S.card();
+      var pipeBody = h('div', { className: 'card-body' });
+      var pipe = h('div', { className: 'pipe' });
+      rows.forEach(function (row) { pipe.appendChild(pipeRow(data, row)); });
+      pipeBody.appendChild(pipe);
+
+      var also = testTracksBlock(data, platforms);
+      if (also) pipeBody.appendChild(also);
+      var unknown = unknownTracksBlock(data, platforms);
+      if (unknown) pipeBody.appendChild(unknown);
+
+      pipeCard.appendChild(pipeBody);
+      where.appendChild(pipeCard);
+      wrap.appendChild(where);
+
+      var field = S.band('Who is on which version');
+      var grid = h('div', { className: 'grid g-main share-grid' });
+      grid.appendChild(shareCard(data, rows));
+      grid.appendChild(storesCard(data));
+      field.appendChild(grid);
+      wrap.appendChild(field);
+
+      var healthy = S.band('Is the newest one healthy', healthWindow(data));
+      healthy.appendChild(healthCard(data));
+      wrap.appendChild(healthy);
+
+      if (data.generatedAt && fmt.ago(data.generatedAt) !== fmt.none) {
+        wrap.appendChild(h('p', {
+          className: 'tiny muted',
+          text: 'Read from the operations API ' + fmt.ago(data.generatedAt) + '.'
+        }));
+      }
+
+      /* Degraded is the pane on screen with part of it unreadable, which here
+         is a store that was polled and refused. Not connected and not polled
+         are known absences the pane states in words, not reads that failed. */
+      if (failedSources(data).length) region.degraded(wrap);
+      else region.show(wrap);
+    }
 
     load();
   });

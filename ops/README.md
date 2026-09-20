@@ -256,6 +256,7 @@ ops/
     shell-pane-v2.css   what a v2 pane page needs and aria.css does not carry:
                         the three gates, the phone drawer, the toast
     pane-overview-v2.css  Overview's own shapes
+    pane-releases-v2.css  App releases' own shapes
     pane-settings-v2.css  Settings' own shapes
 ```
 
@@ -943,6 +944,69 @@ pane against the mock should read the list as "these are on purpose and here is 
 
 Everything the omissions card shows comes **from the answer**, never from a list in the client,
 so a figure that gains a source drops off the card without a code change here.
+
+### App releases on v2: where the pane departs from the mock
+
+`docs/mocks/ops-dashboard-v2/releases.html` in the Aria monorepo is the approved design. The
+pane follows its structure — the four-rung pipeline, the version-share band, the store card with
+its age attached, the health comparison — and the rules its README calls normative.
+
+As with Overview above, this is **not a complete diff** and does not claim to be. It names the
+departures that carry a decision.
+
+The pane's one claim comes first, because most of the list follows from it. A version sitting at
+20% of the field **because the Play rollout is staged at 20%** is a different fact from a version
+stalled at 20% **because nobody is updating**, and the two are answered by two different figures
+that are never merged: `track.rolloutBasisPoints` is what the store is releasing to, per
+platform; `adoption.buckets` is what the field actually ran, across all platforms. Anything that
+would blend them is not drawn.
+
+1. **No Range, App or Environment control.** The release snapshot is upserted per track, so the
+   table holds what is on that track now and no history to window. The registry gives this pane
+   no control and the filter bar states the absence where one would have been.
+2. **Version share is one bar, not one per platform.** The mock splits it iOS/Android. The
+   reading behind it is dimensioned by app version only — `adoption.buckets` is a share of all
+   sessions that reported a version — so two bars would be one number drawn twice under two
+   labels it does not have. The per-platform fact the split was carrying is the store's ceiling,
+   and that is on the pipeline row and in the one sentence under the bar.
+3. **No adoption curve.** The mock draws "adoption since release" as an area chart over nine
+   points. Nothing stores a series: the snapshot holds the current share and overwrites it. A
+   curve drawn from one point is a straight line pretending to be a history.
+4. **The fourth rung is "Rolled out", not "Adopted".** The pipeline is the store's ladder, and
+   its last rung is the store finishing — which is exactly the fact a staged rollout has not
+   reached. Calling it "Adopted" would put the field's answer on the store's ladder and merge
+   the two figures rule 0 keeps apart.
+5. **The health table is one comparison, not a release history.** The mock draws six rows of
+   version × platform with sessions, crash free, median start and AI failure rate. `health`
+   carries one platform, a current build, a previous build and a list of named signals, and
+   nothing stores a per-release history to widen it to. The table drawn is the comparison the
+   contract describes.
+6. **No "What is in 1.1.2" band.** Release notes, build metadata, languages, minimum OS,
+   download sizes, the rollback build and the support-ticket reference are none of them stored
+   anywhere in this platform. The whole band is eight fields with no source.
+7. **No Export or Failed runs actions on the health band.** Nothing generates that export, and a
+   button that does nothing is the filter problem in another costume.
+8. **The mock's three `why` blocks are not reproduced.** "Merging these into one score would
+   hide exactly the case this pane is looking at" is an argument for the design, not a fact
+   about the release, and the mocks' own rule is one fact per slot. The facts those blocks
+   carried are on screen: the store ceiling is named beside the share, and the age of a store
+   reading is attached to the row it fed.
+
+Two additions the mock does not have, both of which exist because the pane reads a live answer
+where the mock reads its own sample text:
+
+- **A failing poller ages the row it fed.** The mock's store card carries freshness; a real
+  answer can carry a poller that has been refused for two days, and "6 days unchanged" read two
+  days ago is a claim about last Thursday. The row says how old its figures are, once, where
+  they are read. The store card then says why and exactly when.
+- **The empty state is derived from the source statuses, not from the ladder.** An empty ladder
+  means "there are no builds" only when both stores were asked and both answered. A store that
+  was never connected, or polled and refused, makes the same empty ladder mean nothing at all,
+  and the headline says which of the three it is.
+
+`assets/pane-releases-v2.css` carries this pane's own shapes. Two rules in it are scoped
+overrides of shared stylesheets that this change is not allowed to edit; both name
+`Stadiora/Aria#10397`, which is filed to move them.
 
 ### Known contrast debt, inherited
 
