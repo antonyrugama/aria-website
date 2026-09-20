@@ -51,10 +51,19 @@
    that the page under it is the pane it claims to be and drew something: the
    shell reached its ready gate, the heading and the question in the top bar
    are the ones the registry declares for that pane, `#content` holds more than
-   a handful of elements, and none of the shell refusals — a pane the role may
-   not open, a pane with no module — is what is on screen. A pane that fails
-   any of those is reported as a failure rather than measured, and is missing
-   from the swept count, which is itself asserted.
+   a handful of elements, none of the shell refusals — a pane the role may not
+   open, a pane with no module — is what is on screen, and `#content` holds a
+   string that only that pane's loaded state draws. A pane that fails any of
+   those is reported as a failure rather than measured, and is missing from the
+   swept count, which is itself asserted.
+
+   That last gate is the one the other five cannot stand in for. Overview, App
+   releases and Settings each answer an empty read with a failure card of their
+   own, and a failure card passes all five: it is the right file, it sets the
+   right `data-pane`, the shell reaches ready, the top bar is written from the
+   registry rather than from the read, and two of the three clear the floor of
+   eight elements by 23 and 30. Without a per-pane marker the sweep shrank from
+   ten laid-out panes to seven and went on printing that it had swept ten.
 
    Two shells, so two spellings of everything the sweep reads off the page.
    assets/shell-pane-v2.js boots from `data-pane` and writes the question into
@@ -359,6 +368,72 @@ const AUDIT = [
     targetType: null, targetId: null, reason: null, ipAddress: '203.0.113.4' }
 ];
 
+const PROBLEM = {
+  id: 'prb_1', reference: 'AO-118', severity: 'critical', status: 'open',
+  category: 'ai_reliability', title: 'Nutrition plans are failing to generate',
+  description: 'Worker memory pressure is killing the generation process.',
+  ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
+  pane: 'jobs-live', paneLabel: 'Happening now',
+  detectedAt: ago(15 * MINUTE), firedAt: ago(13 * MINUTE),
+  acknowledgedAt: null, acknowledgedBy: null,
+  closedAt: null, closeReason: null, closedBy: null,
+  notificationsFailed: 0, events: []
+};
+
+/* ------------------------------------------------------- proof of drawing */
+
+/* One thing per pane that only that pane's LOADED state puts on the page.
+
+   The floor of MIN_CONTENT_ELEMENTS says a pane drew something. It does not
+   say the pane drew its data, and three panes here can draw a failure card of
+   their own instead: Overview, App releases and Settings each answer an empty
+   read with a card that says the read failed. Those cards pass every other
+   gate below — right file, right pane attribute, ready gate reached, top bar
+   correct, no shell refusal — and two of them clear the floor of eight by 23
+   and 30 elements. So a fixture going stale used to shrink the sweep from ten
+   laid-out panes to seven while it went on printing that it had swept ten.
+
+   Each string here is therefore chosen to be absent from that pane's failure
+   or empty state and present in its loaded one, and is taken off the fixture
+   above wherever the pane prints a fixture value verbatim. A pane that draws
+   a failure card now fails its page rather than being measured, which takes it
+   out of the swept count as well, so the count assertion at the bottom catches
+   it a second time.
+
+   What this does NOT prove: Aria quality and Look up a user read nothing until
+   something is submitted, so their markers pin the pane's own static prose and
+   nothing more. People and usage and Cloud costs are measured in the empty
+   state their stubbed read produces, which is what WHAT THIS DOES NOT COVER
+   above already says; their markers pin that empty card, not a populated one. */
+const PROOF = {
+  /* SUMMARY.people.platform.active and SUMMARY.release.platforms[0].versionName,
+     both of which the failure card replaces with "Not reported". */
+  overview: ['1,102', SUMMARY.release.platforms[0].versionName],
+  jobs: [RULES[0].thresholdLabel, `of ${RULES.length} rules were checking`],
+  history: [RULES[0].title, PROBLEM.category],
+  /* The drill-down link the workPane rename restored, and the problem's own
+     reference. Both sit in the action row this check measures. */
+  alerts: [PROBLEM.paneLabel, PROBLEM.reference],
+  analytics: ['No app reported over this window'],
+  spend: ['This answer carried no billed total'],
+  evals: ['Check a dataset declaration', 'Quarantine evidence'],
+  releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
+  users: ['Nothing looked up yet'],
+  settings: [ADMINS[0].email, AUDIT[0].reason]
+};
+
+/* A pane joining the registry without a marker would otherwise be swept on the
+   floor of eight alone, which is the hole this table exists to close. */
+for (const page of PAGES) {
+  const proof = PROOF[page.key];
+  if (!Array.isArray(proof) || proof.length === 0 || proof.some((s) => !s)) {
+    console.error(`\n${REGISTRY} declares pane "${page.key}" and PROOF in ` +
+      'scripts/check-ops-narrow-overflow.mjs names nothing that only its loaded ' +
+      'state draws, so a failure card on that pane would be measured as the pane.\n');
+    process.exit(1);
+  }
+}
+
 function stub(pathname) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
@@ -388,17 +463,7 @@ function stub(pathname) {
     } };
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) {
-    return { data: { problems: [{
-      id: 'prb_1', reference: 'AO-118', severity: 'critical', status: 'open',
-      category: 'ai_reliability', title: 'Nutrition plans are failing to generate',
-      description: 'Worker memory pressure is killing the generation process.',
-      ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
-      pane: 'jobs-live', paneLabel: 'Happening now',
-      detectedAt: ago(15 * MINUTE), firedAt: ago(13 * MINUTE),
-      acknowledgedAt: null, acknowledgedBy: null,
-      closedAt: null, closeReason: null, closedBy: null,
-      notificationsFailed: 0, events: []
-    }] } };
+    return { data: { problems: [PROBLEM] } };
   }
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
@@ -511,8 +576,13 @@ function connect(url) {
 
 /* What the browser is asked, once the pane has rendered. Reported whole, so a
    failure names the elements that are past the edge rather than only the
-   number that proves some element is. */
-const PROBE = `(() => {
+   number that proves some element is.
+
+   Takes the pane's PROOF strings because the answer has to be computed against
+   the whole of #content: contentText below is truncated for the report, and a
+   marker that a pane draws near the bottom of a 530-element page would fall
+   outside it. */
+const probeFor = (markers) => `(() => {
   const de = document.documentElement;
   const viewport = de.clientWidth;
 
@@ -555,6 +625,7 @@ const PROBE = `(() => {
      Both render the registry's own sentence, which is what is compared. */
   const sub = document.querySelector('.page-sub, .page-question');
   const clean = (node) => (node && node.textContent || '').replace(/\\s+/g, ' ').trim();
+  const contentText = content ? clean(content) : '';
 
   return JSON.stringify({
     scrollWidth: de.scrollWidth,
@@ -575,7 +646,10 @@ const PROBE = `(() => {
     title: clean(title),
     sub: clean(sub),
     contentElements: content ? content.querySelectorAll('*').length : -1,
-    contentText: content ? clean(content).slice(0, 4000) : '',
+    contentText: contentText.slice(0, 4000),
+    /* Against the untruncated text, and reported as what is MISSING rather
+       than as a boolean, so a failure can name the marker it did not find. */
+    missing: ${JSON.stringify(markers)}.filter((m) => contentText.indexOf(m) === -1),
     ruleRows: document.querySelectorAll('.rule-row').length,
     /* The row's own text, not the text of a particular element inside it. A
        probe that reads .rule-row .badge only sees the sentence while the pane
@@ -655,7 +729,9 @@ try {
         await cdp.once('Page.loadEventFired');
         await new Promise((r) => setTimeout(r, SETTLE_MS));
 
-        const evaluated = await cdp.send('Runtime.evaluate', { expression: PROBE, returnByValue: true });
+        const evaluated = await cdp.send('Runtime.evaluate', {
+          expression: probeFor(PROOF[page.key]), returnByValue: true
+        });
         const seen = JSON.parse(evaluated.result.value);
         probes += 1;
 
@@ -697,6 +773,17 @@ try {
         if (seen.contentElements < MIN_CONTENT_ELEMENTS) {
           failures.push(`${where}: #content holds ${seen.contentElements} elements, under the ` +
             `floor of ${MIN_CONTENT_ELEMENTS}. The pane did not draw.`);
+          continue;
+        }
+        /* The floor above says the pane drew something. This says it drew
+           itself: a pane whose read came back empty answers with a failure
+           card that clears the floor, reads the right top bar and is not a
+           shell refusal, so nothing else here can tell the two apart. */
+        if (seen.missing.length) {
+          failures.push(`${where}: #content holds ${seen.contentElements} elements but not ` +
+            `${seen.missing.map((m) => JSON.stringify(m)).join(' or ')}, which only this ` +
+            'pane\'s loaded state draws. What was laid out is not this pane with its data ' +
+            `in it — it starts ${JSON.stringify(seen.contentText.slice(0, 120))}.`);
           continue;
         }
         if (page.key === 'alerts') {
