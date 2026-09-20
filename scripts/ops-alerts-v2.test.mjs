@@ -34,11 +34,12 @@
      - What the stylesheet LOOKS like. Nothing here renders it. What the last
        section DOES read out of ops/assets/pane-alerts-v2.css is its text: the
        three machine-read docblock lines and the claims around them, the two
-       rules the rules table's scrolling box depends on, the .is- tone rules
-       and the sheet's own custom properties, each against the file it names.
-       No rule below is rendered to decide any of it, and nothing here can see
-       a colour as a pixel -- scripts/check-ops-contrast.mjs is the tool that
-       judges contrast, and it is not run from here.
+       rules the rules table's scrolling box depends on, the .is- tone rules,
+       the sheet's own custom properties, and every test title the sheet
+       cites, each against the file it names. No rule below is rendered to
+       decide any of it, and nothing here can see a colour as a pixel --
+       scripts/check-ops-contrast.mjs is the tool that judges contrast, and it
+       is not run from here.
      - Anything the operations API decides. The role checks below prove the
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
@@ -86,10 +87,23 @@
        first. */
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import test from 'node:test';
+import nodeTest from 'node:test';
 import vm from 'node:vm';
 
 import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+
+/* Every title this file registers, collected as it registers them rather
+   than scraped out of the source. The stylesheet cites tests BY TITLE and
+   says a claim naming one is thereby bound; a citation that stops resolving
+   would leave the sentence around it reading as proven while nothing held it
+   up, which is Stadiora/Aria#10632 in the device built to close it. The set
+   is complete by the time any test BODY runs, because node:test registers
+   every top-level test while the module evaluates. */
+const TEST_TITLES = new Set();
+const test = (name, ...rest) => {
+  TEST_TITLES.add(name);
+  return nodeTest(name, ...rest);
+};
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -364,17 +378,24 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
    `tabindex="-1"` asks to be OUT of the tab order, and a tabindex whose value
    has no leading digits is IGNORED by the parser.
 
-   Independent review of that fix found five more, all in FOCUSABLE_PROBES
-   marked FOUND IN REVIEW: tabindex is fed through HTML's rules for parsing
-   INTEGERS rather than validated, only the editing HOST takes a stop and not
-   its descendants, that host is decided before href rather than after, an
-   <input type="hidden"> takes none, and a <details> takes its first <summary>
-   CHILD rather than its first child.
+   Independent review of that fix found five more, and a SECOND review found
+   six more still; all of them are rows of FOCUSABLE_PROBES marked FOUND IN
+   REVIEW, and the count is printed beside the table rather than typed here.
+   What the two rounds between them corrected: tabindex is fed through HTML's
+   rules for parsing INTEGERS rather than validated, and a parsed value
+   outside the range of a long is an error just as a missing digit is; only
+   the OUTERMOST editing host takes a stop, and it is decided before href; an
+   <input type="hidden"> takes none; a <details> takes its first <summary>
+   CHILD rather than its first child, and one with no <summary> at all is the
+   agent's business rather than this helper's.
 
    Every answer below is a row of FOCUSABLE_PROBES, which runs this helper
-   against the case and compares it with a typed expectation. What it cannot
-   decide it REFUSES by throwing, rather than guessing: a wrong answer from a
-   guard is worse than no guard.
+   against the case and compares it with a typed expectation. FOCUSABLE_PROBES
+   is this helper's TEST surface, and saying it is the helper's whole surface
+   would be the claim this file exists to stop making: two review rounds each
+   found answers no row covered, and each time the row came after the finding.
+   What it cannot decide it REFUSES by throwing, rather than guessing: a wrong
+   answer from a guard is worse than no guard.
 
    NOT MODELLED, and answered anyway rather than refused, because none of it
    is legible from the markup: focusability that CSS decides (display: none,
@@ -386,8 +407,9 @@ const FOCUSABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'];
 const DISABLEABLE_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'FIELDSET', 'OPTGROUP', 'OPTION'];
 const HREF_TAGS = ['A', 'AREA'];
 const MEDIA_TAGS = ['AUDIO', 'VIDEO'];
-/* Whether these take a tab stop depends on the plugin, the fallback content
-   and the browser, so the helper says it cannot tell instead of answering. */
+/* Whether these take a tab stop depends on the resource they load, their
+   fallback content and the browser, so the helper says it cannot tell
+   instead of answering. */
 const UNDECIDABLE_TAGS = ['OBJECT', 'EMBED'];
 
 const attr = (node, name) =>
@@ -399,17 +421,25 @@ const isDisabled = (node) =>
 /* The parser's own reading of tabindex, which is HTML's RULES FOR PARSING
    INTEGERS and not the attribute's conformance requirement: skip ASCII
    whitespace, take an optional sign, collect the LEADING digits and ignore
-   whatever follows. Only a value with no leading digits is an error, and only
-   then does the element sit where it would have without the attribute.
+   whatever follows. Two things make it an error -- no leading digits at all,
+   and a result outside the range of a long, which is exactly the 32-bit
+   signed range -- and on either the element sits where it would have without
+   the attribute at all.
 
    So '' and '  ' and 'yes' are ignored, but '1.5' is 1 and '12abc' is 12 --
-   both real tab stops, which /^[+-]?\d+$/ called invalid. */
+   both real tab stops, which /^[+-]?\d+$/ called invalid. And '2147483648'
+   is ignored while '2147483647' is a stop, so a <button tabindex="-3e9">
+   keeps the stop its tag gives it rather than losing one it never had. */
+const TAB_INDEX_MIN = -2147483648;
+const TAB_INDEX_MAX = 2147483647;
 const tabIndexOf = (node) => {
   const raw = attr(node, 'tabindex');
   if (raw === null) return null;
   const body = raw.replace(/^[ \t\n\f\r]+/, '');
   if (!/^[+-]?\d/.test(body)) return null;
-  return Number.parseInt(body, 10);
+  const value = Number.parseInt(body, 10);
+  if (!Number.isFinite(value) || value < TAB_INDEX_MIN || value > TAB_INDEX_MAX) return null;
+  return value;
 };
 
 /* hidden and inert take a whole subtree out of the tab order, so an ancestor
@@ -426,16 +456,28 @@ const suppressedBy = (node) => {
 };
 
 /* An EDITING HOST is an element whose OWN contenteditable is in the true or
-   plaintext-only state. That is the element the standard gives the tabindex
-   focus flag to -- its descendants are editable CONTENT, not focusable
-   elements, and Chrome's tab ring agrees: in <div contenteditable><div>, the
-   stop is the outer one. 'inherit', 'false' and any unrecognised value leave
-   the element a non-host. */
-const editable = (node) => {
+   plaintext-only state AND whose nearest such ancestor is none: a host nested
+   inside a host is editable CONTENT of the outer one, and Chrome's tab ring
+   gives the stop to the outer only. A contenteditable="false" between them
+   breaks the chain, and the inner one is a host again. 'inherit' and any
+   unrecognised value state nothing either way. */
+const ownEditable = (node) => {
   const value = attr(node, 'contenteditable');
-  if (value === null) return false;
+  if (value === null) return null;
   const word = value.trim().toLowerCase();
-  return word === '' || word === 'true' || word === 'plaintext-only';
+  if (word === 'false') return false;
+  if (word === '' || word === 'true' || word === 'plaintext-only') return true;
+  return null;
+};
+
+const editable = (node) => {
+  if (ownEditable(node) !== true) return false;
+  for (let at = node.parentNode; at && at.nodeType === 1; at = at.parentNode) {
+    const own = ownEditable(at);
+    if (own === true) return false;
+    if (own === false) return true;
+  }
+  return true;
 };
 
 /* An <input type="hidden"> is not rendered at all, so it takes no tab stop
@@ -464,9 +506,26 @@ function focusable(node) {
   /* Before the href branch: an <a contenteditable> with no href is an editing
      host and a real tab stop, which asking about href first answers wrong. */
   if (editable(node)) return true;
+  /* An <area> is a stop only when a RENDERED <img usemap> uses the <map> it
+     sits in -- a fact about the rest of the document, not about the node --
+     so a linked one is refused. One with no href is never a stop anywhere. */
+  if (node.tagName === 'AREA') {
+    if (attr(node, 'href') === null) return false;
+    throw new Error('focusable() cannot tell: an <area href> takes a tab stop only where a '
+      + 'rendered <img usemap> uses its <map>');
+  }
   if (HREF_TAGS.includes(node.tagName)) return attr(node, 'href') !== null;
   if (node.tagName === 'IFRAME') return true;
   if (MEDIA_TAGS.includes(node.tagName)) return attr(node, 'controls') !== null;
+  /* A <details> with NO <summary> child is given one by the user agent, and
+     whether that supplied control takes a stop is the agent's business, so
+     this one is refused too. With a <summary>, the <summary> is the stop and
+     the <details> is not. */
+  if (node.tagName === 'DETAILS') {
+    if (Array.from(node.children).some((child) => child.tagName === 'SUMMARY')) return false;
+    throw new Error('focusable() cannot tell: a <details> with no <summary> child is given '
+      + 'one by the user agent');
+  }
   /* A <details> takes its FIRST <summary> CHILD as its disclosure control --
      not its first child, and not a <summary> nested deeper. Any other
      <summary> is ordinary text. */
@@ -481,7 +540,7 @@ function focusable(node) {
 /* ====================== focusable(), against cases ===================== */
 
 /* Guard code is code. Every row is a case a browser has a definite answer
-   for, or -- for the four marked `cannot tell` -- one this helper will not
+   for, or -- for the rows marked `cannot tell` -- one this helper will not
    guess at. `answer` is typed here from the HTML standard's own rules and
    never read back out of the helper, and every row was then enumerated
    against Chrome's real sequential focus ring, walked to completion rather
@@ -490,9 +549,10 @@ function focusable(node) {
    antonyrugama/aria-website#75 and is NOT re-run by this suite: what runs
    here is the typed column.
 
-   The seven marked WAS WRONG are the seven Stadiora/Aria#10633 enumerated.
-   The five marked FOUND IN REVIEW are the ones the independent review of the
-   fix for those seven found still wrong. */
+   The rows marked WAS WRONG are the ones Stadiora/Aria#10633 enumerated. The
+   rows marked FOUND IN REVIEW are the ones two rounds of independent review
+   of the fix for those found still wrong. Both are counted below the table
+   rather than here, so a count and its rows cannot come apart. */
 const FOCUSABLE_PROBES = [
   { name: '<button>', tag: 'button', answer: true },
   { name: '<button disabled>', tag: 'button', props: { disabled: true }, answer: false },
@@ -568,8 +628,44 @@ const FOCUSABLE_PROBES = [
   { name: '<div contenteditable="false"> inside <div contenteditable>', tag: 'div',
     attrs: { contenteditable: 'false' }, wrap: 'div', wrapAttrs: { contenteditable: '' },
     answer: false },
-  { name: '<object>', tag: 'object', answer: 'cannot tell' },
-  { name: '<embed>', tag: 'embed', answer: 'cannot tell' },
+  { name: '<object>', tag: 'object', answer: 'cannot tell',
+    why: 'measured in Chrome it takes no stop at tabIndex 0, but that is the empty case: '
+      + 'what a loaded resource or fallback content does is not in the markup' },
+  { name: '<embed>', tag: 'embed', answer: 'cannot tell',
+    why: 'same, and its tabIndex reads -1 where <object> reads 0, so even the IDL the two '
+      + 'expose disagrees on elements this helper cannot distinguish' },
+  { name: '<area href>', tag: 'area', attrs: { href: '/ops/alerts.html' }, answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. a stop only inside a <map> a rendered <img usemap> uses' },
+  { name: '<area> with no href', tag: 'area', answer: false,
+    note: 'FOUND IN REVIEW: true. no href, no link, no stop in any arrangement' },
+  { name: '<details> with a <summary> child', tag: 'details', childBefore: ['summary'],
+    answer: false, why: 'the <summary> is the stop; its <details> is not' },
+  { name: '<details> with no <summary>', tag: 'details', answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: false. the agent supplies a summary, and Chrome gives it a stop' },
+  { name: '<div tabindex="2147483647">', tag: 'div', attrs: { tabindex: '2147483647' },
+    answer: true, why: 'the largest value a long holds, so still a real index' },
+  { name: '<div tabindex="2147483648">', tag: 'div', attrs: { tabindex: '2147483648' },
+    answer: false,
+    note: 'FOUND IN REVIEW: true. one past a long is an ERROR, so the div is a plain div' },
+  { name: '<div tabindex="999999999999999999999">', tag: 'div',
+    attrs: { tabindex: '999999999999999999999' }, answer: false,
+    note: 'FOUND IN REVIEW: true. the same error, far enough out to lose precision as well' },
+  { name: '<button tabindex="-3000000000">', tag: 'button', attrs: { tabindex: '-3000000000' },
+    answer: true,
+    note: 'FOUND IN REVIEW: false. the UNSAFE direction: an out-of-range value is ignored, '
+      + 'so the button keeps the stop its tag gives it' },
+  { name: '<select tabindex="-2147483649">', tag: 'select', attrs: { tabindex: '-2147483649' },
+    answer: true, note: 'FOUND IN REVIEW: false. one below a long, same as above' },
+  { name: '<div tabindex="-2147483648">', tag: 'div', attrs: { tabindex: '-2147483648' },
+    answer: false, why: 'in range, so it is read as a negative index and asks to be out' },
+  { name: '<div contenteditable> inside <div contenteditable>', tag: 'div',
+    attrs: { contenteditable: '' }, wrap: 'div', wrapAttrs: { contenteditable: '' },
+    answer: false,
+    note: 'FOUND IN REVIEW: true. a host inside a host is the outer one\'s content' },
+  { name: '<div contenteditable> under a false under a host', tag: 'div',
+    attrs: { contenteditable: '' }, wrap: 'div', wrapAttrs: { contenteditable: 'false' },
+    outerWrap: 'div', outerWrapAttrs: { contenteditable: '' }, answer: true,
+    why: 'contenteditable="false" breaks the chain, so the inner one is a host again' },
   { name: '<button> inside <fieldset disabled>', tag: 'button', wrap: 'fieldset',
     wrapProps: { disabled: true }, answer: 'cannot tell' },
   { name: '<button> inside a <legend> of <fieldset disabled>', tag: 'button', wrap: 'legend',
@@ -583,6 +679,7 @@ test('focusable() answers the tab order the document can decide, and refuses the
     const node = make(probe.tag);
     for (const [name, value] of Object.entries(probe.attrs || {})) node.setAttribute(name, value);
     Object.assign(node, probe.props || {});
+    for (const tag of probe.childBefore || []) node.appendChild(make(tag));
     if (!probe.wrap) return node;
     const parent = make(probe.wrap);
     for (const [name, value] of Object.entries(probe.wrapAttrs || {})) parent.setAttribute(name, value);
@@ -591,6 +688,7 @@ test('focusable() answers the tab order the document can decide, and refuses the
     parent.appendChild(node);
     if (!probe.outerWrap) return node;
     const outer = make(probe.outerWrap);
+    for (const [name, value] of Object.entries(probe.outerWrapAttrs || {})) outer.setAttribute(name, value);
     Object.assign(outer, probe.outerWrapProps || {});
     outer.appendChild(parent);
     return node;
@@ -616,7 +714,7 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 49, takesATabStop: 20, doesNot: 25, refused: 4, wereWrongBefore: 7, foundInReview: 6 });
+    { cases: 61, takesATabStop: 24, doesNot: 31, refused: 6, wereWrongBefore: 7, foundInReview: 14 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -2047,6 +2145,45 @@ test('clearing the filters puts the window back as well as the pane\'s own contr
 
 /* ============================ the page itself ========================== */
 
+/* The sheet's reading rule -- "anything this sheet says about another file is
+   bound by a test ONLY where the sentence saying it names that test" -- is
+   the whole device this pane's docblock rests on, and it rests in turn on
+   those citations resolving. Nothing checked that they did, so any cited test
+   could be renamed with the suite green and every sentence citing it would go
+   on reading as proven. That is Stadiora/Aria#10632 inside the thing built to
+   close it, and the second independent review of PR #75 found it there.
+
+   Every double-quoted run in the sheet is either a title this file registers
+   or one of the strings below, which are UI copy the sheet quotes rather than
+   citations. Attribute spellings are dropped first, or a role="switch" pairs
+   its quotes with the prose either side and every run after it is garbage. */
+const SHEET_QUOTES_THAT_ARE_NOT_CITATIONS = ['Still happening'];
+
+test('every test the stylesheet cites by name is a test this file registers', () => {
+  const prose = PANE_CSS.replace(/\s+/g, ' ').replace(/[a-zA-Z-]+="[^"]*"/g, '');
+  const quoted = [...prose.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+
+  for (const copy of SHEET_QUOTES_THAT_ARE_NOT_CITATIONS) {
+    assert.ok(quoted.includes(copy),
+      'the sheet no longer quotes ' + JSON.stringify(copy) + ', so the exception for it here '
+      + 'is stale and the next quotation of it would be waved through as UI copy');
+  }
+
+  const cited = quoted.filter((q) => !SHEET_QUOTES_THAT_ARE_NOT_CITATIONS.includes(q));
+  assert.deepEqual(cited.filter((title) => !TEST_TITLES.has(title)), [],
+    'the sheet names a test that this file does not register, so the sentence around it is '
+    + 'prose wearing a proof pointer');
+
+  /* The EXTENT, not only the verdict: an empty citation list passes the line
+     above, and the sheet would then be entirely unbound while this test went
+     on saying its citations were fine. */
+  assert.ok(cited.length >= 8,
+    'the sheet is down to ' + cited.length + ' citations, so most of its cross-file prose is '
+    + 'now unbound whatever this test says');
+  console.log('stylesheet citations judged: '
+    + JSON.stringify({ quoted: quoted.length, cited: cited.length, resolved: cited.length }));
+});
+
 test('the page loads one design system and one theme decision', () => {
   const html = read('alerts.html');
   for (const v1 of ['assets/ops.css', 'assets/operate.css', 'assets/shell.js', 'assets/icons.js']) {
@@ -2226,17 +2363,22 @@ test('the rules table scrolls inside a box a keyboard can reach and a screen rea
        differs, by exactly the property it says: naming an excluded sibling is
        a positive claim too, and it was the false half of
        Stadiora/Aria#10632's finding 4. */
-    const apart = /^\s*DIFFERENT FOCUS RING:\s*(\S+)\s+adds\s+(\S+)\s*$/m.exec(PANE_CSS);
+    /* The line carries the whole DECLARATION, property and value. Naming the
+       property alone left "it resets border-radius: 0" half bound: the
+       sibling growing a border-radius: 4px kept the suite green while the
+       sentence went on saying 0 (found in the second review of #75). */
+    const apart = /^\s*DIFFERENT FOCUS RING:\s*(\S+)\s+adds\s+([\w-]+):\s*(\S.*?)\s*$/m
+      .exec(PANE_CSS);
     assert.ok(apart, 'the sheet no longer names the sibling it says it differs from');
-    const [, excluded, extra] = apart;
+    const [, excluded, extra, extraValue] = apart;
     assert.ok(!siblings.includes(excluded),
       excluded + ' is cited as both the same ring and a different one');
     const theirs = scrollBoxFocusRule(read('assets/' + excluded));
     assert.deepEqual(
       theirs.filter((d) => !mine.some((m) => m.property === d.property && m.value === d.value))
-        .map((d) => d.property),
-      [extra],
-      excluded + ' no longer differs from this sheet by exactly ' + extra
+        .map((d) => d.property + ': ' + d.value),
+      [extra + ': ' + extraValue],
+      excluded + ' no longer differs from this sheet by exactly ' + extra + ': ' + extraValue
       + ', so the reason it is held apart is false');
     assert.ok(!mine.some((d) => d.property === extra),
       'this sheet declares ' + extra + ' on its own focus rule after all');
@@ -2620,6 +2762,32 @@ test('every rule switch is a real checkbox, reachable, stateful and named', asyn
       'the switch is named "' + name + '", which does not name the rule "' + title + '"');
   }
 });
+
+/* Two layout rules in the sheet are justified by facts about what
+   assets/pane-alerts.js draws -- the rules table having six columns, and the
+   condition pill's words being "Still happening" -- and both justifications
+   were prose (Stadiora/Aria#10632, found in the second review of the fix).
+   Delete a column or rename the pill and the sheet goes on naming the old
+   shape as the reason its rules exist. */
+test('the rules the sheet justifies by what the page draws name what it draws',
+  async () => {
+    const dom = await boot({ role: 'owner' });
+    const table = withClass(dom.doc.body, 'rules-card')[0];
+    assert.ok(table, 'the fixture draws no rules card');
+    const head = findAll(table, (n) => n.tagName === 'TR')
+      .find((row) => findAll(row, (n) => n.tagName === 'TH').length > 0);
+    assert.ok(head, 'the rules table draws no header row');
+    const columns = findAll(head, (n) => n.tagName === 'TH').length;
+    assert.equal(columns, 6,
+      'the rules table draws ' + columns + ' columns, and pane-alerts-v2.css justifies two '
+      + 'rules by there being six of them in 760px');
+
+    const pill = withClass(dom.doc.body, 'p-live')[0];
+    assert.ok(pill, 'no problem on the page is still happening, so nothing carries .p-live');
+    assert.equal(allText(pill).trim(), 'Still happening',
+      'the condition pill reads "' + allText(pill).trim() + '", and pane-alerts-v2.css '
+      + 'justifies white-space: nowrap by "Still happening" wrapping to two words');
+  });
 
 test('every status tone here paints the -ink of a tint aria.css also declares', () => {
   const declared = new Set(

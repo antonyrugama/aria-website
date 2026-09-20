@@ -9,7 +9,10 @@
    bound by a test ONLY where the sentence saying it names that test. The
    NOT BOUND list at the bottom of this block enumerates the ones that name
    none, so a cross-file claim with neither a test name nor a line in that
-   list is a defect (Stadiora/Aria#10632).
+   list is a defect (Stadiora/Aria#10632). Every title quoted below is
+   checked to be a test that exists ("every test the stylesheet cites by name
+   is a test this file registers"), so a citation cannot go stale in place
+   and leave the sentence around it reading as proven.
 
    Adapted from docs/mocks/ops-dashboard-v2/assets/pane-operate.css in the Aria
    monorepo, narrowed to the shapes this one pane uses. The mock groups pane
@@ -63,10 +66,12 @@
 
    NOT BOUND by any test, enumerated rather than left to look bound:
 
-     - the provenance paragraph above, because the monorepo file this was
-       adapted from is not in this repository — including its closing claim
-       that anything aria.css already declares is used from there rather than
-       copied, of which only the accents are checked;
+     - every claim in this file about the monorepo mock, because that file is
+       not in this repository: the provenance paragraph above, including its
+       closing claim that anything aria.css already declares is used from
+       there rather than copied, of which only the accents are checked; what
+       the hero's third child is there; and what the switch is drawn from
+       there;
      - that aria.css's palette is WCAG AA by construction, which is a fact
        about the monorepo issue cited and is not rechecked here;
      - what aria.css does with the hero below 980px, and that the card is the
@@ -78,15 +83,17 @@
        pixel measurements quoted at .scrollx:focus-visible, which came off
        screenshots in antonyrugama/aria-website#72 and which no check
        re-measures;
-     - every layout rule below, bar .scrollx's own overflow-x, which the
-       focus-ring test reads to find the box it belongs to.
+     - every layout rule below, bar three: .scrollx's own overflow-x, which
+       the focus-ring test reads to find the box it belongs to, and the two
+       justified by what the page draws — six columns and the words in the
+       condition pill — which are checked against the drawn page.
    ========================================================================= */
 
 /* --------------------------------------------------------------- the hero */
 
 /* aria.css drops the hero to two columns below 980px and moves its third
    child to a row of its own — written against the mock, where that child is a
-   .row. Here it is the chip strip. */
+   .row (NOT BOUND, see the top of this file). Here it is the chip strip. */
 @media (max-width: 980px) {
   .hero > .hero-chips { grid-column: 1 / -1; }
 }
@@ -124,7 +131,9 @@
 
 /* The condition pill sits at the end of the head row and keeps its width:
    "Still happening" wrapping to two words over a long title is the one piece
-   of the row that must stay readable at a glance. */
+   of the row that must stay readable at a glance — those are the pill's own
+   words on the drawn page ("the rules the sheet justifies by what the page
+   draws name what it draws"). */
 .p-head > .pill { flex: none; margin-left: auto; }
 .p-live { white-space: nowrap; }
 
@@ -272,18 +281,20 @@
    screen reader can name", which is also where the tab stop is asserted.
 
    SAME FOCUS RING AS: pane-settings-v2.css, pane-evaluations-v2.css
-   DIFFERENT FOCUS RING: pane-releases-v2.css adds border-radius
+   DIFFERENT FOCUS RING: pane-releases-v2.css adds border-radius: 0
 
    Both lines are read by the same test, which finds each named sheet's
    sideways-scrolling box by its overflow rather than by a class name and
    compares the focus rule declaration for declaration: the first two must
    match this one exactly, and pane-releases-v2.css .tbl-scroll must differ by
-   exactly the property named -- it resets border-radius: 0 as well, which
-   this does not. */
+   exactly the declaration named on the line above, value included, which this
+   sheet does not make at all. */
 .scrollx:focus-visible { outline-offset: -2px; }
 
 /* Six columns in 760px leaves the rule's name in a strip barely wider than
-   one word, which turns every row into a paragraph. Percentage widths do not
+   one word, which turns every row into a paragraph. Six is what the table
+   draws ("the rules the sheet justifies by what the page draws name what it
+   draws"). Percentage widths do not
    fix it: `table-layout: auto` treats them as hints and keeps shrinking the
    column to its longest word. Refusing to break the name raises the column's
    own minimum instead, which the auto algorithm has to honour. */
@@ -295,8 +306,8 @@
    A real checkbox carrying role="switch", so it is focusable, announced with
    its state and named by the rule it belongs to — all three checked on the
    drawn page ("every rule switch is a real checkbox, reachable, stateful and
-   named"). The mock draws a <button> with an <i> inside; an input cannot hold
-   a child, so the knob is ::after. */
+   named"). The mock draws a <button> with an <i> inside (NOT BOUND, see the
+   top of this file); an input cannot hold a child, so the knob is ::after. */
 
 .sw {
   position: relative;
