@@ -145,12 +145,27 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
 
 /* Where the approved design has a control nothing can carry yet, the note
    stands where the control would have been. It is a sentence, not a chip
-   label, so it does not inherit the pill's uppercase letter-spacing. */
+   label, so it does not inherit the pill's uppercase letter-spacing -- or its
+   `white-space: nowrap`. A max-width cannot clamp a line that will not wrap:
+   the box is limited and the text runs straight out of it, which is how a
+   63-character note pushed a 375px page to 393px on CI while fitting on a
+   narrower-metric font locally. */
 .filter-note {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 450;
+  white-space: normal;
   max-width: 62ch;
+}
+
+/* ------------------------------------------------ the pane's own controls */
+
+/* OpsPaneShell.paneFilters() puts a pane's own controls in the shared bar, in
+   one slot it can replace wholesale. The slot lays them out the way the bar
+   lays out its own children, so a control looks the same whichever of the two
+   put it there. */
+.filters-pane {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
 }
 
 /* --------------------------------------------------------------- spacing */

@@ -53,6 +53,8 @@ const TOKENS = {
 
 /* ------------------------------------------------------------- fixtures */
 
+const hoursAgo = (n) => new Date(Date.now() - n * 3600000).toISOString();
+
 const DAYS = ['2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16',
   '2026-09-17', '2026-09-18', '2026-09-19'];
 
@@ -90,8 +92,14 @@ function summaryFixture(over) {
     release: {
       availability: { state: 'ready' },
       platforms: [
-        { label: 'iOS', versionName: '2.9.1', versionCode: 291, fetchedAt: '2026-09-19T09:00:00.000Z' },
-        { label: 'Android', versionName: '2.9.0', versionCode: 290, fetchedAt: '2026-09-19T09:00:00.000Z' },
+        /* Relative, not absolute. The releases card prints how long ago the
+           store was asked, worked out against the real clock, so a fixed date
+           here says "3 hours ago" the day it is written and something new
+           every day after. It said "24 hours ago" exactly once, on the day
+           after this fixture's date, and turned the sweep below red for one
+           day. A fixture that moves with the clock stays the same. */
+        { label: 'iOS', versionName: '2.9.1', versionCode: 291, fetchedAt: hoursAgo(3) },
+        { label: 'Android', versionName: '2.9.0', versionCode: 290, fetchedAt: hoursAgo(3) },
       ],
     },
     activity: {
@@ -270,7 +278,22 @@ test('every figure says the window the answer covered, taken from the answer', a
 
 test('the pane never claims a 24 hour window the pipeline cannot answer', async () => {
   const dom = await boot({});
-  assert.doesNotMatch(liveText(dom), /24 hours|last day|today/i,
+  const text = liveText(dom);
+
+  /* Swept over everything rather than over the tiles, because a window can be
+     claimed in a sentence, a chart description or a footnote, and a sweep
+     that only reads the labels misses the other three.
+
+     One sentence is taken out by name: how long ago the app stores were
+     asked. That is the age of a READ, not the span a figure covers, and a
+     store asked 24 hours ago says so honestly. It is asserted to still be on
+     the page first, or the exclusion would cover the defect by deleting the
+     card that carries it. */
+  const readAge = /Read from the stores (within the hour|[\d,.]+ hours? ago)\./;
+  assert.match(text, readAge,
+    'the releases card printed no read age, so the exclusion below covers nothing');
+
+  assert.doesNotMatch(text.replace(readAge, ''), /24 hours|last day|today/i,
     'a figure claimed an hourly window that nothing behind it aggregates to');
 });
 
