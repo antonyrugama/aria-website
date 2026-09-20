@@ -296,12 +296,18 @@ select.field-input { appearance: none; padding-right: 26px; }
    carried no rule of its own, in this sheet or any other the page loads
    (Stadiora/Aria#10647).
 
-   What it now carries is the one thing every element wearing it has in common
-   and nothing else on the pane needs: the content is a figure, and the figures
-   are stacked in a column. Proportional digits set "+0.03" and "-0.11" to
-   different widths, so a right-aligned column of them does not line up on the
-   decimal. Tabular figures do. */
+   What it now carries is the treatment the figure beside it already has.
+   `.u-score-val` three rules up is mono and tabular; the movement is the same
+   figure in the same column and was neither, so the column jittered. Tabular
+   digits alone do not fix it, because the sign is not a tabular glyph: at
+   identical digits `+0.03` came out 1.9px wider than `-0.02`. Mono sets every
+   character to one advance, sign included, so the column is a column whatever
+   font the machine falls back to. aria.css's `.pill .mono` is this exact
+   treatment — same family, same 11px — for a figure inside a pill; the span is
+   the figure, and the bare-word pills ("flat", "first scored") are left in the
+   text face because they are not figures. */
 .u-move { font-variant-numeric: tabular-nums; }
+.u-move span { font-family: var(--mono); font-size: 11px; }
 
 /* -------------------------------------------------------- side by side */
 .u-vs { display: grid; grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }

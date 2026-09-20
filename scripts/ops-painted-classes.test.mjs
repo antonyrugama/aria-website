@@ -375,9 +375,13 @@ after(async () => {
     await Promise.race([gone, new Promise((r) => setTimeout(r, 5000))]);
   }
   server.close();
-  /* Chrome writes its profile out as it shuts down, so a removal that starts
-     the instant kill() returns races it and throws ENOTEMPTY. */
-  if (profile) fs.rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
+  /* Chrome keeps writing its profile out as it shuts down, and on a CI runner
+     it can still be doing so after the process has gone. The directory is
+     inside RUNNER_TEMP and the runner discards it either way, so failing to
+     remove it is not a reason to fail a test about stylesheets. */
+  try {
+    if (profile) fs.rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
+  } catch (e) { /* the runner sweeps it up */ }
 });
 
 /* ===================== Stadiora/Aria#10646 — App releases ================= */
@@ -828,38 +832,87 @@ test('the short step of the approval handoff is not stretched to the tall one', 
     `taking the rule away adds only ${seen.off[0] - seen.on[0]}px of void to the short card`);
 });
 
-/* Anchor: the `.u-move { font-variant-numeric: tabular-nums }` rule. The class
-   marks the pills that are a movement, was queried by the pane and by
-   ops-pane-evaluations.test.mjs, and carried no rule of its own anywhere. */
+/* Anchor: the two `.u-move` rules. The class marks the pills that are a
+   movement, was queried by the pane and by ops-pane-evaluations.test.mjs, and
+   carried no rule of its own anywhere.
 
-test('the column of score movements is set in figures that line up', async () => {
+   Both arms are read as resolved values rather than as widths, because a width
+   claim about digits is a claim about the font the machine happened to fall
+   back to: on this repository's own CI image the fallback face already sets
+   digits to one advance, so `font-variant-numeric` changes nothing there and a
+   width oracle for it is green for a reason that has nothing to do with the
+   rule. What IS font-independent is that mono gives every character one
+   advance, sign included — so the column's equal widths are asserted, and it
+   is the resolved family and variant that bind them to the rules. */
+
+const MONO = 'Geist Mono';
+
+test('the column of score movements is set in the figure face, and lines up', async () => {
   await show(EVALS_DARK);
   const seen = await evaluate(`(() => {
-    const pill = document.querySelector('.u-move');
-    const ruler = document.createElement('span');
-    /* Measured inside the element that styles it, not in a clone appended to
-       the body: font-variant-numeric inherits, and a clone taken out of its
-       parent loses every descendant selector that reaches it. */
-    pill.appendChild(ruler);
-    const widthOf = (text) => {
-      ruler.textContent = text;
-      return Math.round(ruler.getBoundingClientRect().width * 100) / 100;
-    };
-    const on = { ones: widthOf('111111'), zeroes: widthOf('000000') };
-    pill.classList.remove('u-move');
-    const off = { ones: widthOf('111111'), zeroes: widthOf('000000') };
-    pill.classList.add('u-move');
-    ruler.remove();
-    return { on, off, count: document.querySelectorAll('.u-move').length };
+    const pills = [...document.querySelectorAll('.u-list-end .u-move')];
+    const figure = (pill) => pill.querySelector('span');
+    const numeric = pills.filter(figure);
+    const read = () => numeric.map((pill) => ({
+      text: figure(pill).textContent,
+      pill: Math.round(pill.getBoundingClientRect().width * 100) / 100,
+      family: getComputedStyle(figure(pill)).fontFamily.split(',')[0].replace(/["']/g, '').trim(),
+      size: getComputedStyle(figure(pill)).fontSize,
+      variant: getComputedStyle(pill).fontVariantNumeric
+    }));
+    const on = read();
+    /* Taken off in place. The rules that paint this are a descendant selector
+       and an inherited property, so a clone lifted out of its parent would lose
+       both and measure something that is not on the page. */
+    numeric.forEach((pill) => pill.classList.remove('u-move'));
+    numeric[0].getBoundingClientRect();
+    const off = read();
+    numeric.forEach((pill) => pill.classList.add('u-move'));
+    const words = pills.filter((pill) => !figure(pill))
+      .map((pill) => ({ text: pill.textContent.trim(),
+        family: getComputedStyle(pill).fontFamily.split(',')[0].replace(/["']/g, '').trim() }));
+    return { on, off, words, count: document.querySelectorAll('.u-move').length };
   })()`);
 
   assert.ok(seen.count > 1, 'there should be a column of movements to line up');
-  assert.strictEqual(seen.on.ones, seen.on.zeroes,
-    `six ones set ${seen.on.ones}px and six zeroes ${seen.on.zeroes}px, so the figures ` +
-    'are proportional and a right-aligned column of them does not align');
-  assert.notStrictEqual(seen.off.ones, seen.off.zeroes,
-    'the two digit strings are the same width with `u-move` taken off as well, so the ' +
-    'rule under that selector is not what is making them equal');
+  assert.ok(seen.on.length > 1,
+    'the version history should hold more than one numeric movement, and holds ' +
+    JSON.stringify(seen.on.map((m) => m.text)));
+  assert.ok(seen.on.some((m) => m.text.startsWith('+')) && seen.on.some((m) => m.text.startsWith('-')),
+    'the column should hold a rise and a fall, so the sign is part of what has to ' +
+    'line up, and holds ' + JSON.stringify(seen.on.map((m) => m.text)));
+
+  const widths = [...new Set(seen.on.map((m) => m.pill))];
+  assert.strictEqual(widths.length, 1,
+    'every movement in the column should be one width, and they are ' +
+    JSON.stringify(seen.on.map((m) => m.text + ' ' + m.pill + 'px')));
+
+  for (const movement of seen.on) {
+    assert.strictEqual(movement.family, MONO,
+      `${movement.text} is set in ${movement.family}, not the figure face`);
+    assert.strictEqual(movement.size, '11px',
+      `${movement.text} is ${movement.size}, not the 11px aria.css sets a figure in a pill`);
+    assert.strictEqual(movement.variant, 'tabular-nums',
+      `${movement.text}'s pill resolves font-variant-numeric to ${movement.variant}`);
+  }
+  for (const movement of seen.off) {
+    assert.notStrictEqual(movement.family, MONO,
+      `${movement.text} is still in the figure face with \`u-move\` taken off, so the ` +
+      'rule under that selector is not what is setting it');
+    assert.strictEqual(movement.variant, 'normal',
+      `${movement.text}'s pill still resolves font-variant-numeric to ${movement.variant} ` +
+      'with `u-move` taken off');
+  }
+
+  /* The other direction of the same rule: a pill holding a word rather than a
+     figure is left in the text face, because `.u-move span` reaches the figure
+     and not the pill. */
+  assert.ok(seen.words.length,
+    'the version history should hold at least one worded movement — "flat" or "first scored"');
+  for (const word of seen.words) {
+    assert.notStrictEqual(word.family, MONO,
+      `"${word.text}" is a word, not a figure, and should not be set in the figure face`);
+  }
 });
 
 /* Anchor: ops/assets/pane-evaluations.js — the shell.cardHead call in
