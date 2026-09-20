@@ -8,9 +8,14 @@ name: Ops theme redraw
 # was drawn in. syncTheme() closes the gap with one call to redrawCharts().
 # Delete that call and every chart keeps the previous theme's palette — bright
 # dark-ramp strokes left on a white surface, which is the WCAG AA failure the
-# light palette exists to prevent (monorepo Stadiora/Aria#10042). Nothing threw,
-# no token was missing, no shape was unpainted, and both the unit suite and the
-# shell guard stayed green.
+# light palette exists to prevent (monorepo Stadiora/Aria#10042). Nothing
+# throws, no token is missing, no shape is unpainted, and the other browser
+# guard, scripts/check-ops-shell-v2.mjs, stays green: it reloads instead of
+# toggling. The unit suite is the other half of the coverage —
+# scripts/ops-aria-shell.test.mjs goes red on that deletion too, reading back
+# the attributes the renderer wrote against a hand-written DOM. This job is the
+# half that measures the resolved colour on a laid-out page, against the
+# palette aria.css really declares.
 #
 # A separate job from "Ops v2 shell" on purpose. That check stores a theme,
 # RELOADS, and measures a fresh page, which is correct in either theme because
