@@ -2218,6 +2218,10 @@ const SHEET_QUOTES_THAT_ARE_NOT_CITATIONS = ['Still happening'];
    on the NON-TOKEN PAINT line, so the sheet's own citation of it goes red
    when that line changes size, and typing it here would have taken that
    property away. */
+/* What this binds: the named test is registered. What it does NOT bind: that
+   the named test is rigorous -- gut its body and the citation still resolves
+   (mutation M4-R2 on #75). Each cited test carries its own mutations; this one
+   only stops the sheet naming a test that no longer exists. */
 const SHEET_CITATIONS = [
   'a problem card carries one severity, in the accent and both inks alike',
   'every rule switch is a real checkbox, reachable, stateful and named',
@@ -2683,16 +2687,16 @@ const READER_PROBES = [
     why: 'the atoms inside a classified function ARE read, on a property that paints' },
   { css: '.probe { --acc: magenta; }', refused: true,
     why: 'a custom property can carry a colour, so every one of them is read' },
-  { css: '.probe { column-rule: 1px solid magenta; }', refused: false,
+  { css: '.probe { column-rule: 1px solid magenta; }', refused: false, stemless: 'column-rule',
     why: 'BLIND SPOT: a bare colour keyword on a property with no paint stem in its name' },
   /* The sheet NAMES five stemless properties. Probing one of them and
      writing the other four into prose is the claim this file exists to stop
      making, so each is run (found in the third review of #75). */
-  { css: '.probe { text-decoration: underline magenta; }', refused: false,
+  { css: '.probe { text-decoration: underline magenta; }', refused: false, stemless: 'text-decoration',
     why: 'BLIND SPOT: text-decoration, named by the sheet, carries no paint stem' },
-  { css: '.probe { mask-image: linear-gradient(magenta, white); }', refused: false,
+  { css: '.probe { mask-image: linear-gradient(magenta, white); }', refused: false, stemless: 'mask-image',
     why: 'BLIND SPOT: mask-image, named by the sheet, carries no paint stem' },
-  { css: '.probe { list-style: square inside magenta; }', refused: false,
+  { css: '.probe { list-style: square inside magenta; }', refused: false, stemless: 'list-style',
     why: 'BLIND SPOT: list-style, named by the sheet, carries no paint stem' },
   { css: '.probe { filter: drop-shadow(0 0 1px magenta); }', refused: true,
     why: 'NOT a blind spot, though paints("filter") is false: the only syntax that carries a '
@@ -2729,6 +2733,24 @@ test('the reader refuses what READER_PROBES says it refuses, and walks past what
       'a row is written down as a blind spot while the reader catches it, so the disclosure '
       + 'is worse than the guard');
     console.log('reader probes judged: ' + JSON.stringify(counts));
+
+    /* The paragraph at pane-alerts-v2.css:36-40 NAMES the stemless properties
+       a keyword walks past on. Citing the test by title binds that this test
+       exists; it does not bind that list, so the list is read out of the sheet
+       and deepEqual to the rows marked `stemless`. Removing one from the sheet,
+       or adding one the file never probes, fails here. Shape it misses: the
+       sentence has to keep the exact frame "on <list> walks past it" -- rewrite
+       that frame and the extraction finds nothing, which is why it asserts the
+       match is present before comparing. */
+    const frame = PANE_CSS.replace(/\s+/g, ' ')
+      .match(/so a keyword on ([a-z-]+(?:, [a-z-]+)*) or ([a-z-]+) walks past it/);
+    assert.ok(frame, 'the sheet no longer names the stemless properties in the frame this '
+      + 'test reads, so nothing is checking that list');
+    const namedBySheet = frame[1].split(', ').concat(frame[2]).sort();
+    assert.deepEqual(namedBySheet, READER_PROBES.filter((probe) => probe.stemless)
+      .map((probe) => probe.stemless).sort(),
+      'the sheet names a stemless property this file never probes, or stops naming one it '
+      + 'does -- the prose and the probes have drifted apart');
   });
 
 /* Every atom this sheet paints with that is NOT a token aria.css declares,
@@ -2752,7 +2774,11 @@ const spell = (site) => (site.inside ? site.atom + ' in ' + site.inside + '()' :
 
 /* Generated, and the sheet cites it by this exact text, so the sheet's
    citation goes red when NON_TOKEN_PAINT changes size. SHEET_CITATIONS adds
-   this one in rather than typing it, to keep that property. */
+   this one in rather than typing it -- but measured (M4-P4 on #75), typing it
+   out is ALSO caught, by the half of the citation test that requires a cited
+   title to be registered: grow the list and the typed 6 stops resolving. So
+   generating it removes a place to drift, it is not the only thing holding
+   that property. */
 const NON_TOKEN_PAINT_TITLE = 'every colour this sheet paints is a token aria.css declares, '
   + 'bar the ' + NON_TOKEN_PAINT.length + ' sites named here';
 
