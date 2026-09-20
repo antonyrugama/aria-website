@@ -23,8 +23,12 @@
    screenshotted and quoted — and the whole of the honesty apparatus here is
    paying for it:
 
-     - INVENTED below is every made-up figure in one list, and nothing outside
-       that list is drawn into the preview.
+     - INVENTED below is every made-up figure on this pane, in one list, down
+       to the threshold in a band note. Version labels like 1.2.0 are not in
+       it, because they name the invented rows rather than being figures a
+       reader could quote. The test holds every one of them inside the
+       preview, and sweeps for any two-decimal figure that reaches the page
+       outside it.
      - previewBand() is the only way a band gets into the preview, and it
        stamps the band. workingBand() is the only way a band is built outside
        it, and it stamps that. Neither stamp is a colour: each carries a word.
@@ -90,6 +94,7 @@
       { name: 'Language quality, Portuguese', sub: 'Newest', score: '0.74', pct: 74, tone: 'bad', move: '0.09', down: true }
     ],
     safetyFloor: 'Safety has a hard floor: below 0.95 nothing ships.',
+    regressionThreshold: '0.05',
     regressions: [
       { title: '12 week block after a hamstring strain', id: 'tc_0147', kind: 'Training programs', was: '0.91', now: '0.62', move: '0.29' },
       { title: 'Creatine timing', id: 'tc_0312', kind: 'Chat replies', tone: 'acc', was: '0.88', now: '0.71', move: '0.17' },
@@ -97,7 +102,7 @@
       { title: 'Session note in Portuguese', id: 'tc_0455', kind: 'Coach note summaries', was: '0.81', now: '0.68', move: '0.13' },
       { title: 'Slow block start, 40m footage', id: 'tc_0091', kind: 'Sprint video analysis', tone: 'vio', was: '0.86', now: '0.78', move: '0.08' }
     ],
-    regressionFoot: 'Five of 180 cases regressed. Four ask Aria to tell an athlete no, not yet.',
+    regressionFoot: 'Four of the five ask Aria to tell an athlete no, not yet.',
     shipped: {
       version: '1.1.2', note: 'shipped 14 Jul, 73% of sessions', overall: '0.88',
       figures: [
@@ -690,8 +695,7 @@
         h('div', { className: 'row wrap' }, [
           stamp('u-tag', 'x', 'No harness'),
           stamp('u-tag', 'x', 'No stored scores'),
-          stamp('u-tag', 'x', 'No alerting'),
-          stamp('u-tag works', 'check', 'Design agreed 12 Jul 2026')
+          stamp('u-tag', 'x', 'No alerting')
         ]),
         h('div', { className: 'row wrap' }, [
           shell.link(shell.paneHref('history') || 'run-history.html', 'Read real runs instead', 'btn btn-primary'),
@@ -714,11 +718,21 @@
     return bar;
   }
 
+  /* The direction is a sign in the text as well as a glyph and a tint. The
+     glyph is decoration inside an icon element nothing announces, and the tint
+     is a colour, so without the sign "0.02 up" and "0.02 down" reach a screen
+     reader as the same three characters. assets/pane-overview.js carries the
+     same repair, made there after the same finding.
+
+     `u-move` carries no style. It marks which pills are a change, because
+     `.pill.down` is also the red tone and the release-held pill wears it
+     without being a fall — without the hook the test below has no way to ask
+     the question of the right set. */
   function movePill(entry) {
-    if (!entry.down && !entry.up) return h('span', { className: 'pill', text: entry.move });
-    return h('span', { className: 'pill ' + (entry.down ? 'down' : 'up') }, [
+    if (!entry.down && !entry.up) return h('span', { className: 'pill u-move', text: entry.move });
+    return h('span', { className: 'pill u-move ' + (entry.down ? 'down' : 'up') }, [
       icon(entry.down ? 'down' : 'up'),
-      h('span', { text: entry.move })
+      h('span', { text: (entry.down ? '-' : '+') + entry.move })
     ]);
   }
 
@@ -781,7 +795,8 @@
   }
 
   function regressionsBand() {
-    var section = previewBand('What regressed', 'Dropped more than 0.05 since 1.1.2');
+    var section = previewBand('What regressed',
+      'Dropped more than ' + INVENTED.regressionThreshold + ' since 1.1.2');
     var body = h('tbody');
     INVENTED.regressions.forEach(function (entry) {
       body.appendChild(h('tr', {}, [

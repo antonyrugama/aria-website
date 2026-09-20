@@ -920,8 +920,13 @@ const TOKENS = {
 const INVENTED_FIGURES = [
   '0.82', '0.88', '0.90', '0.87', '0.86', '0.79', '0.96', '0.84', '0.83',
   '0.74', '0.91', '0.62', '0.71', '0.70', '0.81', '0.68', '0.78', '0.89',
-  '0.85', '0.29', '0.17', '0.14', '0.13', '0.08', '0.06', '0.02', '0.03',
-  '0.01', '0.09',
+  '0.85',
+  /* A movement carries its direction as a sign, because a glyph nobody
+     announces and a tint are not a direction. */
+  '-0.29', '-0.17', '-0.14', '-0.13', '-0.08', '-0.06', '-0.02', '-0.03',
+  '-0.01', '-0.09', '+0.03', '+0.02',
+  /* The threshold in the regressions band note is a made-up figure too. */
+  '0.05',
 ];
 
 /* A score is written to two decimals everywhere on this pane, so this is the
@@ -1067,8 +1072,11 @@ test('v2: no score reaches the page outside the preview', async () => {
 test('v2: every invented figure the design prints is inside the preview', async () => {
   const dom = await bootPane();
   const preview = previewOf(dom);
-  const printed = new Set(findAll(preview, () => true)
-    .map(node => (node.textContent || '').trim())
+  /* Tokens rather than whole node text, because a figure is allowed to sit in
+     a sentence — the regressions threshold does. Trailing punctuation is
+     trimmed back to the last digit, so "0.85." matches and "ships." cannot. */
+  const printed = new Set(allText(preview).split(/\s+/)
+    .map(word => word.replace(/^[^0-9+-]+/, '').replace(/[^0-9]+$/, ''))
     .filter(Boolean));
   const missing = INVENTED_FIGURES.filter(figure => !printed.has(figure));
   assert.deepEqual(missing, [],
@@ -1174,4 +1182,57 @@ test('v2: the consent boundary survives the restyle for every role', async () =>
     assert.match(allText(callout), /Quarantine is not permission to use evidence/);
     assert.match(allText(callout), /do not create evaluation or training consent/);
   }
+});
+
+/* Two facts a reader of this pane has to be able to trust, each found by a
+   reviewer as a green suite hiding a live defect.
+
+   The banner draws the boundary between the half that runs and the half that
+   is drawn, so nothing above that boundary may make a claim a reader could
+   quote. A chip there reading "Design agreed 12 Jul 2026" wearing the marker
+   this pane uses for "this really runs" shipped past every other test in this
+   file, because the sweep below only looks for a two-decimal score. */
+test('v2: the banner states no figure and claims nothing that runs', async () => {
+  const dom = await bootPane();
+  const banner = find(dom.content, node => hasClass(node, 'soon'));
+  assert.ok(banner, 'the coming-soon banner is gone');
+  const text = allText(banner);
+  assert.ok(!/\d/.test(text),
+    `the banner prints a figure, and a figure above the boundary is a claim: ${text}`);
+
+  const preview = previewOf(dom);
+  const bands = findAll(dom.content, isBand);
+  const working = bands.filter(section => !within(section, preview));
+  assert.ok(working.length >= 2, `expected the working bands, saw ${working.length}`);
+  const marked = findAll(dom.content,
+    node => hasClass(node, 'u-tag') && hasClass(node, 'works'));
+  assert.ok(marked.length >= 2,
+    `nothing wears the working marker, so this test proves nothing: ${marked.length}`);
+  const stray = marked
+    .filter(node => !working.some(section => within(node, section)))
+    .map(node => allText(node));
+  assert.deepEqual(stray, [],
+    'the marker for "this really runs" is worn by something outside a working band');
+});
+
+/* A rise and a fall reached a screen reader as the same three characters,
+   because the direction lived only in an aria-hidden glyph and a tint.
+   assets/pane-overview.js:796 carries the same repair. */
+test('v2: a rise and a fall do not announce the same thing', async () => {
+  const dom = await bootPane();
+  const preview = previewOf(dom);
+  const pills = findAll(preview, node => hasClass(node, 'u-move'));
+  assert.ok(pills.length >= 10, `expected the drawn change pills, saw ${pills.length}`);
+  const rises = pills.filter(node => hasClass(node, 'up')).map(node => allText(node).trim());
+  const falls = pills.filter(node => hasClass(node, 'down')).map(node => allText(node).trim());
+  assert.ok(rises.length >= 1, `the design draws no rise, so this test proves nothing`);
+  assert.ok(falls.length >= 2, `the design draws ${falls.length} falls, expected the drawn set`);
+
+  const shared = rises.filter(text => falls.includes(text));
+  assert.deepEqual(shared, [],
+    'a rise and a fall announce the same text, so direction is carried by colour alone');
+  assert.deepEqual(rises.filter(text => !text.startsWith('+')), [],
+    'a rising change does not announce its sign');
+  assert.deepEqual(falls.filter(text => !text.startsWith('-')), [],
+    'a falling change does not announce its sign');
 });

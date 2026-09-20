@@ -252,8 +252,13 @@ select.field-input { appearance: none; padding-right: 26px; }
 
 @media (max-width: 900px) {
   .q-grid { grid-template-columns: minmax(0, 1fr); }
-  .u-score { grid-template-columns: minmax(0, 1fr) 52px 78px; row-gap: 6px; }
-  .u-score .meter { grid-column: 1 / -1; }
+  /* The bar drops under the row, and the three text cells keep the row.
+     Placing the bar explicitly matters: auto-placement pushed it to a row of
+     its own and then started a third row for the score and the change, which
+     left the last track empty at every width under 900px. */
+  .u-score { grid-template-columns: minmax(0, 1fr) 48px 74px; row-gap: 6px; column-gap: 12px; }
+  .u-score > :first-child { grid-column: 1; grid-row: 1; }
+  .u-score .meter { grid-column: 1 / -1; grid-row: 2; }
   .u-vs { grid-template-columns: minmax(0, 1fr); }
   .u-vs-rule { height: 1px; width: auto; margin: 6px 0; }
   .u-vs-side { padding: 0; }
