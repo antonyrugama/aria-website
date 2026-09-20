@@ -1766,17 +1766,21 @@ test('the pane module writes no markup and no style attribute', () => {
 
    NOT COVERED by either clause: ANY spelling the spelling clause cannot read
    -- a CSS named colour, an `oklch()`, a `lab()`, a `color-mix()`, which is
-   to say everything but a hex and the `rgb()`/`hsl()` families -- standing in
-   a property whose name carries none of the words `COLOUR_SLOT` gates on.
-   `text-decoration: underline crimson` is the shape, and `text-emphasis` and
-   `mask-image` are the same shape; naming only the NAMED colour here read as
-   a narrower hole than it is. The spelling clause has no property gate but
-   reads only those two families, and the value scan reads any spelling but
-   only where it is looking, so the uncovered set is the intersection. The
-   gate is what decides it, not the property: the same `crimson` in
-   `border-bottom` is caught, and a hex in `text-decoration` is caught.
-   Widening the gate to every property means allowlisting every geometry word
-   in CSS, which is a larger guard than the sheet it guards. */
+   to say everything but a hex and the `rgb()`/`hsl()` families in any case --
+   standing in a property whose name carries none of the words `COLOUR_SLOT`
+   gates on. `text-decoration: underline crimson` is the shape, and
+   `text-emphasis` and `mask-image` are the same shape; naming only the NAMED
+   colour here read as a narrower hole than it is. The spelling clause has no
+   property gate but reads only those two families, and the value scan reads
+   any spelling but only where it is looking, so the uncovered set is the
+   intersection. The gate is what decides it, not the property: the same
+   `crimson` in `border-bottom` is caught, and a hex in `text-decoration` is
+   caught. Both clauses are case-blind, so an UPPERCASE spelling of anything
+   here is covered exactly as its lowercase twin is -- `COLOUR_SLOT` is
+   tested against a lowercased property, `COLOURLESS_WORDS` against a
+   lowercased word, and the spelling clause carries `i`. Widening the gate to
+   every property means allowlisting every geometry word in CSS, which is a
+   larger guard than the sheet it guards. */
 const COLOUR_SLOT = /(^--)|color|background|border|outline|fill|stroke|shadow|rule|filter/;
 
 const COLOURLESS_WORDS = new Set([
@@ -1826,14 +1830,17 @@ function colourResidue(value) {
    it stands: in a property nothing thought to list (`filter: drop-shadow(0 0
    2px #2b7fff)`), inside a `var()` fallback, inside a `@keyframes` body, and
    spelled with no letters at all (`#333`), which the value scan's length
-   sweep eats. What it cannot see is every OTHER spelling -- a CSS named
-   colour, an `oklch()`, a `lab()`, a `color-mix()` -- and that is the value
-   scan's half of the union. */
+   sweep eats. It reads both families in ANY case -- CSS function names are
+   case-insensitive, so `RGB(` paints exactly what `rgb(` paints, and a match
+   that reads only one of them is a spelling guard with a spelling hole. What
+   it cannot see is every OTHER spelling -- a CSS named colour, an `oklch()`,
+   a `lab()`, a `color-mix()` -- and that is the value scan's half of the
+   union. */
 function rawColourSpellings(css) {
   const body = css.replace(/\/\*[\s\S]*?\*\//g, '');
   return [
     ...(body.match(/#[0-9a-fA-F]{3,8}\b/g) || []),
-    ...(body.match(/\b(?:rgb|rgba|hsl|hsla)\(/g) || []),
+    ...(body.match(/\b(?:rgb|rgba|hsl|hsla)\(/gi) || []),
   ];
 }
 
@@ -1909,16 +1916,36 @@ test('the stylesheet introduces no colour value of its own', () => {
 
   /* The spelling clause, controlled on its own: every hex shape including the
      all-numeric one, both function families, and a sheet where the only hex
-     is in a comment. */
-  ['#333', '#112233', '#2b7fff', '#FFF', 'rgb(0,0,0)', 'rgba(0,0,0,.4)',
-    'hsl(210 90% 60%)', 'hsla(210 90% 60% / .4)'].forEach((spelling) => {
+     is in a comment.
+
+     In BOTH cases, because CSS function names and hex digits are
+     case-insensitive and the clause was not: `RGB(` painted what `rgb(`
+     paints and walked through a match spelled `/g` rather than `/gi`. A
+     spelling guard with a spelling hole is the shape of defect this whole
+     test exists to catch, so the case pairs are built by derivation rather
+     than typed -- a new entry above gets its uppercase twin for free. */
+  const SPELLINGS = ['#333', '#112233', '#2b7fff', '#FFF', 'rgb(0,0,0)', 'rgba(0,0,0,.4)',
+    'hsl(210 90% 60%)', 'hsla(210 90% 60% / .4)'];
+  const CASED = [...SPELLINGS, ...SPELLINGS.map((s) => s.toUpperCase()),
+    ...SPELLINGS.map((s) => s.toLowerCase())];
+  CASED.forEach((spelling) => {
     assert.equal(rawColourSpellings('.x { background: ' + spelling + '; }').length, 1,
       'the spelling clause cannot see: ' + spelling);
   });
+  assert.ok(CASED.some((s) => /RGB\(|HSL\(/.test(s)),
+    'the case sweep above produced no uppercase function spelling to check');
   assert.deepEqual(
     rawColourSpellings('/* #333 rgb( */ .x { background: var(--c, var(--cyan)); }'), [],
     'the spelling clause reads a comment as a declaration'
   );
+
+  /* And the value scan is case-blind in its own two places -- the property
+     gate and the colourless-word allowlist -- so neither clause has a case
+     seam the other has to cover. */
+  assert.equal(colourValues('COLOR: CRIMSON;').length, 1,
+    'an uppercase property name walks past the gate');
+  assert.deepEqual(colourValues('BORDER-TOP: 1PX SOLID VAR(--LINE);'), [],
+    'an uppercase legitimate value is mis-read as a colour');
 
   /* The hole, pinned rather than only written down. Each of these is a
      declaration BOTH clauses miss, and the docblock above says so; a freeze
@@ -1932,7 +1959,7 @@ test('the stylesheet introduces no colour value of its own', () => {
     'text-decoration: underline color-mix(in srgb, crimson 50%, transparent)',
     'text-emphasis: dot crimson', 'mask-image: linear-gradient(crimson, transparent)',
   ];
-  UNCOVERED.forEach((decl) => {
+  UNCOVERED.flatMap((decl) => [decl, decl.toUpperCase()]).forEach((decl) => {
     assert.deepEqual(colourValues(decl + ';'), [],
       'NOT COVERED in the docblock above, but the value scan now sees it: ' + decl);
     assert.deepEqual(rawColourSpellings('.x { ' + decl + '; }'), [],
