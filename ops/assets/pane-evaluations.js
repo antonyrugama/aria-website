@@ -1,4 +1,4 @@
-/* Aria quality: dataset declarations and imported evidence quarantine.
+/* Aria quality: two working tools, and a drawing of the pane this one is named for.
 
    Dataset validation checks supplied declarations without reading referenced
    files or storing a dataset. Evidence import places bytes behind the server's
@@ -9,11 +9,42 @@
    The selected file exists only in this page's memory until the operator
    submits it. The page displays file metadata before submission and the
    operation's metadata-only resource afterwards; it never renders the raw
-   evidence or a storage URL. */
+   evidence or a storage URL.
+
+   The scoring harness — the thing that would answer "is Aria giving better or
+   worse answers than before" — does not exist and is not being built here.
+   What is on screen below the violet banner is the agreed layout for it,
+   filled with numbers somebody made up. That is a deliberate choice over an
+   empty "coming soon" card: a placeholder tells a reviewer nothing they can
+   disagree with, so it gets approved by default and the argument arrives later
+   in code, whereas the real shape can be argued with now.
+
+   It carries an obvious risk in the other direction — invented figures get
+   screenshotted and quoted — and the whole of the honesty apparatus here is
+   paying for it:
+
+     - INVENTED below is every made-up figure in one list, and nothing outside
+       that list is drawn into the preview.
+     - previewBand() is the only way a band gets into the preview, and it
+       stamps the band. workingBand() is the only way a band is built outside
+       it, and it stamps that. Neither stamp is a colour: each carries a word.
+     - The preview holds no control of any kind. A disabled or faded button is
+       still in the tab order, and a control that changes nothing is worse than
+       no control.
+
+   The preview is marked as a drawing by a dashed hairline and a hatch rather
+   than by fading it: see assets/pane-evaluations-v2.css for why 55% opacity is
+   an AA failure on a palette that is contrast-correct at full strength.
+
+   Drawn on the v2 design system through assets/shell-pane-v2.js. The pane
+   holds no session, filter or navigation logic of its own, and makes no read
+   on boot — both tools act on what the administrator supplies, and the scoring
+   half has no API behind it — so the shell's four preview states describe
+   nothing here and the pane renders straight into its content region. */
 (function (global) {
   'use strict';
 
-  var shell = global.OpsShell;
+  var shell = global.OpsPaneShell;
   var session = global.OpsSession;
   var h = shell.h;
   var icon = shell.icon;
@@ -28,6 +59,76 @@
     signed_urls: 1,
     health_details: 1,
     none: 1
+  };
+
+  /* Every made-up number on this pane, in one place, so that "is this figure
+     stamped" is a question about a list rather than about a reader's memory.
+     scripts/ops-pane-evaluations.test.mjs asserts that each of these reaches
+     the DOM inside the stamped preview, and that none of them reaches it
+     anywhere else. Printing one of these outside the preview fails that test. */
+  var INVENTED = {
+    overall: '0.82',
+    overallDrop: '0.06',
+    previous: [
+      { version: '1.1.2', when: '14 Jul', score: '0.88', move: 'flat' },
+      { version: '1.1.1', when: '30 Jun', score: '0.88', move: '0.02', down: true },
+      { version: '1.1.0', when: '12 Jun', score: '0.90', move: '0.03', up: true },
+      { version: '1.0.6', when: '28 May', score: '0.87', move: '0.01', down: true },
+      { version: '1.0.5', when: '14 May', score: '0.88', move: '0.02', up: true },
+      { version: '1.0.4', when: '2 May', score: '0.86', move: 'first scored' }
+    ],
+    caseCount: '180 cases, weighted by request volume',
+    dimensions: [
+      { name: 'Coaching tone', score: '0.79', pct: 79, tone: 'warn', move: '0.08', down: true },
+      { name: 'Factual accuracy', score: '0.88', pct: 88, tone: 'ok', move: '0.01', down: true },
+      { name: 'Safety', sub: 'Declines injury, medical and weight advice', score: '0.96', pct: 96, tone: 'ok', move: 'flat' },
+      { name: 'Plan structure', score: '0.84', pct: 84, tone: 'ok', move: '0.01', down: true },
+      { name: 'Language quality, Spanish', sub: 'Written first', score: '0.86', pct: 86, tone: 'ok', move: '0.02', down: true },
+      { name: 'Language quality, English', sub: 'Translated', score: '0.83', pct: 83, tone: 'ok', move: '0.03', down: true },
+      { name: 'Language quality, Portuguese', sub: 'Newest', score: '0.74', pct: 74, tone: 'bad', move: '0.09', down: true }
+    ],
+    safetyFloor: 'Safety has a hard floor: below 0.95 nothing ships.',
+    regressions: [
+      { title: '12 week block after a hamstring strain', id: 'tc_0147', kind: 'Training programs', was: '0.91', now: '0.62', move: '0.29' },
+      { title: 'Creatine timing', id: 'tc_0312', kind: 'Chat replies', tone: 'acc', was: '0.88', now: '0.71', move: '0.17' },
+      { title: '62kg sprinter on a double day', id: 'tc_0208', kind: 'Nutrition plans', was: '0.84', now: '0.70', move: '0.14' },
+      { title: 'Session note in Portuguese', id: 'tc_0455', kind: 'Coach note summaries', was: '0.81', now: '0.68', move: '0.13' },
+      { title: 'Slow block start, 40m footage', id: 'tc_0091', kind: 'Sprint video analysis', tone: 'vio', was: '0.86', now: '0.78', move: '0.08' }
+    ],
+    regressionFoot: 'Five of 180 cases regressed. Four ask Aria to tell an athlete no, not yet.',
+    shipped: {
+      version: '1.1.2', note: 'shipped 14 Jul, 73% of sessions', overall: '0.88',
+      figures: [
+        ['Coaching tone', '0.87'], ['Factual accuracy', '0.89'],
+        ['Safety', '0.96'], ['Plan structure', '0.85'], ['Cases below 0.70', '3']
+      ]
+    },
+    candidate: {
+      version: '1.2.0', note: 'candidate, not released', overall: '0.82',
+      figures: [
+        ['Coaching tone', '0.79', true], ['Factual accuracy', '0.88'],
+        ['Safety', '0.96'], ['Plan structure', '0.84'], ['Cases below 0.70', '11', true]
+      ]
+    },
+    heldTitle: '1.2.0 cannot ship until this is sorted',
+    heldLine: 'Nothing here is unsafe. Aria has started answering like a manual, and the release is held until coaching tone is back above 0.85.',
+    heldSince: 'Held since 29 Jul',
+    suite: [
+      { name: 'Chat replies', count: '62', pct: 34.4 },
+      { name: 'Training programs', count: '48', pct: 26.7 },
+      { name: 'Nutrition plans', count: '31', pct: 17.2 },
+      { name: 'Coach note summaries', count: '21', pct: 11.7 },
+      { name: 'Sprint video analysis', count: '18', pct: 10.0 }
+    ],
+    suiteSize: '180 cases',
+    suiteMeta: [
+      ['Graded by', 'Second model, with a rubric'],
+      ['Human check', 'One in ten, by a coach'],
+      ['Last run', '29 Jul, 02:14 UTC'],
+      ['Took', '41 minutes'],
+      ['Model cost', '$3.18']
+    ],
+    suiteFoot: 'Every case is a real request, anonymised.'
   };
 
   function bytesToBase64(bytes) {
@@ -171,14 +272,40 @@
     };
   }
 
+  /* ------------------------------------------------------------ the stamps */
+
+  /* A chip carrying a word, in the slot a band's status lives in. The colour
+     agrees with the word and never replaces it: a reader who cannot tell the
+     violet from the green still reads "Invented figures". */
+  function stamp(className, iconName, text) {
+    return h('span', { className: className }, [
+      icon(iconName),
+      h('span', { text: text })
+    ]);
+  }
+
+  /* The only way a band is built outside the preview. */
+  function workingBand(title, note) {
+    return shell.band(title, note, [stamp('u-tag works', 'check', 'Works now')]);
+  }
+
+  /* The only way a band gets into the preview, so every band in it is stamped
+     by construction rather than by remembering to. Stamped per band rather
+     than once at the top, because a screenshot is usually of one card. */
+  function previewBand(title, note) {
+    return shell.band(title, note, [stamp('u-tag', 'warn', 'Invented figures')]);
+  }
+
+  /* ------------------------------------------------------------- the forms */
+
   function field(id, label, control, hint) {
     control.setAttribute('id', id);
     var children = [
-      h('label', { className: 'field-label', for: id, text: label }),
+      h('label', { className: 'field-label', 'for': id, text: label }),
       control
     ];
     if (hint) children.push(h('p', { className: 'field-hint', text: hint }));
-    return h('div', { className: 'field' }, children);
+    return h('div', { className: 'q-field' }, children);
   }
 
   function option(value, label) {
@@ -220,22 +347,14 @@
     var error = h('div', { id: 'dataset-error', className: 'field-error', role: 'alert' });
     var result = h('div', { className: 'dataset-result', 'aria-live': 'polite' });
     var submit = h('button', {
-      className: 'btn btn-primary btn-lg',
+      className: 'btn btn-primary',
       type: 'submit',
       text: 'Validate declarations'
     });
     var generation = 0;
     var pending = false;
     var form = h('form', { className: 'card dataset-form' }, [
-      h('div', { className: 'card-head' }, [
-        h('div', {}, [
-          h('h2', { className: 'card-title', text: 'Validate dataset declarations' }),
-          h('p', {
-            className: 'card-hint',
-            text: 'Viewer, operator and owner access. No dataset is stored.'
-          })
-        ])
-      ]),
+      shell.cardHead('Validate declarations', 'No dataset is stored'),
       h('div', { className: 'card-body' }, [
         declarationField,
         h('p', {
@@ -311,9 +430,7 @@
           rows.push(metadataRow(entry.datasetId + ' / revision ' + entry.revision, entry.sha256));
         });
         result.appendChild(h('div', { className: 'card' }, [
-          h('div', { className: 'card-head' }, [
-            h('h3', { className: 'card-title', text: 'Dataset declarations valid' })
-          ]),
+          shell.cardHead('Declarations valid'),
           h('dl', { className: 'card-body evidence-meta' }, rows),
           h('div', {
             className: 'card-foot',
@@ -343,17 +460,34 @@
       }
     });
 
-    return h('div', { className: 'stack' }, [form, result]);
+    var section = workingBand('Check a dataset declaration', 'Any signed-in role');
+    section.appendChild(form);
+    section.appendChild(result);
+    return section;
   }
 
-  function render(root) {
+  function evidenceQuarantineSection() {
+    var section = workingBand('Put evidence into quarantine', 'Operator and owner, 5 MiB and 90 days at most');
+
+    section.appendChild(h('div', { className: 'callout' }, [
+      icon('warn'),
+      h('div', {}, [
+        h('strong', { text: 'Quarantine is not permission to use evidence.' }),
+        h('p', {
+          text: 'Every import stays blocked pending qualified review. Export grants, dashboard roles, redaction and storage do not create evaluation or training consent.'
+        })
+      ])
+    ]));
+
     if (!session.hasRole(['owner', 'operator'])) {
-      root.appendChild(h('div', { className: 'stack' }, [
-        datasetValidationSection(),
-        h('p', { className: 'field-hint', text: 'Evidence import requires operator or owner access.' })
+      var denied = shell.card();
+      denied.appendChild(shell.stateBlock('lock', 'Evidence import needs operator access', [
+        'Your role can validate declarations above, which stores nothing. Putting bytes into quarantine is an operator and owner action.'
       ]));
-      return;
+      section.appendChild(denied);
+      return section;
     }
+
     var fileInput = input('file');
     fileInput.setAttribute('accept', '.json,.txt,image/jpeg,image/png,audio/mpeg,audio/wav,video/mp4,video/quicktime');
     var source = select([
@@ -404,7 +538,7 @@
     var error = h('div', { className: 'field-error', role: 'alert' });
     var status = h('div', { className: 'evidence-result', 'aria-live': 'polite' });
     var submit = h('button', {
-      className: 'btn btn-primary btn-lg',
+      className: 'btn btn-primary',
       type: 'submit',
       text: 'Quarantine evidence'
     });
@@ -437,20 +571,12 @@
     updateSourceFields();
 
     var form = h('form', { className: 'card evidence-form' }, [
-      h('div', { className: 'card-head' }, [
-        h('div', {}, [
-          h('h2', { className: 'card-title', text: 'Import into private quarantine' }),
-          h('p', {
-            className: 'card-hint',
-            text: 'Operator and owner only · 5 MiB maximum · 90 days maximum'
-          })
-        ])
-      ]),
+      shell.cardHead('Import a file', 'Bytes leave this page only on submit'),
       h('div', { className: 'card-body' }, [
         field('evidence-file', 'Evidence file', fileInput,
-          'Bytes are sent only when submitted. Text and JSON are inspected and redacted server-side; media requires manual review.'),
+          'Text and JSON are inspected and redacted server-side; media requires manual review.'),
         selected,
-        h('div', { className: 'grid g2 evidence-form-grid' }, [
+        h('div', { className: 'q-grid' }, [
           field('evidence-source', 'Source', source),
           field('evidence-profile', 'Content profile', profile),
           field('evidence-type', 'Media type', mediaType),
@@ -461,7 +587,7 @@
           field('evidence-key', 'Idempotency key', idempotency,
             'Optional. Blank generates a unique key; reuse a key only for an identical request.')
         ]),
-        h('div', { className: 'grid g2 evidence-form-grid' }, [
+        h('div', { className: 'q-grid' }, [
           field('evidence-necessary', 'Necessary privacy categories', necessary,
             'Comma-separated contract categories, or none. Sensitive categories are not accepted as necessary.'),
           field('evidence-removed', 'Categories removed before import', removed,
@@ -514,14 +640,13 @@
         }
         var resource = response.resource.value;
         status.appendChild(h('div', { className: 'card' }, [
-          h('div', { className: 'card-head' }, [
-            h('span', { className: 'badge badge-warn', text: 'Quarantined · review required' })
+          shell.cardHead('Quarantined, review required', null, [
+            stamp('u-tag works', 'lock', 'No access granted')
           ]),
           h('dl', { className: 'card-body evidence-meta' }, [
             metadataRow('Artifact', String(resource.artifactId || response.resource.id)),
             metadataRow('State', String(resource.state || 'quarantined')),
-            metadataRow('Revision', String(resource.revision || response.resource.revision)),
-            metadataRow('Access', 'No content read or export grant')
+            metadataRow('Revision', String(resource.revision || response.resource.revision))
           ]),
           h('div', {
             className: 'card-foot',
@@ -542,19 +667,237 @@
       });
     });
 
+    section.appendChild(form);
+    section.appendChild(status);
+    return section;
+  }
+
+  /* ---------------------------------------------------- the deferred half */
+
+  function soonBanner() {
+    var card = shell.card('accent soon');
+    card.appendChild(h('div', { className: 'card-body row' }, [
+      h('div', { className: 'u-soon-icon' }, [icon('spark')]),
+      h('div', { className: 'u-soon-body' }, [
+        h('h2', { className: 'u-soon-title', text: 'The scoring harness is not built yet' }),
+        h('p', {
+          className: 'u-soon-line',
+          text: 'Everything below this point is the agreed layout for it, filled with figures somebody made up. Nothing under it reads an API, and no figure in it is a measurement.'
+        }),
+        h('div', { className: 'row wrap' }, [
+          stamp('u-tag', 'x', 'No harness'),
+          stamp('u-tag', 'x', 'No stored scores'),
+          stamp('u-tag', 'x', 'No alerting'),
+          stamp('u-tag works', 'check', 'Design agreed 12 Jul 2026')
+        ]),
+        h('div', { className: 'row wrap' }, [
+          shell.link(shell.paneHref('history') || 'run-history.html', 'Read real runs instead', 'btn btn-primary'),
+          shell.link(shell.paneHref('alerts') || 'alerts.html', 'Problems', 'btn')
+        ])
+      ])
+    ]));
+    return card;
+  }
+
+  /* A bar whose value is printed beside it is decoration, so it is not
+     announced a second time. Width goes through CSSOM rather than a style
+     attribute: the page's Content-Security-Policy carries no 'unsafe-inline',
+     and CSSOM is not what that gates. */
+  function meter(pct, tone) {
+    var bar = h('div', { className: 'meter' + (tone ? ' ' + tone : ''), 'aria-hidden': 'true' });
+    var fill = h('i');
+    fill.style.width = pct + '%';
+    bar.appendChild(fill);
+    return bar;
+  }
+
+  function movePill(entry) {
+    if (!entry.down && !entry.up) return h('span', { className: 'pill', text: entry.move });
+    return h('span', { className: 'pill ' + (entry.down ? 'down' : 'up') }, [
+      icon(entry.down ? 'down' : 'up'),
+      h('span', { text: entry.move })
+    ]);
+  }
+
+  function scoresBand() {
+    var section = previewBand('How good are the answers', 'Scored after every release candidate');
+
+    var headline = shell.card('kpi');
+    headline.appendChild(h('div', { className: 'card-body' }, [
+      h('div', { className: 'kpi-label', text: 'Overall coaching quality, 1.2.0 candidate' }),
+      h('div', { className: 'kpi-val', text: INVENTED.overall }),
+      h('div', { className: 'kpi-meta' }, [
+        movePill({ move: INVENTED.overallDrop, down: true }),
+        h('span', { text: 'on 1.1.2' })
+      ])
+    ]));
+    var history = h('div', { className: 'card-body u-list' }, [
+      h('div', { className: 'u-list-head' }, [
+        h('span', { text: 'Every version before it' }),
+        h('span', { text: 'Change' })
+      ])
+    ]);
+    INVENTED.previous.forEach(function (entry) {
+      history.appendChild(h('div', { className: 'u-list-row' }, [
+        h('span', {}, [
+          h('span', { text: entry.version + ' ' }),
+          h('span', { className: 'muted', text: entry.when })
+        ]),
+        h('span', { className: 'u-list-end' }, [
+          h('b', { className: 'num dim', text: entry.score }),
+          movePill(entry)
+        ])
+      ]));
+    });
+    headline.appendChild(history);
+    headline.appendChild(h('div', { className: 'kpi-foot' }, [
+      h('span', { text: INVENTED.caseCount })
+    ]));
+
+    var dimensions = shell.card();
+    dimensions.appendChild(shell.cardHead('Scores by dimension', 'Against 1.1.2'));
+    var body = h('div', { className: 'card-body' });
+    INVENTED.dimensions.forEach(function (entry) {
+      var name = h('div', {}, [h('div', { className: 'u-score-name', text: entry.name })]);
+      if (entry.sub) name.appendChild(h('div', { className: 'u-score-sub', text: entry.sub }));
+      body.appendChild(h('div', { className: 'u-score' }, [
+        name,
+        meter(entry.pct, entry.tone),
+        h('div', { className: 'u-score-val num', text: entry.score }),
+        h('div', { className: 'u-score-chg' }, [movePill(entry)])
+      ]));
+    });
+    dimensions.appendChild(body);
+    dimensions.appendChild(h('div', { className: 'card-foot' }, [
+      icon('warn'),
+      h('span', { text: INVENTED.safetyFloor })
+    ]));
+
+    section.appendChild(h('div', { className: 'grid g-side' }, [headline, dimensions]));
+    return section;
+  }
+
+  function regressionsBand() {
+    var section = previewBand('What regressed', 'Dropped more than 0.05 since 1.1.2');
+    var body = h('tbody');
+    INVENTED.regressions.forEach(function (entry) {
+      body.appendChild(h('tr', {}, [
+        h('td', {}, [
+          h('div', { className: 't-main', text: entry.title }),
+          h('div', { className: 't-sub' }, [h('span', { className: 'code', text: entry.id })])
+        ]),
+        h('td', {}, [h('span', { className: 'pill' + (entry.tone ? ' ' + entry.tone : ''), text: entry.kind })]),
+        h('td', { className: 'r num', text: entry.was }),
+        h('td', { className: 'r num', text: entry.now }),
+        h('td', { className: 'r' }, [movePill({ move: entry.move, down: true })])
+      ]));
+    });
+    var card = shell.card();
+    card.appendChild(h('div', { className: 'tbl-wrap' }, [
+      h('table', { className: 'tbl' }, [
+        h('thead', {}, [h('tr', {}, [
+          h('th', { text: 'Test case' }),
+          h('th', { text: 'Request type' }),
+          h('th', { className: 'r', text: 'Was' }),
+          h('th', { className: 'r', text: 'Now' }),
+          h('th', { className: 'r', text: 'Change' })
+        ])]),
+        body
+      ])
+    ]));
+    card.appendChild(h('div', { className: 'card-foot' }, [
+      icon('info'),
+      h('span', { text: INVENTED.regressionFoot })
+    ]));
+    section.appendChild(card);
+    return section;
+  }
+
+  function versionSide(spec, tone) {
+    var side = h('div', { className: 'u-vs-side' }, [
+      h('div', { className: 'u-vs-app' }, [
+        h('span', { className: 'dot ' + tone }),
+        h('span', { text: spec.version }),
+        h('small', { text: spec.note })
+      ]),
+      h('div', { className: 'u-vs-big num' + (tone === 'bad' ? ' u-rose' : ''), text: spec.overall }),
+      h('div', { className: 'u-vs-cap', text: 'Overall' })
+    ]);
+    spec.figures.forEach(function (figure) {
+      side.appendChild(h('div', { className: 'u-fig' }, [
+        h('span', { className: 'u-fig-k', text: figure[0] }),
+        h('span', { className: 'u-fig-v num' + (figure[2] ? ' u-rose' : ''), text: figure[1] })
+      ]));
+    });
+    return side;
+  }
+
+  function shipBand() {
+    var section = previewBand('Can 1.2.0 ship');
+
+    var compare = shell.card();
+    compare.appendChild(shell.cardHead('1.1.2 against 1.2.0', 'Same cases, same grader'));
+    compare.appendChild(h('div', { className: 'card-body' }, [
+      h('div', { className: 'u-vs' }, [
+        versionSide(INVENTED.shipped, 'ok'),
+        h('div', { className: 'u-vs-rule' }),
+        versionSide(INVENTED.candidate, 'bad')
+      ])
+    ]));
+    compare.appendChild(h('div', { className: 'card-foot u-held' }, [
+      h('div', { className: 'row' }, [
+        icon('x'),
+        h('strong', { text: INVENTED.heldTitle })
+      ]),
+      h('p', { className: 'u-held-line', text: INVENTED.heldLine }),
+      h('div', { className: 'row wrap' }, [
+        h('span', { className: 'pill down' }, [icon('lock'), h('span', { text: 'Release held' })]),
+        h('span', { className: 'pill ghost', text: INVENTED.heldSince })
+      ])
+    ]));
+
+    var suite = shell.card();
+    suite.appendChild(shell.cardHead('The test suite', INVENTED.suiteSize));
+    var split = h('div', { className: 'card-body u-split' });
+    INVENTED.suite.forEach(function (entry) {
+      split.appendChild(h('div', {}, [
+        h('div', { className: 'u-split-row' }, [
+          h('span', { text: entry.name }),
+          h('span', { className: 'num muted', text: entry.count })
+        ]),
+        meter(entry.pct)
+      ]));
+    });
+    suite.appendChild(split);
+    var meta = h('div', { className: 'card-body u-meta' });
+    INVENTED.suiteMeta.forEach(function (row) {
+      meta.appendChild(h('div', { className: 'u-meta-row' }, [
+        h('span', { className: 'muted', text: row[0] }),
+        h('span', { className: 'dim', text: row[1] })
+      ]));
+    });
+    suite.appendChild(meta);
+    suite.appendChild(h('div', { className: 'card-foot' }, [
+      h('span', { className: 'dot vio' }),
+      h('span', { text: INVENTED.suiteFoot })
+    ]));
+
+    section.appendChild(h('div', { className: 'grid g-main' }, [compare, suite]));
+    return section;
+  }
+
+  /* Nothing in here is focusable, so it is a drawing a keyboard runs past
+     rather than a row of dead controls it has to tab through. */
+  function scoringPreview() {
+    return h('div', { className: 'preview' }, [scoresBand(), regressionsBand(), shipBand()]);
+  }
+
+  function render(root) {
     root.appendChild(h('div', { className: 'stack' }, [
       datasetValidationSection(),
-      h('div', { className: 'callout callout-warn' }, [
-        icon('warn'),
-        h('div', {}, [
-          h('strong', { text: 'Quarantine is not permission to use evidence.' }),
-          h('p', {
-            text: 'Every import remains blocked pending qualified review. Export grants, dashboard roles, redaction, and storage do not create evaluation or training consent.'
-          })
-        ])
-      ]),
-      form,
-      status
+      evidenceQuarantineSection(),
+      soonBanner(),
+      scoringPreview()
     ]));
   }
 

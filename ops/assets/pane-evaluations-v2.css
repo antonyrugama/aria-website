@@ -1,0 +1,249 @@
+/* Aria quality, on the v2 pane bootstrap.
+
+   The pane holds two things that must not be confused for one another. Two
+   tools work today — dataset declaration validation and evidence quarantine —
+   and the scoring harness the pane is named for does not exist. Everything
+   below the violet banner is a drawing of the harness's agreed layout filled
+   with numbers somebody made up.
+
+   So the rules here are mostly about keeping that line visible:
+
+     - Every figure in the drawing carries the word "Invented" somewhere above
+       it, on its own band, because a screenshot of one card has to arrive with
+       the warning attached to it.
+     - The drawing is marked as a drawing by a dashed hairline and a hatch, not
+       by fading it. The mock faded the preview to 55%, which is the obvious
+       move and an AA failure: the v2 palette is contrast-correct at full
+       strength (monorepo Stadiora/Aria#10042, #10293) and multiplying every ink
+       by .55 walks it straight out of that. Nothing here changes an ink.
+     - The drawing contains no control at all. A faded button is still in the
+       tab order, and a control that changes nothing is worse than no control.
+
+   Everything the pane draws otherwise is aria.css's: .card, .band, .pill,
+   .meter, .tbl, .kpi. Only the shapes aria.css has no name for are here.
+
+   Two names, .q-field and its children, exist because aria.css already has a
+   .field — the search box in the top bar — and a form field is not that. */
+
+/* ------------------------------------------------------------------ forms
+   The two working tools are forms, and aria.css is a reading system: it has
+   panels, figures and tables, and no text input a person types a paragraph
+   into. This is that gap, scoped to this pane. */
+.q-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field-label { font-size: 12px; font-weight: 540; color: var(--ink-2); }
+
+.field-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 13px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.field-input:hover { box-shadow: inset 0 0 0 1px var(--line-2); }
+.field-input:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--cyan), 0 0 0 3px color-mix(in srgb, var(--cyan) 22%, transparent);
+}
+.field-input:disabled { color: var(--ink-3); background: var(--surface); }
+textarea.field-input { resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+select.field-input { appearance: none; padding-right: 26px; }
+
+.field-hint { font-size: 11.5px; line-height: 1.55; color: var(--ink-3); max-width: 76ch; }
+
+/* Empty until something is wrong, so it must not reserve a box while it is
+   empty and must not be quiet when it is not. */
+.field-error:not(:empty) {
+  margin-top: 4px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--rose-ink);
+  background: color-mix(in srgb, var(--rose) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose) 26%, transparent);
+}
+.dataset-issues { margin: 6px 0 0 16px; display: flex; flex-direction: column; gap: 3px; }
+.dataset-issues li { font-family: var(--mono); font-size: 11.5px; }
+
+.q-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+
+.evidence-authority {
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+}
+.evidence-authority legend { font-size: 12px; font-weight: 580; padding: 0 6px; }
+.evidence-actions { justify-content: flex-end; }
+
+.evidence-meta { display: flex; flex-direction: column; gap: 9px; }
+.evidence-meta-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.evidence-meta-row dt { font-size: 12px; color: var(--ink-3); min-width: 88px; }
+.evidence-meta-row dd {
+  font-family: var(--mono); font-size: 12px;
+  overflow-wrap: anywhere; min-width: 0; flex: 1;
+}
+
+/* ---------------------------------------------------------------- callout
+   The consent boundary. It is not a status, so it does not take a status
+   colour; it is the one sentence on the pane a person can get wrong in a way
+   that matters, so it does not look like a hint either. */
+.callout {
+  display: flex; gap: 11px; align-items: flex-start;
+  padding: 13px 15px;
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 26%, transparent);
+}
+.callout svg { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--amber-ink); }
+.callout strong { font-size: 13px; font-weight: 580; display: block; }
+.callout p { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); margin-top: 4px; max-width: 78ch; }
+
+/* ----------------------------------------------------------- not-built yet
+   Sized like a hero rather than a note, because a reader who skims past it
+   reads invented figures as real. */
+.card.soon { --acc: var(--violet); }
+.card.soon > .card-body {
+  align-items: flex-start;
+  gap: 18px;
+  padding: 20px 22px;
+}
+
+.u-soon-icon {
+  width: 54px; height: 54px; flex: none;
+  border-radius: 17px;
+  display: grid; place-items: center;
+  color: var(--violet-ink);
+  background: color-mix(in srgb, var(--violet) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 28%, transparent);
+}
+.u-soon-icon svg { width: 25px; height: 25px; }
+
+.u-soon-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.u-soon-title { font-size: 18px; font-weight: 620; letter-spacing: -.018em; }
+.u-soon-line { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); max-width: 80ch; }
+
+/* Repeated over every band of the drawing so a screenshot of any one card
+   still carries the warning with it. The word does the work; the violet only
+   agrees with it. */
+.u-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border-radius: 6px;
+  font-size: 9.5px; font-weight: 620; letter-spacing: .1em; text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--violet-ink);
+  background: color-mix(in srgb, var(--violet) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 24%, transparent);
+}
+.u-tag svg { width: 11px; height: 11px; }
+
+/* A band whose tool really runs gets the same chip shape in the same slot, so
+   the two are read against each other rather than one being read alone. */
+.u-tag.works {
+  color: var(--emerald-ink);
+  background: color-mix(in srgb, var(--emerald) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--emerald) 26%, transparent);
+}
+
+/* ------------------------------------------------------------ the drawing
+   Not a live panel: no lit top edge, a dashed hairline, and a hatch behind
+   the content rather than over it so nothing above it loses contrast. The
+   stripe is ink at 4%, lighter than .state-icon's own 6% fill in aria.css. */
+.preview { display: flex; flex-direction: column; gap: 26px; }
+.preview .card {
+  background: none;
+  background-color: color-mix(in srgb, var(--bg) 45%, transparent);
+  box-shadow: none;
+  border: 1px dashed var(--line-2);
+}
+.preview .card::before { display: none; }
+.preview .card > .card-body,
+.preview .card > .tbl-wrap {
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--ink) 4%, transparent) 0 6px,
+    transparent 6px 14px);
+}
+.preview .card > .card-body:last-child,
+.preview .card > .tbl-wrap:last-child { border-radius: 0 0 var(--r-lg) var(--r-lg); }
+.preview .tbl tbody tr:hover { background: none; }
+
+/* A table has a minimum width its columns cannot go under, so on a phone it
+   scrolls inside its own panel rather than taking the document with it. */
+.tbl-wrap { overflow-x: auto; }
+.tbl-wrap .tbl { min-width: 560px; }
+
+/* ------------------------------------------------- scores by dimension
+   Name, bar, score, movement, in that order, so the eye runs down the bars
+   and stops at the short one. */
+.u-score {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 168px 52px 84px;
+  gap: 16px;
+  align-items: center;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.u-score:first-child { border-top: 0; padding-top: 2px; }
+.u-score-name { font-size: 12.5px; font-weight: 520; }
+.u-score-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.u-score-val { font-family: var(--mono); font-size: 14.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.u-score-chg { display: flex; justify-content: flex-end; }
+
+/* -------------------------------------------------------- side by side */
+.u-vs { display: grid; grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }
+.u-vs-rule { background: var(--line); }
+.u-vs-side { min-width: 0; padding: 0 18px; }
+.u-vs-side:first-child { padding-left: 0; }
+.u-vs-side:last-child { padding-right: 0; }
+.u-vs-app { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 540; flex-wrap: wrap; }
+.u-vs-app small { font-size: 11.5px; font-weight: 440; color: var(--ink-3); }
+.u-vs-big { font-family: var(--mono); font-size: 30px; letter-spacing: -.03em; margin-top: 8px; }
+.u-vs-cap { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.u-fig {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 5px 0; border-top: 1px solid var(--line);
+}
+.u-fig:first-of-type { margin-top: 12px; }
+.u-fig-k { font-size: 12px; color: var(--ink-3); }
+.u-fig-v { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; letter-spacing: -.015em; }
+
+.u-rose { color: var(--rose-ink); }
+
+.u-held { display: flex; flex-direction: column; gap: 9px; }
+.u-held-line { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); max-width: 70ch; }
+
+.u-split { display: flex; flex-direction: column; gap: 11px; }
+.u-split-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; }
+
+.u-meta { display: flex; flex-direction: column; gap: 5px; }
+.u-meta-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; }
+
+.u-list { display: flex; flex-direction: column; }
+.u-list-head {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 11.5px; color: var(--ink-3);
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.u-list-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; padding: 5px 0; }
+.u-list-end { display: flex; align-items: center; gap: 8px; }
+
+/* -------------------------------------------------------------- narrow */
+@media (max-width: 1280px) {
+  .u-score { grid-template-columns: minmax(0, 1fr) 110px 48px 78px; gap: 12px; }
+}
+
+@media (max-width: 900px) {
+  .q-grid { grid-template-columns: minmax(0, 1fr); }
+  .u-score { grid-template-columns: minmax(0, 1fr) 52px 78px; row-gap: 6px; }
+  .u-score .meter { grid-column: 1 / -1; }
+  .u-vs { grid-template-columns: minmax(0, 1fr); }
+  .u-vs-rule { height: 1px; width: auto; margin: 6px 0; }
+  .u-vs-side { padding: 0; }
+  .u-soon-title { font-size: 16px; }
+}
