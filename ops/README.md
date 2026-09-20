@@ -847,8 +847,16 @@ failed sign in.
 ### Overview on v2: where the pane departs from the mock
 
 `docs/mocks/ops-dashboard-v2/index.html` in the Aria monorepo is the approved design. The pane
-follows it except for these, each of which is a thing the mock draws that nothing behind the
-pane can answer, or a second caption for a fact already on screen.
+follows its structure, its drill-down paths and the rules its README calls normative.
+
+The list below is **not a complete diff against the mock** and does not claim to be. It names
+the **deliberate** departures of two kinds: a thing the mock draws that nothing behind the pane
+can answer, and a second caption for a fact already on screen. Wording, ordering within a card
+and exact copy differ in more places than are listed here, because the mock is a static page
+with hand-written sample text and the pane writes its words from the answer — a figure the mock
+spells one way is spelled by `fmt` here, and a sentence the mock hard-codes is either derived or
+dropped under the one-fact-per-slot rule. Anyone checking this pane against the mock should read
+the list as "these are on purpose and here is why", not as "everything else is identical".
 
 1. **No App, Range or Environment control.** The registry gives Overview none, and the filter bar
    states the absence where they would have been. `/api/ops/summary` takes no parameter and
