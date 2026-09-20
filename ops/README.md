@@ -335,11 +335,15 @@ deleting any of them takes the tests with it. `ops.css` and `icons.js` are not p
 
 And the files this README still talks about which are no longer in the tree. The guard checks
 each one is **absent**, so a file that comes back leaves the prose around it red rather than
-quietly wrong again.
+quietly wrong again, and it re-derives who still mentions the name. All 257 lines of
+`operate.css` went in [aria-website#74](https://github.com/antonyrugama/aria-website/pull/74),
+merged as `eae7de31041ffc5e4c773ff662b6821ad09ac5ec`, along with the light-theme badge block that
+closed `ops.css`; the scripts still naming it are asserting a v2 page does **not** link it, which
+is a live assertion about a file that is gone and stays true because it is gone.
 
 ```claims id=deleted-assets
-operate.css = all 257 lines, deleted in aria-website#74 (eae7de31041ffc5e4c773ff662b6821ad09ac5ec)
-settings.css = deleted when Settings moved to the v2 shell
+ops/assets/operate.css = gone; loaded by no page; named in ops-alerts-v2.test.mjs, ops-analytics-v2.test.mjs, ops-dead-css.test.mjs, ops-jobs-live-v2.test.mjs, ops-spend-v2.test.mjs, ops-users-v2.test.mjs
+ops/assets/settings.css = gone; loaded by no page; named by no script
 ```
 
 ### The v2 layer

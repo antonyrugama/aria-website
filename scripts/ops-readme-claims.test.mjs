@@ -398,10 +398,16 @@ DERIVED['deleted-assets'] = () => {
     .map((l) => l.trim())
     .map((line) => {
       const file = line.split('=')[0].trim();
-      assert.ok(/^[A-Za-z0-9._/-]+$/.test(file), `deleted-assets: "${line}" is not a path`);
+      assert.ok(/^[A-Za-z0-9._/-]+\/[A-Za-z0-9._-]+$/.test(file),
+        `deleted-assets: "${line}" does not start with a repository path`);
       assert.ok(!fs.existsSync(path.join(ROOT, file)),
         `${README_PATH} says ${file} is deleted, and it is in the tree`);
-      return line;
+      const base = path.basename(file);
+      const pages = PAGES.filter((page) => loadedAssets(page).includes(base));
+      const spelling = new RegExp(`assets/${base.replace(/\./g, '\\.')}`);
+      const readers = SCRIPTS.filter((s) => spelling.test(read(path.join('scripts', s))));
+      return `${file} = gone; ${pages.length ? `still loaded by ${pages.join(', ')}` : 'loaded by no page'}`
+        + `; ${readers.length ? `named in ${readers.join(', ')}` : 'named by no script'}`;
     });
 };
 
