@@ -1657,6 +1657,7 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
+| `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
 | `node scripts/check-ops-narrow-overflow.mjs` | The Problems pane at 375px **and 360px** in both themes: that nothing is past the right edge, and that the longest sentence the pane can put in a rule row was actually laid out — the check would otherwise pass on a page that never drew the row it exists for. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
 
@@ -1671,9 +1672,326 @@ coverage: deleting `stroke` from `icon()` left sixty icons a blank box with the 
 What the icon sweep does **not** answer is whether an ink that resolves to a real colour can be
 seen against what is painted behind it. That needs the effective background — layered gradients
 and `color-mix` alpha here, not any one ancestor's `background-color` — and it belongs to a
-contrast oracle rather than to a paint-presence check. It reads one geometry property,
-`stroke-width` on the stroke channel, because that is the channel icons paint through; an icon
-hidden by `opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+contrast oracle rather than to a paint-presence check; `check-ops-contrast.mjs` is that oracle,
+and it measures text, not icons. The icon sweep reads one geometry property, `stroke-width` on
+the stroke channel, because that is the channel icons paint through; an icon hidden by
+`opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+
+### Measuring contrast where the colour lands
+
+Pinning token values catches a palette that was derived instead of ported, and a token that
+quietly changed value. It cannot catch a **usage-site swap**: a rule that asks for the *wrong*
+token, where both tokens exist and both hold the value the design says. Swap `.pill.acc`'s
+`color: var(--cyan-ink)` for `color: var(--cyan)` and every token still resolves, every pinned
+value still matches, both suites stay green, and the pill measures 3.03:1 in light.
+
+So `check-ops-contrast.mjs` measures pixels instead of parsing CSS. Backdrops on this page are
+layered gradients under `color-mix` surfaces, and no ancestor's `background-color` is the colour
+a reader sees, so the check hides every glyph with a constructable stylesheet — `<style>` is
+blocked by the page's `style-src 'self'`, CSSOM is not — screenshots the full page, and samples
+the **topmost paint at each run of text** with the glyphs lifted. Runs, not element boxes: a row
+that contains a chip is 12% chip, and the row's own words sit on none of it. That paint is the
+surface *behind* the glyphs only while nothing paints *above* them — lifting the text cannot tell
+the two apart, and the error runs the flattering way, so over-paint is in NOT COVERED below.
+
+Four things decide the answer, and each is chosen for the **role** the colour plays — an ink,
+not a fill. Three of the four end in a refusal rather than a number, because a refusal fails
+the run and a wrong number does not:
+
+- **The ink decides against its worst surface**, with no minimum share. The hatch behind
+  `.budget .fore` is 22% amber every 6px, so a letter crossing a stripe is read at the stripe's
+  4.49:1 and not at the 6.01:1 of the gap. Put a 5% floor on surfaces and a real 1.63:1 site
+  sinks below it unseen. Judge the widest surface instead and the site the page carries today
+  stops failing altogether — what catches *that* is the freeze list below, which requires every
+  frozen site to still reproduce and reports 0 matches where it needs 1. On a page with nothing
+  frozen, judging the widest surface would be silent; the freeze entry is load-bearing here.
+- **An ink it cannot resolve is refused, never assumed.** Assuming opaque is the flattering
+  direction for an ink: a faded ink read as solid clears AA. `color(srgb …)` — how Chromium
+  serialises `color-mix()` — is read as the 0..1 floats CSS Color 4 says it is, because the
+  parser this one was ported from understood only `rgb()` and silently dropped 40 sites with 10
+  real failures among them (monorepo #10255). Anything it cannot read fails the run.
+- **The fade does not have to be on the text.** `opacity` does not inherit, so a faded ancestor
+  leaves the text element reading `opacity: 1` while its glyphs composite at the ancestor's
+  alpha. The ink's alpha is the product of every `opacity` in the chain, plus `fill-opacity` on
+  SVG. That product is the true glyph alpha only while nothing **inside** a fade paints a
+  surface under the text — group opacity composites a subtree as a unit, so the glyphs blend
+  with that surface first and the pair is faded together. Where something does, the site is
+  **refused by name** rather than guessed at; the painter does not have to be the faded element
+  and does not have to be faded itself.
+- **The ink is `color` — or `-webkit-text-fill-color`, which beats it for the glyph interior —
+  times that alpha. Four named properties that defeat that reading are refused.** `filter`,
+  `mix-blend-mode`, `-webkit-text-stroke` and, on SVG text, `stroke` each decide the pixel a
+  glyph paints while the computed colour still reads exactly as the stylesheet asked for, which
+  is the flattering direction for an ink: `filter: opacity(.06)` and `opacity: .06` paint
+  identically and only the second is in the model; `mix-blend-mode: screen` erases black text
+  that still computes to `rgb(0, 0, 0)`; SVG paints `fill` then `stroke`, so a 2px stroke in
+  the surface colour erases a 10px label whose `fill` is unchanged. Set any of the four and the
+  site is **refused by name** and the run fails. Read on the element and its ancestors — and,
+  for a `::placeholder` site, on the pseudo-element too, together with its own `opacity`, which
+  is the one place an `opacity` sits outside the chain above.
+
+  That list is **what this tool will not stand behind, not what CSS can do to a glyph, and it
+  does not close.** `mask-image` and `clip-path` are two more ways to spell the same 6% fade,
+  both measured passing at the same anchor where `opacity` and `filter` are both caught; they
+  are in NOT COVERED below rather than in the list, because enumerating CSS is the losing half
+  of this trade. `backdrop-filter` is a deliberate omission of a different kind — it alters the
+  backdrop, which the screenshot samples correctly — and that reasoning is specific to
+  `backdrop-filter`, not a general property of the screenshot: `text-shadow` is painted on the
+  real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four today (its
+  one `filter` is a `:hover` the sweep never enters), so the refusals cost no coverage.
+  `::first-line` and `::first-letter` are refused on the same terms — see the pseudo-element
+  paragraph below — and likewise match nothing on the shell today.
+
+The tool proves itself before it judges anything: `node scripts/check-ops-contrast.mjs
+--self-test` runs seven parts against synthetic fixtures — the formula against published WebAIM
+values, the decode/plate/sample pipeline against declared swatch colours, plate integrity pixel
+by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
+read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), and the three boundary
+censuses counted on a page that carries six spellings of a nested browsing context, an open
+author shadow root, a closed one, and seven user-agent roots carrying text of which exactly one
+paints words no source reaches — that one named in full, so a census that catches the wrong host
+fails too. If any part fails, nothing is measured
+and the run exits non-zero.
+
+**Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
+geometry against its card — is outside this check; 1.4.11 is a different requirement and this
+tool measures text only. Text over a picture is likewise outside it: the plate hides `img`,
+`canvas` and text-free `<svg>` outright, so a word sitting on an icon or an image would be
+sampled against the surface *behind* it rather than against the picture, and `video` is not
+hidden at all. The shell has no `img`, `canvas` or `video`, and its text-free SVGs paint nothing
+under any text band (measured in round 4 of this PR's independent review: a plate that keeps them
+visible differs from the shipped plate by **0 pixels** across the four text bands their boxes
+contain), so this bites nowhere today. A skip link parked off-canvas is skipped, so its focused appearance is
+unmeasured. Only `shell-v2.html` is walked, at one viewport, in the four states `applyState`
+exposes.
+
+**Text painted by `::before`, `::after` or `::marker` is not measured at all.** A
+pseudo-element has no text node to range over, so there is nothing to sample the surface behind.
+Rather than measure the originating element's box and call that an answer, the run **fails** if
+any of the three paints text — for `::before`/`::after` a quoted string, `counter()`,
+`counters()`, `attr()` or a quote keyword; for `::marker`, `display: list-item` with a
+`list-style-type` other than `none`, because a marker's `content` computes to `normal` whatever
+the page asks for and the words come from the type. `content: ''`, the decorative form this page
+uses everywhere, is not text and is not flagged. What is claimed is that **these three cannot
+pass unmeasured** — nothing more.
+
+**Three other pseudo-elements are handled by two other mechanisms, and the list is still open.**
+`::placeholder` is collected and **read** from its own computed style, because it carries its own
+colour — and a `::placeholder` whose own style carries `opacity`, `filter`, `mix-blend-mode` or
+`-webkit-text-stroke` is **refused by name**, because all four apply to the pseudo-element while
+leaving the originating element reporting the defaults, so neither the alpha chain nor the
+element-level refusal can see them. (`PLATE_CSS` also lifts it explicitly. That rule is **proven
+on the self-test fixture only**: deleting it leaves the real page's plate band byte-identical,
+not because the shell sets no placeholder colour — it sets one at `.field input::placeholder` —
+but because the `*` rule's inherited transparent `-webkit-text-fill-color` beats that colour and
+already lifts those glyphs. A page spelling its placeholder ink as `-webkit-text-fill-color` on
+the pseudo-element would **not** be lifted by that rule; that case is not covered. `PLATE_HOLDS`
+cannot speak for it either, because a placeholder has no text node to iterate.) `::first-line` and `::first-letter` repaint the element's **own** text — no new text node,
+no new box, no change to the site count, and the plate lifts them correctly — so nothing in the
+census or the plate check can see them; they are **refused by name** instead, detected by
+comparing the pseudo-element's resolved ink against the element's own on the element and on every
+ancestor, since first-line styles propagate into inline descendants. (`-webkit-text-fill-color`
+does not apply through either one in Chromium, measured rather than assumed, so `color` is the
+whole channel.) That is six pseudo-elements by three mechanisms — and **`::selection`,
+`::target-text` and the highlight pseudos repaint text too and are neither censused, read nor
+refused.** Six handled is not "all of them"; round 5 of this PR's review found `::first-line` by
+reading past exactly this kind of sentence.
+
+**Text painted through `filter`, `mix-blend-mode`, `-webkit-text-stroke` or an SVG `stroke` is
+not measured** — it is refused, which fails the run, so it can neither pass unmeasured nor be
+reported as a number the tool cannot stand behind. The same goes for a surface painted inside a
+fade. These are refusals, not coverage.
+
+**`text-shadow` is deleted on the plate, so the surface immediately around a glyph is not the
+surface measured.** A shadow paints from the glyph outline even when the text itself is
+transparent, so leaving it in would put glyph geometry into the very sample the plate exists to
+keep clean — clearing it is right for the plate and wrong for the reader, who sees the halo. A
+five-deep `text-shadow` on `.tbl th` changes 259 of 4608 pixels in the sampled band on the real
+page and **0** on the plate, and the run stays green. No claim is made about which direction that
+error runs: WCAG 2.x does not model a halo and this tool does not invent one.
+
+**Paint that lands ON TOP of the glyphs is sampled as though it were behind them, and the error
+runs in the flattering direction.** The plate is the whole page screenshotted with the glyphs
+made transparent; lifting the text cannot distinguish paint under it from paint over it, so a
+positioned sibling, child or pseudo-element covering a text run is read as that run's backdrop.
+`unmodelled()` walks the element and its ancestors, and an over-painting box is neither, so there
+is no property to refuse by name. A `::after` with `position: absolute; inset: -2px;
+background: rgba(255,255,255,.94)` over `span.card-note` exits **0** with the site count
+unmoved, and — forcing the AA threshold to 99 so every judged site prints its ratio — the number
+this tool reports goes **UP**, from `5.85:1 … #55637A on #F8FBFD` to `6.08:1 … #55637A on
+#FFFFFF`: it has sampled the overlay and called it the backdrop. The round-6 reviewer's
+independent pixel probe puts the best contrast available anywhere in that band, on the real
+page, at **1.08:1**. The same pixels spelled `opacity: .06` on the element are caught at 1.08:1.
+A second shape with no pseudo-element and no `content` — an absolutely positioned child `i` over
+`.legend span` — behaves identically: exit 0, with the reviewer measuring the real page at
+6.95:1 to 1.09:1 while the tool moves 6.94:1 to 6.95:1.
+Closing it would mean a geometric overlap analysis over positioned boxes rather than a named
+refusal, so it is named here instead. The shell does not do this today: neutralising every
+shipped positioned overlay that paints in the content layer changes **0 of 113,083** sampled band
+pixels in dark/degraded and **0 of 114,670** in light/live.
+
+**A paint-affecting property outside those four is neither modelled nor refused**, and text
+under one is measured as though it were painted in full. `mask-image` and `clip-path` are the
+demonstrated cases: a 6% `mask-image` on `.legend span` and a `clip-path: inset(100%)` that
+paints no glyph at all both measure clean, at the same anchors where `opacity: .06` and
+`filter: opacity(.06)` are caught. This is the honest shape of a refusal list — it holds what
+has been named and nothing more — and it is why the pixel-level checks below exist alongside
+it. A fifth spelling found later is a new entry, not a surprise.
+
+**The backdrop-alpha refusal is written and unexercised.** Chromium returns this page's
+screenshot as PNG colour type 2, which has no alpha channel, so the "a backdrop I cannot read
+as one opaque colour is refused" half of the per-role rule is structurally unreachable on this
+decode path and no mutation drives it. It is a fail-closed guard against that path changing,
+claimed as nothing.
+
+**Text on an element with no box of its own is refused, and only `display: contents` is
+named.** The collector drops anything whose box is smaller than a glyph, which is how this page
+spells "not shown" — `.sr` clips its text to 1×1 and paints nothing. `display: contents` gives
+the same zero rect and means the opposite: no box, while the text paints in full. That case is
+**refused by name**, which fails the run. Other ways to have no box while text paints — a
+zero-sized block with `overflow: visible`, for one — are **still dropped in silence**, and the
+gate cannot tell them apart without letting `.sr` into the sweep at its full text width. Naming
+one member of a class is not covering the class.
+
+**The WCAG 1.4.3 inactive-component exemption is bounded to form controls, and it no longer
+outranks a refusal.** Round 7 of this PR's independent review broke both halves of this in one
+payload: `closest(':disabled')` reaches through `<fieldset disabled>`, which is simultaneously an
+element HTML lets be disabled and a container, so one attribute on `ops/shell-v2.html` took **56
+status badges** out of the sweep — including the issue's own headline `.pill.acc` defect at
+3.03:1 — and the run reported `1576 … 56 exempt as inactive controls` and exited 0. The same
+wrapper also turned 56 *refusals* into 56 exemptions, because the exemption was tested first.
+Both are closed: the nearest `:disabled` ancestor-or-self must now also be a `button`, `input`,
+`select`, `textarea`, `option` or `optgroup` — `fieldset` and `form` are deliberately not on that
+list — and the refusal check runs **before** the exemption, so "refusals fail the run" now has no
+exception. The exempt count is printed on every run and is `0` today, and the shell carries no
+`:disabled` element and no `<fieldset>` at all.
+
+**Text over a picture is not covered.** The plate hides `img`, `canvas` and text-free `<svg>`
+outright — the last is every `Aria.icon()` on the page — so text over one would be measured
+against whatever is underneath rather than against the picture, and `video` is not hidden at
+all. `shell-v2.html` carries no `img`, `canvas` or `video` element, so nothing here exercises
+that path for those three and no mutation proves it either way — read it as not covered, not as
+handled.
+
+**WCAG's large-text allowance is not implemented: every text site needs 4.5:1.** The allowance
+drops the requirement to 3.0:1 at 24px, or at 18.66px bold, and both numbers can only come from
+`getComputedStyle().fontSize` — the size the stylesheet *asked for*, not the size the glyphs land
+at. Round 7 of this PR's review bought the weaker threshold with `font-size: 24px;
+transform: scale(.48)` on `.pill.acc`, which renders glyphs **narrower** than the untouched
+11.5px pill and passed the issue's own 3.03:1 headline defect at exit 0. That was answered by
+refusing `transform` and `zoom` by name, and round 8 reproduced the identical output twice more
+without touching either: `scale: .48` is an independent transform property Chromium keeps out of
+computed `transform`, and `font-size-adjust: .2` is not a transform at all. Refusing by name cost
+one round per spelling and closed nothing, because the spelling was never the cause — with the
+allowance in place, plain `font-size: 24px` and no scaling of any kind was already enough to pass
+the 3.03:1 defect.
+
+So the allowance is **deleted** rather than defended, and nothing in the tool reads the rendered
+size. The cost is real and runs the safe way for an ink: text WCAG AA would genuinely permit at
+3.0:1 fails this check. It costs **0** sites today — the sweep still passes at 1632 with 4.5:1
+required everywhere, and the lowest ratio measured on any unfrozen site is 5.20:1 — and a site
+that ever earns the allowance goes in `KNOWN_BELOW_AA` with an issue, where it is reconciled in
+both directions instead of granted silently. Rotation and skew are **not** refused and never
+were: `rotate: 20deg` passes, and what a rotated site gets is a sample taken from its
+axis-aligned bounding box, which is wider than the glyphs. Under the worst-surface rule a wider
+box can only add surfaces and so can only lower the ratio, which is the conservative direction.
+
+**Text inside a shadow root is refused, because nothing here enters one.** `COLLECT`,
+`GENERATED_TEXT` and `PLATE_HOLDS` are all `document.querySelectorAll('*')` walks, and none of
+them crosses a shadow boundary. Round 8 of this PR's review put a declarative shadow root on the
+pill row with no JavaScript at all: eight sites left the sweep with no site row, no refusal and
+no census entry — the headline 3.03:1 defect among them — and the run still reported every
+rendered text site meeting AA, eight short. Author shadow roots, open **and** closed, now fail
+the run. The census is taken over CDP with `DOM.getDocument({ pierce: true })` rather than in the
+page, because `el.shadowRoot` is `null` for a closed root: measured here, a closed declarative
+root is invisible to the in-page read and reports `shadowRootType: "closed"` to CDP, so an
+in-page census would have covered half the class while reading as though it covered all of it.
+It refuses rather than measures — piercing the sweep into shadow trees means ranges, plate rules
+and the `*` selector all crossing the boundary — and it costs **0** sites: the shell carries no
+author shadow root in any of the eight passes. That last fact is also why the census is asserted
+in **self-test part G** rather than only on the shell: on a page with no shadow root, a census
+that always returns nothing looks exactly like a working one. Part G's fixture carries an open
+author root, a closed one and a user-agent one, and requires exactly the first two.
+
+**A user-agent shadow root is refused when it paints words `COLLECT` has no source for, and
+measured when it does not.** `COLLECT` reads a control's words from its own text nodes, from
+`.selectedOptions`, from `.value` and from `.placeholder`. All four of the shipped page's
+user-agent roots — one `<select>`, its two `<option>`s and one `<input>` — fall inside those
+four sources and are measured, proven by mutation: colouring `#sampleRange` `#E9EDF2` fails the
+run at `1.08:1` in four passes, colouring the placeholder `#EDEFF2` fails it at `1.11:1`, and the
+failing select run samples a clean `#F2F6FA` backdrop with no glyph pixels in it, which is what
+says the plate lifts a user-agent-painted value too. Round 8 of this PR's review wrote that the
+`<select>`'s value was out of reach and filed it as an issue; round 9 disproved that from the
+code and from those mutations, so
+[Stadiora/Aria#10422](https://github.com/Stadiora/Aria/issues/10422) is closed as not a defect.
+
+Round 10 then showed that round 9 had stopped one step short. A user-agent root that paints words
+in **none** of those four sources used to leave the sweep with no site, no refusal and no census
+entry. Four of them are reachable from this shell with no change to the tool — `<input
+type="file">` ("Choose File / No file chosen"), `<input type="date">` with no value
+("mm/dd/yyyy"), `<input type="submit">` with no value ("Submit"), and `<img alt>` on a broken
+`src` — and each exited **0** while painting real text at about `1.13:1` in light. The control is
+what makes it a defect rather than a limit: the same element at the same anchor with the same
+ink, `<input type="date" value="2026-09-20">`, routes its identical glyphs through `.value`.
+
+Those are now refused by name. The test is behavioural, not a tag list: `DOM.getDocument` with
+`pierce: true` returns the user-agent root's own text nodes, so "this root paints words" is
+answered by the browser. A host is refused unless `COLLECT`'s own rule, run on that host,
+produces **the same string the root paints** — a match is the only thing that shows the glyphs in
+the root are the glyphs the sweep judged — and unless the host is visible with a box of at least
+2×2. That is why the shipped page refuses **0**: `.selectedOptions` gives the `<select>` exactly
+the `Last 7 days` its root paints, `.placeholder` gives the search input exactly its own
+placeholder, and each `<option>` has its own text node. Round 11 replaced an *existence* test
+here, which `placeholder=" "` and `placeholder="never painted"` both walked straight through.
+A working `<img>`, `<input type="range">`, `<input type="color">`, `<progress>` and `<meter>` all
+report an empty root and are never censused. Two consequences worth stating because they are
+costs, not wins: `<video controls>` and `<audio controls>` are refused **whatever they contain**,
+since their root paints a running time and their fallback content — which Chromium never renders
+— does not match it; and `<input type="date" value="…">` is refused too, because its root paints
+`09/20/2026` where `.value` reads `2026-09-20`. Part G's fixture carries seven user-agent roots
+with text — a sourced `<select>`, its `<option>`, a sourced `::placeholder`, the file input's own
+inner UA button sourced through `.value`, a `display: none` reset and a zero-box submit — plus
+one visible `<input type="file">`, and requires **exactly that one, named in full**, to be
+refused: four exonerations of a source, two of a gate, one catch. A census that refused
+everything, nothing, or the wrong host fails there.
+
+What a user-agent root still keeps out of reach is the `<option>` **list** of an open `<select>`,
+which the browser paints in a platform popup outside the page — there are no such glyphs in the
+screenshot, and nothing in the page's own styling decides its contrast.
+
+**Text inside a nested browsing context is refused, for the same reason and a worse one.** A
+frame is a separate document: the shell's `*` walks do not reach it, the plate stylesheet is not
+installed in it, and no `Range` can be taken over its text — while it paints into the same
+screenshot at full size. Round 9 of this PR's review replaced the pill span with an
+`<iframe srcdoc>` rendering the same pill from the same stylesheet, with the headline token swap
+applied: the sweep went from `1632` sites to `1624`, **exited 0**, and still printed that every
+text site it reaches meets AA, while the pill inside the frame painted at `2.89:1` — worse than
+the `3.03:1` this guard exists for. CSP does not prevent it: `shell-v2.html` is
+`default-src 'none'` with no `frame-src`, and `about:srcdoc` is exempt from CSP by spec. The
+census is `Page.getFrameTree` over CDP, not a tag-name list, so a different spelling does not
+walk through it — and that is asserted in **self-test part G**, whose fixture carries
+`<iframe srcdoc>`, `<iframe src>`, `<object type=text/html>`, `<embed type=text/html>`,
+`<object type=image/svg+xml>` and `<embed type=image/svg+xml>` and requires all six to be
+reported. An in-page census would miss two of those outright: `embed.contentDocument` reads
+`null` to script in the page even for HTML the `<embed>` is hosting. It refuses rather than
+measures, and it costs **0** sites: the shell carries no nested browsing context in any of the
+eight passes.
+
+On the shipped page, CSP narrows which spellings can even create a context: `default-src 'none'`
+with no `frame-src` and no `object-src` blocks `<object>` and `<embed>` entirely — they create no
+context and paint nothing — and blocks `<iframe src>`, which still appears in the frame tree as a
+`chrome-error://` child and is still refused. `about:srcdoc` is exempt from CSP by spec, which is
+why it is the spelling that reached the sweep.
+
+And the check answers "is the ink readable against the paint at its own run", which is "can this
+be read" only while nothing paints over the glyphs — not "is this the designed colour". The token
+pins in `check-ops-shell-v2.mjs` answer the second, and the three are complementary.
+
+Sites that are below AA on the page today are frozen one at a time in `KNOWN_BELOW_AA`, keyed
+per site — theme, state, selector and the words — with the issue that tracks each. The freeze is
+asserted in both directions: an entry that stops reproducing, matches more than one site, or
+moves by more than 0.15 fails the run, so an exemption cannot outlive what it exempts. There is
+one entry today, [Stadiora/Aria#10366](https://github.com/Stadiora/Aria/issues/10366).
 
 The pre-paint half of the shell check is the part worth keeping. A theme default written in two
 places that disagree produces a page that paints one theme and switches to the other a moment
