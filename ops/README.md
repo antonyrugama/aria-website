@@ -1034,7 +1034,9 @@ the run and a wrong number does not:
   identically and only the second is in the model; `mix-blend-mode: screen` erases black text
   that still computes to `rgb(0, 0, 0)`; SVG paints `fill` then `stroke`, so a 2px stroke in
   the surface colour erases a 10px label whose `fill` is unchanged. Set any of the four and the
-  site is **refused by name** and the run fails.
+  site is **refused by name** and the run fails. Read on the element and its ancestors — and,
+  for a `::placeholder` site, on the pseudo-element too, together with its own `opacity`, which
+  is the one place an `opacity` sits outside the chain above.
 
   That list is **what this tool will not stand behind, not what CSS can do to a glyph, and it
   does not close.** `mask-image` and `clip-path` are two more ways to spell the same 6% fade,
@@ -1054,8 +1056,9 @@ values, the decode/plate/sample pipeline against declared swatch colours, plate 
 by pixel, SVG ink read from `fill` rather than `color`, a paint-server fill refused rather than
 read as its fallback, `color(srgb 0.5 0 0.5)` read as rgb(127.5, 0, 127.5), and the three boundary
 censuses counted on a page that carries six spellings of a nested browsing context, an open
-author shadow root, a closed one, and five user-agent roots of which exactly one paints words no
-source reaches. If any part fails, nothing is measured
+author shadow root, a closed one, and seven user-agent roots carrying text of which exactly one
+paints words no source reaches — that one named in full, so a census that catches the wrong host
+fails too. If any part fails, nothing is measured
 and the run exits non-zero.
 
 **Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
@@ -1082,10 +1085,16 @@ pass unmeasured** — nothing more.
 
 **Three other pseudo-elements are handled by two other mechanisms, and the list is still open.**
 `::placeholder` is collected and **read** from its own computed style, because it carries its own
-colour. (`PLATE_CSS` also lifts it explicitly. That rule is **proven on the self-test fixture
-only** — the shell sets no placeholder colour, so deleting the rule leaves the real page's plate
-band byte-identical; it is fail-closed for a page that does set one, and `PLATE_HOLDS` cannot
-speak for it because a placeholder has no text node to iterate.) `::first-line` and `::first-letter` repaint the element's **own** text — no new text node,
+colour — and a `::placeholder` whose own style carries `opacity`, `filter`, `mix-blend-mode` or
+`-webkit-text-stroke` is **refused by name**, because all four apply to the pseudo-element while
+leaving the originating element reporting the defaults, so neither the alpha chain nor the
+element-level refusal can see them. (`PLATE_CSS` also lifts it explicitly. That rule is **proven
+on the self-test fixture only**: deleting it leaves the real page's plate band byte-identical,
+not because the shell sets no placeholder colour — it sets one at `.field input::placeholder` —
+but because the `*` rule's inherited transparent `-webkit-text-fill-color` beats that colour and
+already lifts those glyphs. A page spelling its placeholder ink as `-webkit-text-fill-color` on
+the pseudo-element would **not** be lifted by that rule; that case is not covered. `PLATE_HOLDS`
+cannot speak for it either, because a placeholder has no text node to iterate.) `::first-line` and `::first-letter` repaint the element's **own** text — no new text node,
 no new box, no change to the site count, and the plate lifts them correctly — so nothing in the
 census or the plate check can see them; they are **refused by name** instead, detected by
 comparing the pseudo-element's resolved ink against the element's own on the element and on every
@@ -1231,20 +1240,28 @@ type="file">` ("Choose File / No file chosen"), `<input type="date">` with no va
 ("mm/dd/yyyy"), `<input type="submit">` with no value ("Submit"), and `<img alt>` on a broken
 `src` — and each exited **0** while painting real text at about `1.13:1` in light. The control is
 what makes it a defect rather than a limit: the same element at the same anchor with the same
-ink, `<input type="date" value="2026-09-20">`, routes its identical glyphs through `.value` and
-exits 1 as an ordinary judged site.
+ink, `<input type="date" value="2026-09-20">`, routes its identical glyphs through `.value`.
 
 Those are now refused by name. The test is behavioural, not a tag list: `DOM.getDocument` with
 `pierce: true` returns the user-agent root's own text nodes, so "this root paints words" is
-answered by the browser. A host is refused only when its root's text is non-empty, `COLLECT`
-could not source that text, and the host is visible with a box of at least 2×2 — which is why
-the shipped page refuses **0**. A working `<img>`, `<input type="range">`, `<input type="color">`,
-`<progress>` and `<meter>` all report an empty root and are never censused; `<video controls>`
-and `<audio controls>` are refused, correctly, because their root paints a running time this tool
-cannot reach. Part G's fixture carries five user-agent roots — a sourced `<select>`, its
-`<option>`, a sourced `::placeholder`, a working `<img>` and a `display: none` file input — plus
-one visible `<input type="file">`, and requires exactly the last one to be refused: four
-exonerations and one catch, so a census that refused everything or nothing fails there.
+answered by the browser. A host is refused unless `COLLECT`'s own rule, run on that host,
+produces **the same string the root paints** — a match is the only thing that shows the glyphs in
+the root are the glyphs the sweep judged — and unless the host is visible with a box of at least
+2×2. That is why the shipped page refuses **0**: `.selectedOptions` gives the `<select>` exactly
+the `Last 7 days` its root paints, `.placeholder` gives the search input exactly its own
+placeholder, and each `<option>` has its own text node. Round 11 replaced an *existence* test
+here, which `placeholder=" "` and `placeholder="never painted"` both walked straight through.
+A working `<img>`, `<input type="range">`, `<input type="color">`, `<progress>` and `<meter>` all
+report an empty root and are never censused. Two consequences worth stating because they are
+costs, not wins: `<video controls>` and `<audio controls>` are refused **whatever they contain**,
+since their root paints a running time and their fallback content — which Chromium never renders
+— does not match it; and `<input type="date" value="…">` is refused too, because its root paints
+`09/20/2026` where `.value` reads `2026-09-20`. Part G's fixture carries seven user-agent roots
+with text — a sourced `<select>`, its `<option>`, a sourced `::placeholder`, the file input's own
+inner UA button sourced through `.value`, a `display: none` reset and a zero-box submit — plus
+one visible `<input type="file">`, and requires **exactly that one, named in full**, to be
+refused: four exonerations of a source, two of a gate, one catch. A census that refused
+everything, nothing, or the wrong host fails there.
 
 What a user-agent root still keeps out of reach is the `<option>` **list** of an open `<select>`,
 which the browser paints in a platform popup outside the page — there are no such glyphs in the

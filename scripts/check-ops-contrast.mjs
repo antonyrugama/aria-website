@@ -113,7 +113,8 @@ const BOUNDARY_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>b
 <input type="search" placeholder="a sourced placeholder that must NOT be reported">
 <img alt="an empty user-agent root that must NOT be reported" width="20" height="20"
   src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
-<input type="file" style="display:none">
+<input type="reset" style="display:none">
+<input type="submit" style="width:0;height:0;padding:0;border:0">
 <input type="file" id="uaUnsourced">
 </body></html>`;
 
@@ -617,7 +618,27 @@ const COLLECT = `(() => {
     };
 
     let alphaChain;
-    let unmodelledPaint = unmodelled(cs, el);
+    /* The ink is read from the pseudo-element, and so are the things that can
+       make that reading a lie. opacity, filter, mix-blend-mode and
+       -webkit-text-stroke all apply to ::placeholder in Chromium and all leave
+       the ELEMENT reporting the defaults, so neither unmodelled(cs, el) nor
+       the alpha chain below — both of which walk the element and its
+       ancestors — can see any of them. Refused rather than modelled, the
+       disposition every other unmodelled painter gets. Round 11 of this PR's
+       review demonstrated the first two: opacity: .28 on the shell's one
+       ::placeholder rule takes the glyphs from 5.86:1 to 1.50:1 and the sweep
+       exited 0 at its full 1632. */
+    let pseudoPaint = null;
+    if (pseudo) {
+      const po = Number(inkStyle.opacity);
+      const psw = parseFloat(inkStyle.webkitTextStrokeWidth);
+      if (Number.isFinite(po) && po !== 1) pseudoPaint = 'opacity ' + inkStyle.opacity;
+      else if (inkStyle.filter && inkStyle.filter !== 'none') pseudoPaint = 'filter "' + inkStyle.filter + '"';
+      else if (inkStyle.mixBlendMode && inkStyle.mixBlendMode !== 'normal') pseudoPaint = 'mix-blend-mode "' + inkStyle.mixBlendMode + '"';
+      else if (Number.isFinite(psw) && psw > 0) pseudoPaint = '-webkit-text-stroke ' + inkStyle.webkitTextStrokeWidth;
+      if (pseudoPaint) pseudoPaint += ' on ' + nameOf(el) + pseudo;
+    }
+    let unmodelledPaint = pseudoPaint || unmodelled(cs, el);
     {
       let alpha = Number(cs.opacity);
       if (isSvg) {
@@ -794,10 +815,13 @@ const PLATE_CSS = `
      Where a page sets that colour, placeholder glyphs paint ON the plate
      without this line -- the contamination the plate exists to prevent.
      PROVEN ON THE FIXTURE ONLY: self-test part C sets the colour explicitly,
-     and deleting this line leaves the real shell's plate band byte-identical,
-     because the shell sets no ::placeholder colour and the * rule's inherited
-     transparent text-fill already lifts those glyphs. Fail-closed for a page
-     that does set one. PLATE_HOLDS cannot speak for it either: it iterates
+     and deleting this line leaves the real shell's plate band byte-identical.
+     Not because the shell sets no ::placeholder colour -- it does, at
+     aria.css .field input::placeholder -- but because the * rule's inherited
+     transparent text-fill beats that colour and already lifts those glyphs.
+     A page that spells its placeholder ink as -webkit-text-fill-color on the
+     pseudo-element instead would NOT be lifted by this line; that case is not
+     covered. Fail-closed only for the colour spelling. PLATE_HOLDS cannot speak for it either: it iterates
      elements with their own text nodes, and a placeholder has none. */
   ::placeholder { color: transparent !important; }
   /* An SVG that contains text is a SURFACE that text sits on — its bars and
@@ -983,16 +1007,23 @@ async function shadowHosts() {
      - its user-agent root's subtree carries non-whitespace text, so something
        is painted. A working <img>, <input type="range">, <input type="color">,
        <progress> and <meter> all report an empty root and are never censused;
-     - COLLECT could not source that text — no own text node, no
-       .selectedOptions, no .value, no .placeholder. This is what exonerates
-       the shipped <select>, its <input> and both <option>s, and it is the same
-       four sources COLLECT actually reads rather than a restatement of them;
+     - COLLECT's own rule, run on the host, produces a DIFFERENT string
+       from the one the root paints, or none at all. A match is the only
+       thing that shows the glyphs in this root are the glyphs the sweep
+       judged, and it is what exonerates the shipped <select> (.selectedOptions
+       gives "Last 7 days", the root paints "Last 7 days"), its <input>
+       (.placeholder) and both <option>s (own text node). Round 11 replaced an
+       existence test here: .placeholder = " " is truthy while COLLECT's trim
+       drops the site, and .placeholder = "never painted" on a submit button
+       sources words its root never paints;
      - the host is visible and has a box of at least 2x2, the same gates
        COLLECT applies, so a control the page has hidden is not reported.
 
-   <video controls> and <audio controls> are refused by this rule, correctly:
-   their user-agent root paints a running time and a row of labels that this
-   tool cannot reach. The shell carries neither.
+   A consequence worth stating because it is a cost, not a win: <video controls>
+   and <audio controls> are refused whatever they contain. Their root paints a
+   running time and a row of labels this tool cannot reach, and their fallback
+   content — which Chromium never renders — does not match it. The shell
+   carries neither.
 
    What this still does not reach is text a user-agent root paints OUTSIDE the
    page — the <option> list of an open <select>, which the browser draws in a
@@ -1019,15 +1050,25 @@ async function uaTextNoSource() {
   };
   walk(root);
 
-  /* The same four sources COLLECT reads, and the same visibility and box
-     gates, asked of the host itself rather than inferred from its tag. */
+  /* COLLECT's own rule, returning the STRING it would measure so it can be
+     COMPARED with the words the root actually paints — which this function is
+     already holding. Asking whether a source EXISTS is a different question,
+     and round 11 of this PR's review showed what the difference costs:
+     placeholder=" " makes .placeholder truthy while COLLECT's own trim drops
+     the site, so a date input painting mm/dd/yyyy at 1.13:1 left the sweep at
+     exactly 1632; placeholder="never painted" on a submit button sources words
+     the root never paints, and the Submit it does paint went unmeasured.
+     A match is the only thing that shows the glyphs in this root are the
+     glyphs the sweep judged. */
   const SOURCED = `function () {
-    let own = '';
-    for (const node of this.childNodes) if (node.nodeType === 3) own += node.nodeValue;
-    if (own.trim()) return true;
-    if (this.tagName === 'SELECT') return !!((this.selectedOptions[0] || {}).textContent || '').trim();
-    if (this.tagName === 'INPUT' || this.tagName === 'TEXTAREA') return !!(this.value || this.placeholder);
-    return false;
+    let text = '';
+    for (const node of this.childNodes) if (node.nodeType === 3) text += node.nodeValue;
+    if (this.tagName === 'SELECT') text = (this.selectedOptions[0] || {}).textContent || '';
+    else if (this.tagName === 'INPUT' || this.tagName === 'TEXTAREA') {
+      if (this.value) text = this.value;
+      else if (this.placeholder) text = this.placeholder;
+    }
+    return text.replace(/\\s+/g, ' ').trim();
   }`;
   const PAINTS = `function () {
     const cs = getComputedStyle(this);
@@ -1046,7 +1087,8 @@ async function uaTextNoSource() {
       return res.result.value;
     };
     const sourced = await ask(SOURCED);
-    const paints = sourced ? false : await ask(PAINTS);
+    const explained = sourced !== '' && sourced === host.text;
+    const paints = explained ? false : await ask(PAINTS);
     await cdp.send('Runtime.releaseObject', { objectId: object.objectId });
     if (paints) found.push(`${host.name} "${host.text.slice(0, 60)}"`);
   }
@@ -1506,19 +1548,22 @@ async function selfTest() {
     console.log(`     ${okShadow ? 'ok  ' : 'FAIL'} 1 open + 1 closed author root, 1 user-agent ` +
       `root → ${shadow.length} censused: ${shadow.join('; ') || 'nothing'}\n          ` +
       'the user-agent root must not be among them');
-    /* Five user-agent roots on the page and exactly one of them is refused:
-       the <select> is sourced through .selectedOptions, the <option> through
-       its own text node, the <input type="search"> through .placeholder, the
-       working <img>'s root carries no text at all, and the display: none file
-       input paints nothing. Only the visible <input type="file"> paints words
-       with no source — which is why this is an assertion about four
-       exonerations and not just one catch. */
-    const okUa = uaText.length === 1 && uaText[0].startsWith('input "');
+    /* Seven user-agent roots carry text on this page and exactly one of them
+       is refused, named in full rather than by prefix: two hosts that produce
+       the SAME census string cannot tell the assertion which one was caught,
+       which is how round 11 inverted both PAINTS gates with part G still
+       green. The exonerations are one per reason: the <select> matches
+       through .selectedOptions, its <option> through its own text node, the
+       <input type="search"> through .placeholder, the file input's own inner
+       UA button through .value, the working <img>'s root carries no text at
+       all, the display: none reset paints nothing and the zero-box submit has
+       no box. Four exonerations of a source, two of a gate, one catch. */
+    const okUa = uaText.length === 1 && uaText[0] === 'input "Choose FileNo file chosen"';
     if (!okUa) bad++;
-    console.log(`     ${okUa ? 'ok  ' : 'FAIL'} 5 user-agent roots, 1 painting words with no ` +
-      `source → ${uaText.length} refused: ${uaText.join('; ') || 'nothing'}\n          ` +
-      'the sourced select, option and placeholder, the empty img root and the hidden ' +
-      'input must not be among them');
+    console.log(`     ${okUa ? 'ok  ' : 'FAIL'} 7 user-agent roots with text, 1 painting words ` +
+      `with no source → ${uaText.length} refused: ${uaText.join('; ') || 'nothing'}\n          ` +
+      'the sourced select, option, placeholder and file button, the hidden reset ' +
+      'and the zero-box submit must not be among them');
   }
 
   console.log(bad === 0
