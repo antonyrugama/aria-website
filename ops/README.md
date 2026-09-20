@@ -1698,8 +1698,9 @@ cross-origin API call would be.
 
 `scripts/check-ops-narrow-overflow.mjs` is one such stub, written for a narrow-viewport
 regression and reusable as a starting point. It serves this repository, answers the auth calls
-and the reads behind every pane except two — `/api/ops/usage` and `/api/ops/costs` get an empty
-envelope, so People and usage and Cloud costs are laid out in their no-data state — lays **every
+and the reads behind every pane except two — `/api/ops/usage` gets an empty envelope and
+`/api/ops/costs` a period that has not published, so People and usage and Cloud costs are laid
+out with no figures in them — lays **every
 pane the registry declares** out in headless Chrome at **375px and 360px** in both themes, and
 fails if `documentElement.scrollWidth` exceeds the viewport. Two widths because an overflow that
 reproduced on CI's fonts at 375px reproduced on macOS only at 360px, and a guard a reviewer

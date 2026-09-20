@@ -61,8 +61,8 @@
    releases and Settings each answer an empty read with a failure card of their
    own, and a failure card passes all five: it is the right file, it sets the
    right `data-pane`, the shell reaches ready, the top bar is written from the
-   registry rather than from the read, and two of the three clear the floor of
-   eight elements by 23 and 30. Without a per-pane marker the sweep shrank from
+   registry rather than from the read, and all three clear the floor of eight
+   elements — by 23, 30 and 115. Without a per-pane marker the sweep shrank from
    ten laid-out panes to seven and went on printing that it had swept ten.
 
    Two shells, so two spellings of everything the sweep reads off the page.
@@ -75,11 +75,13 @@
    WHAT THIS DOES NOT COVER, in the words of what was actually measured:
 
    - **People and usage, and Cloud costs, are measured with no figures in
-     them.** The stub answers /api/ops/usage and /api/ops/costs with an empty
-     envelope, so those two panes draw their no-data cards and that is what is
-     laid out. Their shell chrome, filter bar and empty state are swept; their
-     populated state is not. Both panes are mid-remodel onto the v2 design
-     system, and a fixture written against the modules being replaced would
+     them.** The stub answers /api/ops/usage with an empty envelope, so People
+     and usage draws its no-data card, and it answers /api/ops/costs with a
+     period that has not published, so Cloud costs draws the card for that.
+     Those cards are what is laid out. Their shell chrome, filter bar and empty
+     state are swept; their populated state is not. Both panes are mid-remodel
+     onto the v2 design system, and a fixture written against the modules being
+     replaced would
      measure markup that is about to be deleted.
    - **Look up a user is measured before any lookup**, and **Aria quality
      before any operation is submitted**. Both panes start as forms with no
@@ -130,8 +132,8 @@ const SETTLE_MS = 2500;
 /* A floor, and only a floor: it says the pane put something on the page
    rather than nothing. It is not a claim that the pane drew its data — see
    WHAT THIS DOES NOT COVER above for the two panes where it did not. The
-   thinnest pane in this sweep today is Cloud costs, whose no-data card is ten
-   elements. */
+   thinnest pane in this sweep today is Cloud costs, whose not-published card
+   is 19 elements. */
 const MIN_CONTENT_ELEMENTS = 8;
 
 /* The things a shell puts on screen INSTEAD of a pane. Each is a single card
@@ -386,6 +388,26 @@ const AUDIT = [
     targetType: null, targetId: null, reason: null, ipAddress: '203.0.113.4' }
 ];
 
+/* Cloud costs, in the state a period that has not published yet produces.
+   Both generations of this pane read `availability.state` first and print
+   `availability.detail` verbatim into the card they draw for it, so the detail
+   line below is a fixture value on the page rather than pane prose — which is
+   what makes it usable as a marker across a remodel.
+
+   An explicit branch rather than the fall-through it used to take. Falling
+   through sent `{}`, which today's pane reads as "no billed total" and the v2
+   remodel on antonyrugama/aria-website#65 reads as a state outside its
+   vocabulary: the same payload, two different cards, and a marker that works
+   on one head and not the next. A state both generations name is the payload
+   this check should have been sending all along. */
+const COSTS = {
+  availability: {
+    state: 'not_published',
+    detail: 'Billing for this period has not published yet, so there is no ' +
+      'figure to read here until the export lands.'
+  }
+};
+
 const PROBLEM = {
   id: 'prb_1', reference: 'AO-118', severity: 'critical', status: 'open',
   category: 'ai_reliability', title: 'Nutrition plans are failing to generate',
@@ -414,9 +436,9 @@ const PROBLEM = {
    their own instead: Overview, App releases and Settings each answer an empty
    read with a card that says the read failed. Those cards pass every other
    gate below — right file, right pane attribute, ready gate reached, top bar
-   correct, no shell refusal — and two of them clear the floor of eight by 23
-   and 30 elements. So a fixture going stale used to shrink the sweep from ten
-   laid-out panes to seven while it went on printing that it had swept ten.
+   correct, no shell refusal — and all three clear the floor of eight, by 23,
+   30 and 115 elements. So a fixture going stale used to shrink the sweep from
+   ten laid-out panes to seven while it went on printing that it had swept ten.
 
    Each string here is therefore chosen to be absent from that pane's failure
    or empty state and present in its loaded one, and is taken off the fixture
@@ -427,9 +449,10 @@ const PROBLEM = {
 
    What this does NOT prove: Aria quality and Look up a user read nothing until
    something is submitted, so their markers pin the pane's own static prose and
-   nothing more. People and usage and Cloud costs are measured in the empty
-   state their stubbed read produces, which is what WHAT THIS DOES NOT COVER
-   above already says; their markers pin that empty card, not a populated one.
+   nothing more. People and usage and Cloud costs are measured in the state
+   their stubbed read produces — an empty envelope and a period that has not
+   published — which is what WHAT THIS DOES NOT COVER above already says; their
+   markers pin those cards, not populated ones.
 
    A pane that changes these words turns this red. That is the mechanism, not a
    side effect: the markers are kept in step by hand, on the same terms as the
@@ -445,7 +468,9 @@ const PROOF = {
      reference. Both sit in the action row this check measures. */
   alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
   analytics: ['No app reported over this window'],
-  spend: ['carried no billed total'],
+  /* COSTS.availability.detail, which both this pane and the v2 remodel print
+     verbatim into whichever card they draw for `not_published`. */
+  spend: ['there is no figure to read here until the export lands'],
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
@@ -495,6 +520,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/alerts/problems')) {
     return { data: { problems: [PROBLEM] } };
   }
+  if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };

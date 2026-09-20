@@ -898,13 +898,16 @@ for (const scenario of [
        preview is widened past the viewport. One thing is guarded, since
        Stadiora/Aria#10492: check-ops-narrow-overflow.mjs lays this page out at
        375px and 360px in both themes and fails if the DOCUMENT scrolls
-       sideways, which is what this pane's 95-character registry filterNote
-       does when shell-pane-v2.css's `.filter-note { white-space: normal }` is
-       taken away — measured, scrollWidth 514 against a 375px viewport, the
-       note named as the offender. Anything finer than the document width — an
-       element that overruns inside a container that clips it, the 390px
-       reading on the PR — is still a hand-run number and not a regression
-       test.
+       sideways, which is what this pane's 89-character registry filterNote
+       does when BOTH copies of `white-space: normal` are taken away — the one
+       in shell-pane-v2.css's `.filter-note` block and the one at
+       pane-evaluations-v2.css:41, which is `.filters .filter-note` and so wins
+       on specificity. Deleting only the shell copy leaves this page green;
+       deleting both gives the measured scrollWidth 514 against a 375px
+       viewport, the note named as the offender. Anything finer than the
+       document width — an element that overruns inside a container that clips
+       it, the 390px reading on the PR — is still a hand-run number and not a
+       regression test.
      - The CSS that draws the stamp. These assert the word and the class the
        pane writes, not what pane-evaluations-v2.css paints them.
      - That INVENTED_FIGURES and INVENTED_PHRASES are COMPLETE. They are two
