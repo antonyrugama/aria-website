@@ -10,27 +10,43 @@
    already declares is used from there rather than copied.
 
    Every colour here comes from a token aria.css declares — the palette made
-   WCAG AA by construction (monorepo #10042) — bar the spellings on the line
+   WCAG AA by construction (monorepo #10042) — bar the sites on the line
    below, which scripts/ops-alerts-v2.test.mjs reads out of this comment and
    checks against what the sheet actually paints, so the two cannot drift:
 
-   NON-TOKEN PAINT: transparent, black
+   NON-TOKEN PAINT: black in color-mix(), transparent in color-mix()
+   AVATAR INK TOKEN: --cyan
 
    `transparent` adds no colour of its own: it is what a color-mix() lays a
-   token over. And `.av`'s ink mixes var(--cyan) toward `black`, which is the
-   one real exception. The avatar tile is an opaque cyan gradient in BOTH
-   themes and its ink has to clear AA against both, and no token aria.css
-   declares can do that — the same test tries every one of them in that mix to
-   say so, rather than leaving it asserted here. Both spellings are pinned
-   there per site (NON_TOKEN_PAINT), so a third fails the suite rather than
+   token over, which is why every entry on that line says `in color-mix()` —
+   the pin behind it is per site AND per enclosing function, so a bare
+   `transparent` anywhere in this sheet fails the suite rather than passing as
+   the same entry. And `.av`'s ink mixes the token on the second line toward
+   `black`, which is the one real exception. The avatar tile is an opaque
+   gradient of that same token in BOTH themes and its ink has to clear AA
+   against both, and no token aria.css declares can do that — the same test
+   tries every one of them in that mix to say so, rather than leaving it
+   asserted here. Both lines are deepEqual to what the sheet paints, so a
+   third spelling, a moved one or a renamed token fails the suite rather than
    joining the list quietly.
 
    Status text takes the -ink variant of its tone, because the base colour is
-   the tint and the -ink is the text on that tint.
+   the tint and the -ink is the text on that tint. The same test pairs every
+   .is- rule here with the tone token aria.css declares beside its -ink.
 
-   Nothing here carries a status by colour alone. Every tinted thing on this
-   page — a card's accent, a severity in ink, a switch, a dot — sits beside the
-   same fact in words, written by assets/pane-alerts.js.
+   Nothing here carries a status by colour alone: every severity on the page
+   sits beside the same fact in words, written by assets/pane-alerts.js and
+   asserted in scripts/ops-alerts-v2.test.mjs ("every severity on the page is
+   a word, not only a colour").
+
+   NOT BOUND by any test, and named here rather than left to look bound: the
+   provenance paragraph above, because the monorepo file this was adapted from
+   is not in this repository; the pointers to other tools, which measure this
+   page but are not run from here; every layout rule below, which nothing in
+   this repository renders except scripts/check-ops-narrow-overflow.mjs; and
+   the rendered pixel measurements quoted at .scrollx:focus-visible, which
+   came off screenshots in antonyrugama/aria-website#72 and which no check
+   re-measures.
    ========================================================================= */
 
 /* --------------------------------------------------------------- the hero */
@@ -203,14 +219,23 @@
 .scrollx > .tbl { min-width: 760px; }
 
 /* The box carries a tab stop (pane-alerts.js), so it takes a focus ring, and
-   aria.css's global :focus-visible sits 2px OUTSIDE the element. This box is
+   aria.css's global :focus-visible sits OUTSIDE the element. This box is
    flush with its card's left, right and top edges, so outside the box is
-   outside the CARD: measured on the rendered page, every pixel of the default
-   ring falls beyond the box and none of it on the table it belongs to.
-   Negating the offset draws the same 2px ring the same 2px in, on the table's
-   own surface. The test derives this value from aria.css rather than typing
-   it. Same line as pane-releases-v2.css .tbl-scroll and pane-settings-v2.css
-   .tbl-wrap. */
+   outside the CARD: measured on the rendered page in
+   antonyrugama/aria-website#72, every pixel of the default ring falls beyond
+   the box and none of it on the table it belongs to.
+
+   A ring lands wholly inside its box only when the offset pulls it in by at
+   least its own WIDTH — `outline-offset <= -outline-width` — so the test
+   derives BOTH quantities from aria.css instead of typing either
+   (Stadiora/Aria#10633): a global ring that grows fatter without this line
+   growing with it is the failure this override exists to prevent.
+
+   SAME FOCUS RING AS: pane-settings-v2.css, pane-evaluations-v2.css
+
+   Those two are read and compared declaration for declaration by the same
+   test. pane-releases-v2.css .tbl-scroll is deliberately NOT on that line:
+   it resets border-radius: 0 as well, which this does not. */
 .scrollx:focus-visible { outline-offset: -2px; }
 
 /* Six columns in 760px leaves the rule's name in a strip barely wider than
