@@ -18,6 +18,7 @@ on:
     paths:
       - 'ops/assets/**'
       - 'ops/*.html'
+      - 'ops/README.md'
       - 'scripts/*.test.mjs'
       - 'scripts/ops-dom-harness.mjs'
       - '.github/workflows/ops-pane-tests.yml'
@@ -26,6 +27,7 @@ on:
     paths:
       - 'ops/assets/**'
       - 'ops/*.html'
+      - 'ops/README.md'
       - 'scripts/*.test.mjs'
       - 'scripts/ops-dom-harness.mjs'
       - '.github/workflows/ops-pane-tests.yml'

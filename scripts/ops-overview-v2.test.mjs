@@ -665,11 +665,33 @@ test('the ribbon says its own state in words, and a different one per state', as
     const title = HERO(dom, 'hero-title');
     const sub = HERO(dom, 'hero-sub');
     assert.match(title, /[A-Za-z]{3}/, 'the ribbon title carries no words in the ' + name + ' state');
-    assert.match(sub, /[A-Za-z]{3}/, 'the ribbon sub carries no words in the ' + name + ' state');
+    /* The unarmed state deliberately has no sentence — see the test below;
+       its chip carries the only fact a sentence there could. */
+    if (name !== 'unarmed') {
+      assert.match(sub, /[A-Za-z]{3}/, 'the ribbon sub carries no words in the ' + name + ' state');
+    }
     titles.push(title);
   }
   assert.equal(new Set(titles).size, titles.length,
     'the ribbon says the same thing in every state, so it says nothing: ' + JSON.stringify(titles));
+});
+
+/* Round nine, advisory: with no alert rules at all the hero read "Nothing is
+   being checked" over "There are no alert rules at all." with a chip beside it
+   reading "0 of 0 rules checking" — one fact in three slots. The sentence went;
+   the chip keeps the count, which is the part an operator acts on. */
+test('the no-rules ribbon leaves the count to the chip', async () => {
+  const dom = await boot({ rules: { rules: [], channels: [] } });
+  const panel = livePanel(dom);
+  const sub = findAll(panel, (n) => /(^|\s)hero-sub(\s|$)/.test(n.className || ''))[0];
+  assert.equal(sub, undefined,
+    'the no-rules ribbon carries a sentence the chip beside it already says: ' +
+    JSON.stringify(sub ? allText(sub) : ''));
+
+  const chips = findAll(panel, (n) => /(^|\s)hero-chips(\s|$)/.test(n.className || ''))[0];
+  assert.ok(chips, 'the ribbon lost its chips');
+  assert.match(allText(chips).replace(/\s+/g, ' '), /0 of 0 rules checking/,
+    'the count left the ribbon entirely, so nothing on the row says no rule is armed');
 });
 
 test('a critical problem says critical in the queue row itself', async () => {
@@ -1176,3 +1198,47 @@ for (const [name, mk] of [
     assert.deepEqual(faults, [], faults.join(' | '));
   });
 }
+
+/* Round nine, advisory: the ribbon read "Oldest started 06:00:00 UTC, 46 hours
+   ago" — a bare clock on an incident two days old, which reads as six this
+   morning. A UTC stamp exists so two operators in two time zones can quote the
+   same instant, and a clock with no date is not one.
+
+   Written as a sweep rather than as an assertion about that one sentence,
+   because the defect is a class: any slot on this pane that prints an absolute
+   time can print it undated, in any wording. Every match has to carry its day.
+
+   NOT COVERED: a time printed in a format this pattern does not recognise
+   (it reads `HH:MM` and `HH:MM:SS` followed by UTC), and a time rendered as an
+   attribute rather than as text. */
+test('no absolute time is printed without the day it belongs to', async () => {
+  const CLOCK = /\b\d{1,2}:\d{2}(?::\d{2})?\s*UTC\b/g;
+  const MONTH = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)';
+  const DATED = new RegExp('\\b\\d{1,2} ' + MONTH + ' \\d{4} $');
+
+  const states = {
+    live: livePanel(await boot({})),
+    'all-quiet': livePanel(await boot({ problems: { problems: [], total: 0 } })),
+    unarmed: livePanel(await boot({ problems: { problems: [], total: 0 }, rules: NEVER_RUN_RULES })),
+  };
+
+  /* The ribbon's oldest sentence is the slot this came from, so the sweep is
+     vacuous unless that branch actually ran in one of the states above. */
+  assert.match(allText(states.live).replace(/\s+/g, ' '), /Oldest started /,
+    'no fixture reached the sentence that prints the oldest problem, so this sweep tests nothing');
+
+  let seen = 0;
+  for (const [name, panel] of Object.entries(states)) {
+    for (const node of findAll(panel, (n) => !n.childNodes || !n.childNodes.length)) {
+      const words = allText(node).replace(/\s+/g, ' ');
+      for (const hit of words.matchAll(CLOCK)) {
+        seen += 1;
+        assert.match(words.slice(0, hit.index), DATED,
+          'the ' + name + ' state prints a clock with no day in front of it: ' +
+          JSON.stringify(words));
+      }
+    }
+  }
+  assert.ok(seen >= 2, 'only ' + seen + ' absolute times were found across three states, ' +
+    'so this pattern is not reading what the pane prints');
+});

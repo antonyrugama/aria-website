@@ -298,10 +298,9 @@
       hero.appendChild(h('div', { className: 'hero-orb', 'aria-hidden': 'true' }, [
         h('i'), h('i'), h('b')
       ]));
-      hero.appendChild(h('div', {}, [
-        h('h2', { className: 'hero-title', text: title }),
-        h('p', { className: 'hero-sub', text: sub })
-      ]));
+      var words = h('div', {}, [h('h2', { className: 'hero-title', text: title })]);
+      if (sub) words.appendChild(h('p', { className: 'hero-sub', text: sub }));
+      hero.appendChild(words);
       hero.appendChild(ribbonChips(problems, armed, capped));
       return hero;
     }
@@ -347,7 +346,10 @@
        Every count here is over the enabled rules, so they can be read against
        each other. */
     function unarmedSentence(armed) {
-      if (!armed.total) return 'There are no alert rules at all.';
+      /* No sentence: the chip beside the title already says `0 of 0 rules
+         checking`, which is the whole of "there are no alert rules at all".
+         The other three branches each carry a cause the chip cannot. */
+      if (!armed.total) return '';
       if (!armed.enabled) {
         return 'None of the ' + fmt.int(armed.total) +
           ' rules are enabled, so nothing would be noticed.';
@@ -368,8 +370,13 @@
     function oldestSentence(needing) {
       var oldest = model.iso(model.oldest(needing.map(function (p) { return p.firedAt; })));
       var taken = needing.length === 1 ? 'Nobody is on it' : 'Nobody is on them';
-      if (!oldest) return taken + '.';
-      return 'Oldest started ' + fmt.stamp(oldest) + ', ' + fmt.since(oldest) + ' ago. ' +
+      /* Dated, not a bare clock: an incident two days old stamped 06:00:00 UTC
+         reads as six this morning, and the whole point of a UTC stamp is that
+         two operators in two time zones can quote the same instant. Every
+         other absolute time on this pane carries its date too. */
+      var when = fmt.utcStamp(oldest);
+      if (!oldest || !when) return taken + '.';
+      return 'Oldest started ' + when + ', ' + fmt.since(oldest) + ' ago. ' +
         taken + '.';
     }
 

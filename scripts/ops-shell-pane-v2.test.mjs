@@ -13,7 +13,7 @@
    and the exact original line whose removal or inversion makes that test fail.
    A test with no such line is a test that pins nothing. */
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
@@ -856,5 +856,76 @@ test('the docblock and the README name exactly what the module exports', async (
       ', which the module exports');
     assert.deepEqual(invented, [], where + ' names ' + invented.join(', ') +
       ', which the module does not export');
+  }
+});
+
+/* Round nine: this PR made ops/README.md a test input (the surface-parity test
+   above reads it) without adding it to the workflow's paths filter, so a
+   README-only change started no job and the guard held nothing on exactly the
+   pull requests it exists for. The same filter had already been widened once
+   in this PR, for ops/*.html, for the same reason — which is what makes this
+   worth a guard rather than a third one-line fix.
+
+   What is covered: every path these two suites name as a LITERAL — the
+   `read('…')` arguments, the SHEETS list, the suite files themselves and the
+   shared DOM harness — has to be matched by the paths filter of both the
+   pull_request and the push trigger.
+
+   NOT COVERED: an input reached by a computed path, and an input read by a
+   suite other than these two. */
+function workflowPaths(yml, trigger) {
+  const at = yml.indexOf('\n  ' + trigger + ':');
+  assert.ok(at > 0, 'ops-pane-tests.yml has no ' + trigger + ' trigger');
+  const from = yml.indexOf('paths:', at);
+  assert.ok(from > at, trigger + ' has no paths filter');
+  const globs = [];
+  for (const line of yml.slice(from).split('\n').slice(1)) {
+    const m = /^\s+- '(.+)'$/.exec(line);
+    if (!m) break;
+    globs.push(m[1]);
+  }
+  assert.ok(globs.length >= 3, trigger + "'s paths filter reads as " + globs.length + ' entries');
+  return globs;
+}
+
+/* The subset of glob syntax this workflow uses: `**` crosses directories, `*`
+   does not, everything else is literal. */
+function globMatches(glob, file) {
+  const rx = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '\u0000')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\u0000/g, '.*');
+  return new RegExp('^' + rx + '$').test(file);
+}
+
+function suiteInputs() {
+  const files = ['scripts/ops-dom-harness.mjs'];
+  for (const suite of ['ops-shell-pane-v2.test.mjs', 'ops-overview-v2.test.mjs']) {
+    files.push('scripts/' + suite);
+    const src = readFileSync(new URL('./' + suite, import.meta.url), 'utf8');
+    for (const [, rel] of src.matchAll(/\bread\('([^']+)'\)/g)) files.push('ops/' + rel);
+    for (const [, list] of src.matchAll(/const SHEETS = \[([^\]]+)\]/g)) {
+      for (const [, one] of list.matchAll(/'([^']+)'/g)) files.push(one);
+    }
+  }
+  /* Existing files only: the scan sees its own docblock, whose `read('…')`
+     is prose rather than an input. A real input that stopped existing would
+     fail the suite that reads it, not this list. */
+  return [...new Set(files)].filter((f) => existsSync(new URL('../' + f, import.meta.url))).sort();
+}
+
+test('every file these suites read also triggers the job that runs them', () => {
+  const yml = readFileSync(new URL('../.github/workflows/ops-pane-tests.yml', import.meta.url), 'utf8');
+  const inputs = suiteInputs();
+  assert.ok(inputs.length >= 8, 'only ' + inputs.length + ' inputs found, so this is not reading the suites');
+  assert.ok(inputs.indexOf('ops/README.md') !== -1,
+    'the surface-parity test reads ops/README.md, so it has to be in this list');
+
+  for (const trigger of ['pull_request', 'push']) {
+    const globs = workflowPaths(yml, trigger);
+    const missed = inputs.filter((f) => !globs.some((g) => globMatches(g, f)));
+    assert.deepEqual(missed, [], trigger + ' does not start the job for ' + missed.join(', ') +
+      ', which these suites read');
   }
 });
