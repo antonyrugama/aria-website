@@ -1244,7 +1244,7 @@ test('the compound state carries real ink sites, in both themes', async () => {
    its failure direction is over-collection -- which this contract surfaces as
    a loud diff a human resolves, not as silence. */
 const CELL_WASH_SCAN = String.raw`((SHEETS) => {
-  const DYNAMIC = /:(hover|focus|focus-visible|focus-within|focus-visible|active|target|visited)\b/g;
+  const DYNAMIC = /:(hover|focus-visible|focus-within|focus|active|target|visited)\b/g;
 
   const hostEl = document.createElement('div');
   document.body.appendChild(hostEl);
@@ -1277,7 +1277,17 @@ const CELL_WASH_SCAN = String.raw`((SHEETS) => {
     return { el, mid };
   }
 
-  function build(onCell, t) {
+  /* class is MERGED into the element's list, never assigned over it.
+     setAttribute('class', ...) replaced the whole attribute, which wiped the
+     tbl marker off the probe table, so every [class~="..."] spelling of a
+     wash silently failed to match and was under-collected -- demonstrated on
+     the real users sheet, green, measuring nothing.
+
+     classFirst orders the merge. [class^="x"] needs x at the FRONT of the
+     attribute and [class$="x"] needs it at the BACK, and one element cannot
+     be both, so a rule naming the class attribute is probed in both orders.
+     Only such rules pay for it. */
+  function build(onCell, t, classFirst) {
     root.replaceChildren();
     const outer = document.createElement('div');
     const table = document.createElement('table');
@@ -1289,13 +1299,16 @@ const CELL_WASH_SCAN = String.raw`((SHEETS) => {
     tr.append(thP.el, tdP.el, sibP.el);
     tbody.appendChild(tr); table.appendChild(tbody); outer.appendChild(table);
     root.appendChild(outer);
-    table.className = 'tbl';
-    const dress = (el) => {
-      for (const c of t.classes) el.classList.add(c);
-      for (const [n, v] of t.attrs) el.setAttribute(n, v);
+    const fromAttr = [];
+    for (const [n, v] of t.attrs) if (n === 'class') fromAttr.push(...v.split(/\s+/).filter(Boolean));
+    const dress = (el, own) => {
+      const mine = own ? [own, ...t.classes] : [...t.classes];
+      const list = classFirst ? [...fromAttr, ...mine] : [...mine, ...fromAttr];
+      el.setAttribute('class', [...new Set(list)].join(' '));
+      for (const [n, v] of t.attrs) if (n !== 'class') el.setAttribute(n, v);
     };
-    [outer, table, tbody, tr].forEach(dress);
-    if (onCell) [thP.el, tdP.el, sibP.el, tdP.mid].forEach(dress);
+    dress(outer); dress(table, 'tbl'); dress(tbody); dress(tr);
+    if (onCell) [thP.el, tdP.el, sibP.el, tdP.mid].forEach((el) => dress(el));
     return { th: thP.el, td: tdP.el, sib: sibP.el, inner: tdP.mid };
   }
 
@@ -1334,8 +1347,10 @@ const CELL_WASH_SCAN = String.raw`((SHEETS) => {
     let one;
     try { one = new CSSStyleSheet(); one.replaceSync(cssText); } catch (e) { return null; }
     if (!one.cssRules.length) return null;
-    for (const onCell of [false, true]) {
-      const p = build(onCell, tokens(sel));
+    const t = tokens(sel);
+    const orders = t.attrs.some(([n]) => n === 'class') ? [false, true] : [false];
+    for (const classFirst of orders) for (const onCell of [false, true]) {
+      const p = build(onCell, t, classFirst);
       const before = [bg(p.th), bg(p.td), bg(p.sib), bg(p.inner)];
       root.adoptedStyleSheets = [one];
       const after = [bg(p.th), bg(p.td), bg(p.sib), bg(p.inner)];
@@ -1413,6 +1428,14 @@ const SCAN_SELF_TEST = {
      unsatisfiable on a bare control (skip/not-empty -- the real
      `.field-error:not(:empty)` in pane-evaluations-v2.css, which this probe
      collected in error until the controls were made non-empty too). */
+  /* The `class` attribute in all four of its matching forms. These are the
+     spellings the probe lost when dress() overwrote `class` instead of
+     merging into it: the `tbl` marker went with the assignment, so the
+     selector could not match and the wash was silently uncollected. */
+  'want/class-word.css': '.tbl tbody tr[class~="is-selected"] > td { background: var(--cyan); }',
+  'want/class-sub.css': '.tbl tbody tr[class*="is-select"] > td { background: var(--cyan); }',
+  'want/class-prefix.css': '.tbl tbody tr[class^="is-selected"] > td { background: var(--cyan); }',
+  'want/class-suffix.css': '.tbl tbody tr[class$="selected"] > td { background: var(--cyan); }',
   'want/not-guard.css': '.tbl tbody tr:not(.plain) > td { background: var(--cyan); }',
   'skip/not-empty.css': '.field-error:not(:empty) { background: var(--cyan); }',
   'skip/row-level.css': '.tbl tbody tr.is-selected { background: var(--cyan); }',
