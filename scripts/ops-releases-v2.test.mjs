@@ -26,13 +26,23 @@
    carry the reading. Nothing inside it is announced to anybody.
 
    Every test here has a published mutation — the exact file, the exact
-   original line, and the payload that makes that one test fail. 44 tests, 45
-   rows: 43 in PR antonyrugama/aria-website#55, and 2 for the 44th ("a
-   pipeline row states the build number once") in the follow-up that added it,
-   one mutation in each direction because the invariant is a count and a count
-   has two ways to be wrong. Rows exceed tests whenever a test has more than
-   one way to fail; they are not the same number and the breakdown is the
-   check on both.
+   original line, and the payload that makes that one test fail. 49 tests, 53
+   rows: 43 in PR antonyrugama/aria-website#55, 2 for the 44th ("a pipeline
+   row states the build number once") in the follow-up that added it, one
+   mutation in each direction because the invariant is a count and a count has
+   two ways to be wrong, and 8 in the omissions change, which added 5 tests
+   here and moved the wording one existing test reads. Rows exceed tests
+   whenever a test has more than one way to fail; they are not the same number
+   and the breakdown is the check on both.
+
+   The omissions rows were EMITTED BY the battery that ran them rather than
+   written up afterwards, so a row cannot name a line nobody mutated. That
+   harness caught two things a hand-written table would have published: an
+   anchor that named the rule above the one the payload landed in, and a
+   mutation — disabling the share sentence's bare unreadable branch — that
+   left this file green, because every fixture in it kept Android staged and
+   so only ever reached that clause by appending it to a measured ceiling.
+   The 49th test exists because of that row.
 
    That claim is checked by counting `test(` names against row names rather
    than by eye: the first round of #55's review found the claim was 38 of 39,

@@ -421,11 +421,13 @@ async function readPage() {
 
 /* ============ the note exists on screen, not merely in the DOM =========== */
 
-/* MUTATION for the four tests below: delete the `.callout.is-note` rule block
-   in ops/assets/pane-releases-v2.css — the two rules opening at
-   `.callout.is-note {` and `.callout.is-note svg {`. The note keeps its class
-   and its text, so nothing about the markup changes; it simply draws as the
-   amber warning instead, and these fail on the tint, the ring and the glyph. */
+/* MUTATION row 1 (see the battery table in the pull request): delete the two
+   declarations inside `.callout.is-note {` in ops/assets/pane-releases-v2.css,
+   leaving the selector's sibling `.callout.is-note svg` rule alone. The note
+   keeps its class and its text, so nothing about the markup changes; it simply
+   draws as the amber warning. Row 1b deletes the svg rule instead, which is a
+   separate experiment because the two rules paint different things and a note
+   claiming one payload killed both would be claiming something nobody ran. */
 
 test('the omissions note is painted, with its own tint and its own ring', async () => {
   await show(UNREADABLE_1280);
@@ -484,10 +486,11 @@ test('.omit-list is a painted column, so two omissions cannot run together', asy
 
 /* ===================== the note reads at AA in both themes =============== */
 
-/* MUTATION: in ops/assets/pane-releases-v2.css, change `.callout.is-note`'s
-   background from `color-mix(in srgb, var(--ink-3) 7%, transparent)` to
-   `var(--ink-3)`. The tint becomes the ink and the body copy drops to about
-   1.2:1 in both themes. */
+/* MUTATION row 1c: in ops/assets/pane-releases-v2.css, change
+   `.callout.is-note`'s background from the 7% tint to `var(--ink-3)`. The note
+   keeps its surface and its ring, so row 1's tests still pass and only these
+   two fail — which is the point of running it separately from row 1: "there is
+   a surface" and "the text on that surface is legible" are two claims. */
 
 for (const state of [UNREADABLE_1280, UNREADABLE_LIGHT]) {
   test(`the note's text clears AA against its own tint — ${state.theme}`, async () => {
@@ -506,10 +509,9 @@ for (const state of [UNREADABLE_1280, UNREADABLE_LIGHT]) {
 
 /* ============== what the note says comes from the answer ================= */
 
-/* MUTATION: in ops/assets/pane-releases.js, replace `str(entry.detail) ||` in
-   omissionsBlock with `'App Store Connect reports no share.' || ` — a caption
-   that is true, reads correctly on screen, and is not the route's sentence.
-   This test fails; nothing else does. */
+/* MUTATION row 4: in ops/assets/pane-releases.js, put a local caption in
+   front of `str(entry.detail) ||` in omissionsBlock — one that is true and
+   reads correctly on screen, and is not the route's sentence. */
 
 test('the note prints the route\'s own sentence, not a caption held here', async () => {
   await show(UNREADABLE_1280);
@@ -542,11 +544,11 @@ test('no omission in the answer means no note on the page', async () => {
    not measure', an absent share read as "no ceiling" in four places at once.
    All four are bound here, each against both arms.
 
-   MUTATION for all four: in ops/assets/pane-releases.js, change
-   `var UNREADABLE_SHARE_STATES = { rolling_out: true, halted: true };` to
-   `var UNREADABLE_SHARE_STATES = {};`. Every reading collapses back to 'none'
-   and all four assertions below fail, which is the state this pane shipped
-   in after monorepo #10833 removed the modelled percentage. */
+   MUTATION row 3r empties `var UNREADABLE_SHARE_STATES` in
+   ops/assets/pane-releases.js, so every reading collapses back to 'none' —
+   the state this pane shipped in once monorepo #10833 removed the modelled
+   percentage. The battery table names which of the four it kills; it is not
+   asserted here to be all four, because nobody ran them one at a time. */
 
 test('the headline does not call an unmeasured phased release live', async () => {
   await show(UNREADABLE_1280);
