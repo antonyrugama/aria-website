@@ -1761,10 +1761,14 @@ async function measureFocusIndicators(where) {
          did NOT change, so when the element arrives somewhere it was not
          before, everything it now covers — and everything its shadow now
          covers — changed. What is left beside the ring is whatever the
-         renderer's shadow happened to miss: 18 pixels on macOS and 0 on
-         Linux for ops/assets/aria.css's .skip, which parks at top:-60px and
-         slides to top:12px on focus. Judging it on one platform and refusing
-         it on the other is the worst of both, so it is named here on both.
+         renderer's shadow happened to miss, which varies by platform and by
+         theme — measured for ops/assets/aria.css's .skip, which parks at
+         top:-60px and slides to top:12px on focus, it ranges from none at all
+         to enough to judge on, with no rule to it. Judging it where the
+         remnant is fat and refusing it where the remnant is thin is the worst
+         of both, so the move is refused everywhere, before any pixel is
+         counted. How many survive in any one pass is not written down here;
+         it is renderer weather.
          Compared at whole pixels: a subpixel reflow is not a move. */
       if (Math.abs(focused.x - focused.was.x) >= 1 || Math.abs(focused.y - focused.was.y) >= 1 ||
           Math.abs(focused.w - focused.was.w) >= 1 || Math.abs(focused.h - focused.was.h) >= 1) {
@@ -2355,10 +2359,13 @@ async function selfTest() {
        shape guard bit at 0.084 — the red channel's 1.08372 falling back
        inside the window. It does not: the green channel is -0.104021, and a
        component below -slack is outside the window too, so `wideIsOutside`
-       survives to 0.104021. One channel was read, three exist, and the
-       sentence outlived the value by four review rounds because nothing in
-       the file could contradict it. Nothing here is typed, so nothing here
-       can drift.
+       survives to 0.104021. One channel was read, three exist, and nothing in
+       the file could contradict the sentence, so it did not have to be right.
+       Note that even the CORRECTED figure is not where this constant is
+       bound — the one-byte ceiling below is an order of magnitude stricter
+       and binds first — which is the deeper reason no comment beside a
+       literal can hold this: WHICH edge binds is a fact about four edges at
+       once. Nothing here is typed, so nothing here can drift.
 
        The BOUND is a different thing from the brackets and is still written
        down: ONE byte, not the half-byte the constant is set at, because
@@ -2971,11 +2978,12 @@ let frozenFocusCount = 0;
    What this floor catches is a COLLAPSE, not one quiet pass. With eight
    passes, losing one still clears 180 by a couple of sites; losing two does
    not. One quiet pass IS caught today, but by KNOWN_UNMEASURABLE_FOCUS
-   happening to enumerate all eight theme/state combinations, so the
-   reconciler notices the four that stopped reproducing — cover that retires
-   when Stadiora/Aria#10686 and #10700 are fixed and those entries go. The
-   failure message below says collapse rather than pointing the reader at a
-   pass this assertion cannot see. */
+   happening to enumerate every theme/state combination, so the reconciler
+   fails on the entries frozen for that pass when they stop reproducing —
+   however many that is, which is a fact about the table and not written down
+   here. That cover retires when Stadiora/Aria#10686 and #10700 are fixed and
+   those entries go. The failure message below says collapse rather than
+   pointing the reader at a pass this assertion cannot see. */
 const FOCUS_SITE_FLOOR = 180;
 
 try {
