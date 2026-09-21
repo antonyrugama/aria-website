@@ -31,12 +31,16 @@
    of this check failed at 375px on a second badge that the same commit had
    passed locally on Windows. Linux is what the check is measured on.
 
-   Two widths, 375px and 360px. 375px is the acceptance criterion; 360px exists
-   because of the platform split above. The first CI run of the v2 Problems
+   Three widths, 375px, 360px and 320px. 375px is the acceptance criterion;
+   360px exists because of the platform split above. The first CI run of the v2 Problems
    pane failed at 375px on Linux on a filter note that fitted 375px on macOS
    with nothing to spare, so a local run could not see it and a reviewer on a
    Mac had to find it by hand. 360px reproduces on any platform what CI's wider
-   font metrics produce at 375px.
+   font metrics produce at 375px. 320px was added while auditing #7366, which
+   filed the overflow this list used to describe at that width: it is the
+   narrowest width the check named but did not lay out, and the Severity
+   control it was filed for is no longer drawn by any pane the registry
+   declares, so the width now holds a property rather than documenting a gap.
 
    The stub is deliberately hostile rather than tidy. It sends a rule that
    cannot judge and whose reason is the longest sentence the vocabulary in
@@ -104,10 +108,9 @@
      only elements more than half a pixel past the edge and it decides nothing,
      so it does not close that gap either. Nothing here catches a margin that
      small.
-   - **320px.** Only 375px and 360px are laid out. A further overflow exists at
-     320px — the Severity segmented control is wider than the bar — and it is
-     filed rather than folded in, so an overflow that appears only below 360px
-     is invisible to this check on every pane, not just that one.
+   - **Anything under 320px.** 375px, 360px and 320px are laid out and nothing
+     narrower is, so an overflow that appears only below 320px is invisible to
+     this check on every pane.
 
    Usage:  node scripts/check-ops-narrow-overflow.mjs
    Chrome: CHROME_PATH, or the usual install locations on Linux and Windows.
