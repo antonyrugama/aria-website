@@ -616,7 +616,10 @@ for (const theme of [EVALS_DARK, EVALS_LIGHT]) {
       const surface2 = token('--surface-2');
       const line2 = token('--line-2');
       const s = getComputedStyle(plain);
-      const out = { fill: s.backgroundColor, shadow: s.boxShadow, surface2, line2 };
+      const out = {
+        fill: s.backgroundColor, image: s.backgroundImage, shadow: s.boxShadow,
+        surface2, line2
+      };
       probe.remove();
       return out;
     })()`);
@@ -630,6 +633,22 @@ for (const theme of [EVALS_DARK, EVALS_LIGHT]) {
     assert.strictEqual(seen.shadow, `${seen.line2} 0px 0px 0px 1px inset`,
       `the consent boundary should be ringed by the --line-2 hairline and is ringed by ` +
       `${seen.shadow}`);
+
+    /* `background` is a shorthand over two layers, and the backing colour is
+       only one of them: a gradient in the image layer repaints the box amber
+       while `backgroundColor` still reports the surface underneath it. So the
+       claim is made about what is painted, not about one declaration's colour
+       slot — the composited answer Chromium gives for the stack behind the
+       note's own heading, which is the reading this pane's contrast figures
+       are taken from. Any painted layer that changes what a person sees moves
+       this number; `backgroundImage` is asserted beside it so a failure names
+       the layer rather than only the colour. */
+    assert.strictEqual(seen.image, 'none',
+      `the consent boundary should carry no image layer and carries ${seen.image}`);
+    const painted = await backdrop('.callout:not(.callout-warn) strong');
+    assert.strictEqual(show3(painted), show3(parseColour(seen.surface2)),
+      `the colour actually painted behind the consent boundary is ${show3(painted)}, ` +
+      `where --surface-2 is ${seen.surface2}`);
   });
 }
 
