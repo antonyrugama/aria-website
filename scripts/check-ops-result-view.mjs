@@ -147,11 +147,14 @@
      flex items, so the page renders "2." and "9.1" with the row's gap between
      them, reads as shown. Reachability is asked of the carrier — its own box
      if it has one, otherwise the boxes a Range over its contents produces,
-     which is how display:contents stays green — and again of any descendant
-     in the walk that owns a real box, so a half parked off the document is
-     not joined to the half on screen. A descendant with no box, or a
-     degenerate one, is not judged there; the carrier's own gate answers for
-     those, so a marker split across two zero-area wrappers is still joined.
+     which is how display:contents stays green — and again of every element
+     inside the walk, by its own box where it has one and by a Range over its
+     contents where it does not, so a half parked off the document is not
+     joined to the half on screen however it is wrapped. visibility is read
+     per element and silences only that element's own text, since a descendant
+     can set it back to visible; at the CARRIER the question is still asked as
+     a veto, so a carrier that is itself visibility:hidden with a visible
+     descendant reads as not shown.
    - **Any painted occurrence answers for all of them.** A marker that a pane
      renders twice passes when either occurrence is painted and reachable, so
      a result view that loses the copy a reader is meant to read while an
@@ -168,7 +171,7 @@
      inline change through CSSOM, or a state expressed only through an
      attribute the sheet keys on, are all outside judgement 1. Judgement 2 sees
      them when they land on an ARIA-marked element, and nowhere else.
-   - **Panes with no state pair.** Eight of the ten panes declare no ARIA state
+   - **Panes with no state pair.** Seven of the ten panes declare no ARIA state
      in their result view, so judgement 2 has nothing to compare on them and
      they are carried by judgement 1 alone. The per-pane minimum in
      EXPECTED_PAIRS is asserted so a pane that stops drawing the pairs it has
@@ -836,9 +839,11 @@ const KNOWN_UNPAINTED_STATE = [];
    anybody editing this table, and a pane that stops drawing the pairs it has
    today fails rather than passing on zero comparisons.
 
-   Eight panes are zero because their result views declare no ARIA state at
+   Seven panes are zero because their result views declare no ARIA state at
    all. That is stated here rather than left to be inferred from a sweep that
-   silently compared nothing. */
+   silently compared nothing. Seven, not eight: releases draws state too, and
+   this table said 0 for it until round 15 read the number the sweep prints
+   against the number this table demands. */
 const EXPECTED_PAIRS = {
   overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0,
   /* One pair: the Group-the-bill-by switch's two buttons, `category` against
@@ -849,7 +854,11 @@ const EXPECTED_PAIRS = {
      run; deleting `service` leaves it at 1. */
   spend: 1,
   evals: 0,
-  releases: 0,
+  /* Two pairs, one per platform the fixture sends: the rollout rail's current
+     stage carries aria-current="step" (ops/assets/pane-releases.js:498) and
+     the stages either side of it do not. Both iOS and Android draw a rail, so
+     both draw a pair. */
+  releases: 2,
   /* The picked row's aria-current against the unpicked row, and the pick
      control's aria-pressed against the other row's control. */
   users: 2,
@@ -1756,32 +1765,45 @@ const probeFor = (markers) => `(() => {
      suppressed() covers them above it.
 
      Lower-cased and whitespace-collapsed so a text-transform is not a false
-     red. Reachability is asked again inside the walk, of any descendant that
-     owns a real box: joining what a page draws in two places is the point,
-     but joining a half parked at left:-99999px to the half on screen rebuilds
-     a marker no reader can read, and measured, that exited 0 with the version
-     card showing "2." and nothing else. A descendant with no box of its own,
-     or a degenerate one, is walked rather than judged, because the carrier's
-     own gate above is what answers for those. */
+     red. Reachability is asked again inside the walk, of every element in it:
+     joining what a page draws in two places is the point, but joining a half
+     parked at left:-99999px to the half on screen rebuilds a marker no reader
+     can read, and measured, that exited 0 with the version card showing "2."
+     and nothing else. An element with a real box is judged by that box; one
+     with none, or a degenerate one, is judged by the boxes a Range over its
+     contents produces — the same two-step the carrier itself gets, and it is
+     here because round 15 wrapped the parked half in a 0x0 span and walked
+     straight through the box-only version of this test.
+
+     visibility is read per element and only silences that element's OWN text,
+     because it inherits but a descendant can set it back to visible; display
+     and content-visibility stop the walk, because nothing under them renders
+     at all. */
   const flat = (s) => String(s).replace(/\\s+/g, ' ').trim().toLowerCase();
+  const placed = (n) => {
+    const reaches = viewportAnchored(n) ? inView : inReach;
+    const box = n.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0) return reaches(box);
+    const r = document.createRange();
+    r.selectNodeContents(n);
+    return [].slice.call(r.getClientRects()).some(reaches);
+  };
   const drawnText = (el) => {
     let out = '';
     const walk = (node) => {
+      const vis = getComputedStyle(node).visibility;
+      const draws = vis !== 'hidden' && vis !== 'collapse';
       for (const n of node.childNodes) {
-        if (n.nodeType === 3) { out += String(n.nodeValue); continue; }
+        if (n.nodeType === 3) { if (draws) out += String(n.nodeValue); continue; }
         if (n.nodeType !== 1) continue;
         const cs = getComputedStyle(n);
-        if (cs.display === 'none' || cs.visibility === 'hidden'
-          || cs.visibility === 'collapse' || cs.contentVisibility === 'hidden') continue;
-        const box = n.getBoundingClientRect();
-        if (box.width > 0 && box.height > 0
-          && !(viewportAnchored(n) ? inView : inReach)(box)) continue;
+        if (cs.display === 'none' || cs.contentVisibility === 'hidden') continue;
+        if (!placed(n)) continue;
         walk(n);
       }
     };
     const own = getComputedStyle(el);
-    if (own.display === 'none' || own.visibility === 'hidden'
-      || own.visibility === 'collapse' || own.contentVisibility === 'hidden') return '';
+    if (own.display === 'none' || own.contentVisibility === 'hidden') return '';
     walk(el);
     return flat(out);
   };
