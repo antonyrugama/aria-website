@@ -54,8 +54,10 @@
        <body>, or wrap it in <noscript>, and the page ships NO policy Chrome
        enforces -- while every assertion below passed, because each is still
        a Content-Security-Policy the file spells once.
-       The shapes that are decidable from the page's BYTES are fixed rather
-       than disclosed, and the ones that have been are: <meta-x> (M26-A2),
+       The shapes that are decidable from the page's BYTES are fixed, or --
+       where deciding one would mean writing a tokeniser state machine to
+       guess with -- REFUSED, which reds; disclosure is the last resort and
+       not the first. The ones fixed are: <meta-x> (M26-A2),
        data-http-equiv= (M27-A2), <meta&#160; (M27-A5), a tag that spells
        http-equiv twice, where the parser keeps the FIRST and a regex took
        the last (M28-A1), the attribute name sitting inside another
@@ -66,14 +68,24 @@
        M29-A6, M29-A7). One more was found while measuring those: a single
        non-space character before the pragma -- a stray NBSP, a letter, a
        <div> -- ends the head and puts the pragma in <body>, where Chrome
-       enforces nothing, and that reds too (M29-A9).
+       enforces nothing, and that reds too (M29-A9). Four more came out of
+       the twenty-ninth review, each one a place where the walk's idea of
+       which bytes are MARKUP disagreed with the parser's: a comment closed
+       by `--!>`, `<!-->` or `<!--->` rather than `-->` (M30-A1, M30-A2,
+       M30-A3), and a pragma inside <noframes>, which is raw text (M30-A5).
+       The fifth, a double-escaped <script>, is REFUSED rather than fixed
+       (M30-A4): `<script><!--<script>` moves the end of the element
+       somewhere this walk cannot compute, so it declines to read the page
+       at all instead of reading a pragma out of script text.
        What is left, and all that is: whether the browser ENFORCES the policy
        this reads. A header can deliver another one, and nothing here can see
        a header. That is the line no reader of a FILE gets past.
        The rule that sorts them: if the page's bytes say the tag is not a
        meta, the attribute is not http-equiv, or the parser would not have
        the pragma in head, this reader is wrong to read it and is made to
-       red; if the bytes are a pragma in head and only the SERVER knows what
+       red -- or, where saying which of those is true would take a state
+       machine this file does not carry, it refuses the page and reds that
+       way; if the bytes are a pragma in head and only the SERVER knows what
        else was sent, no reader of this file can tell, and it goes above.
        What IS bound, and all that is: IF this reader finds a pragma the
        parser would build in this page's head, THEN the source list that
@@ -351,8 +363,43 @@ const decodeRefs = (s) => s.replace(/&#(x[0-9a-f]+|\d+);/gi, (_m, n) => String.f
    inside one is not a tag and not a pragma. <noscript> is on the list
    because this page is only ever visited with scripting ENABLED, which is
    what makes its content raw text; a browser with scripting off parses that
-   content as markup, and nothing in this file would notice. */
-const RAW_TEXT_ELEMENTS = new Set(['script', 'style', 'noscript', 'textarea', 'title']);
+   content as markup, and nothing in this file would notice.
+
+   `noframes`, `iframe`, `noembed` and `xmp` are on it because they are
+   RAWTEXT too, and the first of those was the whole of a false green: the
+   CSP pragma wrapped in <noframes> shipped NO policy in Chrome -- the tag is
+   text, the parser builds no meta -- while this file, which had `noframes`
+   on its head-keeping list three lines below but not here, read the text as
+   a pragma and stayed green (the twenty-ninth review of #75, M29R-5). It is
+   the same payload as the <noscript> one this PR published as newly bound,
+   one name apart. `plaintext` is handled separately below: it has no end
+   tag at all and runs to EOF. */
+const RAW_TEXT_ELEMENTS = new Set(['script', 'style', 'noscript', 'textarea', 'title',
+  'noframes', 'iframe', 'noembed', 'xmp']);
+/* Where a comment ENDS, which is four spellings and not one. `-->` is the
+   common one; `--!>` closes it too (comment-end-bang state: the tokeniser
+   emits the comment and returns to data); and `<!-->` and `<!--->` are
+   already-closed empty comments. Searching only for `-->` swallowed
+   everything up to the NEXT one as comment content, which is how a <link>
+   and a head-ending letter hid inside what this walk called a comment while
+   Chrome loaded a fourth stylesheet that painted every rail, and put the
+   page's pragma in <body> (the twenty-ninth review of #75, M29R-1, M29R-2
+   and M29R-3 -- all three green here before this function existed). */
+const commentEndOf = (html, lt) => {
+  let k = lt + 4;
+  if (html[k] === '>') return k + 1;
+  if (html[k] === '-' && html[k + 1] === '>') return k + 2;
+  while (k < html.length) {
+    const dash = html.indexOf('--', k);
+    if (dash < 0) return html.length;
+    let m = dash + 2;
+    while (html[m] === '-') m += 1;
+    if (html[m] === '>') return m + 1;
+    if (html[m] === '!' && html[m + 1] === '>') return m + 2;
+    k = dash + 1;
+  }
+  return html.length;
+};
 /* The nodes of a document, in document order: start tags carrying the
    attribute MAP the tokeniser would build for them, end tags, comments and
    doctypes. The walk is the HTML tokeniser's, cut down to what this page
@@ -365,11 +412,15 @@ const RAW_TEXT_ELEMENTS = new Set(['script', 'style', 'noscript', 'textarea', 't
    page's policy while Chrome saw one inert attribute on a <div> and shipped
    no policy at all (the twenty-eighth review of #75, finding 2). A comment,
    a doctype, and the text inside a <script> or a <noscript> are the same
-   shape one level down, and all four are decided here rather than disclosed.
+   shape one level down. Each is DECIDED here for the spellings named below
+   and REFUSED where it is not: the refusal list this returns is asserted
+   empty by both tests that read the walk, so a page wearing a shape this
+   walk does not model reds rather than being guessed at.
 
    What the walk does, in the tokeniser's order: `<` followed by an ASCII
-   letter starts a tag and nothing else does; `<!--` runs to the first
-   `-->`; `<!` and `<?` run to the first `>`; a tag name ends at HTML space,
+   letter starts a tag and nothing else does; `<!--` runs to wherever
+   commentEndOf() above says the comment ends, which is four spellings;
+   `<!` and `<?` run to the first `>`; a tag name ends at HTML space,
    `/` or `>`; then, repeatedly, skip space and `/`, read an attribute name
    up to space, `/`, `>` or `=`, then an optional `=` and a double-quoted,
    single-quoted or unquoted value. The FIRST spelling of an attribute name
@@ -386,20 +437,30 @@ const RAW_TEXT_ELEMENTS = new Set(['script', 'style', 'noscript', 'textarea', 't
    attribute NAMED `=http-equiv`) is dropped as well. Neither drop can
    INVENT a pragma or a sheet; both can only lose one, and losing one reds.
 
+   ONE shape is REFUSED rather than modelled: a DOUBLE-ESCAPED <script>.
+   `<script><!--<script>` puts the tokeniser in a state where the next
+   `</script>` does NOT end the element, so a walk that ends at the first
+   one reads the bytes after it as markup and can INVENT a tag the parser
+   never built -- a pragma, in the payload that found this (the twenty-ninth
+   review of #75, M29R-4: Chrome built no meta at all and shipped no policy,
+   and this file read a policy out of script text and stayed green). The
+   state machine that decides it is four tokeniser states wide; a refusal is
+   two lines, cannot be wrong in the green direction, and is what the page
+   actually needs, since nothing in this repo double-escapes a script.
+
    What it does not model, and what stillInHead() below refuses rather than
    guesses at: where in the tree the parser would have PUT the node. `at`
    and `end` are byte offsets so a caller can say "before that one", and
    `end` for a raw-text start tag is where the walk resumed, past the text,
    so the gaps between nodes hold the page's text and not its script. */
-function nodesOf(html) {
+function nodesOf(html, refusals = []) {
   const out = [];
   let i = 0;
   while (i < html.length) {
     const lt = html.indexOf('<', i);
     if (lt < 0) break;
     if (html.startsWith('<!--', lt)) {
-      const close = html.indexOf('-->', lt + 4);
-      const end = close < 0 ? html.length : close + 3;
+      const end = commentEndOf(html, lt);
       out.push({ kind: 'comment', name: '#comment', attrs: new Map(), at: lt, end, text: '' });
       i = end;
       continue;
@@ -456,22 +517,42 @@ function nodesOf(html) {
     }
     if (!closed) break;
     let end = j;
-    if (!isEnd && RAW_TEXT_ELEMENTS.has(name)) {
+    if (!isEnd && name === 'plaintext') end = html.length;
+    else if (!isEnd && RAW_TEXT_ELEMENTS.has(name)) {
       const close = html.toLowerCase().indexOf('</' + name, j);
       end = close < 0 ? html.length : close;
+      if (name === 'script') {
+        const text = html.slice(j, end).toLowerCase();
+        const esc = text.indexOf('<!--');
+        if (esc >= 0 && /<script[\s/>]/.test(text.slice(esc))) {
+          refusals.push('a double-escaped <script> at byte ' + lt + ': `<!--` and then `<script` '
+            + 'inside script text put the tokeniser in a state where the next `</script>` does '
+            + 'not end the element, and this walk cannot tell where it does end');
+        }
+      }
     }
     out.push({ kind: isEnd ? 'end' : 'start', name, attrs, at: lt, end, text: html.slice(lt, j) });
     i = end;
   }
   return out;
 }
-const PAGE_NODES = nodesOf(RAW_HTML);
+/* Shapes the walk refused to model on THIS page. Both tests that read the
+   walk assert this is empty before they read anything out of it, so the
+   refusal is a red rather than a comment nobody runs. */
+const WALK_REFUSALS = [];
+const PAGE_NODES = nodesOf(RAW_HTML, WALK_REFUSALS);
 const PAGE_TAGS = PAGE_NODES.filter((n) => n.kind === 'start');
 const LINK_TAGS = PAGE_TAGS.filter((n) => n.name === 'link');
 const META_TAGS = PAGE_TAGS.filter((n) => n.name === 'meta');
 /* The text between one node and the next. A raw-text start tag ends past its
    text, so what is left in these gaps is the document's TEXT -- which is the
-   thing that ends <head> -- and not the body of a <script>. */
+   thing that ends <head> -- and not the body of a <script>, FOR THE NAMES on
+   RAW_TEXT_ELEMENTS and for comments whose end commentEndOf() computes. That
+   qualifier is the finding: `noframes` was off the list and a `--!>` ended a
+   comment the walk read past, so a gap held bytes the parser did not treat
+   as text and a head-ending letter hid inside them (the twenty-ninth review
+   of #75, M29R-3 and M29R-5). The one shape left where a gap could still be
+   script is refused by the walk rather than measured here. */
 const NODE_GAPS = PAGE_NODES.map((n, k) => RAW_HTML.slice(k ? PAGE_NODES[k - 1].end : 0, n.at));
 /* The names that keep the parser in <head>. <template> is deliberately NOT
    among them: a <meta> inside a template is inert, this walk cannot tell
@@ -492,9 +573,17 @@ const HEAD_END_TAGS = new Set(['noframes', 'noscript', 'script', 'style', 'title
    the head by the parser and enforced (measured in Chrome, round 29 -- the
    meta's parent is HEAD and an injected <style> is blocked), and this says
    false for it. That is a loud red about a policy that is really there. It
-   does not answer true for a node the parser moved OUT of head, because
+   does not answer true for a node the parser moved OUT of head, for as far
+   as the walk above agrees with the parser about which bytes are MARKUP:
    every way head ends -- a start tag not on the list, an end tag not on the
-   list, or non-space text -- is on the false side of it.
+   list, or non-space text -- is on the false side of it, and each of those
+   is read out of the walk's nodes and gaps. Where the walk cannot agree it
+   refuses, and the refusal reds before this function is reached. That
+   qualifier is not decoration: a letter hidden inside what the walk wrongly
+   called a comment made this answer TRUE for a pragma Chrome had put in
+   <body>, and the page shipped no policy (the twenty-ninth review of #75,
+   M29R-3, fixed by commentEndOf()). The claim is only ever as good as the
+   tokenising underneath it.
 
    Three shapes this and the walk above turn from green into red, each
    measured in real Chrome as shipping NO policy the browser enforces
@@ -3334,6 +3423,11 @@ test('the page loads one design system and one theme decision', () => {
      What this block does NOT do is decide where the parser put the pragma.
      It refuses instead: stillInHead() is false for anything it cannot prove
      is still in <head>, and a pragma it is false for is not read. */
+  assert.deepEqual(WALK_REFUSALS, [],
+    'the document walk refused to model a shape in this page, so nothing below may read a '
+    + 'node out of it: a reader that cannot tell where an element ENDS can invent a tag the '
+    + 'parser never built, and inventing one is the direction that ships a page with no policy '
+    + 'while this file says it has one');
   const cspMetas = META_TAGS.filter((t) => (t.attrs.get('http-equiv') || '').toLowerCase()
     === 'content-security-policy');
   assert.deepEqual(cspMetas.filter((t) => !stillInHead(t)).map((t) => t.text), [],
@@ -4389,6 +4483,11 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
      (measured in Chrome, round 28), and `data-href` is an attribute named
      `data-href` to it rather than a boundary problem. A refusal that can no
      longer fire is prose claiming a guard. */
+  assert.deepEqual(WALK_REFUSALS, [],
+    'the document walk refused to model a shape in this page, so nothing below may read a '
+    + 'node out of it: a reader that cannot tell where an element ENDS can invent a tag the '
+    + 'parser never built, and inventing one is the direction that ships a page with no policy '
+    + 'while this file says it has one');
   assert.deepEqual(PAGE_SHEETS, V2_STYLESHEETS,
     'the sheets this reads out of ops/alerts.html are not the three the page is meant to '
     + 'load, in order: ' + JSON.stringify(PAGE_SHEETS) + ' against '
