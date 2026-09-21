@@ -388,7 +388,7 @@ function claimBlocks(md) {
     }
     assert.ok(j < lines.length, `${README_PATH}:${i + 1}: claims block never closes`);
     assert.ok(!blocks.has(id), `${README_PATH}:${i + 1}: id=${id} appears twice`);
-    blocks.set(id, { line: i + 1, lines: body.filter((l) => l.trim() !== '') });
+    blocks.set(id, { line: i + 1, end: j + 1, lines: body.filter((l) => l.trim() !== '') });
     i = j;
   }
   return blocks;
@@ -1195,10 +1195,20 @@ DERIVED['v1-v2-collision'] = () => {
   const v1 = declaredClasses('ops/assets/ops.css');
   const v2 = declaredClasses('ops/assets/aria.css');
   const shared = [...v1.keys()].filter((c) => v2.has(c));
+  /* How many of the shared names this block prints is a HAND-WRITTEN number
+     in the slice below, and round 9 demonstrated the shrink: narrow the slice
+     to three, delete the five README rows with it, and the block agreed with
+     the code at four rows while the sentence above it still said eight. The
+     subjects are derived, so REQUIRED_ROWS cannot pin them; a cardinality has
+     nothing inside it to name. So it is a FLOOR, like the other four. */
   const widest = shared.slice()
     .sort((a, b) => v1.get(b) - v1.get(a) || a.localeCompare(b))
-    .slice(0, 8)
+    .slice(0, FLOORS.collisionWidest)
     .sort();
+  assert.strictEqual(widest.length, FLOORS.collisionWidest,
+    `v1-v2-collision prints ${widest.length} widest rows and FLOORS.collisionWidest is `
+    + `${FLOORS.collisionWidest}: the sample shrank, or ops.css and aria.css stopped sharing `
+    + 'that many names. Both are facts the README states, so neither may be silent.');
   return [
     `class names declared in both ops.css and aria.css = ${shared.length}`,
     ...widest.map((c) => `.${c} = ${v1.get(c)} selectors in ops.css, ${v2.get(c)} in aria.css`),
@@ -1386,6 +1396,7 @@ const SWEEP_TEST = 'every repository file ops/README.md names is in the tree or 
 const JUDGED_TEST = 'the run reports what it judged';
 const TABLE_TEST = 'every browser guard in the tree has a row in the checks table';
 const BLOCK_SET_TEST = 'every claims block is derived here, and every derivation has a block';
+const CITATION_CHECK = 'ops/README.md prose spells no source line number';
 
 DERIVED['claims-blocks'] = () => {
   /* Two row sets are judged by a test rather than by a block — the file
@@ -1401,6 +1412,7 @@ DERIVED['claims-blocks'] = () => {
   const checks = [
     ...(self.includes('\ncheck(SWEEP_TEST,') ? [SWEEP_TEST] : []),
     ...(self.includes('\ncheck(TABLE_TEST,') ? [TABLE_TEST] : []),
+    ...(self.includes('\ncheck(CITATION_CHECK,') ? [CITATION_CHECK] : []),
   ];
   return [
     ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
@@ -1430,6 +1442,7 @@ DERIVED['pinned-blocks'] = () => [
   `floor: blocks pinned in REQUIRED_ROWS = at least ${FLOORS.pinnedBlocks}`,
   `floor: blocks derived in this file = at least ${FLOORS.derivedBlocks}`,
   `floor: families pinned in REQUIRED_FAMILIES = at least ${FLOORS.statusFamilies}`,
+  `floor: widest shared names printed by v1-v2-collision = exactly ${FLOORS.collisionWidest}`,
 ];
 
 /* The policy a page actually declares, read out of the meta tag rather than
@@ -1621,7 +1634,7 @@ const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
    number here AND the row it prints into `claims id=pinned-blocks`. That is the
    property being bought — not that a retirement is impossible, but that it
    cannot be quiet. */
-const FLOORS = { pinnedBlocks: 17, derivedBlocks: 24, statusFamilies: 4 };
+const FLOORS = { pinnedBlocks: 17, derivedBlocks: 24, statusFamilies: 4, collisionWidest: 8 };
 
 const REQUIRED_ROWS = {
   /* Round 8: five more row sets were written by hand here and outside this
@@ -1645,6 +1658,7 @@ const REQUIRED_ROWS = {
     'floor: blocks pinned in REQUIRED_ROWS',
     'floor: blocks derived in this file',
     'floor: families pinned in REQUIRED_FAMILIES',
+    'floor: widest shared names printed by v1-v2-collision',
   ],
   /* Five more, found in round 7 by the reviewer enumerating every derivation
      rather than re-reading the list the round before had named. Each takes its
@@ -1883,6 +1897,67 @@ check(SWEEP_TEST, () => {
   JUDGED['file-paths'] = judged;
 });
 
+/* A line number typed into a sentence is the defect this file keeps finding:
+   five of the false claims on PR #111 were a `file:line` citation that was
+   true when it was written and drifted afterwards, one of them re-typed by
+   the round that removed it for being wrong by 343 lines. `source-anchors`
+   answers that by DERIVING the number from a quoted anchor, but nothing
+   stopped the next sentence from spelling a fresh one, and round 9 found
+   `check-ops-shell-v2.mjs:583` still spelled three lines above the sentence
+   saying both numbers had been moved into the block.
+
+   So this is a NARROWING rather than a new analysis, and it is the whole
+   rule: prose may name a FILE and may not name a LINE. The exceptions are
+   citations that are themselves the record of a number that WAS wrong, which
+   are listed here and nowhere else. What it does not see: a citation written
+   in words ("line 583 of ..."), or one outside a backtick span. Both are in
+   NOT COVERED at the head of this file. */
+const HISTORICAL_CITATIONS = ['pane-registry.js:103-110'];
+
+check(CITATION_CHECK, () => {
+  const here = new Set([
+    ...PAGES.map((f) => `ops/${f}`),
+    ...list('ops/assets').map((a) => `ops/assets/${a}`),
+    ...list('scripts').map((f) => `scripts/${f}`),
+    ...WORKFLOWS.map((w) => `.github/workflows/${w}`),
+  ]);
+  const byBasename = new Set([...here].map((f) => path.basename(f)));
+  /* Only a file THIS repository has. A citation into the Aria monorepo —
+     `opsUsageView.ts:932` — names a line nothing here can resolve, so it is
+     out of reach of this check rather than quietly counted as clean; that is
+     the NOT COVERED entry, not a silent skip. The extension must start with a
+     LETTER, or the contrast ratio `1.08:1` reads as file `1.08` line 1. */
+  const cited = /^([A-Za-z0-9._/-]+\.[A-Za-z][A-Za-z0-9]*):\d+(?:[-,]\d+)*$/;
+  const spans = [...BLOCKS.values()];
+  const inside = (n) => spans.some((b) => n >= b.line && n <= b.end);
+  const found = [];
+  /* A bare `:281` is a continuation of the citation before it, which is how
+     four of the twelve round 9 found were written — and one of those four
+     sits on the NEXT line, so the continuation is PARAGRAPH-scoped rather
+     than line-scoped. It is judged when what it continues is judged. */
+  let continuing = false;
+  README.split('\n').forEach((line, i) => {
+    if (inside(i + 1)) return;
+    if (line.trim() === '') continuing = false;
+    for (const span of line.matchAll(/`([^`]+)`/g)) {
+      const hit = cited.exec(span[1]);
+      if (hit) {
+        continuing = here.has(hit[1]) || (!hit[1].includes('/') && byBasename.has(hit[1]));
+        if (continuing) found.push({ at: i + 1, text: span[1] });
+        continue;
+      }
+      if (continuing && /^:\d+(?:[-,]\d+)*$/.test(span[1])) found.push({ at: i + 1, text: span[1] });
+    }
+  });
+  JUDGED['prose line citations'] = found.length;
+  assert.deepStrictEqual(
+    found.map((f) => f.text).sort(),
+    HISTORICAL_CITATIONS.slice().sort(),
+    '\n' + found.map((f) => `${README_PATH}:${f.at}: spells ${f.text}`).join('\n')
+    + '\nProse may name a file; the line number belongs in source-anchors, or nowhere.\n',
+  );
+});
+
 /* A claims guard that judged nothing is the worst outcome this file has, and
    a green run says nothing about how much was compared. So the count goes in
    the log, per block, and the run is red if any of it is empty or if a
@@ -1891,10 +1966,10 @@ check(JUDGED_TEST, () => {
   const rows = Object.keys(JUDGED).sort().map((id) => `  ${id}: ${JUDGED[id]}`);
   const total = Object.values(JUDGED).reduce((a, b) => a + b, 0);
   console.log(`ops/README.md claims judged against the code:\n${rows.join('\n')}\n  TOTAL: ${total}`);
-  /* Every block, plus the two tests that judge a row set without a block of
-     their own: the file sweep and the checks table. */
+  /* Every block, plus the three checks that judge a row set without a block
+     of their own: the file sweep, the checks table and the line citations. */
   assert.deepStrictEqual([...Object.keys(JUDGED)].sort(),
-    [...Object.keys(DERIVED), 'file-paths', 'checks table'].sort(),
+    [...Object.keys(DERIVED), 'file-paths', 'checks table', 'prose line citations'].sort(),
     'a block was not judged in this run');
   assert.ok(total > 0, 'nothing was judged');
 });
