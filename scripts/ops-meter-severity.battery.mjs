@@ -129,6 +129,29 @@ const BATTERY = [
     why: 'REPAIRS Stadiora/Aria#10848 rather than breaking anything -- flattens the light fill to a flat mid grey so every light meter clears 3:1 against its own track. The ratchet holding that shortfall must red when the shortfall goes, or it outlives the issue in silence. Also raised in review: the trip was `worst < VALUE_CONTRAST + 1`, which left everything in [3, 4) green, and a repair aimed at the SC 1.4.11 threshold lands exactly there. Only `background-image`, so the forced-colors `background-color` still wins in that block.',
     apply: (s) => replaceOnce(s, '.meter i {\n  position: absolute;',
       '[data-theme="light"] .meter i { background-image: linear-gradient(90deg, #737373, #737373); box-shadow: none; }\n.meter i {\n  position: absolute;')
+  },
+  {
+    id: 'T11', file: TARGET, expect: 'KILL',
+    why: 'Deletes the `scrollIntoView` that puts a meter on screen before it is captured, which is the whole of the fix for Stadiora/Aria#10871. The capture then comes from 3,300-4,400px below a 1000px viewport, exactly as it did before. The defect this restores is not a wrong number, it is a number that is only SOMETIMES wrong -- one uniform capture in fourteen runs -- so the row binds the dependency rather than the symptom. Killed by the `covered` probe reporting `off screen`, which is also why the separate precondition first written into `shoot` was deleted: the probe reaches it first in every case, so no row could ever kill it.',
+    apply: (s) => replaceOnce(s, "  el.scrollIntoView({ block: 'center', inline: 'nearest' });\n", '')
+  },
+  {
+    id: 'T12', file: TARGET, expect: 'KILL',
+    why: 'Keeps the scroll and drops the document-coordinate conversion, so the clip is built from viewport coordinates. The clip is in DOCUMENT coordinates in both capture modes -- the measurement this whole change rests on -- so this aims every capture at whatever sits ~2,800px higher up the page. It is the half of the fix that is invisible in a reading of the diff, and it would have been a silent miscapture rather than a loud one.',
+    apply: (s) => replaceOnce(s,
+      'box: { x: t.left + window.scrollX, y: t.top + window.scrollY, width: t.width, height: t.height },',
+      'box: { x: t.left, y: t.top, width: t.width, height: t.height },')
+  },
+  {
+    id: 'T13', file: TARGET, expect: 'GREEN',
+    why: 'Puts `captureBeyondViewport: true` back while LEAVING the scroll in place, and must stay green. Published as a green on purpose: the flag is not what fixes #10871, being on screen is, and a kill here would mean the guard had keyed itself to the spelling of the fix rather than to its invariant. It is also the honest reading of the probe -- with the scroll in, both modes returned identical pixels.',
+    apply: (s) => replaceOnce(s, 'captureBeyondViewport: false, clip }', 'captureBeyondViewport: true, clip }')
+  },
+  {
+    id: 'T14', file: TARGET, expect: 'KILL',
+    why: 'Scrolls each meter to the TOP of the viewport rather than its centre, which is where the sticky headers at aria.css:239 and :382 sit. Binds the occlusion check: centring is not decoration, it is what holds the capture clear of the page chrome, and with nothing asserting it the sweep could measure a sticky header and report it as a bar.',
+    apply: (s) => replaceOnce(s, "el.scrollIntoView({ block: 'center', inline: 'nearest' });",
+      "el.scrollIntoView({ block: 'start', inline: 'nearest' });")
   }
 ];
 

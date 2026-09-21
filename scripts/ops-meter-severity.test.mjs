@@ -62,6 +62,13 @@
  * - Whether three notches remain countable to a reader at arm's length. The
  *   claims here are that they are painted, counted and contrast; legibility
  *   at a distance is a judgement no oracle makes.
+ * - Whether a capture that came back uniform is uniform because the bar is
+ *   blank or because the capture failed. The sweep no longer has to tell
+ *   those apart: it stopped creating the second case by scrolling each meter
+ *   on screen before reading it (Stadiora/Aria#10871), rather than by
+ *   detecting a bad capture and retrying, which could swallow a genuinely
+ *   blank bar. A blank bar is what the two forced-colors claims exist to
+ *   catch, so a retry there would have been a guard eating its own evidence.
  * - A groove displaced onto UNFILLED track. This was claimed and then
  *   withdrawn, because it was measured and the instrument cannot see it.
  *   Pushing the first groove 6px past the fill's trailing edge moves the
@@ -445,14 +452,20 @@ const FINGERPRINT = `Array.prototype.map.call(document.querySelectorAll('.meter 
 }).join('|') + '#' + document.fonts.status`;
 
 /* Every box is the intersection of the fill's rect with the track's, because
-   the track is overflow:hidden and a rect does not know that. */
-const READ_METERS = `Array.prototype.map.call(document.querySelectorAll('.meter'), function (m) {
+   the track is overflow:hidden and a rect does not know that. `idx` is the
+   position in `querySelectorAll('.meter')` and not in the array this returns,
+   because the array is filtered below and `focusMeter` addresses the document.
+   The geometry here is read before any scrolling and is used for identity and
+   for the width floors; what the capture is aimed at comes from `focusMeter`,
+   re-read after the scroll that put the meter on screen. */
+const READ_METERS = `Array.prototype.map.call(document.querySelectorAll('.meter'), function (m, n) {
   var i = m.querySelector('i');
   if (!i) return null;
   var t = m.getBoundingClientRect(), f = i.getBoundingClientRect();
   var left = Math.max(t.left, f.left), right = Math.min(t.right, f.right);
   var tones = ['ok', 'warn', 'bad', 'vio'].filter(function (c) { return m.classList.contains(c); });
   return {
+    idx: n,
     tones: tones,
     synthetic: m.classList.contains('severity-probe'),
     trackWidth: t.width,
@@ -497,8 +510,69 @@ async function shoot(box) {
     width: Math.round(box.width), height: Math.round(box.height), scale: 1
   };
   const shot = await cdp.send('Page.captureScreenshot',
-    { format: 'png', captureBeyondViewport: true, clip });
+    { format: 'png', captureBeyondViewport: false, clip });
   return decodePNG(Buffer.from(shot.data, 'base64'));
+}
+
+/* Puts one meter on screen and re-reads it there. Three things make this the
+   fix for #10871 rather than a tidy-up:
+
+   - The clip is in DOCUMENT coordinates in both capture modes. Measured, not
+     assumed: a clip of `rect + scroll offset` taken with
+     `captureBeyondViewport: false` after scrolling came back byte-identical
+     -- 1.0000 pixel agreement, three meters -- to the unscrolled
+     `captureBeyondViewport: true` capture this file used to take. So the
+     numbers do not move; only where they are read from does.
+   - `captureBeyondViewport` rasterises a region that was never on screen, and
+     a capture that returns before that region has rasterised is UNIFORM. A
+     uniform strip measures exactly 1.00:1, which reds the value ratchet on a
+     bar that is fine. Seen once in fourteen runs, with a second sweep running
+     on the same machine. Every meter on this board sits between y=3322 and
+     y=4463 at a 1000px viewport, so every capture took that path.
+   - The invariant that actually removes the dependency is `the pixels about
+     to be read are on screen`, and ONE thing asserts it: the `covered` probe
+     below, which reports a point outside the viewport and a point behind the
+     sticky topbar in the same breath because both mean the same thing --
+     what gets captured there is not the bar. A separate precondition in
+     `shoot` was written first and deleted: the probe reaches it first in
+     every case, so no mutation could kill it, and an assertion nothing can
+     kill is dead code wearing a guard's clothes.
+   - `captureBeyondViewport: false` is belt and braces, not the fix. T13 in
+     the battery puts `true` back with the scroll left in and stays GREEN on
+     purpose: with the region on screen, both modes return identical pixels.
+
+   A retry on a uniform capture would also have worked and is the worse trade,
+   because it could swallow a genuinely blank bar -- which is exactly what the
+   forced-colors claims exist to catch. */
+function focusMeter(idx) {
+  return `(function () {
+  var el = document.querySelectorAll('.meter')[${idx}];
+  if (!el) return { error: 'meter ${idx} is no longer in the document' };
+  var i = el.querySelector('i');
+  if (!i) return { error: 'meter ${idx} lost its fill between the read and the scroll' };
+  el.scrollIntoView({ block: 'center', inline: 'nearest' });
+  var t = el.getBoundingClientRect(), f = i.getBoundingClientRect();
+  var left = Math.max(t.left, f.left), right = Math.min(t.right, f.right);
+  var cy = t.top + t.height / 2;
+  var covered = [];
+  [t.left + 1, t.left + t.width / 2, t.right - 1].forEach(function (x) {
+    var at = Math.round(x) + 'x' + Math.round(cy);
+    if (x < 0 || cy < 0 || x > window.innerWidth || cy > window.innerHeight) {
+      covered.push(at + ':off screen');
+      return;
+    }
+    var hit = document.elementFromPoint(x, cy);
+    if (hit && (hit === el || el.contains(hit))) return;
+    covered.push(at + ':' + (hit ? hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '') : 'nothing'));
+  });
+  return {
+    tones: ['ok', 'warn', 'bad', 'vio'].filter(function (c) { return el.classList.contains(c); }),
+    box: { x: t.left + window.scrollX, y: t.top + window.scrollY, width: t.width, height: t.height },
+    trackWidth: t.width,
+    visibleFill: Math.max(0, right - left),
+    covered: covered
+  };
+})()`;
 }
 
 const ratioL = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
@@ -609,7 +683,23 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
        Nothing on the board is dropped at 1px, so the floor now judges every
        meter that paints. */
     if (m.visibleFill < 1) continue;
-    const img = await shoot(m.box);
+    const at = await evaluate(focusMeter(m.idx));
+    const where = `${theme}/${pane}/${state} meter ${m.idx}`;
+    assert.ok(!at.error, `${where}: ${at.error}`);
+    /* Scrolling is new reach for this file, so it says what it reached. This
+       is the only thing asserting the pixels are on screen, and it reports
+       off-screen and occluded identically because they mean the same thing:
+       T11 kills it with `off screen`, T14 with `header#topbar`, the sticky
+       bar at aria.css:382 that `block: 'start'` would park every meter
+       under. */
+    assert.deepEqual(at.covered, [],
+      `${where} cannot be measured where it sits: ${at.covered.join(', ')}`);
+    assert.deepEqual(at.tones, m.tones, `${where} changed tone between the read and the scroll`);
+    assert.equal(Math.round(at.trackWidth), Math.round(m.trackWidth),
+      `${where} changed track width when it was scrolled into view`);
+    assert.equal(Math.round(at.visibleFill), Math.round(m.visibleFill),
+      `${where} changed fill width when it was scrolled into view`);
+    const img = await shoot(at.box);
     const tone = m.tones[0] || null;
     out.push({
       pane, state, theme, tone, tones: m.tones, synthetic: m.synthetic,
