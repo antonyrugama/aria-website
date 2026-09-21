@@ -35,10 +35,14 @@
        under this page's own CSP (RV20-4, re-run in round 21): a sheet a
        permitted script APPENDS as a <link> paints, and a constructed sheet
        pushed onto adoptedStyleSheets paints, and neither is read anywhere
-       in this file. Only the third route, an injected <style>, is closed,
-       by a CSP with no 'unsafe-inline' -- which is asserted here, not
-       assumed. ops/alerts.html runs no such script today; nothing in this
-       file would notice if it did.
+       in this file. A script setting `el.style.setProperty(...)` paints
+       too -- CSSOM is not governed by style-src at all, and aria.js and
+       shell-pane-v2.js already do it (RV22-A1) -- and is likewise unread.
+       Only the fourth route, an injected <style> ELEMENT, is closed, and
+       only while style-src stays exactly 'self': a hash or a nonce opens
+       it with no violation reported (RV22-2). Both of those are asserted
+       below, not assumed. ops/alerts.html appends no sheet today; nothing
+       in this file would notice if it did.
      - Every reader of the sheet. The line below enumerates the PREFIXED
        docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the regex frames
        over its prose; what is not enumerated anywhere is the rest. Most of
@@ -277,8 +281,19 @@ const attrOf = (tag, name) => {
     .exec(tag);
   return m ? (m[2] ?? m[3] ?? m[4]) : null;
 };
+/* `rel` is a space-separated TOKEN LIST, not a value: `rel="next stylesheet"`
+   is a stylesheet to the browser, and an equality against the whole string
+   says no. That loaded a fourth sheet painting every rail with 76 tests
+   green, and carried an escape and an @import inside it past both refusals,
+   which only ever look at sheets this list found (twenty-second review of
+   #75). Over-reading is the safe direction here and is left alone: an
+   `alternate` stylesheet, or one with `media="print"` or `disabled`, is read
+   although the browser does not apply it, which can only produce a false
+   RED about a rule that is really there. */
+const relTokens = (tag) => (attrOf(tag, 'rel') || '').toLowerCase().split(/[\s\r\n\t\f]+/)
+  .filter(Boolean);
 const PAGE_SHEETS = LINK_TAGS
-  .filter((t) => (attrOf(t, 'rel') || '').trim().toLowerCase() === 'stylesheet')
+  .filter((t) => relTokens(t).includes('stylesheet'))
   .map((t) => attrOf(t, 'href'));
 
 /* The PREFIXED docblock lines this file reads as DATA rather than as prose.
@@ -2964,6 +2979,18 @@ test('the page loads one design system and one theme decision', () => {
     'the theme is decided in more than one place');
   assert.match(html, /Content-Security-Policy/, 'the page lost its CSP meta tag');
   assert.ok(!/unsafe-inline/.test(html), 'the CSP grew unsafe-inline');
+  /* `no unsafe-inline` is not the same claim as `no inline styles`: a hash
+     or a nonce in style-src opens the <style> route one sheet at a time,
+     with no violation reported, and the NOT COVERED bullet at the top of
+     this file says that route is CLOSED. So the source list is pinned
+     whole, not searched for one keyword (twenty-second review of #75). */
+  const cspMeta = /<meta[^>]*http-equiv="Content-Security-Policy"[^>]*>/i.exec(html);
+  const csp = cspMeta ? (/content\s*=\s*"([^"]*)"/i.exec(cspMeta[0]) || [])[1] : null;
+  const styleSrc = /(?:^|;)\s*style-src\s+([^;]*)/.exec(csp || '');
+  assert.deepEqual(styleSrc ? styleSrc[1].trim().split(/\s+/) : null, ["'self'"],
+    'style-src is no longer exactly \'self\': a hash, a nonce or another source opens the '
+    + '<style> route that the NOT COVERED bullet at the top of this file says is closed, '
+    + 'and it opens it without reporting a violation');
 
   /* The sheet's own first sentence: "Loaded after assets/aria.css and
      assets/shell-pane-v2.css, on ops/alerts.html and nowhere else." Order
@@ -3904,7 +3931,9 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     ] },
   });
   const classesOf = (n) => (((n.getAttribute && n.getAttribute('class')) || '').split(/\s+/));
-  const spelt = (DECODED_HTML.match(/rel\s*=\s*["']?\s*stylesheet/gi) || []).length;
+  const spelt = [...DECODED_HTML.matchAll(/rel\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)]
+    .filter((m) => (m[2] ?? m[3] ?? m[4] ?? '').toLowerCase().split(/[\s\r\n\t\f]+/)
+      .includes('stylesheet')).length;
   assert.equal(PAGE_SHEETS.length, spelt,
     'the page spells rel=stylesheet ' + spelt + ' times and this reads ' + PAGE_SHEETS.length
     + ' sheets, so a sheet the browser loads is one this cannot see -- counted off the raw '

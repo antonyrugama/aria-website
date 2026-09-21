@@ -43,9 +43,13 @@
    fill, stroke), so a keyword on column-rule, text-decoration, mask-image or
    list-style walks past it — inside a color-mix() or not. A -color longhand,
    where one exists, is caught: the stem is in its name. `filter` is not on
-   that list although its name carries no stem either, because the only
-   syntax that brings a colour to it is drop-shadow(), which is unclassified
-   and so refused everywhere. Every one of those is a case that gets RUN
+   that list although its name carries no stem either, because both syntaxes
+   that bring a colour to it — drop-shadow(), and a URL reference to an SVG
+   filter that paints one — are unclassified functions, and an unclassified
+   function is refused on every property (RV22-A2 corrected the earlier
+   version of this sentence, which named only drop-shadow(); the URL form
+   cannot be spelt in this comment, because a guard below reds the sheet for
+   growing one). Every one of those is a case that gets RUN
    rather than asserted ("the reader refuses what READER_PROBES says it
    refuses, and walks past what it says it misses") — and `filter` is off the
    list because running it is what showed the sheet had it wrong.
