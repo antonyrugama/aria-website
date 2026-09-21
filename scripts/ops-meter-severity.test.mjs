@@ -127,6 +127,16 @@
  *   different things in different parts of the space. It binds collapse --
  *   two tones resolving to one colour -- and nothing finer. A real answer
  *   wants CIEDE2000 and a stated observer, which is a judgement, not a pixel.
+ * - Claim 8 as an INDEPENDENT claim. It is nearly subsumed by claim 7. The
+ *   track is `color-mix(var(--ink) 10%, transparent)` -- a translucent wash OF
+ *   the card -- so card and track move together, and in light theme the card
+ *   is lighter than the track, which makes fill-vs-card ALWAYS the easier of
+ *   the two ratios. Any realistic payload that reds claim 8 reds claim 7
+ *   first; T15, the verbatim `origin/main` revert, reds both. Reaching claim 8
+ *   while claim 7 stays green takes T17's contrivance -- an opaque dark track
+ *   with fills lightened to sit between it and the card. Claim 8 is kept
+ *   because it names the trade #10848 makes explicitly, not because it is
+ *   independently reachable.
  * - The surface BELOW a meter. Claim 8 reads two strips above the track's top
  *   edge, because that is where every meter on this board has clear card. A
  *   bar sitting on a boundary -- card above, table row tint below -- would be
@@ -431,7 +441,11 @@ const CARD_UNIFORM = 1.1;
 const CARD_AGREE = 1.03;
 /* And a population floor, because a claim that judges nothing passes: if the
    uniformity gate ever rejected every strip, "every bar clears 3:1 against
-   its card" would be vacuously true. Counted today: see the run summary. */
+   its card" would be vacuously true. Applied PER THEME -- a pooled floor is
+   satisfied by either theme alone, so a change that makes light-theme cards
+   non-uniform empties light's population while dark's 50 readings keep the
+   count healthy and the claim silently judges one theme. T19 in the battery
+   is that payload. Counted today: see the run summary. */
 const CARD_FLOOR = 8;
 
 /* The severity hues are closer together after #10848 than before it --
@@ -922,6 +936,15 @@ test('the sweep judged a real board of meters, not an empty one', () => {
   assert.ok(readings.length >= METER_FLOOR,
     `judged ${readings.length} meters, below the declared floor of ${METER_FLOOR}; ` +
     'a board that rendered nothing would satisfy every other claim in this file');
+  /* PER THEME, not pooled. A pooled floor lets one theme contribute zero while
+     the other carries the count, and every claim downstream then reports a
+     healthy population for a sweep that judged one theme. */
+  for (const theme of THEMES) {
+    const here = readings.filter((r) => r.theme === theme);
+    assert.ok(here.length >= Math.floor(METER_FLOOR / THEMES.length),
+      `judged ${here.length} meters in ${theme}, below its share of the floor; ` +
+      'a pooled count hides a theme that rendered nothing');
+  }
   assert.ok(toned.length >= TONED_FLOOR,
     `judged ${toned.length} severity-bearing meters, below the declared floor of ${TONED_FLOOR}`);
   /* See REQUIRED_REAL: a total cannot tell a board of `ok` meters from a
@@ -994,9 +1017,13 @@ test('every severity-bearing fill is wide enough for its own notches', () => {
 
 test('the bar reports its value, filled against unfilled, in both themes', () => {
   const judged = readings.filter((r) => r.value && r.value.emptyWidth >= 4);
-  assert.ok(judged.length >= VALUE_FLOOR,
-    `only ${judged.length} meters had enough unfilled track to judge the value against, ` +
-    `below the declared floor of ${VALUE_FLOOR}`);
+  for (const theme of THEMES) {
+    const here = judged.filter((r) => r.theme === theme);
+    assert.ok(here.length >= VALUE_FLOOR,
+      `only ${here.length} ${theme} meters had enough unfilled track to judge the value ` +
+      `against, below the declared floor of ${VALUE_FLOOR} -- and a pooled floor would ` +
+      'have passed on the other theme\'s population');
+  }
   const weak = judged.filter((r) => r.value.contrast < VALUE_CONTRAST);
   assert.deepEqual(weak.map((r) =>
     `${r.theme}/${r.pane}/${r.state} .meter${r.tone ? '.' + r.tone : ''} fill vs track ` +
@@ -1064,9 +1091,13 @@ test('the bar reports its value, filled against unfilled, in both themes', () =>
    that nothing measured until this file existed. */
 test('the bar is visible against the card it sits on, not just against its own track', () => {
   const judged = [...readings, ...synthetic].filter((r) => r.cardL !== null && r.fillL !== null);
-  assert.ok(judged.length >= CARD_FLOOR,
-    `only ${judged.length} meters had a readable surface above them, below the declared ` +
-    `floor of ${CARD_FLOOR} -- a claim with nothing to judge passes in silence`);
+  for (const theme of THEMES) {
+    const here = judged.filter((r) => r.theme === theme);
+    assert.ok(here.length >= CARD_FLOOR,
+      `only ${here.length} ${theme} meters had a readable surface above them, below the ` +
+      `declared floor of ${CARD_FLOOR} -- a claim with nothing to judge passes in silence, ` +
+      'and a floor pooled across themes lets one theme empty out unnoticed');
+  }
   const lost = judged.filter((r) => ratioL(r.fillL, r.cardL) < CARD_CONTRAST);
   assert.deepEqual(lost.map((r) =>
     `${r.theme}/${r.pane}/${r.state} .meter${r.tone ? '.' + r.tone : ''} fill vs card ` +
