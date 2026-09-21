@@ -594,8 +594,9 @@ number that is quietly short.
 whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET /api/ops/costs`,
 and land on an honest state rather than a zero wherever an answer carries no figure.
 
-**Settings** is built, and is the one pane that can change something rather than only report it.
-The section on it below is worth reading before the page is used. **Aria quality** lets
+**Settings** is built, and changes configuration rather than only reporting it — it is not the
+only pane that writes, which this file used to claim; see the derived block in the Settings
+section below. The section on it below is worth reading before the page is used. **Aria quality** lets
 viewers, operators and owners validate synthetic dataset declarations. Paste an input object
 containing `datasets` and `fixtureDigests`; the page supplies the operation envelope. The server
 returns manifest digests or field paths and reason codes. Editing the input clears the old
@@ -987,8 +988,19 @@ decided here.
 
 ## The Settings pane
 
-Settings is owner only and is the one pane that can change something, so it is worth being exact
-about what it does and does not do. It runs on the v2 shell: `settings.html` loads `aria.css`,
+Settings is owner only. It used to say here, and in the tour above, that it is "the one pane that
+can change something". That was false when it was written: Problems acknowledges and closes
+problems, People reveals a masked field, and Aria quality posts an evaluation. Derived rather
+than asserted, from the HTTP method each file spells:
+
+```claims id=write-capable-assets
+ops assets naming a write method = login.js, pane-alerts.js, pane-evaluations.js, pane-users.js, session.js, settings.js, setup.js
+of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-users.js
+```
+
+`settings.js` is the v1 script and `session.js` is the transport every one of them calls through;
+`login.js` and `setup.js` are the two pages outside the shell. What is true of Settings is
+narrower and worth being exact about: It runs on the v2 shell: `settings.html` loads `aria.css`,
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
 
@@ -2052,7 +2064,11 @@ Three lines in that block are worth reading twice:
   confirmation's submit, and `pane-settings-v2.css` declares it. This section used to file it
   under "drawn by nothing built so far", and said in as many words that Settings draws none. The
   4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
-  paints it now; the live figure is whatever `check-ops-contrast.mjs` measures on the page.
+  paints it now. No figure in this file describes what does. `check-ops-contrast.mjs` is **not**
+  that oracle either: it fixes its page to `/ops/shell-v2.html` (`scripts/check-ops-contrast.mjs:92`,
+  loaded at `:3277`) and never opens `settings.html`, so the live pairing is unmeasured by
+  anything in the tree. That is a gap, stated as one rather than closed with a pointer at a guard
+  that does not look.
 - **Two classes were written with nothing behind them, and are not any more.** `.masked` and
   `.callout-warn` were both tokens whose rule stayed in `ops.css` when their pane moved to v2,
   so the page that wrote them loaded no sheet declaring them. `aria-website#83` gave
@@ -2161,8 +2177,9 @@ anything draws them:
 | `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, with neither scoped fix | 4.04 / 4.21 / 4.17 |
 
 The `.btn-danger` rows are `ops.css`'s ink over `ops.css`'s tint. Settings draws that class from
-its own sheet now, so those two figures no longer describe the only place the class is drawn, and
-what does describe it is `check-ops-contrast.mjs` measuring the rendered page. The last row was
+its own sheet now, so those two figures no longer describe the only place the class is drawn —
+and nothing measures what does, because `check-ops-contrast.mjs` only ever loads
+`/ops/shell-v2.html`. The last row was
 the badge fix's own boundary: it closes for good on the day the status tokens themselves are
 darkened, which is a decision about the approved palette and belongs to whoever owns it — the
 base tokens are also the dots, the chart series, the meters and the callout borders.
@@ -2410,6 +2427,7 @@ claims id=sr-span-classes
 claims id=table-focus-rings
 claims id=v1-status-classes
 claims id=v1-v2-collision
+claims id=write-capable-assets
 and a test, every repository file ops/README.md names is in the tree or declared deleted
 and a test, every browser guard in the tree has a row in the checks table
 ```
@@ -2446,10 +2464,15 @@ read the way a browser reads one — whitespace around the colon, `!important`, 
 declared twice in a rule resolving to the last of them — but CSS is otherwise parsed by text, so
 a value behind `var()`, a `calc()`, an `hsl()` or anything else this cannot resolve to a flat
 colour is **named** as unresolvable rather than measured or dropped. `@media` and `@supports`
-blocks are flattened, so a `:root` inside one counts as a later `:root` whether or not its
-condition holds: that direction over-reports rather than hides. A pane's read route is resolved
-one hop, from `endpoint:` to a string literal declared in the same file; a route built at run
-time would be named as unresolved. Contrast ratios are
+blocks are flattened — under any spelling, because an at-rule name is case-insensitive too — so a
+`:root` inside one counts as a later `:root` whether or not its condition holds: that direction
+over-reports rather than hides. A value declared twice in one rule resolves last-wins, with an
+important declaration beating a later normal one, which is the one piece of cascade this does
+model. Route blocks are a **literal scan**: every `/api/…` string a pane source spells, closed by
+the quote that opened it, with a line for every `pane-*.js` so none can drop out. There is no
+resolver and no unresolved branch — a URL assembled at run time is simply not there, a prefix
+like `/api/ops/users/` is listed as the literal it is, and a route named in a comment counts.
+Contrast ratios are
 pixels, not arithmetic over the tree: `check-ops-contrast.mjs` is that oracle. And the
 `deleted-assets` list is checked for absence only — the pull request each line names is not
 verifiable from a shallow checkout.
@@ -2563,9 +2586,12 @@ paints words no source reaches — that one named in full, so a census that catc
 fails too. If any part fails, nothing is measured
 and the run exits non-zero.
 
-**Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
-geometry against its card — is outside this check; 1.4.11 is a different requirement and this
-tool measures text only. Text over a picture is likewise outside it: the plate hides `img`,
+**Not covered.** This paragraph used to say the tool "measures text only" and put focus rings
+outside it. Both halves are stale: the script grew a focus sweep, and `--verbose` reports the
+indicators it measures against 1.4.11's 3:1 alongside its text results. What is still outside it
+is the rest of non-text contrast — control boundaries, icon strokes, chart geometry against its
+card. It is also one page: `SHELL` is `/ops/shell-v2.html` and nothing else is opened, so a class
+only a standalone page paints is unmeasured however carefully the tool measures the shell. Text over a picture is likewise outside it: the plate hides `img`,
 `canvas` and text-free `<svg>` outright, so a word sitting on an icon or an image would be
 sampled against the surface *behind* it rather than against the picture, and `video` is not
 hidden at all. The shell has no `img`, `canvas` or `video`, and its text-free SVGs paint nothing

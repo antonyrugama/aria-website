@@ -74,14 +74,20 @@
      surface a given run of text sits on. `check-ops-contrast.mjs` measures
      the rendered pair in a browser and is the oracle for both.
    - How CSS is parsed at all. A rule's declarations are read in SOURCE order
-     and normalised the way a browser reads them - whitespace around the
-     colon, `!important`, a property declared twice in one rule resolving
-     to the LAST one, an EMPTY value (`--x: ;` is legal and is kept as a
-     declaration with no value rather than dropped), and ASCII case: a
-     browser reads `POSITION:` and `Auto` as `position:` and `auto`, so both
-     are folded, while a CUSTOM property name is case-SENSITIVE and keeps
-     its case, which is why `--PanelBg` and `--panelbg` stay two tokens. The
-     parse is still text, not a cascade engine. A
+     and resolved the way a browser resolves them WITHIN ONE RULE - the last
+     declaration wins, and an important one beats a later normal one, which
+     is the one piece of cascade this models. Normalisation covers
+     whitespace around the colon, `!important`, an EMPTY value (`--x: ;` is
+     legal and is kept as a declaration with no value rather than dropped),
+     and ASCII case: a browser reads `POSITION:`, `Auto` and `@MEDIA` as
+     `position:`, `auto` and `@media`, so all three are folded, while a
+     CUSTOM property name is case-SENSITIVE and keeps its case, which is why
+     `--PanelBg` and `--panelbg` stay two tokens. A property NAME is taken
+     as the text before the colon rather than matched against a name class,
+     so an ESCAPED name (`--review\ token`, legal) is read; a name carrying
+     an escaped `;` or `:` is not, because the split is text. Nothing else
+     of the cascade is modelled: specificity, order between rules, and
+     inheritance are all outside this. A
      value behind `var()`, a `calc()` or an `hsl()` is not resolved; it is
      named as unresolvable where a block accounts for its tokens. `@media`
      and `@supports` bodies are flattened into the same rule list, so a
@@ -93,11 +99,21 @@
      such file gets a line, `(no route literal)` included, so a pane cannot
      leave the list by having nothing matched in it. The first spelling of
      this block keyed on one `endpoint:` per file with a NON-GLOBAL match
-     and dropped three panes and two second routes on the floor. The scan
+     and dropped three panes and two second routes on the floor; the second
+     closed each literal on ANY quote rather than the one that opened it,
+     which lost `"/api/x?g='s'"`. A literal is now closed by its own quote
+     and may hold the other two, but it may not hold a newline, so a route
+     spelled across the lines of a template literal is invisible; the scan
+     does not know a comment or a regular-expression literal from code. It
      over-reports a concatenation prefix (`/api/ops/users/`) and a route
-     named only in a comment, and it cannot see a URL assembled from pieces
-     or imported from another file. Whether a listed route is ever called,
-     by what, and with which method, is not decided here.
+     named in a comment, and it cannot see a URL assembled from pieces or
+     imported from another file. Whether a listed route is ever called, by
+     what, and with which method, is not decided here.
+   - Which asset can WRITE. `write-capable-assets` reads the HTTP method a
+     call site NAMES - `method: 'POST'` and its three siblings, in any case.
+     A method assembled at run time, taken from a variable, or defaulted by
+     a helper is invisible, and a method named in dead code counts. It says
+     nothing about whether the call is reachable, authorised, or ever made.
    - Whether an element is drawn INSIDE another. `sr-span-classes` derives
      the clipped, absolutely positioned screen-reader classes a sheet
      declares and the ops assets that draw one, which is text. The DOM
@@ -105,8 +121,12 @@
      scroll wrapper - and the layout consequence of it are NOT derived here;
      `scripts/check-ops-narrow-overflow.mjs` measures the page and is the
      oracle. The class scan wants all three of `position: absolute`, a
-     `clip`/`clip-path` and a `1px` side, so a screen-reader idiom spelled
-     any other way is invisible to it.
+     `clip`/`clip-path` and a `1px` side, each read as the value the RULE
+     resolves rather than as "some declaration in it said so" - appending
+     `position: static` below the `absolute` takes a class off the list, as
+     a browser would. A screen-reader idiom spelled any other way, or put
+     back to `absolute` by a DIFFERENT rule, is invisible to it: this reads
+     one rule at a time and models no cascade between rules.
    - A file path spelled without a directory AND with an extension no file in
      `ops/`, `ops/assets/`, `scripts/` or `.github/workflows/` uses. The sweep
      reads a bare `name.ext` as a path only when the tree already has that
@@ -366,7 +386,7 @@ function cssRules(css) {
     }
     const body = src.slice(open + 1, end);
     if (prelude.startsWith('@')) {
-      if (/^@(media|supports)\b/.test(prelude)) out.push(...cssRules(body));
+      if (/^@(media|supports)\b/i.test(prelude)) out.push(...cssRules(body));
     } else if (prelude) {
       out.push({ selectors: prelude.split(',').map((s) => s.trim()).filter(Boolean), body });
     }
@@ -408,6 +428,34 @@ const declarations = (body) =>
 /* A declared value with `!important` taken off, for the matchers that ask
    what a declaration SAYS rather than how loudly it says it. */
 const declared = (decl) => decl.replace(/\s*!important$/i, '');
+
+/* What a browser RESOLVES each property in one rule to.  `declarations()`
+   gives source order; this gives the winner, which is not the same thing
+   twice over.  The last declaration wins - EXCEPT that an important one
+   beats a later normal one in the same rule, which is why stripping
+   `!important` before a last-wins loop resolved
+   `--text-3: #000000 !important; --text-3: #8593A2` to the wrong ink.  And
+   because the property NAME is taken from the text before the colon rather
+   than matched against a name class, an escaped name survives it:
+   `--review\ token` is a legal custom property and no `--\S+` can read it.
+   A name carrying an escaped `;` or `:` is still invisible - the split is
+   text, and that is in NOT COVERED. */
+function effectiveDecls(body) {
+  const out = new Map();
+  for (const raw of declarations(body)) {
+    const m = /^([^:]+?):\s*([\s\S]*)$/.exec(raw);
+    if (!m) continue;
+    const bang = /^([\s\S]*?)\s*!important$/i.exec(m[2]);
+    const important = Boolean(bang);
+    const prev = out.get(m[1]);
+    if (prev && prev.important && !important) continue;
+    out.set(m[1], { value: (bang ? bang[1] : m[2]).trim(), important });
+  }
+  return out;
+}
+
+/* One rule's resolved value for one property, '' when it declares none. */
+const resolved = (body, prop) => (effectiveDecls(body).get(prop) || {}).value || '';
 
 /* ------------------------------------------------------------ comparison */
 
@@ -882,7 +930,11 @@ DERIVED['data-page-scoping'] = () => {
 DERIVED['pane-read-endpoints'] = () =>
   ASSETS.filter((a) => /^pane-.*\.js$/.test(a)).map((file) => {
     const src = read(path.join('ops/assets', file));
-    const routes = [...new Set([...src.matchAll(/(['"`])(\/api\/[^'"`\s]*)\1/g)].map((m) => m[2]))].sort();
+    /* A literal is closed by the quote that OPENED it, so the other two
+       quote characters are ordinary content: `"/api/x?g='s'"` is one route
+       and a `[^'"`]` class dropped it on the floor. */
+    const literals = [...src.matchAll(/(['"`])((?:\\.|(?!\1)[^\\\n])*)\1/g)].map((m) => m[2]);
+    const routes = [...new Set(literals.filter((v) => v.startsWith('/api/')))].sort();
     return `${file} = ${routes.length ? routes.join(', ') : '(no route literal)'}`;
   });
 
@@ -898,10 +950,11 @@ DERIVED['sr-span-classes'] = () => {
   const found = [];
   for (const sheet of sheets) {
     for (const rule of cssRules(read(path.join('ops/assets', sheet)))) {
-      const decls = declarations(rule.body).map(declared);
-      const absolute = decls.some((d) => /^position:\s*absolute$/i.test(d));
-      const clipped = decls.some((d) => /^clip(-path)?:/i.test(d));
-      const tiny = decls.some((d) => /^(width|height):\s*1px$/i.test(d));
+      const decls = effectiveDecls(rule.body);
+      const val = (prop) => (decls.get(prop) || {}).value || '';
+      const absolute = /^absolute$/i.test(val('position'));
+      const clipped = Boolean(val('clip') || val('clip-path'));
+      const tiny = /^1px$/i.test(val('width')) || /^1px$/i.test(val('height'));
       if (!absolute || !clipped || !tiny) continue;
       for (const sel of rule.selectors) {
         const m = /^\.([-\w]+)$/.exec(sel);
@@ -919,6 +972,26 @@ DERIVED['sr-span-classes'] = () => {
   ];
 };
 
+/* Which ops assets can CHANGE something. The README said in two places that
+   Settings is "the one pane that can change something"; Problems has been
+   acknowledging and closing problems the whole time, and two more panes post
+   as well. Derived from the HTTP method each file spells, so the sentence
+   cannot go stale again the next time a pane grows a button. What this reads
+   is the method a call site NAMES - a method assembled at run time, or a
+   write issued through a helper that names the method elsewhere, is not seen,
+   and a method named in dead code counts. */
+DERIVED['write-capable-assets'] = () => {
+  const writers = ASSETS.filter((a) => a.endsWith('.js')).filter((a) => {
+    const src = read(path.join('ops/assets', a));
+    return /\bmethod\s*:\s*(['"`])(POST|PUT|PATCH|DELETE)\1/i.test(src);
+  }).sort();
+  const panes = writers.filter((a) => a.startsWith('pane-'));
+  return [
+    `ops assets naming a write method = ${writers.join(', ') || '(none)'}`,
+    `of those, pane scripts = ${panes.join(', ') || '(none)'}`
+  ];
+};
+
 DERIVED['dark-text-3'] = () => {
   const sheet = cssRules(read('ops/assets/ops.css'));
   const dark = sheet.find((rule) => rule.selectors.includes(':root'));
@@ -928,9 +1001,8 @@ DERIVED['dark-text-3'] = () => {
      `[a-z0-9-]` name class into nothing at all - resolved LAST-DECLARATION-
      WINS, the way the cascade resolves a property declared twice in one rule. */
   const values = new Map();
-  for (const decl of declarations(dark.body)) {
-    const m = /^(--\S+):\s*([\s\S]*)$/.exec(decl);
-    if (m) values.set(m[1], declared(m[2]));
+  for (const [name, decl] of effectiveDecls(dark.body)) {
+    if (name.startsWith('--')) values.set(name, decl.value);
   }
   const tokens = new Map();
   const unresolved = [];
@@ -958,10 +1030,8 @@ DERIVED['dark-text-3'] = () => {
      theme. */
   const overridden = sheet
     .filter((rule) => rule !== dark && rule.selectors.includes(':root'))
-    .flatMap((rule) => declarations(rule.body))
-    .map((decl) => /^(--\S+):/.exec(decl))
-    .filter((m) => m && values.has(m[1]))
-    .map((m) => m[1])
+    .flatMap((rule) => [...effectiveDecls(rule.body).keys()])
+    .filter((name) => values.has(name))
     .sort();
   return [
     `--text-3 in ops.css's dark :root = ${ink}`,
