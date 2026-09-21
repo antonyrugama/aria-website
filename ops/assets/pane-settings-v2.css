@@ -76,7 +76,15 @@
    A scrollable box has to be reachable from a keyboard, or the rows past the
    edge belong to a pointer only, so every one of these is a labelled region
    with a tab stop. */
-.tbl-wrap { overflow-x: auto; }
+/* Positioned, because `overflow-x` clips only a descendant whose containing
+   block is this box. An absolutely positioned one resolves its containing
+   block to the nearest positioned ancestor, so while this box was static the
+   nearest was the page: a `caption.sr` inside a table wider than the phone sat
+   at its static position in page coordinates, escaped this clip and took the
+   document sideways while the table around it scrolled correctly. ops.css
+   carried this on .table-wrap and the v2 sheets dropped it when they were
+   written from the template. Stadiora/Aria#10706. */
+.tbl-wrap { overflow-x: auto; position: relative; }
 .tbl-wrap:focus-visible { outline-offset: -2px; }
 
 /* A table flush against the top of a card has no head above it to space it

@@ -905,6 +905,60 @@ try {
       });
     })()`));
 
+    /* Stadiora/Aria#10706. `overflow-x` clips a descendant only when this box
+       is that descendant's containing block, and an absolutely positioned one
+       resolves its containing block to the nearest POSITIONED ancestor -- so a
+       static wrapper scrolls its table, clips its table, and lets a
+       `caption.sr` inside it sit in page coordinates at the table's real
+       width. The table scrolls correctly inside its card and the document
+       scrolls sideways behind it.
+
+       Measured as the consequence, not read off the sheet. The box is scrolled
+       and a descendant it contains moves with it by exactly what the box
+       scrolled; one positioned against a card outside does not move at all.
+       `scrolledBy` is read back rather than assumed, because a box that
+       refused to scroll reports every descendant as having moved zero, which
+       is what a CONTAINED descendant looks like when nothing happened.
+
+       scripts/ops-scroll-containment.test.mjs sweeps this across the panes its
+       shared stub can render; its own NOT COVERED says People's `.tbl-wrap`
+       needs a search it does not drive. This harness drives that search. */
+    const containment = JSON.parse(await evaluate(`(() => {
+      const out = [];
+      for (const wrap of document.querySelectorAll('#lookupResult .tbl-wrap')) {
+        const cap = wrap.querySelector('caption');
+        const abs = [...wrap.querySelectorAll('*')]
+          .filter((el) => getComputedStyle(el).position === 'absolute');
+        const before = abs.map((el) => el.getBoundingClientRect().left);
+        const was = wrap.scrollLeft;
+        /* Whichever direction has room. An earlier probe in this run leaves the
+           match table parked at its maximum, and a box that cannot go further
+           right reports scrolledBy 0 -- which drops it out of the arm below
+           without saying so. The step is capped at the room available for the
+           same reason: a box with eight pixels of overflow cannot move
+           twenty-four in either direction. The comparison is signed. */
+        const room = wrap.scrollWidth - wrap.clientWidth;
+        const step = Math.min(24, room);
+        wrap.scrollLeft = was + step <= room ? was + step : was - step;
+        const scrolledBy = wrap.scrollLeft - was;
+        const after = abs.map((el) => el.getBoundingClientRect().left);
+        wrap.scrollLeft = was;
+        out.push({
+          caption: cap ? cap.textContent.trim() : null,
+          position: getComputedStyle(wrap).position,
+          overflows: wrap.scrollWidth > wrap.clientWidth,
+          scrolledBy,
+          descendants: abs.map((el, i) => ({
+            what: el.tagName.toLowerCase() +
+              (el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : ''),
+            position: getComputedStyle(el).position,
+            shift: Math.round((after[i] - before[i]) * 100) / 100,
+          })),
+        });
+      }
+      return JSON.stringify(out);
+    })()`));
+
     /* Binds the MutationObserver, which nothing above can reach. Picking the
        second match replaces the account column with a detail the stub serves
        identically, so no box that is already observed changes size and the
@@ -1209,7 +1263,7 @@ try {
     census[theme] = { styles, textContrast, narrow,
       scrollers: { wide: scrollersWide, narrow: scrollersNarrow, keyboard,
         repick: repick.wraps, injected, immediate, grown, squeezed,
-        rewide: scrollersRewide },
+        containment, rewide: scrollersRewide },
       graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
@@ -1772,6 +1826,55 @@ for (const theme of THEMES) {
      clips the ring, so it is visible on all four sides -- a refinement, not a
      defect. Adding the rule is a paired edit with ops/README.md's derived
      `claims id=table-focus-rings` block, which another agent holds. */
+  /* Stadiora/Aria#10706's two halves, on the pane its own sweep cannot reach.
+     The first is the CONSEQUENCE and the second is the GAP: a wrapper that
+     holds nothing absolutely positioned today produces no escape to detect, so
+     the consequence alone would score an unrepaired eighth scroller clean. */
+  test(`[${theme}] a scrolling result table contains what it appears to contain`, () => {
+    const boxes = census[theme].scrollers.containment;
+
+    /* A sweep that judged nothing is indistinguishable from a clean board. */
+    const scrolled = boxes.filter((b) => b.scrolledBy !== 0);
+    assert.ok(scrolled.length > 0,
+      `no result-table wrapper actually scrolled at 375px, so every descendant below ` +
+      `reports a shift of zero -- which is what a CONTAINED one looks like. Boxes seen: ` +
+      JSON.stringify(boxes.map((b) => [b.caption, b.overflows, b.scrolledBy])));
+    const judged = scrolled.reduce((n, b) => n + b.descendants.length, 0);
+    assert.ok(judged > 0,
+      `${scrolled.length} wrapper(s) scrolled but not one held an absolutely positioned ` +
+      'descendant, so the containment assertion below held whatever the sheet said. ' +
+      'aria.css gives caption.sr position: absolute; if that changed, this file is ' +
+      'the wrong place to find out.');
+
+    for (const box of scrolled) {
+      for (const d of box.descendants) {
+        /* Read off the element, not off the filter that selected it. An
+           in-flow descendant scrolls with its box whatever the box's position
+           is, so a probe that quietly lost its filter would judge a set every
+           member of which passes, and report containment it never tested. The
+           battery's S5 inverts that filter; this is the line it fails on. */
+        assert.equal(d.position, 'absolute',
+          `<${d.what}> was judged for containment but computes position: ${d.position}. ` +
+          'Only an absolutely positioned descendant resolves its containing block to the ' +
+          'nearest positioned ancestor, so only one of those can tell a relative wrapper ' +
+          'from a static one.');
+        assert.equal(d.shift, -box.scrolledBy,
+          `<${d.what}> inside the wrapper holding "${box.caption}" moved ${d.shift}px when ` +
+          `that wrapper scrolled ${box.scrolledBy}px. A descendant this box contains moves ` +
+          `with it; one positioned against a card outside stays exactly where it was and ` +
+          `escapes the clip, taking the document sideways at the table's full width. The ` +
+          `wrapper computes position: ${box.position}.`);
+      }
+    }
+
+    for (const box of boxes) {
+      assert.notEqual(box.position, 'static',
+        `the wrapper holding "${box.caption}" scrolls sideways and is position: static, so ` +
+        'it is in no descendant\'s containing-block chain. Nothing escapes it today only ' +
+        'because nothing positioned inside it has a visible extent yet.');
+    }
+  });
+
   test(`[${theme}] the newly focusable scroll box draws a focus ring`, () => {
     const k = census[theme].scrollers.keyboard;
     assert.equal(k.tabIndex, 0,
