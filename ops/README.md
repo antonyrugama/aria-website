@@ -2353,9 +2353,11 @@ flips a line rather than arriving in silence — **provided the matcher can see
 its heading at all**, which depends on the wording *and* on the comment marker
 it sits behind.
 
-That edge is not described here. It is **measured** and published as the first
-eleven lines of the block: eleven concrete heading lines handed to the real
-matcher, each reported `SEEN` or `INVISIBLE`. The `INVISIBLE` rows are the
+That edge is not described here. It is **measured** and published at the head of
+the block: one row per probed heading line, each handed to the real matcher and
+reported `SEEN` or `INVISIBLE`, under a row carrying **how many** there are so
+that no paragraph has to. (The paragraph below used to carry it, and when the
+table grew this one was updated and that one was not.) The `INVISIBLE` rows are the
 interesting half — a section headed `KNOWN GAPS:` or `What this sweep cannot
 see:` is read by nothing and counted by nothing, and so is a recognised phrase
 written after `//`. They are in the block precisely because they are holes, and
@@ -2377,6 +2379,7 @@ a second one — because a dumb tripwire that fires is worth more here than a
 clever one that reads English.
 
 ```claims id=guard-blind-spots
+(heading probes = 14)
 (heading probe: "WHAT THIS DOES NOT COVER, in the words of what was measured:" = SEEN)
 (heading probe: "   WHAT IT DOES NOT measure:" = SEEN)
 (heading probe: "   WHAT IT DOES NOT check, in so many words:" = SEEN)
@@ -2523,13 +2526,23 @@ block here must be one it derives — and a `claims` fence it cannot parse is a 
 a block quietly skipped — so a block cannot be added, renamed or dropped silently, and the run
 prints what it judged, per block, in CI.
 
-Five blocks cannot derive **which** rows they carry, only what each row says: `source-anchors`
-and `deleted-assets` read their subjects out of this file, and `v1-status-classes`,
-`spend-colour-gate` and `spend-write-gate` read theirs from hand-written arrays in the guard,
-because no sheet says which of its classes carry status and no tree lists the files it has lost.
-All five still derive every **value**. What that shape cannot catch by itself is a subject
-deleted, so all five are pinned **row by row** in the guard — by name, not by count, because a
-count is absorbed the moment the block grows — and a row can only go by deleting it there too.
+Some blocks cannot derive **which** rows they carry, only what each row says, because their
+subjects are written in the guard rather than read out of the tree: `source-anchors` and
+`deleted-assets` name theirs directly, and `v1-status-classes`, `spend-colour-gate`,
+`spend-write-gate`, `guard-constants` and the census rows of `guard-blind-spots` take theirs from
+hand-written arrays — no sheet says which of its classes carry status, no tree lists the files it
+has lost, and no guard declares which of its constants are load-bearing. They still derive every
+**value**. What that shape cannot catch by itself is a **subject deleted**, which shrinks the
+expectation along with the claim, so each is pinned **row by row** in the guard — by name, not by
+count, because a count is absorbed the moment the block grows — and a row can only go by deleting
+it there too.
+
+**How many blocks that is, and how many rows each pins, is derived** rather than counted here,
+and the reason is this paragraph's own history: it said "five" correctly, and then PR #111 added
+two more blocks of exactly this shape and left it saying five for four review rounds. For those
+four rounds deleting a pinned-shaped row and its README line together was **green** — which
+silently reinstated two defects earlier rounds of that same PR had fixed. A sentence counting
+the mechanism that stops claims drifting is not exempt from drifting.
 
 Which blocks those are is itself derived, out of the guard rather than out of a sentence here:
 the enumeration that used to sit in this paragraph said nine and fell three behind, missing two
@@ -2557,6 +2570,7 @@ claims id=guard-blind-spots
 claims id=guard-constants
 claims id=pane-read-endpoints
 claims id=panes
+claims id=pinned-blocks
 claims id=scroll-wrapper-position
 claims id=shell-v2-pins
 claims id=source-anchors
@@ -2569,6 +2583,19 @@ claims id=v1-v2-collision
 claims id=write-capable-assets
 and a test, every repository file ops/README.md names is in the tree or declared deleted
 and a test, every browser guard in the tree has a row in the checks table
+```
+
+And which of them are pinned, with how many rows each pin holds:
+
+```claims id=pinned-blocks
+claims id=deleted-assets pins 2 rows by name
+claims id=guard-blind-spots pins 14 rows by name
+claims id=guard-constants pins 9 rows by name
+claims id=source-anchors pins 6 rows by name
+claims id=spend-colour-gate pins 21 rows by name
+claims id=spend-write-gate pins 3 rows by name
+claims id=v1-status-classes pins 7 rows by name
+claims id=v1-status-classes pins the families badge, tag, callout, verdict
 ```
 
 **NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
@@ -2616,7 +2643,8 @@ pixels, not arithmetic over the tree: `check-ops-contrast.mjs` is that oracle. A
 `deleted-assets` list is checked for absence only — the pull request each line names is not
 verifiable from a shallow checkout. A guard's **constant** is read only where `GUARD_CONSTANTS`
 names one, and only as a top-level `const NAME = …;`: the declaration's right-hand side is
-evaluated in a bare `vm` context with no globals, so a value built from **another binding**
+evaluated in a fresh `vm` realm carrying **no free variables** — its intrinsics are there, which
+is exactly why `Math.round` resolves — so a value built from **another binding** in its own file
 throws rather than being guessed at. A value built from a **pure call on a built-in** —
 `Math.round(1280.4)` — does not throw; it evaluates, and the resolved number is what is bound.
 That is the honest edge: the rule is "no free variables", not "no calls". A guard added next week
@@ -2633,13 +2661,14 @@ and so does a third span on a bullet that already carried two — the per-bullet
 as did not, which round 1 of PR #111 demonstrated. Bullets come from the **leading docblock**
 only: `check-ops-shell-v2.mjs:583` and `check-ops-contrast.mjs:2239` state blind spots outside
 theirs and are **not** carried here, only counted — and counted only because the matcher can see
-their headings. Which headings it can see is **measured, not described**: the block opens with
-fourteen concrete lines handed to the real matcher and reported `SEEN` or `INVISIBLE`. A section
+their headings. Which headings it can see is **measured, not described**: the block opens with a
+row per probed heading line, handed to the real matcher and reported `SEEN` or `INVISIBLE`, under
+a derived count of them. A section
 headed `KNOWN GAPS:`, or headed a recognised phrase but written after `//`, is read by nothing
 and counted by nothing — those rows are in the block as holes. Round 3 of PR #111 demonstrated
 that the parse this replaced could publish a list the matcher did not agree with, in both
-directions, while staying green. Fourteen rows **sample** the two dimensions rather than crossing
-them, and round 4 walked through two cells the eleven had left empty: a phrase taught only behind
+directions, while staying green. Those rows **sample** the two dimensions rather than crossing
+them, and round 4 walked through two cells they had left empty: a phrase taught only behind
 `/*`, and `WHAT IT DOES NOT` narrowed to `WHAT IT DOES NOT MEASURE`, which every spelling then
 probed happened to still match. Both were green; both are now rows.
 
