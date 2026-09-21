@@ -103,15 +103,17 @@
  *     hatched RATHER than flat; what is asserted is that its interior is not
  *     the card surface. Removing the hatch raises every figure here, so it is
  *     the loud direction the band scan exists to catch, not the quiet one.
- *   - any width but 1280 and 375. At 1280 the name cell's floor is checked
- *     from above — it must not push the match table past .tbl-wrap — and at
- *     375 from below, that the "Selected" mark is still on the reference's
- *     line and the cell is no wider than the viewport. The upper arm is loose:
- *     the cell lays out at 345px of its own accord at 1280, so a floor only
- *     bites there above ~345. Page-level sideways scroll is not checked here —
- *     .tbl-wrap absorbs it, so a document-width assertion in this file cannot
- *     fail from anything this change owns. scripts/check-ops-narrow-overflow.mjs
- *     sweeps all ten panes at 375px and 360px in both themes and does check it.
+ *   - any width but 1280 and 375. The name cell's floor is bound at 375 from
+ *     both sides: enough that the "Selected" mark is still on the reference's
+ *     line, and little enough that the name still fits the visible width of
+ *     .tbl-wrap. 1280 is where the colours are measured; the floor is not
+ *     bound there, because the cell takes 345px of its own accord and the
+ *     sibling columns absorb any floor raised under that without clipping.
+ *     Page-level sideways scroll is not asserted here — .tbl-wrap absorbs it,
+ *     so a document-width assertion in this file cannot fail from anything
+ *     this change owns. scripts/check-ops-narrow-overflow.mjs sweeps all ten
+ *     panes at 375px and 360px in both themes and does check it, though it
+ *     never runs a lookup and so never sees a match table.
  *   - the account record beyond its masked chips, and every card below it.
  */
 import assert from 'node:assert/strict';
@@ -734,47 +736,58 @@ try {
     /* Stadiora/Aria#10713. The floor on .match-name was bound only from
        below, by the 375px pass: it proves 200px is ENOUGH to keep the mark on
        the reference's line. Nothing proved it is not too MUCH — raising it to
-       360px survived the whole suite, and a floor that large drags the match
-       table past the card at desktop width and puts the account column behind
-       a horizontal scrollbar for every lookup.
+       360px survived the whole suite.
 
-       Read on .tbl-wrap, which is the element that clips (`overflow-x: auto`,
-       pane-users-v2.css:240). Reading it on an ancestor reports the viewport's
-       own width and can never fail; reading it on <html> cannot fail either,
-       because the wrap absorbs the overflow by scrolling — that exact mistake
-       was caught in this file once already. */
-    const wide = JSON.parse(await evaluate(`(() => {
-      const th = document.querySelector('tr.is-selected th.match-name');
-      const wrap = th.closest('.tbl-wrap');
-      const table = wrap.querySelector('table');
-      return JSON.stringify({
-        viewport: document.documentElement.clientWidth,
-        cellWidth: th.getBoundingClientRect().width,
-        wrapScrollWidth: wrap.scrollWidth, wrapClientWidth: wrap.clientWidth,
-        tableWidth: table.getBoundingClientRect().width,
-        floor: Number.parseFloat(getComputedStyle(th).minWidth)
-      });
-    })()`));
+       The first attempt at the other arm was itself a false green and is
+       recorded here because the shape is worth keeping: it read
+       `scrollWidth > clientWidth` on .tbl-wrap at 1280px, on the theory that
+       an oversized floor drags the table past the card. Measured, it does
+       not. At 1280 the table stays at 984px either way and the four sibling
+       columns absorb the floor — 164/184/179/112 at a 200px floor,
+       128/144/139/88 at 360 — with scrollWidth equal to clientWidth in every
+       one of them. Nothing clips, the text wraps, and the assertion could not
+       fail from the thing it named. scripts/check-ops-narrow-overflow.mjs does
+       not see it either: it never runs a lookup, so there is no match table on
+       the page it sweeps.
 
-    /* The narrow pass. One question: is the "Selected" mark still on the line
-       the reference is on, or has the column squeezed it onto its own? */
+       Where the floor IS load-bearing is 375px, where the cell takes the
+       floor exactly and the wrap is already scrolling sideways (570px of
+       content in a 343px window at the 200px floor). So the arm binds the one
+       thing that is both measurable and user-visible: the match's own name —
+       the row header that says which person this row is — must fit inside the
+       visible width of the wrap without the operator scrolling sideways to
+       reach the end of it. 200px leaves 143px of headroom; 360px does not fit
+       at all. The floor's measured window is [200, 343].
+
+       Read on .tbl-wrap, the element that actually clips (`overflow-x: auto`,
+       pane-users-v2.css:240). Reading it on <html> cannot fail, because the
+       wrap absorbs the overflow by scrolling — the narrow arm below already
+       reports documentScrollWidth for exactly that reason and does not assert
+       on it. */
+
+    /* The narrow pass. Two questions: is the "Selected" mark still on the line
+       the reference is on, and does the cell the floor sets still fit in the
+       window the operator is looking through? */
     await cdp.send('Emulation.setDeviceMetricsOverride',
       { width: 375, height: 1600, deviceScaleFactor: 1, mobile: false });
     await new Promise((r) => setTimeout(r, 400));
     const narrow = JSON.parse(await evaluate(`(() => {
       const th = document.querySelector('tr.is-selected th.match-name');
+      const wrap = th.closest('.tbl-wrap');
       const btn = th.querySelector('.match-row-btn').getBoundingClientRect();
       const mark = th.querySelector('.sel-mark').getBoundingClientRect();
       const overlap = Math.min(btn.bottom, mark.bottom) - Math.max(btn.top, mark.top);
       return JSON.stringify({
         cellWidth: th.getBoundingClientRect().width,
+        floor: Number.parseFloat(getComputedStyle(th).minWidth),
+        wrapClientWidth: wrap.clientWidth, wrapScrollWidth: wrap.scrollWidth,
         sameLine: overlap > Math.min(btn.height, mark.height) / 2,
         documentScrollWidth: document.documentElement.scrollWidth,
         documentClientWidth: document.documentElement.clientWidth,
       });
     })()`));
 
-    census[theme] = { styles, textContrast, narrow, wide,
+    census[theme] = { styles, textContrast, narrow,
       graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
@@ -1004,26 +1017,26 @@ for (const theme of THEMES) {
   });
 
   /* Stadiora/Aria#10713: the floor's other arm. The 375px test below proves
-     the floor is enough; this proves it is not so much that it costs the
-     desktop layout a scrollbar on every lookup.
-
-     What it can and cannot see, stated rather than implied: at 1280px the
-     cell lays out at 345px of its own accord, so the 200px floor is not
-     load-bearing here at all and this arm only bites once a floor is raised
-     past the natural width — measured, that is somewhere between 345 and 360.
-     It is an upper bound, not a tight one, and the 375px arm is what holds
-     the lower end. */
-  test(`[${theme}] the name cell's floor does not push the match table past its own wrapper`, () => {
-    const { wide } = census[theme];
-    assert.equal(wide.viewport, 1280,
-      `this arm is about the desktop layout and was measured at ${wide.viewport}px`);
-    assert.ok(wide.floor >= 200,
-      `the floor resolves to ${wide.floor}px, under the 200px the 375px arm needs`);
-    assert.ok(wide.wrapScrollWidth <= wide.wrapClientWidth,
-      `at ${wide.viewport}px the match table lays out ${wide.tableWidth}px wide inside a ` +
-      `${wide.wrapClientWidth}px wrapper whose content measures ${wide.wrapScrollWidth}px, ` +
-      `so th.match-name's ${wide.floor}px floor (against a natural ${wide.cellWidth}px) has ` +
-      'put the account column behind a horizontal scrollbar at desktop width');
+     the floor is enough to keep the mark on the reference's line; this proves
+     it is not so much that the name itself stops fitting in the window the
+     operator is looking through. Both are measured at 375px, because that is
+     the width at which the floor is load-bearing — at 1280 the cell takes
+     345px of its own accord and the sibling columns absorb any floor raised
+     under that. The long comment above the narrow probe records what was
+     measured at 1280 and why no assertion is made there. */
+  test(`[${theme}] the match's own name fits the window at 375px, floor and all`, () => {
+    const { narrow } = census[theme];
+    assert.ok(narrow.floor >= 200,
+      `the floor resolves to ${narrow.floor}px, under the 200px the line test needs`);
+    assert.equal(narrow.cellWidth, narrow.floor,
+      `at 375px the cell should be squeezed onto its floor, so that this arm binds the ` +
+      `floor and not the content: the floor is ${narrow.floor}px and the cell ` +
+      `${narrow.cellWidth}px`);
+    assert.ok(narrow.cellWidth <= narrow.wrapClientWidth,
+      `at 375px th.match-name is ${narrow.cellWidth}px wide — its ${narrow.floor}px floor — ` +
+      `inside a .tbl-wrap only ${narrow.wrapClientWidth}px of which is on screen, so the ` +
+      'operator has to scroll sideways to reach the end of the name of the row they are ' +
+      `looking at (the wrap already holds ${narrow.wrapScrollWidth}px of table)`);
   });
 
   test(`[${theme}] at 375px the "Selected" mark is still on the reference's line`, () => {
