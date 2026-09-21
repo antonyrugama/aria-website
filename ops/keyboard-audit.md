@@ -13,8 +13,8 @@ a mouse. Contrast is not in scope — it is already proven at 1,632 text sites a
 | | |
 |---|---|
 | Panes walked | 10, at desktop 1440×900 and 375×812 — **20 walks** |
-| Tab stops recorded | 337 |
-| Interactive controls found | 304 |
+| Tab stops recorded | 312 |
+| Interactive controls found | 280 |
 | Controls never reached by Tab | **0** |
 | Focus traps | **0** |
 | Walks whose Shift+Tab exactly retraces Tab | 20/20 |
@@ -36,11 +36,11 @@ a mouse. Contrast is not in scope — it is already proven at 1,632 text sites a
 
 The walk **did** reach it (stop 4 of 8), but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox do not, and neither does any Chrome older than that. It announces as a bare `div`.
 
-Every other pane with a scrolling table declares it — the walk found 4 scroll containers carrying an explicit `tabindex`, with `role="region"` and a label, which is the pattern Stadiora/Aria#10822 established. This one was missed.
+Every other pane with a scrolling table declares it — the walk found 3 scroll containers carrying an explicit `tabindex`, with `role="region"` and a label, which is the pattern Stadiora/Aria#10822 established. This one was missed.
 
 ### F2. An element the code hides is still painted (`fieldset`)
 
-`div.stack > section.band > form.card.evidence-form > div.card-body > fieldset.evidence-authority` on **evals** carries the `hidden` attribute and computes to `display: flex`, so it is **888×292px of visible interface the code believes is not there**, containing 3 form controls.
+`div#fold-body-2 > form.card.evidence-form > div.card-body > fieldset.evidence-authority` on **evals** carries the `hidden` attribute and computes to `display: flex`, so it is **888×292px of visible interface the code believes is not there**, containing 3 form controls.
 
 `hidden` is a UA `display: none` rule and the weakest one in the cascade. Any author `display` on the same element silently defeats it.
 
@@ -56,8 +56,8 @@ The button is not disabled: it is a fully operable control the code has decided 
 
 ## What is clean, and how that is known
 
-- **No focus traps.** 20 walks, 337 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
-- **Nothing unreachable.** 304 enabled, visible, interactive controls; 0 were not reached by Tab.
+- **No focus traps.** 20 walks, 312 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
+- **Nothing unreachable.** 280 enabled, visible, interactive controls; 0 were not reached by Tab.
 - **Tab order is reading order** on every pane at both widths: 0 stops out of DOM order across the whole sweep.
 - **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks.
 - **The skip link works.** It is the first stop on 20/20 walks and Enter lands focus on `main#content` on 20/20.

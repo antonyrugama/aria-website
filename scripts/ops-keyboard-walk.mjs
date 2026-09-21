@@ -885,11 +885,24 @@ P(`| **Scroll containers never declared focusable** | **${totals.undeclaredScrol
 P(`| **Elements marked \`hidden\` that the stylesheet still paints** | **${totals.hiddenPainted}** |`);
 P('');
 
+/* THE FILED ISSUE NUMBERS, RECONCILED AGAINST THE RUN. A findings document
+   that references an issue for a finding the run no longer produces is the
+   same defect class as a mutation table naming a line nobody mutated: a
+   claim that looks like evidence and is not connected to what ran. So the
+   numbers are not prose. Each is keyed to a finding KIND, the generator
+   prints it from this map, and a key whose kind the run did not produce
+   THROWS rather than printing. A finding with no entry prints as unfiled. */
+const FILED = {
+  'undeclared-scroller': 'Stadiora/Aria#10868',
+  'hidden-painted': 'Stadiora/Aria#10869'
+};
+
 P('## Findings', '');
 const findings = [];
 
 for (const { w, x } of list(R, (w) => w.undeclaredScrollers)) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+    kind: 'undeclared-scroller',
     title: 'A sideways-scrolling table is never declared keyboard-focusable',
     body: [
       `\`${x.path}\` on **${w.pane}/${w.viewport}** clips **${x.overflowX}px** of content ` +
@@ -908,6 +921,7 @@ for (const { w, x } of list(R, (w) => w.undeclaredScrollers)) {
 
 for (const { w, x } of list(d, (w) => w.hiddenPainted)) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+    kind: 'hidden-painted',
     title: `An element the code hides is still painted (\`${x.tag}\`)`,
     body: [
       `\`${x.path}\` on **${w.pane}** carries the \`hidden\` attribute and computes to ` +
@@ -926,21 +940,40 @@ for (const { w, x } of list(d, (w) => w.hiddenPainted)) {
 
 for (const { w, x } of list(R, (w) => w.unreachable)) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+    kind: 'unreachable',
     title: 'An enabled, visible control is never reached by Tab',
     body: `\`${x.path}\` (${x.tag}, ${Math.round(x.rect.w)}×${Math.round(x.rect.h)}px) on **${w.pane}/${w.viewport}**.` });
 }
 for (const { w, x } of list(R, (w) => w.backwards)) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+    kind: 'backwards',
     title: 'Tab order does not follow reading order',
     body: `\`${x.stop.path}\` (DOM rank ${x.rank}) is reached after \`${x.afterPath}\` (rank ${x.afterRank}).` });
 }
 for (const { w, x } of list(d, (w) => w.mismatched)) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+    kind: 'label-in-name',
     title: 'Accessible name does not contain the visible label (WCAG 2.5.3)',
     body: `\`${x.path}\` reads "${x.text}" and is named "${x.ariaLabel}".` });
 }
 
 if (!findings.length) P('_None._', '');
+/* RECONCILED ONLY ON A FULL SWEEP, because a scoped run has not walked the
+   pane most findings live on and "the finding did not reproduce" would then
+   mean "you did not look". The first version of this check did not make that
+   distinction and refused on every KBD_ONLY run. A partial document says so
+   in its own text instead. */
+const fullSweep = ONLY === null && ONLY_VP === null;
+if (fullSweep) {
+  for (const k of Object.keys(FILED)) {
+    if (!findings.some((f) => f.kind === k)) {
+      throw new Error(`FILED names ${k} (${FILED[k]}) but this full sweep produced no finding of that kind`);
+    }
+  }
+} else {
+  P('_Scoped run: only part of the dashboard was walked, and the filed-issue ' +
+    'reconciliation is skipped. This document is not the audit._', '');
+}
 const byTitle = new Map();
 for (const f of findings) {
   const k = f.title + '|' + f.body;
@@ -952,6 +985,8 @@ for (const f of byTitle.values()) {
   i++;
   P(`### F${i}. ${f.title}`, '');
   P(f.body, '');
+  P(FILED[f.kind] ? `Filed as ${FILED[f.kind]}. Not fixed here: this audit reports, it does not repair.`
+    : '**Not filed.**', '');
 }
 
 P('## What is clean, and how that is known', '');
@@ -1008,35 +1043,61 @@ P('- **Non-Tab keys.** Enter is pressed on exactly three controls — the skip l
 P('- **Pages that are not panes.** `login.html`, `setup.html` and `shell-v2.html` are outside',
   '  this sweep.', '');
 
-P('## Method notes: four defects in the instrument, each of which printed a confident wrong number', '');
+/* THE COUNT IN THE HEADING IS THE LENGTH OF THE LIST. Two numbers used to be
+   typed here -- "four defects" and "Three more" -- beside lists that grow
+   every time this instrument is caught out. A literal and the list it
+   describes drift the moment one of them changes, which is the whole of
+   Stadiora/Aria#10365. These are arrays; the numbers are their lengths and
+   the numbering is the index. */
+const WALKED_INTO = [
+  ['**Identity was a position.** Stops were keyed by CSS path plus bounding-rect origin. Tabbing',
+   'scrolls the page, so the same element answered to a different key on the way round: cycle',
+   'detection never fired, stop counts inflated, and **exactly one unreachable control was',
+   'reported on nine panes out of ten**. All ten were reachable. The uniformity is what made it',
+   'convincing. A key that moves with the measurement is not an identity; the fix stamps',
+   '`data-kbdid` on every element and keys on the attribute.'],
+  ['**Tab carried a `char` event.** `rawKeyDown` + `char("\\t")` + `keyUp` is how you *type* a',
+   'tab. Inside a text field Chrome inserted one and focus never moved.'],
+  ['**`blur()` is not a focus reset.** It moves `activeElement` to `<body>` but leaves Chrome\'s',
+   'sequential-navigation starting point wherever it was, so walks silently began mid-page. A',
+   'full reload is what finally made the skip link appear as stop 0 — on every pane.'],
+  [`**A composite input is not a trap.** \`input[type=datetime-local]\` has ${COMPOSITE_MAX} internal fields, so`,
+   '`activeElement` is unchanged for several presses *by design*. The old "3 unchanged presses is',
+   'a trap" rule manufactured a trap on Evaluations **and 27 unreachable controls behind it**.',
+   `Press counts are reported instead and a trap is declared only past ${TRAP_PRESSES}, twice the widest`,
+   'composite Chrome ships.']
+];
+const READ_INTO = [
+  ['**A disabled control is not a reachability defect.** The browser is right to skip it. Counting',
+   'it blamed Evaluations for three fields it had deliberately turned off.'],
+  ['**Label in Name is containment, not equality.** An accessible name may say *more* than the',
+   'visible text. Testing equality condemned three correct "Revoke" buttons, and reading',
+   '`textContent` charged a labelled region with its own *contents* — `nav#rail` accused of being',
+   'mislabelled against the entire rail. 30 findings across 20 walks, every one the instrument.'],
+  ['**The forward and reverse counts are not symmetric.** After *n* Tabs focus sits on stop *n-1*,',
+   'so *n* Shift+Tabs walk one step off the document and every key after that is off by one. It',
+   'reported a reverse-order mismatch on 16 of 20 walks, all of them correct pages.'],
+  ['**And the terminal stop is not deterministic, so that fix cannot be proven the obvious way.**',
+   'A walk ends either by wrapping to stop 0 or by dropping out of the document, and the same',
+   'pane at the same width was measured both ways across runs. When it wraps, the off-by-one',
+   '*cancels* — the extra Tab lands on stop 0 and the first Shift+Tab wraps back — so removing',
+   'the fix is invisible in the match result on a wrapping walk and visible on a leaving one.',
+   'Scoring it on the match would have been a coin flip with a decimal point. It is scored on',
+   'the press count, which was 3 in six unmutated runs across both shapes and 4 without the fix.']
+];
+
+P(`## Method notes: ${WALKED_INTO.length} defects in the instrument, each of which printed a confident wrong number`, '');
 P('Recorded because they are the most transferable thing this audit produced. Every one of them',
   'produced plausible output that a reader would have believed.', '');
-P('1. **Identity was a position.** Stops were keyed by CSS path plus bounding-rect origin. Tabbing',
-  '   scrolls the page, so the same element answered to a different key on the way round: cycle',
-  '   detection never fired, stop counts inflated, and **exactly one unreachable control was',
-  '   reported on nine panes out of ten**. All ten were reachable. The uniformity is what made it',
-  '   convincing. A key that moves with the measurement is not an identity; the fix stamps',
-  '   `data-kbdid` on every element and keys on the attribute.');
-P('2. **Tab carried a `char` event.** `rawKeyDown` + `char("\\t")` + `keyUp` is how you *type* a',
-  '   tab. Inside a text field Chrome inserted one and focus never moved.');
-P('3. **`blur()` is not a focus reset.** It moves `activeElement` to `<body>` but leaves Chrome\'s',
-  '   sequential-navigation starting point wherever it was, so walks silently began mid-page. A',
-  '   full reload is what finally made the skip link appear as stop 0 — on every pane.');
-P('4. **A composite input is not a trap.** `input[type=datetime-local]` has six internal fields, so',
-  '   `activeElement` is unchanged for several presses *by design*. The old "3 unchanged presses is',
-  '   a trap" rule manufactured a trap on Evaluations **and 27 unreachable controls behind it**.',
-  '   Press counts are reported instead and a trap is declared only past twice the widest composite',
-  '   Chrome ships.', '');
-P('Three more were caught by the same discipline while the numbers were being read:', '');
-P('- **A disabled control is not a reachability defect.** The browser is right to skip it. Counting',
-  '  it blamed Evaluations for three fields it had deliberately turned off.');
-P('- **Label in Name is containment, not equality.** An accessible name may say *more* than the',
-  '  visible text. Testing equality condemned three correct "Revoke" buttons, and reading',
-  '  `textContent` charged a labelled region with its own *contents* — `nav#rail` accused of being',
-  '  mislabelled against the entire rail. 30 findings across 20 walks, every one the instrument.');
-P('- **The forward and reverse counts are not symmetric.** After *n* Tabs focus sits on stop *n-1*,',
-  '  so *n* Shift+Tabs walk one step off the document and every key after that is off by one. It',
-  '  reported a reverse-order mismatch on 16 of 20 walks, all of them correct pages.', '');
+WALKED_INTO.forEach((lines, n) => {
+  P(`${n + 1}. ${lines[0]}`, ...lines.slice(1).map((l) => `   ${l}`));
+});
+P('');
+P(`${READ_INTO.length} more were caught by the same discipline while the numbers were being read:`, '');
+READ_INTO.forEach((lines) => {
+  P(`- ${lines[0]}`, ...lines.slice(1).map((l) => `  ${l}`));
+});
+P('');
 P('Every claim in this file is exercised by the mutation battery in the pull request that added it:',
   'each finding has a payload that makes it disappear, each instrument rule has a payload that',
   'reverts it to the defective version, and each control has a payload the numbers must ignore.', '');
