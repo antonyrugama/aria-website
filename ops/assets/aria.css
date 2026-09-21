@@ -772,12 +772,14 @@ svg { display: block; }
 
    Notches are grooves cut from the fill's trailing end, drawn as borders
    because a border is geometry: `forced-colors` recolours it rather than
-   discarding it. Their colour is mixed from `--c` toward the page rather than
-   set to a surface token, so the groove keeps its contrast against the fill on
-   whichever card the meter is sitting on, in either theme.
+   discarding it. They are cut in `--bg`, which is opaque in both themes, so a
+   groove reads the same whichever card the meter sits on. A first attempt
+   mixed 30% of `--c` toward the page instead and measured 2.67:1 against a
+   light-theme `bad` fill; `--bg` measures 4.28:1 at its worst.
 
    Every groove sits STRICTLY INSIDE the fill, at 4px, 8px and 12px from its
-   trailing edge. A groove flush with that edge was tried first and discarded
+   trailing edge, cut in the page background so the bar reads as notched
+   rather than tinted. A groove flush with that edge was tried first and discarded
    after looking at it: at the edge a groove is not a groove, it just makes the
    bar 2px shorter, so `warn` was indistinguishable from `ok`.
 
@@ -787,7 +789,8 @@ svg { display: block; }
    but an under-count still misreports, so `ops-meter-severity.test.mjs` holds
    a floor requiring every severity-bearing fill to be wide enough for its own
    notches. Measured across 9 panes x 4 states x 2 themes, the narrowest one
-   today is 124.3px against the 14px three notches need. */
+   today is 124.3px against the 14px three grooves occupy, 18px once the
+   measurement's own edge trim is counted. */
 .meter i { overflow: hidden; }
 .meter i::before,
 .meter i::after {
@@ -795,7 +798,12 @@ svg { display: block; }
   position: absolute;
   top: 0; bottom: 0;
   width: 0;
-  border: 0 solid color-mix(in srgb, var(--c, var(--cyan)) 30%, var(--bg));
+  /* The reset above is `*`, which does not match a pseudo-element, so these
+     would otherwise be content-box and every offset below would be 4px out --
+     enough to land `vio`'s third groove exactly on top of its second and
+     render it as `bad`. */
+  box-sizing: border-box;
+  border: 0 solid var(--bg);
 }
 .meter.warn i::after,
 .meter.bad  i::after,
