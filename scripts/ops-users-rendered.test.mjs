@@ -943,6 +943,7 @@ try {
           descendants: abs.map((el, i) => ({
             what: el.tagName.toLowerCase() +
               (el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : ''),
+            position: getComputedStyle(el).position,
             shift: Math.round((after[i] - before[i]) * 100) / 100,
           })),
         });
@@ -1839,6 +1840,16 @@ for (const theme of THEMES) {
 
     for (const box of scrolled) {
       for (const d of box.descendants) {
+        /* Read off the element, not off the filter that selected it. An
+           in-flow descendant scrolls with its box whatever the box's position
+           is, so a probe that quietly lost its filter would judge a set every
+           member of which passes, and report containment it never tested. The
+           battery's S5 inverts that filter; this is the line it fails on. */
+        assert.equal(d.position, 'absolute',
+          `<${d.what}> was judged for containment but computes position: ${d.position}. ` +
+          'Only an absolutely positioned descendant resolves its containing block to the ' +
+          'nearest positioned ancestor, so only one of those can tell a relative wrapper ' +
+          'from a static one.');
         assert.equal(d.shift, -box.scrolledBy,
           `<${d.what}> inside the wrapper holding "${box.caption}" moved ${d.shift}px when ` +
           `that wrapper scrolled ${box.scrolledBy}px. A descendant this box contains moves ` +
