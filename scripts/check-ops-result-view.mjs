@@ -110,14 +110,31 @@
      elements is invisible to this check in both directions.
    - **A result the scroll box still reaches.** The gate that decides whether a
      pane reached a result view asks whether the marker's carrier has a box
-     inside documentElement's scroll box. Content moved left of the document,
-     translated away, or fixed past the viewport all fail it. Content moved far
+     inside documentElement's scroll box, or — when something up its chain is
+     position:fixed, so scrolling cannot bring it anywhere — inside the
+     viewport. Content moved left of the document, translated away, fixed past
+     the viewport in either direction, or scrolled-to-nowhere all fail it.
+     Content moved far
      to the RIGHT does not: a box at left:99999px extends scrollWidth, the
      reachable area grows to contain it, and the run stays green — measured,
      not reasoned. Reachability rather than the viewport is deliberate, since
      this sweep never scrolls and every pane is taller than the window; the
      cost is that a result parked somewhere no reader would go, but could
-     scroll to, reads as on the page.
+     scroll to, reads as on the page. The fixed clause has a cost of its own
+     in the other direction: a fixed box whose containing block is a
+     transformed ancestor does scroll with the page, and below the fold it
+     would read as unreachable. Nothing on this dashboard is in that shape —
+     every marker carrier on all ten panes computes static or absolute — and
+     a false red there is loud rather than silent.
+   - **A result on screen but painted with nothing.** The marker gate asks
+     where a carrier is and whether the browser renders it, not what it looks
+     like once rendered. Measured at this head, all three of
+     `font-size: 0` with padding, `clip-path: inset(100%)` and an ancestor
+     `height: 0; overflow: hidden` leave the gate saying the marker shows.
+     opacity is in the same family and is deliberately not asked about, since
+     a pane mid-transition would read as hidden. The repo's own 1x1 `.sr`
+     spans are accepted carriers for the same reason, so a marker that only a
+     screen reader can reach satisfies this gate today.
    - **The rendered-text question is asked of boxless carriers only.** A
      carrier that owns a box is judged by that box, by checkVisibility(), and
      by its own content-visibility, which is named as a property because it
@@ -885,7 +902,8 @@ const FLOOR_HINTS = {
     'control finds none outside the match table. The census above counts every ' +
     'aria-pressed attribute under #content, whatever wrote it, and applySelection writes ' +
     'one on the pick control of every rendered match row that has one (:551, from :652). ' +
-    `The LOOKUP fixture in this file sent ${LOOKUP.matches.length} rows. Those are the two ` +
+    `The LOOKUP fixture in this file sent ${LOOKUP.matches.length} ` +
+    `${LOOKUP.matches.length === 1 ? 'row' : 'rows'}. Those are the two ` +
     'numbers to hold against each other; what else on the page may carry the attribute is ' +
     'not measured here, and a row that never rendered, a control the pane stopped writing ' +
     'the attribute on, and a second control that started writing it all move the census ' +
@@ -1096,7 +1114,16 @@ const PREFLIGHT = [
         'declare, so the check it carries runs against nothing.');
       continue;
     }
-    const problem = entry.check();
+    const problem = (() => {
+      try {
+        return entry.check();
+      } catch (err) {
+        /* A pre-flight that cannot read its input has to say so in the same
+           register as everything else here, rather than as a stack trace from
+           a PR about failure output that diagnoses itself. */
+        return `this check could not read what it needs — ${err && err.message}`;
+      }
+    })();
     if (problem) problems.push(`${entry.pane}: ${problem}`);
   }
   if (problems.length) {
@@ -1624,6 +1651,28 @@ const probeFor = (markers) => `(() => {
   const reachH = Math.max(root.clientHeight, root.scrollHeight);
   const inReach = (b) => b.width > 0 && b.height > 0
     && b.right > 0 && b.bottom > 0 && b.left < reachW && b.top < reachH;
+  /* Scrolling is what makes the reachable area the right question, so an
+     element scrolling has to be part of asking it. A fixed box does not move
+     when the page scrolls, and its rect is the viewport's, so a drawer left
+     closed at top:1400px on a 900px window inside a 1695px document reads as
+     reachable, is never on screen at any scroll offset, and passed this gate
+     until round 13 measured it. The product's own closed-panel idiom is
+     exactly that shape: ops.css's .drawer, .toast-host and .scrim and
+     pane-settings-v2.css's .modal are all position:fixed.
+
+     So a carrier with a fixed ancestor is asked the viewport question and
+     everything else is asked the scroll-box one. position is read off the
+     chain rather than the element because the fixed thing is usually the
+     panel, not the value inside it. */
+  const inView = (b) => b.width > 0 && b.height > 0
+    && b.right > 0 && b.bottom > 0 && b.left < root.clientWidth
+    && b.top < root.clientHeight;
+  const viewportAnchored = (el) => {
+    for (let n = el; n && n !== root; n = n.parentElement) {
+      if (getComputedStyle(n).position === 'fixed') return true;
+    }
+    return false;
+  };
   /* An element's own box is not the only thing that paints its text.
      display:contents removes the box and keeps the text: measured on this
      dashboard, a span carrying "2.9.1" under display:contents reports a
@@ -1670,9 +1719,10 @@ const probeFor = (markers) => `(() => {
     return false;
   };
   const shows = (el, marker) => {
+    const reaches = viewportAnchored(el) ? inView : inReach;
     const own = el.getBoundingClientRect();
     if (own.width > 0 || own.height > 0) {
-      if (!inReach(own)) return false;
+      if (!reaches(own)) return false;
       /* content-visibility:hidden on the carrier itself is asked as a
          property, because it is the one way to keep a box and paint no text:
          the element is rendered, only its contents are skipped, so
@@ -1688,7 +1738,7 @@ const probeFor = (markers) => `(() => {
     }
     const range = document.createRange();
     range.selectNodeContents(el);
-    if (![].slice.call(range.getClientRects()).some(inReach)) return false;
+    if (![].slice.call(range.getClientRects()).some(reaches)) return false;
     if (suppressed(el)) return false;
     return renderedText.indexOf(String(marker).replace(/\\s+/g, ' ').trim().toLowerCase()) !== -1;
   };
@@ -1820,7 +1870,6 @@ try {
         continue;
       }
       const seen = JSON.parse(evaluated.result.value);
-      resultViews += 1;
 
       /* Everything from here to the judgements is evidence that what is about
          to be judged is this pane's result view. A landing state, a refusal
@@ -1898,6 +1947,12 @@ try {
       }
 
       judged.add(seen.pane);
+      /* Counted here rather than where the probe's result is parsed, which is
+         where round 13 found it: a page that never reached a result view was
+         counted as a result view read, so a red run printed "over 20 result
+         views" against sixteen. Every gate above ends the page, so a green run
+         counts what it always counted. */
+      resultViews += 1;
       classSites += seen.classSites;
 
       /* --------------------------------------- judgement 1: class paint */
