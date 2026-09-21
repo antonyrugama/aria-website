@@ -208,9 +208,12 @@
      lines above where that section starts. Three restrictions are load-bearing
      and each is a hole:
        (1) LEADING DOCBLOCK ONLY. docblock() slices the first block comment, so
-           a section anywhere else is not carried. Two exist today -
-           check-ops-shell-v2.mjs:583 and check-ops-contrast.mjs:2239 - and
-           both are counted but not read.
+           a section anywhere else is not carried. Two exist today, in
+           check-ops-shell-v2.mjs and check-ops-contrast.mjs, and both are
+           counted but not read. Their line numbers are NOT spelled here:
+           `source-anchors` derives both, and the one this sentence used to
+           carry was wrong by 343 lines while three feet of prose claimed the
+           opposite.
        (2) THE MATCHER HAS TO SEE THE HEADING, and that turns on TWO things:
            the wording and the comment marker in front of it. A heading it
            cannot see is invisible to BOTH the bullet read and the whole-file
@@ -1423,7 +1426,7 @@ DERIVED['claims-blocks'] = () => {
 DERIVED['pinned-blocks'] = () => [
   ...Object.keys(REQUIRED_ROWS).sort()
     .map((id) => `claims id=${id} pins ${REQUIRED_ROWS[id].length} rows by name`),
-  `claims id=v1-status-classes pins the families ${REQUIRED_FAMILIES.join(', ')}`,
+  `claims id=v1-status-classes pins the families = ${REQUIRED_FAMILIES.join(', ')}`,
   `floor: blocks pinned in REQUIRED_ROWS = at least ${FLOORS.pinnedBlocks}`,
   `floor: blocks derived in this file = at least ${FLOORS.derivedBlocks}`,
   `floor: families pinned in REQUIRED_FAMILIES = at least ${FLOORS.statusFamilies}`,
@@ -1618,9 +1621,31 @@ const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
    number here AND the row it prints into `claims id=pinned-blocks`. That is the
    property being bought — not that a retirement is impossible, but that it
    cannot be quiet. */
-const FLOORS = { pinnedBlocks: 12, derivedBlocks: 24, statusFamilies: 4 };
+const FLOORS = { pinnedBlocks: 17, derivedBlocks: 24, statusFamilies: 4 };
 
 const REQUIRED_ROWS = {
+  /* Round 8: five more row sets were written by hand here and outside this
+     list, so a row could be retired together with its README line and the run
+     stayed green - round 5's defect, at five fresh addresses. Each of these
+     rows is the fix for a named defect, which is exactly why silent removal
+     matters: `of those, pane scripts` is why the README stopped saying
+     Settings is the one pane that can change something, `ops assets drawing
+     one` is why item 15 cannot rest on an unchecked "no pane does this", and
+     the collision count is the only whole-sheet row in its block. */
+  'write-capable-assets': ['ops assets naming a write method', 'of those, pane scripts'],
+  'sr-span-classes': ['absolutely positioned screen-reader classes', 'ops assets drawing one'],
+  'v1-v2-collision': ['class names declared in both ops.css and aria.css'],
+  /* The two blocks whose BULK row set is derived - from DERIVED and from
+     REQUIRED_ROWS - and whose TAIL is written by hand right here. The bulk
+     needs no pin; the tail is as free to shrink as any other hand-written
+     row, and round 8 retired one of each while the run stayed green. */
+  'claims-blocks': [`and a check, ${SWEEP_TEST}`, `and a check, ${TABLE_TEST}`],
+  'pinned-blocks': [
+    'claims id=v1-status-classes pins the families',
+    'floor: blocks pinned in REQUIRED_ROWS',
+    'floor: blocks derived in this file',
+    'floor: families pinned in REQUIRED_FAMILIES',
+  ],
   /* Five more, found in round 7 by the reviewer enumerating every derivation
      rather than re-reading the list the round before had named. Each takes its
      subjects from a hand-written array in this file and each was free to
