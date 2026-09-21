@@ -244,6 +244,26 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
   .hdeco { background: #FFFFFF; }
   .hdeco:focus-visible { outline: 4px solid #767676; outline-offset: 6px;
     box-shadow: 0 0 0 12px #EEEEEE; }
+  /* .hclip is the fixture for Stadiora/Aria#10792, and it exists because the
+     truncation gate has to see a ring the CHANGE MASK cannot.
+     Geometry: the ring lands 26px out and is 4px wide, so its outer edge is
+     30px out - past the first clip pad of 28px. Its halo is the RING'S OWN
+     COLOUR and spreads 32px, so while unfocused every pixel the ring will
+     later occupy is already #767676. Focusing swaps halo for ring at the same
+     colour, so before and after are identical there and the change mask is
+     blind to the whole ring. Only the third photograph, where the outline is
+     off and the halo has gone, can see it.
+     What makes the gate load-bearing rather than decorative: the two sides of
+     the ring sit on DIFFERENT surfaces. Inside, 25px out, is .hclipmid's
+     #FFFFFF; outside, 31px out, is .hclipouter's #EEEEEE. So a clip that
+     truncates the ring drops the outer, worse surface and reports the inner,
+     better one - 4.5426 instead of 3.9149. An optimistic answer from a
+     shrunken sample, printed exactly like a healthy one. */
+  .hclipouter { background: #EEEEEE; padding: 20px; width: 176px; }
+  .hclipmid { background: #FFFFFF; padding: 28px; width: 60px; }
+  .hclip { background: #FFFFFF; box-shadow: 0 0 0 32px #767676; }
+  .hclip:focus-visible { box-shadow: none; outline: 4px solid #767676;
+    outline-offset: 26px; }
   /* .hstub defeats the ring suppression on purpose: same !important, higher
      specificity. A page is allowed to do this, and when it does, the third
      photograph is not a photograph of the ring standing down — it is the
@@ -267,6 +287,7 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
 <div class="case"><div class="wrap"><div class="hfloatwrap"><div class="hfloatunder"></div><button class="hfloat"></button></div></div></div>
 <div class="case"><div class="wrap"><button class="hhalo"></button></div></div>
 <div class="case"><div class="wrap"><button class="hdeco"></button></div></div>
+<div class="case"><div class="hclipouter"><div class="hclipmid"><button class="hclip"></button></div></div></div>
 <div class="case"><div class="wrap"><button class="hstub"></button></div></div>
 <div class="caseflush"><button class="hedge"></button></div>
 </body></html>`;
@@ -3125,6 +3146,30 @@ async function selfTest() {
       `of ${deco && !deco.refused ? deco.adjacentPx : '?'} adjacent pixel(s) were painted by ` +
       'focusing\n          (the gap is named in NOT COVERED, part three — this is the fixture ' +
       'that makes the naming checkable)');
+
+    /* H15 — STADIORA/ARIA#10792. The truncation gate used to ask only the
+       change mask whether the ring reached a clip border, and after #10700
+       the ring is no longer defined by the change mask. .hclip is a ring the
+       change mask cannot see at all: its halo is the ring's own colour, so
+       focusing swaps like for like and nothing changes where the ring lands.
+       The gate has to widen the clip on the strength of the THIRD photograph
+       or not at all.
+       The kill is a number, not a refusal, and that is the point: truncating
+       this ring does not fail, it drops the worse of its two surfaces and
+       reports the better one. 3.9149 is #767676 on .hclipouter's #EEEEEE;
+       4.5426 — the value a truncated clip returns — is the same ring on
+       .hclipmid's #FFFFFF, and is the constant H1 and H10 already pin. Both
+       are the fixture's own declared hexes; neither is read back from the
+       measurement. */
+    const clip = shows('hclip', 3.9149,
+      'hides its whole ring from the change mask by wearing a halo the ring\'s own colour');
+    const clipProves = !!clip && !clip.refused && clip.bg === '#EEEEEE' && clip.unchangedPx === 0;
+    if (!clipProves) bad++;
+    console.log(`     ${clipProves ? 'ok  ' : 'FAIL'} and it reached the OUTER surface past the ` +
+      `first clip pad: ${clip && !clip.refused ? clip.bg : '?'}, expected #EEEEEE and not the ` +
+      `#FFFFFF one pixel inside the ring (4.5426)\n          (unchangedPx ` +
+      `${clip && !clip.refused ? clip.unchangedPx : '?'}, expected 0 — the change mask sees ` +
+      'nothing here, so a gate asking only the change mask never widens the clip)');
 
     /* H10 — STADIORA/ARIA#10700, the case the third photograph exists for.
        .hhalo's 20px halo stands down at the moment its ring goes up, so
