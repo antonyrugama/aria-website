@@ -110,9 +110,10 @@
      elements is invisible to this check in both directions.
    - **A result the scroll box still reaches.** The gate that decides whether a
      pane reached a result view asks whether the marker's carrier has a box
-     inside documentElement's scroll box, or — when something up its chain is
-     position:fixed, so scrolling cannot bring it anywhere — inside the
-     viewport. Content moved left of the document, translated away, fixed past
+     inside documentElement's scroll box — its viewport rect plus the current
+     scroll offset, since the two are measured in different coordinate systems
+     — or, when something up its chain is position:fixed, so scrolling cannot
+     bring it anywhere, inside the viewport. Content moved left of the document, translated away, fixed past
      the viewport in either direction, or scrolled-to-nowhere all fail it.
      Content moved far
      to the RIGHT does not: a box at left:99999px extends scrollWidth, the
@@ -135,22 +136,18 @@
      a pane mid-transition would read as hidden. The repo's own 1x1 `.sr`
      spans are accepted carriers for the same reason, so a marker that only a
      screen reader can reach satisfies this gate today.
-   - **The rendered-text question is asked of boxless carriers only.** A
-     carrier that owns a box is judged by that box, by checkVisibility(), and
-     by its own content-visibility, which is named as a property because it
-     keeps the element rendered while skipping the text inside it. A carrier
-     with none — display:contents — is judged by the boxes its text
-     produces, by its computed visibility and by content-visibility:hidden
-     anywhere up its chain (both read off that element, because a Range inside
-     a skipped subtree keeps reporting the rects it had when it was visible),
-     and then by whether the region's innerText still contains the marker.
-     That last one is the region's text and not the carrier's: it can only
-     reject, since nothing reaches it that the per-element questions have not
-     already passed. The asymmetry is real: a
-     refactor that splits a marker into two flex items, so the page renders
-     "2." and "9.1" with the row's gap between them, is a failure on a boxless
-     carrier and a pass on a boxed one. Both answers are about the marker
-     string, not about whether a reader can see a version number.
+   - **The text question is asked of the carrier's own subtree, so a marker
+     split across what the page separates still passes.** Both paths now ask
+     what the carrier itself draws: walk its subtree, skip any element the
+     browser is not drawing the text of (display:none, visibility hidden or
+     collapse, content-visibility:hidden), join what is left with nothing
+     between, and look for the marker. Joining with nothing between is
+     deliberate — it exists to catch text drawn nowhere, not to adjudicate
+     spacing — and the cost is that a refactor splitting a marker into two
+     flex items, so the page renders "2." and "9.1" with the row's gap between
+     them, reads as shown. Reachability is still asked of the carrier: its own
+     box if it has one, otherwise the boxes a Range over its contents
+     produces, which is how display:contents stays green.
    - **Any painted occurrence answers for all of them.** A marker that a pane
      renders twice passes when either occurrence is painted and reachable, so
      a result view that loses the copy a reader is meant to read while an
@@ -1600,20 +1597,28 @@ const probeFor = (markers) => `(() => {
      renders it: the span stopped being a carrier because a child now held
      the marker too, the hidden copy was measured in its place, and a pane
      whose result was untouched on the screenshot failed. So an element is
-     ALSO a carrier when one of its own direct text nodes holds the marker.
-     A single text node, not the concatenation of them, because concatenating
-     across an intervening element would invent an adjacency the page does not
-     render — and because the split-across-siblings case above must keep
-     resolving to the parent rather than to neither.
+     ALSO a carrier when its own text holds the marker.
 
-     Four predicates now, and each one of them was added because the set
+     Its own text means a RUN of its direct text nodes with no element child
+     between them. Round 12 wrote that as a single text node and round 14
+     split one version number into Text("2.") and Text("9.1") beside a hidden
+     duplicate: neither node held "2.9.1", so the visible parent was thrown
+     away for the hidden copy and a card nobody had touched on the screenshot
+     failed. Adjacent text nodes render as one run whatever the DOM writer did
+     with node boundaries, so joining them invents nothing; an element child
+     between them may be a block, a flex item or absolutely positioned, so
+     joining ACROSS one would, and that is where a run still ends.
+
+     Five predicates now, and each one of them was added because the set
      before it passed something nobody could see: a box rules out display:none
      and a collapsed subtree, checkVisibility() rules out visibility:hidden and
      a content-visibility:auto subtree that is currently skipped, reachability
-     rules out a box parked off the page, and content-visibility:hidden is
+     rules out a box parked off the page, content-visibility:hidden is
      asked for by name, because it keeps the element rendered and skips only
      its contents, so checkVisibility() reports true about a carrier painting
-     nothing. opacity is NOT asked about, because a pane mid-transition would
+     nothing, and the carrier's own painted text rules out a marker whose
+     TEXT is suppressed below the element the other four are asked about.
+     opacity is NOT asked about, because a pane mid-transition would
      read as hidden and this gate decides whether the run happens at all. */
   const carriers = (m) => {
     const out = [];
@@ -1624,13 +1629,14 @@ const probeFor = (markers) => `(() => {
         if (clean(kid).indexOf(m) !== -1) { deeper = true; break; }
       }
       let ownText = false;
+      let run = '';
       for (const n of el.childNodes) {
-        if (n.nodeType === 3
-          && String(n.nodeValue).replace(/\\s+/g, ' ').trim().indexOf(m) !== -1) {
-          ownText = true;
-          break;
-        }
+        if (n.nodeType === 3) { run += String(n.nodeValue); continue; }
+        if (n.nodeType !== 1) continue;
+        if (run.replace(/\\s+/g, ' ').trim().indexOf(m) !== -1) { ownText = true; break; }
+        run = '';
       }
+      if (!ownText && run.replace(/\\s+/g, ' ').trim().indexOf(m) !== -1) ownText = true;
       if (!deeper || ownText) out.push(el);
     }
     return out;
@@ -1645,12 +1651,32 @@ const probeFor = (markers) => `(() => {
      one of these panes is taller than the window, so a marker below the fold
      is on the page and failing it would be a false red. documentElement's
      scroll box is what a reader can reach by scrolling; a box that does not
-     intersect it is not reachable by scrolling either. */
+     intersect it is not reachable by scrolling either.
+
+     The two have to be in the same coordinate system to be compared, and for
+     three rounds they were not. getBoundingClientRect is the VIEWPORT's, the
+     scroll box is the DOCUMENT's, and the sweep never scrolling is the only
+     reason that ever agreed. Round 14 scrolled one pane to its end before the
+     probe ran and an ordinary link in normal flow, on screen at scroll 0,
+     reported top -370 against a 1695px document and failed: the reachable
+     area is exactly what a reader reaches BY scrolling, so measuring it from
+     wherever the page happens to be scrolled to is the one thing it cannot
+     do. A pane that restores a scroll position, focuses a result, or jumps to
+     a hash gets there without the probe scrolling at all.
+
+     So the scroll offset is added back before the comparison, at call time
+     rather than captured, since anything on the page may scroll between two
+     carriers. The viewport question below keeps the raw rect, because that
+     one really is asked in viewport space. */
   const root = document.documentElement;
   const reachW = Math.max(root.clientWidth, root.scrollWidth);
   const reachH = Math.max(root.clientHeight, root.scrollHeight);
-  const inReach = (b) => b.width > 0 && b.height > 0
-    && b.right > 0 && b.bottom > 0 && b.left < reachW && b.top < reachH;
+  const inReach = (b) => {
+    const left = b.left + (window.scrollX || window.pageXOffset || 0);
+    const top = b.top + (window.scrollY || window.pageYOffset || 0);
+    return b.width > 0 && b.height > 0
+      && left + b.width > 0 && top + b.height > 0 && left < reachW && top < reachH;
+  };
   /* Scrolling is what makes the reachable area the right question, so an
      element scrolling has to be part of asking it. A fixed box does not move
      when the page scrolls, and its rect is the viewport's, so a drawer left
@@ -1686,30 +1712,66 @@ const probeFor = (markers) => `(() => {
      consulted only when the element produces no box at all: a box with one
      zero dimension stays a failure, which is what keeps transform:scale(0)
      red. */
-  /* innerText is the region's RENDERED text; textContent is all of it. It is
-     the region's, though, not this carrier's, and round 12 showed what that
-     buys: hide one occurrence of a marker with visibility:hidden and move a
-     second occurrence off the document, and the boxless path took reachable
-     geometry from the first and rendered text from the second. Neither one
-     was both, and the pane counted as judged with both figures missing from
-     the screenshot.
+  /* WHERE a carrier is and WHAT IT PAINTS are two questions, and until round
+     14 the second one was asked about the wrong node half the time.
 
-     So the two suppressors that leave a Range reporting rects it can no
-     longer paint are now read off THIS element, as properties, before the
-     region's text is consulted at all: visibility, which inherits, so the
-     carrier's own computed value carries its ancestors'; and
-     content-visibility:hidden, which does not inherit and is looked for up
-     the chain, because a skipped subtree keeps reporting the rects it had
-     when it was visible — measured, the same [1198, 894, 40, 16].
+     A carrier is the innermost element holding the marker, and "innermost"
+     stops at the element, not at the text: split a version number into two
+     spans holding "2." and "9.1", give BOTH spans visibility:hidden, and
+     neither child holds the whole marker, so their parent is the carrier —
+     with a 39.98x20.25 box, visibility:visible, checkVisibility() true and
+     both halves of its text painted by nobody. Measured, that run exited 0
+     with ten panes judged and the version card blank on the screenshot. The
+     same shape defeated the boxless path too, because a Range reports the
+     rects of text that visibility:hidden is not drawing.
 
-     What is left for the region's innerText is a marker the page renders
-     nowhere as one run, which is a text arrangement rather than a suppressor.
-     It can only reject: nothing reaches it that the per-element questions
-     above have not already passed. Lower-cased and whitespace-collapsed so a
-     text-transform is not a false red. */
-  const renderedText = content
-    ? String(content.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase()
-    : '';
+     So the text question is now asked of the carrier's OWN subtree, and asked
+     the same way on both paths: walk it, skip any element the browser is not
+     drawing the text of — display:none, visibility hidden or collapse,
+     content-visibility:hidden — and join what is left. Joining with nothing
+     between, because two runs of text separated by an inline boundary are one
+     run on screen, and because this clause exists to catch text that is not
+     drawn AT ALL rather than to adjudicate spacing.
+
+     This replaced a clause that asked whether #content's innerText still held
+     the marker: the region's rendered text, not the carrier's. Round 12 had
+     already shown what that buys — hide one occurrence and move a second off
+     the document, and the boxless path took reachable geometry from the first
+     and rendered text from the second — and the repair then was to read the
+     two suppressors off the element first. Round 14 went below the element
+     instead. A per-carrier walk answers both, costs the region-wide clause
+     nothing to delete, and ends the asymmetry where a boxed carrier was never
+     asked what it painted at all.
+
+     visibility and content-visibility are still read off the element and its
+     chain as well, by suppressed(): visibility inherits, so the carrier's own
+     computed value carries its ancestors', and content-visibility:hidden does
+     not inherit and is looked for upward, because a skipped subtree keeps
+     reporting the rects it had when it was visible — measured, the same
+     [1198, 894, 40, 16]. The walk below covers those two INSIDE the carrier;
+     suppressed() covers them above it.
+
+     Lower-cased and whitespace-collapsed so a text-transform is not a false
+     red. */
+  const flat = (s) => String(s).replace(/\\s+/g, ' ').trim().toLowerCase();
+  const drawnText = (el) => {
+    let out = '';
+    const walk = (node) => {
+      for (const n of node.childNodes) {
+        if (n.nodeType === 3) { out += String(n.nodeValue); continue; }
+        if (n.nodeType !== 1) continue;
+        const cs = getComputedStyle(n);
+        if (cs.display === 'none' || cs.visibility === 'hidden'
+          || cs.visibility === 'collapse' || cs.contentVisibility === 'hidden') continue;
+        walk(n);
+      }
+    };
+    const own = getComputedStyle(el);
+    if (own.display === 'none' || own.visibility === 'hidden'
+      || own.visibility === 'collapse' || own.contentVisibility === 'hidden') return '';
+    walk(el);
+    return flat(out);
+  };
   const suppressed = (el) => {
     const own = getComputedStyle(el);
     if (own.visibility === 'hidden' || own.visibility === 'collapse') return true;
@@ -1732,15 +1794,17 @@ const probeFor = (markers) => `(() => {
          numbers gone. Without the padding the box collapses and the boxless
          path below catches it, which is what made this half survive a round. */
       if (getComputedStyle(el).contentVisibility === 'hidden') return false;
-      return typeof el.checkVisibility === 'function'
-        ? el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })
-        : true;
+      if (typeof el.checkVisibility === 'function'
+        && !el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) {
+        return false;
+      }
+      return drawnText(el).indexOf(flat(marker)) !== -1;
     }
     const range = document.createRange();
     range.selectNodeContents(el);
     if (![].slice.call(range.getClientRects()).some(reaches)) return false;
     if (suppressed(el)) return false;
-    return renderedText.indexOf(String(marker).replace(/\\s+/g, ' ').trim().toLowerCase()) !== -1;
+    return drawnText(el).indexOf(flat(marker)) !== -1;
   };
   const markers = ${JSON.stringify(markers)};
   const absent = markers.filter((m) => contentText.indexOf(m) === -1);
@@ -1922,12 +1986,13 @@ try {
         failures.push(`${where}: the pane drew ` +
           `${seen.hiddenMarkers.map((m) => JSON.stringify(m)).join(' and ')} into #content ` +
           'and nothing carrying it — neither a box of its own nor the boxes its text ' +
-          'produces, every occurrence of it judged on its own — is both inside the area ' +
-          'this page can be scrolled over and reported ' +
-          'as rendered by the browser. Zero-area, display:none, visibility:hidden or ' +
+          'produces, every occurrence of it judged on its own — is at once inside the area ' +
+          'this page can be scrolled over (or, under a position:fixed ancestor, inside the ' +
+          'viewport), reported as rendered by the browser, and still drawing that text ' +
+          'itself. Zero-area, display:none, visibility:hidden or ' +
           'collapse, content-visibility:hidden on the carrier or a skipped ' +
           'content-visibility:auto subtree, a position outside the document, and a carrier ' +
-          'with no box of its own whose text the page no longer renders as one run all ' +
+          'whose own text is suppressed below it all ' +
           'land here and this check does not tell them apart; opacity it never asked ' +
           'about. The ' +
           'result is in the DOM, nothing below could judge what it paints, and this run ' +
