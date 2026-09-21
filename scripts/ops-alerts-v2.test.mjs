@@ -41,8 +41,11 @@
        Only the fourth route, an injected <style> ELEMENT, is closed, and
        only while the source list that GOVERNS that route -- style-src-elem
        if the policy declares one, else style-src, else default-src -- stays
-       exactly 'self': a hash or a nonce anywhere in that chain opens it
-       with no violation reported (RV22-2, RV23-1). That resolved list is
+       exactly 'self': a hash or a nonce in whichever of those the chain
+       RESOLVES to opens it with no violation reported (RV22-2, RV23-1); a
+       hash in a directive the chain does not resolve to is shadowed and
+       opens nothing, which is why the resolved list is what is pinned
+       (RV24-A1). That resolved list is
        what is asserted below, not the directive that happens to be spelt
        style-src. ops/alerts.html appends no sheet today; nothing in this
        file would notice if it did.
@@ -3001,8 +3004,31 @@ test('the page loads one design system and one theme decision', () => {
      first is what this reads too. `style-src-attr` is NOT in this chain: it
      governs style ATTRIBUTES, not <style> elements, and the attribute route
      is not what the bullet claims to have closed. */
-  const cspMeta = /<meta[^>]*http-equiv="Content-Security-Policy"[^>]*>/i.exec(html);
-  const csp = cspMeta ? (/content\s*=\s*"([^"]*)"/i.exec(cspMeta[0]) || [])[1] : null;
+  /* The policy is lifted out of DECODED_HTML with attrOf, not out of the raw
+     text with a hand-rolled scan. Both halves of that sentence are scar
+     tissue: `&#115;tyle-src-elem` decodes to a directive name the browser
+     obeys and a raw scan never sees (RV20 in the <link> half, RV24-1 here),
+     and `data-content="..."` satisfies a scan for content= that carries no
+     attribute-name boundary, so the decoy is what gets read (RV21 there,
+     RV24-1 here). The <link> half of this page has gone through both since
+     round 21; the <meta> half went through neither until now.
+
+     A third spelling is refused rather than read: a page that spells
+     Content-Security-Policy more than once -- a commented-out old policy is
+     the way that happens -- is refused outright, because .exec takes the
+     first match wherever it sits and which one the PARSER takes is not this
+     reader's decision. Same shape as the duplicate-attribute refusal on
+     <link> tags below. Two policies genuinely delivered would intersect, so
+     refusing is loud rather than wrong. */
+  assert.equal((DECODED_HTML.match(/Content-Security-Policy/gi) || []).length, 1,
+    'the page spells Content-Security-Policy more than once -- an old policy in a comment, a '
+    + 'second meta, or a report-only twin -- and this reader takes the first spelling it '
+    + 'finds, which is not necessarily the one the parser takes');
+  const cspMeta = /<meta[^>]*http-equiv="Content-Security-Policy"[^>]*>/i.exec(DECODED_HTML);
+  assert.equal(cspMeta ? (cspMeta[0].match(/(?<=[\s/"'])content\s*=/gi) || []).length : 1, 1,
+    'the CSP meta tag spells content= more than once and this reader is not the thing that '
+    + 'should be deciding which one the parser takes');
+  const csp = cspMeta ? attrOf(cspMeta[0], 'content') : null;
   const directives = new Map();
   for (const d of (csp || '').split(';')) {
     const parts = d.trim().split(/\s+/).filter(Boolean);
