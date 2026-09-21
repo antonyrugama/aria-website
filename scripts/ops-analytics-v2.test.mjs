@@ -2828,7 +2828,15 @@ async function launchPainter(opened, unwind) {
        process that had not been reaped. Escalating is not enough on its own:
        SIGKILL is a signal too, so it gets its own wait. The first version of
        this release escalated and returned in the same breath, which is the bug
-       this whole PR is about, made once more one level down. */
+       this whole PR is about, made once more one level down.
+
+       Which of the two waits this suite BINDS is the one below, not the one
+       above. Deleting the SIGTERM wait on its own leaves the paint test green,
+       because the gate here then reads a null exitCode -- kill() is a signal,
+       so it is null one statement after the signal -- escalates, and the
+       SIGKILL's wait supplies the join the deleted one was doing. Deleting the
+       wait below fails the paint test, once the ceiling above is forced to
+       expire. Both were run. */
     if (browser.exitCode === null && browser.signalCode === null) {
       killTree(browser, 'SIGKILL');
       await waitForExit(browser, EXIT_WAIT_MS);
