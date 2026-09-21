@@ -62,8 +62,12 @@
    - Where the ink actually lands. `dark-text-3` is arithmetic over the
      tokens in one `:root`: it measures the surfaces it names and accounts
      for every other opaque token beside them, so a token added under any
-     name is red until it is placed in one list or the other. It cannot judge
-     a translucent token - `--topbar-bg` and `--scrim` are `rgba()` and
+     name is red until it is placed in one list or the other. A colour is
+     resolved from its VALUE - hex in three or six digits, `rgb()` in either
+     notation - rather than matched by one spelling, and a value it cannot
+     read as a flat colour is NAMED on a third line rather than skipped, so
+     every token in that block is accounted for. It cannot judge a
+     translucent token - `--topbar-bg` and `--scrim` are `rgba()` and
      composite over whatever is behind them - and it does not know which
      surface a given run of text sits on. `check-ops-contrast.mjs` measures
      the rendered pair in a browser and is the oracle for both.
@@ -455,7 +459,7 @@ DERIVED['table-focus-rings'] = () => {
     const rules = cssRules(read(path.join('ops/assets', sheet)));
     const boxes = new Set();
     for (const rule of rules) {
-      if (!/overflow-x\s*:\s*auto/.test(rule.body)) continue;
+      if (!scrollsSideways(rule.body)) continue;
       rule.selectors.forEach((s) => boxes.add(s));
     }
     for (const box of [...boxes].sort()) {
@@ -762,14 +766,36 @@ const ratio = (a, b) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
+/* A flat opaque colour, whatever the sheet spells it as: `#abc`, `#AABBCC`,
+   `rgb(1, 2, 3)` and `rgb(1 2 3)` are one colour and used to be four
+   different answers here, because the token was matched by its SPELLING.
+   Anything carrying an alpha, a `color-mix()`, an `hsl()` or a length is not
+   resolved and is named as unresolved rather than skipped. */
+function flatColour(value) {
+  const hex = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.exec(value.trim());
+  if (hex) {
+    const h = hex[1];
+    return `#${(h.length === 3 ? [...h].map((c) => c + c).join('') : h).toUpperCase()}`;
+  }
+  const rgb = /^rgba?\(\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*\)$/.exec(value.trim());
+  if (!rgb) return null;
+  const channels = rgb.slice(1, 4).map(Number);
+  if (channels.some((n) => n > 255)) return null;
+  return `#${channels.map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+}
+
 DERIVED['dark-text-3'] = () => {
   const dark = cssRules(read('ops/assets/ops.css'))
     .find((rule) => rule.selectors.includes(':root'));
   assert.ok(dark, 'ops.css declares no :root');
   const tokens = new Map();
+  const unresolved = [];
   for (const decl of declarations(dark.body)) {
-    const m = /^(--[a-z0-9-]+)\s*:\s*(#[0-9A-Fa-f]{6})$/.exec(decl);
-    if (m) tokens.set(m[1], m[2].toUpperCase());
+    const m = /^(--[a-z0-9-]+)\s*:\s*(.+)$/.exec(decl);
+    if (!m) continue;
+    const colour = flatColour(m[2]);
+    if (colour) tokens.set(m[1], colour);
+    else unresolved.push(m[1]);
   }
   const ink = tokens.get('--text-3');
   assert.ok(ink, 'ops.css\'s dark :root declares no --text-3');
@@ -790,6 +816,7 @@ DERIVED['dark-text-3'] = () => {
     `worst pairing = ${worst.name} ${worst.hex} at ${worst.r.toFixed(2)}:1`,
     `clears 4.5:1 on every one of them = ${surfaces.every((s) => ratio(ink, s[1]) >= 4.5)}`,
     `every other opaque token in that block = ${others.join(', ')}`,
+    `tokens in that block this cannot read as a flat colour = ${unresolved.sort().join(', ')}`,
   ];
 };
 

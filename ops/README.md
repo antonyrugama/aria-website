@@ -1183,12 +1183,19 @@ those panes now.
    worst pairing = --surface-hover #1E2833 at 4.76:1
    clears 4.5:1 on every one of them = true
    every other opaque token in that block = --ai, --border, --border-strong, --brand, --brand-bright, --control-border, --control-border-hover, --crit, --cta-end, --info, --ok, --s1, --s2, --s3, --s4, --s5, --s6, --text, --text-2, --text-3, --text-inverse, --warn
+   tokens in that block this cannot read as a flat colour = --glow, --ink-mix, --scrim, --shadow-1, --shadow-2, --shadow-3, --tint, --tint-line, --tint-soft, --topbar-bg
    ```
+
+   Every token in that `:root` is on one of those three lines, and a colour is resolved from its
+   **value** rather than matched by its spelling: `#abc`, `#AABBCC` and `rgb(170, 187, 204)` are
+   one colour here, where the block once read only the six-digit hex and a surface written any
+   other way was measured against nothing.
 
    What it does **not** answer is where the ink lands: `--topbar-bg` and `--scrim` are `rgba()`
    and composite over whatever is behind them, so no arithmetic over this block can judge the
-   pairing a translucent bar produces. `check-ops-contrast.mjs` measures the rendered pair in a
-   browser, and that is the oracle for it.
+   pairing a translucent bar produces — which is why they are named on the third line rather than
+   quietly dropped. `check-ops-contrast.mjs` measures the rendered pair in a browser, and that is
+   the oracle for it.
 5. **A new `--cta-end` token** ends the primary-button gradient. White on the light theme's
    `#0092AE` measured 3.67:1; `#007A93` holds 4.99:1. Splitting it from `--brand` darkens the
    button without darkening every tint derived from the brand. Dark mode is unchanged, because
