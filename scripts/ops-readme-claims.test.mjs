@@ -41,8 +41,9 @@
    DELETED, which shrinks the expectation with it, so all five are pinned row
    by row in `REQUIRED_ROWS` at the foot of this file. A count would not do:
    pin the size and a block that grows by one absorbs the deletion of a
-   different row silently. Every other block derives its row set as well as
-   its values, so shrinking one is already red without a pin.
+   different row silently. Which blocks are pinned, and how many rows each
+   pins, is the `pinned-blocks` block - derived from REQUIRED_ROWS, because
+   this sentence used to say "five" and PR #111 then added two more.
 
    NOT COVERED, stated so nobody reads a green run as more than it is:
 
@@ -143,8 +144,12 @@
      enforces that.
    - A guard CONSTANT this file does not name. `guard-constants` resolves the
      declarations listed in GUARD_CONSTANTS and no others, and only where the
-     value is a top-level `const NAME = <literal>;`: one built from another
-     binding, or returned by a call, throws here rather than being guessed at.
+     value is a top-level `const NAME = ...;` whose right-hand side evaluates
+     in a realm with NO free variables: one built from another binding throws
+     here rather than being guessed at. A pure call on an intrinsic does NOT
+     throw - `Math.round(1280.4)` resolves, and the resolved number is bound.
+     The rule is "no free variables", not "no calls"; round 5 of PR #111 found
+     both spellings of this sentence claiming the stronger thing.
      A guard added next week carries no numbers until somebody names one of
      its constants, so this list growing is a manual step. The worked example
      of what stays out: check-ops-dialog-hit.mjs hit-tests five spots per
@@ -646,8 +651,11 @@ function literalAfter(src, from, what) {
    declaration rather than by matching its text. `const WIDTHS = [375, 360, 320]`
    is three numbers here, not the string "375, 360, 320", so a fourth viewport
    is a fourth entry rather than a longer line that a substring test still
-   passes. A declaration that is not a literal — one built from another binding,
-   or from a call — throws rather than being guessed at. */
+   passes. The right-hand side is evaluated in a realm holding no free
+   variables, so a declaration built from another binding throws rather than
+   being guessed at. A pure call on an intrinsic resolves instead —
+   `Math.round(1280.4)` binds 1280 — because the realm still has its
+   intrinsics. No free variables, not no calls. */
 function constant(script, name) {
   const src = read(path.join('scripts', script));
   const at = new RegExp(String.raw`^const ${name}\s*=\s*`, 'm').exec(src);
@@ -803,6 +811,11 @@ const HEADING_PROBES = [
 ];
 
 DERIVED['guard-blind-spots'] = () => [
+  /* The size of the census, so the README never has to spell it. Round 5 of
+     PR #111 found "eleven" still typed in one paragraph after the table had
+     grown to fourteen, the other paragraph having been updated: a number in
+     prose has to be found by hand at every site, and one site was missed. */
+  `(heading probes = ${HEADING_PROBES.length})`,
   ...HEADING_PROBES.map((probe) =>
     `(heading probe: ${JSON.stringify(probe)} = ${BLIND_SPOT_HEADING.test(probe) ? 'SEEN' : 'INVISIBLE'})`),
   ...BROWSER_GUARDS.flatMap((script) => {
@@ -1340,6 +1353,18 @@ DERIVED['claims-blocks'] = () => {
   ];
 };
 
+/* WHICH blocks are pinned, and how many rows each pins, read out of
+   REQUIRED_ROWS rather than counted in a sentence. The paragraph in the README
+   said "five blocks" and was true when written; PR #111 then added two more
+   and left it saying five for four review rounds. A block that stops being
+   pinned, or loses a pin, moves its line here. REQUIRED_ROWS is declared at the
+   foot of this file and read when the test runs, not now. */
+DERIVED['pinned-blocks'] = () => [
+  ...Object.keys(REQUIRED_ROWS).sort()
+    .map((id) => `claims id=${id} pins ${REQUIRED_ROWS[id].length} rows by name`),
+  `claims id=v1-status-classes pins the families ${REQUIRED_FAMILIES.join(', ')}`,
+];
+
 /* The policy a page actually declares, read out of the meta tag rather than
    assumed from its presence. A tag whose http-equiv this matcher does not
    read is not a policy: `x:http-equiv` is a different attribute to a browser
@@ -1553,8 +1578,13 @@ test(SWEEP_TEST, () => {
    still be judged, by name, so removing one is a deliberate two-line deletion
    in this file and visible in the diff. Growing a block is free.
 
-   Every other block derives its row set from the tree, the pages, the
-   registry or the sheets, so shrinking one is already red without a pin. */
+   A block derives its row set from the tree, the pages, the registry or the
+   sheets UNLESS its subjects are hand-written in this file, and then it needs
+   a pin. PR #111 added two such blocks and did not pin them for four review
+   rounds: deleting a GUARD_CONSTANTS entry, or a HEADING_PROBES row, together
+   with its README line was GREEN, which silently reinstated two defects
+   earlier rounds of that PR had fixed. Both are pinned below now. If you add
+   a block whose subjects come from an array up there, pin it here. */
 /* The status families, pinned as prefixes rather than as rows. For each one
    the members are recomputed from ops.css HERE, independently of
    V1_STATUS_FAMILIES, so narrowing a family prefix in that array shrinks the
@@ -1599,6 +1629,40 @@ const REQUIRED_ROWS = {
     "setAttributeNS(null, 'style', …)",
     'a capitalised Style: key on h()',
     'createContextualFragment()',
+  ],
+  /* Spelled out rather than mapped from GUARD_CONSTANTS: a pin computed from
+     the array it pins moves with the deletion and pins nothing. Deleting a
+     constant means deleting it twice, both in the diff. */
+  'guard-constants': [
+    'check-ops-contrast.mjs STATES',
+    'check-ops-contrast.mjs STATES length',
+    'check-ops-dialog-hit.mjs PAINT_PIXEL_DELTA',
+    'check-ops-dialog-hit.mjs PAINT_COVERAGE_LIMIT',
+    'check-ops-narrow-overflow.mjs WIDTHS',
+    'check-ops-narrow-overflow.mjs WIDTHS length',
+    'check-ops-result-view.mjs WIDTH',
+    'check-ops-theme-redraw.mjs PAINT_PROPS',
+    'check-ops-theme-redraw.mjs PAINT_PROPS length',
+  ],
+  /* The census rows, likewise spelled out rather than mapped from
+     HEADING_PROBES. The subject is everything left of the last ` = `, so each
+     of these pins a probe's PRESENCE and leaves its SEEN/INVISIBLE verdict
+     free to move - which is what you want: the verdict is the measurement. */
+  'guard-blind-spots': [
+    '(heading probe: "WHAT THIS DOES NOT COVER, in the words of what was measured:"',
+    '(heading probe: "   WHAT IT DOES NOT measure:"',
+    '(heading probe: "   WHAT IT DOES NOT check, in so many words:"',
+    '(heading probe: "   NOT COVERED, on purpose"',
+    '(heading probe: "   NOT COVERED at all:"',
+    '(heading probe: "   not covered, in lower case"',
+    '(heading probe: " * NOT COVERED, after a continuation marker"',
+    '(heading probe: "/* NOT COVERED, sharing the comment opener"',
+    '(heading probe: "/** NOT COVERED, sharing a doc-comment opener"',
+    '(heading probe: "// NOT COVERED, after a line comment"',
+    '(heading probe: "   WHAT THIS SWEEP CANNOT SEE:"',
+    '(heading probe: "   KNOWN GAPS:"',
+    '(heading probe: "/* KNOWN GAPS, behind a comment opener"',
+    '(heading probe: "   see NOT COVERED above for the two panes"',
   ],
 };
 
