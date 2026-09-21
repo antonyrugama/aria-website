@@ -22,12 +22,19 @@
  * the surfaces BESIDE it, not the one behind it, and `outline-offset` decides
  * which those are. Positive, and the ring lands outside the control on
  * whatever the control sits on; negative, and it lands on the control itself.
- * Nothing here models that geometry — each control is photographed twice,
- * unfocused and focused, and the ring is read off the pixels that moved. See
- * FOCUS_RATIO below and Stadiora/Aria#10634. (ops/README.md's NOT COVERED list
- * still says focus rings are outside this check. That file belongs to another
- * agent's PR in this wave and was not edited here; the statement is now too
- * cautious rather than too generous.)
+ * Nothing here models that geometry — each control is photographed THREE
+ * times: unfocused, focused, and focused again with the ring switched off.
+ * The ring is the pixels the third photograph differs from the second in;
+ * the surface it lands on is read from the third, where the ring is absent
+ * but everything focus changed is present. An earlier version took only the
+ * first two and read the surface from the unfocused one, which quietly
+ * assumed focusing repaints nothing but the ring — false for any control
+ * whose focus style also stands a glow down, and the count of controls where
+ * it is false is now printed by every verbose run. See FOCUS_RATIO below,
+ * Stadiora/Aria#10634 and Stadiora/Aria#10700. (ops/README.md's NOT COVERED
+ * list still says focus rings are outside this check. That file belongs to
+ * another agent's PR in this wave and was not edited here; the statement is
+ * now too cautious rather than too generous.)
  *
  * Ported from the monorepo's docs/mocks/ops-dashboard-v2/scripts/
  * contrast-check.mjs, which took its own review rounds to become trustworthy.
@@ -179,6 +186,22 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
   .h9half { position: absolute; left: 0; top: 0; width: 70px; height: 60px; background: #FFFFFF; }
   .h9 { position: absolute; left: 50px; top: 18px; width: 40px; height: 24px; background: #FFFFFF; }
   .h9:focus-visible { outline: 4px solid #767676; outline-offset: 8px; }
+  /* .hhalo is ops/assets/aria.css's .btn-primary, reduced to the mechanism:
+     a halo standing down at the moment the ring goes up. The halo spreads
+     20px, the ring lands 6px out and is 4px wide, so BOTH of the ring's
+     immediate neighbours — 5px out and 11px out — are inside the halo and
+     both are repainted by focusing. Nothing beside the ring is unchanged, so
+     an adjacency taken over unchanged pixels has an empty sample. The colour
+     under the halo is the card's own #FFFFFF, which is what makes the right
+     answer a published one. */
+  .hhalo { background: #FFFFFF; box-shadow: 0 0 0 20px #B0B0B0; }
+  .hhalo:focus-visible { box-shadow: none; outline: 4px solid #767676; outline-offset: 6px; }
+  /* .hstub defeats the ring suppression on purpose: same !important, higher
+     specificity. A page is allowed to do this, and when it does, the third
+     photograph is not a photograph of the ring standing down — it is the
+     same picture twice. Refused rather than measured. */
+  .wrap .hstub:focus-visible { outline: 4px solid #767676 !important; outline-offset: 6px; }
+  .hstub { background: #FFFFFF; }
 </style></head><body>
 <div class="case"><div class="wrap"><button class="h1"></button></div></div>
 <div class="case"><div class="wrap"><button class="h2out"></button></div></div>
@@ -193,6 +216,8 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
 <div class="case"><div class="wrap"><div class="h7wrap"><button class="h7"></button><div class="h7far"></div></div></div></div>
 <div class="case"><div class="wrap"><div class="h9wrap"><div class="h9half"></div><button class="h9"></button></div></div></div>
 <div class="case"><div class="wrap"><button class="hmove"></button></div></div>
+<div class="case"><div class="wrap"><button class="hhalo"></button></div></div>
+<div class="case"><div class="wrap"><button class="hstub"></button></div></div>
 <div class="caseflush"><button class="hedge"></button></div>
 </body></html>`;
 
@@ -638,7 +663,7 @@ const FOCUS_PADS = [28, 120, Infinity];
    beside it. */
 const FOCUS_ADJACENT_RADIUS = 1;
 
-/* Below this many unchanged pixels beside the ring there is nothing to take a
+/* Below this many pixels of surface beside the ring there is nothing to take a
    worst-of over, so the site is refused instead of judged on a handful of
    corner pixels. How much headroom the shell actually has over this floor is
    not stated here — a number typed in a comment is exactly what
@@ -666,8 +691,9 @@ function bucketPixels(px) {
    the page's CSP has no 'unsafe-inline', so an injected stylesheet element is
    blocked and would fail silently. `--force-prefers-reduced-motion` is NOT
    enough — it sets the media query, and a transition not written behind that
-   query still runs. Two photographs of the same element mid-transition differ
-   in pixels that have nothing to do with the indicator. */
+   query still runs. Photographs of the same element taken at different
+   moments mid-transition differ in pixels that have nothing to do with the
+   indicator. */
 const NO_MOTION = `(() => {
   const s = new CSSStyleSheet();
   s.replaceSync('*, *::before, *::after { transition: none !important; animation: none !important; }');
@@ -1566,8 +1592,11 @@ async function measureSites(targets, where) {
 /* ------------------------------------------- the focus sweep's measurement */
 
 /* One clipped photograph, decoded. Same capture path as plateShot, clipped
-   rather than whole-page, because two photographs of the same rect subtract
-   and two photographs of the whole shell do not fit in memory 416 times. */
+   rather than whole-page, because photographs of the same rect subtract
+   and whole-shell photographs of every control in every theme and state, now
+   three apiece, do not fit in memory. (The count is deliberately not typed
+   here; it is FOCUS cases × themes × states × 3 and it moved once already
+   when the third photograph was added — Stadiora/Aria#10365.) */
 async function focusShot(box) {
   const shot = await cdp.send('Page.captureScreenshot', {
     format: 'png',
@@ -1712,8 +1741,19 @@ async function measureFocusIndicators(where) {
         const was = { x: r1.x + scrollX, y: r1.y + scrollY, w: r1.width, h: r1.height };
         el.focus({ preventScroll: true });
         const chain = [];
+        let ringIndex = -1;
         for (let n = el; n; n = n.parentElement) {
           const cs = getComputedStyle(n);
+          /* The ring-bearing node is chosen HERE and tagged, so the third
+             photograph below suppresses the outline on the same node this
+             measurement calls the ring. Two copies of this predicate — one
+             in page, one in Node — is one copy too many: they would be free
+             to drift apart, and the tool would then be measuring one ring
+             and suppressing another. */
+          if (ringIndex < 0 && cs.outlineStyle !== 'none' && (parseFloat(cs.outlineWidth) || 0) > 0) {
+            ringIndex = chain.length;
+            n.setAttribute('data-ring-node', '1');
+          }
           chain.push({
             name: n.tagName.toLowerCase() +
               (n.getAttribute('class') ? '.' + n.getAttribute('class').trim().split(/\\s+/)[0] : ''),
@@ -1726,12 +1766,59 @@ async function measureFocusIndicators(where) {
         return JSON.stringify({
           took: document.activeElement === el,
           focusVisible: el.matches(':focus-visible'),
-          was,
+          was, ringIndex,
           x: r2.x + scrollX, y: r2.y + scrollY, w: r2.width, h: r2.height,
           sx: scrollX, sy: scrollY, chain
         });
       })()`);
       const after = await focusShot(box);
+
+      /* THE THIRD PHOTOGRAPH. Same clip, still focused, ring suppressed.
+         WHY IT EXISTS. Two photographs can locate a ring but cannot name the
+         surface under it. Unfocused-versus-focused answers "what did focusing
+         change", and the old adjacency read the surface off the pixels that
+         answer left over — which is the surface only while focusing changed
+         NOTHING BUT the ring. ops/assets/aria.css's `.btn-primary:focus-
+         visible { box-shadow: none }` breaks exactly that: the halo stands
+         down as the ring goes up, every neighbour of the ring is repainted,
+         and the leftover sample is empty (Stadiora/Aria#10700).
+         Suppressing the outline while the element stays focused asks the
+         question directly instead: this is the page AS THE RING SEES IT, so
+         the surface beside the ring is simply read off it. The precondition
+         drops from "focusing repaints nothing but the ring" to "turning the
+         outline off changes nothing but the ring", which is a property of
+         one declaration rather than of the whole page — and unlike the old
+         one, every part of it is checked below rather than assumed. */
+      const bare = await evaluate(`(() => {
+        const node = document.querySelector('[data-ring-node]');
+        const el = document.querySelector('[data-focus-site="${c.i}"]');
+        if (!node || !el) return JSON.stringify({ absent: true });
+        const s = new CSSStyleSheet();
+        s.replaceSync('[data-ring-node] { outline: none !important; }');
+        window.__ringSheet = s;
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, s];
+        const cs = getComputedStyle(node);
+        const r = el.getBoundingClientRect();
+        return JSON.stringify({
+          /* Did the suppression actually win? A page may out-specify it, and
+             an outline that is still painted makes the third photograph a
+             duplicate of the second rather than a picture of the surface. */
+          off: cs.outlineStyle === 'none' || (parseFloat(cs.outlineWidth) || 0) === 0,
+          stillFocused: document.activeElement === el,
+          x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height,
+          sx: scrollX, sy: scrollY
+        });
+      })()`);
+      const bareShot = bare.absent ? null : await focusShot(box);
+      await evaluate(`(() => {
+        for (const n of document.querySelectorAll('[data-ring-node]')) n.removeAttribute('data-ring-node');
+        if (window.__ringSheet) {
+          document.adoptedStyleSheets =
+            document.adoptedStyleSheets.filter((s) => s !== window.__ringSheet);
+          window.__ringSheet = null;
+        }
+        return JSON.stringify({ ok: 1 });
+      })()`);
       await evaluate(`(() => {
         const el = document.querySelector('[data-focus-site="${c.i}"]');
         if (el) el.blur();
@@ -1751,24 +1838,24 @@ async function measureFocusIndicators(where) {
          stop that; this says so rather than assuming it. */
       if (focused.sx !== geom.sx || focused.sy !== geom.sy) {
         refusal = `focusing it scrolled the page from ${geom.sx},${geom.sy} to ` +
-          `${focused.sx},${focused.sy}, so the two photographs are not of the same pixels`;
+          `${focused.sx},${focused.sy}, so the first two photographs are not of the same pixels`;
         break;
       }
       if (!focused.took) { refusal = 'the element refused focus, so nothing could be photographed'; break; }
-      /* An element that MOVES when it is focused has no measurable
-         surroundings, and this is the deterministic statement of that rather
-         than a renderer-dependent one. Adjacency is taken over pixels that
-         did NOT change, so when the element arrives somewhere it was not
-         before, everything it now covers — and everything its shadow now
-         covers — changed. What is left beside the ring is whatever the
-         renderer's shadow happened to miss, which varies by platform and by
-         theme — measured for ops/assets/aria.css's .skip, which parks at
-         top:-60px and slides to top:12px on focus, it ranges from none at all
-         to enough to judge on, with no rule to it. Judging it where the
-         remnant is fat and refusing it where the remnant is thin is the worst
-         of both, so the move is refused everywhere, before any pixel is
-         counted. How many survive in any one pass is not written down here;
-         it is renderer weather.
+      /* An element that MOVES when it is focused is still refused, but no
+         longer for the reason it used to be. The old reason was that
+         adjacency is taken over pixels focusing did not change, so an element
+         arriving somewhere new leaves nothing unchanged beside its ring. The
+         third photograph removed that: it shows the page with the ring
+         switched off and the element already arrived, which is a perfectly
+         good picture of the surface.
+         What it did not remove is the disagreement. Run with this refusal
+         lifted, ops/assets/aria.css's `.skip` — parked at top:-60px, sliding
+         to top:12px — reads 10.35:1 against the 18 pixels the old method had
+         left it and 1.05:1 against the 547 the new one finds, in the same
+         theme, in the same pass. One of those is wrong and this tool cannot
+         yet say which, so it quotes neither. That is Stadiora/Aria#10686's
+         question and it is deliberately not answered here.
          Compared at whole pixels: a subpixel reflow is not a move. */
       if (Math.abs(focused.x - focused.was.x) >= 1 || Math.abs(focused.y - focused.was.y) >= 1 ||
           Math.abs(focused.w - focused.was.w) >= 1 || Math.abs(focused.h - focused.was.h) >= 1) {
@@ -1776,13 +1863,52 @@ async function measureFocusIndicators(where) {
           `${Math.round(focused.was.y)} ${Math.round(focused.was.w)}×${Math.round(focused.was.h)} ` +
           `to ${Math.round(focused.x)},${Math.round(focused.y)} ${Math.round(focused.w)}×` +
           `${Math.round(focused.h)}, so the ` +
-          'surface its ring lands on was repainted by the move and there is nothing unchanged ' +
-          'beside the ring to measure against';
+          'surface its ring lands on is one this tool measures two different ways with two ' +
+          'different answers, and it will not pick between them (Stadiora/Aria#10686)';
         break;
       }
       if (before.width !== after.width || before.height !== after.height) {
-        refusal = 'the two photographs came back different sizes';
+        refusal = 'the first two photographs came back different sizes';
         break;
+      }
+
+      /* PRECONDITIONS OF THE THIRD PHOTOGRAPH, checked rather than assumed.
+         Each one, violated, turns the surface reading into a confident wrong
+         answer instead of a missing one, which is the worse of the two. A
+         row with no ring at all is not handled here — it has nothing to
+         suppress, and the "not an outline" refusal below is its name. */
+      if (focused.ringIndex >= 0) {
+        if (bare.absent) {
+          refusal = 'the node carrying its ring could not be found again to photograph the ' +
+            'surface underneath it'; break;
+        }
+        if (!bare.off) {
+          refusal = 'its outline survived being switched off — the page out-specifies the ' +
+            'suppression this tool uses to photograph the surface under a ring, so the ' +
+            'surface it would measure against is the ring itself'; break;
+        }
+        if (!bare.stillFocused) {
+          refusal = 'it lost focus while the surface under its ring was being photographed, so ' +
+            'that photograph is of the unfocused control'; break;
+        }
+        if (bare.sx !== geom.sx || bare.sy !== geom.sy) {
+          refusal = `suppressing its ring scrolled the page from ${geom.sx},${geom.sy} to ` +
+            `${bare.sx},${bare.sy}, so the third photograph is not of the same pixels`; break;
+        }
+        /* `outline` does not participate in layout, so switching it off must
+           not move anything. If it did, something other than the outline
+           changed and the difference between the two shots is no longer the
+           ring. Whole pixels, for the same reason as the move refusal. */
+        if (Math.abs(bare.x - focused.x) >= 1 || Math.abs(bare.y - focused.y) >= 1 ||
+            Math.abs(bare.w - focused.w) >= 1 || Math.abs(bare.h - focused.h) >= 1) {
+          refusal = 'switching its outline off moved its box, so the third photograph differs ' +
+            'from the second by more than the ring and cannot be read as the surface under it';
+          break;
+        }
+        if (!bareShot || bareShot.width !== after.width || bareShot.height !== after.height) {
+          refusal = 'the photograph of the surface under its ring came back a different size';
+          break;
+        }
       }
 
       const W = before.width, H = before.height;
@@ -1807,14 +1933,14 @@ async function measureFocusIndicators(where) {
       const last = FOCUS_PADS[FOCUS_PADS.length - 1];
       if ((onEdge || !nChanged) && pad !== last) continue;
 
-      measured = { box, pad, nChanged, changed, after, W, H, focused, onEdge };
+      measured = { box, pad, nChanged, changed, after, bareShot, before, W, H, focused, onEdge };
       break;
     }
 
     if (refusal) { rows.push({ ...row, refused: refusal }); continue; }
     if (!measured) { rows.push({ ...row, refused: 'no photograph could be taken' }); continue; }
 
-    const { nChanged, changed, after, W, H, focused } = measured;
+    const { nChanged, changed, after, bareShot, before, W, H, focused } = measured;
     row.focusVisible = focused.focusVisible;
     row.pad = measured.pad === Infinity ? 'whole document' : `${measured.pad}px`;
     row.changedPx = nChanged;
@@ -1856,7 +1982,7 @@ async function measureFocusIndicators(where) {
     /* Innermost ancestor-or-self carrying an outline. Ancestor-or-self
        because `:focus-within` on a wrapper is a legitimate way to indicate
        focus and the ring is then not on the focused element at all. */
-    const ring = focused.chain.find((n) => n.style !== 'none' && n.width > 0);
+    const ring = focused.ringIndex >= 0 ? focused.chain[focused.ringIndex] : null;
     if (!ring) {
       rows.push({ ...row, refused: 'its focus indicator is not an outline — this tool measures ' +
         'outlines, and an indicator drawn some other way (box-shadow, a border swap, a ' +
@@ -1890,27 +2016,40 @@ async function measureFocusIndicators(where) {
     const ringRGB = { r: Math.round(ringColor.r), g: Math.round(ringColor.g), b: Math.round(ringColor.b) };
     row.ringHex = hex(ringRGB);
 
+    /* THE RING is what disappears when the outline is switched off, and is
+       painted exactly the outline colour. Both halves are load-bearing.
+       Without the first, a surface that happens to hold the ring's colour
+       joins the core; without the second, everything the suppression
+       disturbed joins it, antialiasing included. Note which photographs this
+       reads: the second against the THIRD, never the first. That is what
+       makes the ring separable from the rest of what focusing did — and it
+       fails closed, because a suppression that silently did nothing leaves
+       the two identical, so the core is empty and the row is refused below
+       rather than measured against itself. */
     const core = new Uint8Array(W * H);
     let nCore = 0;
     for (let p = 0; p < W * H; p++) {
-      if (!changed[p]) continue;
       const q = p * 4;
+      if (after.data[q] === bareShot.data[q] && after.data[q + 1] === bareShot.data[q + 1] &&
+          after.data[q + 2] === bareShot.data[q + 2]) continue;
       if (after.data[q] === ringRGB.r && after.data[q + 1] === ringRGB.g &&
           after.data[q + 2] === ringRGB.b) { core[p] = 1; nCore++; }
     }
     row.corePx = nCore;
     if (!nCore) {
-      rows.push({ ...row, refused: `its computed outline is ${row.ringHex} but no pixel that moved is ` +
-        'that colour, so the ring this tool would measure is not the ring on the screen' });
+      rows.push({ ...row, refused: `its computed outline is ${row.ringHex} but no pixel that the ` +
+        'ring itself paints is that colour, so the ring this tool would measure is not the ring ' +
+        'on the screen' });
       continue;
     }
 
     const D = FOCUS_ADJACENT_RADIUS;
     const adjacent = [];
+    let unchangedNear = 0, driftPx = 0;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const p = y * W + x;
-        if (changed[p]) continue;
+        if (core[p]) continue;
         let near = false;
         for (let dy = -D; dy <= D && !near; dy++) {
           for (let dx = -D; dx <= D && !near; dx++) {
@@ -1919,28 +2058,48 @@ async function measureFocusIndicators(where) {
             if (core[yy * W + xx]) near = true;
           }
         }
-        if (near) adjacent.push([after.data[p * 4], after.data[p * 4 + 1], after.data[p * 4 + 2],
-          after.data[p * 4 + 3]]);
+        if (!near) continue;
+        const q = p * 4;
+        /* A pixel the ring TOUCHES without owning is a blend of ring and
+           surface, and is neither. Excluded from both sides, exactly as
+           before — what changed is the photograph the test is made against.
+           It used to ask "did focusing change this pixel", which excludes
+           blends only incidentally, and excludes a repainted SURFACE by the
+           same stroke. It now asks "does the ring change this pixel", which
+           is the question that was always meant. */
+        if (after.data[q] !== bareShot.data[q] || after.data[q + 1] !== bareShot.data[q + 1] ||
+            after.data[q + 2] !== bareShot.data[q + 2]) continue;
+        adjacent.push([bareShot.data[q], bareShot.data[q + 1], bareShot.data[q + 2],
+          bareShot.data[q + 3]]);
+        /* Two counts kept for the record, both derived here and neither used
+           to decide anything: how many of these the OLD adjacency would have
+           sampled, and how many sit on a surface focusing repainted. The
+           first is what makes Stadiora/Aria#10700 visible in a self-test
+           rather than argued about; the second is the old method's
+           precondition, reported per run instead of assumed. */
+        if (!changed[p]) unchangedNear++;
+        if (before.data[q] !== bareShot.data[q] || before.data[q + 1] !== bareShot.data[q + 1] ||
+            before.data[q + 2] !== bareShot.data[q + 2]) driftPx++;
       }
     }
     row.adjacentPx = adjacent.length;
+    row.unchangedPx = unchangedNear;
+    row.driftPx = driftPx;
     /* Zero is not "a thin sample". It is a different finding, and conflating
        the two sends the reader looking for a starved 1px ring when the ring
-       is 2px and perfectly healthy. Every pixel beside the core changed,
-       which means focusing repainted the very surface this tool measures the
-       ring against — ops/assets/aria.css's `.btn-primary:focus-visible {
-       box-shadow: none }` stands the button's cyan halo down at the moment
-       the ring goes up, and the ring at outline-offset: 2px lands exactly
-       where the halo was. The box-moved refusal above names one mechanism
-       for this; this names the condition itself, which is the thing that
-       actually stops the measurement. */
+       is 2px and perfectly healthy. Every pixel beside the core is one the
+       ring itself paints, which means there is no surface in this clip that
+       the indicator does not own. Note what this no longer is: before the
+       third photograph it also caught a control whose SURROUND repaints on
+       focus, which is a measurable ring and was being declined — that was
+       Stadiora/Aria#10700, and it is the case this refusal no longer has. */
     if (!adjacent.length) {
-      rows.push({ ...row, refused: 'focusing it repainted every pixel beside its ring, so nothing ' +
-        'is left there that is not part of the indicator to measure the ring against' });
+      rows.push({ ...row, refused: 'every pixel beside its ring is painted by the ring itself, so ' +
+        'there is no surface in this photograph to measure the ring against' });
       continue;
     }
     if (adjacent.length < FOCUS_MIN_ADJACENT) {
-      rows.push({ ...row, refused: `only ${adjacent.length} unchanged pixel(s) sit beside its ring, ` +
+      rows.push({ ...row, refused: `only ${adjacent.length} pixel(s) of surface sit beside its ring, ` +
         `which is under the ${FOCUS_MIN_ADJACENT} this tool will take a worst-of over` });
       continue;
     }
@@ -2056,10 +2215,15 @@ async function measureFocusIndicators(where) {
  *      to prove the adjacency is anchored on the ring and on the ring
  *      exactly, a button straddling a colour seam, whose one ring lands on
  *      two surfaces at 2.83:1 and 4.54:1, to prove the worse of them decides,
- *      a ring three seconds into a colour transition, to prove the two
- *      photographs are of the same page, and a button flush against x=0
+ *      a ring three seconds into a colour transition, to prove the
+ *      photographs are all of the same page, a button flush against x=0
  *      whose ring runs off the document, to prove the document's own edge is
- *      not a truncation (Stadiora/Aria#10634).
+ *      not a truncation (Stadiora/Aria#10634), a control whose glow stands
+ *      down as its ring goes up, whose correct answer is WebAIM's published
+ *      #767676-on-#FFFFFF and which the two-photograph method could only
+ *      refuse, and one that defeats the ring suppression on specificity, to
+ *      drive that refusal live rather than leave it fail-closed
+ *      (Stadiora/Aria#10700).
  *
  * NOT COVERED, on purpose — this is the list of exclusions decided, not an
  * inventory of every blind spot, because one nobody has thought of is by
@@ -2081,19 +2245,30 @@ async function measureFocusIndicators(where) {
  * is named rather than judged, but "named" is the whole of the claim.
  *
  * Also NOT COVERED, and this one has a name: an indicator that repaints the
- * surface it would be measured against. Adjacency is taken over pixels that
- * focusing did NOT change, so a ring whose own arrival repaints its surround
- * — the element moves, or a halo under it stands down as the ring goes up —
- * leaves nothing beside the ring that is not part of the indicator. The sweep
- * refuses those by name and enumerates the live ones against issues (a.skip
- * at Stadiora/Aria#10686, button.btn.btn-primary at #10700); .hmove exercises
- * the moved-box half. The half NOT demonstrated by any fixture is the near
- * miss: a surround repainted only in PART, leaving an arbitrary remnant that
- * happens to clear FOCUS_MIN_ADJACENT, which would be judged on whatever
- * pixels survived rather than refused. Nothing here says that remnant is
- * representative of the surface. The worst-bucket rule makes it pessimistic
- * rather than optimistic, which is the direction to be wrong in, but a
- * pessimistic answer off an arbitrary sample is still an arbitrary sample.
+ * surface it would be measured against so THOROUGHLY that no pixel beside
+ * the ring is anything but ring. The third photograph handles ordinary
+ * repaint — focus is applied, the ring alone is switched off, and the
+ * surround is read from that, glow stood down and all — so a halo going out
+ * as the ring comes up is now MEASURED rather than refused (that was
+ * Stadiora/Aria#10700, and button.btn.btn-primary is the control it
+ * unblocked). What remains excluded is narrower and in two parts. One: an
+ * element that ARRIVES somewhere new on focus, which this sweep refuses by
+ * name before counting a pixel, not because its surround cannot now be
+ * photographed but because the two available readings of it disagree by an
+ * order of magnitude on a.skip and neither has been shown right
+ * (Stadiora/Aria#10686; .hmove is the fixture). Two: a ring that genuinely
+ * paints every pixel within FOCUS_ADJACENT_RADIUS of itself, which is
+ * refused for having no surface, and is a real geometry rather than a
+ * failure of method.
+ *
+ * The direction the OLD method was wrong in is worth recording, because it
+ * is the reason this was not left alone: its adjacency took only pixels
+ * focusing had not changed, so a PARTIAL repaint silently dropped candidate
+ * buckets from a worst-of. Dropping candidates from a worst-of raises it.
+ * That is the optimistic direction — the dangerous one — and it was
+ * invisible, because a shrunken sample and a healthy one print the same way.
+ * The empty-sample case was merely its fully degenerate end, and the only
+ * end anyone noticed.
  *
  * Also NOT COVERED, and named because KNOWN_BELOW_FOCUS is empty: the RING
  * reconciler — the loop over KNOWN_BELOW_FOCUS, distinct from the REFUSAL
@@ -2128,6 +2303,24 @@ async function measureFocusIndicators(where) {
  * would rather carry a named gap than an unproven closure of one. Whoever
  * next needs those branches proven — that is the seam, and it is already cut
  * next door.
+ *
+ * Also NOT COVERED: five of the six preconditions on the third photograph.
+ * Switching the ring off is only trustworthy if nothing ELSE moved when it
+ * was switched off, so the sweep checks six things and refuses on each by
+ * name. Exactly one is exercised by a fixture: THE OUTLINE SURVIVED BEING
+ * SWITCHED OFF, which .hstub drives live by out-specifying the suppression
+ * rule, so that branch is proven rather than merely written. The other five
+ * — the tagged node went missing, focus was lost, the page scrolled, the box
+ * moved, the third photograph came back a different size — are fail-closed
+ * and unexercised, because `outline` does not participate in layout and
+ * nothing on this page or the shell reacts to its removal. They are latent
+ * guards against a future stylesheet where it does, and they are listed
+ * individually rather than counted, so adding a sixth without a proof is
+ * visible rather than absorbed. One thing they do NOT need to catch: a
+ * suppression that silently fails to take. That one cannot produce a wrong
+ * number, because the core is defined as the pixels where the focused and
+ * ring-off photographs DIFFER, so a suppression that did nothing yields an
+ * empty core and the existing no-ring refusal fires on its own.
  *
  * Also NOT COVERED: the scroll refusal. preventScroll is asked for and the
  * two scroll positions are compared, but nothing on this page or the shell
@@ -2607,16 +2800,51 @@ async function selfTest() {
     refuses('h4', 'is not an outline', 'indicates focus with a box-shadow');
     refuses('h5', 'translucent', 'has a 50% alpha outline-color');
     refuses('hdash', 'outline-style is dashed', 'draws a dashed outline, whose gaps are not ring');
-    /* An element that arrives somewhere new when it is focused repaints its
-       own surroundings, so the unchanged pixels adjacency is taken over are
-       whatever its shadow missed — which varies by platform and by theme, and
-       for ops/assets/aria.css's .skip ranges from none at all to a remnant
-       fat enough to judge on. That is why the move is refused everywhere,
+    /* An element that arrives somewhere new when it is focused is refused
        before any pixel is counted, and .hmove is that element: parked 40px
-       up, sliding into place on focus, under a shadow wide enough to cover
-       what it lands on. */
+       up, sliding into place on focus. The reason is no longer that its
+       surroundings cannot be photographed — the third photograph does that
+       fine — but that the two ways of reading them disagree by an order of
+       magnitude on ops/assets/aria.css's .skip and neither has been shown
+       right. See the refusal itself, and Stadiora/Aria#10686. */
     refuses('hmove', 'focusing it moved its box',
-      'slides 40px into place when focused, repainting what its ring lands on');
+      'slides 40px into place when focused, so the surface under its ring is contested');
+
+    /* H10 — STADIORA/ARIA#10700, the case the third photograph exists for.
+       .hhalo's 20px halo stands down at the moment its ring goes up, so
+       BOTH of the ring's immediate neighbours are repainted by focusing and
+       an adjacency taken over unchanged pixels has nothing in it. The ring
+       is measurable all the same: the surface it lands on is the card's
+       #FFFFFF, and the answer is the published 4.54:1 that .h1 already pins
+       against a ring no halo ever covered.
+       The expectation is NOT derived from the measurement. #767676 on
+       #FFFFFF is WebAIM's figure, the same constant H1 uses, and it is the
+       fixture's own two declared hexes. */
+    const halo = shows('hhalo', 4.5426,
+      'stands a 20px halo DOWN as its ring goes up, repainting every neighbour the ring has');
+    /* And the half that makes it a proof rather than a pass: this row is
+       measured over a sample the old adjacency could not have taken. If
+       unchangedPx is anything but zero, the halo is not covering the ring's
+       neighbours and .hhalo has stopped being the case it was built for —
+       so this fails rather than quietly testing nothing. */
+    const haloProves = !!halo && !halo.refused && halo.unchangedPx === 0 &&
+      halo.adjacentPx >= FOCUS_MIN_ADJACENT && halo.driftPx === halo.adjacentPx;
+    if (!haloProves) bad++;
+    console.log(`     ${haloProves ? 'ok  ' : 'FAIL'} and it measured that ring over ` +
+      `${halo && !halo.refused ? halo.adjacentPx : '?'} pixel(s) of surface, of which ` +
+      `${halo && !halo.refused ? halo.unchangedPx : '?'} were unchanged by focusing — expected ` +
+      'a sample above the floor and NOT ONE unchanged pixel in it\n          (the adjacency this ' +
+      'replaced sampled only unchanged pixels, so on this control it sampled nothing at all and ' +
+      'the row was refused — Stadiora/Aria#10700)');
+
+    /* H11 — and the precondition of that third photograph, which is a real
+       precondition and therefore checked. .hstub out-specifies the
+       suppression with an !important of its own, so the third photograph
+       comes back with the ring still in it. A tool that did not look would
+       compare a picture to itself, find no ring, and report an empty core;
+       what it must do is say why it cannot answer. */
+    refuses('hstub', 'outline survived being switched off',
+      'out-specifies the ring suppression, so the surface under its ring cannot be photographed');
 
     /* H6 — the clip escalates rather than measuring a truncated ring. At the
        first pad this ring is entirely outside the photograph's edge. */
@@ -2715,22 +2943,29 @@ async function selfTest() {
     if (!okFindings) bad++;
     console.log(`     ${okFindings ? 'ok  ' : 'FAIL'} the rings under ${FOCUS_RATIO}:1 that this ` +
       `fixture builds on purpose are exactly the ones reported as findings: ${findings.join(', ') || '(none)'}` +
-      ', expected h2out, h9, hedge — 1.61:1, 2.83:1 and 1.61:1, the other 6 measured rings clear it');
+      `, expected h2out, h9, hedge — 1.61:1, 2.83:1 and 1.61:1, the other ` +
+      `${rows.filter((r) => !r.refused).length - findings.length} measured rings clear it`);
 
-    /* The census itself: fourteen buttons on the page, fourteen reached by
-       Tab, and every one of them carrying a row. A focus sweep that quietly
-       measured six of fourteen would print six ok lines and nothing else. */
-    const okCensus = census.candidates === 14 && census.reached === 14 && rows.length === 14;
+    /* The census itself: every button on the page reached by Tab, and every
+       one of them carrying a row. A focus sweep that quietly measured six of
+       them would print six ok lines and nothing else.
+       COUNTED OFF THE FIXTURE, never typed. This number moves the moment a
+       case is added — it has already moved twice — and a count of the markup
+       written beside the markup is Stadiora/Aria#10365's exact shape. Read
+       from the same string the browser is served, so the only way to be
+       wrong about it is to serve a different page. */
+    const CASES = (FOCUS_HTML.match(/<button /g) || []).length;
+    const okCensus = census.candidates === CASES && census.reached === CASES && rows.length === CASES;
     if (!okCensus) bad++;
-    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} 14 focusable buttons → ${census.candidates} ` +
+    console.log(`     ${okCensus ? 'ok  ' : 'FAIL'} ${CASES} focusable buttons → ${census.candidates} ` +
       `censused, ${census.reached} reached by real Tab presses, ${rows.length} judged or refused`);
     /* And that the Tab presses did their other job. Without keyboard modality
        every :focus-visible rule on this page is dead and the lot look like
-       h3 — fourteen missing indicators and no ring measured anywhere. */
+       h3 — every indicator missing and no ring measured anywhere. */
     const modality = rows.filter((r) => r.focusVisible).length;
-    const okModality = modality === 14;
+    const okModality = modality === CASES;
     if (!okModality) bad++;
-    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of 14 ` +
+    console.log(`     ${okModality ? 'ok  ' : 'FAIL'} :focus-visible matched on ${modality} of ${CASES} ` +
       'after the Tab walk (scripted focus alone matches 0, and every ring here is behind it)');
     /* Derived rather than typed. How many of the sweep's refusals this fixture
        actually drives is a number that moves whenever a case is added, and a
@@ -2888,38 +3123,18 @@ const KNOWN_UNMEASURABLE_FOCUS = [
   {
     theme: 'dark',
     states: ['live', 'loading', 'empty', 'degraded'],
-    selector: 'button.btn.btn-primary',
-    text: 'Primary',
-    because: 'repainted every pixel beside its ring',
-    issue: 'https://github.com/Stadiora/Aria/issues/10700',
-    why: 'ops/assets/aria.css stands .btn-primary\'s cyan halo down while the ring is up ' +
-      '(.btn-primary:focus-visible { box-shadow: none }), and the ring at outline-offset: ' +
-      '2px lands exactly where the halo was. Every pixel beside the ring core therefore ' +
-      'changed, and adjacency is taken over pixels that did not. Nothing here says the ring ' +
-      'fails — scripts/ops-focus-indicator.test.mjs judges the same control by a different ' +
-      'method and passes it; this tool will not claim a number it cannot sample.'
-  },
-  {
-    theme: 'light',
-    states: ['live', 'loading', 'empty', 'degraded'],
-    selector: 'button.btn.btn-primary',
-    text: 'Primary',
-    because: 'repainted every pixel beside its ring',
-    issue: 'https://github.com/Stadiora/Aria/issues/10700',
-    why: 'The light-theme half of the same button. Same halo, same refusal.'
-  },
-  {
-    theme: 'dark',
-    states: ['live', 'loading', 'empty', 'degraded'],
     selector: 'a.skip',
     text: 'Skip to content',
     because: 'moved its box',
     issue: 'https://github.com/Stadiora/Aria/issues/10686',
     why: 'ops/assets/aria.css parks the skip link at top:-60px and slides it to top:12px on ' +
-      'focus, so the surface its ring lands on is repainted by the arrival and there are no ' +
-      'unchanged pixels beside the ring to measure against. What survives is whatever the ' +
-      'element\'s drop shadow missed: 18 pixels on macOS and 0 on Linux, which is a renderer ' +
-      'difference rather than an accessibility one. Named on both rather than judged on one.'
+      'focus. The third photograph CAN see the surface under a moved element\'s ring — that is ' +
+      'what it is for — but what it sees there does not agree with what the old adjacency saw, ' +
+      'and not by a little: measured with the move refusal lifted, this ring reads 10.35:1 over ' +
+      'the 18 stale pixels the old method had left, and 1.05:1 over the 547 the new one finds. ' +
+      'Neither number has been shown to be the right one. A ring whose answer moves by an order ' +
+      'of magnitude with the method is not a ring this tool should be quoting, so the move stays ' +
+      'refused and the question stays open where it belongs.'
   },
   {
     theme: 'light',
@@ -2928,7 +3143,8 @@ const KNOWN_UNMEASURABLE_FOCUS = [
     text: 'Skip to content',
     because: 'moved its box',
     issue: 'https://github.com/Stadiora/Aria/issues/10686',
-    why: 'The light-theme half of the same link. Same movement, same refusal.'
+    why: 'The light-theme half of the same link: 2.51:1 the old way, 1.35:1 the new way, same ' +
+      'disagreement. Named on both themes rather than judged on either.'
   }
 ];
 
@@ -3017,6 +3233,15 @@ try {
     const belowAA = [];
     let focusChecked = 0;
     let focusThinnest = null;
+    /* How many measured rings are judged on pixels that focusing repaints.
+       That was the old method's silent precondition: it read the ring
+       against pixels it assumed focus had not touched, and dropped the rest.
+       Counted over the pixels that actually reached the adjacency, so a
+       drift confined to ring-edge blends — which BOTH methods exclude —
+       does not inflate it. 0 would mean the old method happened to be safe
+       on today's page; above 0 means it was taking a worst-of over a
+       shrunken sample and saying nothing about it. */
+    let focusDrifted = 0;
     const focusWorst = new Map();
     const focusBelow = [];
     const focusRefused = [];
@@ -3147,6 +3372,7 @@ try {
         for (const r of focus.rows) {
           if (r.refused) { focusRefused.push({ ...r, theme, state }); continue; }
           focusChecked++;
+          if (r.driftPx > 0) focusDrifted++;
           if (!focusThinnest || r.adjacentPx < focusThinnest.adjacentPx) {
             focusThinnest = { ...r, theme, state };
           }
@@ -3386,11 +3612,18 @@ try {
          right or absent. */
       if (focusThinnest) {
         console.log(`    thinnest sample any of those worst-ofs was taken over: ` +
-          `${focusThinnest.adjacentPx} unchanged pixel(s) beside ` +
+          `${focusThinnest.adjacentPx} pixel(s) of surface beside ` +
           `${focusThinnest.tag}${focusThinnest.cls ? '.' + focusThinnest.cls.split(/\s+/).join('.') : ''}` +
           ` "${focusThinnest.text}" (${focusThinnest.theme}/${focusThinnest.state}), ` +
           `against a floor of ${FOCUS_MIN_ADJACENT}`);
       }
+      /* Also derived. Prints the answer to "was the old two-photograph
+         precondition true?" for today's page, every run. Every ring's
+         surface is read from the third photograph; this is how many of them
+         would have got a DIFFERENT sample from the second. */
+      console.log(`    ${focusDrifted} of those ${focusChecked} ring(s) are measured against ` +
+        'pixels that focusing repainted, which the two-photograph method this replaced would ' +
+        'have dropped from the worst-of rather than reported');
     }
   }
 } finally {
