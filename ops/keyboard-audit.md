@@ -38,6 +38,8 @@ The walk **did** reach it (stop 4 of 8), but only because Chrome 127+ makes a sc
 
 Every other pane with a scrolling table declares it — the walk found 3 scroll containers carrying an explicit `tabindex`, with `role="region"` and a label, which is the pattern Stadiora/Aria#10822 established. This one was missed.
 
+Filed as Stadiora/Aria#10868. Not fixed here: this audit reports, it does not repair.
+
 ### F2. An element the code hides is still painted (`fieldset`)
 
 `div#fold-body-2 > form.card.evidence-form > div.card-body > fieldset.evidence-authority` on **evals** carries the `hidden` attribute and computes to `display: flex`, so it is **888×292px of visible interface the code believes is not there**, containing 3 form controls.
@@ -46,6 +48,8 @@ Every other pane with a scrolling table declares it — the walk found 3 scroll 
 
 The controls inside are `disabled`, so a keyboard operator can see three labelled fields they can neither reach nor operate, with no visible indication of why.
 
+Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not repair.
+
 ### F3. An element the code hides is still painted (`button`)
 
 `div.stack > section.band > div.card > div.card-foot > button.btn.btn-sm` on **settings** carries the `hidden` attribute and computes to `display: flex`, so it is **73×25px of visible interface the code believes is not there**.
@@ -53,6 +57,8 @@ The controls inside are `disabled`, so a keyboard operator can see three labelle
 `hidden` is a UA `display: none` rule and the weakest one in the cascade. Any author `display` on the same element silently defeats it.
 
 The button is not disabled: it is a fully operable control the code has decided should not exist.
+
+Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not repair.
 
 ## What is clean, and how that is known
 
@@ -96,7 +102,7 @@ it has controls is a coincidence, not a trap.
 - **Pages that are not panes.** `login.html`, `setup.html` and `shell-v2.html` are outside
   this sweep.
 
-## Method notes: four defects in the instrument, each of which printed a confident wrong number
+## Method notes: 4 defects in the instrument, each of which printed a confident wrong number
 
 Recorded because they are the most transferable thing this audit produced. Every one of them
 produced plausible output that a reader would have believed.
@@ -112,13 +118,13 @@ produced plausible output that a reader would have believed.
 3. **`blur()` is not a focus reset.** It moves `activeElement` to `<body>` but leaves Chrome's
    sequential-navigation starting point wherever it was, so walks silently began mid-page. A
    full reload is what finally made the skip link appear as stop 0 — on every pane.
-4. **A composite input is not a trap.** `input[type=datetime-local]` has six internal fields, so
+4. **A composite input is not a trap.** `input[type=datetime-local]` has 6 internal fields, so
    `activeElement` is unchanged for several presses *by design*. The old "3 unchanged presses is
    a trap" rule manufactured a trap on Evaluations **and 27 unreachable controls behind it**.
-   Press counts are reported instead and a trap is declared only past twice the widest composite
-   Chrome ships.
+   Press counts are reported instead and a trap is declared only past 12, twice the widest
+   composite Chrome ships.
 
-Three more were caught by the same discipline while the numbers were being read:
+4 more were caught by the same discipline while the numbers were being read:
 
 - **A disabled control is not a reachability defect.** The browser is right to skip it. Counting
   it blamed Evaluations for three fields it had deliberately turned off.
@@ -129,6 +135,13 @@ Three more were caught by the same discipline while the numbers were being read:
 - **The forward and reverse counts are not symmetric.** After *n* Tabs focus sits on stop *n-1*,
   so *n* Shift+Tabs walk one step off the document and every key after that is off by one. It
   reported a reverse-order mismatch on 16 of 20 walks, all of them correct pages.
+- **And the terminal stop is not deterministic, so that fix cannot be proven the obvious way.**
+  A walk ends either by wrapping to stop 0 or by dropping out of the document, and the same
+  pane at the same width was measured both ways across runs. When it wraps, the off-by-one
+  *cancels* — the extra Tab lands on stop 0 and the first Shift+Tab wraps back — so removing
+  the fix is invisible in the match result on a wrapping walk and visible on a leaving one.
+  Scoring it on the match would have been a coin flip with a decimal point. It is scored on
+  the press count, which was 3 in six unmutated runs across both shapes and 4 without the fix.
 
 Every claim in this file is exercised by the mutation battery in the pull request that added it:
 each finding has a payload that makes it disappear, each instrument rule has a payload that
