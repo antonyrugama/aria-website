@@ -120,7 +120,9 @@
 
 /* aria.css drops the hero to two columns below 980px and moves its third
    child to a row of its own — written against the mock, where that child is a
-   .row (NOT BOUND, see the top of this file). Here it is the chip strip. */
+   .row (NOT BOUND, see the top of this file). Here that third child is the
+   chip strip ("the rules the sheet justifies by what the page draws name
+   what it draws"). */
 @media (max-width: 980px) {
   .hero > .hero-chips { grid-column: 1 / -1; }
 }
@@ -147,7 +149,8 @@
    One card per problem, in a column — one card for each is what the page
    draws ("the rules the sheet justifies by what the page draws name what it
    draws"). The card is the accent shape aria.css
-   already has, so only the inside of it is declared here. */
+   already has, so only the inside of it is declared here (NOT BOUND, see the
+   top of this file). */
 
 .p-list { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
 .p-item .card-body { display: flex; flex-direction: column; gap: 13px; }

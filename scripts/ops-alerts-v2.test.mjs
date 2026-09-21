@@ -52,12 +52,15 @@
        what a proof pointer IS.
      - What the stylesheet LOOKS like. Nothing here renders it. The lines it
        reads as data are NON-TOKEN PAINT, AVATAR INK TOKEN, SAME FOCUS RING
-       AS and DIFFERENT FOCUS RING; the rest of what the
-       prose-framed readers below take out of ops/assets/pane-alerts-v2.css is its text -- the
-       claims around those lines, the two rules the rules table's scrolling
-       box depends on, the .is- tone rules, the sheet's own custom
-       properties, and every test title the sheet cites, each against the
-       file it names. No rule below is rendered to decide any of it, and
+       AS and DIFFERENT FOCUS RING; everything else the prose-framed readers
+       take out of ops/assets/pane-alerts-v2.css is its TEXT, and each of
+       those readers is named in PROSE_FRAMES_OVER_THE_SHEET, which is held
+       to the number of frames this file actually opens. There used to be a
+       second enumeration here, of the KINDS of text they read; it was bound
+       by nothing, it went stale the round it was last edited, and deleting
+       two of its items was green (found in the eleventh review of #75,
+       MX-13). The named list is the inventory; a prose paraphrase of it was
+       a second place to be wrong. No rule below is rendered, and
        nothing here can see a colour as a pixel --
        scripts/check-ops-contrast.mjs is the tool that judges contrast, and
        it is not run from here.
@@ -200,10 +203,50 @@ const PROSE_FRAMES_OVER_THE_SHEET = [
   'the paint stems the reader has',
   'the stemless properties a keyword walks past on',
   'the double-quoted test titles the sheet cites',
-  'the number word the sheet states beside a rule it justifies by the drawn page',
   'the pill words the sheet quotes beside white-space: nowrap',
+  'the number of cards the sheet says the list holds per problem',
+  'the number of fact columns the sheet says a card draws',
+  'the number of columns the sheet says the rules table draws in 760px',
+  'the number of words the sheet says the condition pill wraps to',
+  'the width the sheet states in the sentence about six columns',
 ];
 const FRAME_SPELLING = /PANE_CSS\.replace\(\/\\s\+\/g, ' '\)/g;
+/* sheetCount() collapses the whitespace ITSELF, so a frame routed through it
+   adds no occurrence of the spelling above and moved the count by nothing --
+   a fourth missed shape, opened by the round that added the helper, and the
+   one the next frame will be written in (found in the eleventh review of
+   #75, MX-20/21). Its call sites are counted instead, and the helper's own
+   body is cut out of the scan so its collapse is not a frame of its own.
+   Both scans read the file as TEXT and cannot tell code from comment, so
+   writing either spelling inside a comment counts as a frame -- over-counting,
+   which fails loudly, rather than the under-counting this exists to catch. */
+const HELPER_FRAME_SPELLING = /sheetCount\(\//g;
+/* The anchor carries a leading NEWLINE, and the reason is the bug this line
+   had when it was written: indexOf('function sheetCount(') matched THIS
+   HELPER'S OWN string literal, 3200 lines above the declaration, so the
+   slice cut 49 unrelated lines and left the real body -- and its frame --
+   in the scan. The count came out right anyway, because the list had been
+   given a spare entry in the same round, so two errors cancelled and the
+   suite was green. The literal below cannot match itself: the characters
+   here are a backslash and an `n`, and only the declaration is preceded by
+   an actual line break. Uniqueness and identity are both asserted rather
+   than assumed (found by my own round-12 reading of the eleventh review's
+   B3 fix). */
+const outsideSheetCount = (text) => {
+  const start = text.indexOf('\nfunction sheetCount(');
+  assert.ok(start >= 0, 'sheetCount() is gone, so the frame count is scanning for a helper '
+    + 'this file no longer has');
+  assert.equal(text.indexOf('\nfunction sheetCount(', start + 1), -1,
+    'this file declares sheetCount() twice, so the cut below removes one body and counts '
+    + 'the other one\'s frame');
+  const end = text.indexOf('\n}\n', start);
+  assert.ok(end > start, 'sheetCount() is unterminated');
+  const body = text.slice(start, end);
+  assert.ok(body.includes('COUNT_WORDS[word]'),
+    'the text cut out as sheetCount()\'s body does not end by resolving a count word, so '
+    + 'the anchor has drifted onto something else and an unrelated region is being cut');
+  return text.slice(0, start) + text.slice(end);
+};
 
 const machineLine = (prefix, tail = '(.*)') => {
   assert.ok(MACHINE_READ_PREFIXES.includes(prefix),
@@ -620,8 +663,14 @@ const inEditingHost = (node) => {
 
 /* An <input type="hidden"> is not rendered at all, so it takes no tab stop
    even carrying tabindex="0". Markup decides this one, not the sheet. */
+/* No .trim(): `type` is an enumerated attribute, matched ASCII
+   case-insensitively against the value AS WRITTEN. <input type=" hidden">
+   matches no keyword, falls to the Text state, and Chrome gives it a tab stop
+   -- measured, full ring walk: p,end,start. Trimming answered it the
+   opposite way, ahead of tabIndexOf, and no probe told the two apart (found
+   in the eleventh review of #75, MX-19). */
 const hiddenInput = (node) =>
-  node.tagName === 'INPUT' && (attr(node, 'type') || '').trim().toLowerCase() === 'hidden';
+  node.tagName === 'INPUT' && (attr(node, 'type') || '').toLowerCase() === 'hidden';
 
 function focusable(node) {
   if (node.nodeType !== 1) return false;
@@ -753,6 +802,15 @@ const FOCUSABLE_PROBES = [
   { name: '<input type="hidden" tabindex="0">', tag: 'input',
     attrs: { type: 'hidden', tabindex: '0' }, answer: false,
     note: 'FOUND IN REVIEW: true. not rendered beats an explicit tabindex' },
+  /* `type` is enumerated: matched case-insensitively on the value AS
+     WRITTEN, with no whitespace stripped. All three measured in Chrome. */
+  { name: '<input type="HIDDEN" tabindex="0">', tag: 'input',
+    attrs: { type: 'HIDDEN', tabindex: '0' }, answer: false,
+    note: 'FOUND IN REVIEW: true. the keyword match is case-insensitive' },
+  { name: '<input type=" hidden" tabindex="0">', tag: 'input',
+    attrs: { type: ' hidden', tabindex: '0' }, answer: true,
+    note: 'FOUND IN REVIEW: true. a leading space matches no keyword, so it is a text '
+      + 'input and takes its stop -- trimming answered it false' },
   { name: '<select>', tag: 'select', answer: true },
   { name: '<textarea>', tag: 'textarea', answer: true },
   { name: '<div>', tag: 'div', answer: false },
@@ -992,8 +1050,8 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 82, takesATabStop: 30, doesNot: 41, refused: 11, wereWrongBefore: 7,
-      foundInReview: 30 });
+    { cases: 84, takesATabStop: 31, doesNot: 42, refused: 11, wereWrongBefore: 7,
+      foundInReview: 32 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -2480,10 +2538,12 @@ const SHEET_CITATIONS = [
   'the reader refuses what READER_PROBES says it refuses, and walks past what it says it misses',
   'the rules table scrolls inside a box a keyboard can reach and a screen reader can name',
   'the rules the sheet justifies by what the page draws name what it draws',
-  /* Four times: the sheet cites this one wherever a layout rule is justified
+  /* Five times: the sheet cites this one wherever a layout rule is justified
      by what the page draws -- the condition pill's phrasing, the rules
-     table's six columns, one card per problem and the three fact columns.
-     One entry per SITE, or deleting one site is green. */
+     table's six columns, one card per problem, the three fact columns and
+     the hero child the chip strip is. One entry per SITE, or deleting one
+     site is green. */
+  'the rules the sheet justifies by what the page draws name what it draws',
   'the rules the sheet justifies by what the page draws name what it draws',
   'the rules the sheet justifies by what the page draws name what it draws',
   'the rules the sheet justifies by what the page draws name what it draws',
@@ -2555,7 +2615,9 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
       'the sheet stopped naming ' + name + ', so the list is enumerated in code and '
       + 'unmentioned in the prose that claims to name it');
   }
-  const frames = (THIS_FILE.match(FRAME_SPELLING) || []).length;
+  const framed = outsideSheetCount(THIS_FILE);
+  const frames = (framed.match(FRAME_SPELLING) || []).length
+    + (framed.match(HELPER_FRAME_SPELLING) || []).length;
   assert.equal(frames, PROSE_FRAMES_OVER_THE_SHEET.length,
     'this file reads the sheet through ' + frames + ' prose frames and names '
     + PROSE_FRAMES_OVER_THE_SHEET.length + ': a frame was added or removed without saying '
@@ -2626,7 +2688,7 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
       siblingSuites: siblings.length, foreignTitles: foreign.size }));
 });
 
-test('every test the stylesheet cites by name is a test this file registers', () => {
+test('every test the stylesheet cites by name is a test this file registers', async () => {
   const prose = PANE_CSS.replace(/\s+/g, ' ').replace(/[a-zA-Z-]+="[^"]*"/g, '');
   const quoted = [...prose.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 
@@ -2639,10 +2701,26 @@ test('every test the stylesheet cites by name is a test this file registers', ()
      from being moved onto that list. A renamed test turns this red, and the
      cheapest green is to exempt the sheet's stale quotation as UI copy --
      two lines, and the guarantee is off for that title forever (found in the
-     tenth review of #75). */
+     tenth review of #75).
+
+     A REGISTRY check cannot decide that, because after the rename the
+     attacker's string is by construction outside the registry: the eleventh
+     review renamed a cited test, exempted its stale quotation and dropped
+     the entry, and the suite stayed green (MX-1). A VALUE check can. UI copy
+     is a run of text the drawn page actually contains; a test title is not.
+     So both directions, the registry one for a title still registered and
+     the page one for a title that is not. */
   assert.deepEqual(SHEET_QUOTES_THAT_ARE_NOT_CITATIONS.filter((q) => TEST_TITLES.has(q)), [],
     'a string exempted here as UI copy is also a test this file registers, so a citation '
     + 'can be unbound by moving it onto the exemption list');
+  const drawn = await boot({ role: 'owner' });
+  const pageText = allText(drawn.doc.body).replace(/\s+/g, ' ');
+  for (const copy of SHEET_QUOTES_THAT_ARE_NOT_CITATIONS) {
+    assert.ok(pageText.includes(copy),
+      'the page does not draw ' + JSON.stringify(copy) + ', so it is not UI copy: a test '
+      + 'title renamed and then exempted here would leave the sheet quoting a test that '
+      + 'does not exist, beside the sentence that quotation is the proof pointer for');
+  }
 
   const cited = quoted.filter((q) => !SHEET_QUOTES_THAT_ARE_NOT_CITATIONS.includes(q));
   assert.deepEqual(cited.filter((title) => !TEST_TITLES.has(title)), [],
@@ -3362,6 +3440,16 @@ const COUNT_WORDS = {
    bullet went on saying one and the page drew one. */
 function sheetCount(pattern, says) {
   const prose = PANE_CSS.replace(/\s+/g, ' ');
+  /* ([\w-]+), not (\w+): \w excludes the hyphen, so "Twenty-one" captured
+     `one` and resolved to 1 while the page drew 1 -- green, and the sheet
+     free to state any compound whose TAIL is a word this table knows (found
+     in the eleventh review of #75, MX-4/5/6). An unresolvable word has to
+     reach the check below, which already fails with the right message. The
+     shape is required rather than trusted, so the next caller cannot
+     reintroduce it. */
+  assert.ok(pattern.source.includes('([\\w-]+)'),
+    'sheetCount() was handed a pattern that does not capture ([\\w-]+), so a hyphenated '
+    + 'compound number word would resolve to its last component: ' + pattern.source);
   const all = [...prose.matchAll(new RegExp(pattern.source, pattern.flags.replace('g', '') + 'g'))];
   assert.equal(all.length, 1, 'pane-alerts-v2.css states ' + JSON.stringify(says) + ' in '
     + all.length + ' places, not one: the sentence this test reads the count out of has '
@@ -3382,9 +3470,34 @@ test('the rules the sheet justifies by what the page draws name what it draws',
       .find((row) => findAll(row, (n) => n.tagName === 'TH').length > 0);
     assert.ok(head, 'the rules table draws no header row');
     const columns = findAll(head, (n) => n.tagName === 'TH').length;
-    assert.equal(columns, sheetCount(/(\w+) columns in 760px/i, 'N columns in 760px'),
+    /* The WIDTH in that sentence is a claim too, and it was typed in prose
+       beside a declaration that states it -- change the minimum to 900px and
+       the sentence went on reasoning about 760px, with nothing red (found in
+       the eleventh review of #75, MX-16). Read from the sheet's own rule, and
+       the sentence is then located BY that value, so the two cannot drift
+       apart in either direction. */
+    const minWidth = declarations(PANE_CSS)
+      .filter((d) => d.selector === '.scrollx > .tbl' && d.property === 'min-width');
+    assert.equal(minWidth.length, 1,
+      'pane-alerts-v2.css declares .scrollx > .tbl { min-width } ' + minWidth.length
+      + ' times, so the width its six-columns sentence reasons about is not one value');
+    const proseWidth = /in (\d+px) leaves the rule/i.exec(PANE_CSS.replace(/\s+/g, ' '));
+    assert.ok(proseWidth, 'pane-alerts-v2.css no longer states the width its six-columns '
+      + 'sentence reasons about, so that sentence is held to nothing');
+    assert.equal(proseWidth[1], minWidth[0].value,
+      'pane-alerts-v2.css reasons about ' + proseWidth[1] + ' of table and declares a '
+      + 'minimum of ' + minWidth[0].value);
+    /* Width-agnostic on purpose: locating the sentence by the declared value
+       would have made a matched pair of edits to sheet and rule fail HERE,
+       with a "the sentence has moved" message for a sentence that had not
+       moved. The width is bound above, on its own terms. A constructed
+       RegExp would also have been a fifth shape the frame count cannot see,
+       since HELPER_FRAME_SPELLING reads a literal pattern handed to the
+       helper, not a constructed one. */
+    assert.equal(columns,
+      sheetCount(/([\w-]+) columns in \d+px/i, 'N columns in <width>px'),
       'the rules table draws ' + columns + ' columns, and pane-alerts-v2.css justifies two '
-      + 'rules by a different number of them in 760px');
+      + 'rules by a different number of them in ' + minWidth[0].value);
 
     const pill = withClass(dom.doc.body, 'p-live')[0];
     assert.ok(pill, 'no problem on the page is still happening, so nothing carries .p-live');
@@ -3395,7 +3508,7 @@ test('the rules the sheet justifies by what the page draws name what it draws',
       'the condition pill reads "' + allText(pill).trim() + '", and pane-alerts-v2.css '
       + 'justifies white-space: nowrap by ' + JSON.stringify(saidWords[1]) + ' wrapping');
     assert.equal(allText(pill).trim().split(/\s+/).length,
-      sheetCount(/wrapping to (\w+) words/i, 'wrapping to N words'),
+      sheetCount(/wrapping to ([\w-]+) words/i, 'wrapping to N words'),
       'the pill reads ' + JSON.stringify(allText(pill).trim()) + ', which is not the number '
       + 'of words pane-alerts-v2.css says wraps');
 
@@ -3406,7 +3519,7 @@ test('the rules the sheet justifies by what the page draws name what it draws',
     const list = withClass(four.doc.body, 'p-list')[0];
     assert.ok(list, 'the fixture draws no problem list');
     const cards = withClass(list, 'p-item');
-    const perProblem = sheetCount(/(\w+) cards? per problem, in a column/i,
+    const perProblem = sheetCount(/([\w-]+) cards? per problem, in a column/i,
       'N cards per problem, in a column');
     assert.equal(cards.length, 4 * perProblem,
       'the page draws ' + cards.length + ' cards for 4 problems, and pane-alerts-v2.css '
@@ -3418,10 +3531,32 @@ test('the rules the sheet justifies by what the page draws name what it draws',
         'a problem card draws ' + grids.length + ' fact grids, not one');
       const columns = withClass(grids[0], 'p-col');
       assert.equal(columns.length,
-        sheetCount(/(\w+) columns of label-and-value rows/i, 'N columns of label-and-value rows'),
+        sheetCount(/([\w-]+) columns of label-and-value rows/i, 'N columns of label-and-value rows'),
         'a problem card draws ' + columns.length + ' fact columns, and pane-alerts-v2.css '
         + 'justifies .p-facts and .p-col by a different number of them');
     }
+
+    /* "Here it is the chip strip": the sheet moves the hero's THIRD child to
+       a row of its own below 980px, and .hero > .hero-chips is the selector
+       it does it with. Which child the chip strip is, is a fact about
+       pane-alerts.js -- reorder hero() so the chips are appended second and
+       the media query moves the wrong element, silently, at a width this
+       suite never renders. The child rule needs the strip to be a DIRECT
+       child too, so that is asserted rather than inferred from a descendant
+       search (found in the eleventh review of #75, MX-17). */
+    const hero = withClass(dom.doc.body, 'hero')[0];
+    assert.ok(hero, 'the fixture draws no hero');
+    const heroKids = (hero.childNodes || []).filter((n) => n.tagName);
+    const heroMoves = declarations(PANE_CSS).filter((d) => d.selector === '.hero > .hero-chips');
+    assert.ok(heroMoves.length >= 1, 'pane-alerts-v2.css no longer moves .hero > .hero-chips, '
+      + 'so the sentence naming the chip strip as the hero child aria.css moves is stale');
+    assert.equal(heroKids.length, 3,
+      'the hero draws ' + heroKids.length + ' children, and pane-alerts-v2.css reasons about '
+      + 'its third');
+    assert.ok(((heroKids[2].getAttribute('class') || '').split(/\s+/)).includes('hero-chips'),
+      'the hero\'s third child is ' + JSON.stringify(heroKids[2].getAttribute('class'))
+      + ', and pane-alerts-v2.css says the child aria.css drops to a row of its own below '
+      + '980px is the chip strip');
 
     /* "label-and-value ROWS": a fact row carries both halves, so the rule
        styling the pair is not styling a single run of text. */
