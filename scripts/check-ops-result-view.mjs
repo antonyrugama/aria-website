@@ -136,22 +136,26 @@
      a pane mid-transition would read as hidden. The repo's own 1x1 `.sr`
      spans are accepted carriers for the same reason, so a marker that only a
      screen reader can reach satisfies this gate today.
-   - **The marker is judged from the text's own rects, so a marker split
-     across what the page separates still passes.** Walk the carrier's
-     subtree, stop at any element the browser lays nothing out under
-     (display:none, content-visibility:hidden, a skipped
-     content-visibility:auto subtree), drop the own text of any element at
-     visibility hidden or collapse, keep a text node only when a Range over it
-     reports a non-empty box inside the reachable area (or, under a
-     position:fixed ancestor, the viewport), and join what is left with
-     nothing between. Nothing about an ELEMENT decides it: three consecutive
-     rounds found a state where the box that proved reachability and the text
-     that proved presence came from different nodes, so the evidence is now
-     taken from the text itself. The cost of joining with nothing between is
-     that a refactor splitting a marker into two flex items, so the page
-     renders "2." and "9.1" with the row's gap between them, reads as shown;
-     that is deliberate, since this clause exists to catch text drawn nowhere
-     rather than to adjudicate spacing.
+   - **The marker is judged character by character, so a marker split across
+     what the page separates still passes.** Walk the carrier's subtree, mark
+     every character under a display:none, content-visibility:hidden, skipped
+     content-visibility:auto or visibility hidden/collapse element as not
+     drawn, and mark every other character by the rect of that character: a
+     non-empty box inside the reachable area, or, under a position:fixed
+     ancestor, inside the viewport. A marker counts when one occurrence of it
+     is drawn, character for character. Nothing about an ELEMENT decides it,
+     and nothing about a NODE does: four consecutive rounds found a state where the
+     box that proved reachability and the text that proved presence came from
+     different places — different nodes, then different line boxes of one node
+     — so the evidence is the rect of the character it is offered for. Text
+     that is not drawn is left out, as it always has been, so two halves
+     separated by an invisible sibling join: the same lenient direction as
+     the flex-item case, and what keeps an sr-only span inside a value from
+     being a false red. The cost is that a refactor splitting a marker into
+     two flex items, so the page renders "2." and "9.1" with the row's gap
+     between them, reads as shown: adjacent runs are joined with nothing
+     between, deliberately, since this clause exists to catch text drawn
+     nowhere rather than to adjudicate spacing.
    - **Any painted occurrence answers for all of them.** A marker that a pane
      renders twice passes when either occurrence is painted and reachable, so
      a result view that loses the copy a reader is meant to read while an
@@ -899,9 +903,13 @@ for (const page of PAGES) {
 const FLOOR_HINTS = {
   spend: 'The pair comes from the Group-the-bill-by switch, which viewCard draws only ' +
     'when two or more of the groupings in VIEW_ORDER (declared in ops/assets/pane-spend.js) ' +
-    'arrive with rows. PREFLIGHT in this file tested the COSTS fixture against that one ' +
-    'rule before Chrome started and it passed, since a failure there exits before this ' +
-    'point — so read that rule as already checked and start downstream of it.',
+    'arrive with rows. PREFLIGHT in this file tested the COSTS fixture against VIEW_ORDER ' +
+    'AS DECLARED before Chrome started and it passed, since a failure there exits before ' +
+    'this point. That is how far it is checked and no further: PREFLIGHT reads the ' +
+    'declaration rather than running the module, and refuses only when the file holds a ' +
+    'text it reads as a write to the name, from the enumerated list of mutators beside it. ' +
+    'A mutation route outside that list would have been read past, so treat the rule as ' +
+    'checked against the declaration, not against the array the pane ran with.',
   users: 'The pairs come from picking a row in Look up a user: aria-current on the row ' +
     'and aria-pressed on its control. Measured at this head, a one-row result view judges ' +
     'aria-current and not aria-pressed — the marked <tr> finds an unmarked peer among the ' +
@@ -987,11 +995,27 @@ const PREFLIGHT = [
           'switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
       }
       const decl = decls[0];
-      /* Everything the name touches AFTER its one declaration. A read is fine;
-         a write is not, and the list is written out rather than inferred so
-         that a mutator it does not know is a gap in this comment rather than a
-         silent pass — see the limit note above the table. */
-      const rest = src.slice(decl.index + decl[0].length);
+      /* Everything the name touches anywhere else in the file, with the
+         declaration's own span excised so its `=` is not read as a write. A
+         read is fine; a write is not, and the list is written out rather than
+         inferred so that a mutator it does not know is a gap in this comment
+         rather than a silent pass — see the limit note above the table.
+
+         BOTH directions, because text order is not execution order. Round 17
+         declared an ordinary helper ABOVE the array and called it below:
+
+           function r17trim() { VIEW_ORDER.length = 1; }
+           var VIEW_ORDER = ['category', 'resourceGroup'];
+           ...
+           r17trim();
+
+         Only the tail was read, so nothing was refused, the run reached Chrome
+         and failed the spend floor — and the paragraph it printed told the
+         reader that PREFLIGHT had already cleared that rule and to look
+         downstream of it, which is where the cause was not. Moving the same
+         helper one line down refuses correctly, so a line number was the whole
+         difference between a true refusal and a false instruction. */
+      const rest = src.slice(0, decl.index) + src.slice(decl.index + decl[0].length);
       const WRITE = new RegExp('\\bVIEW_ORDER\\s*(?:=[^=]|\\[[^\\]]*\\]\\s*=[^=]|\\.\\s*' +
         '(?:push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin|length\\s*=))');
       const write = rest.match(WRITE);
@@ -1001,7 +1025,7 @@ const PREFLIGHT = [
            writes to VIEW_ORDER" was false the moment the text appeared in a
            comment — and the sentence after it, that the declaration is not the
            value the pane runs with, was false with it. */
-        return `${rel} contains a text after the declaration that this check reads as a ` +
+        return `${rel} contains a text outside the declaration that this check reads as a ` +
           `write to VIEW_ORDER (${JSON.stringify(write[0].trim())}), and it does not ` +
           'distinguish code from a comment or a string, so it cannot rely on the ' +
           'declaration being the whole of the order. Teach it which texts are ' +
@@ -1639,12 +1663,11 @@ const probeFor = (markers) => `(() => {
      decides whether the run happens at all. */
   const carriers = (m) => {
     const out = [];
-    const want = flat(m);
     for (const el of content.querySelectorAll('*')) {
       if (clean(el).indexOf(m) === -1) continue;
       let deeper = false;
       for (const kid of el.children) {
-        if (drawnText(kid).indexOf(want) !== -1) { deeper = true; break; }
+        if (shows(kid, m)) { deeper = true; break; }
       }
       if (!deeper) out.push(el);
     }
@@ -1722,18 +1745,25 @@ const probeFor = (markers) => `(() => {
      span, and the text that made it a carrier was nowhere; measured, exit 0
      and a card reading "2." only.
 
-     So there is one question and it is asked per TEXT NODE: is this run of
-     text being drawn, and do its own rects land somewhere a reader can reach.
-     A Range over the node's contents gives exactly the boxes the browser laid
-     that text out in, which is why the evidence can no longer come from a
-     different node than the text does. What survives the walk is joined and
-     compared to the marker.
+     So there is one question and it is asked per CHARACTER: is this character
+     being drawn, and does its own rect land somewhere a reader can reach. A
+     Range gives exactly the boxes the browser laid that text out in, which is
+     why the evidence can no longer come from a different place than the text
+     does — round 17 showed that a text node is as many places as it has line
+     boxes, and that asking the node accepted a marker on an unreachable line
+     for the sake of a reachable one fifty lines above it. What a reader could
+     read is what is kept; every other character is left out, exactly as text
+     under a display:none element always has been.
 
      Joined with nothing between, because two runs separated by an inline
      boundary are one run on screen, and because this clause exists to catch
      text that is not drawn AT ALL rather than to adjudicate spacing. The cost
      is stated in the docblock: a marker split across two flex items is joined
-     here and passes.
+     here and passes, and so, in the same lenient direction, does one whose
+     halves are separated by text a reader cannot see. Leaving that text out
+     is the same choice this file has always made about a display:none
+     sibling, which occupies no space, and it is what keeps an sr-only span
+     inside a value from being a false red.
 
      A Range is the right instrument twice over. display:contents removes the
      box and keeps the text — measured on this dashboard, a span carrying
@@ -1759,29 +1789,86 @@ const probeFor = (markers) => `(() => {
      red. Memoized, because carriers() calls it once per child per candidate
      per marker. */
   const flat = (s) => String(s).replace(/\\s+/g, ' ').trim().toLowerCase();
+  /* A TEXT NODE IS NOT A PLACE. It is as many places as it has line boxes,
+     and round 17 is the third round in a row to find the verdict and the text
+     coming from different ones. Round 16 moved the question from the element
+     to the node; a node holding 400 words of filler and then a version number
+     wraps into 51 lines, and asking whether ANY of those rects reaches
+     accepts the node for the sake of line 1 while the marker sits on line 50
+     at y=1001 in a 900px window, reachable at no scroll offset. Measured:
+     exit 0, ten panes judged, the card blank on the screenshot in both
+     themes. Moving the same characters into their own text node — identical
+     pixels — made it exit 1, which is the whole proof that the granularity
+     was the defect and nothing else was.
+
+     So reachability is decided per CHARACTER, and a character a reader could
+     not read is left out of the string — the same thing this file has always
+     done with text under a display:none element, now at the granularity the
+     evidence actually has. Keeping it in and matching around it was the other
+     candidate and it is worse: it would make a value whose halves straddle an
+     sr-only or display:none span, which the page renders as one run of text,
+     a false red. Dropping is lenient in the direction this clause already
+     chose — it exists to catch text drawn NOWHERE — and manufacturing a
+     marker through it would need an unreachable middle between two reachable
+     ends, which a contiguous scroll band cannot produce.
+
+     Whitespace is neutral rather than judged, since a space has no glyph to
+     find and a line break's rect is degenerate; a marker's own non-space
+     characters decide it.
+
+     Cost is kept near the old one by asking the cheap question first: a node
+     laid out on a single line has one rect, and one rect answers for all of
+     its characters. Per-character measurement happens only inside a node that
+     actually wrapped, and the answer is cached per text node, so the page's
+     text is measured once however many carriers are asked about it. */
+  const charCache = new Map();
+  const charReach = (n, reaches) => {
+    if (charCache.has(n)) return charCache.get(n);
+    const value = String(n.nodeValue);
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    const rects = [].slice.call(range.getClientRects());
+    let out;
+    if (!rects.length) out = null;
+    else if (rects.length === 1) out = rects.some(reaches) ? true : false;
+    else {
+      out = new Array(value.length);
+      for (let i = 0; i < value.length; i += 1) {
+        if (/\\s/.test(value[i])) { out[i] = null; continue; }
+        range.setStart(n, i);
+        range.setEnd(n, i + 1);
+        out[i] = [].slice.call(range.getClientRects()).some(reaches);
+      }
+    }
+    charCache.set(n, out);
+    return out;
+  };
   const drawnCache = new Map();
   const drawnText = (el) => {
     if (drawnCache.has(el)) return drawnCache.get(el);
     let out = '';
-    const walk = (node) => {
-      const vis = getComputedStyle(node).visibility;
-      const draws = vis !== 'hidden' && vis !== 'collapse';
+    const add = (value, verdict) => {
+      for (let i = 0; i < value.length; i += 1) {
+        const v = Array.isArray(verdict) ? verdict[i] : verdict;
+        if (v === false) continue;
+        out += value[i];
+      }
+    };
+    const walk = (node, dead) => {
+      const cs = getComputedStyle(node);
+      const box = node.getBoundingClientRect();
+      const boxed = box.width > 0 || box.height > 0;
+      const gone = dead || cs.display === 'none' || cs.contentVisibility === 'hidden'
+        || (boxed && typeof node.checkVisibility === 'function'
+          && !node.checkVisibility({ contentVisibilityAuto: true }));
+      const draws = !gone && cs.visibility !== 'hidden' && cs.visibility !== 'collapse';
       const reaches = viewportAnchored(node) ? inView : inReach;
       for (const n of node.childNodes) {
         if (n.nodeType === 3) {
-          if (!draws) continue;
-          const r = document.createRange();
-          r.selectNodeContents(n);
-          if ([].slice.call(r.getClientRects()).some(reaches)) out += String(n.nodeValue);
+          add(String(n.nodeValue), draws ? charReach(n, reaches) : false);
           continue;
         }
-        if (n.nodeType !== 1) continue;
-        const cs = getComputedStyle(n);
-        if (cs.display === 'none' || cs.contentVisibility === 'hidden') continue;
-        const box = n.getBoundingClientRect();
-        if ((box.width > 0 || box.height > 0) && typeof n.checkVisibility === 'function'
-          && !n.checkVisibility({ contentVisibilityAuto: true })) continue;
-        walk(n);
+        if (n.nodeType === 1) walk(n, gone);
       }
     };
     /* content-visibility:hidden ABOVE the carrier, which the walk cannot see
@@ -1796,20 +1883,14 @@ const probeFor = (markers) => `(() => {
        A skipped content-visibility:auto ancestor is asked through
        checkVisibility(), of the carrier and only when the carrier has a box,
        since that call reports false for a display:contents element. */
+    let dead = false;
     for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
-      if (getComputedStyle(n).contentVisibility === 'hidden') {
-        drawnCache.set(el, '');
-        return '';
-      }
+      if (getComputedStyle(n).contentVisibility === 'hidden') { dead = true; break; }
     }
     const ownBox = el.getBoundingClientRect();
     if ((ownBox.width > 0 || ownBox.height > 0) && typeof el.checkVisibility === 'function'
-      && !el.checkVisibility({ contentVisibilityAuto: true })) {
-      drawnCache.set(el, '');
-      return '';
-    }
-    const own = getComputedStyle(el);
-    if (own.display !== 'none') walk(el);
+      && !el.checkVisibility({ contentVisibilityAuto: true })) dead = true;
+    walk(el, dead);
     const text = flat(out);
     drawnCache.set(el, text);
     return text;
@@ -1994,15 +2075,16 @@ try {
       if (seen.hiddenMarkers.length) {
         failures.push(`${where}: the pane drew ` +
           `${seen.hiddenMarkers.map((m) => JSON.stringify(m)).join(' and ')} into #content ` +
-          'and no run of that text is drawn where a reader could read it. Every occurrence ' +
-          'was judged on its own, and by the rects of the TEXT rather than of any element ' +
-          'around it: none of them is at once laid out with a non-empty box, inside the ' +
-          'area this page can be scrolled over (or, under a position:fixed ancestor, inside ' +
-          'the viewport), and free of display:none, visibility:hidden or collapse, ' +
-          'content-visibility:hidden, and a skipped content-visibility:auto subtree between ' +
-          'it and the element holding it. Zero-area text, a position outside the document, ' +
-          'and text silenced anywhere under the carrier all land here and this check does ' +
-          'not tell them apart; opacity it never asked about. The ' +
+          'and no occurrence of it survives character by character. Every occurrence was ' +
+          'judged on its own, and every character in it by the rect of that character ' +
+          'rather than of any node or element around it: to be kept, a character has to be ' +
+          'laid out with a non-empty box, inside the area this page can be scrolled over ' +
+          '(or, under a position:fixed ancestor, inside the viewport), and under no ' +
+          'display:none, visibility:hidden or collapse, content-visibility:hidden or ' +
+          'skipped content-visibility:auto element between it and the element holding the ' +
+          'marker. Zero-area text, a position outside the document, a line that wraps off ' +
+          'the page, and text silenced anywhere under the carrier all land here and this ' +
+          'check does not tell them apart; opacity it never asked about. The ' +
           'result is in the DOM, nothing below it paints, and this run ' +
           'will not count the pane as reaching a result view.');
         continue;
