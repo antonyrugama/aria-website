@@ -66,9 +66,9 @@ const BATTERY = [
   },
   {
     id: 'CONTROL-2', file: CSS, expect: 'GREEN',
-    why: 'Gives `.meter.vio` the same GLOW hue as `.meter.bad`. Must stay GREEN: `--c` drives the decorative `box-shadow` and nothing that carries meaning, so colliding it is not a severity collision. This row used to collide the whole colour channel, which was the same thing until Stadiora/Aria#10848 split the fill onto `--c-ink`; the anchor it matched no longer exists, and the row ERRORED rather than passing when the split landed -- a control failing loudly at the one moment its premise changed, which is what a control is for. The stronger half of its old statement now lives in T10, where every light tone is flattened to one grey and the three notch claims stay green.',
-    apply: (s) => replaceOnce(s, '.meter.vio  { --c: var(--violet);  --c-ink: var(--violet-ink); }',
-      '.meter.vio  { --c: var(--rose);  --c-ink: var(--violet-ink); }')
+    why: 'Repaints EVERY bar\'s glow a flat red, a hue no tone uses. Must stay GREEN, and for a sharper reason than "the glow carries no meaning": `.meter` sets `overflow: hidden`, so the child\'s outer `box-shadow` is clipped and never painted at all. This row is the battery\'s standing evidence for that -- an independent reviewer measured it directly (flat 1.0000 from 1px to 30px above the track even with a deliberately huge `0 0 40px 6px` glow, versus 1.52 with `overflow: visible`), and if a future change removes the clip this control turns RED and says so. It previously collided `.meter.vio`\'s tone token with `.meter.bad`\'s, which stopped being inert the moment #10848 routed the FILL through the same token; the anchor was re-aimed rather than the expectation relaxed.',
+    apply: (s) => replaceOnce(s, '  box-shadow: 0 0 12px -1px var(--c, var(--cyan));',
+      '  box-shadow: 0 0 12px -1px #ff0000;')
   },
   {
     id: 'T1', file: CSS, expect: 'KILL',
@@ -90,7 +90,7 @@ const BATTERY = [
     id: 'T3', file: CSS, expect: 'KILL',
     why: 'Tints the groove with the fill\'s own ink grade until it nearly disappears into it. RE-AIMED: this row used to restore the historical groove colour, `color-mix(var(--c) 30%, var(--bg))`, which measured 2.67:1 against a light-theme `bad` fill -- and that payload now SURVIVES, measuring 4.21:1, because the groove reads `--c` while the fill reads the darker `--c-ink` after Stadiora/Aria#10848 and the two separated. The old payload is kept as T18 and published green on purpose. At 58% the grooves stay above the 1.8:1 detect threshold and land at 2.47:1 to 2.62:1, under SC 1.4.11. The row also reds the two count claims, because 28 of 36 grooves fall under the detector at that mix; the claim it exists for is the contrast one, which names its own numbers in the failure.',
     apply: (s) => replaceOnce(s, '  border: 0 solid var(--bg);',
-      '  border: 0 solid color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 58%, var(--bg));')
+      '  border: 0 solid color-mix(in srgb, var(--c, var(--cyan-ink)) 58%, var(--bg));')
   },
   {
     id: 'T4', file: CSS, expect: 'KILL',
@@ -156,15 +156,23 @@ const BATTERY = [
   },
   {
     id: 'T15', file: CSS, expect: 'KILL',
-    why: 'THE row for Stadiora/Aria#10848: puts the defect back exactly as it shipped, by routing the fill through `--c` instead of `--c-ink`. This is the mutation the fix exists for, and it is a one-token revert rather than a synthetic payload, so a kill here is the claim binding the real defect and not a caricature of it. Expected to red claim 7 with light-theme readings at 2.27:1 and to leave dark untouched, because the dark block defines each `-ink` as an alias of its base token.',
-    apply: (s) => replaceOnce(s,
-      'background: linear-gradient(90deg, color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 65%, transparent), var(--c-ink, var(--cyan-ink)));',
-      'background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--cyan)) 65%, transparent), var(--c, var(--cyan)));')
+    why: 'THE row for Stadiora/Aria#10848: restores all five lines this PR changes to their verbatim `origin/main` text, so what it reinstates is the shipped defect rather than a caricature of it. Expected to red claim 7 with light-theme readings at 2.27:1 -- the number in the issue title -- and to leave dark untouched, because the dark block defines each `-ink` as an alias of its base token. It also reds claim 8, which is not incidental: `origin/main` measures 2.87:1 fill-against-card in light, itself under 3:1.',
+    apply: (s) => {
+      let out = replaceOnce(s,
+        'background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--cyan-ink)) 65%, transparent), var(--c, var(--cyan-ink)));',
+        'background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--cyan)) 65%, transparent), var(--c, var(--cyan)));');
+      for (const [tone, hue] of [['ok', 'emerald'], ['warn', 'amber'], ['bad', 'rose'], ['vio', 'violet']]) {
+        const pad = tone === 'ok' ? '   ' : tone === 'warn' ? ' ' : '  ';
+        out = replaceOnce(out, `.meter.${tone}${pad}{ --c: var(--${hue}-ink); }`,
+          `.meter.${tone}${pad}{ --c: var(--${hue}); }`);
+      }
+      return out;
+    }
   },
   {
     id: 'T16', file: CSS, expect: 'KILL',
-    why: 'Drops `--c-ink` from `.meter.warn` alone, leaving `--c` in place. The tone still reaches the glow and no longer reaches the fill, so a warn bar paints the `var(--cyan-ink)` fallback -- the wrong colour at full contrast, which every ratio-measuring claim in this file is blind to by construction. Binds claim 10, the hazard this change introduces rather than one it inherits.',
-    apply: (s) => replaceOnce(s, '.meter.warn { --c: var(--amber);   --c-ink: var(--amber-ink); }',
+    why: 'The ONE-TOKEN version of T15: drops `-ink` from `.meter.warn` and nothing else, leaving the other three tones and the untoned fallback fixed. This is the realistic slip -- a single tone missed in a four-line edit, or added later by copying a pre-fix line -- and it reaches only the warn bars, so a kill here shows claim 7 is per-reading rather than sweep-wide. A previous version of this row bound a claim about a `--c-ink` token that no longer exists; the token was removed from the fix entirely after review, and the row was re-aimed rather than deleted.',
+    apply: (s) => replaceOnce(s, '.meter.warn { --c: var(--amber-ink); }',
       '.meter.warn { --c: var(--amber); }')
   },
   {
@@ -173,8 +181,8 @@ const BATTERY = [
     apply: (s) => replaceOnce(s, '.meter i {\n  position: absolute;',
       '[data-theme="light"] .meter { background: #1a1a1a; }\n' +
       '[data-theme="light"] .meter i { background-image: linear-gradient(90deg, ' +
-      'color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 30%, white), ' +
-      'color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 30%, white)); }\n.meter i {\n  position: absolute;')
+      'color-mix(in srgb, var(--c, var(--cyan-ink)) 30%, white), ' +
+      'color-mix(in srgb, var(--c, var(--cyan-ink)) 30%, white)); }\n.meter i {\n  position: absolute;')
   },
   {
     id: 'T18', file: CSS, expect: 'GREEN',

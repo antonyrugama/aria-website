@@ -43,17 +43,20 @@
  * near-white card and a dark wash over a near-black one -- so only light
  * theme failed.
  *
- * The fix routes the fill through the `-ink` grade of its own tone. That
- * token family is defined per theme as "the legible grade of this hue", and
- * in the DARK block each `-ink` is an alias of the base token, so dark theme
- * is byte-identical by construction and measured so. Light theme moves to
- * 3.64:1 worst. Two side effects, both measured and both good: the notches
- * are cut in `--bg` so a darker fill IMPROVES them (4.28:1 -> 6.36:1 worst),
- * and fill-against-card rose from 3.05:1 to 5.08:1.
+ * The fix repoints each tone's `--c` at the `-ink` grade of the same hue,
+ * and the untoned fallback with it. That token family is defined per theme as
+ * "the legible grade of this hue", and in the DARK block each `-ink` is an
+ * alias of the base token, so dark theme is byte-identical by construction
+ * and measured so. Light theme moves to 3.64:1 worst. Two side effects, both
+ * measured and both good: the notches are cut in `--bg` so a darker fill
+ * IMPROVES them (4.28:1 -> 6.36:1 worst), and fill-against-card rose from
+ * 2.87:1 to 4.78:1 -- which means `origin/main` was under 3:1 on the CARD
+ * relationship too, and this change repairs a SECOND SC 1.4.11 failure that
+ * neither #10848 nor the first draft of this file knew about.
  *
  * One side effect is a real cost. Every `-ink` grade is darker, and darker
  * colours sit closer together, so light-theme hue separation compresses by
- * 35% at the closest pair -- `none` vs `ok`, 61.2 -> 39.9 RGB distance. That
+ * 33% at the closest pair -- `none` vs `ok`, 59.2 -> 39.9 RGB distance. That
  * is acceptable ONLY because #10825 moved severity off hue and onto notch
  * count, which claim 4 binds without reference to colour. Claim 9 stops the
  * compression before the tones become one colour.
@@ -104,6 +107,21 @@
  *   from whether the filled part is visible, and widening this file to answer
  *   it would repaint the base appearance of a component on every pane. Raised
  *   as Stadiora/Aria#10891 rather than folded in here.
+ * - A meter that inherits a `--c` from a `.tone-*` ancestor without carrying
+ *   a tone class of its own. Custom properties inherit, and `--c` is set by
+ *   `.dot.*`, the six `.tone-*` classes and four pane sheets this file does
+ *   not own. Such a bar would paint the inherited hue's BASE grade rather
+ *   than its ink grade, which is the 2.27:1 defect again for that one bar.
+ *   Claim 7 measures every meter it finds and would red on it -- but only
+ *   once one exists, and today ZERO of 96 meters inherit a `--c`, so nothing
+ *   currently exercises that path. An earlier draft asserted this directly;
+ *   the assertion could not distinguish the case it was named for from an
+ *   ordinary untoned bar, so it is recorded here instead of claimed.
+ * - Whether the two card strips ever disagree. `CARD_AGREE` has rejected 0 of
+ *   100 instrumented readings, worst ratio 1.000000. The gate is retained for
+ *   a future layout that puts content between 18px and 26px above a track;
+ *   as of this head it decides nothing, and no mutation in the battery kills
+ *   it.
  * - Whether two tones are PERCEPTUALLY distinct. Claim 9 uses euclidean RGB
  *   distance, which is not a perceptual metric; a fixed distance means
  *   different things in different parts of the space. It binds collapse --
@@ -389,15 +407,26 @@ const VALUE_FLOOR = 8;
 /* #10848's fix darkens the light-theme fill to clear 3:1 against the TRACK,
    and the obvious way to cheat that is to darken it against everything -- the
    card included. These bind the other side of the trade. Distances are in px
-   above the track's top edge: `CARD_NEAR` clears the bar's own
-   `0 0 12px -1px` glow, `CARD_FAR` is a second opinion far enough out that
-   the two disagree if either is inside the bleed. */
+   above the track's top edge. They are NOT clearing the bar's glow: `.meter`
+   sets `overflow: hidden`, which clips the child's outer `box-shadow`
+   entirely, so no halo is painted above the track at any distance. 18 and 26
+   were picked to clear the track's own top rows -- a 3px strip nearer than
+   about 6px straddles them and the uniformity gate rejects it -- and to sit
+   below the card's own padded content. */
 const CARD_NEAR = 18;
 const CARD_FAR = 26;
 const CARD_CONTRAST = 3;
 /* Both literal. A strip spanning more than CARD_UNIFORM top-to-bottom is not
    one surface; two strips further apart than CARD_AGREE are not the same
-   surface. Measured on a clean card the two strips agree to 1.00. */
+   surface. HONEST RECORD of what the second strip has done so far: across
+   100 instrumented readings the two returned EXACTLY equal luminance, worst
+   ratio 1.000000, so `CARD_AGREE` has rejected nothing and the `readCard`
+   role-conservative pick has always chosen between two identical numbers.
+   Kept, not deleted, for a narrow and stated reason: the region between 18
+   and 26 is not guaranteed empty forever -- instrumented readings at other
+   distances differ by up to 7.22x where real card content intervenes -- so a
+   layout change that puts a border or a label between the two strips is the
+   case this gate exists to catch. It has caught none to date. */
 const CARD_UNIFORM = 1.1;
 const CARD_AGREE = 1.03;
 /* And a population floor, because a claim that judges nothing passes: if the
@@ -406,8 +435,8 @@ const CARD_AGREE = 1.03;
 const CARD_FLOOR = 8;
 
 /* The severity hues are closer together after #10848 than before it --
-   measured, light theme, closest pair `none` vs `ok` at 61.2 -> 39.9 RGB
-   distance, a 35% compression. That is acceptable ONLY because #10825 moved
+   measured, light theme, closest pair `none` vs `ok` at 59.2 -> 39.9 RGB
+   distance, a 33% compression. That is acceptable ONLY because #10825 moved
    severity off hue and onto notch count, which the separability claim below
    binds independently. This floor stops the compression continuing until the
    tones are one colour; it is literal, and sits under the measured minimum
@@ -548,8 +577,6 @@ const READ_METERS = `Array.prototype.map.call(document.querySelectorAll('.meter'
        \`.tone-older\` in three pane sheets), and custom properties inherit, so
        a meter nested in a toned ancestor picks one up without carrying a tone
        class of its own. Claim 10 is what makes that safe to rely on. */
-    cVar: cs.getPropertyValue('--c').trim(),
-    cInkVar: cs.getPropertyValue('--c-ink').trim(),
     trackWidth: t.width,
     fillWidth: f.width,
     visibleFill: Math.max(0, right - left),
@@ -602,13 +629,18 @@ async function shoot(box) {
    synthetic host -- and #10848's whole lesson is that one declaration can
    resolve to opposite things.
 
-   Two strips are taken at different distances and must AGREE. The bar draws
-   `box-shadow: 0 0 12px -1px var(--c)`, so a strip inside that bleed reads
-   the GLOW and reports the fill as contrasting against its own halo -- the
-   #10650 mistake, one surface out. Strips that disagree are contaminated
-   (glow, a cell border, a label above the bar) and the reading is DROPPED
-   rather than guessed at; `CARD_FLOOR` below then refuses to let the claim
-   judge too few of them to mean anything. */
+   Two strips are taken at different distances and must AGREE. NOT because of
+   the bar's `box-shadow: 0 0 12px -1px var(--c)` -- that halo is never
+   painted, because `.meter` sets `overflow: hidden` and an outer shadow on
+   the child is clipped by it. Verified with controls: with `overflow` forced
+   back to `visible` a strip 1px above the track reads 1.37 against a strip at
+   30px, and with a deliberately huge `0 0 40px 6px red` glow it reads 1.52;
+   restore `overflow: hidden` with that same huge glow in place and every
+   distance from 1px to 30px reads flat 1.0000. So the contaminant the two
+   strips can actually catch is CARD CONTENT between them -- a cell border, a
+   label above the bar -- and such a reading is DROPPED rather than guessed
+   at. `CARD_FLOOR` below then refuses to let the claim judge too few of them
+   to mean anything. */
 async function readCard(box, fillL) {
   const strips = [];
   for (const d of [CARD_NEAR, CARD_FAR]) {
@@ -825,7 +857,6 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
     const fillL = fillPx.length >= 6 ? median(fillPx.map(relativeLuminance)) : null;
     out.push({
       pane, state, theme, tone, tones: m.tones, synthetic: m.synthetic,
-      cVar: m.cVar, cInkVar: m.cInkVar,
       trackWidth: m.trackWidth, fillWidth: m.fillWidth, visibleFill: m.visibleFill,
       fillL,
       fillRGB: fillPx.length >= 6 ? [0, 1, 2].map((k) => median(fillPx.map((p) => p[k]))) : null,
@@ -1027,8 +1058,10 @@ test('the bar reports its value, filled against unfilled, in both themes', () =>
    3:1 against the TRACK moves it against the CARD too, and the cheap way to
    satisfy the claim above is to keep going until the bar is a dark smear on a
    white card -- legible against its track, and against nothing else.
-   Measured before the fix: 3.05:1 worst in light. After: 5.08:1. It moved the
-   right way, and this pins that it did. */
+   Measured on `origin/main`: 2.87:1 worst in light. After: 4.78:1. Note the
+   before figure is UNDER 3:1, so this claim is not only guarding a trade --
+   it is repairing a second SC 1.4.11 failure that #10848 does not mention and
+   that nothing measured until this file existed. */
 test('the bar is visible against the card it sits on, not just against its own track', () => {
   const judged = [...readings, ...synthetic].filter((r) => r.cardL !== null && r.fillL !== null);
   assert.ok(judged.length >= CARD_FLOOR,
@@ -1041,7 +1074,7 @@ test('the bar is visible against the card it sits on, not just against its own t
   `a fill that clears its track but not its card is legible only where it is already obvious`);
 });
 
-/* #10848 compresses the light-theme hues by 35% at the closest pair, because
+/* #10848 compresses the light-theme hues by 33% at the closest pair, because
    every `-ink` grade is darker and darker colours sit closer together. That
    is a real cost and it is acceptable only while notch COUNT carries severity
    -- which the separability claim binds independently of this one. This stops
@@ -1093,31 +1126,6 @@ test('no two severity tones collapse into the same fill colour', () => {
   }
 });
 
-/* The hazard #10848's fix introduces, bound rather than described.
-
-   The fill now reads `--c-ink`, and `--c-ink` is set in exactly four places:
-   the four `.meter.*` rules. `--c` is set in many more -- `.dot.*`, the six
-   `.tone-*` classes, `.tone-muted` and `.tone-older` in three pane sheets,
-   `.sp-s1` through `.sp-s6` in a fourth -- and custom properties INHERIT. So
-   a meter that carries no tone class but sits inside a `.tone-amber` ancestor
-   used to paint amber, and after this change would paint the `var(--cyan-ink)`
-   fallback: a bar silently the wrong colour, contrast intact, no claim here
-   the wiser, because every other claim measures ratios rather than hue.
-
-   Measured on today's board: 96 meters, 40 of them untoned, and ZERO inherit
-   a `--c`. That makes the change safe now and says nothing about next week,
-   which is the whole reason this is an assertion and not a comment -- the
-   sheets that set `--c` belong to five other agents. */
-test('every meter that resolves a --c resolves the --c-ink to match it', () => {
-  const all = [...readings, ...synthetic];
-  assert.ok(all.length >= METER_FLOOR,
-    `only ${all.length} meters were read, below the declared floor of ${METER_FLOOR}`);
-  const orphaned = all.filter((r) => r.cVar !== '' && r.cInkVar === '');
-  assert.deepEqual(orphaned.map((r) =>
-    `${r.theme}/${r.pane}/${r.state} meter has --c "${r.cVar}" but no --c-ink, so its fill ` +
-    `falls back to cyan regardless of the tone it inherited`), [],
-  'a tone that reaches the glow but not the fill paints a bar the wrong colour');
-});
 
 /* Measured before the fix, on evaluations.html: under forced-colors the fill's
    `background-image` resolves to `none` and its `box-shadow` to `none`, and
