@@ -78,7 +78,7 @@ const MIME = {
 /* Which of the two answers the server is handing out. Selected here rather
    than in the URL because the pane asks for /api/ops/releases with no
    querystring and ops-releases-v2.test.mjs asserts that it does. */
-let unreadable = true;
+let answerKind = 'unreadable';
 
 /* The answer the route publishes while an iOS phased release is running.
    Built by deep-copying the shared stub's own release payload and changing
@@ -133,6 +133,25 @@ function readableAnswer() {
   return data;
 }
 
+/* iOS still phasing, Android finished and reported. This fixture exists
+   because the battery proved the headline assertion could not be killed
+   without it — see the comment on UNREADABLE_OUT_1280. */
+function unreadableAndroidOutAnswer() {
+  const data = unreadableAnswer();
+  const prod = data.platforms
+    .find((p) => p.platform === 'android')
+    .tracks.find((t) => t.track === 'production');
+  prod.state = 'live';
+  prod.rolloutBasisPoints = 10_000;
+  return data;
+}
+
+const ANSWERS = {
+  unreadable: unreadableAnswer,
+  readable: readableAnswer,
+  unreadableAndroidOut: unreadableAndroidOutAnswer,
+};
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
@@ -140,7 +159,7 @@ const server = http.createServer((req, res) => {
     req.on('data', (chunk) => { raw += chunk; });
     req.on('end', () => {
       const answer = url.pathname.startsWith('/api/ops/releases')
-        ? { data: unreadable ? unreadableAnswer() : readableAnswer() }
+        ? { data: ANSWERS[answerKind]() }
         : stub(url.pathname);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify(answer));
@@ -288,14 +307,21 @@ after(async () => {
   } catch (e) { /* the runner sweeps it up */ }
 });
 
-const UNREADABLE_1280 = { key: 'unreadable/1280/dark', width: 1280, theme: 'dark', unreadable: true };
-const UNREADABLE_LIGHT = { key: 'unreadable/1280/light', width: 1280, theme: 'light', unreadable: true };
-const UNREADABLE_375 = { key: 'unreadable/375/dark', width: 375, theme: 'dark', unreadable: true };
-const READABLE_1280 = { key: 'readable/1280/dark', width: 1280, theme: 'dark', unreadable: false };
+const UNREADABLE_1280 = { key: 'unreadable/1280/dark', width: 1280, theme: 'dark', answer: 'unreadable' };
+const UNREADABLE_LIGHT = { key: 'unreadable/1280/light', width: 1280, theme: 'light', answer: 'unreadable' };
+const UNREADABLE_375 = { key: 'unreadable/375/dark', width: 375, theme: 'dark', answer: 'unreadable' };
+const READABLE_1280 = { key: 'readable/1280/dark', width: 1280, theme: 'dark', answer: 'readable' };
+/* iOS phasing, Android finished. This exists because the battery proved the
+   headline test could not be killed without it: on the fixture above, Android
+   is staged at 20%, so the headline says "is the production build" for a
+   reason that has nothing to do with iOS, and the assertion held with the fix
+   removed. Here the ONLY thing between the headline and "is live on both
+   stores" is iOS's unreadable share. */
+const UNREADABLE_OUT_1280 = { key: 'unreadable-out/1280/dark', width: 1280, theme: 'dark', answer: 'unreadableAndroidOut' };
 
 async function show(state) {
   if (showing === state.key) return;
-  unreadable = state.unreadable;
+  answerKind = state.answer;
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: state.width, height: 900, deviceScaleFactor: 1, mobile: false
   });
@@ -395,6 +421,15 @@ async function readPage() {
       shareLine: shareLine ? shareLine.textContent.replace(/\\s+/g, ' ').trim() : null,
       figures: Array.from(document.querySelectorAll('.pipe-date')).map((n) => n.textContent.trim()),
       pills: Array.from(document.querySelectorAll('.pipe-row .pill')).map((n) => n.textContent.replace(/\\s+/g, ' ').trim()),
+      /* Scoped to the iOS row. The page-wide list above cannot tell a claim
+         about Apple from one about Google, so an Android row that legitimately
+         says "Rolled out" would answer for iOS and the assertion would be
+         about the wrong store. */
+      iosPills: (() => {
+        const row = Array.from(document.querySelectorAll('.pipe-row'))
+          .find((n) => { const m = n.querySelector('.t-main'); return m && m.textContent.trim() === 'iOS'; });
+        return row ? Array.from(row.querySelectorAll('.pill')).map((n) => n.textContent.replace(/\\s+/g, ' ').trim()) : null;
+      })(),
       plain: plain ? styleOf(plain) : null,
       note: null
     };
@@ -551,7 +586,8 @@ test('no omission in the answer means no note on the page', async () => {
    asserted here to be all four, because nobody ran them one at a time. */
 
 test('the headline does not call an unmeasured phased release live', async () => {
-  await show(UNREADABLE_1280);
+  /* The Android-finished fixture, not the shared one: see UNREADABLE_OUT_1280. */
+  await show(UNREADABLE_OUT_1280);
   const unread = await readPage();
   assert.ok(!/is live on/.test(unread.heroTitle),
     `the headline says "${unread.heroTitle}" over a phased release still on its way out`);
@@ -596,13 +632,14 @@ test('the stage figure names the store that will not report the share', async ()
 test('the end pill does not say Rolled out over a running phased release', async () => {
   await show(UNREADABLE_1280);
   const unread = await readPage();
-  assert.ok(!unread.pills.includes('Rolled out'),
-    `pipeline pills were ${JSON.stringify(unread.pills)} — "Rolled out" is a claim ` +
-    'that the rollout finished, and an unreadable share cannot support it');
+  assert.ok(unread.iosPills, 'no iOS row on the page to read a pill from');
+  assert.ok(!unread.iosPills.includes('Rolled out'),
+    `the iOS row's pills were ${JSON.stringify(unread.iosPills)} — "Rolled out" is a ` +
+    'claim that the rollout finished, and an unreadable share cannot support it');
 
   await show(READABLE_1280);
   const readable = await readPage();
-  assert.ok(readable.pills.includes('Rolled out'),
+  assert.ok(readable.iosPills.includes('Rolled out'),
     'no row says "Rolled out" even when a rollout has finished, so the assertion ' +
     'above would pass on a pane that can never say it');
 });
