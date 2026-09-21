@@ -512,6 +512,13 @@
          line has just thrown away. Clearing busy without this hands that
          response an unowned record to land in. */
       record.token += 1;
+      /* `more` describes the window the five lines above have just discarded,
+         and it is the only field left doing so. When the reload's own record
+         read fails, recordBand() takes the error branch and calls
+         syncControls() directly -- acceptPage(), which is the only other place
+         `more` is written, never runs -- so the card came up with a failure
+         body and a live Load more over zero rows (Stadiora/Aria#10689). */
+      record.more = false;
 
       Promise.all([
         readAdmins(),
@@ -1141,6 +1148,17 @@
         record.offset = 0;
         record.rows = [];
         record.seen = null;
+        /* Same reason as load()'s reset (Stadiora/Aria#10689, #10740): `more`
+           describes the window the three lines above have just discarded. The
+           failure arm below calls syncControls() with no rows, acceptPage() --
+           the only other place `more` is written -- never runs, and the card
+           came up saying it could not read the record while still offering to
+           load more of it. Reachable from Refresh, not only from a revoke.
+
+           Only on a reset. A later page failing with rows still on screen
+           keeps its `more`, because that flag still describes the window the
+           operator is looking at and the retry below is worth offering. */
+        record.more = false;
         /* The skeleton, not the empty state. An empty record and a record that
            has not arrived yet are different answers to the same question, and
            showing the first while waiting for the second is how a pane says

@@ -19,3 +19,8 @@ desktop.ini
 # the run interrupted before it gets that far, and for the one where Chrome
 # never exits, which the check reports when it gives up.
 .ops-theme-redraw-*/
+
+# Chrome profile written by scripts/check-ops-dialog-hit.mjs, on the same terms
+# as the entry above: kept in the repository so the path matches on a laptop and
+# on the runner, deleted once Chrome has exited, ignored for the interrupted run.
+.ops-dialog-hit-*/

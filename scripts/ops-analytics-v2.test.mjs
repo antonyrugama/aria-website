@@ -235,10 +235,13 @@ const APP_PARTS = {
    only shape that can carry one. The route sends ONE denominator per app
    (`opsUsageView.ts:689`) -- that app's own active people -- so an under-floor
    feature row cannot sit on an app with 1,061 of them, which is what the old
-   fixture's `denominator: 41` beside Mobile's 1,061 claimed. A small app
-   beside a large one still arrives `ready`, because availability is decided on
-   PLATFORM active people (`opsUsageView.ts:863`) and that is its own count
-   rather than a sum of the columns. */
+   fixture's `denominator: 41` beside Mobile's 1,061 claimed. Beside a large
+   app this one still arrives `ready`, because availability is decided on
+   PLATFORM active people (`opsUsageView.ts:863`) and that row is counted over
+   the selected apps rather than summed from the columns. Selected ALONE it
+   does not: 41 is under the floor, so a `coaches` scope holding only this app
+   arrives `insufficient`, which is why `usagePayload` resolves the state
+   instead of asserting it. */
 const YOUNG_COACHES = {
   ...APP_PARTS.coaches,
   counts: { activePeople: 41, sessions: 96, featurePeople: 5 },
@@ -252,6 +255,100 @@ const YOUNG_COACHES = {
 };
 
 const YOUNG_PARTS = { ...APP_PARTS, coaches: YOUNG_COACHES };
+
+/* Apps sized to a denominator, for the tests about the reporting floor.
+
+   The route puts ONE denominator in an app column -- that column's own active
+   people, `opsUsageView.ts:643-646` -- and `countMetric` cannot carry one at
+   all (`:252`, and the union at `:16` says so in types: only `rateMetric` and
+   `ratioMetric` produce a denominator). So the only way to ask for a
+   denominator of 49 is to send an app with 49 active people. Reaching into a
+   built payload to set `metrics[3].denominator = 49` leaves a column reporting
+   1,061 active people beside a share measured over 49 of them, which is a
+   shape `/api/ops/usage` cannot send: Stadiora/Aria#10667.
+
+   Every count below is chosen, not scaled, so `checkPart` can hold it to the
+   same arithmetic as the full-size parts. `sized` only spreads over the app it
+   is shrinking, so the fields no test here reads -- filter, label, subtitle,
+   tone, colour -- stay the app's own. */
+const sized = (base, part) => ({ ...base, ...part });
+
+/* 49 active people: one under the floor of 50. `Opened a feature` is
+   `basisPoints(31, 49)` = 6327, so the share the pane must NOT print is
+   63.3%. */
+const MOBILE_49 = sized(APP_PARTS.mobile, {
+  counts: { activePeople: 49, sessions: 380, featurePeople: 31 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.046)),
+  versions: [{ version: '2.9.1', sessions: 380, reporting: 380 }],
+  features: [
+    { label: 'Aria chat', users: 28 },
+    { label: 'Workout logging', users: 19 },
+  ],
+  groups: [
+    { label: '24 Aug', size: 20, returned: [14, 10] },
+    { label: '31 Aug', size: 12, returned: [9, null] },
+    { label: '7 Sep', size: 8, returned: [null, null] },
+  ],
+});
+
+/* 50 active people: exactly the floor, which is publishable.
+   `basisPoints(32, 50)` = 6400, so the share the pane MUST print is 64.0%. */
+const MOBILE_50 = sized(APP_PARTS.mobile, {
+  counts: { activePeople: 50, sessions: 390, featurePeople: 32 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.047)),
+  versions: [{ version: '2.9.1', sessions: 390, reporting: 390 }],
+  features: [
+    { label: 'Aria chat', users: 29 },
+    { label: 'Workout logging', users: 20 },
+  ],
+  groups: [
+    { label: '24 Aug', size: 20, returned: [14, 10] },
+    { label: '31 Aug', size: 12, returned: [9, null] },
+    { label: '7 Sep', size: 8, returned: [null, null] },
+  ],
+});
+
+/* 12 active people, for the ratio the route sends as a decimal: `Sessions per
+   person` is `ratioMetric` (`opsUsageView.ts:645`), which is `kind: 'decimal'`
+   carrying both halves, so this part reaches the floor guard through the kind
+   the historical defect walked past -- without the fixture having to say
+   `kind` at all. */
+const MOBILE_12 = sized(APP_PARTS.mobile, {
+  counts: { activePeople: 12, sessions: 96, featurePeople: 8 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.011)),
+  versions: [{ version: '2.9.1', sessions: 96, reporting: 96 }],
+  features: [
+    { label: 'Aria chat', users: 7 },
+    { label: 'Workout logging', users: 5 },
+  ],
+  groups: [
+    { label: '24 Aug', size: 5, returned: [3, 2] },
+    { label: '31 Aug', size: 4, returned: [2, null] },
+    { label: '7 Sep', size: 2, returned: [null, null] },
+  ],
+});
+
+/* 20 active people on the SECOND column, which is the only place a withheld
+   figure of a non-lead app is drawn at all now that the tiles carry no feet.
+   `basisPoints(13, 20)` = 6500, so the share the split must NOT print is
+   65.0% -- a number that exists, unlike the 81.0% this assertion used to look
+   for while the answer said 80.8%. */
+const COACHES_20 = sized(APP_PARTS.coaches, {
+  counts: { activePeople: 20, sessions: 78, featurePeople: 13 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.019)),
+  versions: [{ version: '', sessions: 78, reporting: 78 }],
+  features: [
+    { label: 'Athlete roster', users: 11 },
+    { label: 'Training plan', users: 6 },
+  ],
+  groups: [
+    { label: '24 Aug', size: 6, returned: [4, 3] },
+    { label: '31 Aug', size: 5, returned: [3, null] },
+  ],
+});
+
+const withMobile = (part) => ({ ...APP_PARTS, mobile: part });
+const withCoaches = (part) => ({ ...APP_PARTS, coaches: part });
 
 /* Mobile with nothing measured: an app whose sessions produced no
    `coverage_sessions` rows at all. That is the one way the route sends a null
@@ -436,7 +533,7 @@ function usagePayload(scope, parts) {
     filters: { app: scope, env: 'production' },
     reportingFloor: 50,
     consent: { enforcedAt: 'ingest', detail: CONSENT_DETAIL },
-    availability: { state: 'ready', detail: '' },
+    availability: resolveAvailability(apps, 30),
     apps,
     cohorts: keys.map((key) => appCohort(key, parts)),
     features: rows.length
@@ -462,6 +559,35 @@ function usagePayload(scope, parts) {
 /* `over` mutates or replaces the composed answer; `options.scope` picks which
    apps the whole answer is built from, and `options.parts` swaps what those
    apps report. */
+/* The availability state the route would resolve for the apps this answer
+   selects, rather than a constant.
+
+   `resolveAvailability` (`opsUsageView.ts:851-877`) reads ONE number: the
+   platform active-people row, which `distinctPeople(window, env, sourceApps)`
+   (`opsUsageRepository.ts:301`) counts over the SELECTED apps only. So a
+   one-app scope narrows the platform count to that app, and an answer scoped
+   to a small app cannot arrive `ready` -- the very shape a hard-coded
+   `{ state: 'ready' }` was claiming for `mobile/mobile 49`,
+   `mobile/mobile 12`, `coaches/coaches 20` and, before this PR,
+   `coaches/young`. Raised in the independent review of PR #91.
+
+   Distinct people are not additive in general, but every app in these fixtures
+   is disjoint from the others -- an account belongs to one app -- so the sum
+   is what the platform row would hold. `not_reporting` is out of reach here
+   because every part carries sessions; the constant this replaces could not
+   express it either. */
+function resolveAvailability(apps, days) {
+  const platformActivePeople = apps.reduce((sum, app) => sum + app.metrics[0].value, 0);
+  if (platformActivePeople >= 50) return { state: 'ready', detail: '' };
+  const people = platformActivePeople === 1 ? 'person was' : 'people were';
+  const unit = days === 1 ? 'day' : 'days';
+  return {
+    state: 'insufficient',
+    detail: `${platformActivePeople} ${people} active in the last ${days} ${unit}, which `
+      + 'is under the 50 we report rates from.',
+  };
+}
+
 function usageFixture(over, options) {
   const opts = options || {};
   const base = usagePayload(opts.scope || 'all', opts.parts || APP_PARTS);
@@ -672,7 +798,20 @@ test('every answer this file builds is a shape the route can send', async () => 
      people, read off the column rather than restated here. */
   const answers = [];
   ['all', 'mobile', 'coaches'].forEach((scope) => {
-    [['shipped', APP_PARTS], ['young', YOUNG_PARTS], ['unmeasured', UNMEASURED_PARTS]]
+    [
+      ['shipped', APP_PARTS],
+      ['young', YOUNG_PARTS],
+      ['unmeasured', UNMEASURED_PARTS],
+      /* The four floor parts go through this guard too, which is the second
+         half of Stadiora/Aria#10667: composing them is only a repair if the
+         answers they compose are also checked. An `over` callback was never
+         reachable from here -- this walks the builder's output -- so the four
+         denominators it used to poke were outside every assertion below. */
+      ['mobile 49', withMobile(MOBILE_49)],
+      ['mobile 50', withMobile(MOBILE_50)],
+      ['mobile 12', withMobile(MOBILE_12)],
+      ['coaches 20', withCoaches(COACHES_20)],
+    ]
       .forEach(([name, parts]) => {
         answers.push([`${scope}/${name}`, usageFixture(null, { scope, parts }), scope]);
       });
@@ -709,6 +848,18 @@ test('every answer this file builds is a shape the route can send', async () => 
       assert.ok(row.users <= row.denominator,
         name + ': more people used ' + row.label + ' than were active in ' + row.app);
     });
+
+    /* `resolveAvailability` reads the platform active-people row, and
+       `distinctPeople` counts that over the SELECTED apps only
+       (`opsUsageView.ts:851-877`, `opsUsageRepository.ts:301`). So an answer
+       whose whole selection is under the floor cannot also say `ready`: the
+       route would have said `insufficient` and the pane would have drawn the
+       sentence instead of the figures. */
+    const platform = answer.apps.reduce((sum, app) => sum + app.metrics[0].value, 0);
+    assert.equal(answer.availability.state, platform < answer.reportingFloor
+      ? 'insufficient' : 'ready',
+      name + ' says ' + answer.availability.state + ' over ' + platform
+      + ' active people, floor ' + answer.reportingFloor);
   });
 });
 
@@ -809,6 +960,23 @@ test('the reason leaves the bar the day the window is offered', async () => {
   assert.deepEqual(filterNotes(offered).filter((note) => /custom window/i.test(note)), [],
     'the bar offers a Custom window and still says it cannot: '
     + JSON.stringify(filterNotes(offered)));
+
+  /* An absence proves nothing on its own: `no note matching /custom window/`
+     is equally true of a pane that stopped drawing the note at all, or of one
+     whose note this regex never matched. So the unpatched boot goes beside it,
+     through the same two readers, in the same test -- a sentence that leaves
+     the bar has to have been in the bar. Stadiora/Aria#10666.
+
+     Sibling tests do catch a note that never renders, which is why this was
+     hardening rather than a false green; the point of putting it here is that
+     this test now fails for its own reason rather than borrowing theirs. */
+  const withheld = await boot({});
+  assert.ok(rangeOptions(withheld).indexOf('custom') === -1,
+    'the unpatched bar offers a Custom window, so there is no absence to explain: '
+    + rangeOptions(withheld).join(', '));
+  assert.equal(filterNotes(withheld).filter((note) => /custom window/i.test(note)).length, 1,
+    'the note the patched boot expects to lose was never in the bar: '
+    + JSON.stringify(filterNotes(withheld)));
 });
 
 test('the reason is in the bar on every answer, including the ones with no figures', async () => {
@@ -833,25 +1001,16 @@ test('the reason is in the bar on every answer, including the ones with no figur
 /* ============================ the reporting floor ====================== */
 
 test('a rate over a group under the floor is withheld, and one over the floor is drawn', async () => {
-  const under = await boot({
-    usage: usageFixture((u) => {
-      u.apps[0].metrics[3].denominator = 49;
-      u.apps[0].metrics[3].value = 6400;
-    }),
-  });
+  const under = await boot({ usage: usageFixture(null, { parts: withMobile(MOBILE_49) }) });
   const withheldTile = tileText(under, /Opened a feature/);
   assert.match(withheldTile, /Not reported/, 'a rate over 49 people was published anyway');
-  assert.match(withheldTile, /floor is 50/, 'the tile withheld a figure without saying why');
-  assert.doesNotMatch(withheldTile, /64\.0%/, 'the withheld figure was printed regardless');
+  assert.match(withheldTile, /49 people in the group, floor is 50/,
+    'the tile withheld a figure without saying over how many people: ' + withheldTile);
+  assert.doesNotMatch(withheldTile, /63\.3%/, 'the withheld figure was printed regardless');
 
   /* The other direction. Without it this test passes just as well against a
      pane that withholds every figure it is given. */
-  const over = await boot({
-    usage: usageFixture((u) => {
-      u.apps[0].metrics[3].denominator = 50;
-      u.apps[0].metrics[3].value = 6400;
-    }),
-  });
+  const over = await boot({ usage: usageFixture(null, { parts: withMobile(MOBILE_50) }) });
   const shown = tileText(over, /Opened a feature/);
   assert.match(shown, /64\.0%/, 'a rate over exactly 50 people was withheld');
   assert.doesNotMatch(shown, /Not reported/, 'a publishable figure was withheld anyway');
@@ -860,18 +1019,31 @@ test('a rate over a group under the floor is withheld, and one over the floor is
 test('a ratio delivered as a decimal still goes through the floor', async () => {
   /* The historical defect: the guard keyed on kind === "rate", and a ratio
      sent as a decimal walked straight past it. The denominator is the signal,
-     not the kind. */
-  const dom = await boot({
-    usage: usageFixture((u) => {
-      u.apps[0].metrics[2].kind = 'decimal';
-      u.apps[0].metrics[2].denominator = 12;
-      u.apps[0].metrics[1].denominator = 12;
-    }),
-  });
-  assert.match(tileText(dom, /Sessions per person/), /Not reported/,
+     not the kind.
+
+     The fixture no longer says `kind` at all. `Sessions per person` is
+     `ratioMetric` (`opsUsageView.ts:645`), which is `kind: 'decimal'` carrying
+     both halves, so the builder sends the defect's own shape without being
+     told to -- and the old `metrics[2].kind = 'decimal'` override turned out
+     to be setting the value it already had.
+
+     NOT COVERED, on purpose: the sibling assertion here used to give
+     `metrics[1]` -- `Sessions`, a count -- a denominator of 12, to show a
+     count with a denominator goes through the floor too. `countMetric`
+     (`opsUsageView.ts:252`) returns `{ label, kind, value }` and the metric
+     union at `:16` admits `numerator`/`denominator` only on the `rate` and
+     `decimal` members, whose two constructors are the only ones. No answer the
+     route can build carries that shape, so the assertion was deleted rather
+     than kept against a payload nothing can send. The pane's rule that the
+     denominator is the signal is still bound, by this test, through the shape
+     the route does send. */
+  const dom = await boot({ usage: usageFixture(null, { parts: withMobile(MOBILE_12) }) });
+  const ratio = tileText(dom, /Sessions per person/);
+  assert.match(ratio, /Not reported/,
     'a ratio labelled decimal was published over a group of 12');
-  assert.match(tileText(dom, /^\s*Sessions\b/m), /Not reported/,
-    'a count that arrived with a denominator was published over a group of 12');
+  assert.match(ratio, /12 people in the group, floor is 50/,
+    'the tile withheld the ratio without saying over how many people: ' + ratio);
+  assert.doesNotMatch(ratio, /8\.0/, 'the withheld ratio was printed regardless');
 });
 
 test('a feature row over too small a group shows no share', async () => {
@@ -1139,16 +1311,71 @@ test('one app is a split that cannot exist, not an empty one', async () => {
     'the comparison lost one of its columns');
 });
 
+/* One column of the split, by the app it is of, and the lead slot inside it.
+   Read as a slot rather than as whole-card text because the card prints eight
+   figures and a regex over all of them cannot say which slot a number came
+   out of. `u-vs-val` is the lead metric's; the rest are `u-vs-v`. */
+function splitColumn(dom, label) {
+  return byClass(card(dom, /Side by side/), 'u-vs-side')
+    .filter((n) => byClass(n, 'u-vs-name').some((name) => allText(name).indexOf(label) !== -1))[0];
+}
+
+function leadSlot(column) {
+  const big = byClass(column, 'u-vs-big')[0];
+  if (!big) return null;
+  const only = (cls) => {
+    const found = byClass(big, cls);
+    assert.equal(found.length, 1,
+      'the lead slot has ' + found.length + ' .' + cls + ' elements, not 1');
+    return allText(found[0]).trim();
+  };
+  return { value: only('u-vs-val'), caption: only('u-vs-cap') };
+}
+
 test('every app figure is in the split, withheld ones with their reason', async () => {
-  const dom = await boot({
-    usage: usageFixture((u) => { u.apps[1].metrics[3].denominator = 20; }),
-  });
+  const dom = await boot({ usage: usageFixture(null, { parts: withCoaches(COACHES_20) }) });
   const split = allText(card(dom, /Side by side/));
   assert.match(split, /Opened a feature/, 'the split lost a figure the answer sent');
   assert.match(split, /64\.0%/, 'a rate the answer sent was not printed as a percentage');
   assert.match(split, /Not reported, 20 people in the group, floor is 50/,
     'a withheld figure in the split gave no reason: ' + split);
-  assert.doesNotMatch(split, /81\.0%/, 'the withheld figure was printed in the split anyway');
+  /* 65.0% is `basisPoints(13, 20)`, the share this column would print if the
+     floor let it. This assertion used to look for 81.0% while the answer said
+     80.8%, so it was a check for a string no pane could ever emit. */
+  assert.doesNotMatch(split, /65\.0%/, 'the withheld figure was printed in the split anyway');
+
+  /* The lead slot, which is the half of this card `.u-vs-row` never reaches.
+     Both columns, so the assertion is about the slot rather than about the app
+     that happens to be first.
+
+     NOT COVERED, on purpose: the withheld branch of this slot
+     (`pane-analytics.js:852-858`, `leadReason ? sentence(leadReason) : …`) is
+     unreachable from any answer the route can send, so no fixture here binds
+     it and none should pretend to. The lead metric is `metrics[0]`, which the
+     route always builds as `countMetric('Active people', …)`
+     (`opsUsageView.ts:643`). `withheld()` has exactly two ways to fire: a
+     stored-day gap, which needs the label to be `Sessions` or `Sessions per
+     person` (`pane-analytics.js:210-218`), and the floor, which needs
+     `kind === 'rate'` or a denominator (`:105-107`) -- and a count carries
+     neither. Binding it would take the same impossible payload
+     Stadiora/Aria#10667 exists to remove. Reported on Stadiora/Aria#10666.
+
+     NOT COVERED, second: that the caption is READ from `lead.label` rather
+     than printed as a literal. `metrics[0]` is always
+     `countMetric('Active people', …)` (`opsUsageView.ts:643`), so `lead.label`
+     holds the same string on every answer the route can send, and replacing
+     the expression with `'Active people'` is 48/48 green -- verified in the
+     independent review of PR #91. What the assertion below DOES bind is that
+     the slot carries a caption and that the caption is that text: emptying it,
+     dropping the element, or printing another field all go red. */
+  [['Mobile', '1,061'], ['Coaches Web', '20']].forEach(([label, activePeople]) => {
+    const slot = leadSlot(splitColumn(dom, label));
+    assert.ok(slot, label + ' has no lead slot in the split at all');
+    assert.equal(slot.caption, 'Active people',
+      label + ' captioned its lead figure ' + JSON.stringify(slot.caption));
+    assert.equal(slot.value, activePeople,
+      label + ' printed ' + JSON.stringify(slot.value) + ' as its lead figure');
+  });
 });
 
 /* ================================ the line ============================= */

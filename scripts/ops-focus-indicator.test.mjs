@@ -49,10 +49,26 @@
  *
  * NOT COVERED — read this before trusting a green run:
  *
- *   - Only `/ops/shell-v2.html`. The ten v2 panes load `aria.css` too, and
- *     four of them override `:focus-visible` in their own stylesheet with
- *     their own hard-coded colour. Those rules are not measured here and are
- *     not this file's to change.
+ *   - `/ops/shell-v2.html` and `/ops/evaluations.html`, not the other nine
+ *     panes. They load `aria.css` too, and three rules in two of their
+ *     stylesheets still hard-code `var(--cyan)` rather than inheriting
+ *     `--cyan-ink`: `pane-alerts-v2.css:183` (`.p-close textarea`) and `:256`
+ *     (`.sw`), and `pane-settings-v2.css:153` (`.modal-input`). That is the
+ *     shape Stadiora/Aria#10649 and #10651 were, and all three also paint at a
+ *     POSITIVE offset, so their rings land outside the control. They are
+ *     unmeasured here and not this file's to change — Stadiora/Aria#10721.
+ *     The `outline-offset`-only overrides (`pane-alerts-v2.css:214`,
+ *     `pane-evaluations-v2.css:198`, `pane-releases-v2.css:258`,
+ *     `pane-settings-v2.css:80`) inherit the shared colour and are fine.
+ *   - Driving the other nine panes needs their API fixtures. The evaluations
+ *     pane is here because it reads nothing until something is submitted, so
+ *     its form is drawn from the page's own prose and an auth stub alone.
+ *   - `<main>` is excluded from the census. shell-pane-v2.js gives the content
+ *     column `tabindex="-1"` so the skip link can land on it, and that
+ *     landmark is the whole content column — taller than any viewport a
+ *     screenshot can hold, so its ring is not judged. Excluded by TAG rather
+ *     than by `tabindex="-1"`, because a roving-tabindex toolbar marks its
+ *     inactive buttons the same way and those are real controls.
  *   - Only the outline-shaped indicator. A control whose indicator is a
  *     box-shadow, a background swap or a border change is REFUSED, not
  *     measured. Refusal is a failure, so nothing is silently skipped, but
@@ -89,6 +105,14 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHELL = '/ops/shell-v2.html';
+/* The second subject, added for Stadiora/Aria#10694: the evaluations pane's
+   own text inputs carried the same unmeasurable shape the shell's search field
+   did. Unlike the shell this page gates on a session, so the server below
+   answers the two auth calls it makes. It reads nothing else until something
+   is submitted, so its form — the controls this is here for — is drawn from
+   the page's own prose with no fixture. */
+const EVALS = '/ops/evaluations.html';
+const EVALS_FLOOR = 12;
 const THEMES = ['dark', 'light'];
 const STATES = ['live', 'loading', 'empty', 'degraded'];
 const VIEWPORT = { width: 1440, height: 1000 };
@@ -193,8 +217,36 @@ const SELF_TEST_HTML = `<!doctype html><html><head><meta charset="utf-8">
 
 /* ----------------------------------------------------------------- server */
 
+/* Just enough operations API for `evaluations.html` to get past its session
+   gate. Everything else answers an empty envelope, which is the state the pane
+   draws its form in — it reads nothing until a check is submitted. */
+const ADMIN = { id: 'adm_1', email: 'ops@example.invalid', name: 'Ops', role: 'owner', status: 'active' };
+const SESSION = { id: 'ses_1', createdAt: new Date().toISOString(), lastSeenAt: new Date().toISOString() };
+
+function opsStub(pathname) {
+  if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
+    return { data: {
+      accessToken: 'stub-access', expiresIn: 900, refreshToken: 'stub-refresh-2',
+      refreshTokenRotated: true, authTime: Math.floor(Date.now() / 1000),
+      reauthWindowSeconds: 900, admin: ADMIN, session: SESSION
+    } };
+  }
+  if (pathname.startsWith('/api/ops/auth/session')) {
+    return { data: {
+      admin: ADMIN, session: SESSION,
+      authTime: Math.floor(Date.now() / 1000), reauthWindowSeconds: 900
+    } };
+  }
+  return { data: {} };
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
+  if (url.pathname.startsWith('/api/')) {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(opsStub(url.pathname)));
+    return;
+  }
   if (url.pathname === '/__focus-self-test.html') {
     res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
     res.end(SELF_TEST_HTML);
@@ -470,6 +522,15 @@ const FOCUS_SITES = `(() => {
     const r = el.getBoundingClientRect();
     if (cs.display === 'none' || cs.visibility === 'hidden' || el.disabled) continue;
     if (r.width < 1 || r.height < 1) continue;
+    /* The skip link's landmark, and only that. shell-pane-v2.js gives the
+       content column tabindex="-1" so the skip link has somewhere to land, so
+       it enters the census through [tabindex] — but a <main> is a landmark,
+       not a user interface component, and its box is the whole content column,
+       which is taller than any viewport a screenshot can hold. Excluded by TAG
+       rather than by tabindex="-1" on purpose: a roving-tabindex toolbar marks
+       its inactive BUTTONS the same way, and those are real controls that must
+       stay swept. */
+    if (el.tagName === 'MAIN') continue;
     el.setAttribute('data-focus-site', String(i));
     const label = (el.textContent || '').replace(/\\s+/g, ' ').trim() ||
       (el.getAttribute('aria-label') || '').trim() ||
@@ -589,10 +650,19 @@ async function evaluate(expression) {
 }
 
 let initScript = null;
-async function setTheme(theme) {
+async function setTheme(theme, session = false) {
   if (initScript) await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: initScript });
+  /* The session half is only for EVALS, which will not build its form until
+     the operations API has confirmed an admin. `ops-api-base` is api.js's
+     loopback-only escape hatch and `ops-refresh` is what session.js reads to
+     start a refresh; both are written pre-paint for the same reason the theme
+     is. The shell needs neither, so it is asked for neither. */
   const res = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
-    source: `try { localStorage.setItem('ops-theme', ${JSON.stringify(theme)}); } catch (e) {}`
+    source: `try { localStorage.setItem('ops-theme', ${JSON.stringify(theme)}); } catch (e) {}` +
+      (session
+        ? `try { localStorage.setItem('ops-api-base', location.origin); ` +
+          `sessionStorage.setItem('ops-refresh', JSON.stringify({ t: 'stub', s: 'adm_1' })); } catch (e) {}`
+        : '')
   });
   initScript = res.identifier;
   /* Emulated to the OPPOSITE of the stored theme, so a failed storage write
@@ -977,5 +1047,142 @@ test('the three controls the issues name are still in the swept set', async () =
       `${r.ratio.toFixed(2)}:1 against ${r.surface}`);
   }
   console.log('\n  light theme, the three controls the issues name:');
+  for (const line of results) console.log(line);
+});
+
+/* ------------------------------------------- the evaluations pane (#10694) */
+
+/* Load a session-gated pane and wait for the real dashboard rather than the
+   boot placeholder. A pane measured in its boot state would offer two or three
+   focus sites and pass a sweep that never saw the controls it is about, so the
+   gate is asserted rather than slept past. */
+async function loadPane(pathname, theme) {
+  await setTheme(theme, true);
+  await load(`${origin}${pathname}`, 300);
+  for (let i = 0; i < 40; i++) {
+    const g = await evaluate(`(() => JSON.stringify({
+      booting: document.body.classList.contains('is-booting'),
+      app: !!document.querySelector('.gate-app') &&
+           getComputedStyle(document.querySelector('.gate-app')).display !== 'none',
+      failed: !!document.querySelector('#gateFailed') &&
+              getComputedStyle(document.querySelector('#gateFailed')).display !== 'none',
+      theme: document.documentElement.getAttribute('data-theme'),
+      inputs: document.querySelectorAll('.field-input').length
+    }))()`);
+    if (!g.booting && g.app) {
+      assert.equal(g.theme, theme, `asked for the ${theme} theme, ${pathname} rendered ${g.theme}`);
+      assert.ok(!g.failed, `${pathname} drew its failure card instead of its dashboard`);
+      await evaluate(NO_MOTION);
+      return g;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail(`${pathname} never left its boot gate, so nothing on it was measured`);
+}
+
+test('every focus indicator on the evaluations pane is a measurable outline, and clears 3:1', async () => {
+  const failures = [];
+  const judged = [];
+  const perPass = [];
+
+  for (const theme of THEMES) {
+    const gate = await loadPane(EVALS, theme);
+    /* The controls this test exists for. A pane that stopped drawing its form
+       would otherwise sweep its topbar and rail, clear the floor on those, and
+       report that the inputs pass. */
+    assert.ok(gate.inputs >= 3,
+      `${theme}: the evaluations pane drew ${gate.inputs} .field-input controls, so the ones ` +
+      'Stadiora/Aria#10694 is about were not on the page that was measured');
+    await keyboardModality();
+    const sites = await evaluate(FOCUS_SITES);
+    let n = 0;
+    for (const site of sites) {
+      const where = `${theme} ${site.tag}${site.cls ? '.' + site.cls.split(/\s+/).join('.') : ''}` +
+        `${site.text ? ` "${site.text}"` : ''}`;
+      const r = await judge(site.i);
+      if (r.refused) {
+        failures.push(`${where}: REFUSED — ${r.refused}`);
+        continue;
+      }
+      n++;
+      judged.push({ ...r, where, theme });
+      if (r.ratio + EPS < FOCUS_RATIO) {
+        failures.push(`${where}: the ${r.ring} ring measures ${r.ratio.toFixed(2)}:1 against ` +
+          `${r.surface}, ${r.surfacePixels} of the ${r.sampled} pixels beside it — WCAG 2.2 ` +
+          `SC 1.4.11 needs ${FOCUS_RATIO.toFixed(1)}:1. Surfaces beside this ring: ` +
+          r.breakdown.join(' '));
+      }
+    }
+    perPass.push({ theme, n, sites: sites.length });
+    if (n < EVALS_FLOOR) {
+      failures.push(`${theme}: only ${n} of ${sites.length} focus sites on ${EVALS} were judged, ` +
+        `under the floor of ${EVALS_FLOOR} — a sweep that judges nothing reports nothing`);
+    }
+  }
+
+  const worst = judged.slice().sort((a, b) => a.ratio - b.ratio).slice(0, 5);
+  console.log(`\n  evaluations pane focus sweep: judged ${judged.length} ring(s) across ` +
+    `${THEMES.length} themes (${perPass.map((p) => `${p.theme}:${p.n}`).join(' ')})`);
+  for (const r of worst) {
+    console.log(`    ${r.ratio.toFixed(2)}:1  ring ${r.ring} on ${r.surface}  ${r.where}`);
+  }
+
+  assert.deepEqual(failures, [],
+    `\n${failures.length} focus indicator problem(s) on ${EVALS}:\n  ` + failures.join('\n  ') + '\n');
+});
+
+test('the evaluations pane\'s text inputs carry their own measurable ring (#10694)', async () => {
+  /* The named-control contract, on the same terms as the shell's three. The
+     sweep above would still pass if `.field-input` stopped being focusable or
+     stopped being drawn; this names it and fails on its absence. */
+  const results = [];
+  for (const theme of THEMES) {
+    await loadPane(EVALS, theme);
+    await keyboardModality();
+    const sites = await evaluate(FOCUS_SITES);
+    const inputs = sites.filter((s) => s.cls.split(/\s+/).includes('field-input'));
+    assert.ok(inputs.length >= 3,
+      `${theme}: ${inputs.length} focusable .field-input controls on ${EVALS}, expected at least 3`);
+    const tags = new Set(inputs.map((s) => s.tag));
+    for (const tag of ['input', 'select', 'textarea']) {
+      assert.ok(tags.has(tag),
+        `${theme}: no <${tag} class="field-input"> was swept, and the rule under test styles all ` +
+        `three — swept: ${[...tags].join(', ')}`);
+    }
+    for (const site of inputs) {
+      const r = await judge(site.i);
+      assert.equal(r.refused, undefined,
+        `${theme} ${site.tag}.field-input "${site.text}": REFUSED — ${r.refused}`);
+      assert.ok(r.ratio + EPS >= FOCUS_RATIO,
+        `${theme} ${site.tag}.field-input "${site.text}": ${r.ratio.toFixed(2)}:1 against ` +
+        `${r.surface}, needs ${FOCUS_RATIO.toFixed(1)}:1`);
+      /* Placement is part of the fix, not a detail of it, and the contrast
+         number alone cannot see it: this input sits flush inside its card, so
+         a positive offset paints the ring outside the card and judges it
+         against the card's surroundings rather than against the field. Proven
+         on the shell's search field at +2px, where the ring still cleared 3:1
+         on the wrong surface. */
+      assert.ok(r.offset <= 0,
+        `${theme} ${site.tag}.field-input "${site.text}": its ring is drawn at offset ` +
+        `${r.offset}px, outside the input it marks`);
+      assert.ok(r.on === site.tag || r.on.startsWith(site.tag + '.'),
+        `${theme} ${site.tag}.field-input "${site.text}": the ring is carried by ${r.on}, not by ` +
+        'the control itself');
+    }
+    const worst = inputs.length
+      ? await (async () => {
+        let low = null;
+        for (const site of inputs) {
+          const r = await judge(site.i);
+          if (!low || r.ratio < low.ratio) low = { ...r, site };
+        }
+        return low;
+      })()
+      : null;
+    results.push(`    ${theme}: ${inputs.length} .field-input controls, tightest ` +
+      `${worst.ratio.toFixed(2)}:1 — ring ${worst.ring} at offset ${worst.offset}px on ` +
+      `${worst.on}, against ${worst.surface}`);
+  }
+  console.log(`\n  ${EVALS} .field-input (Stadiora/Aria#10694):`);
   for (const line of results) console.log(line);
 });

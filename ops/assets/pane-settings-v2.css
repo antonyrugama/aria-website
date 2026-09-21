@@ -125,7 +125,20 @@
    inert. assets/settings.js owns that half. */
 .modal {
   position: fixed;
-  z-index: 60;
+  /* Above the scrim at 90 and the drawer rail at 100, below the toast at 120,
+     which are the layers ops/assets/shell-pane-v2.css declares. At 60 this
+     panel lost to its own scrim: `document.elementFromPoint` over the confirm
+     button returned `div.scrim`, so the pane's one destructive action could
+     not be confirmed with a pointer at all (Stadiora/Aria#10688).
+
+     The number belongs here rather than on the scrim because the scrim is
+     right to be above the page -- it is the thing making the page inert -- and
+     because nothing between this element and the root alters the comparison:
+     measured in Chrome, the panel and the scrim are both children of <body>,
+     <body> creates no stacking context, and each is a positioned child of the
+     root's. So this z-index is compared with the scrim's directly, and raising
+     it is a fix rather than a bigger number that happens to work. */
+  z-index: 110;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   width: min(460px, calc(100vw - 32px));
@@ -150,7 +163,29 @@
   background: color-mix(in srgb, var(--bg) 55%, transparent);
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
-.modal-input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+/* The shared ring, moved INSIDE the field. Three things were wrong with
+   overriding it here (Stadiora/Aria#10721):
+
+   The colour. `var(--cyan)` is the fill hue, not the ink one. In light it is
+   #0891B2, which is what #10649/#10650 were about; `aria.css` already carries
+   the same hue down to --cyan-ink until it clears, and inheriting the shared
+   rule is one ring definition instead of two.
+
+   The offset. At `1px` the ring sat outside the border box, and the surface
+   on its inner face was the field's own 1px inset edge -- measured #d6d9dd in
+   light, giving 2.591:1 against #0891B2, under SC 1.4.11's 3:1. A positive
+   offset cannot be recoloured out of that, because the neighbour it is judged
+   against belongs to the control (PR #85). A negative offset paints over that
+   edge and puts the ring on the field's own fill, which is what
+   `.tbl-wrap:focus-visible` above already does and what the shell's fields
+   ship. Measured after, worst adjacent surface: 5.116:1 light against that
+   same inset edge, 8.479:1 dark; against the dialog panel beyond the ring,
+   7.045:1 light and 10.573:1 dark.
+
+   Keeping the offset override, and only that, because `aria.css` sets +2px
+   for controls that sit on a card. This one sits in a dialog, flush against
+   its own label and hint, where a ring outside the box overlaps them. */
+.modal-input:focus-visible { outline-offset: -2px; }
 .modal-hint { font-size: 11.5px; color: var(--ink-3); margin-top: 7px; line-height: 1.5; }
 
 /* The refusal the server sent, in the dialog that asked for it, so the reason

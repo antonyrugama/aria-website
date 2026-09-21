@@ -292,6 +292,65 @@
   box-shadow: inset 3px 0 0 0 var(--cyan);
 }
 
+/* ------------------------------------------- what the wash does to the ink
+
+   Stadiora/Aria#10754. The wash above was chosen for how a picked row should
+   READ and never measured for what it does to the text standing on it,
+   because nothing in this repository could: check-ops-contrast.mjs composes
+   sites on a fixture page and never drives a pane to a selection, and the
+   hover sweep that arrived with #5501 swept a pane with no wash of its own.
+
+   Measured on rendered pixels once an instrument existed, at 1440px in both
+   themes, worst frequent pixel under each ink:
+
+     selected, no pointer        dark  4.662  .muted on #0F262D   -- clears
+     selected, no pointer        light 5.256  .locked on #D4E2E7  -- clears
+     selected AND hovered        dark  3.849  .muted on #17353F   -- BELOW AA
+     selected AND hovered        dark  4.214  .locked on #28434D  -- BELOW AA
+     selected AND hovered        light 4.632  .locked on #C1D7DD  -- clears
+
+   So the wash on its own is fine and the COMPOUND state is not, in the dark
+   theme only, and the cause is that two lifts land on one cell: aria.css
+   tints the ROW with `--ink 4%` on hover, this sheet tints the CELL five
+   points further into the cyan, and the cell is translucent so both arrive.
+   Dropping the hovered wash back to the unhovered 10% does not fix it --
+   recomputed at 4.13, still under -- because the row's own tint is enough on
+   its own. The wash is not the thing that is wrong.
+
+   What is wrong is the RANK. `--ink-3` is the palest ink in the system and it
+   was tuned against the card, which is the darkest thing a row sits on. On a
+   washed cell it is one rank too pale, so on a washed cell it is one rank
+   less pale. Written as a token override rather than a list of classes
+   because a list can miss a carrier and this cannot: .muted, .tbl .t-sub and
+   the lock glyph inside .locked all take it, and each of them is lifted by
+   the same wash for the same reason.
+
+   Applied to the selected row rather than only to its hovered half, although
+   only the hovered half measures unsafe: text that changes colour when a
+   pointer crosses it is a worse artefact than a 0.16 margin, and the
+   unhovered half gains the same step (4.662 -> 6.07). */
+.tbl tbody tr.is-selected > th,
+.tbl tbody tr.is-selected > td {
+  --ink-3: var(--ink-2);
+}
+
+/* The mask chip is lifted TWICE: once by the wash under it and again by its
+   own hatch, which is `--ink 7%` laid over whatever it is standing on. On an
+   unwashed row that lands on the card and the address reads at 5.15; on a
+   washed and hovered cell it lands on the wash and the address reads at 4.21.
+
+   The chip gets its own base back, rather than the address getting a louder
+   ink: the masked value is the quietest thing in the row and should stay
+   that way, and a chip that keeps its own surface under a tinted row is also
+   more obviously a chip. The mix is toward --surface, so it pulls DOWN in the
+   dark theme and UP in the light one -- in both, back toward the page's own
+   ground and away from the row's tint. The hatch and the hairline ring are
+   untouched, so nothing about the redaction signal is softened. */
+.tbl tbody tr.is-selected > th .locked,
+.tbl tbody tr.is-selected > td .locked {
+  background-color: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
 /* The word, on the line the coded reference is on. */
 .match-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
