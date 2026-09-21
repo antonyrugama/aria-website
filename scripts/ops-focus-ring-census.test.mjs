@@ -51,10 +51,12 @@
  *     flush inside a card puts the ring outside the card (PR #72 measured
  *     21,234 pixels of it there; PR #85 measured a 1px offset consumed
  *     entirely by antialiasing, leaving the control's own edge as the
- *     neighbour). The declared offset of every rule is recorded and printed
- *     below, because a divergent rule's holder needs it, but this file does
- *     not fail on it. Whether a given offset is wrong is a question about
- *     rendered pixels, and this file has none.
+ *     neighbour). The declared offset IS pinned — it is one of the fields the
+ *     contract compares, printed as `contract pins` in the report below and
+ *     derived from the contract rather than described here, so a changed
+ *     offset reds this file. What is not covered is whether a given offset is
+ *     the RIGHT one: that is a question about rendered pixels, and this file
+ *     has none.
  *   - Indicators that are not an outline. A ring drawn as a box-shadow, a
  *     background swap or a border change is invisible here. The census is of
  *     `outline`/`outline-color` declarations under a focus pseudo-class.
@@ -65,7 +67,8 @@
  *     failure rather than as silence.
  *   - Whether a rule ever MATCHES anything. `.modal-card .field-input` is
  *     judged here from its declaration; whether an operator can reach that
- *     field is a different question, asked in ops/keyboard-audit.md.
+ *     field with a keyboard is a different question and no file in this
+ *     repository answers it yet.
  */
 
 import { test, after } from 'node:test';
@@ -94,7 +97,15 @@ const ROOT = path.resolve(HERE, '..');
 
    A new focus rule that declares a colour, a changed palette value, or a
    changed offset turns this red. That is the point: all three are the defect
-   this file exists for, and all three are one line of review. */
+   this file exists for, and all three are one line of review.
+
+   `PINNED_FIELDS` above is the list of fields the comparison actually uses.
+   It is printed in the report and carried in the asserted `counts` block, so
+   the NOT COVERED section can point at it instead of describing it — a
+   coverage claim written in English drifts away from the code, and this file
+   shipped with exactly that defect (Stadiora/Aria#10850). */
+const PINNED_FIELDS = ['file', 'selector', 'offset', 'dark', 'light'];
+
 const EXPECTED = [
   { file: 'ops/assets/aria.css', selector: ':focus-visible',
     offset: '2px', dark: '#22d3ee', light: '#155e75' },
@@ -153,9 +164,12 @@ const KNOWN_DIVERGENT = [
 /* ------------------------------------------------------------------ source
 
    A CSS reader, not a regular expression over CSS. The difference matters
-   here: `shell-pane-v2.css` carries an eleven-line comment immediately above
+   here: `shell-pane-v2.css` carries a multi-line comment immediately above
    the rule this file exists to find, and a pattern that matches a selector
-   followed by a brace happily swallows the comment into the selector. */
+   followed by a brace happily swallows the comment into the selector. The
+   comment's length is deliberately not stated: a count typed beside the thing
+   it counts is the drift this repository keeps catching, and the argument
+   does not depend on the number. */
 
 /* Replace every comment with the same number of newlines it spanned, so line
    numbers survive and no comment text can be read as a selector. */
@@ -668,9 +682,11 @@ const counts = {
   inherits: census.filter((r) => !r.diverges && !r.unresolvable).length,
   diverges: census.filter((r) => r.diverges && !r.unresolvable).length,
   unresolvable: census.filter((r) => r.unresolvable).length,
-  enumerated: KNOWN_DIVERGENT.length
+  enumerated: KNOWN_DIVERGENT.length,
+  pins: [...PINNED_FIELDS].sort().join(',')
 };
-console.log('\ncounts ' + JSON.stringify(counts));
+console.log('\ncontract pins ' + counts.pins);
+console.log('counts ' + JSON.stringify(counts));
 console.log('-----------------------------------------------------------------\n');
 
 /* -------------------------------------------------------------- assertions */
@@ -745,6 +761,24 @@ test('the census matches the contract written from the stylesheets', () => {
   const want = EXPECTED.map((r) => ({
     file: r.file, selector: r.selector, offset: r.offset, dark: r.dark, light: r.light
   })).sort((a, b) => (a.file + a.selector).localeCompare(b.file + b.selector));
+
+  /* Both projections must carry exactly the pinned fields. Without this, a
+     field quietly dropped from one side of the comparison stops being
+     compared and the deepEqual below keeps passing — the contract would
+     silently stop pinning, say, the offset, while the NOT COVERED section
+     still pointed at `contract pins` as though it did. */
+  const pins = [...PINNED_FIELDS].sort();
+  for (const [side, rows] of [['census', got], ['EXPECTED', want]]) {
+    assert.ok(rows.length > 0,
+      `the ${side} side is empty: every assertion quantified over it passes for ` +
+      'free, and a check with no subject prints identically to one that passed');
+    for (const row of rows) {
+      assert.deepEqual(Object.keys(row).sort(), pins,
+        `the ${side} projection does not carry exactly the pinned fields, so ` +
+        'the contract compares something other than what it claims to pin');
+    }
+  }
+
   assert.deepEqual(got, want,
     'a focus rule appeared, vanished, changed colour or changed offset. All three ' +
     'are the defect this file exists for; update EXPECTED once a human has read ' +
@@ -794,13 +828,15 @@ test('the counts are the ones this file claims to produce', () => {
     inherits: counts.inherits,
     diverges: counts.diverges,
     unresolvable: counts.unresolvable,
-    enumerated: counts.enumerated
+    enumerated: counts.enumerated,
+    pins: counts.pins
   }, {
     colourRules: 8,
     censusRows: 8,
     inherits: 5,
     diverges: 3,
     unresolvable: 0,
-    enumerated: 3
+    enumerated: 3,
+    pins: 'dark,file,light,offset,selector'
   });
 });
