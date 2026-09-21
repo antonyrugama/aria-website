@@ -32,15 +32,15 @@
    passed locally on Windows. Linux is what the check is measured on.
 
    Three widths, 375px, 360px and 320px. 375px is the acceptance criterion;
-   360px exists because of the platform split above. The first CI run of the v2 Problems
-   pane failed at 375px on Linux on a filter note that fitted 375px on macOS
+   360px exists because of the platform split above. The first CI run of the
+   v2 Problems pane failed at 375px on Linux on a filter note that fitted on macOS
    with nothing to spare, so a local run could not see it and a reviewer on a
    Mac had to find it by hand. 360px reproduces on any platform what CI's wider
    font metrics produce at 375px. 320px was added while auditing #7366, which
    filed the overflow this list used to describe at that width: it is the
    narrowest width the check named but did not lay out, and the Severity
-   control it was filed for is no longer drawn by any pane the registry
-   declares, so the width now holds a property rather than documenting a gap.
+   control it names fits it, measured on Linux CI across all ten panes, so the
+   width now holds a property rather than documenting a gap.
 
    The stub is deliberately hostile rather than tidy. It sends a rule that
    cannot judge and whose reason is the longest sentence the vocabulary in
@@ -69,12 +69,15 @@
    elements — by 23, 30 and 115. Without a per-pane marker the sweep shrank from
    ten laid-out panes to seven and went on printing that it had swept ten.
 
-   Two shells, so two spellings of everything the sweep reads off the page.
-   assets/shell-pane-v2.js boots from `data-pane` and writes the question into
-   `.page-sub`; the v1 assets/shell.js boots from `data-page` and writes it
-   into `.page-question`. Cloud costs is the one pane still on the v1 shell.
-   Reading only the v2 spelling drops it out of the sweep silently, which is
-   how both of these were found.
+   Two shells have existed, so the sweep reads two spellings of everything it
+   takes off the page. assets/shell-pane-v2.js boots from `data-pane` and
+   writes the question into `.page-sub`; the v1 assets/shell.js boots from
+   `data-page` and writes it into `.page-question`. Which pages use which is
+   deliberately not stated here — that sentence was written when it was true
+   and went stale without anything noticing. Reading only one spelling drops a
+   pane out of the sweep silently, which is how both of these were found, and
+   the `measured.size !== PAGES.length` check below is what actually catches
+   that rather than this comment.
 
    WHAT THIS DOES NOT COVER, in the words of what was actually measured:
 
@@ -108,9 +111,26 @@
      only elements more than half a pixel past the edge and it decides nothing,
      so it does not close that gap either. Nothing here catches a margin that
      small.
-   - **Anything under 320px.** 375px, 360px and 320px are laid out and nothing
-     narrower is, so an overflow that appears only below 320px is invisible to
-     this check on every pane.
+   - **Every width that is not 375px, 360px or 320px.** This is three point
+     samples, not a range. Nothing narrower than 320px is laid out and nothing
+     wider than 375px is either, so an overflow confined to any other width is
+     invisible here on every pane. ops/assets/*.css declares thirteen width
+     breakpoints for itself and no swept width reaches any of them —
+     `grep -rhoE '\((max|min)-width: *[0-9]+px\)' ops/assets/*.css` prints the
+     list rather than trusting this sentence to stay current. The phone widths
+     above 375px that most current large handsets report are in the same gap.
+     Not theoretical: it is why this check never saw Stadiora/Aria#7365, whose
+     band starts at 861px — a number that is itself one of those breakpoints.
+     Appending
+     `@media (min-width: 421px) and (max-width: 460px) { .content { min-width:
+     560px } }` to assets/aria.css reds every pane at 430px and leaves this
+     check green at all three of its widths.
+   - **ops/login.html and ops/setup.html.** PAGES comes from the pane registry
+     and those two are not panes, so no width here ever lays them out. They are
+     also the only two pages still linking assets/ops.css, so the one
+     stylesheet Stadiora/Aria#7365 and #7366 were filed against has never been
+     laid out narrow by anything. check-ops-shell-v2.mjs loads both, at 1440px
+     only.
 
    Usage:  node scripts/check-ops-narrow-overflow.mjs
    Chrome: CHROME_PATH, or the usual install locations on Linux and Windows.
@@ -219,8 +239,8 @@ const SESSION = { id: 'ses_1', createdAt: ago(10 * MINUTE), lastSeenAt: ago(1000
    the longest of the five labels, followed by INSUFFICIENT_REASON.no_baseline,
    the longest of the four reasons — 'there is no history to compare against'
    at 38 characters against below_minimum_samples' 27. Both lists are in
-   assets/alerts-model.js:50-68, and assets/pane-alerts.js:1406-1408 composes
-   the pill by joining them with ', '. That row is the one this check was
+   assets/alerts-model.js:50-68, and assets/pane-alerts.js:1429-1434 composes
+   the pill, joining them with ', ' on :1432-1433. That row is the one this check was
    written for, and NARROW_BADGE below asserts it reached the DOM.
 
    no_baseline is sent for cost_anomaly, whose scope is "Against the last 7
@@ -417,9 +437,9 @@ const PROBLEM = {
   description: 'Worker memory pressure is killing the generation process.',
   ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
   /* workPane, not pane: assets/pane-alerts.js:928-931,
-     assets/pane-overview.js:539-544 and assets/pane-jobs-live-v2.js:921-924
+     assets/pane-overview.js:589-594 and assets/pane-jobs-live-v2.js:897-900
      all read problem.workPane / problem.workPaneLabel, and so does the panes'
-     own fixture at scripts/ops-alerts-v2.test.mjs:124. Spelled `pane` this
+     own fixture at scripts/ops-alerts-v2.test.mjs:137. Spelled `pane` this
      stub drew an action row with the drill-down link missing, so the widest
      row the sweep laid out was one button narrower than the real one
      (Stadiora/Aria#10461). */
@@ -691,10 +711,11 @@ const probeFor = (markers) => `(() => {
     viewport: viewport,
     /* Which pane the page says it is, and which theme actually got applied.
 
-       Two spellings because there are two shells: shell-pane-v2.js boots from
-       data-pane and the v1 assets/shell.js from data-page, and Cloud costs is
-       the one page still on the v1 one. Reading only the v2 spelling drops
-       that pane out of the swept count, which is how this was found.
+       Two spellings because two shells have existed: shell-pane-v2.js boots
+       from data-pane and the v1 assets/shell.js from data-page. Which pages
+       use which is not asserted here; reading only one spelling would drop a
+       pane out of the swept count, and the count check on the next line is
+       what catches that rather than this comment.
 
        The theme is set through localStorage before the navigation and read
        back here because a write that silently failed would leave this sweep
