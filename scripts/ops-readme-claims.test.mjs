@@ -148,7 +148,14 @@
      claim no block carries, is not judged. The remedy used in the rewrite is
      to make the prose point AT a block rather than repeat it, but nothing
      enforces that.
-   - The RAN exit handler itself. It is the one construct here that nothing
+   - A test marked `{ todo: true }`. Node runs the body, discards its failures,
+     reports the file as passing and exits 0 - and it does that whatever this
+     file does with process.exitCode, a throw, or an explicit process.exit(1)
+     from the exit handler. All four were probed. The COMPLETED handler cannot
+     see it, which is why nothing load-bearing is a test any more: the floors
+     and the pins are module-scope assertions, and the only test left holding
+     anything is the judged census.
+   - The COMPLETED exit handler itself. It is the one construct here that nothing
      else watches, and deleting it puts every test in this file back to being
      silently skippable. That is not a gap a guard can close - something has to
      be last - so it is named instead. Round 7 falsified the sentence that used

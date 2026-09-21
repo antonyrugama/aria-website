@@ -2556,14 +2556,19 @@ one added in the same commit passes it. That hole is stated in the guard's NOT C
 those words; keying per block would catch it and would be another hand-written list, which is the
 regress the floors exist to end.
 
-None of that helps if the test holding it never runs, and for six review rounds nothing here
-could tell a test that ran from a registration still in the text. `test(NAME, { skip: true },
-...)` leaves the source spelling untouched; deleting `the run reports what it judged` outright
-moved nothing at all and took every pin with it. Both were **green**. So every test now records
-its own name when it executes, and an exit handler — not a test, since a test cannot police its
-own non-execution — fails the run for any expected name that did not report in. Skip, delete,
-rename and throw-before-the-first-line all land in the same place. What is **not** covered is
-the handler itself, which is named in the guard's NOT COVERED list: something has to be last.
+None of that helps if the check never runs, and for seven review rounds every one of these
+checks was a `test()`, which is a thing that can be **silenced in place**. `{ skip: true }` never
+runs the body and leaves the source spelling untouched. `{ todo: true }` is worse: it runs the
+body and then **discards what it found**, and node reports the file as passing and exits 0
+whatever the file does with `process.exitCode` — measured, including a throw and an explicit
+`process.exit(1)` from an exit handler. Deleting a test outright moved nothing at all and took
+every pin with it.
+
+So the floors, the row pins and the family pins are **not tests**. They are module-scope
+assertions, which have no flag to attach and exit 1 when they throw. The judged census stays a
+test because its input only exists once tests have run, and a completion recorder plus an exit
+handler catches that one being skipped, deleted or renamed — but **not** `todo`, which is
+stated in the guard's NOT COVERED list rather than left to be discovered.
 
 **How many blocks that is, and how many rows each pins, is derived** rather than counted here,
 and the reason is this paragraph's own history: it said "five" correctly, and then PR #111 added
@@ -2612,7 +2617,6 @@ claims id=v1-v2-collision
 claims id=write-capable-assets
 and a test, every repository file ops/README.md names is in the tree or declared deleted
 and a test, every browser guard in the tree has a row in the checks table
-and a test, no defence in this file was retired without lowering a floor
 ```
 
 And which of them are pinned, with how many rows each pin holds:
