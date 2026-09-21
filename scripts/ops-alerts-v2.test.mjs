@@ -78,6 +78,15 @@
        message starts with. The causes a message names after that prefix are
        prose -- reverting the <area> message to the two-cause wording it had
        before the fifteenth review is green (measured, the same review).
+     - WHICH sentence a citation belongs to. The multiset below holds the
+       number of SITES a title is quoted at, so deleting a citation is red
+       and so is inventing one -- but MOVING a quotation from the sentence
+       it proves to a sentence it does not is both at once and is invisible:
+       the abandoned claim goes unbound with no NOT BOUND line, and the
+       receiving claim reads as proven (measured, RV16-3a in the sixteenth
+       review of #75, which cited this very test for an invented padding
+       rule and stayed green). The sheet's own HOW TO READ says a citation
+       cannot go stale IN PLACE, which is the narrower thing that is true.
      - Anything the operations API decides. The role checks below prove the
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
@@ -3751,13 +3760,23 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
   });
   const classesOf = (n) => (((n.getAttribute && n.getAttribute('class')) || '').split(/\s+/));
   const both = [...declarations(ARIA_CSS), ...declarations(PANE_CSS)];
-  const tokenOf = (selector, property) => {
+  /* Per ROLE, not one pattern for both: a lazy `(--[\w-]+?)(-ink)?` strips
+     the suffix off whichever side it is handed, so an accent painted in its
+     own -ink agreed with the ink and the card's whole stripe changed colour
+     in both themes with 482 tests green (found in the sixteenth review of
+     #75). The tint side must NOT end in -ink and the ink side must, which is
+     what "the -ink of" means and is the shape the neighbouring status-tone
+     test already used. */
+  const resolve = (selector, property, wantInk) => {
     const found = both.filter((d) => d.selector === selector && d.property === property);
     assert.equal(found.length, 1, selector + ' declares ' + property + ' ' + found.length
       + ' times across the two sheets, so the tone it names is not one value');
-    const ref = /^var\(\s*(--[\w-]+?)(-ink)?\s*\)$/.exec(found[0].value);
-    assert.ok(ref, selector + ' paints ' + JSON.stringify(found[0].value) + ', which names no '
-      + 'token, so the sheet\'s sentence about -ink variants cannot be checked against it');
+    const ref = (wantInk ? /^var\(\s*(--[\w-]+)-ink\s*\)$/ : /^var\(\s*(--[\w-]+)\s*\)$/)
+      .exec(found[0].value);
+    assert.ok(ref && !(!wantInk && /-ink$/.test(ref[1])),
+      selector + ' paints ' + JSON.stringify(found[0].value) + ', which is not '
+      + (wantInk ? 'the -ink of a token' : 'a tint token') + ', so the sheet\'s sentence '
+      + 'about -ink variants is not true of it');
     return ref[1];
   };
 
@@ -3771,8 +3790,9 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     const inks = [...new Set(findAll(card, (n) => classesOf(n).some((c) => /^is-[\w-]+$/.test(c)))
       .flatMap((n) => classesOf(n).filter((c) => /^is-[\w-]+$/.test(c))))];
     assert.ok(inks.length, 'the ' + accent[0] + ' card draws no status ink at all');
-    const tone = tokenOf('.' + accent[0], '--acc');
-    return { card: accent[0], tone, wrong: inks.filter((c) => tokenOf('.' + c, 'color') !== tone) };
+    const tone = resolve('.' + accent[0], '--acc', false);
+    return { card: accent[0], tone,
+      wrong: inks.filter((c) => resolve('.' + c, 'color', true) !== tone) };
   });
   assert.deepEqual(seen.filter((r) => r.wrong.length).map((r) => r.card + ' draws '
     + r.wrong.join(' ') + ' over ' + r.tone), [],
