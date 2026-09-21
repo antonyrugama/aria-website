@@ -8,9 +8,14 @@
    HOW TO READ THIS COMMENT. Anything this sheet says about another file is
    bound by a test ONLY where the sentence saying it, or the paragraph that
    sentence sits in, names that test. The
-   NOT BOUND list at the bottom of this block enumerates the ones that name
+   NOT BOUND list at the bottom of this block collects the ones that name
    none, so a cross-file claim with neither a test name nor a line in that
-   list is a defect (Stadiora/Aria#10632). Every title quoted below is
+   list is a defect (Stadiora/Aria#10632). That list is kept BY HAND and
+   nothing checks it is complete: whether a sentence makes a claim about
+   another file is a reading rather than a parse, and reviews of
+   antonyrugama/aria-website#75 have found sentences missing from it more
+   than once. Read it as the claims somebody noticed, not as all of
+   them. Every title quoted below is
    checked to be a test that exists ("every test the stylesheet cites by name
    is a test this file registers"), so a citation cannot go stale in place
    and leave the sentence around it reading as proven.
@@ -100,9 +105,15 @@
        be noticed;
      - every layout rule below, bar the ones named next: .scrollx's own
        overflow-x, which
-       the focus-ring test reads to find the box it belongs to, and the two
-       justified by what the page draws — six columns and the words in the
-       condition pill — which are checked against the drawn page.
+       the focus-ring test reads to find the box it belongs to, and the ones
+       justified by what the page draws — the rules table's six columns, the
+       words in the condition pill, one card per problem and the three fact
+       columns — which are checked against the drawn page;
+     - what the problems answer and the closed-problem record carry: that an
+       answer holds an observed value and a threshold but no full scale, and
+       that the note is the one line in the record a person wrote rather than
+       the system. Both are facts about an API that is not in this
+       repository.
    ========================================================================= */
 
 /* --------------------------------------------------------------- the hero */
@@ -133,7 +144,9 @@
 
 /* ------------------------------------------------------------ the problems
 
-   One card per problem, in a column. The card is the accent shape aria.css
+   One card per problem, in a column — one card for each is what the page
+   draws ("the rules the sheet justifies by what the page draws name what it
+   draws"). The card is the accent shape aria.css
    already has, so only the inside of it is declared here. */
 
 .p-list { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
@@ -155,9 +168,11 @@
 
 /* --------------------------------------------------------- what it measured
 
-   Three columns of label-and-value rows. No meter: the answer carries an
+   Three columns of label-and-value rows, which is what the page draws ("the
+   rules the sheet justifies by what the page draws name what it draws"). No
+   meter: the answer carries an
    observed value and a threshold, and the bar between them would need a full
-   scale nothing sends. */
+   scale nothing sends (NOT BOUND, see the top of this file). */
 
 .p-facts { gap: 12px; }
 .p-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -220,7 +235,7 @@
 
 /* The note somebody wrote when they closed it. Set apart because it is the
    one line in the record that is a person talking rather than the system
-   reporting. */
+   reporting (NOT BOUND, see the top of this file). */
 .p-log-note {
   margin-top: 4px;
   padding-left: 9px;

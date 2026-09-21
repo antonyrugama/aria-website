@@ -200,6 +200,8 @@ const PROSE_FRAMES_OVER_THE_SHEET = [
   'the paint stems the reader has',
   'the stemless properties a keyword walks past on',
   'the double-quoted test titles the sheet cites',
+  'the number word the sheet states beside a rule it justifies by the drawn page',
+  'the pill words the sheet quotes beside white-space: nowrap',
 ];
 const FRAME_SPELLING = /PANE_CSS\.replace\(\/\\s\+\/g, ' '\)/g;
 
@@ -2478,8 +2480,12 @@ const SHEET_CITATIONS = [
   'the reader refuses what READER_PROBES says it refuses, and walks past what it says it misses',
   'the rules table scrolls inside a box a keyboard can reach and a screen reader can name',
   'the rules the sheet justifies by what the page draws name what it draws',
-  /* Twice: pane-alerts-v2.css:150 cites it for the pill's phrasing and :311
-     for the six columns. One entry per SITE, or deleting one site is green. */
+  /* Four times: the sheet cites this one wherever a layout rule is justified
+     by what the page draws -- the condition pill's phrasing, the rules
+     table's six columns, one card per problem and the three fact columns.
+     One entry per SITE, or deleting one site is green. */
+  'the rules the sheet justifies by what the page draws name what it draws',
+  'the rules the sheet justifies by what the page draws name what it draws',
   'the rules the sheet justifies by what the page draws name what it draws',
 ];
 
@@ -2629,6 +2635,14 @@ test('every test the stylesheet cites by name is a test this file registers', ()
       'the sheet no longer quotes ' + JSON.stringify(copy) + ', so the exception for it here '
       + 'is stale and the next quotation of it would be waved through as UI copy');
   }
+  /* And the other direction, which was missing: nothing stopped a real title
+     from being moved onto that list. A renamed test turns this red, and the
+     cheapest green is to exempt the sheet's stale quotation as UI copy --
+     two lines, and the guarantee is off for that title forever (found in the
+     tenth review of #75). */
+  assert.deepEqual(SHEET_QUOTES_THAT_ARE_NOT_CITATIONS.filter((q) => TEST_TITLES.has(q)), [],
+    'a string exempted here as UI copy is also a test this file registers, so a citation '
+    + 'can be unbound by moving it onto the exemption list');
 
   const cited = quoted.filter((q) => !SHEET_QUOTES_THAT_ARE_NOT_CITATIONS.includes(q));
   assert.deepEqual(cited.filter((title) => !TEST_TITLES.has(title)), [],
@@ -3319,12 +3333,46 @@ test('every rule switch is a real checkbox, reachable, stateful and named', asyn
   }
 });
 
-/* Two layout rules in the sheet are justified by facts about what
-   assets/pane-alerts.js draws -- the rules table having six columns, and the
-   condition pill's words being "Still happening" -- and both justifications
-   were prose (Stadiora/Aria#10632, found in the second review of the fix).
-   Delete a column or rename the pill and the sheet goes on naming the old
-   shape as the reason its rules exist. */
+/* Layout rules in the sheet that are justified by facts about what
+   assets/pane-alerts.js draws -- the rules table's six columns, the condition
+   pill's words being "Still happening", one card per problem and three fact
+   columns -- and every one of those justifications was prose
+   (Stadiora/Aria#10632: the first two found in the second review of the fix,
+   the last two in the TENTH, still unbound while the sheet claimed every
+   unbound claim was enumerated). Delete a column, rename the pill, draw two
+   cards for one problem or a fourth fact column, and the sheet goes on
+   naming the old shape as the reason its rules exist.
+
+   Both sides are READ, neither is typed. The count in the sheet's own
+   sentence is resolved to a number and compared with what the page draws, so
+   rewording "Three columns" to "Nine columns" with the citation left in
+   place is red here -- which pinning the number in this file could not do,
+   and the tenth review demonstrated green at exactly that anchor. */
+const COUNT_WORDS = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+};
+
+/* The number the SHEET states, at one named site, resolved from its word.
+   A pattern that stops matching is a failure, not a zero: the sentence
+   moving or being reworded is exactly the drift this reads it to catch. And
+   it has to match ONCE -- taking the first of several is how a reader in
+   this file has been wrong twice, and the round-11 battery caught it here
+   too: /N cards? per problem/ matched the NOT BOUND bullet listing the claim
+   before it reached the claim, so the sentence could say three while the
+   bullet went on saying one and the page drew one. */
+function sheetCount(pattern, says) {
+  const prose = PANE_CSS.replace(/\s+/g, ' ');
+  const all = [...prose.matchAll(new RegExp(pattern.source, pattern.flags.replace('g', '') + 'g'))];
+  assert.equal(all.length, 1, 'pane-alerts-v2.css states ' + JSON.stringify(says) + ' in '
+    + all.length + ' places, not one: the sentence this test reads the count out of has '
+    + 'moved, been reworded or been duplicated, and nothing is holding it to the page');
+  const found = all[0];
+  const word = found[1].toLowerCase();
+  assert.ok(Object.prototype.hasOwnProperty.call(COUNT_WORDS, word),
+    'pane-alerts-v2.css states ' + JSON.stringify(word) + ' where ' + JSON.stringify(says)
+    + ' expects a number word, so the count cannot be resolved and compared');
+  return COUNT_WORDS[word];
+}
 test('the rules the sheet justifies by what the page draws name what it draws',
   async () => {
     const dom = await boot({ role: 'owner' });
@@ -3334,15 +3382,57 @@ test('the rules the sheet justifies by what the page draws name what it draws',
       .find((row) => findAll(row, (n) => n.tagName === 'TH').length > 0);
     assert.ok(head, 'the rules table draws no header row');
     const columns = findAll(head, (n) => n.tagName === 'TH').length;
-    assert.equal(columns, 6,
+    assert.equal(columns, sheetCount(/(\w+) columns in 760px/i, 'N columns in 760px'),
       'the rules table draws ' + columns + ' columns, and pane-alerts-v2.css justifies two '
-      + 'rules by there being six of them in 760px');
+      + 'rules by a different number of them in 760px');
 
     const pill = withClass(dom.doc.body, 'p-live')[0];
     assert.ok(pill, 'no problem on the page is still happening, so nothing carries .p-live');
-    assert.equal(allText(pill).trim(), 'Still happening',
+    const saidWords = /"([^"]+)" wrapping to \w+ words/i.exec(PANE_CSS.replace(/\s+/g, ' '));
+    assert.ok(saidWords, 'pane-alerts-v2.css no longer quotes the pill it justifies '
+      + 'white-space: nowrap with');
+    assert.equal(allText(pill).trim(), saidWords[1],
       'the condition pill reads "' + allText(pill).trim() + '", and pane-alerts-v2.css '
-      + 'justifies white-space: nowrap by "Still happening" wrapping to two words');
+      + 'justifies white-space: nowrap by ' + JSON.stringify(saidWords[1]) + ' wrapping');
+    assert.equal(allText(pill).trim().split(/\s+/).length,
+      sheetCount(/wrapping to (\w+) words/i, 'wrapping to N words'),
+      'the pill reads ' + JSON.stringify(allText(pill).trim()) + ', which is not the number '
+      + 'of words pane-alerts-v2.css says wraps');
+
+    /* One card per problem: booted with a KNOWN number of problems, so the
+       expectation comes from what was handed in rather than from the page.
+       A fixture of one cannot tell "one per problem" from "one, always". */
+    const four = await boot({ open: { problems: manyProblems(4) } });
+    const list = withClass(four.doc.body, 'p-list')[0];
+    assert.ok(list, 'the fixture draws no problem list');
+    const cards = withClass(list, 'p-item');
+    const perProblem = sheetCount(/(\w+) cards? per problem, in a column/i,
+      'N cards per problem, in a column');
+    assert.equal(cards.length, 4 * perProblem,
+      'the page draws ' + cards.length + ' cards for 4 problems, and pane-alerts-v2.css '
+      + 'justifies .p-list by there being ' + perProblem + ' card(s) per problem');
+
+    for (const card of cards) {
+      const grids = withClass(card, 'p-facts');
+      assert.equal(grids.length, 1,
+        'a problem card draws ' + grids.length + ' fact grids, not one');
+      const columns = withClass(grids[0], 'p-col');
+      assert.equal(columns.length,
+        sheetCount(/(\w+) columns of label-and-value rows/i, 'N columns of label-and-value rows'),
+        'a problem card draws ' + columns.length + ' fact columns, and pane-alerts-v2.css '
+        + 'justifies .p-facts and .p-col by a different number of them');
+    }
+
+    /* "label-and-value ROWS": a fact row carries both halves, so the rule
+       styling the pair is not styling a single run of text. */
+    const rows = withClass(cards[0], 'p-fact');
+    assert.ok(rows.length >= 2, 'the first card draws ' + rows.length + ' fact rows');
+    for (const row of rows) {
+      const label = withClass(row, 'muted')[0];
+      const value = withClass(row, 'p-fact-v')[0];
+      assert.ok(label && allText(label).trim(), 'a fact row carries no label');
+      assert.ok(value && allText(value).trim(), 'a fact row carries no value');
+    }
   });
 
 test('every status tone here paints the -ink of a tint aria.css also declares', () => {
@@ -3423,6 +3513,7 @@ function themeTokens(css) {
   const names = [...new Set([...dark.keys(), ...light.keys()])];
   return {
     names,
+    raw: (theme, name) => (theme === 'light' ? light : dark).get(name),
     readable: names.filter((name) => resolve(dark, name) && resolve(light, name)),
     dark: (name) => resolve(dark, name),
     light: (name) => resolve(light, name),
@@ -3431,10 +3522,17 @@ function themeTokens(css) {
 
 /* Every token aria.css declares that the resolver above cannot turn into a
    colour, and why. deepEqual, so adding a token in an unhandled spelling is a
-   red suite rather than a thirteenth silent drop. Three of these ARE colours
-   -- CSS would take them in a color-mix() perfectly well; they are here
-   because the resolver reads opaque hex only, not because the mix would
-   refuse them. */
+   red suite rather than a silent drop. No ordinal here: the one that stood
+   here said "a thirteenth" while the list held thirteen, so the next drop
+   would have been the fourteenth -- wrong from the commit that wrote it and
+   through five reviews, found in the tenth.
+
+   The `why` is not decoration. Each one is checked against the class the
+   DECLARED VALUE falls in ("every reason UNREADABLE_TOKENS gives is the
+   class its declared value is in"), so the ones whose reason says they are
+   translucent rgba() really are colours CSS would take in a color-mix():
+   they are here because the resolver reads opaque hex only, not because the
+   mix would refuse them. */
 const UNREADABLE_TOKENS = [
   { name: '--line', why: 'a colour, but a translucent rgba()' },
   { name: '--line-2', why: 'a colour, but a translucent rgba()' },
@@ -3451,10 +3549,76 @@ const UNREADABLE_TOKENS = [
   { name: '--mono', why: 'a font stack' },
 ];
 
+/* Top-level commas only: a shadow list separates its shadows with commas
+   that an rgba() also uses inside its own parentheses, so a naive split
+   reports --shadow-1 as four pieces and --sans as one font. */
+function commaParts(value) {
+  const out = [];
+  let depth = 0;
+  let at = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    if (value[i] === '(') depth += 1;
+    else if (value[i] === ')') depth -= 1;
+    else if (value[i] === ',' && depth === 0) { out.push(value.slice(at, i)); at = i + 1; }
+  }
+  out.push(value.slice(at));
+  return out.map((part) => part.trim()).filter((part) => part.length);
+}
+const isShadowList = (v, n) => {
+  const parts = commaParts(v);
+  return parts.length === n && parts.every((part) => /rgba?\(/i.test(part) && /px/.test(part));
+};
+
+/* What each reason in UNREADABLE_TOKENS MEANS, as a predicate over the RAW
+   declared value. Written against CSS syntax rather than derived from the
+   table, or the expectation would move with the thing it checks. Coarse on
+   purpose: the raw value settles the class and nothing finer. */
+const WHY_MEANS = {
+  'a colour, but a translucent rgba()': (v) => {
+    const m = /^rgba\(([^)]*)\)$/i.exec(v);
+    if (!m) return false;
+    const parts = m[1].split(',').map((x) => x.trim());
+    return parts.length === 4 && Number(parts[3]) < 1;
+  },
+  'a shadow list: offsets, a blur and an rgba()': (v) => isShadowList(v, 1),
+  'a shadow list, two of them': (v) => isShadowList(v, 2),
+  'a length': (v) => /^-?[\d.]+(px|rem|em)$/.test(v),
+  'a font stack': (v) => commaParts(v).length > 1
+    && commaParts(v).every((part) => !/\(|px|#/.test(part)),
+};
+
 /* The only raw colour word the sheet is allowed. Spelled out so that changing
    the exception to a different keyword fails here rather than going
    unmeasured. */
 const KEYWORD_RGB = { black: [0, 0, 0] };
+
+test('every reason UNREADABLE_TOKENS gives is the class its declared value is in', () => {
+  const tokens = themeTokens(ARIA_CSS);
+  const wrong = [];
+  for (const row of UNREADABLE_TOKENS) {
+    assert.ok(Object.prototype.hasOwnProperty.call(WHY_MEANS, row.why),
+      'UNREADABLE_TOKENS gives ' + row.name + ' a reason nothing here can check: '
+      + JSON.stringify(row.why));
+    for (const theme of ['dark', 'light']) {
+      const value = tokens.raw(theme, row.name);
+      assert.ok(value, row.name + ' is not declared in the ' + theme + ' theme');
+      /* The set of reasons TRUE of this value, not just whether its own is:
+         a reason that fits two tokens equally is not a reason. */
+      const fits = Object.keys(WHY_MEANS).filter((why) => WHY_MEANS[why](value));
+      if (fits.length !== 1 || fits[0] !== row.why) {
+        wrong.push(row.name + ' (' + theme + ') is declared ' + value + ', which is ['
+          + fits.join(' | ') + '], but UNREADABLE_TOKENS says ' + JSON.stringify(row.why));
+      }
+    }
+  }
+  assert.deepEqual(wrong, [],
+    'UNREADABLE_TOKENS gives a reason its own declared value contradicts, and the docblock '
+    + 'above it tells a reader those reasons are why the resolver cannot read them');
+  console.log('unreadable-token reasons judged: ' + JSON.stringify({
+    tokens: UNREADABLE_TOKENS.length,
+    reasons: new Set(UNREADABLE_TOKENS.map((t) => t.why)).size,
+  }));
+});
 
 test('the avatar ink is the one paint no aria.css token could have made', () => {
   assert.equal(Math.round(ratio(rgbOf('#000000'), rgbOf('#ffffff'))), 21,
@@ -3533,8 +3697,8 @@ test('the avatar ink is the one paint no aria.css token could have made', () => 
   /* The sweep's EXTENT, not only its verdict: "the same test tries every one
      of them" is green over an empty list too, so the candidate set is pinned
      before it is filtered -- and pinned on the tokens actually TRIED, not on
-     the tokens declared, which is a number thirteen unreadable tokens cannot
-     move. Every name the resolver drops is enumerated and named, rather than
+     the tokens declared, which is a number the unreadable ones cannot move.
+     Every name the resolver drops is enumerated and named, rather than
      described by a category. */
   const notRead = tokens.names.filter((name) => !tokens.readable.includes(name));
   assert.deepEqual(notRead.slice().sort(), UNREADABLE_TOKENS.map((t) => t.name).sort(),
