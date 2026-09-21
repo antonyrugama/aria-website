@@ -1340,12 +1340,17 @@ const SWEEP_TEST = 'every repository file ops/README.md names is in the tree or 
 DERIVED['claims-blocks'] = () => {
   /* Two row sets are judged by a test rather than by a block — the file
      sweep and the checks table — so their rows are read out of this file's
-     own source: delete either test and its row goes with it, which a typed
-     sentence would not do. */
+     own source: delete either registration and its row goes with it, which a
+     typed sentence would not do. The probe anchors on a NEWLINE because the
+     spelling `test(SWEEP_TEST,` also occurs inside this very expression, so
+     the unanchored `includes` round 6 found here matched its own source and
+     would have held the row up with both tests deleted. Both registrations
+     sit at column 0; a re-indent of either is a false red, which is the
+     trade this narrowing accepts. */
   const self = read(path.join('scripts', SELF));
   const tests = [
-    ...(self.includes('test(SWEEP_TEST,') ? [SWEEP_TEST] : []),
-    ...(self.includes('test(TABLE_TEST,') ? [TABLE_TEST] : []),
+    ...(self.includes('\ntest(SWEEP_TEST,') ? [SWEEP_TEST] : []),
+    ...(self.includes('\ntest(TABLE_TEST,') ? [TABLE_TEST] : []),
   ];
   return [
     ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
@@ -1358,11 +1363,23 @@ DERIVED['claims-blocks'] = () => {
    said "five blocks" and was true when written; PR #111 then added two more
    and left it saying five for four review rounds. A block that stops being
    pinned, or loses a pin, moves its line here. REQUIRED_ROWS is declared at the
-   foot of this file and read when the test runs, not now. */
+   foot of this file and read when the test runs, not now.
+
+   The last three rows are the FLOORS, and they are what stops the regress
+   round 6 found: this block's own row set comes from REQUIRED_ROWS, which is
+   hand-written, so deleting a pin together with its line here was green, one
+   level up from the defect round 5 fixed. A floor is one integer, not another
+   list, so the chain ends. What a floor buys is that a net shrink cannot be
+   quiet: it is red until somebody lowers a number that the README also
+   carries, which is two more edits and both of them visible. What it does NOT
+   buy is in NOT COVERED at the top of this file. */
 DERIVED['pinned-blocks'] = () => [
   ...Object.keys(REQUIRED_ROWS).sort()
     .map((id) => `claims id=${id} pins ${REQUIRED_ROWS[id].length} rows by name`),
   `claims id=v1-status-classes pins the families ${REQUIRED_FAMILIES.join(', ')}`,
+  `floor: blocks pinned in REQUIRED_ROWS = at least ${FLOORS.pinnedBlocks}`,
+  `floor: blocks derived in this file = at least ${FLOORS.derivedBlocks}`,
+  `floor: families pinned in REQUIRED_FAMILIES = at least ${FLOORS.statusFamilies}`,
 ];
 
 /* The policy a page actually declares, read out of the meta tag rather than
@@ -1592,6 +1609,22 @@ test(SWEEP_TEST, () => {
    only by being deleted in both places. */
 const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
 
+/* The floors. Three integers, and they are integers ON PURPOSE: every other
+   defence in this file is a SET, and a set of subjects is itself a hand-written
+   list that can be deleted alongside the thing it pins. Round 6 walked that
+   regress up one level — REQUIRED_ROWS pins the blocks, and nothing pinned
+   REQUIRED_ROWS, so retiring a pin together with its `pinned-blocks` line ran
+   green and reinstated a defect round 5 had just fixed. Pinning the pin list
+   with another list moves the hole again; a count ends it, because a count has
+   nothing inside it to delete.
+
+   These are FLOORS, not equalities: growing any of the three is free, which is
+   the whole point of a ratchet. Shrinking one is red until somebody edits the
+   number here AND the row it prints into `claims id=pinned-blocks`. That is the
+   property being bought — not that a retirement is impossible, but that it
+   cannot be quiet. */
+const FLOORS = { pinnedBlocks: 7, derivedBlocks: 24, statusFamilies: 4 };
+
 const REQUIRED_ROWS = {
   'source-anchors': [
     'ops/assets/pane-analytics.js "`features.coverageNote` carries two facts"',
@@ -1649,6 +1682,11 @@ const REQUIRED_ROWS = {
      of these pins a probe's PRESENCE and leaves its SEEN/INVISIBLE verdict
      free to move - which is what you want: the verdict is the measurement. */
   'guard-blind-spots': [
+    /* The census SIZE, pinned with the probes themselves. Round 6: the probe
+       rows were pinned and the row printing how many there are was not, so
+       the census could shrink to nothing while every surviving row still
+       matched its pin. */
+    '(heading probes',
     '(heading probe: "WHAT THIS DOES NOT COVER, in the words of what was measured:"',
     '(heading probe: "   WHAT IT DOES NOT measure:"',
     '(heading probe: "   WHAT IT DOES NOT check, in so many words:"',
@@ -1709,4 +1747,26 @@ test('the run reports what it judged', () => {
       `${absent.map((n) => `.${n}`).join(', ')} — the family was narrowed, or REQUIRED_FAMILIES ` +
       'has to lose it on purpose');
   }
+});
+
+/* The ratchet. Nothing above this can see a pin RETIRED, because every one of
+   them reads the pin list to decide what to check, so an empty list checks
+   nothing and says so in no words at all. Three counts, compared against
+   integers spelled out in FLOORS.
+
+   The failure message names what is missing rather than the arithmetic,
+   because the arithmetic is not the finding: the finding is which defence
+   stopped existing. */
+test('no defence in this file was retired without lowering a floor', () => {
+  const pinned = Object.keys(REQUIRED_ROWS).sort();
+  assert.ok(pinned.length >= FLOORS.pinnedBlocks,
+    `REQUIRED_ROWS pins ${pinned.length} blocks and FLOORS.pinnedBlocks is ${FLOORS.pinnedBlocks}: `
+    + `a pin was retired. Pinned now: ${pinned.join(', ')}`);
+  const derived = Object.keys(DERIVED).sort();
+  assert.ok(derived.length >= FLOORS.derivedBlocks,
+    `this file derives ${derived.length} blocks and FLOORS.derivedBlocks is ${FLOORS.derivedBlocks}: `
+    + `a derivation was retired, which retires the README block it held. Derived now: ${derived.join(', ')}`);
+  assert.ok(REQUIRED_FAMILIES.length >= FLOORS.statusFamilies,
+    `REQUIRED_FAMILIES holds ${REQUIRED_FAMILIES.length} families and FLOORS.statusFamilies is `
+    + `${FLOORS.statusFamilies}: a family was retired. Held now: ${REQUIRED_FAMILIES.join(', ')}`);
 });
