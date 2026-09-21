@@ -153,8 +153,9 @@
 /* ------------------------------------------------------------ the problems
 
    One card per problem, in a column, which is what the page draws ("the
-   rules the sheet justifies by what the page draws name what it draws"). The card is the accent shape aria.css
-   already has, so only the inside of it is declared here (NOT BOUND, see the
+   rules the sheet justifies by what the page draws name what it draws").
+   The card is the accent shape aria.css already has, so only the inside of
+   it is declared here (NOT BOUND, see the
    top of this file). */
 
 .p-list { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
