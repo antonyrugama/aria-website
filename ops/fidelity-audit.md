@@ -47,9 +47,12 @@ be read:
    first version of this document published that false presence.
 
    The determinations below are therefore taken from **the rendered band calls
-   themselves** — the first argument of every `S.band(...)` in each pane file —
+   themselves** — the first argument of every band call in each pane file —
    compared against the titles named inside the cannot-answer lists, which are a
-   separate and opposite set.
+   separate and opposite set. Note the call is not spelled the same everywhere:
+   most panes use `S.band(`, `pane-users.js` uses `shell.band(`, and
+   `pane-evaluations.js` builds its sections without either, so a sweep that
+   greps only for `S.band(` silently returns nothing for two of the ten panes.
 2. **Look up a user could not be rendered at all.** The pane reads
    `/api/ops/users/lookup` and `/api/ops/users/<id>`, neither of which the stub
    serves, and it draws nothing until a search is submitted. Inventing a fixture
@@ -68,7 +71,7 @@ be read:
 | Type scale | **No drift.** Identical on both sides, both themes. |
 | Colour roles | **Changed, and the change is corrective.** The mock's own light-theme secondary ink fails WCAG AA. |
 | Pane questions | **Nine of ten verbatim.** One changed. |
-| Section hierarchy | **Divergence on 8 of 10 panes**; four of the eight acknowledge it on screen, three have no machinery to. |
+| Section hierarchy | **Divergence on 8 of 10 panes**; four of the eight acknowledge it on screen, four have no machinery to. |
 | Preview states | **Coherent**, with one pane that ignores the control for a defensible reason. |
 | Type identity | **Inert.** Both sheets ask for Geist; the built dashboard has never rendered in it. |
 
@@ -133,9 +136,18 @@ from `question:` in `ops/assets/pane-registry.js`, compared verbatim: **9 of 10
 identical, evaluations the only difference.**
 
 The label and the sidebar slot are unchanged, so nothing signals the change. It
-was traced to PR #36 (`a94025f`, "feat(ops): add Ciel evidence quarantine
-pane"), which added three working tool sections to the pane and moved the
-question to describe them.
+arrived in three steps, not one. The first version of this document credited all
+of it to PR #36; independent review showed that is wrong on both halves, and
+`git log -S` gives the real trace:
+
+| PR | what it did to the question |
+|---|---|
+| **#36** `a94025f` | added the **quarantine** tool, and set the question to *"Can this approved evidence enter private quarantine safely?"* — already off the approved one, but not today's wording |
+| **#40** `9e90d42` | added the **dataset-declaration** tool and set the question **shipping today** |
+| **#50** `1154673` | added the **qualified approval handoff** tool |
+
+So no single PR moved the question to its current wording while adding three
+tools. #36 displaced the approved question; #40 replaced #36's.
 
 The approved question is still answered — "How good are the answers", "What
 regressed" and "Can 1.2.0 ship" all survive, below the new tools — but it is now
@@ -189,7 +201,7 @@ Section spines, dark theme at 1280, live state:
 | Cloud costs | Where the money goes / The same bill, two other ways / Top services, and anything unusual | What this period cost / Where the money goes / Day by day, and what Azure calls it | reorganised; "Anything unusual" absent |
 | Aria quality | How good are the answers / What regressed / Can 1.2.0 ship | + three tool bands above them | **addition** (finding 2) |
 | App releases | Where each app is / Who is on which version / Is the newest one healthy / What is in 1.1.2 | first three only | "What is in 1.1.2" absent |
-| Look up a user | One account / Recent activity / Subscription, support and consent / Danger zone | *not comparable* | all four present as band calls; one **renamed** to "Subscription and devices" |
+| Look up a user | One account / Recent activity / Subscription, support and consent / Danger zone | *not comparable* | all four present as `shell.band(...)` calls, one **renamed** to "Subscription and devices"; two **added** — "Matches" and "Access record" |
 | Settings | Administrators / Active sessions / **Audit log** / What we keep / Integrations | …/ **Access record** / … | one rename, order intact |
 
 The pattern worth naming: **Happening now** is missing the most against its mock
@@ -231,10 +243,15 @@ ops/assets/settings.js
 ops/assets/pane-evaluations.js
 ```
 
-`pane-analytics.js`, `pane-spend.js` and `pane-releases.js` carry none of it. Of
-the eight diverging panes, **four say so on screen** — Overview, Happening now,
-What happened, Aria quality. Settings has the machinery but does not diverge.
-The remaining three have neither.
+Of the eight diverging panes, **four say so on screen** — Overview, Happening
+now, What happened, Aria quality — and **four carry none of the machinery at
+all**: Problems (`pane-alerts.js`), People and usage (`pane-analytics.js`),
+Cloud costs (`pane-spend.js`) and App releases (`pane-releases.js`). Settings is
+the fifth file with machinery, and it does not diverge.
+
+Problems is in the second group but files nothing here: its divergence is an
+**addition** ("Closed, and how the watching is doing"), not a loss, so there is
+nothing for it to acknowledge.
 
 **Filed as [Stadiora/Aria#10807](https://github.com/Stadiora/Aria/issues/10807)**
 — the absences with no route and no acknowledgement, on the three panes with no
@@ -276,8 +293,10 @@ not a number. Measured against each:
 and white is the most favourable of the four — quoting only the white figure
 would have flattered it. The built ink passes on all four.
 
-The rose accent moved the same way, `rgb(225,29,72)` to `rgb(159,18,57)`: 4.70:1
-to 8.02:1 on white, and 4.17:1 to 7.12:1 on `--surface-3`. Restoring the mock's
+The rose accent — the ink used for the critical pill and the failure row — moved
+the same way, `rgb(225,29,72)` to `rgb(159,18,57)`: 4.70:1 to 8.02:1 on white,
+and 4.17:1 to 7.12:1 on `--surface-3`. (It is one ink among several that changed;
+these are the two the audit sampled, not the whole palette.) Restoring the mock's
 palette would reintroduce a measured accessibility defect across all ten panes.
 
 **2. The mock collapses at 375px; the built pane does not.** This is the clearest
@@ -338,3 +357,18 @@ the method failure is more useful than the conclusions:
    contradicted this document's own summary table.
 5. **The whole Aria quality change credited to PR #36.** It took three PRs
    (#36, #40, #50), and the question shipping today came from #40.
+
+A second review round then caught three more, two of which are worth recording
+because they are failures of the *correction*, not of the original audit:
+
+6. **One of the five fixes above was announced but never applied.** The edit was
+   a silent no-op — the search text did not match the file's line wrapping — so
+   the document asserted the wrong PR trace in finding 2 and retracted it in
+   this list at the same time, and #10805's correction comment pointed at a
+   document that still said the wrong thing. *A fix reported without being
+   verified by content is indistinguishable from no fix.*
+7. **The corrected count was itself miscounted.** Eight diverging panes minus
+   four that acknowledge leaves four, not the three first written; Problems
+   (`pane-alerts.js`) carries no machinery either. Its divergence is an addition
+   rather than a loss, so it files nothing, but it belongs in the count.
+8. The PR description still published five claims this document had retracted.
