@@ -1,8 +1,11 @@
 /* Cloud costs, on the v2 pane bootstrap.
 
    The pane answers what we are paying for, from one read of
-   GET /api/ops/costs. That route is unchanged by this work: this is a surface
-   remodel and no field moved to make it.
+   GET /api/ops/costs, and what that is measured against, from a second read
+   of GET /api/ops/summary. Neither route was changed to make this pane: the
+   bill is the billing export and the target is Azure's own budget record,
+   and they arrive on different routes because they are answers to different
+   questions. The second read fails soft -- see the budget card.
 
    Three properties are load bearing here. Each is checked by a test in
    scripts/ops-spend-v2.test.mjs rather than only claimed in this comment:
@@ -31,9 +34,10 @@
    a failure card with a retry that cannot succeed.
 
    Nothing here uses innerHTML and no style attribute is written into markup.
-   Two lengths are computed from the answer -- a share bar's width and a
-   gridline label's offset -- and both go through CSSOM, which the page's
-   Content-Security-Policy does not gate. */
+   Four lengths are computed from the answer -- a share bar's width, a
+   gridline label's offset, a date's position and a budget segment's width --
+   and all go through CSSOM, which the page's Content-Security-Policy does
+   not gate. */
 (function (global) {
   'use strict';
 
@@ -43,6 +47,17 @@
 
   var PANE_ID = 'spend';
   var ENDPOINT = '/api/ops/costs';
+
+  /* Where the target comes from, which is NOT this pane's own answer.
+     /api/ops/costs is a reading of the billing export and knows nothing about
+     what anybody meant to spend. See the budget card below. */
+  var SUMMARY_ENDPOINT = '/api/ops/summary';
+
+  /* The fixture key the second read takes, kept apart from the pane's own so
+     a local preview can drive the target and the bill independently.
+     shell-pane-v2.js reads `ops-pane-fixture-<paneId>` and uses paneId for
+     nothing else, so this is a fixture name rather than a second pane. */
+  var SUMMARY_FIXTURE_ID = 'spend-budget';
 
   /* Beyond this the answer is old enough to say so beside the figures rather
      than only in a timestamp. Twice the route's own publish lag, so a normal
@@ -282,6 +297,203 @@
       h('div', { className: 'sp-fore-label', text: 'Forecast to period end' }),
       h('div', { className: 'sp-fore-value', text: money(forecast, data) })
     ]);
+  }
+
+  /* ------------------------------------------------- spend against a target
+
+     The one figure on this pane that is not a reading of the bill. A budget
+     is what somebody meant to spend, and Azure keeps it as its own
+     Microsoft.Consumption record; /api/ops/costs is the billing export and
+     knows nothing about it. It reaches a client on /api/ops/summary instead
+     (Stadiora/Aria#7370 publishes it, #10779 is this drawing of it), so this
+     card is a SECOND read, made beside the first rather than after it: the
+     pane is about the bill, and a target nobody could read must never delay
+     or replace the figures it would be measured against.
+
+     Three states, and the difference between the last two is the whole point:
+
+       a target was read       the card draws it, at its real size
+       the route refused one   the card says WHICH refusal, in the route's
+                               own words, and draws no track at all
+       the read itself failed  no card, because a failed request is not a
+                               statement about whether a budget exists
+
+     An empty track reads as a budget with nothing spent against it and a full
+     one as a budget already gone, so an absent target draws neither. Same
+     absent-versus-zero rule the rest of this pane keeps. */
+
+  /* What the summary says it could not answer, by key. The route sends a
+     reason per omission and the sentence is its own, because it is the only
+     thing that knows which of the seven refusals applies. */
+  function omissionDetail(summary, key) {
+    var found = null;
+    list(summary.omissions).forEach(function (entry) {
+      if (found === null && entry && text(entry.key) === key) found = entry;
+    });
+    if (!found) return null;
+    return text(found.detail) || text(found.title) || null;
+  }
+
+  /* The published ratio is read, never recomputed. The route divides spend by
+     target itself and says so unclamped -- 31524 basis points, not 10000 --
+     and a second division here would be a second opinion about the same pair
+     that drifts from it by a rounding. A target of zero or less never reaches
+     this: the route filters to strictly positive amounts before dividing. */
+  function budgetState(summary) {
+    if (!summary) return null;
+    var cost = summary.cost || {};
+    var budget = cost.budget;
+    var spend = num(cost.micros);
+    var target = budget ? num(budget.micros) : null;
+    var ratio = budget ? num(budget.ratioBasisPoints) : null;
+
+    if (budget && spend !== null && target !== null && target > 0 && ratio !== null) {
+      return {
+        drawn: true,
+        spend: spend,
+        target: target,
+        ratio: ratio,
+        money: { currency: text(budget.currency) || text(cost.currency) },
+        window: cost.window || {}
+      };
+    }
+
+    /* A payload that names a budget it cannot describe is contradicting
+       itself, and the reason it gives is the more trustworthy half. */
+    var refusal = omissionDetail(summary, 'budget');
+    return refusal ? { drawn: false, detail: refusal } : null;
+  }
+
+  var AT_TARGET = 10000;
+
+  /* The track's scale, stated once and used by every part of the drawing:
+
+       domain = max(AT_TARGET, ratio)
+       used   = min(ratio, AT_TARGET) / domain   of the track
+       over   = (ratio - AT_TARGET) / domain     of the track, when positive
+
+     so the target sits at AT_TARGET/domain of the width -- the track's own
+     end while spend is under it, travelling left as spend runs past it. That
+     is what the track does past 100%: it keeps the target as a position
+     inside itself rather than pinning the fill at the end, because a bar
+     pinned at full cannot be told apart from one exactly on target, which is
+     the failure this card exists to avoid. Under target the same arithmetic
+     is the approved mock's drawing exactly: domain AT_TARGET, one fill, the
+     target at the track's end.
+
+     The BAR is clamped by this scale; the number never is. The ratio is
+     printed at its real size whatever the track does with it. */
+  function trackShare(part, ratio) {
+    var domain = Math.max(AT_TARGET, ratio);
+    return (Math.max(0, part) / domain * 100).toFixed(2) + '%';
+  }
+
+  function budgetTrack(state) {
+    var over = state.ratio > AT_TARGET;
+    var track = h('div', {
+      className: 'sp-budget' + (over ? ' sp-budget-over' : ''),
+      'aria-hidden': 'true'
+    });
+
+    /* Decorative BY DECISION, like the gauge in aria.js: every fact this
+       track encodes -- the ratio, the target, the overrun, the window -- is
+       real text in this same card, so naming the bar as well would announce
+       each of them twice. It also carries no text of its own, which is what
+       keeps the over-target segment free to be a hatch: text on a hatch is
+       measured against the WORST stripe, and that pair is already one
+       contrast failure on this design system (Stadiora/Aria#10366). */
+    track.appendChild(segment('sp-bud-used', trackShare(Math.min(state.ratio, AT_TARGET), state.ratio)));
+    if (over) {
+      track.appendChild(segment('sp-bud-over', trackShare(state.ratio - AT_TARGET, state.ratio)));
+    }
+    return track;
+  }
+
+  function segment(className, width) {
+    var fill = h('i', { className: className });
+    fill.style.setProperty('width', width);
+    return fill;
+  }
+
+  /* Over target is a word here, never only a tone: check-ops-contrast.mjs
+     judges both themes and this repo's answer where colour IS the data is a
+     label chip with words in it. */
+  function budgetPill(ratio) {
+    if (ratio > AT_TARGET) {
+      return h('span', { className: 'pill down' }, [
+        S.icon('warn'), h('span', { text: 'Over target' })
+      ]);
+    }
+    return h('span', { className: 'pill' }, [
+      h('span', { text: ratio === AT_TARGET ? 'At target' : 'Within target' })
+    ]);
+  }
+
+  /* Past twice the target a percentage stops reading as a proportion -- 315%
+     is a multiple written the long way -- so the figure changes unit at the
+     line the card is about. The caption below it carries the word either way,
+     so the glyph is punctuation for a word a reader also hears rather than
+     the only thing saying it. */
+  function budgetFigure(ratio) {
+    if (ratio > AT_TARGET) return (ratio / AT_TARGET).toFixed(2) + '\u00D7';
+    return fmt.percent(ratio);
+  }
+
+  function budgetWindow(state) {
+    var from = day(state.window.start);
+    var to = day(state.window.actualThrough) || day(state.window.endExclusive);
+    if (from && to) return from + ' to ' + to;
+    return from ? 'from ' + from : null;
+  }
+
+  function budgetCard(summary) {
+    var state = budgetState(summary);
+    if (!state) return null;
+
+    var card = S.card();
+    card.appendChild(S.cardHead('Against the monthly target'));
+    var body = h('div', { className: 'card-body' });
+
+    /* The refusal, in the route's own words and with no track under it. */
+    if (!state.drawn) {
+      body.appendChild(h('div', { className: 'sp-bud-none sp-absent', text: 'No target to draw against' }));
+      body.appendChild(h('div', { className: 'sp-bud-why', text: state.detail }));
+      card.appendChild(body);
+      return card;
+    }
+
+    var over = state.ratio > AT_TARGET;
+    var head = h('div', { className: 'sp-bud-head' }, [
+      h('div', { className: 'sp-bud-main' }, [
+        h('div', { className: 'sp-bud-figure sp-num', text: budgetFigure(state.ratio) }),
+        h('div', {
+          className: 'sp-bud-of',
+          text: (over ? 'times the ' : 'of the ') + money(state.target, state.money)
+            + ' monthly target'
+        })
+      ]),
+      budgetPill(state.ratio)
+    ]);
+    body.appendChild(head);
+    body.appendChild(budgetTrack(state));
+
+    /* The two ends of the same subtraction, each printed once: what has been
+       spent, and what that leaves. Money rather than a second percentage,
+       because the figure above is already the proportion. */
+    var when = budgetWindow(state);
+    var spent = money(state.spend, state.money) + ' spent';
+    body.appendChild(h('div', { className: 'sp-bud-foot' }, [
+      h('span', { className: 'sp-num', text: when ? spent + ', ' + when : spent }),
+      h('span', {
+        className: 'sp-num sp-bud-rest' + (over ? ' sp-bud-past' : ''),
+        text: over
+          ? money(state.spend - state.target, state.money) + ' over'
+          : money(state.target - state.spend, state.money) + ' left'
+      })
+    ]));
+
+    card.appendChild(body);
+    return card;
   }
 
   /* -------------------------------------------------- the allocation views
@@ -963,11 +1175,13 @@
 
   /* ---------------------------------------------------------- the render */
 
-  function render(data, viewKey, onPick) {
+  function render(data, summary, viewKey, onPick) {
     var wrap = h('div', { className: 'stack' });
 
     var first = S.band('What this period cost', null, answerNotes(data));
     first.appendChild(headline(data));
+    var budget = budgetCard(summary);
+    if (budget) first.appendChild(budget);
     wrap.appendChild(first);
 
     var keys = availableViews(data);
@@ -993,6 +1207,7 @@
     var region = S.region(content);
     var inFlight = 0;
     var latest = null;
+    var latestSummary = null;
     var viewKey = DEFAULT_VIEW;
 
     function skeleton() {
@@ -1022,7 +1237,7 @@
       var wasOnSwitch = !!(live && live.getAttribute
         && live.getAttribute('data-view') !== null);
 
-      region.show(render(latest, viewKey, pick));
+      region.show(render(latest, latestSummary, viewKey, pick));
 
       if (wasOnSwitch && host) {
         var again = host.querySelectorAll('[data-view="' + key + '"]')[0];
@@ -1031,26 +1246,44 @@
       S.announce('The bill is now grouped by ' + (VIEW_BUTTON[key] || key) + '.');
     }
 
+    /* The target, read beside the bill rather than after it.
+
+       Beside, so the card below the headline does not cost the pane a second
+       round trip's worth of skeleton. And its failure is swallowed here
+       rather than raised: this read is the answer to a different question,
+       and a summary the API refused must not turn a perfectly good bill into
+       a failure card. `null` is what the budget card treats as "no statement
+       either way", which draws nothing. */
+    function target() {
+      return S.read({ paneId: SUMMARY_FIXTURE_ID, endpoint: SUMMARY_ENDPOINT })
+        .then(function (answer) {
+          return (answer && answer.data) || null;
+        }, function () { return null; });
+    }
+
     function load() {
       var token = ++inFlight;
       skeleton();
 
-      S.read(source()).then(function (answer) {
+      Promise.all([S.read(source()), target()]).then(function (both) {
         if (token !== inFlight) return;
-        var data = (answer && answer.data) || {};
+        var data = (both[0] && both[0].data) || {};
         var availability = data.availability || {};
 
         if (availability.state !== 'ready') {
           latest = null;
+          latestSummary = null;
           notReady(data, region);
           return;
         }
         latest = data;
-        region.show(render(data, viewKey, pick));
+        latestSummary = both[1];
+        region.show(render(data, latestSummary, viewKey, pick));
         S.announce('Cost figures updated for ' + periodLabel(data) + '.');
       }).catch(function (error) {
         if (token !== inFlight) return;
         latest = null;
+        latestSummary = null;
         region.failed(error, load);
       });
     }

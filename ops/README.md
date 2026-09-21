@@ -969,7 +969,7 @@ pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/sum
 pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
 pane-run-history-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
-pane-spend.js = /api/ops/costs
+pane-spend.js = /api/ops/costs, /api/ops/summary
 pane-users.js = /api/ops/users/, /api/ops/users/lookup
 ```
 

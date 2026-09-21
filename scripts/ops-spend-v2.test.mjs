@@ -542,6 +542,77 @@ export function payload(options) {
   };
 }
 
+/* ------------------------------------------------- the summary's budget
+
+   The SECOND read the pane makes. /api/ops/costs carries no target -- a
+   budget is Azure's own Microsoft.Consumption record and reaches a client on
+   /api/ops/summary -- so the budget card is driven from a different payload
+   and this builds it.
+
+   Mirrors the block `opsSummaryView.ts` publishes as of Stadiora/Aria#10780:
+   `basis` is `spend_against_target` only when a budget was read AND is
+   comparable, `cost.budget.ratioBasisPoints` is the route's own division of
+   spend by target and is deliberately NOT clamped, and the `budget` entry
+   leaves `omissions` exactly when the block arrives. Both halves matter to
+   this pane: the refusal is what it prints when there is no track to draw.
+
+   The arithmetic here is the ROUTE's, not the pane's: `ratioBasisPoints` is
+   computed from the two micros figures the fixture states, so a test that
+   compares a drawn width against it is comparing the pane to the contract
+   rather than to itself. */
+const OTHER_OMISSION = {
+  key: 'hourly_activity',
+  title: 'Activity by hour',
+  detail: 'Nothing stores an hourly grain, so the by-hour figure has no source.',
+};
+
+export function summaryPayload(options) {
+  const o = options || {};
+  const spend = o.spend === undefined ? 945_710_000 : o.spend;
+  const target = o.target === undefined ? 300_000_000 : o.target;
+  const currency = o.currency === undefined ? 'USD' : o.currency;
+  const refusal = o.refusal || null;
+  const drawn = !refusal && target !== null && spend !== null;
+
+  const budget = drawn
+    ? {
+      name: 'aria-target-monthly-budget',
+      micros: target,
+      currency,
+      timeGrain: 'Monthly',
+      periodStart: '2026-06-01',
+      periodEnd: null,
+      fetchedAt: '2026-08-14T06:00:00.000Z',
+      ratioBasisPoints: Math.round((spend / target) * 10_000),
+    }
+    : null;
+
+  return {
+    cost: {
+      range: 'month',
+      basis: drawn ? 'spend_against_target' : 'spend',
+      publishLagHours: OPS_COST_PUBLISH_LAG_HOURS,
+      window: {
+        start: o.windowStart === undefined ? '2026-08-01' : o.windowStart,
+        endExclusive: '2026-09-01',
+        billedDays: 14,
+        actualThrough: o.actualThrough === undefined ? '2026-08-14' : o.actualThrough,
+      },
+      availability: { state: 'ready', detail: '' },
+      asOf: '2026-08-14T06:00:00.000Z',
+      ...(spend === null ? {} : { micros: spend, currency }),
+      ...(budget ? { budget: o.budget === undefined ? budget : o.budget(budget) } : {}),
+    },
+    omissions: drawn
+      ? [OTHER_OMISSION]
+      : [{
+        key: 'budget',
+        title: 'Budget',
+        detail: refusal || 'Nothing here records a cloud budget to compare this against.',
+      }, OTHER_OMISSION],
+  };
+}
+
 /* ------------------------------------------------------------ stylesheet */
 
 /* Every rule in a stylesheet, found by what its selector list targets rather
@@ -662,6 +733,12 @@ async function boot(options) {
   const opts = options || {};
   const calls = [];
   const answer = opts.costs === undefined ? payload() : opts.costs;
+  /* Absent by default, and absent means the read FAILS -- which is the state
+     every test written before the budget card ran in, and the state the live
+     API is in until Stadiora/Aria#10780 deploys. So the whole suite doubles
+     as the control for "a summary this pane cannot read leaves the bill
+     untouched". */
+  const summary = opts.summary === undefined ? null : opts.summary;
   const search = opts.search || '';
 
   const dom = makeDom({
@@ -679,6 +756,11 @@ async function boot(options) {
     boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
     call: (endpoint, o) => {
       calls.push({ endpoint, query: o && o.query });
+      if (endpoint === '/api/ops/summary') {
+        if (summary === null) return Promise.reject(new Error('no stub for ' + endpoint));
+        if (summary instanceof Error) return Promise.reject(summary);
+        return Promise.resolve({ data: summary });
+      }
       if (endpoint !== '/api/ops/costs') return Promise.reject(new Error('no stub for ' + endpoint));
       if (answer instanceof Error) return Promise.reject(answer);
       return Promise.resolve({ data: answer });
@@ -2283,6 +2365,410 @@ test('a closed period carries no forecast, and the pane draws none', async () =>
     'a basis with no forecast beside it is a sentence about nothing');
 });
 
+/* ------------------------------------------- spend against its target
+
+   The budget is NOT on this pane's own route. /api/ops/costs is the billing
+   export; the target is Azure's own Microsoft.Consumption record and reaches
+   a client on /api/ops/summary. So every assertion here drives a SECOND
+   payload, and the default `boot()` -- which rejects that endpoint -- is the
+   control for what the pane does without one.
+
+   Production is 3.15x over a $300 target, and the approved mock has no drawn
+   state for a bar past the end of its own track. The scale this pane uses is
+   stated once in pane-spend.js and restated here as its own arithmetic, from
+   the fixture's two micros figures rather than from the pane's code: an
+   expectation computed by the thing under test moves with the mutation and
+   proves nothing. */
+
+const BUDGET_TRACK = 'sp-budget';
+
+const budgetCardOf = (dom) => card(dom, /Against the monthly target/);
+const trackOf = (dom) => byClass(livePanel(dom), BUDGET_TRACK)[0];
+
+/* The contract, independently: what share of the track each segment is owed,
+   from the two figures the fixture states. `ratio` is spend/target; the
+   track's domain is the larger of the target and the spend, so the target
+   stands at domain's own 100% while spend is under it and travels left as
+   spend runs past it. */
+function owedShares(spendMicros, targetMicros) {
+  const ratio = spendMicros / targetMicros;
+  const domain = Math.max(1, ratio);
+  return {
+    used: (Math.min(ratio, 1) / domain) * 100,
+    over: (Math.max(0, ratio - 1) / domain) * 100,
+  };
+}
+
+const pct = (node) => parseFloat(String((node.style || {}).width || '').replace('%', ''));
+
+test('the target is read beside the bill, once, from the summary route', async () => {
+  const dom = await boot({ summary: summaryPayload() });
+  const reads = dom.calls.filter((c) => c.endpoint === '/api/ops/summary');
+  assert.equal(reads.length, 1,
+    'one read of the summary per load: the bill and the target are read together, and a '
+    + 'second read of either would race two answers into one card');
+  assert.equal(reads[0].query, undefined,
+    'the summary takes no selection: it is the month, whatever this pane\'s range is');
+  assert.ok(dom.calls.filter((c) => c.endpoint === '/api/ops/costs').length === 1,
+    'and the bill is still read exactly once');
+});
+
+test('spend past its target draws the overrun as its own segment, not a full bar',
+  async () => {
+    const summary = summaryPayload();
+    const spend = summary.cost.micros;
+    const target = summary.cost.budget.micros;
+    assert.ok(spend > target * 3, 'the fixture is the production shape: well past its target');
+
+    const dom = await boot({ summary });
+    const track = trackOf(dom);
+    assert.ok(track, 'the track is drawn');
+
+    const used = byClass(track, 'sp-bud-used')[0];
+    const over = byClass(track, 'sp-bud-over')[0];
+    assert.ok(used && over, 'past the target the track is two segments, not one');
+
+    const owed = owedShares(spend, target);
+    assert.ok(Math.abs(pct(used) - owed.used) < 0.01,
+      `the segment up to the target is ${owed.used.toFixed(2)}% of the track, drawn at `
+      + `${pct(used)}%`);
+    assert.ok(Math.abs(pct(over) - owed.over) < 0.01,
+      `the overrun is ${owed.over.toFixed(2)}% of the track, drawn at ${pct(over)}%`);
+
+    /* The point of the scale. A bar pinned at full cannot be told apart from
+       one exactly on target, so the target's own mark has to be somewhere a
+       reader can see it is behind them. */
+    assert.ok(pct(used) < 40 && pct(used) > 25,
+      'at 3.15x the target the mark sits around a third of the way along, not at the end: '
+      + `drawn at ${pct(used)}%`);
+    assert.ok(Math.abs(pct(used) + pct(over) - 100) < 0.02,
+      'and the two together are the whole track');
+  });
+
+test('spend short of its target draws one segment, at the share it is of the target',
+  async () => {
+    const summary = summaryPayload({ spend: 572_000_000, target: 650_000_000 });
+    const dom = await boot({ summary });
+    const track = trackOf(dom);
+
+    const used = byClass(track, 'sp-bud-used')[0];
+    assert.ok(used, 'the fill is drawn');
+    assert.equal(byClass(track, 'sp-bud-over').length, 0,
+      'nothing has run past the target, so there is no overrun segment to draw');
+    assert.equal(hasClass(track, 'sp-budget-over'), false,
+      'and the track is not in its over-target state');
+
+    const owed = owedShares(572_000_000, 650_000_000);
+    assert.ok(Math.abs(pct(used) - owed.used) < 0.01,
+      `88% of the target is ${owed.used.toFixed(2)}% of the track, drawn at ${pct(used)}%`);
+  });
+
+test('the published ratio is printed at its real size, never clamped to the track',
+  async () => {
+    const summary = summaryPayload();
+    assert.equal(summary.cost.budget.ratioBasisPoints, 31_524,
+      'the route publishes the ratio unclamped, which is what makes this drawable');
+
+    const dom = await boot({ summary });
+    const words = ownText(budgetCardOf(dom));
+
+    assert.match(words, /3\.15\u00D7/,
+      'the multiple is a figure on the card. A bar clamped to its track with no number '
+      + 'beside it renders three times over budget identically to exactly on target');
+    assert.equal(/\b100\.0%\b/.test(words), false,
+      'and the ratio is not restated as the clamped width the bar was drawn at');
+
+    /* The two halves of the same claim: the BAR is bounded by the track and
+       the NUMBER is not bounded by anything. */
+    const track = trackOf(dom);
+    const widths = byClass(track, 'sp-bud-used').concat(byClass(track, 'sp-bud-over'))
+      .map(pct);
+    assert.ok(widths.every((w) => w <= 100) && Math.abs(widths.reduce((a, b) => a + b) - 100) < 0.02,
+      'the drawing stays inside its own track: ' + widths.join(' + '));
+  });
+
+test('the figure changes unit at the target, and the caption says which in words',
+  async () => {
+    const over = ownText(budgetCardOf(await boot({ summary: summaryPayload() })));
+    assert.match(over, /3\.15\u00D7/);
+    assert.match(over, /times the \$300\.00 monthly target/,
+      'the glyph is punctuation for a word a reader also hears, not the only thing '
+      + 'saying what the figure is a multiple of');
+
+    const at = ownText(budgetCardOf(await boot({
+      summary: summaryPayload({ spend: 300_000_000, target: 300_000_000 }),
+    })));
+    assert.match(at, /100\.0%/, 'exactly on target is a percentage, not a 1.00x');
+    assert.match(at, /of the \$300\.00 monthly target/);
+
+    const under = ownText(budgetCardOf(await boot({
+      summary: summaryPayload({ spend: 572_000_000, target: 650_000_000 }),
+    })));
+    assert.match(under, /88\.0%/);
+    assert.match(under, /of the \$650\.00 monthly target/);
+  });
+
+test('over target is said in words, so a tone is never the only thing saying it',
+  async () => {
+    const over = budgetCardOf(await boot({ summary: summaryPayload() }));
+    assert.equal(runCount(over, /^Over target$/), 1,
+      'the state is a label chip with words in it. check-ops-contrast.mjs judges both '
+      + 'themes and a re-toned fill says nothing to a reader who cannot see it');
+
+    const under = budgetCardOf(await boot({
+      summary: summaryPayload({ spend: 572_000_000, target: 650_000_000 }),
+    }));
+    assert.equal(runCount(under, /^Within target$/), 1,
+      'and the other state is words too, or the presence of a chip is the signal');
+    assert.equal(runCount(under, /^Over target$/), 0);
+
+    const at = budgetCardOf(await boot({
+      summary: summaryPayload({ spend: 300_000_000, target: 300_000_000 }),
+    }));
+    assert.equal(runCount(at, /^At target$/), 1,
+      'spending exactly the target is neither over it nor within it');
+  });
+
+test('what is left, or what it is over by, is money and is printed once', async () => {
+  const over = ownText(budgetCardOf(await boot({ summary: summaryPayload() })));
+  assert.match(over, /\$645\.71 over/, 'the overrun is the subtraction, in money');
+  assert.match(over, /\$945\.71 spent/, 'beside what was spent');
+  assert.equal(over.split('$300.00').length - 1, 1,
+    'and the target is printed once, not once in the caption and again in the foot');
+
+  const under = ownText(budgetCardOf(await boot({
+    summary: summaryPayload({ spend: 572_000_000, target: 650_000_000 }),
+  })));
+  assert.match(under, /\$78\.00 left/);
+  assert.equal(/over/.test(under), false, 'nothing is over anything here');
+});
+
+test('the card says which window the target is measured over, not the pane\'s range',
+  async () => {
+    /* The bill on screen can be Last 3 months while the target is monthly.
+       The card states its own window so the two cannot be read as one. */
+    const dom = await boot({ costs: payload({ range: '3m' }), summary: summaryPayload() });
+    const words = ownText(budgetCardOf(dom));
+    assert.match(words, /1 Aug 2026 to 14 Aug 2026/,
+      'the summary\'s own window, from its own payload');
+  });
+
+test('a target the route refused is the refusal in words, with no track under it',
+  async () => {
+    const summary = summaryPayload({ refusal: 'The budget is set in EUR and this period '
+      + 'was billed in USD, so the two are not comparable.' });
+    assert.equal(summary.cost.basis, 'spend',
+      'the route does not claim a comparison it refused to make');
+
+    const dom = await boot({ summary });
+    const budget = budgetCardOf(dom);
+    assert.ok(budget, 'the card is still drawn: an operator has to be told why');
+    assert.equal(byClass(budget, BUDGET_TRACK).length, 0,
+      'and draws NO track. An empty one reads as a budget with nothing spent against it '
+      + 'and a full one as a budget already gone');
+    assert.match(ownText(budget), /set in EUR/,
+      'the route\'s own sentence, because it is the only thing that knows which of the '
+      + 'seven refusals applies');
+    assert.match(ownText(budget), /No target to draw against/);
+  });
+
+test('a summary the pane could not read draws no budget card, and no bill is lost',
+  async () => {
+    const dom = await boot({ summary: new Error('summary unavailable') });
+    assert.equal(byClass(livePanel(dom), BUDGET_TRACK).length, 0);
+    assert.equal(budgetCardOf(dom), undefined,
+      'a failed read is not a statement about whether a budget exists, so the card says '
+      + 'nothing at all rather than saying there is no budget');
+    assert.match(liveText(dom), /This month to date/,
+      'and the figures this pane is actually about are untouched by it');
+  });
+
+test('a payload naming a target it cannot describe is not drawn as one', async () => {
+  /* Both directions of one invariant: the pane reads the block, not the
+     basis, so a payload that contradicts itself cannot put a track on screen
+     with nothing behind it. */
+  const noBlock = summaryPayload();
+  delete noBlock.cost.budget;
+  assert.equal(noBlock.cost.basis, 'spend_against_target',
+    'the fixture is the contradiction: the basis claims a comparison the block is missing');
+  assert.equal(byClass(livePanel(await boot({ summary: noBlock })), BUDGET_TRACK).length, 0);
+
+  const noRatio = summaryPayload({ budget: (b) => ({ ...b, ratioBasisPoints: undefined }) });
+  assert.equal(byClass(livePanel(await boot({ summary: noRatio })), BUDGET_TRACK).length, 0,
+    'a block with no ratio in it has nothing to draw a width from');
+
+  const noTarget = summaryPayload({ budget: (b) => ({ ...b, micros: 0 }) });
+  assert.equal(byClass(livePanel(await boot({ summary: noTarget })), BUDGET_TRACK).length, 0,
+    'and a target of nothing is not a target: every figure would be infinite against it');
+
+  const noSpend = summaryPayload({ spend: null });
+  assert.equal(byClass(livePanel(await boot({ summary: noSpend })), BUDGET_TRACK).length, 0,
+    'nor is a target with no spend to measure against it');
+});
+
+test('the budget track is hidden from a reader, and carries no text of its own',
+  async () => {
+    const dom = await boot({ summary: summaryPayload() });
+    const track = trackOf(dom);
+    assert.equal(track.getAttribute('aria-hidden'), 'true',
+      'decorative by decision: every fact it encodes is real text in the same card, so '
+      + 'naming it would announce each of them twice');
+    assert.equal(runs(track).length, 0,
+      'and no text sits on it. Text over a hatch is measured against the worst stripe, '
+      + 'and that pair is already one contrast failure on this design system (#10366)');
+
+    /* The half that makes hiding it safe: each of the four facts is in text. */
+    const words = ownText(budgetCardOf(dom));
+    [/3\.15\u00D7/, /\$300\.00/, /\$945\.71/, /\$645\.71/].forEach((re) => {
+      assert.match(words, re, 'a fact the track encodes is missing from the card\'s text');
+    });
+  });
+
+test('the scale is the larger of the target and the spend, at every ratio', async () => {
+  /* One statement of the scale, checked across the range rather than at the
+     one ratio production happens to sit at. Each pair is computed here from
+     the fixture's figures; the pane is compared to that, not to itself. */
+  const CASES = [
+    [1_000_000, 650_000_000],     // a rounding of a percent
+    [325_000_000, 650_000_000],   // half
+    [650_000_000, 650_000_000],   // exactly on it
+    [650_065_000, 650_000_000],   // barely past it
+    [945_710_000, 300_000_000],   // production
+    [30_000_000_000, 300_000_000] // a hundred times over
+  ];
+  for (const [spend, target] of CASES) {
+    const dom = await boot({ summary: summaryPayload({ spend, target }) });
+    const track = trackOf(dom);
+    const owed = owedShares(spend, target);
+    const used = byClass(track, 'sp-bud-used')[0];
+    const over = byClass(track, 'sp-bud-over')[0];
+
+    assert.ok(Math.abs(pct(used) - owed.used) < 0.02,
+      `${spend} against ${target}: the segment to the target is owed ${owed.used.toFixed(2)}%`
+      + ` and is ${pct(used)}%`);
+    if (owed.over > 0) {
+      assert.ok(over, `${spend} against ${target}: an overrun with no segment drawn for it`);
+      assert.ok(Math.abs(pct(over) - owed.over) < 0.02,
+        `${spend} against ${target}: the overrun is owed ${owed.over.toFixed(2)}% and is `
+        + `${pct(over)}%`);
+    } else {
+      assert.equal(over, undefined,
+        `${spend} against ${target}: nothing ran past the target, so nothing is drawn past it`);
+    }
+    assert.equal(hasClass(track, 'sp-budget-over'), owed.over > 0,
+      `${spend} against ${target}: the state class and the geometry disagree`);
+  }
+});
+
+/* The two claims the mutation battery found nothing binding: the overrun's
+   texture, and the target mark's colour. Both were GREEN under a mutation
+   that removed them -- M10 and M11 -- which is what a false green looks like
+   from the outside, so both are bound here.
+
+   Read as the rule that paints, parsed and cascade-ordered, not as a string
+   found in the file. What is asserted is which colour FUNCTION the declared
+   value is built from, because that is the part a browser paints and the part
+   a mutation removes. The rendered proof -- the stripe count, the measured
+   ratios -- is in Chrome and published in the PR; this is the part CI can
+   run, and the PR says so rather than implying the pair is covered twice. */
+function paintOf(selector, property) {
+  let found = null;
+  RULES.forEach((rule) => {
+    const decl = declarations(rule.body);
+    if (!decl.has(property)) return;
+    if (!rule.selectors.some((one) => oneLine(one) === selector)) return;
+    found = { value: decl.get(property), media: rule.media };
+  });
+  return found;
+}
+
+test('the overrun is a different material, not only a different tone', () => {
+  const over = paintOf('.sp-bud-over', 'background');
+  const used = paintOf('.sp-bud-used', 'background');
+  assert.ok(over && used, 'both segments of the budget track are painted by this sheet');
+
+  /* A repeating gradient is a texture: stripes a reader who cannot tell rose
+     from cyan still sees as a second material. Rendered, it is 12 distinct
+     colours spanning 2.45:1 in the dark theme and 17 spanning 2.05:1 in the
+     light one, against a fill that is a smooth ramp. */
+  assert.match(over.value, /\brepeating-(linear|radial|conic)-gradient\(/,
+    'the over-target segment paints no repeating gradient, so the only thing separating '
+    + 'it from the segment before it is its hue -- and colour alone cannot carry '
+    + '"over target" (check-ops-contrast.mjs judges both themes; this repo\'s answer '
+    + 'where colour IS the data is a texture and a label chip, not a re-toned fill)');
+  assert.ok(!/\brepeating-/.test(used.value),
+    'and the under-target segment is NOT striped, or the two materials are one material '
+    + 'and this assertion is comparing a thing to itself');
+  assert.equal(over.media, null, 'at every width, not only a wide one');
+});
+
+test('the target mark takes the darker token in each theme, not one in both', () => {
+  const mark = paintOf('.sp-budget-over .sp-bud-used', 'border-right');
+  assert.ok(mark, 'the over-target track draws a mark where the target fell');
+
+  /* --ink is near-black in the light theme and near-white in the dark one,
+     while both segments the mark separates are mid-luminance in both. One
+     token cannot be the conservative choice for both roles: measured in
+     Chrome, an --ink rule is 6.28:1 against the cyan fill in light and
+     2.15:1 against it in dark, which is under the 3:1 a boundary needs.
+     light-dark() takes the darker end in each theme: 6.28:1 / 5.31:1 light,
+     8.00:1 / 4.63:1 dark. */
+  const chosen = /light-dark\(\s*(var\(--[a-z0-9-]+\))\s*,\s*(var\(--[a-z0-9-]+\))\s*\)/
+    .exec(mark.value);
+  assert.ok(chosen,
+    'the mark takes one colour for both themes: `' + mark.value + '`. A single token '
+    + 'cannot be the conservative choice for both, because --ink flips polarity with the '
+    + 'theme and the two segments it separates do not: measured, --ink is 2.15:1 against '
+    + 'the cyan fill in the dark theme');
+  assert.notEqual(chosen[1], chosen[2],
+    'both arms of light-dark() name the same token, which is one colour written twice');
+});
+
+test('the last row of the service table drops its rule on every cell in it', () => {
+  /* Stadiora/Aria#10820: the rule reached the `td`s and not the row's own
+     `th[scope="row"]`, so the last row drew a horizontal rule that stopped
+     dead at the end of the first column -- about 48% of the table -- while
+     every row above it drew a full-width one. Measured on the shipped
+     screenshot's Azure Monitor row: th 546px wide with a 1px bottom border,
+     the three td s with 0px.
+
+     Read as rules and their order rather than as a string in the file: the
+     question is which declaration WINS on that cell, and `border-bottom: 0`
+     in a rule a later one overrides is a sheet saying nothing. */
+  const base = new Map();
+  const lastRow = new Map();
+  RULES.forEach((rule, index) => {
+    const decl = declarations(rule.body);
+    if (!decl.has('border-bottom')) return;
+    rule.selectors.forEach((selector) => {
+      const one = oneLine(selector);
+      if (!/\.sp-tbl\b/.test(one)) return;
+      const cell = /(?:^|[\s>])(th|td)\b[^\s>]*$/.exec(one);
+      if (!cell) return;
+      const entry = { value: decl.get('border-bottom'), index, media: rule.media, one };
+      (/tbody\s+tr:last-child/.test(one) ? lastRow : base).set(cell[1], entry);
+    });
+  });
+
+  assert.deepEqual([...base.keys()].sort(), ['td', 'th'],
+    'the table draws a rule under both kinds of cell, or there is no rule to drop');
+  base.forEach((entry, cell) => {
+    assert.match(entry.value, /^1px\b/, `the ${cell} rule is the 1px one: ${entry.one}`);
+    assert.equal(entry.media, null, 'and it is not inside a media query');
+  });
+
+  assert.deepEqual([...lastRow.keys()].sort(), ['td', 'th'],
+    'and the last row drops it on BOTH. A rule naming only `td` leaves the row\'s own '
+    + 'th[scope="row"] with its 1px, which is a rule under half a row');
+  lastRow.forEach((entry, cell) => {
+    assert.match(entry.value, /^0(px)?$/, `the last row's ${cell} keeps no rule: ${entry.one}`);
+    assert.equal(entry.media, null, 'at every width, not only a wide one');
+    assert.ok(entry.index > base.get(cell).index,
+      `and says so after the rule it overrides, so it wins the cascade on ${cell} whatever `
+      + 'the specificities work out to');
+  });
+});
+
 /* ------------------------------------------------------- the view switch */
 
 test('the allocation groupings are one card and a switch, not a card each', async () => {
@@ -2635,11 +3121,13 @@ const MARKUP_WRITE = /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*wri
    pattern allows for both.
 
    NOT COVERED, deliberately: `element.style.setProperty(...)`. The module
-   does that three times on purpose -- a share bar's width, a gridline
-   label's offset and a date's left, all lengths computed from the answer --
-   and CSSOM is not gated by the policy. The clause below pins that exception
-   rather than trusting it: every `.style` contact in the module must be a
-   `setProperty` call FOR ONE OF THOSE THREE PROPERTIES. Pinning only the
+   does that four times on purpose -- a share bar's width, a gridline label's
+   offset, a date's left and a budget segment's width, all lengths computed
+   from the answer -- and CSSOM is not gated by the policy. The clause below
+   pins that exception rather than trusting it: every `.style` contact in the
+   module must be a `setProperty` call FOR ONE OF THOSE THREE PROPERTY NAMES
+   (the fourth site writes `width`, which is already one of them, so the
+   property axis is unchanged by it). Pinning only the
    form was a hole: the stylesheet allowlist further up cannot see CSSOM at
    all, so `cell.style.setProperty('position', 'static')` added inside the
    date loop's own `if (placed)` gate was a `setProperty` call, was green,
@@ -2707,16 +3195,16 @@ test('the pane module writes no markup and no style attribute', () => {
   const styleContacts = PANE_CODE.match(/\.style\b[\s\S]{0,34}/g) || [];
   styleContacts.forEach(function (contact) {
     assert.match(contact, CSSOM_LENGTH,
-      'the docblock allows CSSOM for three computed lengths -- a bar\'s width, a gridline '
-      + 'label\'s top and a date\'s left -- and nothing else. Any other property set this '
+      'the docblock allows CSSOM for four computed lengths -- a bar\'s width, a gridline '
+      + 'label\'s top, a date\'s left and a budget segment\'s width -- and nothing else. Any other property set this '
       + 'way is invisible to the stylesheet allowlist above: adding '
       + '`cell.style.setProperty(\'position\', \'static\')` inside the date loop\'s own '
       + '`if (placed)` gate put the worst date 69.86% of the plot from its day with two '
       + 'dates touching (0.00px apart), and was green. This is: ' + contact);
   });
-  assert.equal(styleContacts.length, 3,
-    'a fourth `.style` contact, or one fewer: the three are a bar\'s width, a gridline '
-    + 'label\'s top and a date\'s left');
+  assert.equal(styleContacts.length, 4,
+    'a fifth `.style` contact, or one fewer: the four are a bar\'s width, a gridline '
+    + 'label\'s top, a date\'s left and a budget segment\'s width');
 
   assert.ok(!/\bstyle\s*=/.test(PAGE_HTML), 'and none is written into the page either');
 });
@@ -2767,9 +3255,29 @@ test('the rendered pane carries three inline lengths and no fourth, however it i
     loose.daily.labels = loose.daily.labels.map((one, i) => '2026-01-' + String(i + 1));
     assert.ok(loose.forecast, 'the open month forecasts, or the second branch is not taken');
 
-    for (const data of [placed, loose]) {
-      const dom = await boot({ costs: data });
+    /* Two more renders for the budget track, which is the other branch that
+       writes a length: over target it draws two segments, under target one.
+       Without them the sweep never sees the card at all -- every other test
+       in this file boots with no summary, so the track is absent -- and a
+       fifth inline property written into it would be green here. */
+    const over = summaryPayload();
+    const under = summaryPayload({ spend: 572_000_000, target: 650_000_000 });
+    assert.ok(over.cost.budget.ratioBasisPoints > 10_000
+      && under.cost.budget.ratioBasisPoints < 10_000,
+      'one render is past the target and one is short of it, or the pair is one branch twice');
+
+    for (const one of [
+      { costs: placed }, { costs: loose },
+      { costs: placed, summary: over }, { costs: placed, summary: under },
+    ]) {
+      const dom = await boot(one);
+      const data = one.costs;
       const isLoose = data === loose;
+      /* From the fixture's own ratio and the scale's stated design -- two
+         segments past the target, one short of it -- not from the tree. */
+      const segments = one.summary
+        ? (one.summary.cost.budget.ratioBasisPoints > 10_000 ? 2 : 1)
+        : 0;
 
       /* This harness's style object is a plain object: `setProperty` writes
          the property as an own key beside its own two methods, so the own
@@ -2819,7 +3327,13 @@ test('the rendered pane carries three inline lengths and no fourth, however it i
       const holders = (name) => written.filter((one) => one.name === name).map((one) => one.node);
       holders('width').forEach((node) => {
         assert.equal(String(node.tagName).toLowerCase(), 'i', 'a width is a bar\'s fill');
-        assert.ok(hasClass(node.parentNode, 'sp-bar'), 'inside the share meter');
+        const box = node.parentNode;
+        if (hasClass(box, 'sp-budget')) {
+          assert.ok(hasClass(node, 'sp-bud-used') || hasClass(node, 'sp-bud-over'),
+            'a width in the budget track is one of its two named segments');
+        } else {
+          assert.ok(hasClass(box, 'sp-bar'), 'inside the share meter or the budget track');
+        }
       });
       holders('top').forEach((node) => {
         assert.ok(hasClass(node, 'sp-tick'), 'a top is a gridline\'s number');
@@ -2838,8 +3352,10 @@ test('the rendered pane carries three inline lengths and no fourth, however it i
       assert.equal(holders('top').length, 5,
         'one number per gridline: four ticks and the baseline');
       assert.equal(holders('width').length,
-        data.views.category.rows.filter((row) => row.shareBasisPoints !== undefined).length,
-        'one bar per row of the grouping on screen that has a share');
+        data.views.category.rows.filter((row) => row.shareBasisPoints !== undefined).length
+          + segments,
+        'one bar per row of the grouping on screen that has a share, plus the budget '
+        + 'track\'s segments');
 
       /* The second render is only worth making if it really took the other
          two branches, so the branches are asserted rather than assumed. */
@@ -2901,6 +3417,24 @@ const COLOURLESS_WORDS = new Set([
      them takes without every blur in the sheet reading as a colour. */
   'blur', 'brightness', 'contrast', 'drop-shadow', 'grayscale', 'hue-rotate',
   'invert', 'opacity', 'saturate', 'sepia',
+  /* The gradient functions, for the same reason and with the same reach: the
+     NAME is not a colour, and the stops inside it are still read by the
+     residue that is left after it goes. `linear-gradient(90deg, #fff, red)`
+     still leaves `hex` and `red` behind and is still caught -- there is a
+     control for exactly that below. Needed because this sheet's budget track
+     paints two of them: a fill and, for the over-target segment, a
+     repeating hatch that is what keeps colour from being the only thing
+     saying "past the target". */
+  'linear-gradient', 'repeating-linear-gradient',
+  'radial-gradient', 'repeating-radial-gradient',
+  'conic-gradient', 'repeating-conic-gradient',
+  /* And `light-dark()`, on exactly the same terms: the name is not a colour
+     and both of its arguments are still read. The budget track's target mark
+     uses it to take the darker token in each theme, because --ink is
+     near-black in one and near-white in the other while the two segments it
+     separates are mid-luminance in both. Controlled below in both
+     directions -- a raw colour in either argument is still caught. */
+  'light-dark',
 ]);
 
 /* Strips the two things allowed to WRAP a value -- a token reference, and a
@@ -2992,6 +3526,18 @@ test('the stylesheet introduces no colour value of its own', () => {
     /* A colour standing in a token reference's fallback, which paints. */
     'background: var(--nope, #ff0000)', 'background: var(--nope, crimson)',
     'stroke: var(--c, #ff0000)',
+    /* A colour standing inside a gradient, whose FUNCTION NAME is allowed
+       above. Allowing the name must not allow the stops: both families, so
+       neither clause of the union is what is carrying this alone. */
+    'background: linear-gradient(90deg, #ff0000, transparent)',
+    'background: linear-gradient(90deg, crimson, transparent)',
+    'background: repeating-linear-gradient(135deg, #333 0 5px, transparent 5px 10px)',
+    'background: repeating-linear-gradient(135deg, rebeccapurple 0 5px, transparent 5px 10px)',
+    /* A colour standing in either argument of `light-dark()`, whose name is
+       allowed above. Both arguments, because allowing the name must not make
+       either side of it a place to hide a colour. */
+    'border-right: 2px solid light-dark(#333, var(--bg))',
+    'border-right: 2px solid light-dark(var(--ink), crimson)',
   ];
   CAUGHT.forEach((decl) => {
     assert.equal(colourValues(decl + ';').length, 1, 'the guard cannot see: ' + decl);
@@ -3003,6 +3549,12 @@ test('the stylesheet introduces no colour value of its own', () => {
     'background: transparent', 'color: currentColor', 'border-radius: 20px',
     'stroke: var(--c, var(--cyan))', 'filter: blur(6px)',
     'filter: drop-shadow(0 1px 2px var(--line))',
+    /* The two the budget track actually paints, verbatim in shape: a token
+       gradient and the over-target hatch layered over a tint. */
+    'background: linear-gradient(90deg, color-mix(in srgb, var(--cyan) 65%, transparent), var(--cyan))',
+    'background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--rose) 62%, transparent) 0 5px, transparent 5px 10px), color-mix(in srgb, var(--rose) 26%, transparent)',
+    /* And the target mark, verbatim in shape. */
+    'border-right: 2px solid light-dark(var(--ink), var(--bg))',
   ];
   ALLOWED.forEach((decl) => {
     assert.deepEqual(colourValues(decl + ';'), [], 'the guard mis-reads: ' + decl);

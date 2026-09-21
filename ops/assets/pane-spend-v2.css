@@ -183,6 +183,125 @@
   white-space: nowrap;
 }
 
+/* ------------------------------------------------- spend against a target
+
+   The approved mock tops out at 88% of its target and has no drawn state for
+   a bar that has run past the end of its own track. Production is 3.15x over
+   (Stadiora/Aria#10779), so this is that state, designed rather than
+   improvised:
+
+     - The track's domain is the larger of the target and the spend, so the
+       target is a POSITION inside the track rather than its end. Under
+       target that position is the end and the drawing is the mock's exactly;
+       over target it travels left, and a third of a bar in cyan followed by
+       two thirds in rose cannot be mistaken for a bar sitting at full.
+     - The boundary between the two is drawn as a hard edge, so where the
+       target fell is visible and not inferred from a colour change alone.
+     - The overrun segment is a HATCH as well as a tone. A reader who cannot
+       tell rose from cyan still sees two different materials, and the card's
+       own words say which is which. Colour never carries this on its own.
+
+   No text sits on any of it. The card's figures are real text above and
+   below the track, and the track itself is aria-hidden: text over a hatch is
+   measured against the worst stripe and that pair is already one contrast
+   failure on this design system (Stadiora/Aria#10366). */
+.sp-budget {
+  position: relative;
+  display: flex;
+  height: 26px;
+  margin-top: 14px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* Both segments are flex items sized by CSSOM from the ratio. The floor is
+   3px so a target that is one hundredth of the spend is still a visible
+   sliver rather than nothing at all; the track hides what that pushes past
+   its own end, so the distortion is bounded at three pixels and lands on the
+   segment whose figure is least precise anyway. */
+.sp-bud-used, .sp-bud-over { flex: none; min-width: 3px; }
+
+.sp-bud-used {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--cyan) 65%, transparent), var(--cyan));
+}
+
+.sp-bud-over {
+  background:
+    repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--rose) 62%, transparent) 0 5px,
+      transparent 5px 10px),
+    color-mix(in srgb, var(--rose) 26%, transparent);
+}
+
+/* Where the target fell. Only drawn when the spend ran past it: under target
+   the track's own end is the target and the inset ring above already draws
+   it.
+
+   The colour is picked PER THEME rather than once, through light-dark() on
+   the color-scheme aria.css already sets with each token set. Both segments
+   the mark separates are mid-luminance -- a cyan and a rose -- while --ink is
+   near-black in one theme and near-white in the other, so no single token is
+   the conservative choice for both: measured in Chrome, an --ink rule is
+   6.28:1 against the cyan fill in the light theme and 2.15:1 against it in
+   the dark one. Taking the darker end in each theme puts both edges of the
+   mark past 3:1 in both (light 6.28:1 / 5.31:1, dark 8.00:1 / 4.63:1).
+
+   A browser too old for light-dark() drops this declaration and draws no
+   mark, which is the state the design already has under target: the hatch
+   and the card's own words still say the spend ran past. */
+.sp-budget-over .sp-bud-used {
+  border-right: 2px solid light-dark(var(--ink), var(--bg));
+}
+
+.sp-bud-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+}
+
+.sp-bud-main { min-width: 0; flex: 1 1 auto; }
+
+.sp-bud-figure {
+  font-size: 30px;
+  font-weight: 620;
+  letter-spacing: -.02em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+
+.sp-bud-of {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+
+.sp-bud-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* Pushed to the far end rather than spread by space-between: with two items
+   the two are the same drawing, but this file has one bug's worth of history
+   with a container deciding where a thing goes (Stadiora/Aria#10507) and an
+   auto margin says which end is meant. */
+.sp-bud-rest { margin-left: auto; }
+.sp-bud-past { color: var(--rose-ink); font-weight: 560; }
+
+/* No target, and which refusal it was, in the route's own words. No track
+   under it: an empty one reads as a budget with nothing spent against it. */
+.sp-bud-none { font-size: 15px; font-weight: 560; }
+.sp-bud-why { font-size: 12px; color: var(--ink-2); margin-top: 5px; }
+
 /* ------------------------------------------------------------- the day line
 
    The scale is HTML beside the picture rather than <text> inside it:
@@ -311,6 +430,12 @@
   white-space: nowrap;
 }
 
+/* The rule under the last row is dropped for every cell in it, not for the
+   `td`s alone. Naming only `td` left the row's own `th[scope="row"]` with its
+   1px, so the last row drew a rule that stopped dead at the end of the first
+   column -- about 48% of the table -- and read as a rendering fault
+   (Stadiora/Aria#10820). */
+.sp-tbl tbody tr:last-child th,
 .sp-tbl tbody tr:last-child td { border-bottom: 0; }
 
 .sp-tbl th[scope="row"] {
@@ -421,6 +546,7 @@
 @media (max-width: 420px) {
   .sp-head { gap: 16px; }
   .sp-total { font-size: 25px; }
+  .sp-bud-figure { font-size: 25px; }
   .sp-chart-wrap .chart { height: 180px; }
 
   /* Six dates is what the route strides down to, and six of them over the
