@@ -145,9 +145,13 @@
      deliberate — it exists to catch text drawn nowhere, not to adjudicate
      spacing — and the cost is that a refactor splitting a marker into two
      flex items, so the page renders "2." and "9.1" with the row's gap between
-     them, reads as shown. Reachability is still asked of the carrier: its own
-     box if it has one, otherwise the boxes a Range over its contents
-     produces, which is how display:contents stays green.
+     them, reads as shown. Reachability is asked of the carrier — its own box
+     if it has one, otherwise the boxes a Range over its contents produces,
+     which is how display:contents stays green — and again of any descendant
+     in the walk that owns a real box, so a half parked off the document is
+     not joined to the half on screen. A descendant with no box, or a
+     degenerate one, is not judged there; the carrier's own gate answers for
+     those, so a marker split across two zero-area wrappers is still joined.
    - **Any painted occurrence answers for all of them.** A marker that a pane
      renders twice passes when either occurrence is painted and reachable, so
      a result view that loses the copy a reader is meant to read while an
@@ -1752,7 +1756,13 @@ const probeFor = (markers) => `(() => {
      suppressed() covers them above it.
 
      Lower-cased and whitespace-collapsed so a text-transform is not a false
-     red. */
+     red. Reachability is asked again inside the walk, of any descendant that
+     owns a real box: joining what a page draws in two places is the point,
+     but joining a half parked at left:-99999px to the half on screen rebuilds
+     a marker no reader can read, and measured, that exited 0 with the version
+     card showing "2." and nothing else. A descendant with no box of its own,
+     or a degenerate one, is walked rather than judged, because the carrier's
+     own gate above is what answers for those. */
   const flat = (s) => String(s).replace(/\\s+/g, ' ').trim().toLowerCase();
   const drawnText = (el) => {
     let out = '';
@@ -1763,6 +1773,9 @@ const probeFor = (markers) => `(() => {
         const cs = getComputedStyle(n);
         if (cs.display === 'none' || cs.visibility === 'hidden'
           || cs.visibility === 'collapse' || cs.contentVisibility === 'hidden') continue;
+        const box = n.getBoundingClientRect();
+        if (box.width > 0 && box.height > 0
+          && !(viewportAnchored(n) ? inView : inReach)(box)) continue;
         walk(n);
       }
     };
