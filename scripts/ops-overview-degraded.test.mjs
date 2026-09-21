@@ -156,6 +156,11 @@ async function boot(options) {
     '/api/ops/alerts/rules': opts.rules === undefined ? rulesFixture() : opts.rules,
   };
 
+  const calls = {};
+  const settle = async (n) => {
+    for (let i = 0; i < (n || 12); i += 1) await new Promise((r) => setImmediate(r));
+  };
+
   const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/index.html' });
   const body = dom.element('body');
   dom.root.appendChild(body);
@@ -167,6 +172,7 @@ async function boot(options) {
     state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role: 'owner' } },
     boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
     call: (endpoint) => {
+      calls[endpoint] = (calls[endpoint] || 0) + 1;
       const answer = answers[endpoint];
       if (answer instanceof Error) return Promise.reject(answer);
       if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
@@ -186,7 +192,12 @@ async function boot(options) {
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-overview.js' });
 
   for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
-  return dom;
+
+  /* `answers` is handed back live so a test can change what a read returns
+     BETWEEN loads, and `calls` counts them. Without those two a retry can only
+     be asserted to exist, not to do anything — which is how a button wired to
+     a no-op stayed green through three review rounds. */
+  return Object.assign(dom, { answers, calls, settle });
 }
 
 /* ---------------------------------------------------------- what is drawn */
@@ -446,6 +457,87 @@ test('a read that never landed does not earn the sentence "there is nothing here
     assert.match(text, /could not be read|unread/,
       `the ${which} read failed and the pane says nothing about it at all`);
   }
+});
+
+test('the retry actually re-runs the read and the section comes back', async () => {
+  /* Three rounds of review checked that the button EXISTS and that it is told
+     apart from the other one. Nothing checked that pressing it does anything,
+     and a retry wired to a no-op is a worse failure than no retry at all: it
+     is the control the whole partial-degradation fix hands the operator, and
+     it would have looked completely normal. */
+  const dom = await boot({ problems: boom('problems') });
+  const before = dom.calls['/api/ops/alerts/problems'];
+  assert.ok(before >= 1, 'the pane never asked for the problems at all');
+
+  const again = findAll(shownPanel(dom),
+    (n) => n.tagName === 'BUTTON' && /Try again/.test(allText(n)))[0];
+  assert.ok(again, 'the failed section drew no retry');
+
+  /* The read starts answering. Nothing else about the page changes, so any
+     difference below is the retry's doing. */
+  dom.answers['/api/ops/alerts/problems'] = problemsFixture();
+  again.dispatch('click');
+  await dom.settle();
+
+  assert.ok(dom.calls['/api/ops/alerts/problems'] > before,
+    'pressing Try again did not ask for the problems again — the button is drawn, named, '
+    + 'and wired to nothing');
+
+  const after = allText(shownPanel(dom));
+  assert.doesNotMatch(after, /The problems could not be read/,
+    'the read succeeded on retry and the pane is still showing the failure card, so the '
+    + 'operator has no way back to a working pane short of a reload');
+  assert.match(after, /Checkout latency/,
+    'the problems came back and the pane did not draw them');
+});
+
+test('the figures card\'s retry re-runs its read too, which is a second handler', async () => {
+  /* figuresSection builds its own button rather than going through
+     failedSection, so it is a separate `addEventListener` and a separate way
+     to be wired to nothing. */
+  const dom = await boot({ summary: boom('summary') });
+  const before = dom.calls['/api/ops/summary'];
+  const again = findAll(shownPanel(dom),
+    (n) => n.tagName === 'BUTTON' && /Try again/.test(allText(n)))[0];
+  assert.ok(again, 'the figures failure drew no retry');
+
+  dom.answers['/api/ops/summary'] = summaryFixture();
+  again.dispatch('click');
+  await dom.settle();
+
+  assert.ok(dom.calls['/api/ops/summary'] > before,
+    'the figures card\'s Try again did not ask for the summary again');
+  assert.match(allText(shownPanel(dom)), /1,102|1102/,
+    'the summary came back on retry and the figures did not');
+});
+
+test('the whole-pane failure offers a retry that works', async () => {
+  /* When all three reads fail the pane hands `load` to the shell, and the
+     shell draws the button. The handler is the shell\'s; what this binds is
+     that the pane passed something that actually re-reads. */
+  const dom = await boot({
+    summary: boom('summary'), problems: boom('problems'), rules: boom('rules'),
+  });
+  const panel = shownPanel(dom);
+  assert.match(allText(panel), /This pane could not be read/,
+    'all three reads failed and the pane did not say so');
+
+  const before = dom.calls['/api/ops/summary'];
+  const again = findAll(panel,
+    (n) => n.tagName === 'BUTTON' && /Try again/.test(allText(n)))[0];
+  assert.ok(again, 'the whole-pane failure drew no retry');
+
+  dom.answers['/api/ops/summary'] = summaryFixture();
+  dom.answers['/api/ops/alerts/problems'] = problemsFixture();
+  dom.answers['/api/ops/alerts/rules'] = rulesFixture();
+  again.dispatch('click');
+  await dom.settle();
+
+  assert.ok(dom.calls['/api/ops/summary'] > before,
+    'the whole-pane retry did not re-read anything, so an operator who lost the pane to a '
+    + 'transient failure cannot get it back without a reload');
+  assert.doesNotMatch(allText(shownPanel(dom)), /This pane could not be read/,
+    'every read recovered and the pane is still showing its failure state');
 });
 
 /* ------------------------------------------- what the pane may not claim */
