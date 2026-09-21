@@ -43,7 +43,9 @@
        it left. No test counts any of them.
      - The sheet's own reading rule, the HOW TO READ THIS COMMENT paragraph
        at the top of it. The devices below IMPLEMENT that rule; nothing
-       reads it, so rewording it moves nothing -- measured, mutation M7-A4
+       reads it EXCEPT the test title quoted inside it, which the citation
+       multiset reads like any other quoted title -- deleting that quotation
+       is red. Rewording the rest moves nothing -- measured, mutation M7-A4
        on #75, where dropping the clause that makes a paragraph citation
        count left the suite green. It is the one claim in the sheet that
        cannot have a proof pointer, because it is the sentence that says
@@ -556,7 +558,8 @@ const tabIndexOf = (node) => {
    carrying either answers for everything under it. A disabled <fieldset>
    does the same to its controls EXCEPT those inside its first <legend>, and
    that exception is the kind of thing this helper would get wrong, so a
-   descendant of one is refused rather than answered. */
+   descendant of one is refused rather than answered -- but only after the
+   branches that answer from the node alone, which see it first. */
 const suppressedBy = (node) => {
   for (let at = node; at && at.nodeType === 1; at = at.parentNode) {
     if (attr(at, 'hidden') !== null || attr(at, 'inert') !== null) return 'hidden';
@@ -595,10 +598,17 @@ const editable = (node) => {
    <button>, <input>, <select>, <textarea>, <iframe> or <audio controls>
    inside a host keeps its own stop, and a link-shaped element loses one --
    measured over HTTP with full ring walks in the eighth review of #75.
-   A contenteditable="false" island between the node and the host ends the
-   walk as NOT content: measured, a link inside one takes its stop back. */
+   The walk starts at the NODE, not at its parent. A contenteditable="false"
+   island ends it as NOT content wherever it sits, and the node can BE the
+   island: <a href contenteditable="false"> directly inside a host takes its
+   stop (measured, ring walk DIV,p,end,start), and starting at the parent
+   answered it false -- under-reporting reachability, which is the direction
+   the live caller's emptiness check cannot survive (found in the ninth
+   review of #75). A node whose OWN value is true is a nested host, which
+   takes no stop either, and editable() has already answered the outermost
+   one above. */
 const inEditingHost = (node) => {
-  for (let at = node.parentNode; at && at.nodeType === 1; at = at.parentNode) {
+  for (let at = node; at && at.nodeType === 1; at = at.parentNode) {
     const own = ownEditable(at);
     if (own === true) return true;
     if (own === false) return false;
@@ -614,11 +624,7 @@ const hiddenInput = (node) =>
 function focusable(node) {
   if (node.nodeType !== 1) return false;
   const suppressed = suppressedBy(node);
-  if (suppressed === 'fieldset') {
-    throw new Error('focusable() cannot tell: a descendant of a disabled <fieldset> is '
-      + 'disabled unless it is inside that fieldset\'s first <legend>');
-  }
-  if (suppressed) return false;
+  if (suppressed === 'hidden') return false;
   if (isDisabled(node)) return false;
   if (hiddenInput(node)) return false;
 
@@ -634,6 +640,16 @@ function focusable(node) {
      the non-negative case from the attribute would be wrong half the time,
      which is worse than refusing it. */
   if (index !== null && index < 0) return false;
+  /* Below those two for the same reason the negative-tabindex branch is
+     above the <object> refusal: the fieldset's first-<legend> exception is
+     the part this helper would get wrong, but a node that is itself disabled
+     or carries tabindex="-1" takes no stop whatever the fieldset does, and
+     refusing it was this helper saying "cannot tell" about a case the node
+     settles alone (found in the ninth review of #75; both measured). */
+  if (suppressed === 'fieldset') {
+    throw new Error('focusable() cannot tell: a descendant of a disabled <fieldset> is '
+      + 'disabled unless it is inside that fieldset\'s first <legend>');
+  }
   if (UNDECIDABLE_TAGS.includes(node.tagName)) {
     throw new Error('focusable() cannot tell: <' + node.tagName.toLowerCase()
       + '> takes a tab stop in some browsers and not others');
@@ -884,6 +900,16 @@ const FOCUSABLE_PROBES = [
     wrapAttrs: { contenteditable: '' }, answer: true,
     note: 'FOUND IN REVIEW: true. a form control in a host KEEPS its own stop, which is '
       + 'why the rule above is about links and not about hosts' },
+  { name: '<a href contenteditable="false"> inside <div contenteditable>', tag: 'a',
+    attrs: { href: '/x', contenteditable: 'false' }, wrap: 'div',
+    wrapAttrs: { contenteditable: '' }, answer: true,
+    note: 'FOUND IN REVIEW: true. the node is its OWN island, so it is not content of the '
+      + 'host and keeps its stop -- measured' },
+  { name: '<a href contenteditable="true"> inside <div contenteditable>', tag: 'a',
+    attrs: { href: '/x', contenteditable: 'true' }, wrap: 'div',
+    wrapAttrs: { contenteditable: '' }, answer: false,
+    note: 'FOUND IN REVIEW: true. a NESTED host takes no stop, and the other side of the '
+      + "same branch: own true and own false must not answer alike" },
   { name: '<a href> under contenteditable="false" inside <div contenteditable>', tag: 'a',
     attrs: { href: '/x' }, wrap: 'div', wrapAttrs: { contenteditable: 'false' },
     outerWrap: 'div', outerWrapAttrs: { contenteditable: '' }, answer: true,
@@ -902,6 +928,14 @@ const FOCUSABLE_PROBES = [
   { name: '<button> inside a <legend> of <fieldset disabled>', tag: 'button', wrap: 'legend',
     outerWrap: 'fieldset', outerWrapProps: { disabled: true }, answer: 'cannot tell',
     note: 'refused for a reason: Chrome gives THIS one a stop and the row above none' },
+  { name: '<button disabled> inside <fieldset disabled>', tag: 'button',
+    props: { disabled: true }, wrap: 'fieldset', wrapProps: { disabled: true }, answer: false,
+    note: 'FOUND IN REVIEW: true. its own disabled settles it whatever the fieldset does, '
+      + 'and the legend exception cannot give a disabled control a stop -- measured' },
+  { name: '<button tabindex="-1"> inside <fieldset disabled>', tag: 'button',
+    attrs: { tabindex: '-1' }, wrap: 'fieldset', wrapProps: { disabled: true }, answer: false,
+    note: 'FOUND IN REVIEW: true. the same, from the other branch the refusal used to '
+      + 'outrank -- measured, no stop' },
 ];
 
 test('focusable() answers the tab order the document can decide, and refuses the rest', () => {
@@ -956,8 +990,8 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 78, takesATabStop: 29, doesNot: 38, refused: 11, wereWrongBefore: 7,
-      foundInReview: 26 });
+    { cases: 82, takesATabStop: 30, doesNot: 41, refused: 11, wereWrongBefore: 7,
+      foundInReview: 30 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -3026,9 +3060,13 @@ const READER_PROBES = [
     why: 'a custom property can carry a colour, so every one of them is read' },
   { css: '.probe { column-rule: 1px solid magenta; }', refused: false, stemless: 'column-rule',
     why: 'BLIND SPOT: a bare colour keyword on a property with no paint stem in its name' },
-  /* The sheet NAMES five stemless properties. Probing one of them and
-     writing the other four into prose is the claim this file exists to stop
-     making, so each is run (found in the third review of #75). */
+  /* Probing one of the stemless properties the sheet names and writing the
+     rest into prose is the claim this file exists to stop making, so each is
+     run (found in the third review of #75). No count of them is typed: one
+     was, it said five where the sheet names four -- filter came off that
+     list in round 4 and the count did not follow -- and the row below had
+     been contradicting it in the same file ever since (found in the ninth
+     review of #75). The list is bound; a number beside it never was. */
   { css: '.probe { text-decoration: underline magenta; }', refused: false, stemless: 'text-decoration',
     why: 'BLIND SPOT: text-decoration, named by the sheet, carries no paint stem' },
   { css: '.probe { mask-image: linear-gradient(magenta, white); }', refused: false, stemless: 'mask-image',
