@@ -155,6 +155,15 @@
      see it, which is why nothing load-bearing is a test any more: the floors
      and the pins are module-scope assertions, and the only test left holding
      anything is the judged census.
+   - The floor assertions themselves. FLOORS is three integers and a count has
+     nothing inside it to delete, but the three `assert.ok(... >= FLOORS....)`
+     lines are ordinary code: edit one to `true ||` and the defect it guards
+     goes unseen. Battery A1/A2 are green on exactly that and stay green on
+     purpose. Nothing in one file can outrank its own last assertion; what
+     changed at module scope is that disabling one is now an edit a diff shows
+     rather than a one-word flag that leaves the source spelling intact. If the
+     CONSTANT is deleted rather than the assert, the run is red - `pinned-blocks`
+     prints all three floors, so the derivation throws.
    - The COMPLETED exit handler itself. It is the one construct here that nothing
      else watches, and deleting it puts every test in this file back to being
      silently skippable. That is not a gap a guard can close - something has to
