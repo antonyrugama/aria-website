@@ -98,7 +98,8 @@
        @media block — whose condition the reader discards, so a gated rule
        would be read as an ungated later one — is not modelled and would not
        be noticed;
-     - every layout rule below, bar three: .scrollx's own overflow-x, which
+     - every layout rule below, bar the ones named next: .scrollx's own
+       overflow-x, which
        the focus-ring test reads to find the box it belongs to, and the two
        justified by what the page draws — six columns and the words in the
        condition pill — which are checked against the drawn page.
@@ -118,7 +119,7 @@
    The accent down a problem card, the ink on its title and the glyph beside
    it are three sightings of one fact, so assets/pane-alerts.js derives all
    three from the model's severity tone rather than setting them apart —
-   asserted on the drawn page, across three severities at once ("a problem
+   asserted on the drawn page, over more than one severity at once ("a problem
    card carries one severity, in the accent and both inks alike"). */
 
 .is-crit { color: var(--rose-ink); }
@@ -300,8 +301,8 @@
 
    Both lines are read by the same test, which finds each named sheet's
    sideways-scrolling box by its overflow rather than by a class name and
-   compares the focus rule declaration for declaration: the first two must
-   match this one exactly, and pane-releases-v2.css's must differ by
+   compares the focus rule declaration for declaration: the ones on the SAME
+   line must match this one exactly, and pane-releases-v2.css's must differ by
    exactly the declaration named on the line above, value included, which this
    sheet does not make at all. */
 .scrollx:focus-visible { outline-offset: -2px; }
@@ -319,7 +320,7 @@
 /* ---------------------------------------------------------------- switch
 
    A real checkbox carrying role="switch", so it is focusable, announced with
-   its state and named by the rule it belongs to — all three checked on the
+   its state and named by the rule it belongs to — each checked on the
    drawn page ("every rule switch is a real checkbox, reachable, stateful and
    named"). The mock draws a <button> with an <i> inside (NOT BOUND, see the
    top of this file); an input cannot hold a child, so the knob is ::after. */

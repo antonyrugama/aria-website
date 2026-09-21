@@ -46,8 +46,8 @@
        what a proof pointer IS.
      - What the stylesheet LOOKS like. Nothing here renders it. The lines it
        reads as data are NON-TOKEN PAINT, AVATAR INK TOKEN, SAME FOCUS RING
-       AS and DIFFERENT FOCUS RING; the rest of what THREE sections of this
-       file read out of ops/assets/pane-alerts-v2.css is its text -- the
+       AS and DIFFERENT FOCUS RING; the rest of what the
+       prose-framed readers below take out of ops/assets/pane-alerts-v2.css is its text -- the
        claims around those lines, the two rules the rules table's scrolling
        box depends on, the .is- tone rules, the sheet's own custom
        properties, and every test title the sheet cites, each against the
@@ -176,6 +176,13 @@ const MACHINE_READ_PREFIXES = [
    Found by my own round-6 battery -- dropping the name from the bullet left
    the suite green, so the pointer was prose like any other. */
 const FRAMES_LIST_NAME = 'PROSE_FRAMES_OVER_THE_SHEET';
+/* The two lists the SHEET points at by name. Same device as
+   FRAMES_LIST_NAME one line up, pointed the other way: renaming either
+   constant while the sheet went on naming the old one was green, and
+   READER_PROBES is the sly one -- it is spelled in a test title too, so the
+   citation multiset kept the title alive while the list it named walked away
+   underneath it (found in the seventh review of #75, RV7-1 and RV7-1b). */
+const LISTS_THE_SHEET_NAMES = ['UNREADABLE_TOKENS', 'READER_PROBES'];
 const PROSE_FRAMES_OVER_THE_SHEET = [
   'the paint stems the reader has',
   'the stemless properties a keyword walks past on',
@@ -2412,10 +2419,16 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
     + namedThere.join(' / '));
 
   /* And from the sheet's side: no OTHER line in it is shaped like data. */
-  const headings = [...PANE_CSS.matchAll(/^ *([A-Z][A-Z-]+(?: [A-Z-]+)*):/gm)].map((m) => m[1]);
-  assert.deepEqual([...new Set(headings)].sort(), [...MACHINE_READ_PREFIXES].sort(),
-    'the sheet carries a line shaped like a machine-read one that nothing reads: '
-    + headings.join(' / '));
+  /* Not de-duplicated, and \s* rather than * so this scan indents exactly
+     as machineLine() does. Every reader takes the FIRST match, so a second
+     copy of a data line is read by nobody: a duplicate SAME FOCUS RING AS
+     naming a sheet with no sideways box at all was green, which re-opened
+     finding 4 of Stadiora/Aria#10632 from a line the device never reads
+     (found in the seventh review of #75, RV7-D1). One line per prefix. */
+  const headings = [...PANE_CSS.matchAll(/^\s*([A-Z][A-Z-]+(?: [A-Z-]+)*):/gm)].map((m) => m[1]);
+  assert.deepEqual(headings.slice().sort(), [...MACHINE_READ_PREFIXES].sort(),
+    'the sheet carries a line shaped like a machine-read one that nothing reads, or a '
+    + 'second copy of one that only the first of is read: ' + headings.join(' / '));
   /* The unprefixed kind, counted off the code rather than typed in prose. */
   assert.ok(THIS_FILE.includes('const ' + FRAMES_LIST_NAME + ' = ['),
     'FRAMES_LIST_NAME does not name a list this file declares, so the bullet points at '
@@ -2428,6 +2441,14 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
   assert.ok(notCovered[0].includes(FRAMES_LIST_NAME),
     'the NOT COVERED block stopped naming ' + FRAMES_LIST_NAME + ', so the unprefixed '
     + 'readers are enumerated in code and unmentioned in the prose that claims to name them');
+  for (const name of LISTS_THE_SHEET_NAMES) {
+    assert.ok(THIS_FILE.includes('const ' + name + ' = ['),
+      'the sheet names ' + name + ' but this file declares no such list, so the pointer '
+      + 'is a dangling name');
+    assert.ok(PANE_CSS.includes(name),
+      'the sheet stopped naming ' + name + ', so the list is enumerated in code and '
+      + 'unmentioned in the prose that claims to name it');
+  }
   const frames = (THIS_FILE.match(FRAME_SPELLING) || []).length;
   assert.equal(frames, PROSE_FRAMES_OVER_THE_SHEET.length,
     'this file reads the sheet through ' + frames + ' prose frames and names '
@@ -2548,7 +2569,19 @@ test('the page loads one design system and one theme decision', () => {
      assets/shell-pane-v2.css, on ops/alerts.html and nowhere else." Order
      first -- a later sheet wins a tie in the cascade, and this one is written
      to override the two above it. */
-  const at = (href) => html.indexOf('href="' + href + '"');
+  /* Each index is proven to EXIST first. indexOf returns -1 for any other
+     spelling, and -1 is below every real index, so both comparisons passed
+     whenever the missing link was the left operand -- which is aria.css and
+     shell-pane-v2.css, the two sheets the first sentence claims to be loaded
+     after. Re-spelling aria.css as href="assets/aria.css?v=2" and moving it
+     last was green (found in the seventh review of #75, RV7-3). The guard
+     failed OPEN, in the one direction that matters. */
+  const at = (href) => {
+    const i = html.indexOf('href="' + href + '"');
+    assert.ok(i >= 0, 'alerts.html no longer carries href="' + href + '" in that exact '
+      + 'spelling, so nothing below can compare its position');
+    return i;
+  };
   assert.ok(at('assets/aria.css') < at('assets/shell-pane-v2.css'),
     'alerts.html loads shell-pane-v2.css before aria.css');
   assert.ok(at('assets/shell-pane-v2.css') < at('assets/pane-alerts-v2.css'),
@@ -2728,10 +2761,15 @@ test('the rules table scrolls inside a box a keyboard can reach and a screen rea
     assert.ok(!siblings.includes(excluded),
       excluded + ' is cited as both the same ring and a different one');
     const theirs = scrollBoxFocusRule(read('assets/' + excluded));
-    assert.deepEqual(
-      theirs.filter((d) => !mine.some((m) => m.property === d.property && m.value === d.value))
-        .map((d) => d.property + ': ' + d.value),
-      [extra + ': ' + extraValue],
+    /* BOTH directions. theirs \ mine alone let the sibling DROP a
+       declaration unseen: deleting outline-offset: -2px from
+       pane-releases-v2.css left the difference still reading as exactly the
+       one added declaration, while the sibling's ring went back outside its
+       box -- Stadiora/Aria#10459's own defect, behind a green suite (found
+       in the seventh review of #75, RV7-4). A set difference is not a
+       comparison; "differs by exactly" is an equality. */
+    const spell = (ds) => ds.map((d) => d.property + ': ' + d.value).sort();
+    assert.deepEqual(spell(theirs), spell([...mine, { property: extra, value: extraValue }]),
       excluded + ' no longer differs from this sheet by exactly ' + extra + ': ' + extraValue
       + ', so the reason it is held apart is false');
     assert.ok(!mine.some((d) => d.property === extra),
