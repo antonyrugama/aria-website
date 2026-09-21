@@ -999,7 +999,9 @@ of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-users.js
 ```
 
 `settings.js` is the v1 script and `session.js` is the transport every one of them calls through;
-`login.js` and `setup.js` are the two pages outside the shell. What is true of Settings is
+`login.js` and `setup.js` are the two pages outside the shell. The line is per file and not per
+call site — it reads the HTTP method a call site spells, so a file keeps its place until its last
+write method goes, and says nothing about whether any of those calls is reachable or authorised. What is true of Settings is
 narrower and worth being exact about: It runs on the v2 shell: `settings.html` loads `aria.css`,
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.

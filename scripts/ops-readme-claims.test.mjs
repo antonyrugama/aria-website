@@ -112,8 +112,11 @@
    - Which asset can WRITE. `write-capable-assets` reads the HTTP method a
      call site NAMES - `method: 'POST'` and its three siblings, in any case.
      A method assembled at run time, taken from a variable, or defaulted by
-     a helper is invisible, and a method named in dead code counts. It says
-     nothing about whether the call is reachable, authorised, or ever made.
+     a helper is invisible, and a method named in dead code counts. The line
+     is per FILE, not per call site: a file with three write sites stays on
+     the list when one of them goes, and only leaves it when the last one
+     does. It says nothing about whether a call is reachable, authorised,
+     or ever made.
    - Whether an element is drawn INSIDE another. `sr-span-classes` derives
      the clipped, absolutely positioned screen-reader classes a sheet
      declares and the ops assets that draw one, which is text. The DOM
