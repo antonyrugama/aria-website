@@ -260,10 +260,29 @@
         'Nothing here is a zero. This part is unread, not empty.'
       ], 3);
       var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+      describeRetry(block, again);
       again.addEventListener('click', function () { load(); });
       block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
       box.appendChild(block);
       band.appendChild(box);
+    }
+
+    /* Two reads can fail at once, and then two buttons reading "Try again" are
+       on the page with nothing between them. Pointing each at its own headline
+       is what tells them apart in a screen reader's control list, and it keeps
+       the visible word — an aria-label would rename the button out from under
+       anyone driving it by voice. */
+    var retryN = 0;
+    function describeRetry(block, again) {
+      var kids = block.childNodes || [];
+      for (var i = 0; i < kids.length; i++) {
+        if (/^h[1-6]$/i.test(String(kids[i].tagName || ''))) {
+          retryN += 1;
+          kids[i].id = kids[i].id || 'ov-failed-' + retryN;
+          again.setAttribute('aria-describedby', kids[i].id);
+          return;
+        }
+      }
     }
 
     /* The Problems count beside the rail item.
@@ -340,8 +359,7 @@
       if (openFailed) {
         tone = 'st-warn';
         title = 'Whether anything is wrong is unknown';
-        sub = 'The problems could not be read. Nothing here is a zero: they are ' +
-          'unread, not absent.';
+        sub = 'The problems could not be read.';
       } else if (rulesFailed && !active.length) {
         tone = 'st-warn';
         title = 'Nothing is open, and whether anything is watching is unknown';
@@ -1455,6 +1473,7 @@
         ];
         var block = S.stateBlock('warn', 'These figures could not be read', lines, 3);
         var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+        describeRetry(block, again);
         again.addEventListener('click', function () { load(); });
         block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
         box.appendChild(block);

@@ -322,6 +322,32 @@ test('each failed section offers its own retry rather than one for the pane', as
     (n) => n.tagName === 'BUTTON' && /Try again/.test(allText(n)));
   assert.equal(retries.length, 1,
     'the section that failed did not offer exactly one way to ask again');
+
+  /* "rather than one for the pane" is the half a count cannot see: the
+     whole-pane failure card also draws exactly one Try again. What separates
+     them is WHERE the button is, so the retry has to be inside the block the
+     failed section drew, and the pane-wide card has to be absent. */
+  const section = nodesWithClass(livePanel(down), 'state-block')
+    .find((b) => /The problems could not be read/.test(allText(b)));
+  assert.ok(section, 'no failed-section block to hold a retry');
+  assert.ok(findAll(section, (n) => n === retries[0]).length === 1,
+    'the retry is on the page but not inside the section that failed, which is what a '
+    + 'pane-wide failure card looks like');
+  assert.equal(
+    nodesWithClass(livePanel(down), 'state-block')
+      .filter((b) => /This pane could not be read/.test(allText(b))).length, 0,
+    'the pane drew its whole-pane failure card for a single failed read');
+
+  /* Two failed reads, two independent ways to ask again. */
+  const both = await boot({ problems: boom('problems'), summary: boom('summary') });
+  const two = findAll(livePanel(both),
+    (n) => n.tagName === 'BUTTON' && /Try again/.test(allText(n)));
+  assert.equal(two.length, 2,
+    'two sections failed and the pane did not offer a retry for each');
+  const described = two.map((b) => b.getAttribute('aria-describedby'));
+  assert.ok(described.every(Boolean) && described[0] !== described[1],
+    'two buttons both named "Try again" are on screen with nothing telling them apart: '
+    + `described by ${JSON.stringify(described)}`);
 });
 
 /* ------------------------------------------- what the pane may not claim */
@@ -407,4 +433,60 @@ test('the figures failure claims the problems are unaffected only when they are'
   const both = await boot({ summary: boom('the summary'), problems: boom('problems') });
   assert.doesNotMatch(allText(livePanel(both)), /read separately and are unaffected/,
     'the pane told the operator their problems were fine while saying it could not read them');
+});
+
+/* ------------------------------------ every degraded reading says something */
+
+/* The negative assertions above bind which branch is CHOSEN. None of them binds
+   that the chosen branch says anything at all, and an independent reviewer
+   showed all four new readings can be emptied to '' with the file still green
+   — two of them shipping an empty <h2 class="hero-title"> and an empty
+   <h4 class="state-title">, which is an accessibility defect that renders.
+
+   This is the positive half, and it is deliberately not an equality check
+   against the prose: pinning the sentence would make every future wording
+   change a test edit, and the defect is emptiness, not wording. It sweeps
+   rather than naming sites so a fifth reading added later is covered without
+   anybody remembering to come back.
+
+   chipTexts() cannot see this: it ends in .filter(Boolean), so an empty chip
+   leaves the array it returns and the absence looks like success. */
+function emptyLabels(dom) {
+  const panel = livePanel(dom);
+  const headings = findAll(panel, (n) => /^H[1-6]$/.test(String(n.tagName || '')));
+  const chips = nodesWithClass(panel, 'hero-chips')
+    .flatMap((strip) => strip.childNodes || []);
+  const checked = [...headings, ...chips];
+  return {
+    checked: checked.length,
+    empty: checked.filter((n) => allText(n).trim() === '')
+      .map((n) => `<${String(n.tagName || '?').toLowerCase()} class="${n.className || ''}">`),
+  };
+}
+
+test('no degraded reading is drawn as an empty heading or an empty chip', async () => {
+  /* The healthy render first: it proves the finder reaches real nodes, so a
+     sweep that found nothing cannot pass as a sweep that found nothing wrong. */
+  const healthy = emptyLabels(await boot());
+  assert.ok(healthy.checked >= 4,
+    `the finder reached ${healthy.checked} labelled nodes on a healthy render, which is too `
+    + 'few for its absence on a degraded one to mean anything');
+  assert.deepEqual(healthy.empty, [], 'the healthy render already draws an empty label');
+
+  const cases = [
+    ['the problems read', { problems: boom('problems') }],
+    ['the rules read', { rules: boom('rules') }],
+    ['the rules read with an open problem', { rules: boom('rules') }],
+    ['the summary read', { summary: boom('the summary') }],
+    ['the problems and rules reads', { problems: boom('problems'), rules: boom('rules') }],
+    ['the problems and summary reads',
+      { problems: boom('problems'), summary: boom('the summary') }],
+  ];
+  for (const [what, options] of cases) {
+    const seen = emptyLabels(await boot(options));
+    assert.ok(seen.checked > 0, `nothing labelled was drawn with ${what} down`);
+    assert.deepEqual(seen.empty, [],
+      `with ${what} down the pane drew ${seen.empty.join(', ')} — a reading with no words in `
+      + 'it, which a screen reader announces as an unnamed heading');
+  }
 });
