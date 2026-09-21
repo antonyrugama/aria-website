@@ -63,16 +63,21 @@
  *   claims here are that they are painted, counted and contrast; legibility
  *   at a distance is a judgement no oracle makes.
  * - A groove displaced onto UNFILLED track. This was claimed and then
- *   withdrawn, because it was measured and the instrument cannot see it:
- *   pushing the first groove 6px past the fill's trailing edge moves the
- *   bare-track region by 1.21-1.27:1 in 18 of 96 readings, against this
- *   scan's 1.8:1 detect threshold and an ungrooved track that already varies
- *   by up to 1.15:1 under the fill's own glow. The signal is real and too
- *   weak to separate from the track. `METER_SUMMARY=1` prints that
- *   sensitivity so the withdrawal stays checkable. The GEOMETRY regression
- *   that produces a stray groove is bound -- that exact payload is battery
- *   row T8, killed by three notch-count claims -- so what is not covered is
- *   the stray mark itself, not the fault that makes one.
+ *   withdrawn, because it was measured and the instrument cannot see it.
+ *   Pushing the first groove 6px past the fill's trailing edge moves the
+ *   bare-track region by 1.21-1.27:1 on the 18 of 96 readings it reaches --
+ *   per-reading figures, from comparing a mutated run against a clean one,
+ *   not from anything printed below. What IS printed, by `METER_SUMMARY=1`,
+ *   is the sweep-wide widest deviation from track level: 1.29:1, and it does
+ *   not move when the payload is applied. That single number settles the
+ *   withdrawal on its own and settles it harder than the per-reading pair
+ *   does: the track's own noise floor, 1.29:1, is ALREADY ABOVE the 1.27:1
+ *   the defect produces, so the signal is not merely under this scan's 1.8:1
+ *   detect threshold, it is inside the noise. Lowering the threshold to reach
+ *   it would key the instrument to the payload. The GEOMETRY regression that
+ *   produces a stray groove is bound -- that exact payload is battery row T8,
+ *   killed by three notch-count claims -- so what is not covered is the stray
+ *   mark itself, not the fault that makes one.
  */
 
 import test, { after } from 'node:test';
@@ -328,6 +333,15 @@ const METER_FLOOR = 40;
 const TONED_FLOOR = 24;
 const VALUE_FLOOR = 8;
 
+/* Which severities a REAL pane must be caught drawing, per theme, declared
+   rather than counted. The totals above cannot do this job: `RANK.ok` is 0, so
+   a board of nothing but `ok` meters clears them with no notch on screen, and a
+   payload that deletes every `bad` reading leaves them green while the notch
+   claims judge nothing. `vio` is absent on purpose -- no pane draws one today,
+   which is why the synthetic arm exists and why it is the only thing that
+   caught `vio` rendering identically to `bad`. */
+const REQUIRED_REAL = ['warn', 'bad'];
+
 const THEMES = ['dark', 'light'];
 const PANES = ['alerts', 'analytics', 'evaluations', 'jobs-live', 'releases',
   'run-history', 'settings', 'spend', 'users'];
@@ -357,7 +371,10 @@ const server = http.createServer((req, res) => {
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
-const profile = fs.mkdtempSync(path.join(ROOT, '.ops-meter-'));
+/* Outside the checkout on Actions, inside it on a laptop, same as the other
+   browser suites here. A profile written into the checkout is one `git add -A`
+   away from being committed by whoever works in the tree next. */
+const profile = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || ROOT, '.ops-meter-'));
 const browser = spawn(chromePath(), ['--headless=new', '--remote-debugging-port=0',
   `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
   '--disable-gpu', '--force-device-scale-factor=1', '--hide-scrollbars',
@@ -506,11 +523,12 @@ function analyseFill(img, visibleFill) {
   return scanRuns(rowOf(img, EDGE_TRIM, visibleFill - EDGE_TRIM), 12);
 }
 
-/* The same detector pointed at the UNFILLED part of the track. A groove there
-   is a mark the bar has not reached, which reads as a higher value than the
-   meter was given. Nothing should be found: every groove is positioned left
-   of the fill's trailing edge and the track clips what overhangs. This is the
-   claim that replaced a redundant `overflow: hidden` on the fill. */
+/* The same detector pointed at the UNFILLED part of the track. NOTHING
+   ASSERTS ON THIS -- it feeds one `METER_SUMMARY` line and nothing else. It
+   was written to bind a claim that a groove never paints past the fill, and
+   that claim was withdrawn when the payload proving it measured under this
+   detector's own floor. See NOT COVERED in the header. What survives is the
+   published sensitivity, which is what makes the withdrawal checkable. */
 function analyseStray(img, visibleFill, trackWidth) {
   return scanRuns(rowOf(img, visibleFill + EDGE_TRIM, trackWidth - EDGE_TRIM), 10);
 }
@@ -583,7 +601,14 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
   const meters = await evaluate(READ_METERS);
   const out = [];
   for (const m of meters) {
-    if (m.visibleFill < 8) continue;
+    /* Only a fill with no width at all is dropped. An 8px bound was here
+       first and it skipped exactly the meters the width floor exists to
+       catch: a `.meter.bad` drawn at 4% is 6.7px, too narrow for its two
+       notches, and being dropped before the floor judged it made a total
+       under-count invisible while the same defect 3px wider was caught.
+       Nothing on the board is dropped at 1px, so the floor now judges every
+       meter that paints. */
+    if (m.visibleFill < 1) continue;
     const img = await shoot(m.box);
     const tone = m.tones[0] || null;
     out.push({
@@ -624,17 +649,26 @@ const toned = readings.filter((r) => r.tone);
 
 /* ------------------------------------------------------------------- tests */
 
-/* The vocabulary is read out of the sheet rather than trusted from this file.
+/* The vocabulary is read out of the sheets rather than trusted from this file.
    If somebody adds `.meter.crit` and gives it a hue, this reds rather than
    quietly declining to measure it -- the shape of defect where a guard stays
-   green because it never looked. */
-test('the tone vocabulary this sweep declares is the tone vocabulary aria.css defines', () => {
-  const css = fs.readFileSync(path.join(ROOT, 'ops/assets/aria.css'), 'utf8');
-  const found = new Set();
-  for (const m of css.matchAll(/\.meter\.([a-z][a-z0-9-]*)/g)) found.add(m[1]);
-  assert.deepEqual([...found].sort(), [...TONES].sort(),
-    `aria.css styles meter tones ${[...found].sort().join(', ')} but this sweep ranks ` +
-    `${[...TONES].sort().join(', ')}; a tone with no rank is a tone nothing here measures`);
+   green because it never looked. EVERY sheet under `ops/assets`, not just
+   `aria.css`: a tone defined one file over is a tone with no rank just the
+   same, and reading a single file would be that defect wearing a guard. */
+test('the tone vocabulary this sweep declares is the tone vocabulary the sheets define', () => {
+  const sheets = fs.readdirSync(path.join(ROOT, 'ops/assets')).filter((f) => f.endsWith('.css'));
+  assert.ok(sheets.length >= 10, `only ${sheets.length} stylesheets were read`);
+  const found = new Map();
+  for (const f of sheets) {
+    const css = fs.readFileSync(path.join(ROOT, 'ops/assets', f), 'utf8');
+    for (const m of css.matchAll(/\.meter\.([a-z][a-z0-9-]*)/g)) {
+      if (!found.has(m[1])) found.set(m[1], f);
+    }
+  }
+  assert.deepEqual([...found.keys()].sort(), [...TONES].sort(),
+    `the sheets style meter tones ${[...found].map(([t, f]) => `${t} (${f})`).sort().join(', ')} ` +
+    `but this sweep ranks ${[...TONES].sort().join(', ')}; a tone with no rank is a tone ` +
+    'nothing here measures');
 });
 
 test('the sweep judged a real board of meters, not an empty one', () => {
@@ -643,9 +677,15 @@ test('the sweep judged a real board of meters, not an empty one', () => {
     'a board that rendered nothing would satisfy every other claim in this file');
   assert.ok(toned.length >= TONED_FLOOR,
     `judged ${toned.length} severity-bearing meters, below the declared floor of ${TONED_FLOOR}`);
+  /* See REQUIRED_REAL: a total cannot tell a board of `ok` meters from a
+     board carrying severity, and a payload that deleted every `bad` reading
+     left both totals above green while the notch claims judged nothing. */
   for (const theme of THEMES) {
-    assert.ok(toned.some((r) => r.theme === theme),
-      `no severity-bearing meter was judged in the ${theme} theme`);
+    for (const tone of REQUIRED_REAL) {
+      assert.ok(toned.some((r) => r.theme === theme && r.tone === tone),
+        `no real .meter.${tone} was judged in the ${theme} theme, so every claim ` +
+        `about ${RANK[tone]}-notch severity rests on the synthetic arm alone`);
+    }
   }
 });
 
@@ -734,7 +774,12 @@ test('the bar reports its value, filled against unfilled, in both themes', () =>
     const fv = forced.filter((r) => r.value && r.value.emptyWidth >= 4).map((r) => r.value.contrast);
     console.log(`forced-colors value contrast: worst ${Math.min(...fv).toFixed(2)}:1, n=${fv.length}`);
   }
-  assert.ok(worst < VALUE_CONTRAST + 1,
+  /* Trips the moment the worst reading clears 3:1, which is where the
+     shortfall is discharged. A `+ 1` slack was here first and left every
+     repair landing in [3, 4) green -- which is precisely where a repair
+     aimed at the SC 1.4.11 threshold lands, so the ratchet would have
+     outlived the issue in silence. */
+  assert.ok(worst < VALUE_CONTRAST,
     `the light-theme shortfall this ratchet records appears to be gone (worst now ` +
     `${worst.toFixed(2)}:1); raise the ratchet to ${VALUE_CONTRAST} and close #10848`);
 });

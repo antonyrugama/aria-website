@@ -40,6 +40,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
 const TARGET = 'scripts/ops-meter-severity.test.mjs';
 const CSS = 'ops/assets/aria.css';
+const PANE = 'ops/assets/pane-evaluations.js';
 
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
 
@@ -70,7 +71,7 @@ const BATTERY = [
   },
   {
     id: 'T1', file: CSS, expect: 'KILL',
-    why: 'Deletes every notch rule, restoring the state of the file before this PR: the four tones differ in `--c` and nothing else. This is the defect Stadiora/Aria#10825 records, put back verbatim.',
+    why: 'Deletes every notch rule -- 49 of the 62 lines this PR adds -- so the four tones differ in `--c` and nothing else, which is the defect Stadiora/Aria#10825 records. It is NOT the pre-PR file: the `@media (forced-colors: active)` block survives this payload, and the tell is in the killed-by column, where `under forced-colors the bar still paints its value` is correctly absent. That half is T5. No single row restores both.',
     apply: (s) => {
       const from = s.indexOf('/* Stadiora/Aria#10825: severity was carried by');
       const to = s.indexOf('.meter.vio  i::before  { right: 12px; border-right-width: 2px; }');
@@ -117,6 +118,17 @@ const BATTERY = [
     why: 'Moves the first groove 6px PAST the fills trailing edge for all three toned meters -- warn, bad and vio share this declaration block -- so every tone loses a notch and vio reads as bad. Written to bind a claim about marks on bare track; that claim was withdrawn when this payload measured 1.27:1 there, under the 1.8:1 the scan can resolve. The payload stayed because the geometry fault it injects is caught anyway, by count rather than by position.',
     apply: (s) => replaceOnce(s, '.meter.vio  i::after   { right: 4px; border-right-width: 2px; }',
       '.meter.vio  i::after   { right: -6px; border-right-width: 2px; }')
+  },
+  {
+    id: 'T9', file: PANE, expect: 'KILL',
+    why: 'Draws the boards only `.meter.bad` at 4% instead of 74%, which is 6.7px of fill against the 14px two notches occupy -- a severity meter that cannot carry its severity. Raised in independent review as a demonstrated false green: a `visibleFill < 8` skip in the sweep dropped this reading before the width floor judged it, so the guard caught the same defect at 10.1px and was blind to a worse version at 6.7px. The skip is now 1px. This row is that finding, kept as an experiment.',
+    apply: (s) => replaceOnce(s, "score: '0.74', pct: 74, tone: 'bad'", "score: '0.74', pct: 4, tone: 'bad'")
+  },
+  {
+    id: 'T10', file: CSS, expect: 'KILL',
+    why: 'REPAIRS Stadiora/Aria#10848 rather than breaking anything -- flattens the light fill to a flat mid grey so every light meter clears 3:1 against its own track. The ratchet holding that shortfall must red when the shortfall goes, or it outlives the issue in silence. Also raised in review: the trip was `worst < VALUE_CONTRAST + 1`, which left everything in [3, 4) green, and a repair aimed at the SC 1.4.11 threshold lands exactly there. Only `background-image`, so the forced-colors `background-color` still wins in that block.',
+    apply: (s) => replaceOnce(s, '.meter i {\n  position: absolute;',
+      '[data-theme="light"] .meter i { background-image: linear-gradient(90deg, #737373, #737373); box-shadow: none; }\n.meter i {\n  position: absolute;')
   }
 ];
 

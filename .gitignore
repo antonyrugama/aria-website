@@ -54,6 +54,9 @@ desktop.ini
 .ops-painter-exit-*/
 
 # Chrome profile written by scripts/ops-meter-severity.test.mjs when RUNNER_TEMP
-# is unset, and the directory its mutation battery writes the generated table and
-# per-row runner logs into. Same terms as the entries above.
+# is unset, which is every laptop; Actions always sets it, so on the runner this
+# lands outside the checkout. Same terms as the entries above: removed once
+# Chrome has exited, ignored for the run interrupted before that. The battery's
+# generated table and per-row logs are not here -- they go to .probe, covered
+# above.
 .ops-meter-*/
