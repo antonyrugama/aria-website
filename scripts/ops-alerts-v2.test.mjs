@@ -3536,14 +3536,17 @@ function sheetCount(pattern, says) {
      green with the sheet stating sixty-six and the page drawing six (found
      in the thirteenth review of #75). So the run is required to be WHOLE
      where it sits: nothing word-ish and no hyphen either side of it, which
-     is what "the number word the sentence states" means, and is blind to
+     is what a maximal `[\w-]` run means and NOT what "the number word the
+     sentence states" means -- the two come apart wherever the sheet joins a
+     compound with something that is neither (the fourteenth review). It is
+     blind to
      whether the pattern ate the rest in a prefix, in a suffix, or inside a
      second group. It says nothing about the shape of the pattern, and a
      pattern with no group 1 at all is refused here rather than crashing. */
   const span = found.indices && found.indices[1];
   assert.ok(Array.isArray(span), 'sheetCount() reads group 1 and was handed a pattern '
     + 'that has none, so nothing can be resolved from it: ' + pattern.source);
-  const nextTo = (ch) => ch !== undefined && (/[\w]/u.test(ch) || /\p{Pd}/u.test(ch));
+  const nextTo = (ch) => /[\w-]/.test(ch || '');
   const context = JSON.stringify(prose.slice(Math.max(0, span[0] - 16), span[1] + 16));
   assert.ok(!nextTo(prose[span[0] - 1]) && !nextTo(prose[span[1]]),
     'pane-alerts-v2.css states ' + context + ' and the pattern for ' + JSON.stringify(says)
@@ -3554,9 +3557,14 @@ function sheetCount(pattern, says) {
      `[\w-]+` is free to start at the TAIL component of a compound the sheet
      joins with a space -- "Twenty six columns" resolves to 6, both edges are
      spaces, and 481 tests stay green on a one-word edit to the sheet (found
-     in the fourteenth review of #75). Any dash is a dash: the edge test
-     above reads `\p{Pd}`, so the non-breaking hyphen that renders exactly
-     like the ASCII one is not a second way in. */
+     in the fourteenth review of #75). This is also what catches the dash
+     spellings the edge test above cannot see, and it is why that test is
+     still the ASCII `[\w-]` and claims nothing wider: a non-breaking hyphen
+     renders exactly like the ASCII one and is not word-ish, so "Sixty\u2011six
+     columns" walks past the edge test -- and dies here, because a compound
+     that changes the number has a number word in it. Widening the edge test
+     to `\p{Pd}` was tried and deleted: no payload made it the thing that
+     fired (M15-B1f). */
   const wordBefore = (prose.slice(0, span[0]).match(/([\w-]+)[^\w-]*$/) || [])[1];
   const wordAfter = (prose.slice(span[1]).match(/^[^\w-]*([\w-]+)/) || [])[1];
   const numberish = (word) => word !== undefined && NUMBER_ISH.has(word.toLowerCase());
