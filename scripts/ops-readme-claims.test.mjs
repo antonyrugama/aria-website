@@ -148,6 +148,14 @@
      claim no block carries, is not judged. The remedy used in the rewrite is
      to make the prose point AT a block rather than repeat it, but nothing
      enforces that.
+   - This file's own wholesale removal, and that is not a gap a guard can
+     close. Every defence here can be deleted by somebody who also deletes the
+     claim it holds up; what the floors buy is narrower and is the thing that
+     actually went wrong twice: a PIN or a DERIVATION cannot go quietly, which
+     they could in rounds 5 and 6 and which reinstated live defects both times.
+     The ratchet test's own name is a row in `claims-blocks`, so deleting the
+     test moves a line - but deleting that line too is green, and saying so is
+     the point of this bullet.
    - A defence SWAPPED rather than retired. The three FLOORS count blocks
      pinned, blocks derived and families held. Each is a floor, so each sees a
      NET shrink and nothing else: delete one derivation and add a trivial one
@@ -1353,6 +1361,7 @@ DERIVED['dark-text-3'] = () => {
 /* The blocks this file derives, listed out of this file rather than typed into
    the README, because the README's enumeration of them fell three behind. */
 const SWEEP_TEST = 'every repository file ops/README.md names is in the tree or declared deleted';
+const RATCHET_TEST = 'no defence in this file was retired without lowering a floor';
 
 DERIVED['claims-blocks'] = () => {
   /* Two row sets are judged by a test rather than by a block — the file
@@ -1368,6 +1377,7 @@ DERIVED['claims-blocks'] = () => {
   const tests = [
     ...(self.includes('\ntest(SWEEP_TEST,') ? [SWEEP_TEST] : []),
     ...(self.includes('\ntest(TABLE_TEST,') ? [TABLE_TEST] : []),
+    ...(self.includes('\ntest(RATCHET_TEST,') ? [RATCHET_TEST] : []),
   ];
   return [
     ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
@@ -1774,7 +1784,7 @@ test('the run reports what it judged', () => {
    The failure message names what is missing rather than the arithmetic,
    because the arithmetic is not the finding: the finding is which defence
    stopped existing. */
-test('no defence in this file was retired without lowering a floor', () => {
+test(RATCHET_TEST, () => {
   const pinned = Object.keys(REQUIRED_ROWS).sort();
   assert.ok(pinned.length >= FLOORS.pinnedBlocks,
     `REQUIRED_ROWS pins ${pinned.length} blocks and FLOORS.pinnedBlocks is ${FLOORS.pinnedBlocks}: `
