@@ -1449,7 +1449,25 @@ DERIVED['pinned-blocks'] = () => [
   `floor: blocks derived in this file = at least ${FLOORS.derivedBlocks}`,
   `floor: families pinned in REQUIRED_FAMILIES = at least ${FLOORS.statusFamilies}`,
   `floor: widest shared names printed by v1-v2-collision = exactly ${FLOORS.collisionWidest}`,
+  `floor: citations exempt by name = exactly ${FLOORS.exemptCitations}`,
 ];
+
+const HISTORICAL_CITATIONS = ['pane-registry.js:103-110'];
+
+/* The exemptions themselves, published rather than counted in a sentence. The
+   README said "One citation is exempt by name" and round 10 grew the array to
+   three, added two live citations to the prose, and the run stayed green with
+   the sentence still saying one. An exemption list that can grow quietly is
+   the guard's own back door, so its SIZE is a floor and an equality: growing
+   it is a weakening, not a widening, and has to be loud. */
+DERIVED['exempt-citations'] = () => {
+  assert.strictEqual(HISTORICAL_CITATIONS.length, FLOORS.exemptCitations,
+    `HISTORICAL_CITATIONS holds ${HISTORICAL_CITATIONS.length} exemptions and `
+    + `FLOORS.exemptCitations is ${FLOORS.exemptCitations}: the list grew or shrank, and the `
+    + 'README publishes it row by row, so neither may be silent.');
+  return HISTORICAL_CITATIONS.slice().sort()
+    .map((c) => `${c} = exempt, the record of a citation that had already drifted`);
+};
 
 /* The policy a page actually declares, read out of the meta tag rather than
    assumed from its presence. A tag whose http-equiv this matcher does not
@@ -1640,7 +1658,10 @@ const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
    number here AND the row it prints into `claims id=pinned-blocks`. That is the
    property being bought — not that a retirement is impossible, but that it
    cannot be quiet. */
-const FLOORS = { pinnedBlocks: 17, derivedBlocks: 24, statusFamilies: 4, collisionWidest: 8 };
+const FLOORS = {
+  pinnedBlocks: 17, derivedBlocks: 25, statusFamilies: 4,
+  collisionWidest: 8, exemptCitations: 1,
+};
 
 const REQUIRED_ROWS = {
   /* Round 8: five more row sets were written by hand here and outside this
@@ -1658,13 +1679,20 @@ const REQUIRED_ROWS = {
      REQUIRED_ROWS - and whose TAIL is written by hand right here. The bulk
      needs no pin; the tail is as free to shrink as any other hand-written
      row, and round 8 retired one of each while the run stayed green. */
-  'claims-blocks': [`and a check, ${SWEEP_TEST}`, `and a check, ${TABLE_TEST}`],
+  'claims-blocks': [
+    `and a check, ${SWEEP_TEST}`, `and a check, ${TABLE_TEST}`,
+    /* Round 10: round 9 added a THIRD tail row here and pinned two, so the
+       new check's own published row was free to go with its registration -
+       round 5's defect at a seventeenth address, in the round-9 fix. */
+    `and a check, ${CITATION_CHECK}`,
+  ],
   'pinned-blocks': [
     'claims id=v1-status-classes pins the families',
     'floor: blocks pinned in REQUIRED_ROWS',
     'floor: blocks derived in this file',
     'floor: families pinned in REQUIRED_FAMILIES',
     'floor: widest shared names printed by v1-v2-collision',
+    'floor: citations exempt by name',
   ],
   /* Five more, found in round 7 by the reviewer enumerating every derivation
      rather than re-reading the list the round before had named. Each takes its
@@ -1914,12 +1942,12 @@ check(SWEEP_TEST, () => {
 
    So this is a NARROWING rather than a new analysis, and it is the whole
    rule: prose may name a FILE and may not name a LINE. The exceptions are
-   citations that are themselves the record of a number that WAS wrong, which
-   are listed here and nowhere else. What it does not see: a citation written
-   in words ("line 583 of ..."), or one outside a backtick span. Both are in
-   NOT COVERED at the head of this file. */
-const HISTORICAL_CITATIONS = ['pane-registry.js:103-110'];
-
+   citations that are themselves the record of a number that WAS wrong; they
+   live in HISTORICAL_CITATIONS above, are PUBLISHED row by row in the
+   `exempt-citations` block, and their number is a floor, because a list of
+   things this refuses to judge is its own back door. What it does not see: a
+   citation written in words ("line 583 of ..."), or one outside a backtick
+   span. Both are in NOT COVERED at the head of this file. */
 check(CITATION_CHECK, () => {
   const here = new Set([
     ...PAGES.map((f) => `ops/${f}`),
@@ -1933,7 +1961,7 @@ check(CITATION_CHECK, () => {
      out of reach of this check rather than quietly counted as clean; that is
      the NOT COVERED entry, not a silent skip. The extension must start with a
      LETTER, or the contrast ratio `1.08:1` reads as file `1.08` line 1. */
-  const cited = /^([A-Za-z0-9._/-]+\.[A-Za-z][A-Za-z0-9]*):\d+(?:[-,]\d+)*$/;
+  const cited = /([A-Za-z0-9._/-]+\.[A-Za-z][A-Za-z0-9]*):\d+(?:[-,]\d+)*/g;
   const spans = [...BLOCKS.values()];
   const inside = (n) => spans.some((b) => n >= b.line && n <= b.end);
   const found = [];
@@ -1946,10 +1974,15 @@ check(CITATION_CHECK, () => {
     if (inside(i + 1)) return;
     if (line.trim() === '') continuing = false;
     for (const span of line.matchAll(/`([^`]+)`/g)) {
-      const hit = cited.exec(span[1]);
-      if (hit) {
-        continuing = here.has(hit[1]) || (!hit[1].includes('/') && byBasename.has(hit[1]));
-        if (continuing) found.push({ at: i + 1, text: span[1] });
+      /* Every citation INSIDE the span, not a span that is nothing but one.
+         Round 10 demonstrated the anchored version green on `see
+         check-ops-shell-v2.mjs:583` and on a span carrying two citations,
+         under a claim that read `anywhere in this file's prose`. */
+      const hits = [...span[1].matchAll(cited)]
+        .filter((h) => here.has(h[1]) || (!h[1].includes('/') && byBasename.has(h[1])));
+      if (hits.length) {
+        continuing = true;
+        for (const hit of hits) found.push({ at: i + 1, text: hit[0] });
         continue;
       }
       if (continuing && /^:\d+(?:[-,]\d+)*$/.test(span[1])) found.push({ at: i + 1, text: span[1] });
