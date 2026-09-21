@@ -736,11 +736,15 @@ function focusable(node) {
      takes a stop when the map is used and none when it is not, with identical
      markup on the node. It was answered `true` by the branch five lines below,
      which over-reported reachability (found in the twelfth review of #75).
-     With NEITHER an href nor a tabindex it is a stop in no arrangement --
-     measured both ways round -- and a NEGATIVE tabindex was answered false
-     above, so only the two undecidable shapes reach the throw. */
+     An own contenteditable in the true or plaintext-only state does the same
+     thing a tabindex does -- measured both ways round, a stop only with the
+     map used -- and moving this branch above `editable()` took that answer
+     away from it and left `false` behind, in the under-reporting direction
+     (found in the thirteenth review of #75). What is left for `false` is the
+     node that settles it itself: no href, no tabindex, no own editability. A
+     NEGATIVE tabindex was answered false above and never reaches here. */
   if (node.tagName === 'AREA') {
-    if (attr(node, 'href') === null && index === null) return false;
+    if (attr(node, 'href') === null && index === null && ownEditable(node) !== true) return false;
     throw new Error('focusable() cannot tell: an <area> with an href or a non-negative '
       + 'tabindex takes a tab stop only where a rendered <img usemap> uses its <map>');
   }
@@ -940,8 +944,9 @@ const FOCUSABLE_PROBES = [
   { name: '<area href>', tag: 'area', attrs: { href: '/ops/alerts.html' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. a stop only inside a <map> a rendered <img usemap> uses' },
   { name: '<area> with no href', tag: 'area', answer: false,
-    note: 'FOUND IN REVIEW: true. no href and no tabindex, so no stop in any arrangement '
-      + '-- measured with the map used and unused' },
+    note: 'FOUND IN REVIEW: true. no href, no tabindex and nothing else that reaches '
+      + 'outside the node, so no stop in any arrangement -- measured with the map used '
+      + 'and unused' },
   { name: '<area tabindex="0"> with no href', tag: 'area', attrs: { tabindex: '0' },
     answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. measured: a stop when a rendered <img usemap> uses the '
@@ -952,6 +957,10 @@ const FOCUSABLE_PROBES = [
   { name: '<area tabindex="-1"> with no href', tag: 'area', attrs: { tabindex: '-1' },
     answer: false,
     why: 'out of the ring whatever the map does, and answered above the refusal' },
+  { name: '<area contenteditable> with no href', tag: 'area',
+    attrs: { contenteditable: 'true' }, answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. an own contenteditable makes it a stop in a used map '
+      + 'and not in an unused one, exactly as a tabindex does' },
   { name: '<details> with a <summary> child', tag: 'details', childBefore: ['summary'],
     answer: false, why: 'the <summary> is the stop; its <details> is not' },
   { name: '<details> with no <summary>', tag: 'details', answer: 'cannot tell',
@@ -1069,8 +1078,8 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 87, takesATabStop: 31, doesNot: 43, refused: 13, wereWrongBefore: 7,
-      foundInReview: 34 });
+    { cases: 88, takesATabStop: 31, doesNot: 43, refused: 14, wereWrongBefore: 7,
+      foundInReview: 35 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -3453,30 +3462,6 @@ const COUNT_WORDS = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
 };
 
-/* WHERE group 1 is, rather than whether the source happens to spell the
-   required capture somewhere in it. Asking `source.includes(...)` was green
-   for /(\w+) columns in ([\w-]+) leaves/i -- a legal caller that widens the
-   pattern to also take the width, which is the obvious next widening here --
-   and MX-6 walked back in with the sheet saying sixty-six and the page
-   drawing six (found in the twelfth review of #75). The scan skips escapes
-   and character classes, and treats (?: and lookarounds as non-capturing
-   while treating (?<name> as capturing, so a named first group fails the
-   check rather than passing it. What it does NOT understand: nothing else --
-   a pattern built by string concatenation is read the same way, because it
-   is read off `source` after construction. */
-const firstGroupAt = (source) => {
-  let inClass = false;
-  for (let i = 0; i < source.length; i += 1) {
-    const ch = source[i];
-    if (ch === '\\') { i += 1; continue; }
-    if (inClass) { if (ch === ']') inClass = false; continue; }
-    if (ch === '[') { inClass = true; continue; }
-    if (ch !== '(') continue;
-    if (source[i + 1] !== '?' || /^\(\?<[^=!]/.test(source.slice(i))) return i;
-  }
-  return -1;
-};
-
 /* The number the SHEET states, at one named site, resolved from its word.
    A pattern that stops matching is a failure, not a zero: the sentence
    moving or being reworded is exactly the drift this reads it to catch. And
@@ -3487,23 +3472,34 @@ const firstGroupAt = (source) => {
    bullet went on saying one and the page drew one. */
 function sheetCount(pattern, says) {
   const prose = PANE_CSS.replace(/\s+/g, ' ');
-  /* ([\w-]+), not (\w+): \w excludes the hyphen, so "Twenty-one" captured
-     `one` and resolved to 1 while the page drew 1 -- green, and the sheet
-     free to state any compound whose TAIL is a word this table knows (found
-     in the eleventh review of #75, MX-4/5/6). An unresolvable word has to
-     reach the check below, which already fails with the right message. The
-     shape is required rather than trusted, so the next caller cannot
-     reintroduce it. */
-  const at = firstGroupAt(pattern.source);
-  assert.ok(at >= 0 && pattern.source.startsWith('([\\w-]+)', at),
-    'sheetCount() reads group 1 and was handed a pattern whose FIRST capture is not '
-    + '([\\w-]+), so a hyphenated compound number word would resolve to its last '
-    + 'component: ' + pattern.source);
-  const all = [...prose.matchAll(new RegExp(pattern.source, pattern.flags.replace('g', '') + 'g'))];
+  const all = [...prose.matchAll(
+    new RegExp(pattern.source, pattern.flags.replace(/[gd]/g, '') + 'gd'))];
   assert.equal(all.length, 1, 'pane-alerts-v2.css states ' + JSON.stringify(says) + ' in '
     + all.length + ' places, not one: the sentence this test reads the count out of has '
     + 'moved, been reworded or been duplicated, and nothing is holding it to the page');
   const found = all[0];
+  /* What group 1 CAPTURED, not how it is spelled. "Twenty-one" captured by
+     (\w+) resolved to 1 while the page drew 1 -- green, and the sheet free
+     to state any compound whose tail this table knows (MX-4/5/6, the
+     eleventh review of #75). Requiring the spelling `([\w-]+)` was the first
+     fix and it was not enough: /\w+-([\w-]+) columns in \d+px/i is spelled
+     right, is group 1, and still eats `Sixty-` before the capture starts --
+     green with the sheet stating sixty-six and the page drawing six (found
+     in the thirteenth review of #75). So the run is required to be WHOLE
+     where it sits: nothing word-ish and no hyphen either side of it, which
+     is what "the number word the sentence states" means, and is blind to
+     whether the pattern ate the rest in a prefix, in a suffix, or inside a
+     second group. It says nothing about the shape of the pattern, and a
+     pattern with no group 1 at all is refused here rather than crashing. */
+  const span = found.indices && found.indices[1];
+  assert.ok(Array.isArray(span), 'sheetCount() reads group 1 and was handed a pattern '
+    + 'that has none, so nothing can be resolved from it: ' + pattern.source);
+  const nextTo = (ch) => /[\w-]/.test(ch || '');
+  assert.ok(!nextTo(prose[span[0] - 1]) && !nextTo(prose[span[1]]),
+    'pane-alerts-v2.css states ' + JSON.stringify(prose.slice(span[0] - 12, span[1] + 12))
+    + ' and the pattern for ' + JSON.stringify(says) + ' captured only '
+    + JSON.stringify(prose.slice(span[0], span[1])) + ' of the number word, so a compound '
+    + 'the sheet states would resolve to one component of itself');
   const word = found[1].toLowerCase();
   assert.ok(Object.prototype.hasOwnProperty.call(COUNT_WORDS, word),
     'pane-alerts-v2.css states ' + JSON.stringify(word) + ' where ' + JSON.stringify(says)
