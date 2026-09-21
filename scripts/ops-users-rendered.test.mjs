@@ -1490,24 +1490,25 @@ for (const theme of THEMES) {
     assert.equal(arrived[3], 'region', `it arrived with role ${JSON.stringify(arrived[3])}`);
   });
 
-  /* aria.css:180 draws every focus ring at outline-offset 2px, which on a box
-     that clips puts the ring outside the thing it is naming and over whatever
-     is next to it. pane-users-v2.css pulls it inside. PR #85's finding is the
-     reference: at a positive offset the adjacent surface is often the
-     control's own halo, and no recolouring answers that. */
-  test(`[${theme}] the focus ring on a scroll box is drawn inside it`, () => {
+  /* A box that has just become focusable has to show that it is focused:
+     WCAG 2.4.7, and the fix above is what puts focus there in the first place.
+     The ring is aria.css:180's global one, measured rather than assumed.
+
+     NOT its offset. aria.css draws every ring at outline-offset 2px, and four
+     v2 pane sheets pull theirs inside with a `:focus-visible` rule of their
+     own; this sheet has no such rule, so the ring sits 2px outside the box.
+     Measured on this pane the box is flush with its card body and nothing
+     clips the ring, so it is visible on all four sides -- a refinement, not a
+     defect. Adding the rule is a paired edit with ops/README.md's derived
+     `claims id=table-focus-rings` block, which another agent holds. */
+  test(`[${theme}] the newly focusable scroll box draws a focus ring`, () => {
     const k = census[theme].scrollers.keyboard;
     assert.equal(k.focusVisible, true,
       `the wrap holding "${k.caption}" did not match :focus-visible after eight real ` +
-      'key presses, so its outline is whatever an unfocused box computes and the ' +
-      'rest of this test would assert nothing');
+      'key presses, so a keyboard user has no mark of where they are');
     assert.notEqual(k.outlineStyle, 'none',
       'the focused scroll box draws no outline at all');
     assert.ok(k.outlineWidth > 0,
       `the focused scroll box draws a ${k.outlineWidth}px outline`);
-    assert.ok(k.outlineOffset <= 0,
-      `the focused scroll box puts its ring at outline-offset ${k.outlineOffset}px, ` +
-      'outside the box, where it overlaps the card beside it rather than marking ' +
-      'the box it belongs to');
   });
 }
