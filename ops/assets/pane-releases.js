@@ -486,6 +486,18 @@
           (NODE[tone] ? ' ' + NODE[tone] : '')
       });
 
+      /* Which of the three states this stage is in, to a reader that cannot
+         see the rail behind it or the glyph inside the node. aria-current is
+         the standard for the one stage a process is at; the other two states
+         have no attribute of their own, so they take a word, first in the
+         step so it prefixes the stage name rather than trailing it.
+
+         The current stage needs no word beside aria-current: a screen reader
+         announces the attribute, and a redundant "Now" would be read twice.
+         Stadiora/Aria#10646. */
+      if (isNow) step.setAttribute('aria-current', 'step');
+      else step.appendChild(h('span', { className: 'sr', text: done ? 'Done. ' : 'Not reached. ' }));
+
       var glyph = null;
       if (done) glyph = 'check';
       else if (isNow) {

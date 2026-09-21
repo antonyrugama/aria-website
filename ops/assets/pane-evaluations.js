@@ -549,8 +549,13 @@
   function evidenceQuarantineSection() {
     var section = workingBand('Put evidence into quarantine', 'Operator and owner, 5 MiB and 90 days at most');
 
+    /* A padlock, not the warning triangle. Both callouts on this pane wore the
+       triangle, so the one that is actually a warning — the trust note above
+       the approval handoff — had no glyph of its own to be told apart by.
+       This one states a boundary rather than a risk, and a boundary is a lock.
+       Stadiora/Aria#10647. */
     section.appendChild(h('div', { className: 'callout' }, [
-      icon('warn'),
+      icon('lock'),
       h('div', {}, [
         h('strong', { text: 'Quarantine is not permission to use evidence.' }),
         h('p', {
@@ -799,7 +804,7 @@
     var approvalGetId = input('text');
     var approvalGetError = h('div', { className: 'field-error', role: 'alert' });
     var approvalGetSubmit = h('button', {
-      className: 'btn btn-secondary',
+      className: 'btn',
       type: 'submit',
       text: 'Load request'
     });
@@ -852,7 +857,13 @@
     }, [
       icon('warn'),
       h('div', {}, [
-        h('strong', { text: 'Qualification comes from an external trust record.' }),
+        /* One word, carrying the same fact as the amber for anyone the amber
+           does not reach — a monochrome screen, a printout, forced-colours
+           mode, or simply not knowing that this pane's amber means caution.
+           #10456's fix added a word for the same reason: the rule is that
+           colour is never the only channel, and the cost of holding to it
+           here is one word. Stadiora/Aria#10647. */
+        h('strong', { text: 'Warning: qualification comes from an external trust record.' }),
         h('p', {
           text: 'This dashboard cannot provision qualification. Owner role and fresh authentication remain necessary but do not make a reviewer qualified.'
         })
@@ -860,14 +871,17 @@
     ]);
     approvalTrustNote.setAttribute('id', 'approval-trust-note');
 
+    /* A step of the handoff. shell.cardHead builds exactly this head — an h3
+       .card-title with a .card-note under it — so the hand-rolled copy that
+       used to sit here existed only to spell the note `card-hint`, a name
+       ops.css painted and this page does not load. The note therefore rendered
+       at 13.5px in full ink: the same size and the same colour as the title
+       above it, which is what a card's explanatory sentence must not be
+       (Stadiora/Aria#10647). The shell's own shape, and the shell's own class,
+       instead of a second spelling of both. */
     function approvalCard(title, hint, approvalForm) {
       return h('div', { className: 'card approval-card' }, [
-        h('div', { className: 'card-head' }, [
-          h('div', {}, [
-            h('h3', { className: 'card-title', text: title }),
-            h('p', { className: 'card-hint', text: hint })
-          ])
-        ]),
+        shell.cardHead(title, hint),
         h('div', { className: 'card-body' }, [approvalForm])
       ]);
     }
@@ -1068,10 +1082,14 @@
      reader as the same three characters. assets/pane-overview.js carries the
      same repair, made there after the same finding.
 
-     `u-move` carries no style. It marks which pills are a change, because
-     `.pill.down` is also the red tone and the release-held pill wears it
-     without being a fall — without the hook the test below has no way to ask
-     the question of the right set. */
+     `u-move` marks which pills are a change, because `.pill.down` is also the
+     red tone and the release-held pill wears it without being a fall — without
+     the hook the test below has no way to ask the question of the right set.
+     It is also the one selector that can reach every figure in this column, so
+     it is what sets them in tabular figures: see .u-move in
+     assets/pane-evaluations-v2.css. It used to carry no style at all, which
+     put it on Stadiora/Aria#10647's list of classes written into a DOM no
+     sheet this page loads could see. */
   function movePill(entry) {
     if (!entry.down && !entry.up) return h('span', { className: 'pill u-move', text: entry.move });
     return h('span', { className: 'pill u-move ' + (entry.down ? 'down' : 'up') }, [

@@ -761,29 +761,7 @@ const KNOWN_UNPAINTED = [
   { pane: 'users', cls: 'sel-mark', issue: null,
     why: 'a query hook: assets/pane-users.js:549 finds the selected mark by it' },
   { pane: 'alerts', cls: 'rule-row', issue: 'Stadiora/Aria#10644',
-    why: 'styled only in operate.css, which alerts.html deliberately does not load' },
-  { pane: 'releases', cls: 'done', issue: 'Stadiora/Aria#10646',
-    why: 'no sheet in the repository defines it' },
-  { pane: 'evals', cls: 'dataset-form', issue: 'Stadiora/Aria#10647',
-    why: 'styled only in ops.css, which evaluations.html deliberately does not load' },
-  { pane: 'evals', cls: 'dataset-result', issue: 'Stadiora/Aria#10647',
-    why: 'styled only in ops.css, which evaluations.html deliberately does not load' },
-  { pane: 'evals', cls: 'evidence-form', issue: 'Stadiora/Aria#10647',
-    why: 'styled only in ops.css, which evaluations.html deliberately does not load' },
-  { pane: 'evals', cls: 'evidence-form-grid', issue: 'Stadiora/Aria#10647',
-    why: 'styled only in ops.css, which evaluations.html deliberately does not load' },
-  { pane: 'evals', cls: 'approval-workflow-grid', issue: 'Stadiora/Aria#10647',
-    why: 'no sheet in the repository defines it' },
-  { pane: 'evals', cls: 'approval-card', issue: 'Stadiora/Aria#10647',
-    why: 'no sheet in the repository defines it' },
-  { pane: 'evals', cls: 'callout-warn', issue: 'Stadiora/Aria#10647',
-    why: 'the warning tint lives in ops.css, which evaluations.html does not load' },
-  { pane: 'evals', cls: 'card-hint', issue: 'Stadiora/Aria#10647',
-    why: 'styled only in ops.css, which evaluations.html deliberately does not load' },
-  { pane: 'evals', cls: 'btn-secondary', issue: 'Stadiora/Aria#10647',
-    why: 'no sheet in the repository defines it' },
-  { pane: 'evals', cls: 'u-move', issue: 'Stadiora/Aria#10647',
-    why: 'no sheet in the repository defines it' }
+    why: 'styled only in operate.css, which alerts.html deliberately does not load' }
 ];
 
 /* The same enumeration for judgement 2: a state a pane declares to assistive
