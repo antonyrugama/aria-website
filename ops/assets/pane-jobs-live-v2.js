@@ -348,8 +348,12 @@
 
     function redrawFooter() {
       if (!footerHost) return;
+      /* Same swap, smaller scope: the footer holds Pause and Read now, and a
+         failure redraw lands here while one of them may be focused. */
+      var held = captureRetained();
       while (footerHost.firstChild) footerHost.removeChild(footerHost.firstChild);
       footerHost.appendChild(refreshCard());
+      restoreRetained(held, footerHost);
     }
 
     function refreshCard() {
@@ -398,7 +402,8 @@
           className: 'btn btn-sm',
           type: 'button',
           text: paused ? 'Resume' : 'Pause',
-          'aria-pressed': paused ? 'true' : 'false'
+          'aria-pressed': paused ? 'true' : 'false',
+          'data-retain': 'jobs-toggle'
         });
         toggle.addEventListener('click', function () {
           paused = !paused;
@@ -417,7 +422,10 @@
         actions.appendChild(toggle);
       }
 
-      var now = h('button', { className: 'btn btn-sm', type: 'button', text: 'Read now' });
+      var now = h('button', {
+        className: 'btn btn-sm', type: 'button', text: 'Read now',
+        'data-retain': 'jobs-read-now'
+      });
       now.addEventListener('click', function () { load(false); });
       actions.appendChild(now);
 
@@ -430,6 +438,7 @@
     /* --------------------------------------------------------- the reading */
 
     function render(data) {
+      var held = captureRetained();
       var queue = data.queue || {};
       var workingSet = data.workingSet || {};
       var attention = data.attention || {};
@@ -477,6 +486,48 @@
       wrap.appendChild(footerHost);
 
       region.show(wrap);
+      restoreRetained(held, wrap);
+      shownRoot = wrap;
+    }
+
+    /* A refresh every fifteen seconds redraws the pane and `region.show`
+       swaps the whole box out, so anything the operator was holding at that
+       instant belongs to the read rather than to them: the control they had
+       tabbed to loses focus to BODY, and the table they had scrolled right
+       snaps back to column one. At 375px the table is 311 wide against 643 of
+       content, so that is most of it. Carry both across the swap and put them
+       back. Nodes are matched by `data-retain` because the node itself is a
+       new object after every render -- the name is the only stable identity
+       a rebuilt tree has. */
+    var RETAIN_ATTR = 'data-retain';
+    var shownRoot = null;
+
+    function captureRetained() {
+      var held = { focus: null, scroll: {} };
+      var active = global.document && global.document.activeElement;
+      if (active && active.getAttribute && (!shownRoot || !shownRoot.contains || shownRoot.contains(active))) {
+        held.focus = active.getAttribute(RETAIN_ATTR) || null;
+      }
+      if (shownRoot && shownRoot.querySelectorAll) {
+        var nodes = shownRoot.querySelectorAll('[' + RETAIN_ATTR + ']');
+        for (var i = 0; i < nodes.length; i += 1) {
+          var name = nodes[i].getAttribute(RETAIN_ATTR);
+          if (name) held.scroll[name] = nodes[i].scrollLeft || 0;
+        }
+      }
+      return held;
+    }
+
+    function restoreRetained(held, root) {
+      if (!held || !root || !root.querySelectorAll) return;
+      var nodes = root.querySelectorAll('[' + RETAIN_ATTR + ']');
+      for (var i = 0; i < nodes.length; i += 1) {
+        var node = nodes[i];
+        var name = node.getAttribute(RETAIN_ATTR);
+        if (!name) continue;
+        if (held.scroll[name]) node.scrollLeft = held.scroll[name];
+        if (held.focus && name === held.focus && typeof node.focus === 'function') node.focus();
+      }
     }
 
     /* ----------------------------------------------------------- the hero */
@@ -766,7 +817,7 @@
         var row = h('tr', {}, [
           h('td', {}, [
             h('div', { className: 't-main', text: jobTypeLabel(job.jobType) }),
-            h('div', { className: 'tiny muted mono', text: coded(String(job.id || '')) })
+            h('div', { className: 'tiny muted job-id', text: coded(String(job.id || '')) })
           ]),
           h('td', { text: LANE_LABEL[job.lane] || job.lane || fmt.none }),
           h('td', { text: STATE_LABEL[job.state] || job.state || fmt.none }),
@@ -795,7 +846,8 @@
           className: 'u-scroll',
           tabindex: '0',
           role: 'region',
-          'aria-label': 'Jobs in flight, by kind'
+          'aria-label': 'Jobs in flight, by kind',
+          'data-retain': 'jobs-table'
         }, [
           h('table', { className: 'tbl' }, [head, body])
         ])

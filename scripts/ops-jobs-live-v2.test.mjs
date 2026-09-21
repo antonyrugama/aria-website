@@ -1026,6 +1026,101 @@ test('the table scroll box is named and reachable', async () => {
     'the scroll box is reachable and announces nothing when it is reached');
 });
 
+/* ------------------ what a refresh must not take away ------------------ */
+
+/* The pane rebuilds itself every fifteen seconds and `region.show` swaps the
+   whole box out. Everything below is about the operator's own position in the
+   page surviving that swap, because a pane that steals focus and rewinds the
+   table four times a minute is unusable with a keyboard and close to unusable
+   on a phone, where the table is 311 wide against 643 of content. */
+
+const scrollBox = (dom) => findAll(livePanel(dom),
+  (n) => (n.getAttribute('class') || '').indexOf('u-scroll') !== -1)[0] || null;
+
+const WITH_ROWS = () => viewFixture({
+  workingSet: {
+    returned: 2, truncated: false,
+    jobs: [jobFixture({ id: 'job_1' }), jobFixture({ id: 'job_2' })],
+  },
+});
+
+test('a refresh keeps the table where the operator scrolled it', async () => {
+  const dom = await boot({ view: WITH_ROWS() });
+  const before = scrollBox(dom);
+  assert.ok(before, 'no scroll box, so this proves nothing');
+  before.scrollLeft = 220;
+
+  await dom.clock.fire();
+
+  const after = scrollBox(dom);
+  /* Without this the test passes when the pane never redraws at all, which is
+     a different pane from the one under test. */
+  assert.notStrictEqual(after, before, 'the refresh did not rebuild the table');
+  assert.equal(after.scrollLeft, 220,
+    'the refresh rewound the table to column one, hiding the columns the '
+    + 'operator had scrolled to');
+});
+
+test('a refresh keeps focus on the scroll region the operator had tabbed to', async () => {
+  const dom = await boot({ view: WITH_ROWS() });
+  const before = scrollBox(dom);
+  before.focus();
+  assert.strictEqual(dom.doc.activeElement, before, 'the box did not take focus');
+
+  await dom.clock.fire();
+
+  const after = scrollBox(dom);
+  assert.notStrictEqual(after, before, 'the refresh did not rebuild the table');
+  assert.strictEqual(dom.doc.activeElement, after,
+    'the refresh dropped focus, so a keyboard operator is returned to the top '
+    + 'of the document every fifteen seconds');
+});
+
+test('a refresh keeps focus on the Pause button', async () => {
+  const dom = await boot({ view: WITH_ROWS() });
+  const before = buttonNamed(dom, 'Pause');
+  before.focus();
+  assert.strictEqual(dom.doc.activeElement, before);
+
+  await dom.clock.fire();
+
+  const after = buttonNamed(dom, 'Pause');
+  assert.notStrictEqual(after, before, 'the refresh did not rebuild the footer');
+  assert.strictEqual(dom.doc.activeElement, after, 'the refresh dropped focus off Pause');
+});
+
+test('a refresh does not steal focus from somewhere else on the page', async () => {
+  const dom = await boot({ view: WITH_ROWS() });
+  /* Focus outside the pane, on a node that happens to carry the same retain
+     name the pane uses. The pane must decide by "was this inside my own tree",
+     not by a global name match — otherwise a refresh yanks focus out of the
+     shell and into the pane while the operator is using something else. */
+  const outside = dom.doc.getElementById('content');
+  outside.setAttribute('data-retain', 'jobs-toggle');
+  dom.doc.activeElement = outside;
+
+  await dom.clock.fire();
+
+  assert.strictEqual(dom.doc.activeElement, outside,
+    'the refresh pulled focus into the pane from outside it');
+});
+
+test('pressing Pause leaves focus on the button that was pressed', async () => {
+  const dom = await boot({ view: WITH_ROWS() });
+  const pause = buttonNamed(dom, 'Pause');
+  pause.focus();
+  pause.dispatch('click');
+  await settle();
+
+  /* Pause redraws only the footer, but that still swaps the button out. A
+     keyboard operator who pressed it must not be dropped to the top of the
+     document for having used the control the pane offers them. */
+  const resume = buttonNamed(dom, 'Resume');
+  assert.ok(resume, 'Pause did not become Resume');
+  assert.strictEqual(dom.doc.activeElement, resume,
+    'pressing Pause threw focus away, so the keyboard path out of it is lost');
+});
+
 /* ============================ the page shape =========================== */
 
 test('the page loads one design system, not two', () => {
@@ -1069,18 +1164,50 @@ test('the pane writes no class only the v1 sheet defines', () => {
   /* The page loads aria.css, shell-pane-v2.css and its own sheet. A class from
      ops.css — the v1 sheet — is written into the DOM and painted by nothing,
      which fails silently and looks like a design choice (Stadiora/Aria#10646,
-     #10647). This is the cheap source-level catch; the resolved-value proof,
-     which is the one that cannot be fooled by a selector that is present and
-     overridden, is in ops-jobs-live-painted.test.mjs. */
+     #10647).
+
+     Two deliberate limits, because a guard that overstates its reach is worse
+     than one that admits a gap. FIRST, the names are DERIVED from the source
+     rather than listed here: a hand-kept list only ever proves what someone
+     remembered to put in it, and the class this guard was written to catch
+     (`mono`) was missing from exactly such a list while the list sat green.
+     SECOND, this is a source-level PRESENCE check. It asks whether the name
+     appears in any selector the page loads; it cannot tell `.mono` from
+     `.pill .mono`, so a class that is defined only as someone else's
+     descendant still passes here. That case is caught in a real browser by
+     scripts/check-ops-result-view.mjs, which drives this pane to a result view
+     and resolves every written class against the rules that actually reach it. */
   const sheets = ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-jobs-live-v2.css']
     .map((f) => read(f)).join('\n');
-  for (const name of ['tile', 'tile-value', 'tile-label', 'tile-meta', 'badge', 'badge-info',
-    'cell-strong', 'page-question', 'small']) {
-    const written = new RegExp("className: '[^']*\\b" + name + "\\b").test(PANE_SRC);
-    const painted = new RegExp('\\.' + name + '(?![\\w-])').test(sheets);
-    assert.ok(!written || painted,
-      'the pane writes .' + name + ', which only ops.css defines and this page does not load');
+
+  const written = new Set();
+  const addAll = (text) => {
+    for (const lit of text.match(/'[^'\n]*'/g) || []) {
+      for (const name of lit.slice(1, -1).trim().split(/\s+/)) {
+        if (/^[a-z][\w-]*$/i.test(name)) written.add(name);
+      }
+    }
+  };
+  for (const m of PANE_SRC.matchAll(/className:\s*([^\n]*)/g)) {
+    /* Stop at the next property key, or the extractor reads `text:` too and
+       every word of English prose on the line becomes a "class". */
+    addAll(m[1].split('}')[0].split(/,\s*(?=(?:[A-Za-z_$][\w$]*|'[^']*')\s*:)/)[0]);
   }
+  for (const m of PANE_SRC.matchAll(/S\.card\(([^)\n]*)\)/g)) addAll(m[1]);
+
+  /* An extractor that quietly matched nothing would pass this test over every
+     class in the file, so it has to show it found the shapes it claims to
+     read: a plain literal, a concatenated one, and a card grade. */
+  assert.ok(written.size >= 25, `only ${written.size} classes extracted, so this proves little`);
+  for (const need of ['job-id', 'u-scroll', 'pill', 'kpi', 'tbl']) {
+    assert.ok(written.has(need), `the class extractor missed ${need}`);
+  }
+
+  const unpainted = [...written]
+    .filter((name) => !new RegExp('\\.' + name + '(?![\\w-])').test(sheets))
+    .sort();
+  assert.deepStrictEqual(unpainted, [],
+    'the pane writes classes no sheet this page loads defines: ' + unpainted.join(', '));
 });
 
 test('every glyph is decorative and no status is a glyph alone', async () => {

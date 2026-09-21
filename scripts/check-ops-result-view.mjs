@@ -297,6 +297,17 @@ const RULES = [
     channels: ['teams', 'email'], enabled: true, lastEvaluationStatus: 'error' }
 ];
 
+/* One reading of the live queue, for Happening now. Rather than a hand-written
+   object this is the route's own recorded output: scripts/fixtures/
+   ops-jobs-live-view.json is a literal buildOpsJobsView result, committed with
+   Stadiora/Aria#5562 so the pane's suite and this sweep read the same shape the
+   server actually sends. A fixture invented here could drift from the route and
+   still pass, which is the defect the file exists to prevent. */
+const JOBS = JSON.parse(fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/ops-jobs-live-view.json'),
+  'utf8'
+));
+
 /* Three problems rather than one, in three different statuses, because the
    result views on Problems, What happened and Overview are lists: a single
    row cannot show a list drawing its rows differently from one another. */
@@ -605,6 +616,7 @@ function stub(pathname, body) {
     } };
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) return { data: { problems: PROBLEMS } };
+  if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/usage')) return { data: USAGE };
@@ -708,7 +720,12 @@ const DRIVE = {
    the same failure wearing a better number. */
 const RESULT_PROOF = {
   overview: ['1,102', SUMMARY.release.platforms[0].versionName, PROBLEMS[0].reference],
-  jobs: [RULES[0].thresholdLabel, RULES[1].title],
+  /* Happening now moved off the alerting record onto GET /api/ops/jobs
+     (Stadiora/Aria#5562), so its markers come off that reading: the id of the
+     first job in the working set, which only the job table prints, and the
+     worker-load sentence, which the route sends as prose and the pane prints
+     verbatim. Both are absent until a reading has been drawn. */
+  jobs: [JOBS.workingSet.jobs[0].id, JOBS.capacity.reason],
   history: [RULES[0].title, PROBLEMS[0].category],
   alerts: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
   analytics: ['1,061', '8,430', USAGE.apps[1].label],
