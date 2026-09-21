@@ -864,13 +864,11 @@
        (`severityWords()` there too, Stadiora/Aria#10630), so two panes an
        operator moves between during one incident say one word for one state.
 
-       The two are not byte-identical: this `textOf()` accepts any non-empty
-       string and the Problems pane's TRIMS first, so they differ on every
-       severity carrying surrounding whitespace. Nothing but spaces reads
-       "Unknown" there and as a blank prefix here; `' critical '` reads
-       `critical` there and ` critical ` here. That is a defect of this file,
-       not of the agreement — filed rather than fixed on #10630's PR, which
-       does not own this pane's behaviour: Stadiora/Aria#10799.
+       Both panes' `textOf()` TRIM, which is what makes the agreement hold on
+       every payload rather than on the three #10630 tabulated. Until
+       Stadiora/Aria#10799 this one did not, so a severity of nothing but
+       spaces read "Unknown" on the Problems pane and printed a blank prefix
+       here — #10630's defect 1 surviving on the other pane by another route.
 
        Only a severity that did not arrive at all, or arrived as something
        that is not a word, falls back to "Unknown", because there is nothing
@@ -977,8 +975,22 @@
       return (typeof detail === 'string' && detail) ? detail : fallback;
     }
 
+    /* A string worth showing, or nothing.
+
+       Trimmed, because a severity of three spaces is a non-empty string and
+       would otherwise print as a blank where a word belongs — visible to
+       nobody, and indistinguishable from a row that never had one
+       (Stadiora/Aria#10799). The Problems pane's `textOf()` has always
+       trimmed; this is the two of them agreeing on every payload rather than
+       on the three #10630 happened to tabulate.
+
+       Every caller uses the RESOLVED value rather than testing with this and
+       rendering the raw field, because a predicate that trims over a value
+       that does not is the same defect wearing the fix. */
     function textOf(value) {
-      return (typeof value === 'string' && value) ? value : null;
+      if (typeof value !== 'string') return null;
+      var trimmed = value.trim();
+      return trimmed || null;
     }
 
     /* The window a figure covers, in words, read from the answer rather than
@@ -1082,8 +1094,8 @@
 
       value(card, fmt.int(active));
       meta(card, peopleChange(people, active));
-      why(card, windowLabel(people.window) +
-        (textOf(people.environment) ? ', ' + people.environment : ''));
+      var environment = textOf(people.environment);
+      why(card, windowLabel(people.window) + (environment ? ', ' + environment : ''));
 
       /* The two apps, side by side and never added. The headline above them is
          the platform's own distinct count rather than their sum, so a reader
@@ -1308,13 +1320,13 @@
       var rows = h('div', { className: 'kpi-rows' });
       var newest = null;
       platforms.forEach(function (platform) {
+        var code = textOf(platform.versionCode);
         rows.appendChild(h('div', { className: 'kpi-row' }, [
           h('span', { className: 'kpi-plat', text: textOf(platform.label) || platform.platform }),
           h('div', { className: 'spacer' }),
           h('span', {
             className: 'num',
-            text: platform.versionName +
-              (textOf(platform.versionCode) ? ' (' + platform.versionCode + ')' : '')
+            text: platform.versionName + (code ? ' (' + code + ')' : '')
           })
         ]));
         var read = fmt.hoursSince(platform.fetchedAt);
@@ -1593,8 +1605,9 @@
     }
 
     function appendNote(card, note) {
-      if (!textOf(note)) return;
-      card.appendChild(h('div', { className: 'card-foot' }, [h('span', { text: note })]));
+      var words = textOf(note);
+      if (!words) return;
+      card.appendChild(h('div', { className: 'card-foot' }, [h('span', { text: words })]));
     }
 
     /* --------------------------------------------- what is not drawn here */

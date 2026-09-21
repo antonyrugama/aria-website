@@ -1,0 +1,525 @@
+/* What the Problems pane shows for a rule that has never looked, and for a
+   destination nothing has ever been sent to.
+
+   The 26-route data-reality audit found that on the live dashboard four of
+   the eight alert rules have never reached a verdict (Stadiora/Aria#10812)
+   and neither delivery channel has ever been configured, with seven problems
+   open and the oldest 51 days old (Stadiora/Aria#10811). The pane half of
+   both is one question: does a rule that has never looked render like a rule
+   that looked and found nothing?
+
+   Measured before anything here was written, the answer was already mostly
+   yes. The ribbon says "4 rules watching" and not 8, a note under it says
+   four rules cannot reach a verdict, and each of the four rows says so on its
+   own line. Those three behaviours are load-bearing and had no test, so the
+   first four tests below pin them against the exact production payload -- a
+   regression in any of them would put a confident "8 rules watching" over
+   data half of them never saw.
+
+   Three things did need changing, and each has its own test:
+
+     - `no_source_configured` read "nothing is feeding it yet". Waiting does
+       not fix a missing source, and #10812 asked for the two to be told
+       apart.
+     - Nothing anywhere said that no notification has ever been sent. Each
+       destination row was honest on its own; the aggregate an operator needs
+       was three bands below the queue and never stated.
+     - `armedState({})` produced `channels: []`, which the pane printed as
+       "No notification channel is set up." -- a claim about the world taken
+       from a gap in the payload.
+
+   And Stadiora/Aria#10821: the shared API stub's `channels` fixture carried
+   `status`/`target`/`lastDeliveredAt`/`failureReason`, none of which the pane
+   reads, so the stub drew two nameless rows both saying no destination was
+   set. The last two tests bind the stub's own answer against the pane.
+
+   How these bind:
+
+     - The rule fixtures are the production rows from #10812 verbatim, keys
+       and statuses and reasons, not a sketch of them. If the pane stops
+       telling the truth it will be about this payload.
+
+     - Every absence assertion is preceded by the same finder locating the
+       thing on a render that has it, so a finder that matches nothing cannot
+       pass by matching nothing.
+
+     - The stub test imports `ops-api-stub.mjs` and feeds its ANSWER to the
+       pane. Asserting the fixture's field names would pin the fixture; this
+       asserts that what it sends draws a destination.
+
+   NOT COVERED here:
+
+     - Whether the rules are evaluated, or whether a notification is sent.
+       Both are backend behaviour on Stadiora/Aria and neither is reachable
+       from this repo.
+
+     - The per-destination sentences. `scripts/ops-alerts-v2.test.mjs` owns
+       `channelNote()`'s branches and that file is held by another PR. What is
+       new here is the aggregate and the label fallback. */
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import vm from 'node:vm';
+
+import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { stub } from './ops-api-stub.mjs';
+
+const OPS = new URL('../ops/', import.meta.url);
+const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
+
+const REGISTRY_SRC = read('assets/pane-registry.js');
+const ARIA_SRC = read('assets/aria.js');
+const SHELL_SRC = read('assets/shell-pane-v2.js');
+const MODEL_SRC = read('assets/alerts-model.js');
+const PANE_SRC = read('assets/pane-alerts.js');
+
+const TOKENS = {
+  '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
+  '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
+  '--line-2': '#1F2A36', '--ink': '#E6EDF3',
+};
+
+const MINUTE = 60_000;
+const DAY = 24 * 60 * MINUTE;
+const at = (back) => new Date(Date.now() - back).toISOString();
+
+/* ------------------------------------------------------------- fixtures */
+
+/* `ops_alert_rules` as the audit read it on 2026-09-21, all eight rows.
+
+   Four have never reached a verdict: `ai_success_rate`, `queue_backlog_age`
+   and `stalled_staged_rollout` for want of samples, `crash_free_rate`
+   because nothing is wired up to feed it at all. That last distinction is
+   the whole of one of the fixes below, so it is in the fixture rather than
+   flattened into "four cannot judge". */
+function prodRules() {
+  return [
+    { ruleKey: 'ai_success_rate', title: 'AI success rate', category: 'ai_reliability',
+      categoryLabel: 'AI reliability', severity: 'critical', enabled: true,
+      threshold: 'below 95% for 10m', thresholdLabel: 'below 95% for 10m',
+      scopeLabel: 'Per request type', scopeDescription: 'Per request type',
+      lastEvaluatedAt: at(2 * MINUTE), lastEvaluationStatus: 'insufficient_data',
+      lastInsufficientReason: 'no_samples', lastFiredAt: null },
+    { ruleKey: 'cost_reconciliation_blocked', title: 'Cost reconciliation blocked',
+      category: 'cost', categoryLabel: 'Cost', severity: 'warning', enabled: true,
+      threshold: 'blocked for 24h', thresholdLabel: 'blocked for 24h',
+      scopeLabel: 'Daily rollup', scopeDescription: 'Daily rollup',
+      lastEvaluatedAt: at(2 * MINUTE), lastEvaluationStatus: 'firing',
+      lastInsufficientReason: null, lastFiredAt: at(42 * DAY) },
+    { ruleKey: 'crash_free_rate', title: 'Crash-free rate', category: 'mobile',
+      categoryLabel: 'Mobile', severity: 'critical', enabled: true,
+      threshold: 'below 99% for 1h', thresholdLabel: 'below 99% for 1h',
+      scopeLabel: 'Per app', scopeDescription: 'Per app',
+      lastEvaluatedAt: at(2 * MINUTE), lastEvaluationStatus: 'insufficient_data',
+      lastInsufficientReason: 'no_source_configured', lastFiredAt: null },
+    { ruleKey: 'data_silence', title: 'Data silence', category: 'ingestion',
+      categoryLabel: 'Ingestion', severity: 'critical', enabled: true,
+      threshold: 'no rows for 6h', thresholdLabel: 'no rows for 6h',
+      scopeLabel: 'All sources', scopeDescription: 'All sources',
+      lastEvaluatedAt: at(2 * MINUTE), lastEvaluationStatus: 'firing',
+      lastInsufficientReason: null, lastFiredAt: at(49 * DAY) },
+    { ruleKey: 'queue_backlog_age', title: 'Queue backlog age', category: 'jobs',
+      categoryLabel: 'Jobs', severity: 'warning', enabled: true,
+      threshold: 'over 30m', thresholdLabel: 'over 30m',
+      scopeLabel: 'Sprint video analysis', scopeDescription: 'Sprint video analysis',
+      lastEvaluatedAt: at(2 * MINUTE), lastEvaluationStatus: 'insufficient_data',
+      lastInsufficientReason: 'no_samples', lastFiredAt: null },
+    { ruleKey: 'service_cost_anomaly', title: 'Unusual cost for a service', category: 'cost',
+      categoryLabel: 'Cost', severity: 'warning', enabled: true,
+      threshold: 'over 25%', thresholdLabel: 'over 25%',
+      scopeLabel: 'Against the last 7 days', scopeDescription: 'Against the last 7 days',
+      lastEvaluatedAt: at(2 * MINUTE), lastEvaluationStatus: 'ok',
+      lastInsufficientReason: null, lastFiredAt: at(3 * DAY) },
+    { ruleKey: 'spend_forecast', title: 'Spend forecast', category: 'cost',
+      categoryLabel: 'Cost', severity: 'warning', enabled: true,
+      threshold: 'over budget', thresholdLabel: 'over budget',
+      scopeLabel: 'Month to date', scopeDescription: 'Month to date',
+      lastEvaluatedAt: at(2 * MINUTE), lastEvaluationStatus: 'firing',
+      lastInsufficientReason: null, lastFiredAt: at(49 * DAY) },
+    { ruleKey: 'stalled_staged_rollout', title: 'Stalled staged rollout',
+      category: 'releases', categoryLabel: 'Releases', severity: 'warning', enabled: true,
+      threshold: 'no movement for 48h', thresholdLabel: 'no movement for 48h',
+      scopeLabel: 'Per app', scopeDescription: 'Per app',
+      lastEvaluatedAt: at(2 * MINUTE), lastEvaluationStatus: 'insufficient_data',
+      lastInsufficientReason: 'no_samples', lastFiredAt: null },
+  ];
+}
+
+/* `ops_alert_channel_state` as the audit read it: both rows unconfigured,
+   both failure reasons `config`, both `last_success_at` null. Nothing has
+   ever been delivered because nothing was ever set up to deliver it. */
+function prodChannels() {
+  return [
+    { channel: 'teams', label: 'Microsoft Teams', configured: false,
+      lastDeliveryStatus: null, lastFailureReason: 'config', consecutiveFailures: 0,
+      lastAttemptAt: null, lastSuccessAt: null },
+    { channel: 'email', label: 'Email', configured: false,
+      lastDeliveryStatus: null, lastFailureReason: 'config', consecutiveFailures: 0,
+      lastAttemptAt: null, lastSuccessAt: null },
+  ];
+}
+
+function problem(over) {
+  return Object.assign({
+    id: 'prb_1', reference: 'AO-101',
+    ruleKey: 'data_silence', ruleTitle: 'Data silence', ruleThreshold: 'no rows for 6h',
+    severity: 'critical', category: 'ingestion', categoryLabel: 'Ingestion',
+    status: 'open', title: 'Data silence', summary: 'No rows have arrived.',
+    scopeKey: 'all', scopeLabel: 'All sources',
+    observedValue: 0, thresholdValue: 1, durationSeconds: 21600, detail: null,
+    workPane: 'jobs-live', workPaneLabel: 'Happening now',
+    firstBreachedAt: at(51 * DAY), firedAt: at(51 * DAY),
+    lastObservedAt: at(MINUTE), conditionClearedAt: null,
+    acknowledgedAt: null, acknowledgedByEmail: null,
+    closedAt: null, closedByEmail: null, closeReason: null,
+  }, over || {});
+}
+
+/* Seven open, the oldest 51 days, as the audit counted them. */
+function prodProblems() {
+  return [
+    problem({ id: 'p1', reference: 'AO-101' }),
+    problem({ id: 'p2', reference: 'AO-102', scopeLabel: 'Workouts' }),
+    problem({ id: 'p3', reference: 'AO-103', severity: 'warning', scopeLabel: 'aria-api' }),
+    problem({ id: 'p4', reference: 'AO-104', severity: 'warning', scopeLabel: 'Month to date' }),
+    problem({ id: 'p5', reference: 'AO-105', severity: 'warning', scopeLabel: 'Daily rollup' }),
+    problem({ id: 'p6', reference: 'AO-106', severity: 'warning', scopeLabel: 'app-backend' }),
+    problem({ id: 'p7', reference: 'AO-107', severity: 'warning', scopeLabel: 'coaches-web' }),
+  ];
+}
+
+/* ------------------------------------------------------------------ boot */
+
+function buildPage(dom, body) {
+  const el = (parent, tag, attrs = {}) => {
+    const node = dom.element(tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    parent.appendChild(node);
+    return node;
+  };
+  body.setAttribute('data-pane', 'alerts');
+  body.className = 'is-booting';
+  const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
+  el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
+  el(body, 'main', { class: 'gate gate-failed gate-center', id: 'gateFailed', tabindex: '-1' });
+  const appGate = el(body, 'div', { class: 'gate gate-app' });
+  el(appGate, 'div', { id: 'app' });
+}
+
+/* `rules` takes the whole `/api/ops/alerts/rules` answer, so a test can send
+   one with no `channels` key at all -- which is the shape the confident-zero
+   test is about and which no `channels: []` default could express. */
+async function boot(options) {
+  const opts = options || {};
+  const rules = opts.rules === undefined
+    ? { rules: prodRules(), channels: prodChannels() }
+    : opts.rules;
+  const problems = opts.problems === undefined ? prodProblems() : opts.problems;
+
+  const answers = {
+    '/api/ops/alerts/rules': rules,
+    '/api/ops/alerts/problems': problems instanceof Error ? problems : { problems },
+  };
+
+  const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/alerts.html' });
+  const body = dom.element('body');
+  dom.root.appendChild(body);
+  dom.doc.body = body;
+  buildPage(dom, body);
+
+  dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
+  dom.window.OpsSession = {
+    state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role: 'owner' } },
+    boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
+    call: (endpoint) => {
+      const key = Object.keys(answers).filter((k) => endpoint.indexOf(k) === 0)[0];
+      if (!key) return Promise.resolve({ data: {} });
+      const answer = answers[key];
+      if (answer instanceof Error) return Promise.reject(answer);
+      return Promise.resolve({ data: answer });
+    },
+    signOut: () => Promise.resolve(),
+    role: () => 'owner',
+    hasRole: () => true,
+    daysLeft: () => 12,
+  };
+
+  vm.createContext(dom.window);
+  vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
+  vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
+  vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
+  vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
+  vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-alerts.js' });
+
+  for (let i = 0; i < 14; i += 1) await new Promise((r) => setImmediate(r));
+  return dom;
+}
+
+/* ------------------------------------------------------- what is drawn */
+
+const hasClass = (node, name) =>
+  String(node.className || '').split(/\s+/).indexOf(name) !== -1;
+
+function shownPanel(dom) {
+  const boxes = dom.doc.getElementById('content').querySelectorAll('[data-state]')
+    .filter((n) => n.getAttribute('data-shown') !== null);
+  assert.equal(boxes.length, 1,
+    `the shell has ${boxes.length} panels on screen at once, so "what the operator sees" `
+    + 'is not a single answer');
+  return boxes[0];
+}
+
+const screenText = (dom) => allText(shownPanel(dom)).replace(/\s+/g, ' ').trim();
+
+/* The ribbon at the top of the pane, whole. "N rules watching" is drawn into
+   `hero-sub` rather than into a pill, and the pills it sits beside carry the
+   severity counts, so reading pills alone across the panel picks up every
+   queue row's chips and none of the sentence. */
+function ribbonText(dom) {
+  const heroes = findAll(shownPanel(dom), (n) => hasClass(n, 'hero'));
+  assert.equal(heroes.length, 1, 'the pane does not have exactly one ribbon to read');
+  return allText(heroes[0]).replace(/\s+/g, ' ').trim();
+}
+
+/* The one warn note between the ribbon and the queue. */
+function noteText(dom) {
+  const notes = findAll(shownPanel(dom), (n) => hasClass(n, 'note'));
+  return notes.length ? allText(notes[0]).replace(/\s+/g, ' ').trim() : null;
+}
+
+/* Every row in "Where problems are sent", as its name and its status chip. */
+function routeRows(dom) {
+  return findAll(shownPanel(dom), (n) => hasClass(n, 'c-route')).map((row) => {
+    const lines = findAll(row, (n) => hasClass(n, 'strong'));
+    return {
+      name: lines.length ? allText(lines[0]).trim() : '',
+      text: allText(row).replace(/\s+/g, ' ').trim(),
+    };
+  });
+}
+
+/* Every rule row's state cell, keyed by the rule's title. */
+function ruleStates(dom) {
+  const out = {};
+  findAll(shownPanel(dom), (n) => n.tagName === 'TR').forEach((row) => {
+    const cells = findAll(row, (n) => n.tagName === 'TD');
+    if (cells.length < 4) return;
+    out[allText(cells[0]).trim()] = allText(cells[3]).replace(/\s+/g, ' ').trim();
+  });
+  return out;
+}
+
+/* ====================================================================== */
+/* #10812 -- what the pane already does, pinned so it keeps doing it       */
+/* ====================================================================== */
+
+test('the ribbon counts rules that reached a verdict, not rules that exist', async () => {
+  const ribbon = ribbonText(await boot());
+
+  /* Four of the eight rows are judging. The number an operator reads has to
+     be that four: printing 8 would report that eight things are watching
+     when half have never looked at anything. */
+  assert.match(ribbon, /\b4 rules watching\b/,
+    `the ribbon reads "${ribbon}", which does not say "4 rules watching" -- over a payload `
+    + 'where exactly four of eight rules reached a verdict');
+  assert.doesNotMatch(ribbon, /\b8 rules watching\b/,
+    'the pane counted every rule as watching, including four that have never judged '
+    + 'anything');
+});
+
+test('a rule that has never judged does not read as a rule that found nothing wrong',
+  async () => {
+    const states = ruleStates(await boot());
+
+    /* The healthy rule first, so "no row says Checking normally" cannot pass
+       because the finder never found a row. */
+    assert.equal(states['Unusual cost for a service'], 'Checking normally',
+      'the one rule that IS judging does not say so, so the four assertions below read a '
+      + 'table this finder cannot parse');
+
+    for (const title of ['AI success rate', 'Crash-free rate', 'Queue backlog age',
+      'Stalled staged rollout']) {
+      const state = states[title];
+      assert.ok(state, `"${title}" has no state cell on screen`);
+      assert.doesNotMatch(state, /Checking normally|No problems|Healthy|All clear/i,
+        `"${title}" has never reached a verdict and its row reads "${state}", which an `
+        + 'operator during an incident would read as this rule having looked');
+      assert.match(state, /Not enough data to judge/,
+        `"${title}" reads "${state}", which does not say the rule could not judge`);
+    }
+  });
+
+test('the pane says in words that some of its rules cannot judge', async () => {
+  const note = noteText(await boot());
+  assert.ok(note, 'there is no note between the ribbon and the queue at all');
+
+  /* The sentence that stops the list below being read as the whole truth. */
+  assert.match(note, /A rule that is not judging is not watching/,
+    `the note reads "${note}" and does not say that the list below is short`);
+});
+
+/* ====================================================================== */
+/* #10812 -- a missing source is not a waiting problem                    */
+/* ====================================================================== */
+
+test('a rule nothing feeds is told apart from a rule that is merely short of data',
+  async () => {
+    const dom = await boot();
+    const states = ruleStates(dom);
+    const note = noteText(dom);
+
+    /* Three rules are waiting for samples; one has no source at all. */
+    assert.match(note, /3 rules cannot reach a verdict yet\./,
+      `the note reads "${note}" -- the three rules that ARE waiting are not counted as three`);
+    assert.match(note, /1 rule has nothing wired up to feed it, so waiting will not help\./,
+      `the note reads "${note}" -- the rule with no source is not told apart from the ones `
+      + 'that are waiting');
+    assert.doesNotMatch(note, /4 rules cannot reach a verdict yet/,
+      'the note lumps the unwired rule in with the waiting ones, so an operator is told to '
+      + 'come back later about a rule that will read the same in a year');
+
+    /* And on the row itself. */
+    assert.match(states['Crash-free rate'], /nothing is wired up to feed it/,
+      `Crash-free rate reads "${states['Crash-free rate']}"`);
+    assert.doesNotMatch(states['Crash-free rate'], /\byet\b/,
+      'the row tells an operator to wait for something waiting will not produce');
+    assert.match(states['AI success rate'], /nothing has come in to measure/,
+      'the rule that IS waiting for samples lost its own wording');
+  });
+
+/* ====================================================================== */
+/* #10811 -- nothing has ever been delivered                              */
+/* ====================================================================== */
+
+test('the pane says that nothing has ever been sent, where the problems are', async () => {
+  const note = noteText(await boot());
+  assert.match(note, /No destination is set, so nothing here has been sent to anyone\./,
+    `the note reads "${note}" -- seven open problems and not one notification ever sent, and `
+    + 'the operator is told neither where the queue is nor anywhere near it');
+});
+
+test('a destination that is set up but has never delivered says so too', async () => {
+  const channels = prodChannels();
+  channels[0].configured = true;
+  channels[0].lastDeliveryStatus = 'failed';
+  const note = noteText(await boot({ rules: { rules: prodRules(), channels } }));
+
+  assert.match(note, /Nothing has ever been delivered, on any destination that is set up\./,
+    `the note reads "${note}" -- a configured destination that has never succeeded is not `
+    + 'the same as no destination, and the sentence has to change with it');
+  assert.doesNotMatch(note, /No destination is set/,
+    'a destination IS set, and the pane said otherwise');
+});
+
+test('a destination that has delivered stops the sentence', async () => {
+  const channels = prodChannels();
+  channels[0].configured = true;
+  channels[0].lastDeliveryStatus = 'ok';
+  channels[0].lastSuccessAt = at(5 * MINUTE);
+  const note = noteText(await boot({ rules: { rules: prodRules(), channels } }));
+
+  /* The note still exists -- four rules still cannot judge -- so this is a
+     real absence inside a real note, not the note being gone. */
+  assert.ok(note, 'the note vanished entirely, so the absence below proves nothing');
+  assert.doesNotMatch(note, /has ever been delivered|been sent to anyone/,
+    `the note reads "${note}" and claims nothing has been delivered, over a payload where `
+    + 'something has');
+});
+
+test('an unreadable queue is not told that nothing in it has been sent', async () => {
+  /* The sentence is about THESE problems reaching nobody. When the problems
+     read failed, what is in the queue is unknown, so there is no "these" to
+     make the claim about.
+
+     This is the reachable empty queue, and the only one. A read that LANDS
+     with no problems takes the pane's empty branch several lines earlier and
+     never calls the note at all, so a test booted with `problems: []` cannot
+     see this gate however the gate is written -- battery row M15 came back
+     green over exactly that draft. A failed read is the one way an empty
+     queue reaches the note. */
+  const dom = await boot({ problems: Object.assign(new Error('problems are down'),
+    { status: 503 }) });
+  const text = screenText(dom);
+
+  /* The rules half still rendered, so this is an absence inside a note that
+     exists rather than a note that is gone. */
+  assert.match(text, /A rule that is not judging is not watching/,
+    'the note is not on screen at all, so the absence below proves nothing');
+  assert.doesNotMatch(text, /has been sent to anyone|has ever been delivered/,
+    'the pane said these problems reached nobody, over a queue it could not read');
+});
+
+test('an answer that did not mention delivery is not read as no delivery', async () => {
+  /* `armedState({})` used to produce `channels: []`, and an empty list is
+     what the pane prints "No notification channel is set up." over. So a
+     read that said nothing at all about destinations produced a confident
+     statement that there are none. */
+  const dom = await boot({ rules: { rules: prodRules() } });
+  const text = screenText(dom);
+
+  assert.doesNotMatch(text, /No notification channel is set up\./,
+    'the pane stated there are no destinations, from an answer that did not carry the '
+    + 'field at all');
+  assert.doesNotMatch(text, /nothing here has been sent to anyone/,
+    'the pane claimed nothing has been delivered, from an answer that said nothing about '
+    + 'delivery');
+  assert.match(text, /did not say where problems are sent/,
+    'the pane neither stated the gap nor admitted it');
+});
+
+test('a known-empty list still says there are no destinations', async () => {
+  /* The other side of the same gate, and the reason it is a gate rather than
+     a deletion: an answer that DID carry the field and carried nothing in it
+     supports exactly the sentence the absent case does not. */
+  const dom = await boot({ rules: { rules: prodRules(), channels: [] } });
+  const text = screenText(dom);
+
+  assert.match(text, /No notification channel is set up\./,
+    'a read that landed and reported zero destinations stopped saying so');
+  assert.doesNotMatch(text, /did not say where problems are sent/,
+    'a read that DID say where problems are sent was reported as silent');
+});
+
+/* ====================================================================== */
+/* #10821 -- the stub's fixture, and rows with no name                    */
+/* ====================================================================== */
+
+test('the shared API stub sends a shape the pane can draw destinations from', async () => {
+  /* The stub's own answer, not a transcription of it. A test that asserted
+     the fixture's field names would go green on a fixture the pane cannot
+     read, which is exactly the state #10821 was filed about. */
+  const sent = stub('/api/ops/alerts/rules').data;
+  assert.ok(sent.channels && sent.channels.length >= 2,
+    'the stub no longer sends channels, so there is nothing here to check');
+
+  const rows = routeRows(await boot({ rules: sent }));
+  assert.equal(rows.length, sent.channels.length,
+    `the stub sent ${sent.channels.length} destinations and the pane drew ${rows.length}`);
+
+  for (const row of rows) {
+    assert.notEqual(row.name, '',
+      `a destination row drew with no name at all: "${row.text}"`);
+    assert.doesNotMatch(row.text, /No destination has been set/,
+      `the stub's destination drew as unconfigured: "${row.text}" -- the fixture is `
+      + 'describing a payload the route does not send');
+  }
+
+  /* And the states actually differ, so the fixture is not two copies of one
+     row wearing different names. */
+  assert.equal(new Set(rows.map((r) => r.text)).size, rows.length,
+    'every destination the stub sends draws identically, so the fixture exercises one '
+    + 'branch and reports two');
+});
+
+test('a destination with no label is still identified', async () => {
+  const channels = prodChannels();
+  delete channels[0].label;
+  const rows = routeRows(await boot({ rules: { rules: prodRules(), channels } }));
+
+  assert.equal(rows.length, 2, 'the unlabelled destination took a row down with it');
+  assert.equal(rows[0].name, 'teams',
+    `the unlabelled destination is named "${rows[0].name}" -- a row that cannot say which `
+    + 'destination it is about is a row nobody can act on');
+  assert.equal(rows[1].name, 'Email',
+    'the labelled destination lost its label');
+});

@@ -330,11 +330,23 @@ function stub(pathname) {
         severity: 'warning', category: 'ai_reliability',
         lastInsufficientReason: null, lastEvaluatedAt: ago(2 * MINUTE), lastFiredAt: null
       }, r)),
+      /* The shape `pane-alerts.js:routingCard()` actually reads. The stub used
+         to send `status`/`target`/`lastDeliveredAt`/`failureReason`, none of
+         which the pane looks at, so "Where problems are sent" drew two
+         nameless rows both reading "No destination has been set"
+         (Stadiora/Aria#10821). A fixture describing a payload the route does
+         not send is a picture of nothing.
+
+         Teams delivering, email set up but refused: the two states worth
+         looking at, and between them they reach every branch of
+         `channelNote()` that a configured channel can. */
       channels: [
-        { channel: 'teams', status: 'ok', target: 'Aria operations',
-          lastDeliveredAt: ago(5 * MINUTE), failureReason: null },
-        { channel: 'email', status: 'failed', target: 'ops@example.invalid',
-          lastDeliveredAt: ago(2 * HOUR), failureReason: 'auth' }
+        { channel: 'teams', label: 'Microsoft Teams', configured: true,
+          lastDeliveryStatus: 'ok', lastFailureReason: null, consecutiveFailures: 0,
+          lastAttemptAt: ago(5 * MINUTE), lastSuccessAt: ago(5 * MINUTE) },
+        { channel: 'email', label: 'Email', configured: true,
+          lastDeliveryStatus: 'failed', lastFailureReason: 'auth', consecutiveFailures: 3,
+          lastAttemptAt: ago(2 * HOUR), lastSuccessAt: ago(2 * DAY) }
       ]
     } };
   }

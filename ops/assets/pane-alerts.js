@@ -427,7 +427,7 @@
       var wrap = h('div', { className: 'stack' });
       wrap.appendChild(hero(queue, armed, capped, queueCapped, rulesFailed));
 
-      var late = latenessNote(armed, rulesFailed);
+      var late = latenessNote(armed, rulesFailed, queue);
       if (late) wrap.appendChild(late);
 
       wrap.appendChild(openFailed
@@ -643,25 +643,67 @@
        well enough for the list under them to be read as everything that is
        wrong. It is not the degraded preview state — the reads all landed — it
        is the answer itself saying the watching is short. */
-    function latenessNote(armed, rulesFailed) {
-      if (rulesFailed || !armed.total) return null;
+    function latenessNote(armed, rulesFailed, queue) {
+      if (rulesFailed) return null;
       var bits = [];
-      if (armed.errored) {
-        bits.push(fmt.plural(armed.errored, 'rule') + ' failed the check itself.');
+      if (armed.total) {
+        if (armed.errored) {
+          bits.push(fmt.plural(armed.errored, 'rule') + ' failed the check itself.');
+        }
+        /* Waiting and never-wired are counted apart, because they ask the
+           operator for different things: one for patience, one for a source.
+           Saying "cannot reach a verdict yet" over a rule nothing feeds sends
+           somebody back tomorrow to read the identical sentence
+           (Stadiora/Aria#10812). */
+        if (armed.insufficientData > armed.unconfigured) {
+          bits.push(fmt.plural(armed.insufficientData - armed.unconfigured, 'rule') +
+            ' cannot reach a verdict yet.');
+        }
+        if (armed.unconfigured) {
+          bits.push(fmt.plural(armed.unconfigured, 'rule') +
+            ' has nothing wired up to feed it, so waiting will not help.');
+        }
+        if (armed.neverRun) {
+          bits.push(fmt.plural(armed.neverRun, 'rule') + ' has never run.');
+        }
+        if (bits.length) {
+          bits.push('A rule that is not judging is not watching, whatever the list below says.');
+        }
       }
-      if (armed.insufficientData) {
-        bits.push(fmt.plural(armed.insufficientData, 'rule') + ' cannot reach a verdict yet.');
-      }
-      if (armed.neverRun) {
-        bits.push(fmt.plural(armed.neverRun, 'rule') + ' has never run.');
-      }
+
+      var undelivered = deliveryGap(armed, queue);
+      if (undelivered) bits.push(undelivered);
+
       if (!bits.length) return null;
-      bits.push('A rule that is not judging is not watching, whatever the list below says.');
 
       var note = h('div', { className: 'note' });
       note.appendChild(icon('warn', 'is-warn'));
       note.appendChild(h('div', { text: bits.join(' ') }));
       return note;
+    }
+
+    /* Nothing has ever reached anybody, said where the problems are rather
+       than three bands further down beside the destinations.
+
+       "Where problems are sent" already reports each destination honestly, one
+       row at a time. What no row can say is the thing that matters: that these
+       open problems, the oldest of them 51 days old at the time of writing,
+       have sat here without a single notification ever going out
+       (Stadiora/Aria#10811). An operator reading a queue is entitled to know
+       that reading it is the only way anyone finds out.
+
+       Gated on there being something undelivered, because with an empty queue
+       nothing has failed to arrive and the sentence would be an unprompted
+       complaint about configuration. Gated on `channelsKnown` because a
+       payload that did not mention delivery cannot support a claim about it. */
+    function deliveryGap(armed, queue) {
+      if (!armed.channelsKnown) return null;
+      if (!queue || !queue.length) return null;
+      if (armed.everDelivered) return null;
+      if (!armed.channelsConfigured) {
+        return 'No destination is set, so nothing here has been sent to anyone.';
+      }
+      return 'Nothing has ever been delivered, on any destination that is set up.';
     }
 
     /* -------------------------------------------------------- the problems */
@@ -1803,6 +1845,20 @@
         return box;
       }
 
+      /* Absent is not empty. An answer that carried no channel list at all
+         cannot support "No notification channel is set up" -- that is a
+         statement about the world derived from a gap in the payload
+         (Stadiora/Aria#10811). */
+      if (!armed.channelsKnown) {
+        body.appendChild(h('p', {
+          className: 'tiny is-warn',
+          text: 'The answer did not say where problems are sent, so whether ' +
+            'anything is getting through is unknown.'
+        }));
+        box.appendChild(body);
+        return box;
+      }
+
       if (!armed.channels.length) {
         body.appendChild(h('p', {
           className: 'tiny muted', text: 'No notification channel is set up.'
@@ -1815,7 +1871,14 @@
       armed.channels.forEach(function (channel) {
         var row = h('div', { className: 'c-route' });
         var words = h('div', { className: 'grow' });
-        words.appendChild(h('div', { className: 'strong tiny', text: channel.label }));
+        /* Named by its key when the answer carries no label, because an empty
+           element is indistinguishable from a row that is simply not there --
+           to a reader, to a screen reader, and to a test (Stadiora/Aria#10821).
+           The key is not pretty and is not meant to be: it is the only thing
+           on hand that identifies WHICH destination this row is about, and a
+           row that cannot say that is not worth drawing. */
+        words.appendChild(h('div', { className: 'strong tiny',
+          text: textOf(channel.label) || textOf(channel.channel) || 'Unnamed destination' }));
         words.appendChild(h('div', { className: 'tiny muted', text: channelNote(channel) }));
         row.appendChild(words);
 

@@ -59,13 +59,22 @@
   };
 
   /* Why a rule cannot reach a verdict, each reading as the end of the sentence
-     "it cannot judge yet because ...". */
+     "it cannot judge because ...".
+
+     Only `no_source_configured` is not a waiting problem. The other three end
+     if enough traffic arrives; that one ends when somebody configures a
+     source, and no amount of waiting reaches it. It used to read "nothing is
+     feeding it YET", which told an operator to come back later about a rule
+     that will read the same in a year (Stadiora/Aria#10812). `STARVED` is the
+     set that time alone fixes, and the pane counts the two separately. */
   var INSUFFICIENT_REASON = {
-    no_source_configured: 'nothing is feeding it yet',
+    no_source_configured: 'nothing is wired up to feed it',
     no_samples: 'nothing has come in to measure',
     below_minimum_samples: 'too few measurements so far',
     no_baseline: 'there is no history to compare against'
   };
+
+  var UNCONFIGURED_REASON = { no_source_configured: true };
 
   var CHANNEL_STATUS = {
     ok: { tone: 'ok', label: 'Connected' },
@@ -207,9 +216,27 @@
     });
     var lastEvaluated = latest(enabled.map(function (r) { return r.lastEvaluatedAt; }));
 
+    var channels = Array.isArray(rules.channels) ? rules.channels : [];
+    var configured = channels.filter(function (c) { return c.configured === true; });
+
     return {
       rules: list,
-      channels: rules.channels || [],
+      channels: channels,
+      /* Whether the answer carried a channel list at all, kept apart from its
+         being empty. `armedState({})` used to produce `channels: []`, which
+         the Problems pane printed as "No notification channel is set up." --
+         a confident statement about delivery derived from a payload that said
+         nothing about delivery. Same disease as counting an unread rules list
+         as zero rules. */
+      channelsKnown: Array.isArray(rules.channels),
+      channelsConfigured: configured.length,
+      /* Has anything ever actually arrived, anywhere. Not "is a destination
+         set": a destination that has never delivered is a destination that
+         has never delivered, and seven open problems behind it read the same
+         either way (Stadiora/Aria#10811). */
+      everDelivered: configured.some(function (c) {
+        return time(c.lastSuccessAt) !== null;
+      }),
       total: list.length,
       enabled: enabled.length,
       /* Enabled, ran, and reached a verdict. This is the only count either
@@ -217,6 +244,13 @@
       checking: checking.length,
       insufficientData: enabled.filter(function (r) {
         return r.lastEvaluationStatus === 'insufficient_data';
+      }).length,
+      /* The subset of `insufficientData` that waiting will not fix, because
+         nothing is wired up to feed the rule. Told apart from the ones that
+         are merely short of data, which is what #10812 asked for. */
+      unconfigured: enabled.filter(function (r) {
+        return r.lastEvaluationStatus === 'insufficient_data' &&
+          UNCONFIGURED_REASON[r.lastInsufficientReason] === true;
       }).length,
       /* An enabled rule whose own check failed. Different from short of data,
          and a different thing to go and fix. */
