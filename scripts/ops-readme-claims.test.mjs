@@ -1363,7 +1363,6 @@ DERIVED['dark-text-3'] = () => {
 /* The blocks this file derives, listed out of this file rather than typed into
    the README, because the README's enumeration of them fell three behind. */
 const SWEEP_TEST = 'every repository file ops/README.md names is in the tree or declared deleted';
-const RATCHET_TEST = 'no defence in this file was retired without lowering a floor';
 const JUDGED_TEST = 'the run reports what it judged';
 const BLOCK_SET_TEST = 'every claims block is derived here, and every derivation has a block';
 
@@ -1381,7 +1380,6 @@ DERIVED['claims-blocks'] = () => {
   const tests = [
     ...(self.includes('\ntest(SWEEP_TEST,') ? [SWEEP_TEST] : []),
     ...(self.includes('\ntest(TABLE_TEST,') ? [TABLE_TEST] : []),
-    ...(self.includes('\ntest(RATCHET_TEST,') ? [RATCHET_TEST] : []),
   ];
   return [
     ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
@@ -1542,7 +1540,7 @@ const completed = (name) => { COMPLETED.add(name); };
 process.on('exit', () => {
   const expected = [
     ...Object.keys(DERIVED).map((id) => `ops/README.md claims id=${id} still describe the code`),
-    BLOCK_SET_TEST, TABLE_TEST, SWEEP_TEST, JUDGED_TEST, RATCHET_TEST,
+    BLOCK_SET_TEST, TABLE_TEST, SWEEP_TEST, JUDGED_TEST,
   ];
   const silent = expected.filter((name) => !COMPLETED.has(name));
   if (silent.length === 0) return;
@@ -1854,6 +1852,13 @@ test(JUDGED_TEST, () => {
     [...Object.keys(DERIVED), 'file-paths', 'checks table'].sort(),
     'a block was not judged in this run');
   assert.ok(total > 0, 'nothing was judged');
+  completed(JUDGED_TEST);
+});
+
+/* Module scope for the same reason as the ratchet below. Round 7 deleted the
+   test these used to sit inside, outright, and the run was green with every
+   pin and every family check gone. */
+{
   for (const [id, required] of Object.entries(REQUIRED_ROWS)) {
     /* A key naming no block is inert - its subject set is empty, nothing is
        missing from it, and it passes while inflating FLOORS.pinnedBlocks.
@@ -1888,8 +1893,8 @@ test(JUDGED_TEST, () => {
       `${absent.map((n) => `.${n}`).join(', ')} — the family was narrowed, or REQUIRED_FAMILIES ` +
       'has to lose it on purpose');
   }
-  completed(JUDGED_TEST);
-});
+}
+
 
 /* The ratchet. Nothing above this can see a pin RETIRED, because every one of
    them reads the pin list to decide what to check, so an empty list checks
@@ -1899,7 +1904,17 @@ test(JUDGED_TEST, () => {
    The failure message names what is missing rather than the arithmetic,
    because the arithmetic is not the finding: the finding is which defence
    stopped existing. */
-test(RATCHET_TEST, () => {
+/* The ratchet. NOT a test, and that placement is the finding. Round 7 showed a test can be
+   silenced in place: `{ skip: true }` never runs the body, and `{ todo: true }`
+   RUNS it and then discards whatever it found - node reports the file as
+   passing and exits 0 whatever an exit handler does with process.exitCode,
+   which was measured, not assumed. A module-scope assertion has no such switch.
+   It cannot be skipped, todo-ed or tolerated, and a throw here exits 1.
+
+   So the checks that hold every other defence in this file live out here: the
+   floors, the row pins and the family pins. What stays a test is the judged
+   census, because JUDGED only fills while tests run. */
+{
   const pinned = Object.keys(REQUIRED_ROWS).sort();
   assert.ok(pinned.length >= FLOORS.pinnedBlocks,
     `REQUIRED_ROWS pins ${pinned.length} blocks and FLOORS.pinnedBlocks is ${FLOORS.pinnedBlocks}: `
@@ -1911,5 +1926,4 @@ test(RATCHET_TEST, () => {
   assert.ok(REQUIRED_FAMILIES.length >= FLOORS.statusFamilies,
     `REQUIRED_FAMILIES holds ${REQUIRED_FAMILIES.length} families and FLOORS.statusFamilies is `
     + `${FLOORS.statusFamilies}: a family was retired. Held now: ${REQUIRED_FAMILIES.join(', ')}`);
-  completed(RATCHET_TEST);
-});
+}
