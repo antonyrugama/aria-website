@@ -28,6 +28,12 @@ desktop.ini
 # Mutation-battery source snapshots (mutate-*.mjs restores from these)
 .mutbak/
 
+# Chrome profile written by scripts/ops-webfont.test.mjs when RUNNER_TEMP is
+# unset, and the output directory its mutation battery writes its generated
+# table and per-row runner logs into. Same terms as the entries around it.
+.ops-webfont-*/
+.probe/
+
 # Chrome profile written by scripts/ops-scroll-containment.test.mjs when
 # RUNNER_TEMP is unset, which is every laptop; Actions always sets it, so on the
 # runner this lands outside the repository. Same terms as the two entries above:
