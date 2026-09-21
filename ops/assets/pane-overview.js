@@ -129,17 +129,25 @@
         { type: 'block', height: 210 }
       ]);
 
+      /* Three reads, each carried as a value or as the error it failed with.
+
+         Every one of them fails on its own terms rather than through the
+         pane. The halves of this page answer different questions from
+         different tables, and a read that is down must not take the others
+         off the screen with it: an operator who cannot see spend can still
+         act on a critical problem, and one who cannot read the queue can
+         still be told what the figures say. Each rejection is therefore
+         carried as a value and drawn as one failed section, with the pane in
+         its degraded state rather than its live one.
+
+         Bare reads under Promise.all did the opposite. A single failed
+         problems or rules request rejected the whole thing and replaced the
+         entire pane with "This pane could not be read", including the
+         sections whose own reads had landed (Stadiora/Aria#5498). */
       Promise.all([
-        session.call('/api/ops/alerts/problems', { query: { status: 'open', limit: model.PAGE } })
-          .then(function (p) { return p.data; }),
-        session.call('/api/ops/alerts/rules').then(function (p) { return p.data; }),
-        /* The figures fail on their own terms rather than through the pane.
-           The two halves of this page answer different questions from
-           different tables, and a summary read that is down must not take the
-           urgent queue off the screen with it: an operator who cannot see
-           spend can still act on a critical problem. The rejection is
-           therefore carried as a value and drawn as one failed section, with
-           the pane in its degraded state rather than its live one. */
+        settled(session.call('/api/ops/alerts/problems',
+          { query: { status: 'open', limit: model.PAGE } })),
+        settled(session.call('/api/ops/alerts/rules')),
         summary().then(function (payload) {
           return { data: (payload && typeof payload === 'object') ? payload : null };
         }, function (err) {
@@ -149,8 +157,20 @@
         if (token !== loadToken) return;
         render({ open: results[0], rules: results[1], summary: results[2] });
       }).catch(function (err) {
+        /* Not a failed read any more — the three above cannot reject. This is
+           the backstop for render() itself throwing, which is the one failure
+           that really does leave nothing on screen. */
         if (token !== loadToken) return;
         region.failed(err, load);
+      });
+    }
+
+    /* A read as a value: { data } or { error }, never a rejection. */
+    function settled(promise) {
+      return promise.then(function (payload) {
+        return { data: payload.data };
+      }, function (err) {
+        return { error: err };
       });
     }
 
@@ -168,42 +188,82 @@
     }
 
     function render(data) {
-      var armed = model.armedState(data.rules);
-      var problems = data.open.problems.slice().sort(model.byWorstThenOldest);
+      var openFailed = !!data.open.error;
+      var rulesFailed = !!data.rules.error;
+      var failed = !!(data.summary && data.summary.error);
+
+      /* armedState({}) is the empty answer, not the unread one, so every
+         branch that reads `armed` has to be told which it is looking at.
+         Without that, an unreadable rules request renders as "no rule
+         exists", which is the pane stating as fact the one thing it does not
+         know. */
+      var armed = model.armedState(rulesFailed ? {} : (data.rules.data || {}));
+      var openProblems = openFailed ? [] : list(data.open.data && data.open.data.problems);
+      var problems = openProblems.slice().sort(model.byWorstThenOldest);
       /* A full read is a floor, not a total: problems come back worst first
          and then oldest and stop at model.PAGE, so every count on this pane is
          "at least" when the page came back full. */
-      var capped = model.capped(data.open.problems);
-      var failed = !!(data.summary && data.summary.error);
+      var capped = model.capped(openProblems);
       var figures = data.summary && data.summary.data;
 
-      badgeProblems(problems, capped);
+      badgeProblems(problems, capped, openFailed);
+
+      /* Every read unreadable is the whole pane unreadable. Anything less
+         renders what did come back. */
+      if (openFailed && rulesFailed && failed) {
+        region.failed(data.open.error, load);
+        return;
+      }
 
       /* Empty is a real state with a real trigger, and a narrow one: not one
-         quiet window, but a pane with nothing behind either of its halves.
-         Anything less than that renders whatever did come back. */
-      if (!failed && !figures && !problems.length && !armed.total) {
+         quiet window, but a pane with nothing behind either of its halves,
+         from reads that landed. A read that never landed has not earned the
+         sentence "there is nothing here". */
+      if (!failed && !openFailed && !rulesFailed &&
+          !figures && !problems.length && !armed.total) {
         region.empty(nothingBehindIt());
         return;
       }
 
       var wrap = h('div', { className: 'stack' });
-      wrap.appendChild(ribbon(problems, armed, capped));
+      wrap.appendChild(ribbon(problems, armed, capped, openFailed, rulesFailed));
 
       var attention = S.band('What needs a person');
-      attention.appendChild(queueCard(problems, armed, capped));
+      if (openFailed) {
+        failedSection(attention, 'The problems could not be read', data.open.error);
+      } else {
+        attention.appendChild(queueCard(problems, armed, capped, rulesFailed));
+      }
       wrap.appendChild(attention);
 
       var going = S.band('How things are going');
-      figuresSection(going, data.summary);
+      figuresSection(going, data.summary, openFailed);
       wrap.appendChild(going);
 
       /* Degraded is the pane on screen with one of its reads unusable, which
-         is exactly this: the problems half answered and the figures half did
-         not. It is not the empty state, because a read that never landed has
-         not earned the sentence "there is nothing here". */
-      if (failed) region.degraded(wrap);
+         is exactly this: some of it answered and some of it did not. It is not
+         the empty state, because a read that never landed has not earned the
+         sentence "there is nothing here". */
+      if (failed || openFailed || rulesFailed) region.degraded(wrap);
       else region.show(wrap);
+    }
+
+    /* A section whose own read failed, in place of what it would have drawn.
+       Named where the content would have been rather than replacing the pane,
+       because the rest of the page is still true. The same shape the Problems
+       pane uses for the same two reads, so an operator moving between the two
+       during one incident meets one treatment. */
+    function failedSection(band, headline, err) {
+      var box = S.card();
+      var block = S.stateBlock('warn', headline, [
+        S.failureMessage(err),
+        'Nothing here is a zero. This part is unread, not empty.'
+      ], 3);
+      var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+      again.addEventListener('click', function () { load(); });
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      box.appendChild(block);
+      band.appendChild(box);
     }
 
     /* The Problems count beside the rail item.
@@ -211,9 +271,11 @@
        A real read or nothing: this is the count this pane just asked for, and
        a rail badge that invents one is worse than a rail with no badge. It is
        cleared as well as set, so a page that lands on a quiet system does not
-       keep a stale count from a previous render. */
-    function badgeProblems(problems, capped) {
-      var needing = model.needingAction(problems).length;
+       keep a stale count from a previous render, and a read that failed takes
+       the badge away rather than leaving yesterday's number beside a queue
+       this pane could not read. */
+    function badgeProblems(problems, capped, failed) {
+      var needing = failed ? 0 : model.needingAction(problems).length;
       if (!needing) {
         S.setBadge('alerts', null);
         return;
@@ -261,7 +323,7 @@
        what needs a person and what is being worked on are different lists. */
     var RIBBON_TONE = { crit: 'st-bad', warn: 'st-warn', info: 'st-acc' };
 
-    function ribbon(problems, armed, capped) {
+    function ribbon(problems, armed, capped, openFailed, rulesFailed) {
       var active = model.active(problems);
       var needing = model.needingAction(problems);
       var worst = model.worstSeverity(active);
@@ -270,7 +332,22 @@
       var sub;
       var tone;
 
-      if (!armed.trustworthy) {
+      /* Two more readings of "we do not know", both of them a read that never
+         landed rather than a check that is not running. They come first
+         because every branch below states something this pane was not told:
+         an unread queue cannot say "everything is working", and an unread
+         rules list cannot tell an empty queue apart from nothing looking. */
+      if (openFailed) {
+        tone = 'st-warn';
+        title = 'Whether anything is wrong is unknown';
+        sub = 'The problems could not be read. Nothing here is a zero: they are ' +
+          'unread, not absent.';
+      } else if (rulesFailed && !active.length) {
+        tone = 'st-warn';
+        title = 'Nothing is open, and whether anything is watching is unknown';
+        sub = 'The rules could not be read, so a quiet queue cannot be told apart ' +
+          'from nothing looking.';
+      } else if (!rulesFailed && !armed.trustworthy) {
         tone = 'st-warn';
         title = 'Nothing is being checked';
         sub = unarmedSentence(armed);
@@ -301,7 +378,7 @@
       var words = h('div', {}, [h('h2', { className: 'hero-title', text: title })]);
       if (sub) words.appendChild(h('p', { className: 'hero-sub', text: sub }));
       hero.appendChild(words);
-      hero.appendChild(ribbonChips(problems, armed, capped));
+      hero.appendChild(ribbonChips(problems, armed, capped, rulesFailed));
       return hero;
     }
 
@@ -400,7 +477,7 @@
       return pill;
     }
 
-    function ribbonChips(problems, armed, capped) {
+    function ribbonChips(problems, armed, capped, rulesFailed) {
       var row = h('div', { className: 'hero-chips' });
       var counts = { critical: 0, warning: 0, info: 0 };
       /* Everything still open whose severity is not one of the three. Counted
@@ -437,8 +514,16 @@
           model.atLeast(fmt.plural(taken.length, 'problem'), capped) + ' taken on'));
       }
 
-      row.appendChild(chip(armed.trustworthy ? 'ok' : 'warn',
-        fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking'));
+      /* The armed proof. `0 of 0 rules checking` is a real answer when the
+         rules read landed and a fabrication when it did not, and the two look
+         identical on screen, so the unread case says it is unread instead of
+         printing a count nobody reported. */
+      if (rulesFailed) {
+        row.appendChild(chip('warn', 'rules unread'));
+      } else {
+        row.appendChild(chip(armed.trustworthy ? 'ok' : 'warn',
+          fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking'));
+      }
 
       /* A channel that was never connected is where a problem goes to be
          missed, so it is stated here rather than only on the pane that owns
@@ -452,7 +537,7 @@
 
     /* -------------------------------------------------------------- queue */
 
-    function queueCard(problems, armed, capped) {
+    function queueCard(problems, armed, capped, rulesFailed) {
       var card = S.card();
       var needing = model.needingAction(problems);
       var taken = model.takenOn(problems);
@@ -481,10 +566,17 @@
         /* The ribbon above already carries the reason, and it carries it in
            these exact words. This block keeps its own heading, because a
            reader who scrolled to the queue needs to know why it is empty
-           without scrolling back, and adds nothing the ribbon said. */
-        body.appendChild(armed.trustworthy
-          ? quietBlock(armed)
-          : S.stateBlock('warn', 'The checks are not running', [], 4));
+           without scrolling back, and adds nothing the ribbon said.
+
+           Three readings, not two: the checks are running, the checks are not
+           running, and nobody could read which. The third used to render as
+           the second, because an unread rules list reaches armedState as the
+           empty one. */
+        body.appendChild(rulesFailed
+          ? S.stateBlock('warn', 'Whether the checks are running could not be read', [], 4)
+          : (armed.trustworthy
+              ? quietBlock(armed)
+              : S.stateBlock('warn', 'The checks are not running', [], 4)));
         card.appendChild(body);
         return card;
       }
@@ -1346,14 +1438,22 @@
         num(people.platform && people.platform.previousActive) !== null;
     }
 
-    function figuresSection(band, result) {
+    function figuresSection(band, result, openFailed) {
       if (result && result.error) {
         var box = S.card();
-        var block = S.stateBlock('warn', 'These figures could not be read', [
+        /* The second sentence is a claim about the OTHER read, so it is made
+           only when that read actually landed. Both halves down and it would
+           be telling the operator their queue is fine while the section above
+           says it could not be read. */
+        var lines = [
           S.failureMessage(result.error),
-          'Nothing here is a zero: the figures are unread, not absent. The problems ' +
-            'above were read separately and are unaffected.'
-        ], 3);
+          openFailed
+            ? 'Nothing here is a zero: the figures are unread, not absent. The ' +
+              'problems above could not be read either.'
+            : 'Nothing here is a zero: the figures are unread, not absent. The ' +
+              'problems above were read separately and are unaffected.'
+        ];
+        var block = S.stateBlock('warn', 'These figures could not be read', lines, 3);
         var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
         again.addEventListener('click', function () { load(); });
         block.appendChild(h('div', { className: 'row mt-sm' }, [again]));

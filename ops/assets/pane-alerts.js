@@ -88,6 +88,16 @@
 
   var RANGE_DAYS = { '7d': 7, '30d': 30 };
 
+  /* What the close endpoint keeps of a note, and the same number the textarea
+     stops at, so the field cannot accept text the record will not hold.
+
+     The attribute alone is not the whole fix. `maxlength` stops typing, but a
+     PASTE past the limit is truncated by the browser without a word, so an
+     operator who pastes a paragraph gets a note ending mid-sentence and no
+     sign that anything was dropped (Stadiora/Aria#5498). The line beside the
+     field is silent until the limit is actually reached and then says so. */
+  var NOTE_LIMIT = 500;
+
   /* How far back the closed list looks, and how many of them it shows. The
      window is this pane's own rather than the shell's: the shell's range
      decides which problems are in the QUEUE, and a closed list that emptied
@@ -1166,8 +1176,23 @@
       noteWrap.appendChild(h('label', {
         className: 'p-label', 'for': noteId, text: 'What happened? Kept with the record'
       }));
-      var note = h('textarea', { id: noteId, rows: '2', maxlength: '500' });
+      var limitId = discloseId('close-note-limit', surface);
+      var note = h('textarea', {
+        id: noteId, rows: '2', maxlength: String(NOTE_LIMIT),
+        'aria-describedby': limitId
+      });
       noteWrap.appendChild(note);
+      /* Empty until the limit is reached, so the ordinary case carries no
+         extra words, and a sentence the moment the field starts dropping
+         what is put into it. role="status" rather than "alert": nothing is
+         wrong, and it is not worth interrupting what is being typed. */
+      var limit = h('p', { className: 'tiny muted', id: limitId, role: 'status' });
+      noteWrap.appendChild(limit);
+      note.addEventListener('input', function () {
+        limit.textContent = String(note.value || '').length >= NOTE_LIMIT
+          ? 'At the ' + NOTE_LIMIT + '-character limit. Anything past it is not kept.'
+          : '';
+      });
       box.appendChild(noteWrap);
 
       var confirm = h('button', {
