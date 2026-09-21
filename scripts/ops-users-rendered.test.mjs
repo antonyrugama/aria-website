@@ -561,6 +561,33 @@ const sampleRects = (rects) => `(() => {
 
 /* Every computed style this file compares, in one place, so the two sides of a
    comparison can never be read with different property lists. */
+/* Every sideways scroller the pane has drawn, and the three facts that decide
+   whether a keyboard can use it. Read on .tbl-wrap itself, the element that
+   clips: on an ancestor of a clipping box the two widths agree and the
+   overflow is invisible, which is the second of the two blind spots
+   CLAUDE.md records for this comparison. The first -- both values being
+   integers -- is not dodgeable here and is declared under NOT COVERED.
+
+   accessibleName is read the way a reader resolves it, aria-label first, so a
+   role that names nothing cannot pass as a named region. */
+const SCROLLERS = `(() => {
+  const out = [];
+  for (const wrap of document.querySelectorAll('#lookupResult .tbl-wrap')) {
+    const caption = wrap.querySelector('caption');
+    out.push({
+      caption: caption ? caption.textContent.trim() : null,
+      clientWidth: wrap.clientWidth,
+      scrollWidth: wrap.scrollWidth,
+      overflows: wrap.scrollWidth > wrap.clientWidth,
+      hasTabindex: wrap.hasAttribute('tabindex'),
+      tabIndex: wrap.tabIndex,
+      role: wrap.getAttribute('role'),
+      accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
+    });
+  }
+  return JSON.stringify(out);
+})()`;
+
 const STYLE = (selector) => `(() => {
   const el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
@@ -652,6 +679,52 @@ try {
     return JSON.parse(raw);
   };
 
+  /* The consequence, driven rather than inferred.
+     `tabindex="0"` is a statement about the tab sequence; this is the thing a
+     keyboard user actually wants, which is for the columns past the edge to
+     come into view. Focus is taken with .focus(), which a div without a
+     tabindex ignores outright -- so activeElement landing on the wrap is
+     itself evidence -- and the scroll is driven with real key events through
+     CDP. A synthetic KeyboardEvent would not scroll anything: the browser
+     scrolls on the default action of a trusted key press, and dispatchEvent
+     produces an untrusted one. Same reason CSS :hover needs
+     Input.dispatchMouseEvent. */
+  const driveScroller = async () => {
+    const found = await evaluate(`(() => {
+      for (const wrap of document.querySelectorAll('#lookupResult .tbl-wrap')) {
+        if (wrap.scrollWidth > wrap.clientWidth) {
+          wrap.id = 'kbdScroller';
+          wrap.scrollLeft = 0;
+          wrap.focus();
+          return JSON.stringify({
+            caption: (wrap.querySelector('caption') || {}).textContent || null,
+            focused: document.activeElement === wrap,
+            before: wrap.scrollLeft,
+            room: wrap.scrollWidth - wrap.clientWidth,
+          });
+        }
+      }
+      return null;
+    })()`);
+    if (!found) return { present: false };
+
+    for (let i = 0; i < 8; i += 1) {
+      for (const type of ['rawKeyDown', 'keyUp']) {
+        await cdp.send('Input.dispatchKeyEvent',
+          { type, key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39,
+            nativeVirtualKeyCode: 39 });
+      }
+    }
+    await new Promise((r) => setTimeout(r, 400));
+
+    const after = await evaluate(`(() => {
+      const wrap = document.getElementById('kbdScroller');
+      return JSON.stringify({ after: wrap.scrollLeft,
+        stillFocused: document.activeElement === wrap });
+    })()`);
+    return { present: true, ...JSON.parse(found), ...JSON.parse(after) };
+  };
+
   let initScript = null;
   for (const theme of THEMES) {
     if (initScript) {
@@ -675,6 +748,16 @@ try {
       { width: 1280, height: 1600, deviceScaleFactor: 1, mobile: false });
 
     cdp.reset();
+
+    /* The second pass renders nothing without this, and says so quietly.
+       After the first navigation the target stops being frontmost, so its
+       document is visibilityState "hidden" -- and a hidden document produces
+       no animation frames. Layout and getComputedStyle still answer, which is
+       why everything measured here kept working, but anything delivered on a
+       frame stops: requestAnimationFrame, ResizeObserver, IntersectionObserver
+       and the window `resize` event. Measured: 24 rAF ticks in the first pass
+       against 0 in the second, over the same 400ms, both at innerWidth 375. */
+    await cdp.send('Page.bringToFront');
     await cdp.send('Page.navigate', { url: origin + PAGE });
     await cdp.once('Page.loadEventFired');
     await new Promise((r) => setTimeout(r, 800));
@@ -688,6 +771,10 @@ try {
 
     const styles = {};
     for (const [key, selector] of Object.entries(PAIRS)) styles[key] = await styleOf(selector);
+
+    /* The wide arm of the scroller question. At 1280 these four tables fit
+       their cards, so this is where a tab stop that should not exist shows up. */
+    const scrollersWide = JSON.parse(await evaluate(SCROLLERS));
 
     /* Text-run geometry is read from the DOM before the glyphs go, because
        afterwards there is nothing left to measure the extent of. */
@@ -771,6 +858,14 @@ try {
     await cdp.send('Emulation.setDeviceMetricsOverride',
       { width: 375, height: 1600, deviceScaleFactor: 1, mobile: false });
     await new Promise((r) => setTimeout(r, 400));
+
+    /* Collected AFTER the viewport change and after the pane's 140ms settle,
+       with nothing repainted in between: at this point the only thing that can
+       have moved these attributes is the pane's ResizeObserver, since no
+       paint, click or navigation happened between the width change and this
+       read. That is what binds the observer rather than merely the writes. */
+    const scrollersNarrow = JSON.parse(await evaluate(SCROLLERS));
+    const keyboard = await driveScroller();
     const narrow = JSON.parse(await evaluate(`(() => {
       const th = document.querySelector('tr.is-selected th.match-name');
       const wrap = th.closest('.tbl-wrap');
@@ -788,6 +883,7 @@ try {
     })()`));
 
     census[theme] = { styles, textContrast, narrow,
+      scrollers: { wide: scrollersWide, narrow: scrollersNarrow, keyboard },
       graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
@@ -1069,5 +1165,95 @@ for (const theme of THEMES) {
         `${s.where} reads ${s.ratio}:1 — ink ${s.ink} on the painted stack ` +
         `rgb(${s.backdrop.map(Math.round).join(', ')}) sampled over ${s.pixels} text pixels`);
     }
+  });
+}
+
+/* ------------------------------------------- a scroll box a keyboard can use
+
+   Stadiora/Aria#10822. `overflow-x: auto` makes the columns past the card's
+   edge reachable with a pointer and with nothing else: a div is not focusable
+   by default, and a box that cannot be focused cannot be scrolled from a
+   keyboard. WCAG 2.1 SC 2.1.1.
+
+   The pane sets the three attributes only while the box actually scrolls, so
+   both arms are asserted: present where it clips, ABSENT where it does not.
+   The second arm is the one that keeps the fix from becoming a row of dead tab
+   stops at desktop width, and it is assertable here only because the same run
+   measures the same four boxes at two widths.
+
+   NOT COVERED, deliberately:
+     - the wrap's POSITION in the tab sequence. That it is reachable is bound
+       below; that it is reached in a sensible order is not.
+     - overflow under half a pixel. clientWidth and scrollWidth are integers,
+       so a hairline clip is invisible to the pane's own condition and to this
+       check alike. The pane errs towards the tab stop for that reason.
+     - the pane painted while hidden. A display:none box measures 0/0 and reads
+       as not scrolling. The pane's ResizeObserver does fire when such a box is
+       shown and gains a size, so the mechanism covers it; nothing here binds
+       that, because the shell draws this pane only when it is the active one.
+     - every other pane. ops/assets/pane-run-history-v2.js has the same defect
+       and is held by another agent; #10822 stays open against it. */
+
+for (const theme of THEMES) {
+  test(`[${theme}] at 375px every clipping table is a named region a keyboard can reach`, () => {
+    const wraps = census[theme].scrollers.narrow;
+    assert.ok(wraps.length >= 3,
+      `only ${wraps.length} scroll wrappers were drawn, so the pane did not reach ` +
+      'the populated state this arm reads');
+
+    const clipping = wraps.filter((w) => w.overflows);
+    assert.ok(clipping.length >= 1,
+      'no table clipped at 375px, so this assertion could not have failed from ' +
+      'what it names — the widths measured were ' +
+      wraps.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
+
+    for (const w of clipping) {
+      assert.equal(w.tabIndex, 0,
+        `the wrap holding "${w.caption}" clips ${w.scrollWidth - w.clientWidth}px and ` +
+        `reports tabIndex ${w.tabIndex}, so a keyboard cannot reach what it hides`);
+      assert.equal(w.role, 'region',
+        `the wrap holding "${w.caption}" is a tab stop with role ${JSON.stringify(w.role)}`);
+      assert.ok(w.accessibleName.length > 0,
+        `the wrap holding "${w.caption}" is a region with no accessible name, so a ` +
+        'reader landing on it is told "region" and nothing else');
+      assert.equal(w.accessibleName, w.caption,
+        `the region is named ${JSON.stringify(w.accessibleName)} while the table it ` +
+        `holds is captioned ${JSON.stringify(w.caption)}`);
+    }
+  });
+
+  test(`[${theme}] a table that fits is not a tab stop`, () => {
+    const seen = [];
+    for (const where of ['wide', 'narrow']) {
+      for (const w of census[theme].scrollers[where]) {
+        if (w.overflows) continue;
+        seen.push(`${where}:${w.caption}`);
+        assert.equal(w.hasTabindex, false,
+          `at ${where} width the wrap holding "${w.caption}" fits ` +
+          `(${w.clientWidth}/${w.scrollWidth}) and is still a tab stop, so a keyboard ` +
+          'user stops on a region that cannot move');
+        assert.equal(w.role, null,
+          `at ${where} width the wrap holding "${w.caption}" fits and still announces ` +
+          `role ${JSON.stringify(w.role)}`);
+      }
+    }
+    assert.ok(seen.length >= 1,
+      'every wrap clipped at both widths, so this arm asserted nothing; the ' +
+      'conditional half of the fix is unbound in this run');
+  });
+
+  test(`[${theme}] arrow keys actually scroll the box they focus`, () => {
+    const k = census[theme].scrollers.keyboard;
+    assert.equal(k.present, true, 'no clipping wrap was found to drive at 375px');
+    assert.equal(k.focused, true,
+      `.focus() on the wrap holding "${k.caption}" did not move activeElement to it, ` +
+      'which is what a div without a tabindex does');
+    assert.equal(k.before, 0, `the box started at scrollLeft ${k.before}`);
+    assert.ok(k.after > 0,
+      `eight ArrowRight presses on the focused wrap holding "${k.caption}" left ` +
+      `scrollLeft at ${k.after} with ${k.room}px of room, so the columns past the ` +
+      'edge stayed out of reach');
+    assert.equal(k.stillFocused, true,
+      'focus left the wrap during the presses, so what scrolled may not be it');
   });
 }

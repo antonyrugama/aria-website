@@ -1368,10 +1368,99 @@
      change. */
   var looked = false;
 
+  /* Whether a box scrolls is a fact about layout, and layout changes for
+     reasons no single call site can see: the window resizes, the account
+     column redraws under a row click without going back through paintResult,
+     a web font lands late and the widest cell grows. So the question is
+     re-asked by watching the two things that can change the answer -- the
+     size of the box, and the size of the table inside it -- plus additions to
+     the result region itself.
+
+     Deliberately NOT a `resize` listener, which is what this started as.
+     A window `resize` event is a notification the browser may decline to
+     send: driving Chrome from 1280px to 375px through CDP fires it in one
+     run and not in the next, at the same call site, with innerWidth changed
+     both times. A ResizeObserver is driven by layout rather than by that
+     event, so it also catches the cases a window resize never covered -- a
+     sidebar collapsing, a zoom, a font swap. aria.js:714 uses the event
+     because it redraws charts on a viewport change, which is genuinely a
+     window question; this one is not.
+
+     Settled at aria.js:714's interval: an affordance that appears and
+     vanishes through a window drag is worse than one that arrives a beat
+     late. paintResult calls syncScrollers directly as well, so the common
+     case is synchronous and the observers only cover what it cannot see. */
+  var syncSettle;
+  var boxWatch = null;
+
+  function queueScrollerSync() {
+    clearTimeout(syncSettle);
+    syncSettle = setTimeout(function () { syncScrollers(resultRegion); }, 140);
+  }
+
+  /* observe() on an element already observed is a no-op, so this is safe to
+     re-run on every sync and needs no bookkeeping of its own. */
+  function watchScroller(wrap) {
+    if (!boxWatch) return;
+    boxWatch.observe(wrap);
+    var table = wrap.querySelector('table');
+    if (table) boxWatch.observe(table);
+  }
+
+  /* A table wider than its card scrolls sideways inside .tbl-wrap, which makes
+     the columns past the edge reachable with a pointer and, without this, with
+     nothing else. A box with `overflow-x: auto` is not focusable by default,
+     and a box that cannot be focused cannot be scrolled from a keyboard:
+     WCAG 2.1.1. Stadiora/Aria#10822.
+
+     It is made a region and a tab stop only WHILE it actually scrolls. At
+     1280px these four tables fit their cards, and a tab stop that cannot move
+     is a stop that announces a region and then does nothing in it.
+
+     The name is read off the table's own <caption class="sr"> rather than
+     written a second time here, so the region and the table cannot come to
+     disagree about what they are.
+
+     ops/assets/pane-evaluations.js:1181 and ops/assets/settings.js:225 set the
+     same three attributes unconditionally. Both name their region, which is
+     the half this repository usually gets wrong; neither asks whether the box
+     scrolls. */
+  function syncScrollers(root) {
+    if (!root || !root.querySelectorAll) return;
+    var wraps = root.querySelectorAll('.tbl-wrap');
+    for (var i = 0; i < wraps.length; i += 1) {
+      var wrap = wraps[i];
+      watchScroller(wrap);
+
+      /* Both integers, so overflow under half a pixel rounds away here. The
+         error that leaves is a clipped hairline with no tab stop; the error
+         the other threshold leaves is a stop that scrolls nothing. Sensitivity
+         is the safe direction when the thing being missed is a barrier. */
+      if (wrap.scrollWidth > wrap.clientWidth) {
+        var caption = wrap.querySelector('caption');
+        var name = caption ? (caption.textContent || '').trim() : '';
+        wrap.setAttribute('tabindex', '0');
+
+        /* An unnamed region is a landmark that says "region" and stops. Where
+           there is no caption to read, reachability is still worth having on
+           its own, so the tab stop goes on and the role does not. */
+        if (name) {
+          wrap.setAttribute('role', 'region');
+          wrap.setAttribute('aria-label', name);
+        }
+      } else {
+        wrap.removeAttribute('tabindex');
+        wrap.removeAttribute('role');
+        wrap.removeAttribute('aria-label');
+      }
+    }
+  }
+
   function paintResult(node) {
     if (!resultRegion) return;
     clear(resultRegion);
     if (node) resultRegion.appendChild(node);
+    syncScrollers(resultRegion);
   }
 
   function runLookup() {
@@ -1572,6 +1661,26 @@
     resultRegion = h('div', { className: 'stack', id: 'lookupResult' });
     resultRegion.appendChild(idleState());
     region.empty(resultRegion);
+
+    /* Two observers, one question. The ResizeObserver answers "is this box
+       still the same shape as what is in it", which is what actually decides
+       the affordance. The MutationObserver exists because a box that has just
+       been created has never been observed: selectAccount redraws the account
+       column in place, and the three tables it brings with it never pass
+       through paintResult.
+
+       childList and subtree only. Watching attributes would make this loop:
+       syncScrollers sets tabindex, role and aria-label, and would be woken by
+       its own writes. */
+    if (global.ResizeObserver) {
+      boxWatch = new global.ResizeObserver(queueScrollerSync);
+    }
+    if (global.MutationObserver) {
+      new global.MutationObserver(queueScrollerSync).observe(resultRegion, {
+        childList: true,
+        subtree: true
+      });
+    }
   });
 
   global.addEventListener('ops:filters', function (e) {

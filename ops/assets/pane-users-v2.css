@@ -239,6 +239,15 @@
    scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
 .tbl-wrap { overflow-x: auto; }
 
+/* pane-users.js makes the wrap a tab stop while it scrolls (Stadiora/Aria#10822),
+   and aria.css:180 puts :focus-visible 2px OUTSIDE the box it is on. On a box
+   that spans its card that lands the ring on the card's own edge rather than on
+   the thing being focused. Inset by the same 2px it keeps the ring on the
+   surface it belongs to, which is also PR #85's answer to a halo measured
+   against the wrong neighbour. Same treatment, same reason, as
+   pane-evaluations-v2.css:283. */
+.tbl-wrap:focus-visible { outline-offset: -2px; }
+
 /* aria.css styles .tbl th as a column header: uppercase, 9.5px, tracked out.
    A row header is a row's NAME, and on this pane one of those names is a
    masked email. Uppercasing it changes what the API sent into something else
