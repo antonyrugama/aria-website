@@ -561,68 +561,127 @@ test('the body wrapper keeps the spacing the band used to give its children', as
 
 /* ============ Stadiora/Aria#10809 — the answer slot's live region ========= */
 
-test('the answer region is revealed empty in one task and filled in a later one', async () => {
-  await reshow(EVALS_375);
-  const record = await evaluate(`(async () => {
-    const slot = document.querySelector('#approval-result');
-    /* A MutationObserver callback runs once per task, after that task's
-       mutations. That is the same model an assistive technology uses to
-       decide whether a live region changed, so what this records is what an
-       announcement would have to be derived from. */
-    const seen = [];
-    const observer = new MutationObserver(() => {
-      seen.push({ hidden: slot.hidden, text: slot.textContent.length });
-    });
-    observer.observe(slot, { attributes: true, childList: true, characterData: true, subtree: true });
+/* Resolves #approval-result from the real accessibility tree. Whether an
+   assistive technology can announce a live region is a fact about the tree,
+   not about the attributes written onto the element, and the two disagree
+   exactly where this defect lives: while `hidden`, the slot resolves
+   `ignored: true, ignoredReasons: ["notRendered"]` and carries no role at
+   all, which no assertion over `el.hidden` or `getComputedStyle` reports. */
+async function answerSlotAx() {
+  const remote = await cdp.send('Runtime.evaluate', {
+    expression: "document.querySelector('#approval-result')"
+  });
+  const described = await cdp.send('DOM.describeNode', { objectId: remote.result.objectId });
+  const ax = await cdp.send('Accessibility.getPartialAXTree', {
+    backendNodeId: described.node.backendNodeId, fetchRelatives: false
+  });
+  const self = ax.nodes.find((n) => n.backendDOMNodeId === described.node.backendNodeId);
+  const prop = (name) => {
+    const hit = (self.properties || []).find((x) => x.name === name);
+    return hit ? String(hit.value.value) : null;
+  };
+  return {
+    ignored: self.ignored,
+    why: (self.ignoredReasons || []).map((r) => r.name).join(','),
+    role: self.role ? self.role.value : null,
+    live: prop('live'),
+    atomic: prop('atomic')
+  };
+}
 
+/* The state of the slot as the DOM has it, read in ONE task so the stub's
+   answer cannot land between two reads and rewrite what is being measured. */
+const SLOT_BOX = `(() => {
+  const slot = document.querySelector('#approval-result');
+  const rect = slot.getBoundingClientRect();
+  const cs = getComputedStyle(slot);
+  return { chars: slot.textContent.trim().length, hiddenAttr: slot.hidden,
+    rects: slot.getClientRects().length, height: Math.round(rect.height),
+    display: cs.display, visibility: cs.visibility, padding: cs.paddingTop,
+    shadow: cs.boxShadow, border: cs.borderLeftWidth };
+})()`;
+
+test('the answer region stays in the accessibility tree across the whole answer', async () => {
+  /* At 1280 rather than 375 so the slot is inside an OPEN band. Below 900 the
+     bands start closed and #approval-result sits inside `.band-body[hidden]`,
+     where it is not rendered at all — every box read comes back zero for a
+     reason that has nothing to do with the rule under test, and the AX node
+     is ignored for `notRendered` no matter what this fix does. */
+  await reshow(EVALS_1280);
+
+  const before = await evaluate(SLOT_BOX);
+  const axBefore = await answerSlotAx();
+
+  /* Arm one: before any answer has ever been asked for, the region is already
+     there to be watched. This is the whole of Stadiora/Aria#10809 — a live
+     region an assistive technology only learns about at the moment it already
+     holds its text is a region creation, not a change, and the announcement
+     can be nothing at all. */
+  assert.equal(before.chars, 0, 'the slot should start with nothing to say');
+  assert.equal(axBefore.ignored, false,
+    `an empty answer slot must still be in the accessibility tree, got ignored for `
+    + `"${axBefore.why}"`);
+  assert.equal(axBefore.role, 'status', 'it must resolve as a status region');
+  assert.equal(axBefore.live, 'polite', 'and be announced politely');
+  assert.equal(axBefore.atomic, 'true', 'and be read whole when it changes');
+
+  /* ...and it must be rendered while it is empty. `getBoundingClientRect()`
+     reports 0 for a box that is not rendered just as loudly as for one that
+     is rendered with no extent, so the height assertion below means nothing
+     without this: getClientRects() is empty for `display: none` and for an
+     unrendered subtree, and non-empty for a rendered box of zero height. */
+  assert.ok(before.rects > 0,
+    'the empty slot must be rendered, not merely measured as zero');
+  assert.notEqual(before.display, 'none', 'it must not be display: none');
+  assert.notEqual(before.visibility, 'hidden',
+    'visibility: hidden would take it back out of the tree while leaving display alone');
+  assert.equal(before.hiddenAttr, false, 'and it must not carry the hidden attribute');
+
+  /* Costing nothing to keep there: a permanently present alert box would be
+     an empty bordered slot under the form at all times. */
+  assert.equal(before.height, 0, 'an empty answer region should have no extent');
+  assert.equal(before.padding, '0px');
+  assert.equal(before.border, '0px');
+  assert.equal(before.shadow, 'none');
+
+  await evaluate(`(() => {
     document.querySelector('#approval-get-id').value = 'apr_9f3c';
     document.querySelector('#approval-get-form')
       .dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-
-    const deadline = Date.now() + 8000;
-    while (Date.now() < deadline) {
-      if (seen.length && seen[seen.length - 1].text > 0) break;
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    observer.disconnect();
-    return seen;
   })()`);
+  await waitFor("document.querySelector('#approval-result').textContent.trim().length > 0",
+    'the answer to arrive');
 
-  const filled = record.findIndex((r) => r.text > 0);
-  assert.ok(filled >= 0, `the answer never arrived: ${JSON.stringify(record)}`);
-  /* The defect: reveal and fill in one task gives a single record in which
-     the region is already visible AND already holding its text, so there is
-     no earlier state to diff it against and the announcement can be nothing.
-     The fix has to produce a task where it is visible and empty. */
-  const revealedEmpty = record
-    .slice(0, filled)
-    .some((r) => r.hidden === false && r.text === 0);
-  assert.ok(revealedEmpty,
-    'the region should be visible and empty for a task before its text lands: '
-    + JSON.stringify(record));
-});
+  const filled = await evaluate(SLOT_BOX);
+  const axFilled = await answerSlotAx();
+  assert.ok(filled.chars > 0, 'the answer should have landed');
+  assert.ok(filled.height > 0, 'and taken up room once it had something to say');
+  assert.equal(axFilled.ignored, false, 'the filled region is still in the tree');
+  assert.equal(axFilled.role, 'status');
 
-test('an answer region that is visible and empty takes up no room', async () => {
-  await reshow(EVALS_375);
-  const box = await evaluate(`(() => {
-    const slot = document.querySelector('#approval-result');
-    slot.textContent = '';
-    slot.hidden = false;
-    const rect = slot.getBoundingClientRect();
-    const cs = getComputedStyle(slot);
-    return { height: Math.round(rect.height), display: cs.display,
-      padding: cs.paddingTop, shadow: cs.boxShadow, border: cs.borderLeftWidth };
+  /* Arm two, and the one a re-read of the source cannot supply: asking a
+     second time must EMPTY the slot rather than hide it. Hiding it between
+     answers pulls the region out of the tree, so the second answer announces
+     a creation exactly like the first did and the bug is back for every
+     operator who asks about more than one approval. Read in the same task as
+     the dispatch, because the stub answers in single-digit milliseconds. */
+  const cleared = await evaluate(`(() => {
+    document.querySelector('#approval-get-form')
+      .dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    return ${SLOT_BOX};
   })()`);
+  const axCleared = await answerSlotAx();
 
-  /* The reveal above buys its task at the cost of a frame in which a 28px
-     bordered box could appear empty and then fill. `display` must stay as it
-     is: `visibility`, `display: none` and a zero height would each take the
-     region back out of the accessibility tree and undo the reveal. */
-  assert.notEqual(box.display, 'none', 'the empty region must stay in the accessibility tree');
-  assert.equal(box.height, 0, 'a visible but empty answer region should have no extent');
-  assert.equal(box.padding, '0px');
-  assert.equal(box.border, '0px');
-  assert.equal(box.shadow, 'none');
+  assert.equal(cleared.chars, 0, 'asking again should clear the previous answer');
+  assert.equal(cleared.hiddenAttr, false,
+    'asking again must not hide the region — empty it instead');
+  assert.ok(cleared.rects > 0,
+    'the cleared region must still be rendered between answers');
+  assert.equal(cleared.height, 0, 'and back to no extent while it is empty');
+  assert.equal(axCleared.ignored, false,
+    `the region must stay in the tree between answers, got ignored for "${axCleared.why}"`);
+  assert.equal(axCleared.role, 'status',
+    'and keep its role, so the next answer is a change and not a creation');
 });
 
 test('the light theme folds and rails the same way', async () => {

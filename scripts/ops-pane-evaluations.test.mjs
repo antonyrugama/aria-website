@@ -1329,7 +1329,11 @@ test('v2: approval lookup clears the previous success while its replacement is p
   input.value = 'approval-first';
   form.dispatch('submit');
   await waitFor(() => !submit.disabled, 'first approval lookup did not settle');
-  assert.equal(result.hidden, false);
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
   assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
 
   input.value = 'approval-next';
@@ -1337,13 +1341,21 @@ test('v2: approval lookup clears the previous success while its replacement is p
   assert.equal(submit.disabled, true);
   assert.equal(submit.textContent, 'Loading…');
   try {
-    assert.equal(result.hidden, true, 'the previous approval must not remain current while loading');
-    assert.equal(result.textContent, '');
+    assert.equal(result.textContent, '',
+      'the previous approval must not remain current while loading');
+    assert.notEqual(result.hidden, true,
+      'and it must be EMPTIED rather than hidden: hiding the region between '
+      + 'answers takes it out of the accessibility tree, so the replacement '
+      + 'announces as a fresh region rather than a change (Stadiora/Aria#10809)');
   } finally {
     resolveReplacement(approvalLookupResponse('approval-next', 'pending', 4));
   }
   await waitFor(() => !submit.disabled, 'replacement approval lookup did not settle');
-  assert.equal(result.hidden, false);
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
   assert.equal(result.textContent, 'Approval request approval-next is pending at revision 4.');
 });
 
@@ -1367,22 +1379,31 @@ test('v2: approval lookup keeps old success cleared after denial and shows a lat
   input.value = 'approval-first';
   form.dispatch('submit');
   await waitFor(() => !submit.disabled, 'first approval lookup did not settle');
-  assert.equal(result.hidden, false);
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
   assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
 
   input.value = 'approval-denied';
   form.dispatch('submit');
   await waitFor(() => !submit.disabled, 'denied approval lookup did not settle');
   assert.equal(error.textContent, 'Lookup denied.');
-  assert.equal(result.hidden, true, 'a denial must not retain the earlier approval');
-  assert.equal(result.textContent, '');
+  assert.equal(result.textContent, '', 'a denial must not retain the earlier approval');
+  assert.notEqual(result.hidden, true,
+    'and the emptied region stays in the accessibility tree (Stadiora/Aria#10809)');
   assert.equal(submit.textContent, 'Load request');
 
   input.value = 'approval-recovered';
   form.dispatch('submit');
   await waitFor(() => !submit.disabled, 'recovered approval lookup did not settle');
   assert.equal(error.textContent, '');
-  assert.equal(result.hidden, false);
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
   assert.equal(result.textContent, 'Approval request approval-recovered is pending at revision 5.');
 });
 

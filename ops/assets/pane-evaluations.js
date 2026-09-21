@@ -963,7 +963,6 @@
       role: 'status'
     });
     approvalResult.setAttribute('id', 'approval-result');
-    approvalResult.hidden = true;
     var approvalTrustNote = h('div', {
       className: 'callout callout-warn'
     }, [
@@ -1007,26 +1006,26 @@
         String(value.state) + ' at revision ' +
         String(value.revision || resource.revision) + '.';
 
-      /* Revealed in one task, filled in the next.
+      /* Just the text. The slot is never `hidden`, so this is a change
+         inside a region an assistive technology is already watching.
 
-         role="status" is a live region, and an assistive technology announces
-         one by diffing its contents between tasks. A region that was `hidden`
-         when the task began is not in the accessibility tree to diff against,
-         so revealing it and filling it in the same task can put the answer on
-         screen and nothing in the ear: the region arrives already holding its
-         text, which is indistinguishable from no change at all.
-         Stadiora/Aria#10809.
+         role="status" is a live region, and what an AT reads is a
+         serialisation of the accessibility tree, which Blink produces at a
+         rendering opportunity rather than once per task. A region that is
+         `hidden` when the task begins is not in the tree at all, so revealing
+         it and filling it announces a region that arrives already holding its
+         text — a live region CREATION, which is the unreliable case
+         Stadiora/Aria#10809 was filed about.
 
-         Splitting them buys a task in which the region exists and is empty,
-         so the text landing afterwards is a change inside something already
-         being watched. `#approval-result:empty` in pane-evaluations-v2.css
-         takes the padding and the ring off for precisely the width of that
-         gap, so the empty frame has no extent and nothing flickers. */
-      approvalResult.textContent = '';
-      approvalResult.hidden = false;
-      global.setTimeout(function () {
-        approvalResult.textContent = message;
-      }, 0);
+         Deferring the fill by a task does not fix that, and the measurement
+         is unambiguous: 20 runs out of 20 put ZERO rendering opportunities
+         between a `setTimeout(0)` and the reveal before it, so both land in
+         the same serialisation and the AT sees the same creation it saw
+         before. The fix is not to time the reveal better but to stop needing
+         one — the slot is in the document and in the tree from construction,
+         empty, and `#approval-result:empty` in pane-evaluations-v2.css gives
+         it no extent while it has nothing to say. */
+      approvalResult.textContent = message;
 
       if (resource.id) {
         approvalGetId.value = resource.id;
@@ -1080,7 +1079,10 @@
     approvalGetForm.addEventListener('submit', function (event) {
       event.preventDefault();
       approvalGetError.textContent = '';
-      approvalResult.hidden = true;
+      /* Emptied, not hidden: hiding it between answers is what takes the
+         live region out of the accessibility tree, so the next answer has to
+         announce a region that did not exist a moment ago. Empty, it is
+         still there and still has no extent. */
       approvalResult.textContent = '';
       approvalGetSubmit.disabled = true;
       approvalGetSubmit.textContent = 'Loading…';

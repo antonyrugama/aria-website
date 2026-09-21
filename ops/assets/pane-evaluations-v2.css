@@ -190,13 +190,12 @@ select.field-input { appearance: none; padding-right: 26px; }
    class outright, so no other .form-alert in the repository reaches this.
 
    shell-pane-v2.css:259 makes the opposite choice for that modal alert, and
-   its reasoning applies here word for word: this slot is `role="status"`, and
-   pane-evaluations.js reveals it and fills it in the same task, which is the
-   unreliable half of how a live region announces. Keeping `display: none`
-   re-commits to that. It is not a regression — before this sheet painted the
-   box, the user-agent `[hidden]` rule already did exactly this — and changing
-   it means changing the pane's JS, not this rule. Stated so the two sheets do
-   not look like they disagree by accident. */
+   this sheet now agrees with it: pane-evaluations.js no longer hides the
+   approval slot at all, so `#approval-result` never reaches this rule. It
+   collapses on `:empty` below instead, which keeps the live region in the
+   accessibility tree between answers (Stadiora/Aria#10809). The rule stays
+   because .form-alert is a shared class and a `hidden` one must still
+   disappear; it is simply not how the approval answer is emptied. */
 .form-alert[hidden] { display: none; }
 
 /* `is-ok` says the call came back, not that the news is good: the sentence it
@@ -217,19 +216,23 @@ select.field-input { appearance: none; padding-right: 26px; }
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--emerald) 26%, transparent);
 }
 
-/* The approval answer slot, visible and still empty, has no extent.
+/* The approval answer slot, present and still empty, has no extent.
 
-   assets/pane-evaluations.js reveals this region one task before it fills it,
-   so the accessibility tree gets a task in which the region exists and is
-   empty, and the text landing afterwards reads as a change to something
-   already being watched (Stadiora/Aria#10809). That gap is normally shorter
-   than a frame, but it is not guaranteed to be, and a 28px railed box
-   appearing empty and then filling is a flicker that means nothing.
+   This rule is what lets assets/pane-evaluations.js keep the region in the
+   document permanently. `role="status"` is announced by diffing a live region
+   between serialisations of the accessibility tree, so a region that only
+   appears at the moment it already holds its text is a region CREATION rather
+   than a change, and may be announced to nobody (Stadiora/Aria#10809). The
+   pane therefore never hides the slot — it empties it — and this rule pays
+   for that by taking the box's decoration off while it has nothing to say.
+   Without it the form would carry a permanent empty railed box.
 
-   `display` is deliberately untouched. `visibility: hidden`, `display: none`
-   and a zero `height` would each take the region back out of the
-   accessibility tree and undo the reveal this rule exists to cover. Dropping
-   the box's own decoration leaves it displayed, in the tree, and 0px tall.
+   `display` is deliberately untouched, and so is `visibility`: either would
+   take the region back out of the accessibility tree and put the defect
+   straight back while leaving the DOM looking correct. A zero `height` is
+   NOT in that list — a 0px-tall box is still rendered and still in the tree,
+   measured `ignored: false, role: status` at height 0 — but dropping padding,
+   shadow and border is enough to reach 0 here without asking for it.
 
    Addressed by id rather than as `.form-alert:empty` for two reasons. The
    class form also reaches the shell's own dialog alert, which is a shared
