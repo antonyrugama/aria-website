@@ -40,11 +40,6 @@
 
    NOT COVERED here, deliberately:
 
-     - That `retryN` keeps ids unique. Only one `failedBand()` retry is on
-       screen at a time and a re-render discards the previous one, so no render
-       this pane can reach puts two of these ids in the document and nothing
-       here can tell an incrementing counter from a constant.
-
      - Whether a screen reader actually announces the composed name. That is
        the user agent's accessible-name computation, not this repo's; what is
        testable is that the references resolve and that the resolved text
@@ -307,6 +302,35 @@ function accessibleName(dom, button) {
 const sectionRetries = (dom) =>
   retryButtons(dom).filter((b) => b.getAttribute('aria-labelledby'));
 
+/* Every named retry in the WHOLE document, shown or not. The shell keeps its
+   panels rather than swapping them -- `region.empty()` fills one box and
+   `region.degraded()` fills another, and neither clears the other -- so a
+   control drawn on a render the operator has moved past is still in the
+   document, still holding its ids. Reading only the shown panel cannot see
+   that, and id collisions live exactly there. */
+const allNamedRetries = (dom) => findAll(dom.doc.body,
+  (n) => n.tagName === 'BUTTON'
+    && /^Try again\b/.test(allText(n).trim())
+    && n.getAttribute('aria-labelledby'));
+
+/* The name the BROWSER would compose, which is not quite the one
+   `accessibleName()` asserts: `getElementById` takes the first element in
+   document order and says nothing about a second one carrying the same id.
+   That difference is the whole point where two panels are in the document at
+   once, so this resolver reproduces it rather than rejecting it. */
+function browserName(dom, button) {
+  return String(button.getAttribute('aria-labelledby')).trim().split(/\s+/)
+    .map((id) => {
+      const found = dom.doc.getElementById(id);
+      return found ? allText(found).trim() : '';
+    }).join(' ').trim();
+}
+
+const within = (node, ancestor) => {
+  for (let n = node; n; n = n.parentNode) if (n === ancestor) return true;
+  return false;
+};
+
 async function settle(n) {
   for (let i = 0; i < (n || 14); i += 1) await new Promise((r) => setImmediate(r));
 }
@@ -387,21 +411,41 @@ test('Problems and Overview give one word for one state', async () => {
   const words = /function severityWords\(severity\) \{\s*return ([^;]+);/.exec(ovSrc);
   assert.ok(words, 'pane-overview.js no longer has a severityWords() to agree with');
 
-  /* Run Overview's own expression, on Overview's own maps, against the same
-     three severities — so this compares BEHAVIOUR, not two copies of a
-     sentence. */
+  /* Overview's own `textOf()`, lifted from its own source rather than
+     rewritten here. Typing a copy of it would make this test agree with
+     itself: Overview could stop guarding the lookup entirely and the local
+     copy would keep answering the way the fixed file used to. */
+  const ovTextOf = /function textOf\(value\) \{\s*return ([^;]+);/.exec(ovSrc);
+  assert.ok(ovTextOf, 'pane-overview.js no longer has a textOf() to run');
+
+  /* And Overview's `model` is `global.OpsAlertsModel` -- the same
+     alerts-model.js this pane loaded, taken from the booted window rather
+     than transcribed, so a change to the shared label map is a change to
+     both sides of the comparison.
+
+     Which is also the honest limit of this test: because the map is shared by
+     construction, no edit to it can make these two disagree, and nothing here
+     could catch one. What this binds is that the two panes take the same
+     STEPS over that map -- and dropping Overview's guard on the label lookup
+     does make it red (M14). */
+  const ovModel = dom.window.OpsAlertsModel;
+  assert.ok(ovModel && ovModel.SEVERITY_LABEL,
+    'alerts-model.js no longer publishes the label map both panes look in');
+
+  /* Run Overview's own expression, over Overview's own textOf and the shared
+     label map, against the same severities — so this compares BEHAVIOUR, not
+     two copies of a sentence. */
   const overview = vm.runInNewContext(
     `(function (model, textOf) { return function (severity) { return ${words[1]}; }; })`,
     {},
-  )(
-    { SEVERITY_LABEL: { critical: 'Critical', warning: 'Warning', info: 'Info' } },
-    (v) => ((typeof v === 'string' && v) ? v : null),
-  );
+  )(ovModel, vm.runInNewContext(`(function (value) { return ${ovTextOf[1]}; })`, {}));
 
   /* #10630's three tabulated payloads only. AO-4 is deliberately not here:
      this pane's textOf() trims and Overview's does not, so a whitespace
      severity is one the two files genuinely answer differently, and asserting
-     agreement on it would be asserting something untrue. */
+     agreement on it would be asserting something untrue. That divergence is
+     an Overview defect, filed as Stadiora/Aria#10799 rather than fixed from
+     a PR that does not own that pane. */
   const severities = { 'AO-1': 'notice', 'AO-2': undefined, 'AO-3': 'constructor' };
   for (const [reference, severity] of Object.entries(severities)) {
     assert.equal(severityPill(dom, reference), overview(severity),
@@ -535,3 +579,53 @@ test('naming the retry did not stop it reading again', async () => {
   assert.ok(allText(shownPanel(dom)).indexOf('The rules could not be read') === -1,
     'the pane still says the rules could not be read after a successful re-read');
 });
+
+test('a retry left on a panel the operator moved past does not take the visible one\'s name',
+  async () => {
+    /* The shell KEEPS its panels. `region.empty()` fills `emptyBox`,
+       `region.degraded()` fills `liveBox`, and neither clears the other --
+       only `data-shown` decides which one the operator sees. So a render that
+       goes empty and then degraded leaves TWO `failedBand()` retries in the
+       document, and the ids `nameRetry()` writes have to survive that.
+
+       Reached with two real renders: nothing open and the rules unreadable is
+       the empty panel, then the operator presses its own retry and this time
+       the PROBLEMS read is the one that fails, which is the degraded panel.
+       Two different sections, so the two names are different sentences and a
+       name resolved off the wrong panel is a name that says the wrong thing
+       -- not merely a duplicate id. */
+    const dom = await boot({ open: { problems: [] }, rules: boom('rules') });
+    assert.equal(shownPanel(dom).getAttribute('data-state'), 'empty',
+      'the first render is not the empty panel, so the two-panel state below is not reached');
+
+    dom.answers.open = boom('problems');
+    dom.answers.rules = rulesFixture();
+    sectionRetries(dom)[0].dispatch('click');
+    await settle(20);
+
+    const shown = shownPanel(dom);
+    assert.equal(shown.getAttribute('data-state'), 'live degraded',
+      'the second render is not the degraded panel, so only one panel has content');
+
+    const retries = allNamedRetries(dom);
+    assert.equal(retries.length, 2,
+      `${retries.length} named retries are in the document, so the discarded panel did not `
+      + 'keep its control and this test is not about the state it names');
+
+    /* The expectation is the section that failed on THIS render, stated
+       rather than read back off the control: the problems read is the one
+       that broke, so the visible retry has to say so. Under a constant id it
+       resolves to the discarded panel's heading, which still says the rules
+       failed -- a true sentence about a render that is gone. */
+    const visible = retries.filter((b) => within(b, shown));
+    assert.equal(visible.length, 1,
+      `${visible.length} of the named retries are on the shown panel`);
+    assert.equal(browserName(dom, visible[0]), 'Try again The problems could not be read',
+      'the retry the operator can see resolves its name off the wrong heading');
+
+    for (const id of String(visible[0].getAttribute('aria-labelledby')).trim().split(/\s+/)) {
+      assert.ok(within(dom.doc.getElementById(id), shown),
+        `the visible retry names id "${id}", which resolves to an element on a panel the `
+        + 'operator is not looking at');
+    }
+  });
