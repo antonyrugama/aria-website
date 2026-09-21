@@ -661,10 +661,14 @@
         }
         if (armed.unconfigured) {
           bits.push(fmt.plural(armed.unconfigured, 'rule') +
-            ' has nothing wired up to feed it, so waiting will not help.');
+            (armed.unconfigured === 1
+              ? ' has nothing wired up to feed it'
+              : ' have nothing wired up to feed them') +
+            ', so waiting will not help.');
         }
         if (armed.neverRun) {
-          bits.push(fmt.plural(armed.neverRun, 'rule') + ' has never run.');
+          bits.push(fmt.plural(armed.neverRun, 'rule') +
+            (armed.neverRun === 1 ? ' has' : ' have') + ' never run.');
         }
         if (bits.length) {
           bits.push('A rule that is not judging is not watching, whatever the list below says.');
@@ -700,6 +704,18 @@
       if (!armed.channelsKnown) return null;
       if (!queue || !queue.length) return null;
       if (armed.everDelivered) return null;
+      /* Before either claim below, because both of them are claims that
+         nothing arrived and an unreadable stamp does not support one. Over
+         every channel for the same reason `everDelivered` is: a rotated-out
+         destination's stamp is still a delivery this payload reports -- and
+         that is also why "No destination is set" survives in front of it
+         when nothing is configured. Both facts are true and only one of them
+         is actionable. */
+      if (armed.unreadableDelivery) {
+        return (armed.channelsConfigured ? '' : 'No destination is set. ')
+          + 'A delivery is reported at a time that cannot be read, so whether '
+          + 'anything here has been sent cannot be told.';
+      }
       if (!armed.channelsConfigured) {
         return 'No destination is set, so nothing here has been sent to anyone.';
       }
@@ -1888,8 +1904,15 @@
         words.appendChild(h('div', { className: 'tiny muted', text: channelNote(channel) }));
         row.appendChild(words);
 
+        /* An own-property test, not `|| null`. CHANNEL_STATUS is a plain
+           object literal, so `lastDeliveryStatus: 'constructor'` resolves to
+           Object -- which is TRUTHY, so the fallback never fired and the
+           chip rendered the literal string `undefined` from `status.label`.
+           A falsy-fallback cannot catch a prototype hit (Stadiora/Aria#10630). */
         var status = channel.configured === true
-          ? (CHANNEL_STATUS[channel.lastDeliveryStatus] || null)
+          ? (Object.prototype.hasOwnProperty.call(CHANNEL_STATUS, channel.lastDeliveryStatus)
+            ? CHANNEL_STATUS[channel.lastDeliveryStatus]
+            : null)
           : CHANNEL_STATUS.unconfigured;
         var tone = !status ? 'ghost'
           : status.tone === 'ok' ? 'up'
@@ -1905,14 +1928,30 @@
     function channelNote(channel) {
       if (channel.configured !== true) return 'No destination has been set';
       if (channel.lastDeliveryStatus === 'failed') {
-        var why = CHANNEL_FAILURE[channel.lastFailureReason];
+        /* Through textOf() and an own-property test, the same two guards
+           `ruleState()` puts on INSUFFICIENT_REASON one screen above. A
+           failure reason of `constructor` reaches Object through the
+           prototype chain and drew `function Object() { [native code] }` at
+           an operator, which is Stadiora/Aria#10630 on the destinations
+           card. The raw key prints instead. */
+        var why = Object.prototype.hasOwnProperty.call(CHANNEL_FAILURE, channel.lastFailureReason)
+          ? textOf(CHANNEL_FAILURE[channel.lastFailureReason])
+          : null;
         return 'Last attempt ' + fmt.ago(channel.lastAttemptAt) +
           (why ? ', ' + why : '') +
           (channel.consecutiveFailures > 1
             ? ', ' + fmt.int(channel.consecutiveFailures) + ' in a row'
             : '');
       }
-      if (channel.lastSuccessAt) return 'Last delivered ' + fmt.ago(channel.lastSuccessAt);
+      /* Parsed, not tested for truth. The row and `deliveryGap()` answer the
+         same question and must answer it the same way; a stamp the pane
+         cannot read is reported as unreadable rather than printed as
+         "Last delivered -", which reads as a delivery whose time is simply
+         missing. */
+      if (time(channel.lastSuccessAt) !== null) {
+        return 'Last delivered ' + fmt.ago(channel.lastSuccessAt);
+      }
+      if (channel.lastSuccessAt) return 'Delivered, at a time that cannot be read';
       return 'Set up, nothing sent through it yet';
     }
 

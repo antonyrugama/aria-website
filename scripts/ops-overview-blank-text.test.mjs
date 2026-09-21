@@ -588,8 +588,10 @@ test('a day range is named only when both of its ends resolve', async () => {
        `stringPaths(fixture)`, not the source, so a field the fixture does
        not carry is not swept, and a branch the fixture does not enter is
        not swept either. The `exercised` list and the baseline gate below
-       are what keep that honest: the gate names a value from each region
-       and fails if it is missing from the render.
+       are what keep that honest: the gate names a value from release,
+       people, cost, omissions, consent and activity, plus the chart's own
+       accessible name on the fixture that draws one, and fails if any of
+       them is missing from the render.
 
      - Sites added after this was written, on fields the fixture carries.
 
@@ -709,7 +711,7 @@ const LOOKUP_FIELDS = new Set([
   'cost.currency',
 ]);
 
-async function sweep(make, extraLookups, expectSwept) {
+async function sweep(make, extraLookups, expectSwept, extraReached = []) {
   const base = make();
   const paths = stringPaths(base);
   assert.ok(paths.length >= 15,
@@ -723,8 +725,18 @@ async function sweep(make, extraLookups, expectSwept) {
      `cost.micros` and the fixture carried `total.usd`, so every render took
      the unavailable branch and `clean.includes('128')` was false while the
      two values checked here were both true. A sweep that cannot say which
-     parts of the screen it reached is not a sweep. */
-  for (const reached of ['2.4.1', 'production', '128.40', 'No budget bar']) {
+     parts of the screen it reached is not a sweep.
+
+     Round 5 of the review then read the list against the claim above it.
+     It said "a value from each region" and named release, people, cost and
+     omissions -- nothing from `consent`, and nothing from `activity`, which
+     supplies fourteen of the charted sweep's thirty-nine paths and is the
+     entire reason `chartedFixture()` exists. The chart region was in fact
+     being drawn, so this was an overclaiming sentence rather than a blind
+     spot; it is now a true one, with the chart's own accessible name gated
+     by the caller because only one of the two fixtures draws a chart. */
+  for (const reached of ['2.4.1', 'production', '128.40', 'No budget bar',
+    'Operational data only.', 'Backfilled on 3 Sep.', ...extraReached]) {
     assert.ok(clean.includes(reached),
       `the baseline render does not carry "${reached}", so the region of the fixture `
       + 'that value comes from was never drawn and every comparison below passes over '
@@ -807,5 +819,5 @@ test('padding any string changes nothing on the screen with the chart drawn too'
        legend and the spoken sentence live on the other side of it. */
     await sweep(chartedFixture, new Set([
       'activity.availability.state',
-    ]), 39);
+    ]), 39, ['14 Sep to 20 Sep', 'Aria XII']);
   });

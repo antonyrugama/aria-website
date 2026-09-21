@@ -287,6 +287,13 @@ function noteText(dom) {
   return notes.length ? allText(notes[0]).replace(/\s+/g, ' ').trim() : null;
 }
 
+/* Text with nothing done to the whitespace, for the assertions that are
+   about the whitespace. */
+function rawText(node) {
+  if (!node) return '';
+  return (node.textContent || '') + (node.childNodes || []).map(rawText).join('');
+}
+
 /* Every row in "Where problems are sent", as its name and its status chip. */
 function routeRows(dom) {
   return findAll(shownPanel(dom), (n) => hasClass(n, 'c-route')).map((row) => {
@@ -294,6 +301,11 @@ function routeRows(dom) {
     const pills = findAll(row, (n) => hasClass(n, 'pill'));
     return {
       name: lines.length ? allText(lines[0]).trim() : '',
+      /* The same name with NOTHING done to the whitespace. `allText()` ends
+         in `.replace(/\s+/g, ' ').trim()`, so every assertion routed through
+         it reads a string the HARNESS tidied -- and a padded label drawn
+         with its padding intact looks identical to one drawn trimmed. */
+      rawName: lines.length ? rawText(lines[0]) : '',
       /* The status chip, read separately from the row.
          A routing row is TWO statements -- `channelNote()`'s sentence and
          this chip -- and round 3 of PR #124's review showed they need two
@@ -681,5 +693,234 @@ test('a rule whose reason is a word every object answers to does not print a fun
         `a reason of "${reason}" drew the source of a function at an operator: "${cell}"`);
       assert.match(cell, /Not enough data to judge/,
         `a reason of "${reason}" took down the words around it: "${cell}"`);
+    }
+  });
+
+/* ====================================================================== */
+/* Raised by round 5 of the independent review of PR #124                 */
+/* ====================================================================== */
+
+/* A stamp the answer carries and `new Date()` cannot read. All three reach
+   this pane from the stack below it: Postgres renders `timestamptz` with a
+   TWO-digit UTC offset, which ECMA-262's Date Time String Format does not
+   accept; `timestamptz 'infinity'` serialises verbatim; and epoch seconds
+   that went through JSON as a string arrive as digits. */
+const UNREADABLE = ['2026-09-21T14:00:00+00', 'infinity', '1758470400'];
+
+test('a delivery time the pane cannot read is not reported as never delivered',
+  async () => {
+    /* The PR gave "has anything ever arrived" a SECOND spelling and did not
+       align it with the first. `armedState().everDelivered` PARSES the stamp;
+       `channelNote()` tested it for TRUTH. They agree on absent and they
+       agree on valid -- the only two values the test above ever handed them --
+       and they disagree on exactly one class, which is a stamp that is there
+       and cannot be read. One render then said "Nothing has ever been
+       delivered, on any destination that is set up" above two green
+       "Connected · Last delivered -" rows, which is the two-panes-disagreeing
+       defect of #10630 inside a single render, on the pane whose whole
+       subject is that delivery has never worked (#10811). */
+    const configured = (over) => prodChannels().map((c) => Object.assign(c, {
+      configured: true, lastDeliveryStatus: 'ok', lastAttemptAt: null,
+    }, over));
+    const render = async (over) =>
+      boot({ rules: { rules: prodRules(), channels: configured(over) },
+        problems: prodProblems() });
+
+    /* Two gates, because both halves of the disagreement are asserted below
+       and a finder that read neither would look like a pass. The denial has
+       to be a sentence this probe can SEE, and the row has to be one that
+       reports a delivery when there is one to report. */
+    const denied = noteText(await render({ lastSuccessAt: null }));
+    assert.match(denied || '', /Nothing has ever been delivered/,
+      `a payload with no delivery anywhere drew the note "${denied}", so the absence of `
+      + 'that sentence below would prove nothing');
+    const good = routeRows(await render({ lastSuccessAt: at(5 * MINUTE) }));
+    assert.ok(good.length >= 2 && good.every((r) => /Last delivered \w/.test(r.text)),
+      `a payload with a real delivery drew ${JSON.stringify(good.map((r) => r.text))}, so `
+      + 'the row finder is not reading the delivery line');
+
+    for (const stamp of UNREADABLE) {
+      const dom = await render({ lastSuccessAt: stamp });
+      const note = noteText(dom);
+      const rows = routeRows(dom);
+
+      assert.ok(note, `"${stamp}" drew no note at all, so the pane said nothing about a `
+        + 'delivery it cannot date');
+      assert.doesNotMatch(note, /has ever been delivered|been sent to anyone/,
+        `the note reads "${note}" and denies any delivery, over a payload whose own `
+        + `lastSuccessAt of "${stamp}" reports one`);
+      assert.match(note, /cannot be read/,
+        `the note reads "${note}" -- a stamp the pane cannot read is a thing it cannot `
+        + 'tell, and saying so is the only honest answer available');
+
+      assert.equal(rows.length, 2, `"${stamp}" drew ${rows.length} routing rows`);
+      for (const row of rows) {
+        assert.ok(!/Last delivered/.test(row.text),
+          `the row for "${row.name}" reads "${row.text}" -- "Last delivered -" reads as a `
+          + 'delivery whose time is merely missing, while the note above denies it');
+        assert.match(row.text, /Delivered, at a time that cannot be read/,
+          `the row for "${row.name}" reads "${row.text}", which does not say what is `
+          + 'actually wrong with the stamp');
+      }
+    }
+  });
+
+test('a destination whose failure reason is a word every object answers to '
+  + 'does not print a function', async () => {
+  /* #10630 again, on the destinations card rather than the rule table.
+     `CHANNEL_FAILURE` is a plain object literal, so a reason of `constructor`
+     resolved to Object through the prototype chain and the row printed
+     `function Object() { [native code] }` at an operator. */
+  const failing = (reason) => prodChannels().map((c) => Object.assign(c, {
+    configured: true, lastDeliveryStatus: 'failed', lastFailureReason: reason,
+    lastAttemptAt: at(30 * MINUTE), consecutiveFailures: 1,
+  }));
+  const render = async (reason) =>
+    routeRows(await boot({ rules: { rules: prodRules(), channels: failing(reason) } }));
+
+  const known = await render('auth');
+  assert.ok(known.length >= 2 && known.every((r) => /it was refused/.test(r.text)),
+    `a known failure reason drew ${JSON.stringify(known.map((r) => r.text))}, so this test `
+    + 'is not reading the line it is about to check');
+
+  for (const reason of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
+    for (const row of await render(reason)) {
+      assert.doesNotMatch(row.text, /\[native code\]|function \w*\(/,
+        `a failure reason of "${reason}" drew the source of a function at an operator: `
+        + `"${row.text}"`);
+      assert.match(row.text, /Last attempt \w/,
+        `a failure reason of "${reason}" took down the words around it: "${row.text}"`);
+    }
+  }
+});
+
+test('a delivery status no map knows does not draw the word undefined', async () => {
+  /* The sibling hole, and the one a falsy fallback cannot close.
+     `CHANNEL_STATUS['constructor']` is `Object`, which is TRUTHY, so
+     `|| null` never fired and `status.label` was `undefined` -- rendered as
+     the literal five letters, in the chip, next to a real destination. */
+  const withStatus = (status) => prodChannels().map((c) => Object.assign(c, {
+    configured: true, lastDeliveryStatus: status, lastSuccessAt: at(5 * MINUTE),
+  }));
+  const render = async (status) =>
+    routeRows(await boot({ rules: { rules: prodRules(), channels: withStatus(status) } }));
+
+  const ok = await render('ok');
+  assert.ok(ok.length >= 2 && ok.every((r) => r.chip === 'Connected'),
+    `a known status drew chips ${JSON.stringify(ok.map((r) => r.chip))}, so a clean result `
+    + 'below would mean the probe never reached the chip');
+
+  for (const status of ['constructor', 'toString', '__proto__', 'valueOf']) {
+    for (const row of await render(status)) {
+      assert.equal(row.chip, 'Nothing sent yet',
+        `a delivery status of "${status}" drew the chip "${row.chip}" -- an unrecognised `
+        + 'status is a status the pane does not know, and it has a word for that');
+      assert.doesNotMatch(row.text, /\[native code\]|function \w*\(/,
+        `a delivery status of "${status}" drew a function at an operator: "${row.text}"`);
+    }
+  }
+});
+
+test('a destination label made of spaces is not a label', async () => {
+  /* #10799 on the row this PR rewrote, in both of its shapes.
+
+     A label of three spaces is a label with nothing in it, and drawing it
+     produces a name-shaped element carrying nothing -- the blank row #10821
+     was filed about, wearing a different payload. And a label with words
+     inside padding is the predicate/value split: `textOf()` decides, and
+     whatever gets CONCATENATED is what the operator reads.
+
+     The two need separate payloads, and finding that out is what this test
+     is worth. The first draft used the blank label for both, so the battery
+     row that put the split back came back GREEN -- with a blank label the
+     split cannot express itself, because both branches fall through to the
+     channel key. Not a blind test: a payload that could not reach the
+     defect. */
+  const withLabel = async (label) => {
+    const channels = prodChannels();
+    channels[0].label = label;
+    return routeRows(await boot({ rules: { rules: prodRules(), channels } }));
+  };
+
+  const blank = await withLabel('   ');
+  assert.equal(blank.length, 2, 'the blank label took a row down with it');
+  assert.equal(blank[0].name, 'teams',
+    `the destination whose label is three spaces is named "${blank[0].name}" -- a row that `
+    + 'cannot say which destination it is about is a row nobody can act on');
+  assert.equal(blank[1].name, 'Email', 'the labelled destination lost its label');
+
+  const padded = await withLabel('  Microsoft Teams  ');
+  assert.equal(padded[0].rawName, 'Microsoft Teams',
+    `the padded label drew ${JSON.stringify(padded[0].rawName)} -- the row decided with a `
+    + 'trimmed value and drew an untrimmed one, which is the same defect wearing its own fix');
+});
+
+test('a pane where waiting will not help does not say nought rules are waiting',
+  async () => {
+    /* `insufficientData > unconfigured`, and the boundary is the state
+       #10812 reaches the moment the three sample-starved rules get samples:
+       every rule that is short of data is short of it because nothing feeds
+       it, so the two counts are EQUAL and the subtraction is zero. No
+       fixture had ever put them equal, so `>=` there printed "0 rules cannot
+       reach a verdict yet." at an operator and nothing noticed. */
+    const waiting = noteText(await boot());
+    assert.match(waiting || '', /3 rules cannot reach a verdict yet/,
+      `the production payload drew the note "${waiting}", so this test is not reading the `
+      + 'sentence whose disappearance it is about to require');
+
+    const rules = prodRules();
+    rules.forEach((r) => {
+      if (r.lastEvaluationStatus === 'insufficient_data') {
+        r.lastInsufficientReason = 'no_source_configured';
+      }
+    });
+    const note = noteText(await boot({ rules: { rules, channels: prodChannels() } }));
+
+    assert.ok(note, 'the note vanished, so the absence below proves nothing');
+    assert.doesNotMatch(note, /cannot reach a verdict yet/,
+      `the note reads "${note}" -- with every short-of-data rule short because nothing `
+      + 'feeds it, no rule is merely waiting and a count of them is a count of nothing');
+    assert.match(note, /4 rules have nothing wired up to feed them/,
+      `the note reads "${note}" and does not say what is actually wrong with the four`);
+
+    /* Found by the payload above rather than looked for: no fixture had ever
+       put more than one rule in this branch, so the sentence was written
+       singular under a plural count and read "4 rules HAS nothing wired up
+       to feed it". `fmt.plural()` pluralises the noun and nothing was
+       pluralising the verb. The same line one branch down said "4 rules has
+       never run." */
+    const never = prodRules();
+    never.forEach((r) => { r.lastEvaluatedAt = null; r.lastEvaluationStatus = null; });
+    const neverNote = noteText(await boot({ rules: { rules: never, channels: prodChannels() } }));
+    assert.match(neverNote || '', /8 rules have never run/,
+      `eight rules that have never run drew "${neverNote}"`);
+  });
+
+test('an insufficient reason every object answers to is not counted as unwired',
+  async () => {
+    /* `UNCONFIGURED_REASON[reason] === true`, not a truth test.
+       `UNCONFIGURED_REASON['constructor']` is `Object`, which is truthy, so a
+       truth test would move a rule out of "waiting" and into "nothing feeds
+       it" on a reason the map has never heard of -- and send an operator to
+       configure a source for a rule that is simply short of data. */
+    const base = noteText(await boot());
+    assert.match(base || '', /3 rules cannot reach a verdict yet/,
+      `the production payload drew "${base}", so the counts below are not being read`);
+    assert.match(base, /1 rule has nothing wired up to feed it/,
+      `the production payload drew "${base}", so the unwired count is not being read`);
+
+    for (const reason of ['constructor', 'toString', 'valueOf', '__proto__']) {
+      const rules = prodRules();
+      const target = rules.find((r) => r.lastInsufficientReason === 'no_samples');
+      assert.ok(target, 'no rule in the production payload is merely short of data');
+      target.lastInsufficientReason = reason;
+      const note = noteText(await boot({ rules: { rules, channels: prodChannels() } }));
+
+      assert.match(note || '', /3 rules cannot reach a verdict yet/,
+        `a reason of "${reason}" drew "${note}" -- a rule short of data for a reason the `
+        + 'map does not know is still a rule short of data');
+      assert.match(note, /1 rule has nothing wired up to feed it/,
+        `a reason of "${reason}" drew "${note}" and counted it as unwired, which sends `
+        + 'somebody to configure a source that is already configured');
     }
   });

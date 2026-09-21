@@ -247,6 +247,26 @@
       everDelivered: channels.some(function (c) {
         return time(c.lastSuccessAt) !== null;
       }),
+      /* Present but not readable, told apart from absent -- because the two
+         spellings of "has anything ever arrived" disagree on exactly this
+         input and nothing else, and round 5 of the review showed what that
+         costs. `everDelivered` PARSES the stamp; `channelNote()` tested it
+         for TRUTH. A `lastSuccessAt` that `new Date()` cannot read -- a
+         Postgres `timestamptz` with a two-digit offset, `infinity`, epoch
+         seconds that arrived as a string -- made one render say "Nothing has
+         ever been delivered" above two green "Connected" rows.
+
+         So unreadable is its own answer, the way `channelsKnown` makes
+         absent its own answer. The pane already knows it could not read the
+         stamp: `fmt.ago()` returns `-` for it. Turning that into a confident
+         negative in one place and a confident positive in another is the
+         two-panes-disagreeing defect of Stadiora/Aria#10630 inside a single
+         render, and on the pane whose subject is that delivery has never
+         worked at all (Stadiora/Aria#10811) it fails in the direction of
+         looking healthy. */
+      unreadableDelivery: channels.some(function (c) {
+        return Boolean(c.lastSuccessAt) && time(c.lastSuccessAt) === null;
+      }),
       total: list.length,
       enabled: enabled.length,
       /* Enabled, ran, and reached a verdict. This is the only count either
