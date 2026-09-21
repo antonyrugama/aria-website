@@ -2703,11 +2703,10 @@ const PAINT_PROGRAM = String.raw`(() => {
    newest-first, so the removal registered before the browser is the next thing
    popped -- which makes that ORDER load-bearing rather than incidental. */
 const EXIT_WAIT_MS = 5_000;
-/* The removal confirms rather than assumes. One pass is the normal case; the
-   extras exist for a descendant whose last writes land after the parent was
-   reaped. Bounded so a browser that genuinely will not die fails the run
-   instead of hanging it -- the whole point of Stadiora/Aria#10800. */
-const REMOVE_ATTEMPTS = 6;
+/* The removal looks back before it reports. Chrome's last writes can land
+   after the parent is reaped, so checking the instant rmSync returns is
+   checking too early -- which is the whole reason the obvious assertion could
+   not see Stadiora/Aria#10854 in the first place. */
 const REMOVE_SETTLE_MS = 150;
 
 /* Signals the child's whole process group, falling back to the single process
@@ -2781,7 +2780,7 @@ async function launchPainter(opened, unwind) {
      milliseconds later. At the moment close() returns, the buggy version and
      the fixed one are byte-identical on disk. The mutation battery proved that
      by leaving two payloads green. */
-  const teardown = { browserExitedBeforeRemoval: null, removalAttempts: 0, profileReturned: false };
+  const teardown = { browserExitedBeforeRemoval: null, profileReturned: null };
   /* Not `browser` directly: chromePath() throws when there is no Chrome, and
      that throw lands between this line and the spawn below. A closure closing
      over the `const` would hit its temporal dead zone, the drain would swallow
@@ -2793,23 +2792,17 @@ async function launchPainter(opened, unwind) {
   opened.push(async () => {
     teardown.browserExitedBeforeRemoval = spawned === null ||
       spawned.exitCode !== null || spawned.signalCode !== null;
-    /* Remove and CONFIRM, rather than remove and assume. Waiting for the
-       browser to be reaped closes the common recreation, and on this machine
-       it closes it completely -- but CI disagreed, failing 3 runs out of 5 on
-       heads whose removal already waited. The residue is bounded and cheap to
-       out-wait, so this re-removes anything that comes back and records both
-       how many passes it took and whether the directory ever returned, so a
-       failure says which of the two mechanisms produced it instead of leaving
-       the next reader to guess from a boolean. */
-    for (let i = 0; i < REMOVE_ATTEMPTS; i += 1) {
-      teardown.removalAttempts += 1;
-      rmSync(profile, { recursive: true, force: true });
-      if (!existsSync(profile)) {
-        await new Promise((r) => setTimeout(r, REMOVE_SETTLE_MS));
-        if (!existsSync(profile)) return;
-      }
-      teardown.profileReturned = true;
-    }
+    /* Remove, then LOOK. An earlier version re-removed up to six times until
+       the directory stayed gone, and it was deleted rather than kept: on this
+       machine it never fired, and on CI it has reported one pass and no return
+       on every run since the group kill landed. A mechanism nobody has
+       observed doing anything is speculation, and re-removing quietly is the
+       wrong shape anyway -- a directory that comes back is the leak this whole
+       change is about, so it should fail the run and say so, not be tidied
+       away until the assertion stops noticing. */
+    rmSync(profile, { recursive: true, force: true });
+    await new Promise((r) => setTimeout(r, REMOVE_SETTLE_MS));
+    teardown.profileReturned = existsSync(profile);
   });
   const browser = spawn(chromePath(), [
     '--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile,
@@ -3106,11 +3099,11 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
      the whole tree with the parent and none of the three can be load-bearing.
      The behaviour they exist for is Linux-only, so CI is the only oracle, and a
      mechanism nobody can see working is one nobody can tell has stopped. These
-     two numbers make every CI run a reading: removalAttempts above 1, or
-     profileReturned true, is the confirm loop doing work. */
+     reading makes every CI run a measurement rather than a pass: a profile
+     that came back is the leak, and a browser not reaped before the removal is
+     the moment it leaks at. */
   console.log('  painter teardown: reaped before removal ' +
     JSON.stringify(painter.teardown.browserExitedBeforeRemoval) +
-    ', removal passes ' + painter.teardown.removalAttempts +
     ', profile came back ' + JSON.stringify(painter.teardown.profileReturned));
 
   assert.equal(existsSync(painter.profile), false,
@@ -3119,8 +3112,8 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
     'it runs while Chrome is still writing its profile out and the files come back. ' +
     'Teardown recorded: ' + JSON.stringify(painter.teardown) + ' -- ' +
     'browserExitedBeforeRemoval false means the removal ran too early, ' +
-    'profileReturned true with the attempts exhausted means something was still writing ' +
-    'after the parent was reaped, which is a descendant rather than the browser.');
+    'profileReturned true means something was still writing after the parent was reaped, ' +
+    'which is a descendant rather than the browser itself.');
 
   /* The line above binds that the removal HAPPENED. This binds that it happened
      at a safe moment, which is the actual subject of Stadiora/Aria#10854 and is
