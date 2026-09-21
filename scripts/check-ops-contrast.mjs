@@ -1802,11 +1802,13 @@ async function measureFocusIndicators(where) {
       if (box.width < 1 || box.height < 1) { refusal = 'the element has no photographable box'; break; }
 
       /* THE ZEROTH PHOTOGRAPH, and it is of nothing happening.
-         Two captures of the same unmoving page are not identical: 186 of one
-         sweep's comparisons never settled in five attempts, disagreeing by
-         3-17 glyph-shaped pixels in 3-4px wide boxes (Stadiora/Aria#10778).
-         captureBeyondViewport resizes the viewport per capture and text is
-         re-rasterised, so glyph edges land a byte differently.
+         Two captures of the same unmoving page are not identical
+         (Stadiora/Aria#10778). captureBeyondViewport resizes the viewport per
+         capture and text is re-rasterised, so glyph edges land a byte
+         differently. How much is never typed here: the summary prints how
+         many rows carried noise and the worst row's count, so the size of it
+         in the log is the size this run measured, not a figure someone wrote
+         down once and stopped checking.
          WHY A MASK AND NOT A TOLERANCE. A constant allowance on the change
          count is blind to a genuinely small indicator, which is the defect
          this tool exists to catch — it would trade a flake for a hole. This
@@ -1820,7 +1822,22 @@ async function measureFocusIndicators(where) {
          shows a keyboard user nothing. A few noise pixels lifted nChanged
          off zero and the row came back `its focus indicator is not an
          outline` instead: a limitation, not a finding. Noise was converting
-         a defect into an excuse at roughly 1 run in 18. */
+         a defect into an excuse at roughly 1 run in 18.
+         WHAT BINDS THIS, AND WHAT DOES NOT — measured, not assumed. No
+         fixture assertion binds this mask, because the fixture page has no
+         noise to mask: instrumented, 17 fixture rows photographed per run
+         carried 0 noise pixels in 5 consecutive runs, and 120 alternating
+         --self-test runs (60 with this mask, 60 with the second capture
+         replaced by a copy of the first) produced 0 reds on either arm. The
+         fixture page is pixel-deterministic, so the two mutations that
+         remove this mask SURVIVE the fast path, and they are published as
+         surviving. What binds it is the shell, where the same instrument
+         reports a non-zero count every run, and it binds only stochastically
+         — at the rate above. A fixture that flaked on purpose would bind it
+         deterministically only if the mask built from one capture pair
+         generalised to another, which a phase-dependent animation defeats:
+         such a fixture reds the intact tool, not the mutants. That is why
+         there is none, and it is in NOT COVERED rather than implied away. */
       const before0 = await focusShot(box);
       const before = await focusShot(box);
       const focused = await evaluate(`(() => {
@@ -2608,10 +2625,11 @@ async function measureFocusIndicators(where) {
  * Also NOT COVERED, and both are constants pinned in one direction only.
  * FOCUS_MIN_ADJACENT: raising it FAR ENOUGH fails the run, because a sample
  * under the floor is refused and a refusal nothing freezes is a failure.
- * Raising it a LITTLE does not, and that distinction is not a quibble — this
- * PR's battery raises it 8 → 9 as a tolerance control and the run is
- * unmoved, because the thinnest sample the shell produces sits far above the
- * floor. (An earlier draft of this paragraph said "raising it fails the run"
+ * Raising it a LITTLE does not, and that distinction is not a quibble — every
+ * mutation battery this file has had, this one included, raises it 8 → 9 as
+ * a tolerance control and the run is unmoved, because the thinnest sample the
+ * shell produces sits far above the floor. (An earlier draft of this
+ * paragraph said "raising it fails the run"
  * flat, which its own battery disproves. That is Stadiora/Aria#10365's exact
  * shape occurring inside a file written to be about it, and it is recorded
  * rather than quietly corrected.) How far above is printed every run and is
@@ -2627,6 +2645,23 @@ async function measureFocusIndicators(where) {
  * within a few pixels — at the same seam named above, and both are left open
  * for the same reason: an unproven fixture written to answer a review is not
  * an improvement on a named gap.
+ *
+ * Also NOT COVERED, and this one is a gap I measured rather than inferred:
+ * the noise mask of Stadiora/Aria#10778 has NO fixture assertion behind it.
+ * Instrumented, the fixture page photographs 17 focus rows per run and every
+ * one of them came back with 0 noise pixels, five runs running; 120
+ * alternating --self-test runs, 60 with the mask and 60 with the second
+ * capture replaced by a copy of the first, produced 0 reds on either arm.
+ * The page is pixel-deterministic, so there is nothing here for the mask to
+ * remove and the two mutations that delete it survive. They are published as
+ * surviving. The mask is exercised on the shell instead, where this run
+ * prints a non-zero count, and it is bound there only stochastically, at the
+ * flake rate it was built to remove. A fixture that flickered on purpose
+ * would not close this: the mask is built from one capture pair and asked
+ * about another, so a phase-dependent difference reds the INTACT tool rather
+ * than the mutants, and a fixture that flakes at the defect's own rate
+ * reintroduces the defect in CI. Left open deliberately, for the reason two
+ * paragraphs up.
  */
 const FIXTURE_CASES = [
   { bg: '#ffffff', expect: [255, 255, 255] },
