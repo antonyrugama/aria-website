@@ -141,6 +141,30 @@
      claim no block carries, is not judged. The remedy used in the rewrite is
      to make the prose point AT a block rather than repeat it, but nothing
      enforces that.
+   - A guard CONSTANT this file does not name. `guard-constants` resolves the
+     declarations listed in GUARD_CONSTANTS and no others, and only where the
+     value is a top-level `const NAME = <literal>;`: one built from another
+     binding, or returned by a call, throws here rather than being guessed at.
+     A guard added next week carries no numbers until somebody names one of
+     its constants, so this list growing is a manual step. The worked example
+     of what stays out: check-ops-dialog-hit.mjs hit-tests five spots per
+     control, but that array lives inside a template literal evaluated in the
+     browser, so the five stays prose and stays unproven.
+   - A blind spot a guard does not put in a bullet HEADING.
+     `guard-blind-spots` reads the leading bold run of each bullet under a
+     NOT COVERED heading that OPENS its line - matching the phrase anywhere in
+     a line anchors on check-ops-contrast.mjs pointing at the README's list
+     and on check-ops-result-view.mjs referring to its own section thirty
+     lines above where that section starts. Bullets are reassembled across
+     wrapped lines, because the first spelling of this derivation read one
+     line at a time and silently lost the two blind spots whose bold openers
+     wrap in check-ops-narrow-overflow.mjs. A second bold span later in the
+     same bullet is body text; a blind spot written into a bullet's body is
+     not a line; a bullet with no bold opener is reported as one rather than
+     skipped; and a section written as prose says so on its guard's line
+     instead of contributing nothing. Whether the guard's own account of its
+     blind spots is TRUE is not decided here - only that the README carries
+     the same list, in the same order.
    - `<link>` and `<script>` tags only, spelled statically with a literal
      `assets/…` URL. An asset injected at runtime is invisible to the loader
      map, as is one loaded by a page outside `ops/`. A tag inside an HTML
