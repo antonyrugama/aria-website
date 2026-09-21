@@ -630,3 +630,133 @@ test('the light theme folds and rails the same way', async () => {
   assert.equal(seen.open, 0);
   assert.notEqual(seen.controlShown, 'none');
 });
+
+/* ===================== the state on a second channel ===================== */
+
+test('at 375 the chevron turns over when the band opens', async () => {
+  await reshow(EVALS_375);
+  const seen = await evaluate(`(async () => {
+    const button = document.querySelector('.band-fold');
+    const svg = button.querySelector('svg');
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+    const read = () => getComputedStyle(svg).transform;
+    const shut = read();
+    button.click(); await frame(); await frame();
+    const open = read();
+    button.click(); await frame(); await frame();
+    return { shut, open, again: read(), width: Math.round(svg.getBoundingClientRect().width) };
+  })()`);
+
+  /* aria-expanded is the whole story for a screen reader and none of it for
+     everybody else, so the state carries on a second channel that is not
+     colour: the glyph points at the content it would reveal, and points back
+     at the head once the content is there. Asserted as the resolved matrix
+     rather than the declaration, so a rule that fails to match — which is
+     exactly what #10456 shipped — cannot pass this.
+
+     `rotate(180deg)` resolves to matrix(-1, 0, 0, -1, 0, 0). Compared to the
+     shut state rather than to that literal so the direction, not the spelling,
+     is what is bound. */
+  assert.equal(seen.shut, 'none',
+    `a closed band's chevron should sit unrotated, saw ${seen.shut}`);
+  assert.notEqual(seen.open, seen.shut,
+    'an open band should not draw the same chevron as a closed one');
+  assert.match(seen.open, /^matrix\(-1,\s*0,\s*0,\s*-1/,
+    `an open band's chevron should be turned over, saw ${seen.open}`);
+  /* Both arms: a chevron stuck upside down is as wrong as one that never
+     turns, and only the pair rules out a rule matching unconditionally. */
+  assert.equal(seen.again, seen.shut,
+    'closing the band again should put the chevron back');
+  assert.ok(seen.width >= 14, `the glyph should be drawn, saw ${seen.width}px`);
+});
+
+test('at 375 the fold control is a finger-sized target clear of its own title', async () => {
+  await reshow(EVALS_375);
+  const seen = await evaluate(`(() => {
+    const band = document.querySelector('.band');
+    const button = band.querySelector('.band-fold');
+    const title = band.querySelector('.band-title');
+    const b = button.getBoundingClientRect();
+    const t = title.getBoundingClientRect();
+    const head = band.querySelector('.band-head').getBoundingClientRect();
+    return {
+      w: Math.round(b.width), h: Math.round(b.height),
+      onScreen: b.left >= 0 && b.right <= document.documentElement.clientWidth,
+      overlapsTitle: b.left < t.right && b.right > t.left && b.top < t.bottom && b.bottom > t.top,
+      /* The head is a wrapping flex row. The control is out of flow so it
+         cannot take a line of its own; if it ever did, the head would be
+         taller than the one line of text it holds at the top. */
+      withinHead: b.top >= head.top - 8 && b.right <= head.right + 1
+    };
+  })()`);
+
+  assert.ok(seen.w >= 36 && seen.h >= 36,
+    `the control should be at least a 36px target, saw ${seen.w}x${seen.h}`);
+  assert.equal(seen.onScreen, true, 'the control should be inside the viewport at 375');
+  assert.equal(seen.overlapsTitle, false, 'the control should not sit on top of its band title');
+  assert.equal(seen.withinHead, true, 'the control should be pinned to its band head');
+});
+
+test('at 375 a stage that has not been reached still rails down the column', async () => {
+  await show(SHIP_375);
+  const seen = await evaluate(`(() => {
+    /* The live fixture carries no 'todo' stage, so the class is put on a
+       stage to resolve what the sheet would draw for one. Restored before the
+       read returns, so no later test sees it. */
+    const steps = [...document.querySelector('.pipe-track').children];
+    const step = steps[0];
+    const had = step.className;
+    step.className = 'pipe-step todo';
+    const cs = getComputedStyle(step, '::before');
+    const out = { width: cs.width, height: cs.height, image: cs.backgroundImage,
+      left: cs.left, top: cs.top, bottom: cs.bottom, right: cs.right };
+    step.className = had;
+    return out;
+  })()`);
+
+  await show(SHIP_1280);
+  const wide = await evaluate(`(() => {
+    const step = document.querySelector('.pipe-track').children[0];
+    const had = step.className;
+    step.className = 'pipe-step todo';
+    const cs = getComputedStyle(step, '::before');
+    const out = { width: cs.width, height: cs.height, image: cs.backgroundImage };
+    step.className = had;
+    return out;
+  })()`);
+
+  /* Vertical: a narrow strip taller than it is wide. The horizontal form was
+     the other way round, so this fails if the 560 block does not apply. */
+  assert.ok(parseFloat(seen.width) <= 4,
+    `an unreached stage's rail should be a narrow vertical strip, saw ${seen.width} wide`);
+  assert.ok(parseFloat(seen.height) > parseFloat(seen.width),
+    `it should be taller than it is wide, saw ${seen.width} x ${seen.height}`);
+  /* `right` is not readable here: getComputedStyle resolves `auto` to a used
+     pixel value on a positioned element, so the assertion that the horizontal
+     rail's `right` was unset has to be made through its consequence. Unset it
+     is not, and the strip spans the step instead of the gutter — which is what
+     the width above rules out. This binds the run: a rail under an unreached
+     stage that is only a few pixels long reads as a gap, and four gaps down a
+     column read as no rail at all. */
+  assert.ok(parseFloat(seen.height) >= 15,
+    `it should run a real distance, saw ${seen.height}`);
+  /* The dashes have to run down the rail, not across it: the base rule's
+     `90deg` on a 2px-wide vertical strip draws one dash filling the whole
+     run — a solid line, which is this sheet's spelling for a stage that HAS
+     been reached, so the rail would say the opposite of what it means.
+
+     Bound through the resolved value and its other arm rather than by
+     matching `180deg` in the text: 180deg IS the default direction, so Chrome
+     serialises it away and the computed value carries no angle at all. A
+     regex looking for the angle it was written with could never match, which
+     is the same shape as a source grep that pins a string instead of a
+     behaviour. 90deg is not the default, so it survives serialisation — the
+     horizontal arm below is what gives this one its teeth. */
+  assert.equal(/\d+deg|to (top|bottom|left|right)/.test(seen.image), false,
+    `at 375 the dashes should run down the column, which is the default ` +
+    `direction and carries no angle, saw ${seen.image}`);
+  assert.match(wide.image, /90deg/,
+    `at 1280 the same dashes should run along the row, saw ${wide.image}`);
+  assert.notEqual(seen.image, wide.image,
+    'the unreached rail should not be drawn the same way at both widths');
+});
