@@ -62,6 +62,13 @@
  * - Whether three notches remain countable to a reader at arm's length. The
  *   claims here are that they are painted, counted and contrast; legibility
  *   at a distance is a judgement no oracle makes.
+ * - Whether a capture that came back uniform is uniform because the bar is
+ *   blank or because the capture failed. The sweep no longer has to tell
+ *   those apart: it stopped creating the second case by scrolling each meter
+ *   on screen before reading it (Stadiora/Aria#10871), rather than by
+ *   detecting a bad capture and retrying, which could swallow a genuinely
+ *   blank bar. A blank bar is what the two forced-colors claims exist to
+ *   catch, so a retry there would have been a guard eating its own evidence.
  * - A groove displaced onto UNFILLED track. This was claimed and then
  *   withdrawn, because it was measured and the instrument cannot see it.
  *   Pushing the first groove 6px past the fill's trailing edge moves the
@@ -497,18 +504,11 @@ const BUILD_SYNTHETIC = `(function () {
   return ['ok', 'warn', 'bad', 'vio'].length;
 })()`;
 
-async function shoot(box, viewportY) {
+async function shoot(box) {
   const clip = {
     x: Math.round(box.x), y: Math.round(box.y),
     width: Math.round(box.width), height: Math.round(box.height), scale: 1
   };
-  /* The precondition, and the whole of the fix for Stadiora/Aria#10871: the
-     region being captured is on screen. Delete the `scrollIntoView` in
-     `focusMeter` and this reds on the first meter of the first pane with a
-     number in the thousands, because nothing on this board is above the fold. */
-  assert.ok(viewportY >= 0 && viewportY + clip.height <= VIEWPORT.height,
-    `a capture was aimed ${Math.round(viewportY)}px down a ${VIEWPORT.height}px ` +
-    `viewport for a ${clip.height}px box, so it would have come from off screen`);
   const shot = await cdp.send('Page.captureScreenshot',
     { format: 'png', captureBeyondViewport: false, clip });
   return decodePNG(Buffer.from(shot.data, 'base64'));
@@ -529,9 +529,17 @@ async function shoot(box, viewportY) {
      bar that is fine. Seen once in fourteen runs, with a second sweep running
      on the same machine. Every meter on this board sits between y=3322 and
      y=4463 at a 1000px viewport, so every capture took that path.
-   - The invariant that actually removes the dependency is `the region is on
-     screen`, which is what `shoot` asserts. `captureBeyondViewport: false` is
-     belt and braces: with the scroll in place, `true` measures correctly too.
+   - The invariant that actually removes the dependency is `the pixels about
+     to be read are on screen`, and ONE thing asserts it: the `covered` probe
+     below, which reports a point outside the viewport and a point behind the
+     sticky topbar in the same breath because both mean the same thing --
+     what gets captured there is not the bar. A separate precondition in
+     `shoot` was written first and deleted: the probe reaches it first in
+     every case, so no mutation could kill it, and an assertion nothing can
+     kill is dead code wearing a guard's clothes.
+   - `captureBeyondViewport: false` is belt and braces, not the fix. T13 in
+     the battery puts `true` back with the scroll left in and stays GREEN on
+     purpose: with the region on screen, both modes return identical pixels.
 
    A retry on a uniform capture would also have worked and is the worse trade,
    because it could swallow a genuinely blank bar -- which is exactly what the
@@ -548,15 +556,18 @@ function focusMeter(idx) {
   var cy = t.top + t.height / 2;
   var covered = [];
   [t.left + 1, t.left + t.width / 2, t.right - 1].forEach(function (x) {
+    var at = Math.round(x) + 'x' + Math.round(cy);
+    if (x < 0 || cy < 0 || x > window.innerWidth || cy > window.innerHeight) {
+      covered.push(at + ':off screen');
+      return;
+    }
     var hit = document.elementFromPoint(x, cy);
     if (hit && (hit === el || el.contains(hit))) return;
-    covered.push(Math.round(x) + 'x' + Math.round(cy) + ':' +
-      (hit ? hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '') : 'nothing'));
+    covered.push(at + ':' + (hit ? hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '') : 'nothing'));
   });
   return {
     tones: ['ok', 'warn', 'bad', 'vio'].filter(function (c) { return el.classList.contains(c); }),
     box: { x: t.left + window.scrollX, y: t.top + window.scrollY, width: t.width, height: t.height },
-    viewportY: t.top,
     trackWidth: t.width,
     visibleFill: Math.max(0, right - left),
     covered: covered
@@ -675,18 +686,20 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
     const at = await evaluate(focusMeter(m.idx));
     const where = `${theme}/${pane}/${state} meter ${m.idx}`;
     assert.ok(!at.error, `${where}: ${at.error}`);
-    /* Scrolling is new reach for this file, so it says what it reached. A
-       meter centred in the viewport is clear of the sticky headers at
-       aria.css:239 and :382, and this is the reading that proves it rather
-       than the reasoning that assumes it. */
+    /* Scrolling is new reach for this file, so it says what it reached. This
+       is the only thing asserting the pixels are on screen, and it reports
+       off-screen and occluded identically because they mean the same thing:
+       T11 kills it with `off screen`, T14 with `header#topbar`, the sticky
+       bar at aria.css:382 that `block: 'start'` would park every meter
+       under. */
     assert.deepEqual(at.covered, [],
-      `${where} is covered where it was about to be measured: ${at.covered.join(', ')}`);
+      `${where} cannot be measured where it sits: ${at.covered.join(', ')}`);
     assert.deepEqual(at.tones, m.tones, `${where} changed tone between the read and the scroll`);
     assert.equal(Math.round(at.trackWidth), Math.round(m.trackWidth),
       `${where} changed track width when it was scrolled into view`);
     assert.equal(Math.round(at.visibleFill), Math.round(m.visibleFill),
       `${where} changed fill width when it was scrolled into view`);
-    const img = await shoot(at.box, at.viewportY);
+    const img = await shoot(at.box);
     const tone = m.tones[0] || null;
     out.push({
       pane, state, theme, tone, tones: m.tones, synthetic: m.synthetic,

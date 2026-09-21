@@ -132,7 +132,7 @@ const BATTERY = [
   },
   {
     id: 'T11', file: TARGET, expect: 'KILL',
-    why: 'Deletes the `scrollIntoView` that puts a meter on screen before it is captured, which is the whole of the fix for Stadiora/Aria#10871. The capture then comes from 3,300-4,400px below a 1000px viewport, exactly as it did before, and `shoot`s precondition refuses it. The defect this restores is not a wrong number, it is a number that is only SOMETIMES wrong -- one uniform capture in fourteen runs -- so the row binds the dependency rather than the symptom.',
+    why: 'Deletes the `scrollIntoView` that puts a meter on screen before it is captured, which is the whole of the fix for Stadiora/Aria#10871. The capture then comes from 3,300-4,400px below a 1000px viewport, exactly as it did before. The defect this restores is not a wrong number, it is a number that is only SOMETIMES wrong -- one uniform capture in fourteen runs -- so the row binds the dependency rather than the symptom. Killed by the `covered` probe reporting `off screen`, which is also why the separate precondition first written into `shoot` was deleted: the probe reaches it first in every case, so no row could ever kill it.',
     apply: (s) => replaceOnce(s, "  el.scrollIntoView({ block: 'center', inline: 'nearest' });\n", '')
   },
   {
