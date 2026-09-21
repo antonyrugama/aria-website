@@ -2776,9 +2776,11 @@ async function launchPainter(opened, unwind) {
   spawned = browser;
   opened.push(async () => {
     browser.kill();
-    /* Already dead -- the failure cases reach here that way -- so there is no
-       exit left to wait for, and listening for one would wait out the ceiling
-       for an event that has already fired. */
+    /* A browser that died on startup arrives already reaped, so there is no
+       exit left to wait for and listening for one would sit out the ceiling
+       for an event that has already fired. A browser that is merely unresponsive
+       -- the port never published, the case this early return does NOT take --
+       is alive when kill() returns and is waited for below. */
     if (browser.exitCode !== null || browser.signalCode !== null) return;
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, EXIT_WAIT_MS);

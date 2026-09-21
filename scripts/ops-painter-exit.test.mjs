@@ -69,7 +69,7 @@
      did not catch a real leak: ops-analytics-v2.test.mjs has ended, and green,
      while leaving its profile behind (Stadiora/Aria#10854). No quantifier --
      the run that found Stadiora/Aria#10800 neither ended nor passed, and this
-     file's own header says so 60 lines up.
+     file's own header says so.
 
      That is the whole basis, and it is deliberately not generalised. Two
      attempts to say WHY termination misses things have been wrong. The first
