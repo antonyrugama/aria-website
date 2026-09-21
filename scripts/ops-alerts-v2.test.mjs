@@ -646,8 +646,10 @@ const HEAD_END_TAGS = new Set(['noframes', 'noscript', 'script', 'style', 'title
    every way head ends -- a start tag not on the list, an end tag not on the
    list, or non-space text -- is on the false side of it, and each of those
    is read out of the walk's nodes and gaps. Where the walk cannot agree it
-   refuses, and the refusal reds before this function is reached. That
-   qualifier is not decoration: a letter hidden inside what the walk wrongly
+   refuses in exactly ONE case -- the double-escaped <script> below -- and
+   GUESSES in every other, so this sentence is worth no more than the
+   partial-tokeniser disclosure at the top of this file. That qualifier is
+   not decoration: a letter hidden inside what the walk wrongly
    called a comment made this answer TRUE for a pragma Chrome had put in
    <body>, and the page shipped no policy (the twenty-ninth review of #75,
    M29R-3, fixed by commentEndOf()). The claim is only ever as good as the
@@ -686,8 +688,8 @@ const stillInHead = (node) => {
    RED about a rule that is really there. */
 const relTokens = (tag) => (tag.attrs.get('rel') || '').toLowerCase()
   .split(new RegExp(SP + '+')).filter(Boolean);
-/* The sheets ops/alerts.html loads, TYPED BY HAND, and the only statement
-   about this page in this file that owes nothing to the walk above. Two
+/* The sheets ops/alerts.html loads, TYPED BY HAND, so this statement owes
+   nothing to the walk above. Two
    readers are held against it: `html.includes(...)`, a raw substring scan,
    in the test that says the page loads one design system, and a deepEqual
    against PAGE_SHEETS, the parsed list, in the <link> test at the bottom.
