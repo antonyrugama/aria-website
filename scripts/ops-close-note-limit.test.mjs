@@ -138,9 +138,15 @@ async function openCloseForm(dom) {
   const note = findAll(livePanel(dom), (n) => n.tagName === 'TEXTAREA')[0];
   assert.ok(note, 'the close form has no note field');
   const describedBy = note.getAttribute('aria-describedby');
-  const hint = describedBy
-    ? findAll(livePanel(dom), (n) => n.getAttribute('id') === describedBy)[0]
-    : null;
+
+  /* Find the message the way a reader of the RENDER would — the live region
+     in the close form — and not by following the very reference the tests
+     below check. Resolving it through `describedBy` makes
+     `hint.id === describedBy` true by construction: round 2 caught that
+     assertion comparing an attribute with itself, and moving the comparison
+     without moving the lookup only relocated the tautology. */
+  const hint = findAll(livePanel(dom),
+    (n) => n.tagName === 'P' && n.getAttribute('role') === 'status')[0] || null;
   return { note, hint, describedBy };
 }
 

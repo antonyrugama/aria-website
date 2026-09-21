@@ -194,6 +194,19 @@ async function boot(options) {
 /* The panel an operator is actually looking at. The loading and empty panels
    are siblings of it, so reading the whole region would read text nobody can
    see. */
+/* Whichever of the shell's panels is the one showing. `region.empty()` fills
+   a DIFFERENT box from `region.show()`, so a test that always reads the live
+   panel reads '' for an empty render and would pass every absence assertion
+   in this file for the wrong reason. */
+function shownPanel(dom) {
+  const boxes = dom.doc.getElementById('content').querySelectorAll('[data-state]')
+    .filter((n) => n.getAttribute('data-shown') !== null);
+  assert.equal(boxes.length, 1,
+    `the shell has ${boxes.length} panels on screen at once, so "what the operator sees" `
+    + 'is not a single answer and nothing below means what it says');
+  return boxes[0];
+}
+
 function livePanel(dom) {
   return dom.doc.getElementById('content').querySelectorAll('[data-state]')
     .filter((n) => (n.getAttribute('data-state') || '').split(' ').indexOf('live') !== -1)[0];
@@ -404,6 +417,35 @@ test('the failed section says what went wrong and that the gap is not a zero', a
   const healthy = allText(livePanel(await boot()));
   assert.doesNotMatch(healthy, /the problems query timed out/,
     'the healthy render already carries the error text, so its presence proves nothing');
+});
+
+test('a read that never landed does not earn the sentence "there is nothing here"', async () => {
+  /* The emptiest legal answer all three reads can give: a summary that landed
+     carrying no figures, no problems, no rules. That IS empty, and the pane
+     says so. */
+  const nothing = {
+    summary: null,
+    problems: { problems: [] },
+    rules: { rules: [], summary: { armed: 0, total: 0 }, channels: [] },
+  };
+  const bare = allText(shownPanel(await boot(nothing)));
+  assert.match(bare, /Nothing is behind this pane yet/,
+    'the pane no longer recognises its genuinely empty state, so the absence assertions '
+    + 'below would pass for the wrong reason');
+
+  /* Now take one read away and leave the rest exactly as they were. Nothing
+     about how much data exists has changed — only how much of it was read.
+     An unread half is not an empty half, and "nothing is behind this pane"
+     is a claim about the world, not about the request. */
+  for (const [which, only] of [['problems', 'problems'], ['rules', 'rules']]) {
+    const text = allText(shownPanel(await boot({ ...nothing, [only]: boom(which) })));
+    assert.doesNotMatch(text, /Nothing is behind this pane yet/,
+      `the ${which} read failed and the pane told the operator there is nothing behind it — `
+      + 'the one sentence on this pane that a failed read can turn into a lie, because it '
+      + 'reads as a fact about the system rather than about the request');
+    assert.match(text, /could not be read|unread/,
+      `the ${which} read failed and the pane says nothing about it at all`);
+  }
 });
 
 /* ------------------------------------------- what the pane may not claim */
