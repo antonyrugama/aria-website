@@ -361,10 +361,15 @@
         if (token !== loadToken || !detail || detail.jobId !== jobId) return;
         detail = { jobId: jobId, loading: false, data: payload.data, error: null };
         render(lastWindow, selection);
+        /* Said on arrival, not only on departure. The intent was announced
+           before the read; without this a screen reader is told something is
+           starting and never told how it ended. */
+        S.announce(detailSentence(payload.data));
       }, function (err) {
         if (token !== loadToken || !detail || detail.jobId !== jobId) return;
         detail = { jobId: jobId, loading: false, data: null, error: err };
         render(lastWindow, selection);
+        S.announce('That run could not be read. The window around it still came back.');
       });
     }
 
@@ -415,6 +420,68 @@
          inside it is not. */
       if (detail && detail.error) region.degraded(wrap);
       else region.show(wrap);
+
+      settleFocus();
+    }
+
+    /* ------------------------------------------------------------- focus */
+
+    /* Every redraw here replaces the whole pane, so the control the operator
+       is standing on is destroyed under them and focus falls to <body>. From
+       row forty of a window that is what it sounds like: past the skip link,
+       ten rail items, the theme control, sign out, both pickers and every
+       button above theirs to get back. `pane-spend.js` decided this one
+       already; this is the same guard over six controls instead of one.
+
+       Only when focus WAS on a control of this pane. A pointer user has focus
+       nowhere in particular and moving it would be a jump they did not ask
+       for, so a redraw from boot or from the shell's filter event moves
+       nothing. */
+
+    var wanted = null;
+    var wantedFallback = null;
+
+    function focusKeyNow() {
+      var live = document.activeElement;
+      return live && live.getAttribute ? live.getAttribute('data-rh-focus') : null;
+    }
+
+    /** Put focus back where it is, once the redraw has replaced that node. */
+    function keepFocus() {
+      moveFocus(focusKeyNow());
+    }
+
+    /** Ask for focus somewhere else, but only if it is here to begin with. */
+    function moveFocus(key, fallback) {
+      if (!focusKeyNow()) return;
+      wanted = key || null;
+      wantedFallback = fallback || null;
+    }
+
+    function byKey(key) {
+      if (!key) return null;
+      /* Matched by reading the attribute rather than by building a selector,
+         because a key carries a job id that came off the wire. */
+      var all = document.querySelectorAll('[data-rh-focus]');
+      for (var i = 0; i < all.length; i += 1) {
+        if (all[i].getAttribute('data-rh-focus') === key) return all[i];
+      }
+      return null;
+    }
+
+    function settleFocus() {
+      if (!wanted && !wantedFallback) return;
+      var node = byKey(wanted) || byKey(wantedFallback);
+      if (!node || !node.focus) {
+        /* Not drawn yet. Opening a run redraws twice -- once for the skeleton
+           and once when it lands -- and Close only exists on the second, so
+           the request is held rather than dropped. Nothing here runs on a
+           timer, so the next redraw is the operator's next action. */
+        return;
+      }
+      node.focus();
+      wanted = null;
+      wantedFallback = null;
     }
 
     /* What landed, for a screen that is listened to rather than looked at. The
@@ -431,6 +498,17 @@
         (data.coverage.state === 'partial' ? 'Partly covered: ' : '') +
         fmt.plural(summary.runs, 'run', 'runs') + ' finished in ' + words + ', ' +
         fmt.int(summary.failed) + ' failed.');
+    }
+
+    /* The run that just landed, said rather than shown. Outcome first: it is
+       what the operator opened the run to find out. */
+    function detailSentence(data) {
+      var run = data && data.run;
+      if (!run) return 'That run came back.';
+      var when = fmt.utcStamp(run.finishedAt);
+      return run.type.label + ', ' + (run.outcomeLabel || 'still going') +
+        (when ? ', finished ' + when : '') + '. ' +
+        fmt.plural((data.stages || []).length, 'step', 'steps') + ' recorded.';
     }
 
     /* The count beside the rail item. A real read or nothing.
@@ -496,7 +574,11 @@
         }));
 
       var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Read again' });
-      again.addEventListener('click', function () { load(); });
+      again.setAttribute('data-rh-focus', 'rh-read-again');
+      again.addEventListener('click', function () {
+        keepFocus();
+        load();
+      });
 
       var tail = h('div', { className: 'rh-controls-end' });
       tail.appendChild(h('span', {
@@ -519,6 +601,7 @@
 
       var wrap = h('div', { className: 'sel' });
       var select = h('select', { id: id });
+      select.setAttribute('data-rh-focus', id);
       var seen = false;
       options.forEach(function (option) {
         var node = h('option', { value: option.value, text: option.label });
@@ -538,7 +621,10 @@
         missing.setAttribute('selected', 'selected');
         select.appendChild(missing);
       }
-      select.addEventListener('change', function () { onChange(select.value); });
+      select.addEventListener('change', function () {
+        keepFocus();
+        onChange(select.value);
+      });
       wrap.appendChild(select);
       wrap.appendChild(icon('chev'));
       group.appendChild(wrap);
@@ -591,7 +677,12 @@
       var row = h('div', { className: 'row mt-sm' });
       if (narrowed) {
         var clear = h('button', { className: 'btn btn-sm', type: 'button', text: 'Clear the narrowing' });
+        clear.setAttribute('data-rh-focus', 'rh-clear-narrowing');
         clear.addEventListener('click', function () {
+          /* This button is the one control that removes itself: with the
+             narrowing gone there is nothing to clear. So the operator is put
+             on the type picker, the nearest thing to where they were. */
+          moveFocus('rh-type');
           narrowing = { type: 'all', outcome: 'all' };
           detail = null;
           load();
@@ -875,7 +966,15 @@
          rather than a description, so this one branch wants the words. */
       open.setAttribute('aria-label', 'Open the run that finished at ' +
         (fmt.utcStamp(run.finishedAt) || 'an unrecorded time'));
-      open.addEventListener('click', function () { openRun(run.jobId, selection); });
+      open.setAttribute('data-rh-focus', 'rh-open-' + run.jobId);
+      open.addEventListener('click', function () {
+        /* The run opens below, so focus follows it there rather than staying
+           on a button the redraw is about to replace. Close sends it back.
+           A read that fails draws Try again instead of Close, and focus has
+           to land on one of them or it lands on nothing. */
+        moveFocus('rh-detail-close', 'rh-detail-retry');
+        openRun(run.jobId, selection);
+      });
       end.appendChild(open);
       row.appendChild(end);
 
@@ -905,7 +1004,13 @@
         ], 3);
         var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
         again.setAttribute('aria-label', 'Try reading this run again');
-        again.addEventListener('click', function () { openRun(detail.jobId, selection); });
+        again.setAttribute('data-rh-focus', 'rh-detail-retry');
+        again.addEventListener('click', function () {
+          /* A second attempt that works replaces this button with the run, so
+             ask for Close and fall back to this button if it fails again. */
+          moveFocus('rh-detail-close', 'rh-detail-retry');
+          openRun(detail.jobId, selection);
+        });
         block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
         failedBox.appendChild(block);
         section.appendChild(failedBox);
@@ -935,7 +1040,14 @@
     function closeButton() {
       var close = h('button', { className: 'btn btn-sm', type: 'button', text: 'Close' });
       close.setAttribute('aria-label', 'Close this run');
+      close.setAttribute('data-rh-focus', 'rh-detail-close');
+      var back = detail ? 'rh-open-' + detail.jobId : null;
       close.addEventListener('click', function () {
+        /* Back to the row the run was opened from, which is where the
+           operator was before Open, and which may be halfway down a long
+           table. Falling back to Read again keeps them inside the pane if
+           that row is no longer listed. */
+        moveFocus(back, 'rh-read-again');
         detail = null;
         render(lastWindow, current);
         S.announce('Closed the run.');

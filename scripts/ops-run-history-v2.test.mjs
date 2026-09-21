@@ -288,9 +288,29 @@ async function boot(options) {
      rather than fail an assertion. Supplying a counting one turns "this pane
      starts no timer" into a fact a test can read, which is the whole of the
      pane's answer to what stops it when the operator leaves. */
-  const timers = { intervals: 0, cleared: 0 };
+  const timers = { intervals: 0, cleared: 0, timeouts: 0, frames: 0 };
   dom.window.setInterval = () => { timers.intervals += 1; return 77; };
   dom.window.clearInterval = () => { timers.cleared += 1; };
+
+  /* setTimeout and requestAnimationFrame count too, and they are wrapped
+     rather than replaced, because the harness and the shell both use the real
+     ones. Review of PR #117 proved the point: a one-line
+     `setTimeout(function () { load(); }, 30000)` reinstates a background poll
+     and the interval counter alone cannot see it. A self-rescheduling timeout
+     is the ordinary way to write a poll, so counting only intervals reads a
+     narrower fact than the test's name claims. */
+  const realTimeout = dom.window.setTimeout;
+  dom.window.setTimeout = function () {
+    timers.timeouts += 1;
+    return realTimeout.apply(this, arguments);
+  };
+  const realFrame = dom.window.requestAnimationFrame;
+  if (realFrame) {
+    dom.window.requestAnimationFrame = function () {
+      timers.frames += 1;
+      return realFrame.apply(this, arguments);
+    };
+  }
 
   vm.createContext(dom.window);
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
@@ -635,13 +655,173 @@ test('the read stamp is on screen, because nothing refreshes it on its own', asy
     'the figures carry no read time, so nothing on screen says how old they are');
 });
 
-test('nothing starts a timer', async () => {
-  /* The whole of this pane's answer to "what stops it when the operator
-     leaves". Nothing is started, so nothing has to be stopped. */
+/* ============================ keyboard focus =========================== */
+
+/* Every redraw replaces the whole pane, so without a guard the control the
+   operator just used is destroyed under them and focus falls to <body>. From
+   row forty of a long window that is a long way back. These read
+   `doc.activeElement`, which the harness maintains through `focus()`.
+
+   Attachment is checked before the key is read, and that check is the whole
+   probe. A browser moves focus to <body> when the focused node leaves the
+   document; this harness does not -- `removeChild` clears `parentNode` and
+   leaves `activeElement` pointing at the orphan. So a redraw that restores
+   nothing still answers with the key of the node it destroyed, and an
+   assertion that the key is unchanged passes over a pane that dropped focus
+   on the floor. Measured: deleting the `settleFocus()` call in `render()`
+   left both same-key tests green until this walk was added. */
+
+const attached = (dom, node) => {
+  for (var at = node; at; at = at.parentNode) if (at === dom.doc.documentElement) return true;
+  return false;
+};
+
+const focusKey = (dom) => {
+  const live = dom.doc.activeElement;
+  if (!live || !live.getAttribute || !attached(dom, live)) return null;
+  return live.getAttribute('data-rh-focus');
+};
+
+/* The shell's polite live region, which is a div it appends to <body> and
+   whose textContent it replaces. Toasts also carry role="status", so the
+   aria-live attribute is what separates them. */
+const lastSaid = (dom) => {
+  const region = findAll(dom.body, (n) => n.getAttribute
+    && n.getAttribute('role') === 'status'
+    && n.getAttribute('aria-live') === 'polite')[0];
+  return region ? allText(region) : null;
+};
+
+test('a picker the operator is standing on keeps focus across the re-read', async () => {
   const dom = await boot({});
-  assert.equal(dom.timers.intervals, 0,
-    'the pane started ' + dom.timers.intervals + ' interval(s), so it keeps reading after the ' +
-    'operator has gone and something now has to stop it');
+  const select = selectsIn(dom)[0];
+  select.focus();
+  assert.equal(focusKey(dom), 'rh-type', 'the harness did not put focus on the picker');
+
+  select.value = 'nutrition_plan';
+  select.dispatch('change');
+  await settle();
+
+  assert.notEqual(selectsIn(dom)[0], select, 'the redraw did not replace the picker, so this ' +
+    'test is not exercising the thing it names');
+  assert.equal(focusKey(dom), 'rh-type',
+    'focus fell to ' + (focusKey(dom) || 'nowhere in this pane') + ' after narrowing, so a ' +
+    'keyboard operator is dropped to the top of the document by the pane\'s main control');
+});
+
+test('Read again keeps focus on Read again', async () => {
+  const dom = await boot({});
+  const again = buttonsIn(livePanel(dom), /Read again/)[0];
+  again.focus();
+  assert.equal(focusKey(dom), 'rh-read-again', 'the harness did not put focus on Read again');
+
+  again.dispatch('click');
+  await settle();
+
+  assert.equal(focusKey(dom), 'rh-read-again',
+    'focus fell to ' + (focusKey(dom) || 'nowhere in this pane') + ' after a fresh reading');
+});
+
+test('opening a run moves focus into the run, and Close puts it back on the row', async () => {
+  const dom = await boot({ detail: detailAnswer() });
+  const open = buttonsIn(livePanel(dom), /^Open$/)[1];
+  const backKey = open.getAttribute('data-rh-focus');
+  assert.match(backKey || '', /^rh-open-/, 'the Open button carries no focus key');
+  open.focus();
+
+  open.dispatch('click');
+  await settle();
+
+  assert.equal(focusKey(dom), 'rh-detail-close',
+    'focus fell to ' + (focusKey(dom) || 'nowhere in this pane') + ' when the run opened, so ' +
+    'the operator has to tab back down to the run they just asked for');
+
+  buttonsIn(livePanel(dom), /^Close$/)[0].dispatch('click');
+  await settle();
+
+  assert.equal(focusKey(dom), backKey,
+    'Close left focus at ' + (focusKey(dom) || 'nowhere in this pane') + ' rather than on the ' +
+    'row the run was opened from');
+});
+
+test('a pointer user is not yanked: nothing moves focus when focus was not here', async () => {
+  const dom = await boot({});
+  assert.equal(focusKey(dom), null, 'boot moved focus on its own');
+
+  buttonsIn(livePanel(dom), /Read again/)[0].dispatch('click');
+  await settle();
+  assert.equal(focusKey(dom), null, 'a click with focus nowhere pulled focus onto a control');
+
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click');
+  await settle();
+  assert.equal(focusKey(dom), null, 'opening a run by pointer pulled focus into the detail');
+});
+
+test('a run whose read fails still lands focus somewhere in the pane', async () => {
+  /* Open sends focus to Close, and a failed read draws no Close. Without a
+     second place to land, the operator is left on a button that no longer
+     exists in the document. */
+  const dom = await boot({});
+  const open = buttonsIn(livePanel(dom), /^Open$/)[1];
+  open.focus();
+  open.dispatch('click');
+  await settle();
+
+  assert.equal(focusKey(dom), 'rh-detail-retry',
+    'focus ended at ' + (focusKey(dom) || 'nowhere in this pane') + ' after a run failed to ' +
+    'read, so the operator is standing on a node the redraw removed');
+});
+
+test('a run that arrives is announced, not only the intent to read it', async () => {
+  const dom = await boot({ detail: detailAnswer() });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click');
+  await settle();
+
+  const said = lastSaid(dom);
+  assert.ok(said, 'the pane announced nothing at all');
+  assert.ok(!/^Opening one run\.$/.test(said),
+    'the last thing said was the intent, so a screen reader is told a read started and never ' +
+    'told how it ended');
+  assert.match(said, /Nutrition plan/,
+    'the arrival said "' + said + '", which does not name the run that landed');
+});
+
+test('a run that fails to arrive says so, rather than leaving the intent standing', async () => {
+  const dom = await boot({});
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click');
+  await settle();
+
+  const said = lastSaid(dom);
+  assert.ok(!/^Opening one run\.$/.test(said),
+    'a failed read left "Opening one run." as the last thing said');
+  assert.match(said, /could not be read/,
+    'the failure said "' + said + '", which does not say the read failed');
+});
+
+test('nothing starts a timer, of any of the three kinds', async () => {
+  /* The whole of this pane's answer to "what stops it when the operator
+     leaves". Nothing is started, so nothing has to be stopped.
+
+     All three kinds, because a poll can be written with any of them and only
+     one of them is called an interval. Boot alone is not the whole claim, so
+     the two things that redraw without a fresh selection -- Read again and
+     opening a run -- are driven here too. */
+  const dom = await boot({});
+  assert.deepEqual(
+    { intervals: dom.timers.intervals, timeouts: dom.timers.timeouts, frames: dom.timers.frames },
+    { intervals: 0, timeouts: 0, frames: 0 },
+    'boot started a timer, so the pane keeps working after the operator has gone and ' +
+    'something now has to stop it');
+
+  buttonsIn(livePanel(dom), /Read again/)[0].dispatch('click');
+  await settle();
+  buttonsIn(livePanel(dom), /^Open$/)[0].dispatch('click');
+  await settle();
+
+  assert.deepEqual(
+    { intervals: dom.timers.intervals, timeouts: dom.timers.timeouts, frames: dom.timers.frames },
+    { intervals: 0, timeouts: 0, frames: 0 },
+    'reading again or opening a run started a timer');
 });
 
 test('Read again re-reads with the selection that is on screen', async () => {
