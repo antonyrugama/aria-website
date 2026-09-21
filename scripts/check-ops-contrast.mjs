@@ -2304,16 +2304,21 @@ async function measureFocusIndicators(where) {
        the two identical, so the core is empty and the row is refused below
        rather than measured against itself. */
     const core = new Uint8Array(W * H);
-    let nCore = 0;
+    let nCore = 0, coreLostToNoise = 0;
     for (let p = 0; p < W * H; p++) {
-      if (noise[p]) continue;
       const q = p * 4;
       if (after.data[q] === bareShot.data[q] && after.data[q + 1] === bareShot.data[q + 1] &&
           after.data[q + 2] === bareShot.data[q + 2]) continue;
-      if (after.data[q] === ringRGB.r && after.data[q + 1] === ringRGB.g &&
-          after.data[q + 2] === ringRGB.b) { core[p] = 1; nCore++; }
+      if (after.data[q] !== ringRGB.r || after.data[q + 1] !== ringRGB.g ||
+          after.data[q + 2] !== ringRGB.b) continue;
+      /* Counted rather than skipped in silence. A noise pixel that would
+         otherwise have been RING is the mask eating the indicator, which is
+         the one thing a noise floor must never be allowed to do quietly. */
+      if (noise[p]) { coreLostToNoise++; continue; }
+      core[p] = 1; nCore++;
     }
     row.corePx = nCore;
+    row.coreLostToNoise = coreLostToNoise;
     if (!nCore) {
       rows.push({ ...row, refused: `its computed outline is ${row.ringHex} but no pixel that the ` +
         'ring itself paints is that colour, so the ring this tool would measure is not the ring ' +
@@ -2323,11 +2328,11 @@ async function measureFocusIndicators(where) {
 
     const D = FOCUS_ADJACENT_RADIUS;
     const adjacent = [];
-    let unchangedNear = 0, driftPx = 0;
+    let unchangedNear = 0, driftPx = 0, adjLostToNoise = 0;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const p = y * W + x;
-        if (core[p] || noise[p]) continue;
+        if (core[p]) continue;
         let near = false;
         for (let dy = -D; dy <= D && !near; dy++) {
           for (let dx = -D; dx <= D && !near; dx++) {
@@ -2337,6 +2342,11 @@ async function measureFocusIndicators(where) {
           }
         }
         if (!near) continue;
+        /* Same exclusion as before, moved after the adjacency test purely so
+           it can be COUNTED. A worst-of over a shrunken sample prints
+           identically to a healthy one, so the number of candidate surface
+           pixels the mask removed has to leave the loop with the sample. */
+        if (noise[p]) { adjLostToNoise++; continue; }
         const q = p * 4;
         /* A pixel the ring TOUCHES without owning is a blend of ring and
            surface, and is neither. Excluded from both sides, exactly as
@@ -2361,6 +2371,7 @@ async function measureFocusIndicators(where) {
       }
     }
     row.adjacentPx = adjacent.length;
+    row.adjLostToNoise = adjLostToNoise;
     row.unchangedPx = unchangedNear;
     row.driftPx = driftPx;
     /* Zero is not "a thin sample". It is a different finding, and conflating
@@ -3679,6 +3690,7 @@ try {
     let focusNoisy = 0, focusNoiseMax = 0, focusUnsampled = 0;
     const focusNoiseRows = [];
     const focusMotionRows = [];
+    const focusEatenRows = [];
     const focusWorst = new Map();
     const focusBelow = [];
     const focusRefused = [];
@@ -3815,6 +3827,7 @@ try {
             focusNoiseRows.push({ ...r, theme, state });
           }
           if (r.motionN > 0) focusMotionRows.push({ ...r, theme, state });
+          if (r.adjLostToNoise > 0 || r.coreLostToNoise > 0) focusEatenRows.push({ ...r, theme, state });
           /* Ownership is answered for the whole ring band or not at all, and
              the count of rows where it could not be is printed rather than
              left to be inferred from a refusal that quietly did not fire.
@@ -4143,6 +4156,20 @@ try {
       }
       console.log(`    ${focusMotionRows.length} of them were photographed with something still ` +
         `animating inside the clip: ${Object.keys(motionNames).sort().map((k) => `${k} x${motionNames[k]}`).join(', ') || 'nothing'}`);
+      /* THE NUMBER THAT MATTERS, and the one the summary could not say. Not
+         how much the mask removed from the CLIP -- most of a clip is
+         background nobody measures -- but how much it removed from the two
+         things a verdict is made of: the ring, and the surface beside it. */
+      console.log(`    ${focusEatenRows.length} of them had the noise mask remove a pixel that ` +
+        'would otherwise have been ring or surface beside the ring');
+      for (const r of focusEatenRows.sort((a, b) =>
+        (b.adjLostToNoise + b.coreLostToNoise) - (a.adjLostToNoise + a.coreLostToNoise)).slice(0, 5)) {
+        const share = r.adjacentPx + r.adjLostToNoise
+          ? (100 * r.adjLostToNoise / (r.adjacentPx + r.adjLostToNoise)) : 0;
+        console.log(`      surface ${r.adjLostToNoise}/${r.adjacentPx + r.adjLostToNoise} ` +
+          `(${share.toFixed(1)}%)  ring ${r.coreLostToNoise}/${r.corePx + r.coreLostToNoise}` +
+          `  ${r.theme}/${r.state}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}  "${r.text}"`);
+      }
       for (const r of focusMotionRows.slice(0, 5)) {
         console.log(`      ${r.theme}/${r.state}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}` +
           `  "${r.text}"  noise ${r.noisePx}px  animations ${r.motionN} (${r.motionNames})`);
