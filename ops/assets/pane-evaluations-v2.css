@@ -53,13 +53,23 @@
    classes the same band writes.
 
    One measure for every surface a person types into or reads an answer off.
-   ops.css capped .evidence-form at 920px and capped nothing else, so the
-   dataset form, its answer and the widest approval card ran the full 984px of
-   the band while the evidence form beside them stopped short. A form is a
-   measure, not a page width. */
+   ops.css capped the evidence form and the answer under it at 920px and
+   capped nothing else, so the dataset form, its answer and the widest
+   approval card ran the full 984px of the band while that pair beside them
+   stopped short. A form is a measure, not a page width.
+
+   `#approval-result` is here by id rather than by class because it has no
+   class of its own: pane-evaluations.js gives it `form-alert is-ok`, and both
+   of those also name the re-authentication modal's alert, which
+   shell-pane-v2.css owns. Capping `.form-alert` would put a `max-width` on
+   that alert — the one declaration `.modal-card .form-alert` does not itself
+   declare, so the one this sheet could actually leak into it. An id reaches
+   exactly the element that needs the measure and nothing else. */
 .dataset-form,
 .dataset-result,
 .evidence-form,
+.evidence-result,
+#approval-result,
 .approval-card { max-width: 920px; }
 
 /* Neither a validation message nor a dataset name has a space in it to break
@@ -143,6 +153,69 @@ select.field-input { appearance: none; padding-right: 26px; }
 }
 .dataset-issues { margin: 6px 0 0 16px; display: flex; flex-direction: column; gap: 3px; }
 .dataset-issues li { font-family: var(--mono); font-size: 11.5px; }
+
+/* The approval band's answer slot: hidden until a request is read or decided,
+   then one sentence saying which request is in which state at which revision.
+   ops.css drew it as a box; v2 arrived with nothing, so the sentence landed as
+   bare body text in the stack's 26px gap — a returned answer wearing the same
+   face as page copy. Stadiora/Aria#10674, which is Stadiora/Aria#10456's shape
+   again.
+
+   Every declaration here is also declared by `.modal-card .form-alert` in
+   shell-pane-v2.css, which this page also loads and which is the more specific
+   selector, so the re-authentication modal's own alert is untouched by this
+   rule. That parity is the whole argument, which is why this block declares
+   nine properties and not eight: `gap` has no rendered effect here — the pane
+   only ever writes `textContent`, so the flex container holds one anonymous
+   item and there is nothing to space — and `color` is inert too, because the
+   inherited colour already resolves to `--ink`. Both are carried so the
+   property sets match. Drop either and this rule starts declaring something
+   the modal rule does not, which is the only way it could reach the modal. */
+.form-alert {
+  display: flex;
+  gap: 9px;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+/* `display: flex` above is an author rule and `[hidden]` is a user-agent one,
+   so painting this box at all un-hides the empty slot the pane keeps hidden
+   between answers. This is the half that keeps it hidden. The modal alert is
+   never `hidden` — it collapses on `:empty` — and login and setup clear the
+   class outright, so no other .form-alert in the repository reaches this.
+
+   shell-pane-v2.css:259 makes the opposite choice for that modal alert, and
+   its reasoning applies here word for word: this slot is `role="status"`, and
+   pane-evaluations.js reveals it and fills it in the same task, which is the
+   unreliable half of how a live region announces. Keeping `display: none`
+   re-commits to that. It is not a regression — before this sheet painted the
+   box, the user-agent `[hidden]` rule already did exactly this — and changing
+   it means changing the pane's JS, not this rule. Stated so the two sheets do
+   not look like they disagree by accident. */
+.form-alert[hidden] { display: none; }
+
+/* `is-ok` says the call came back, not that the news is good: the sentence it
+   carries may well read `rejected`. So the mark means "this is the answer",
+   the box stays a neutral surface under it, and the mark itself is a 3px rail
+   — a shape, legible in greyscale, under every colour-vision deficiency, and
+   in forced-colours mode, where a border survives and every shadow and tint is
+   thrown away. A left border rather than an inset shadow for that last reason.
+   Colour is the third channel here, never the only one.
+
+   The pane bakes the class in at construction and never removes it, so today
+   the rail is on whenever the slot is visible. It is a modifier rather than
+   part of the base so that the base stays property-for-property with the modal
+   rule above; `border-left` is the one thing here the modal must not inherit. */
+.form-alert.is-ok {
+  border-left: 3px solid var(--emerald);
+  background: color-mix(in srgb, var(--emerald) 10%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--emerald) 26%, transparent);
+}
 
 .q-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 
@@ -278,8 +351,17 @@ select.field-input { appearance: none; padding-right: 26px; }
 .preview .tbl tbody tr:hover { background: none; }
 
 /* A table has a minimum width its columns cannot go under, so on a phone it
-   scrolls inside its own panel rather than taking the document with it. */
-.tbl-wrap { overflow-x: auto; }
+   scrolls inside its own panel rather than taking the document with it.
+
+   Positioned, because `overflow-x` clips only a descendant whose containing
+   block is this box. An absolutely positioned one resolves its containing
+   block to the nearest positioned ancestor, so while this box was static the
+   nearest was the page: a visually-hidden span inside a table wider than the
+   phone would sit at its static position in page coordinates, escape this
+   clip and take the document sideways while the table around it scrolled
+   correctly. ops.css carried this on .table-wrap and the v2 sheets dropped it.
+   Stadiora/Aria#10706. */
+.tbl-wrap { overflow-x: auto; position: relative; }
 .tbl-wrap:focus-visible { outline-offset: -2px; }
 .tbl-wrap .tbl { min-width: 560px; }
 

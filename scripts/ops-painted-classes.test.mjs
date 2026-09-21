@@ -64,16 +64,22 @@ let androidState = null;
    approval cards render rather than erroring. */
 function operations(body) {
   const req = body || {};
-  const op = String(req.operation || '');
+  /* `operationId`, which is what approvalEnvelope in pane-evaluations.js sets.
+     Reading `operation` instead leaves this branch unreachable and every
+     approval answering out of the dataset envelope below, whose value carries
+     no state — the slot then renders `is undefined at revision 1`, which is
+     true of the stub and not of the pane. */
+  const op = String(req.operationId || '');
   const envelope = (type, id, value) => ({
     schemaVersion: 'ciel.operation.response.v1',
     requestId: req.requestId, operationId: req.operationId,
     status: 'success', exitCode: 0,
     resource: { type: type, id: id, revision: 1, value: value }
   });
-  if (op.indexOf('approval') === 0) {
-    return envelope('ciel.evidence-approval', 'apr_9f3c',
-      { approvalRequestId: 'apr_9f3c', state: 'pending', revision: 2 });
+  if (op.indexOf('ciel.approval.') === 0) {
+    const asked = (req.input && req.input.approvalRequestId) || 'apr_9f3c';
+    return envelope('ciel.evidence-approval', asked,
+      { approvalRequestId: asked, state: 'pending', revision: 2 });
   }
   return envelope('ciel.dataset-validation', req.requestId, {
     valid: true, issues: [],
@@ -262,6 +268,37 @@ async function show(state) {
     await waitFor("document.querySelector('.dataset-result .evidence-meta-row dt')",
       'the dataset validation result');
   }
+
+  /* The approval band's answer slot is `hidden` between answers, so reaching it
+     means asking the band for an answer. A synthetic submit event rather than a
+     click: it runs the same handler and skips constraint validation, which is
+     how the dataset form above is driven too. */
+  if (state.approval) {
+    await evaluate(`(() => {
+      document.querySelector('#approval-get-id').value = 'apr_9f3c';
+      document.querySelector('#approval-get-form')
+        .dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    })()`);
+    await waitFor("(() => { const el = document.querySelector('#approval-result');"
+      + ' return el && !el.hidden && el.textContent.length; })()',
+      'the approval band to answer');
+  }
+
+  /* The quarantine form refuses to submit without a file, and a File cannot be
+     assigned to an <input type="file">; DataTransfer is the only way to put one
+     there, and it is the same path a real drop takes. */
+  if (state.quarantine) {
+    await evaluate(`(() => {
+      const input = document.querySelector('#evidence-file');
+      const carrier = new DataTransfer();
+      carrier.items.add(new File([new Uint8Array([1, 2, 3, 4])], 'evidence.bin',
+        { type: 'application/octet-stream' }));
+      input.files = carrier.files;
+      input.closest('form').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    })()`);
+    await waitFor("document.querySelector('.evidence-result .card')",
+      'the quarantine answer card');
+  }
   showing = state.key;
 }
 
@@ -269,6 +306,14 @@ const EVALS_DARK = { key: 'evals/1280/dark', url: '/ops/evaluations.html', width
 const EVALS_LIGHT = { key: 'evals/1280/light', url: '/ops/evaluations.html', width: 1280, theme: 'light', ready: '#approval-trust-note', validate: true };
 const EVALS_940 = { key: 'evals/940/dark', url: '/ops/evaluations.html', width: 940, theme: 'dark', ready: '.evidence-form-grid' };
 const EVALS_880 = { key: 'evals/880/dark', url: '/ops/evaluations.html', width: 880, theme: 'dark', ready: '.evidence-form-grid' };
+
+/* The two answer states of Stadiora/Aria#10674: the approval band having
+   answered, and the evidence form having quarantined something. Both are
+   states the pane only reaches when it does the thing it exists to do, which
+   is why the classes they draw went unpainted for a release without anybody
+   noticing. */
+const EVALS_ANSWER_DARK = { key: 'evals/answer/dark', url: '/ops/evaluations.html', width: 1280, theme: 'dark', ready: '#approval-get-form', approval: true, quarantine: true };
+const EVALS_ANSWER_LIGHT = { key: 'evals/answer/light', url: '/ops/evaluations.html', width: 1280, theme: 'light', ready: '#approval-get-form', approval: true, quarantine: true };
 const SHIP_DARK = { key: 'ship/1280/dark', url: '/ops/releases.html', width: 1280, theme: 'dark', ready: '.pipe-step.done' };
 const SHIP_MID = { key: 'ship/1280/dark/in-review', url: '/ops/releases.html', width: 1280, theme: 'dark', ready: '.pipe-step.todo', android: 'in_review' };
 
@@ -1057,3 +1102,473 @@ test('a card on the approval handoff explains itself in a note, not in a second 
   assert.notStrictEqual(seen.note.colour, seen.title.colour,
     'the note and the title are the same colour, which is what `card-hint` rendered as');
 });
+
+/* ============== Stadiora/Aria#10674 — the two answer slots ================ */
+
+/* Three more classes of the same shape as #10647, on the same pane, missed by
+   the rendered guard rather than found by it: the guard reports a class only
+   where it lands on an element with a box, and both of these slots are empty —
+   one of them `hidden` outright — until the band answers. A result slot that is
+   hidden until there is a result is precisely where a pane's result styling
+   lives, so the filter was blind exactly where the defect was.
+ *
+ * `form-alert` and `is-ok` land on <div id="approval-result">, written at
+ * ops/assets/pane-evaluations.js:850; `evidence-result` on the quarantine
+ * answer's container, written at :624. ops.css painted all three and
+ * ops/evaluations.html does not load ops.css.
+ *
+ * Anchor for every mutation below: the named block in
+ * ops/assets/pane-evaluations-v2.css, at its own site with its original gating.
+ */
+
+test('the answer slot reserves nothing until the band has answered', async () => {
+  /* The single most important assertion in this file. `display: flex` on
+     `.form-alert` is an author rule and `[hidden]` is a user-agent one, so
+     painting this box at all un-hides the empty slot unless something puts the
+     hiding back at author level. Painting it naively turns an invisible defect
+     into a visible one: an empty bordered box under the approval cards, always.
+
+     Both arms, on one laid-out page: the slot as the pane leaves it between
+     answers, and the same element once it has an answer to show. */
+  await show(EVALS_ANSWER_DARK);
+  const seen = await evaluate(`(() => {
+    const el = document.querySelector('#approval-result');
+    const read = () => {
+      el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      return { display: s.display, height: Math.round(box.height), width: Math.round(box.width) };
+    };
+    const answered = read();
+    el.hidden = true;
+    const between = read();
+    el.hidden = false;
+    return { answered, between, restored: read() };
+  })()`);
+
+  assert.strictEqual(seen.between.display, 'none',
+    'between answers the slot is displayed as `' + seen.between.display + '`, so the ' +
+    'empty box is on screen — painting .form-alert without .form-alert[hidden] ' +
+    'overrides the user-agent [hidden] rule');
+  assert.strictEqual(seen.between.height, 0,
+    `between answers the slot still takes ${seen.between.height}px of height`);
+
+  assert.strictEqual(seen.answered.display, 'flex',
+    'with an answer to show the slot is displayed as `' + seen.answered.display +
+    '`, so the painting is not reaching it');
+  assert.ok(seen.answered.height > 0,
+    'with an answer to show the slot has no height, so the sentence is not in a box');
+  assert.deepStrictEqual(seen.restored, seen.answered,
+    'the reading did not survive its own toggle, so one of the two arms above is ' +
+    'measuring a page in a state this test put it in and did not put back');
+});
+
+for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
+  test(`the answer is drawn as a returned answer and not as page copy, in the ${theme.theme} theme`,
+    async () => {
+      /* Anchor: the `.form-alert` block. Payload: the block deleted, which is
+         what ops/evaluations.html shipped — the sentence laid out as an
+         anonymous block in the stack, wearing the same face as the page's own
+         copy. Eight of the block's nine declarations are asserted on their own
+         below, so that deleting one of them is not absorbed by the others.
+         NOT COVERED, and deliberately: `color: var(--ink)` is unobservable on
+         this pane — deleting it leaves the rendered colour byte-identical,
+         because the inherited colour already resolves to `--ink`. It is
+         declared for property-set parity with `.modal-card .form-alert`, which
+         is what keeps this rule out of the re-authentication modal, and there
+         is no rendered behaviour here to bind. `gap` is in the same position
+         on the page today — one anonymous flex item, nothing to space — but it
+         is asserted anyway, because unlike `color` it resolves to a different
+         computed value with the class off, so the declaration can be bound
+         even where its effect cannot be seen. */
+      await show(theme);
+      const seen = await evaluate(`(() => {
+        const el = document.querySelector('#approval-result');
+        const read = () => {
+          el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return {
+            display: s.display, gap: s.columnGap,
+            padTop: s.paddingTop, padLeft: s.paddingLeft,
+            radius: s.borderTopLeftRadius,
+            size: s.fontSize, leading: s.lineHeight,
+            fill: s.backgroundColor, image: s.backgroundImage, ring: s.boxShadow
+          };
+        };
+        const on = read();
+        el.classList.remove('form-alert');
+        const off = read();
+        el.classList.add('form-alert');
+        return { on, off };
+      })()`);
+
+      /* The off arm is the shipped state, stated once: an unpainted div has no
+         padding, no corner, no ring and no fill of its own. Every `on`
+         assertion below is bound against it rather than against a literal
+         copied out of the sheet. */
+      assert.deepStrictEqual(
+        { pad: seen.off.padTop, radius: seen.off.radius, ring: seen.off.ring, fill: seen.off.fill },
+        { pad: '0px', radius: '0px', ring: 'none', fill: 'rgba(0, 0, 0, 0)' },
+        'with `form-alert` removed the slot should fall back to a bare block, and does ' +
+        'not — so something other than this rule is painting it and the arms below ' +
+        'prove nothing');
+
+      assert.notStrictEqual(seen.on.padTop, seen.off.padTop,
+        'the answer sits flush against the page with no padding of its own');
+      assert.notStrictEqual(seen.on.padLeft, seen.off.padLeft);
+      assert.notStrictEqual(seen.on.radius, seen.off.radius,
+        'the answer has square corners, so it is not drawn as a box');
+      assert.notStrictEqual(seen.on.ring, seen.off.ring,
+        'the answer carries no ring, so nothing separates it from the band behind it');
+      assert.notStrictEqual(seen.on.fill, seen.off.fill,
+        'the answer has no fill of its own, which is what Stadiora/Aria#10674 reported');
+      assert.notStrictEqual(seen.on.size, seen.off.size,
+        'the answer is set at the page copy size, so `font-size` is not reaching it');
+      /* Leading is bound as a ratio, not as a px pair. The arms already differ
+         in `font-size`, so computed `line-height` in px differs between them
+         whether or not this rule sets it — asserting the px values would pass
+         with `line-height: 1.55` deleted, which is a false green of exactly
+         the kind this file exists to catch. The ratio collapses to the
+         inherited one the moment the declaration goes. */
+      const ratio = (a) => Number.parseFloat(a.leading) / Number.parseFloat(a.size);
+      assert.ok(Math.abs(ratio(seen.on) - ratio(seen.off)) > 0.01,
+        'the answer is set at the page copy leading, so `line-height` is not reaching it: ' +
+        `on ${seen.on.leading}/${seen.on.size}, off ${seen.off.leading}/${seen.off.size}`);
+      assert.strictEqual(seen.on.display, 'flex',
+        'the answer is displayed as `' + seen.on.display + '`');
+      assert.notStrictEqual(seen.on.gap, seen.off.gap,
+        'the answer sets no column gap, so `gap` is not reaching it');
+
+      /* `background` is a shorthand over two layers and the backing colour is
+         only one of them, so the claim is made about what is painted: a
+         gradient in the image layer would repaint this box while
+         `backgroundColor` went on reporting the colour underneath it. */
+      assert.strictEqual(seen.on.image, 'none',
+        `the answer carries an image layer, ${seen.on.image}, which no rule here sets`);
+    });
+}
+
+for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
+  test(`the answer's mark is a shape before it is a colour, in the ${theme.theme} theme`, async () => {
+    /* Anchor: the `.form-alert.is-ok` block. Payload: `border-left` deleted
+       from it, leaving the tint and the ring — which is the state this repair
+       is not allowed to ship in, because `is-ok` would then be carried by hue
+       alone. The assertion is on a LENGTH, so no colour can satisfy it.
+
+       And the rail is measured against the fill it sits on for luminance, not
+       for hue: a ratio at or above 3:1 is what a non-text mark needs under
+       WCAG 2.2 AA, and relative luminance is the greyscale channel, so a rail
+       that clears it is a rail a person sees with no colour vision at all. */
+    await show(theme);
+    const seen = await evaluate(`(() => {
+      const el = document.querySelector('#approval-result');
+      const read = () => {
+        el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return { width: s.borderLeftWidth, style: s.borderLeftStyle, colour: s.borderLeftColor };
+      };
+      const on = read();
+      el.classList.remove('is-ok');
+      const off = read();
+      el.classList.add('is-ok');
+      const probe = document.createElement('span');
+      probe.hidden = true;
+      el.appendChild(probe);
+      probe.style.backgroundColor = 'var(--emerald)';
+      const emerald = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return { on, off, emerald, fill: getComputedStyle(el).backgroundColor };
+    })()`);
+
+    assert.strictEqual(seen.off.width, '0px',
+      'the slot carries a left border without `is-ok`, so the rail is not the ' +
+      'modifier\'s and removing the state would leave the mark behind');
+    assert.strictEqual(seen.on.width, '3px',
+      `the completed-read rail measures ${seen.on.width}, not 3px — a mark that is ` +
+      'only a tint is carried by colour alone');
+    assert.strictEqual(seen.on.style, 'solid',
+      `the rail is drawn \`${seen.on.style}\`, which at this width reads as an edge`);
+    assert.strictEqual(seen.on.colour, seen.emerald,
+      `the rail is ${seen.on.colour} where --emerald resolves to ${seen.emerald}`);
+
+    const ratio = contrast(parseColour(seen.on.colour), parseColour(seen.fill));
+    assert.ok(ratio >= 3,
+      `the rail is ${ratio.toFixed(2)}:1 against the fill it sits on (${seen.fill}), ` +
+      'under the 3:1 a non-text mark needs — at that ratio it disappears in greyscale ' +
+      'and the state is carried by hue alone');
+  });
+}
+
+for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
+  test(`the answer's tint is emerald over the pane's own surface, in the ${theme.theme} theme`,
+    async () => {
+      /* The other half of the split, and the half the shape test cannot reach:
+         it binds the two `background` declarations — the base's neutral surface
+         and the modifier's tint over it — against the tokens themselves,
+         resolved by the browser off this document rather than copied out of the
+         sheet. Without this, putting the base back to the amber a warning wears
+         leaves every assertion above green.
+
+         The composited reading rather than `backgroundColor`, for the layer
+         reason above, taken on the element's own text so the stack behind the
+         sentence is what is measured. */
+      await show(theme);
+      const seen = await evaluate(`(() => {
+        const el = document.querySelector('#approval-result');
+        const probe = document.createElement('span');
+        probe.hidden = true;
+        el.appendChild(probe);
+        const token = (name) => {
+          probe.style.backgroundColor = 'var(' + name + ')';
+          return getComputedStyle(probe).backgroundColor;
+        };
+        const surface2 = token('--surface-2');
+        const line2 = token('--line-2');
+        const emerald = token('--emerald');
+        probe.remove();
+        const read = () => {
+          el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return { fill: s.backgroundColor, ring: s.boxShadow };
+        };
+        const on = read();
+        el.classList.remove('is-ok');
+        const off = read();
+        el.classList.add('is-ok');
+        return { on, off, surface2, line2, emerald };
+      })()`);
+
+      assert.match(seen.surface2, /^rgba?\(/, 'the probe should resolve --surface-2 to a colour');
+      assert.notStrictEqual(seen.surface2, seen.emerald, 'the two tokens should not be one colour');
+
+      assert.strictEqual(seen.off.fill, seen.surface2,
+        `without \`is-ok\` the slot should be filled with --surface-2 (${seen.surface2}) ` +
+        `and is filled with ${seen.off.fill} — the base rule's own background`);
+      assert.strictEqual(seen.off.ring, `${seen.line2} 0px 0px 0px 1px inset`,
+        `without \`is-ok\` the slot should be ringed by the --line-2 hairline and is ` +
+        `ringed by ${seen.off.ring}`);
+
+      assert.notStrictEqual(seen.on.fill, seen.off.fill,
+        'the state changes nothing about the fill, so the tint is not reaching it');
+      assert.notStrictEqual(seen.on.ring, seen.off.ring,
+        'the state changes nothing about the ring');
+
+      /* Relational rather than a restatement of the recipe: the tint has to sit
+         BETWEEN the neutral surface and the token it is mixed from, on the
+         channel that token is strongest in. A tint mixed from some other hue,
+         or no tint at all, fails this without the test ever naming a
+         percentage. */
+      const [tint, plain, pure] =
+        [seen.on.fill, seen.off.fill, seen.emerald].map(parseColour);
+      const green = (c) => c[1] - (c[0] + c[2]) / 2;
+      assert.ok(green(tint) > green(plain),
+        `the answer's fill (${show3(tint)}) is no greener than the plain surface ` +
+        `(${show3(plain)}), so whatever is tinting it is not --emerald`);
+      assert.ok(green(tint) < green(pure),
+        `the answer's fill (${show3(tint)}) is at or past pure --emerald ` +
+        `(${show3(pure)}), so it is a fill rather than a tint over the surface`);
+
+      const painted = await backdrop('#approval-result');
+      assert.strictEqual(show3(painted), show3(tint),
+        `the colour actually painted behind the answer is ${show3(painted)} where the ` +
+        `element reports ${show3(tint)} — a layer this test is not reading is painting it`);
+    });
+}
+
+test('the re-authentication modal keeps its own alert, unrepainted by the pane', async () => {
+  /* The leak arm. `.form-alert` is written by four places in this repository
+     and only one of them is this pane: session.js puts one inside the
+     re-authentication modal, which shell-pane-v2.css paints, and login.js and
+     setup.js put one on pages that load ops.css instead. So the rule added here
+     declares nothing that `.modal-card .form-alert` does not also declare, and
+     that sheet is the more specific selector — which means the modal's alert
+     has to come out unchanged. This asserts it does, against the same element
+     placed outside a modal card in the same document. */
+  await show(EVALS_ANSWER_DARK);
+  const seen = await evaluate(`(() => {
+    const read = (el) => {
+      el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      return { padTop: s.paddingTop, padLeft: s.paddingLeft, colour: s.color, fill: s.backgroundColor };
+    };
+    const host = document.querySelector('.band') || document.body;
+
+    const card = document.createElement('div');
+    card.className = 'modal-card';
+    const inModal = document.createElement('div');
+    inModal.className = 'form-alert';
+    inModal.textContent = 'Wrong password.';
+    card.appendChild(inModal);
+    host.appendChild(card);
+
+    const loose = document.createElement('div');
+    loose.className = 'form-alert';
+    loose.textContent = 'Wrong password.';
+    host.appendChild(loose);
+
+    const probe = document.createElement('span');
+    probe.hidden = true;
+    host.appendChild(probe);
+    probe.style.backgroundColor = 'var(--rose-ink)';
+    const roseInk = getComputedStyle(probe).backgroundColor;
+
+    const out = { inModal: read(inModal), loose: read(loose), roseInk };
+    probe.remove();
+    card.remove();
+    loose.remove();
+    return out;
+  })()`);
+
+  assert.strictEqual(seen.inModal.colour, seen.roseInk,
+    `the modal's alert is set in ${seen.inModal.colour} where --rose-ink resolves to ` +
+    `${seen.roseInk} — this pane's rule has taken over an element it does not own`);
+  assert.notStrictEqual(seen.inModal.padTop, seen.loose.padTop,
+    'the modal alert and a loose one are padded identically, so the more specific ' +
+    'rule in shell-pane-v2.css is no longer winning');
+  assert.notStrictEqual(seen.inModal.fill, seen.loose.fill,
+    'the modal alert and a loose one are filled identically');
+  assert.notStrictEqual(seen.loose.colour, seen.roseInk,
+    'a loose alert is drawn in the modal ink, so the two rules are not separable ' +
+    'and this test cannot tell a leak from a coincidence');
+});
+
+for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
+  test(`the quarantine answer takes the same measure as the form above it, in the ${theme.theme} theme`,
+    async () => {
+      /* Anchor: `.evidence-result` in the `max-width: 920px` group. Payload:
+         the selector removed from that group, which is what shipped — the
+         answer running the full width of the band while the form that produced
+         it stops short, two measures in one column.
+
+         Bound against the form's own laid-out width rather than against 920,
+         so the assertion is "the answer is the width of its question" and not a
+         literal copied out of the rule. */
+      await show(theme);
+      const seen = await evaluate(`(() => {
+        const answer = document.querySelector('.evidence-result');
+        const form = document.querySelector('.evidence-form');
+        const read = () => {
+          answer.getBoundingClientRect();
+          return {
+            answer: Math.round(answer.getBoundingClientRect().width),
+            cap: getComputedStyle(answer).maxWidth
+          };
+        };
+        const on = read();
+        answer.classList.remove('evidence-result');
+        const off = read();
+        answer.classList.add('evidence-result');
+        return { on, off, form: Math.round(form.getBoundingClientRect().width),
+          band: Math.round(answer.parentElement.getBoundingClientRect().width) };
+      })()`);
+
+      assert.ok(seen.band > seen.form,
+        `the band is ${seen.band}px and the form ${seen.form}px; with nothing to ` +
+        'measure against, this test cannot tell a capped answer from an uncapped one');
+      assert.strictEqual(seen.off.answer, seen.band,
+        `with the class removed the answer should run the full ${seen.band}px of the ` +
+        `band and runs ${seen.off.answer}px`);
+      assert.strictEqual(seen.on.answer, seen.form,
+        `the quarantine answer is ${seen.on.answer}px wide where the form that produced ` +
+        `it is ${seen.form}px — ops.css capped both and this sheet arrived capping neither`);
+      assert.notStrictEqual(seen.on.cap, seen.off.cap,
+        'the answer resolves the same max-width with and without the class');
+    });
+}
+
+for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
+  test(`the approval answer takes the same measure as the workflow above it, in the ${theme.theme} theme`,
+    async () => {
+      /* Anchor: `#approval-result` in the `max-width: 920px` group. Payload:
+         the selector removed from that group.
+
+         This one is here because painting the box is what made its width
+         visible. Unpainted, a full-band sentence is a paragraph and nobody
+         reads a width off it; filled, ringed and railed, it is a box, and a
+         box that overhangs the cards it answers by 64px at this viewport is a
+         second measure in a single column. The sheet's own rule at :55 is one
+         measure per surface a person reads an answer off.
+
+         Bound against the workflow grid's laid-out width — the thing that
+         produced the answer, capped at :108 by a different rule this PR does
+         not touch — rather than against 920, so the claim is "the answer is
+         the width of its question" and not a literal copied out of the rule.
+
+         The id is toggled rather than a class because the element has no class
+         of its own to toggle: `form-alert is-ok` both name the modal alert
+         too, which is exactly why the cap is on the id. */
+      await show(theme);
+      const seen = await evaluate(`(() => {
+        const answer = document.querySelector('#approval-result');
+        const work = document.querySelector('.approval-workflow-grid');
+        const read = () => {
+          answer.getBoundingClientRect();
+          return {
+            answer: Math.round(answer.getBoundingClientRect().width),
+            cap: getComputedStyle(answer).maxWidth
+          };
+        };
+        const on = read();
+        answer.id = '';
+        const off = read();
+        answer.id = 'approval-result';
+        return { on, off, work: Math.round(work.getBoundingClientRect().width),
+          band: Math.round(answer.parentElement.getBoundingClientRect().width),
+          restored: Math.round(answer.getBoundingClientRect().width) };
+      })()`);
+
+      assert.ok(seen.band > seen.work,
+        `the band is ${seen.band}px and the workflow ${seen.work}px; with nothing to ` +
+        'measure against, this test cannot tell a capped answer from an uncapped one');
+      assert.strictEqual(seen.off.answer, seen.band,
+        `with the id removed the answer should run the full ${seen.band}px of the ` +
+        `band and runs ${seen.off.answer}px`);
+      assert.strictEqual(seen.on.answer, seen.work,
+        `the approval answer is ${seen.on.answer}px wide where the workflow that produced ` +
+        `it is ${seen.work}px, so the newly painted box overhangs the cards it answers`);
+      assert.notStrictEqual(seen.on.cap, seen.off.cap,
+        'the answer resolves the same max-width with and without the id');
+      assert.strictEqual(seen.restored, seen.on.answer,
+        'the test left the answer at a width it was not found at');
+    });
+}
+
+for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
+  test(`capping the approval answer leaves the re-authentication alert uncapped, in the ${theme.theme} theme`,
+    async () => {
+      /* The other half of the measure claim, and the reason it is written on an
+         id. shell-pane-v2.css:265 declares nine properties for the modal's own
+         alert and `max-width` is not among them, so a cap on `.form-alert`
+         would be the one declaration this sheet could leak into a surface it
+         does not own. Built here rather than asserted from the sheet text: a
+         real `.modal-card > .form-alert` is constructed on the live page, the
+         shape session.js:1028 builds, and its resolved cap is read. */
+      await show(theme);
+      const seen = await evaluate(`(() => {
+        const card = document.createElement('form');
+        card.className = 'modal-card';
+        const alert = document.createElement('div');
+        alert.className = 'form-alert mt';
+        alert.textContent = 'Session expired.';
+        card.appendChild(alert);
+        document.body.appendChild(card);
+        const modal = getComputedStyle(alert).maxWidth;
+        const answer = getComputedStyle(document.querySelector('#approval-result')).maxWidth;
+        const bare = document.createElement('div');
+        bare.className = 'form-alert';
+        document.body.appendChild(bare);
+        const plain = getComputedStyle(bare).maxWidth;
+        card.remove(); bare.remove();
+        return { modal, answer, plain };
+      })()`);
+
+      assert.strictEqual(seen.modal, 'none',
+        `the re-authentication alert resolves max-width ${seen.modal}; this sheet has ` +
+        'leaked a measure into a surface shell-pane-v2.css owns');
+      assert.strictEqual(seen.plain, 'none',
+        `a bare .form-alert resolves max-width ${seen.plain}, so the cap is on the class ` +
+        'and not on the one element that needs it');
+      assert.notStrictEqual(seen.answer, 'none',
+        'the approval answer resolves no max-width, so it is uncapped after all');
+    });
+}
