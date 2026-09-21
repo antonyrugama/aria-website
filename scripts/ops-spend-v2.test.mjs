@@ -1188,19 +1188,29 @@ test('the day chart carries an x axis of the dates the route labelled', async ()
   assert.equal(row.getAttribute('aria-hidden'), 'true',
     'and it is hidden from the reader, because the chart\'s own name already carries the dates');
 
-  /* And BELOW the drawing, not above it. Every date stays over its own day
-     either way -- the horizontal story is untouched -- so nothing else in
-     this file notices: `body.insertBefore(axis, plot.node)` at the same site
-     is green everywhere but here. An x axis printed above the chart it labels
-     is a different drawing, and this is the only assertion that says which
-     side of it the dates are on. */
+  /* In the card body, beside the drawing's own box, and AFTER it.
+
+     Every date stays over its own day however this row is re-parented -- the
+     horizontal story is untouched -- so nothing else in this file notices,
+     and neither does Chrome's placement sweep: `body.insertBefore(axis,
+     plot.node)` moves the axis above the chart and `plot.node.appendChild(
+     axis)` drops it INSIDE the drawing's box, overlapping the plot by more
+     than its own width, and both are green everywhere but here.
+
+     The box is named, not followed. Round 9 broke the first version of this,
+     which took `row.parentNode` as the box and therefore travelled with the
+     row: the assertion moved with the mutation, which is the defect it exists
+     to catch wearing the assertion's own clothes. */
   const box = row.parentNode;
-  const order = (node) => box.childNodes.indexOf(node);
+  assert.match(box.getAttribute('class') || '', /\bcard-body\b/,
+    'the strip is printed in the card body, not inside the drawing it labels');
   const drawing = findAll(box, (n) => n.getAttribute && n.getAttribute('role') === 'img')[0];
-  assert.ok(drawing, 'the drawing is in the same box as the dates');
-  const holder = box.childNodes.filter((n) => n === drawing
-    || findAll(n, (x) => x === drawing).length === 1)[0];
-  assert.ok(order(row) > order(holder),
+  assert.ok(drawing, 'the drawing is in that same box');
+  const wrap = drawing.parentNode;
+  assert.equal(wrap.parentNode, box,
+    'the drawing\'s box is a child of the card body, beside the strip, not somewhere else');
+  const order = (node) => box.childNodes.indexOf(node);
+  assert.ok(order(wrap) >= 0 && order(row) > order(wrap),
     'the dates are printed under the drawing they label, not over it');
 });
 
