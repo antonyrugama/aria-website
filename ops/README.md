@@ -388,8 +388,10 @@ review left it saying something untrue. The list below is therefore read out of 
 panes read the endpoints they always read — moving a pane across changes its surface, never its
 reads.
 
-Every pane has now moved, and the v1 layer did **not** all die with the last one. What actually
-died is `operate.css`; what survives, and why, is the two blocks under Layout above. `ops.css`
+Every pane has now moved, and the v1 layer did **not** all die with the last one. Which files
+actually died is the `deleted-assets` block under Layout above rather than a list here — it
+carries `operate.css` and `settings.css` today, and a third deletion joins it without this
+sentence being touched; what survives, and why, is the two blocks beside it. `ops.css`
 and `icons.js` are still loaded by `login.html` and `setup.html`, which are not panes and have no
 v2 remodel; `shell.js`, `operate.js` and `pane-data.js` are loaded by no page and executed by the
 tests, so they are fixtures rather than dead code. A sentence here predicting which files go on
@@ -1920,28 +1922,32 @@ Which of these classes any page can still draw is therefore derived rather than 
 
 ```claims id=v1-status-classes
 .badge = declared in ops.css; drawn by (no page)
-.badge-ok = declared in ops.css; drawn by (no page)
-.badge-warn = declared in ops.css; drawn by (no page)
+.badge-ai = declared in ops.css; drawn by (no page)
+.badge-brand = declared in ops.css; drawn by (no page)
 .badge-crit = declared in ops.css; drawn by (no page)
 .badge-info = declared in ops.css; drawn by (no page)
-.badge-brand = declared in ops.css; drawn by (no page)
-.flagchip = declared in ops.css; drawn by (no page)
-.tag-mobile = declared in ops.css; drawn by (no page)
-.tag-coaches = declared in ops.css; drawn by (no page)
+.badge-ok = declared in ops.css; drawn by (no page)
+.badge-warn = declared in ops.css; drawn by (no page)
+.tag = declared in ops.css; drawn by (no page)
 .tag-backend = declared in ops.css; drawn by (no page)
+.tag-coaches = declared in ops.css; drawn by (no page)
+.tag-mobile = declared in ops.css; drawn by (no page)
+.tag-watch = declared in ops.css; drawn by (no page)
+.callout = declared in ops.css, pane-evaluations-v2.css, pane-releases-v2.css; drawn by evaluations.html, releases.html; painted where drawn
+.callout-ai = declared in ops.css; drawn by (no page)
+.callout-crit = declared in ops.css; drawn by (no page)
+.callout-info = declared in ops.css; drawn by (no page)
+.callout-warn = declared in ops.css; drawn by evaluations.html; no sheet declares it on evaluations.html
+.verdict-better = declared in ops.css; drawn by (no page)
+.verdict-slightly-worse = declared in ops.css; drawn by (no page)
+.verdict-worse = declared in ops.css; drawn by (no page)
+.flagchip = declared in ops.css; drawn by (no page)
 .build = declared in ops.css; drawn by (no page)
 .masked = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
-.verdict-better = declared in ops.css; drawn by (no page)
-.verdict-worse = declared in ops.css; drawn by (no page)
-.verdict-slightly-worse = declared in ops.css; drawn by (no page)
 .reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .nav-count = declared in ops.css; drawn by (no page)
 .btn-danger = declared in ops.css, pane-settings-v2.css; drawn by settings.html; painted where drawn
 .field-error = declared in ops.css, pane-evaluations-v2.css, pane-users-v2.css; drawn by evaluations.html, login.html, setup.html, users.html; painted where drawn
-.callout-warn = declared in ops.css; drawn by evaluations.html; no sheet declares it on evaluations.html
-.callout-crit = declared in ops.css; drawn by (no page)
-.callout-info = declared in ops.css; drawn by (no page)
-.callout-ai = declared in ops.css; drawn by (no page)
 ```
 
 Three lines in that block are worth reading twice:

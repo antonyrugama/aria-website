@@ -32,7 +32,8 @@
    file and which quoted comment to go looking for and `deleted-assets` reads
    which absent path to look for, both out of the README; `v1-status-classes`,
    `spend-colour-gate` and `spend-write-gate` read their subjects from
-   V1_STATUS_CLASSES, COLOUR_PROBES and WRITE_PROBES in this file. All five
+   V1_STATUS_FAMILIES and V1_STATUS_SINGLETONS, COLOUR_PROBES and
+   WRITE_PROBES in this file. All five
    then derive every value — the line
    number, the uniqueness of an anchor, the absence of a file, who loads and
    reads it, what the spend guard's own matchers answer. Editing a value in
@@ -397,18 +398,35 @@ DERIVED['spend-write-gate'] = () => {
 };
 
 /* The v1 status classes the contrast record below is written about: where
-   each one is still declared, and which pages can still draw it. The list is
-   hand-chosen — a sheet does not say which of its classes carry status — so
-   it is pinned row by row in REQUIRED_ROWS and an omission is nobody's red.
-   `ops.css` declares the four callout tones as one block, so all four are
-   here even though the record only stops to explain the warning one. */
-const V1_STATUS_CLASSES = [
-  'badge', 'badge-ok', 'badge-warn', 'badge-crit', 'badge-info', 'badge-brand',
-  'flagchip', 'tag-mobile', 'tag-coaches', 'tag-backend', 'build', 'masked',
-  'verdict-better', 'verdict-worse', 'verdict-slightly-worse', 'reveal-note',
-  'nav-count', 'btn-danger', 'field-error',
-  'callout-warn', 'callout-crit', 'callout-info', 'callout-ai'
+   each one is still declared, and which pages can still draw it.
+   A sheet does not say which of its classes carry status, so the SUBJECTS
+   start here rather than in the code. What does not have to be typed is a
+   FAMILY: four of them are status from end to end, so every class `ops.css`
+   declares under those prefixes is read out of the sheet. A sibling added to
+   any of them — `.badge-ai` and `.tag-watch` were both missing from the
+   hand-typed list this replaced — joins the block on its own. The seven
+   singletons are still hand-chosen, and an omission among THOSE is nobody's
+   red; all four families and all seven singletons are pinned by name in
+   REQUIRED_ROWS, so a family or a singleton can only go by being deleted
+   there too. */
+const V1_STATUS_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
+const V1_STATUS_SINGLETONS = [
+  'flagchip', 'build', 'masked', 'reveal-note', 'nav-count', 'btn-danger', 'field-error'
 ];
+function v1StatusClasses() {
+  const declared = new Set();
+  const sheet = read('ops/assets/ops.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const m of sheet.matchAll(/\.([A-Za-z][A-Za-z0-9_-]*)/g)) {
+    declared.add(m[1]);
+  }
+  const families = V1_STATUS_FAMILIES.flatMap((family) => {
+    const members = [...declared].filter((n) => n === family || n.startsWith(`${family}-`)).sort();
+    assert.ok(members.length > 0,
+      `ops/assets/ops.css declares no .${family} class at all, so that family is judging nothing`);
+    return members;
+  });
+  return [...new Set([...families, ...V1_STATUS_SINGLETONS])];
+}
 
 /* Every class token a file can put on an element: the `class` attributes in a
    page, the `class:` and `className` keys and assignments in a script, the
@@ -448,7 +466,7 @@ const PAGE_TOKENS = new Map(PAGES.map((page) => {
   return [page, tokens];
 }));
 
-DERIVED['v1-status-classes'] = () => V1_STATUS_CLASSES.map((cls) => {
+DERIVED['v1-status-classes'] = () => v1StatusClasses().map((cls) => {
   const selector = new RegExp(`\\.${cls}(?![\\w-])`);
   const declaring = (sheet) => cssRules(read(path.join('ops/assets', sheet)))
     .some((r) => r.selectors.some((s) => selector.test(s)));
@@ -768,7 +786,8 @@ test(SWEEP_TEST, () => {
    Two read their subjects from the README — `source-anchors` (which comment
    to go and find) and `deleted-assets` (which absent path to look for) — and
    two read them from a hand-written array up in this file:
-   `v1-status-classes` from V1_STATUS_CLASSES and `spend-colour-gate` from
+   `v1-status-classes` from V1_STATUS_FAMILIES and V1_STATUS_SINGLETONS,
+   `spend-colour-gate` from
    COLOUR_PROBES. In all four, deleting a subject deletes the expectation with
    it and runs green.
 
@@ -790,16 +809,17 @@ const REQUIRED_ROWS = {
     'ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for"',
   ],
   'deleted-assets': ['ops/assets/operate.css', 'ops/assets/settings.css'],
-  /* Spelled out rather than mapped from V1_STATUS_CLASSES, COLOUR_PROBES and
+  /* Spelled out rather than mapped from V1_STATUS_FAMILIES, COLOUR_PROBES and
      WRITE_PROBES: a pin computed from the array it is pinning moves with the
      deletion and pins nothing. Deleting a subject means deleting it twice, in
      two places in this file, both in the diff. */
+  /* One literal per family, so a family deleted from V1_STATUS_FAMILIES takes
+     a pinned row with it, plus every hand-chosen singleton. The rest of each
+     family is derived out of ops.css and needs no pin. */
   'v1-status-classes': [
-    '.badge', '.badge-ok', '.badge-warn', '.badge-crit', '.badge-info', '.badge-brand',
-    '.flagchip', '.tag-mobile', '.tag-coaches', '.tag-backend', '.build', '.masked',
-    '.verdict-better', '.verdict-worse', '.verdict-slightly-worse', '.reveal-note',
+    '.badge-ok', '.tag-mobile', '.callout-warn', '.verdict-better',
+    '.flagchip', '.build', '.masked', '.reveal-note',
     '.nav-count', '.btn-danger', '.field-error',
-    '.callout-warn', '.callout-crit', '.callout-info', '.callout-ai',
   ],
   'spend-colour-gate': [
     'property --sp-ink', 'property color', 'property background-image',
@@ -833,8 +853,16 @@ test('the run reports what it judged', () => {
     'a block was not judged in this run');
   assert.ok(total > 0, 'nothing was judged');
   for (const [id, required] of Object.entries(REQUIRED_ROWS)) {
-    const rows = (BLOCKS.get(id)?.lines || []).map((l) => l.trim());
-    const gone = required.filter((subject) => !rows.some((row) => row.startsWith(subject)));
+    /* The subject is everything left of the row's last ` = `, matched
+       WHOLE. A prefix match would let `.badge-ok` satisfy the pin on
+       `.badge`, which is a pin on nothing for every subject that is a
+       prefix of a sibling. */
+    const subjects = new Set((BLOCKS.get(id)?.lines || []).map((l) => {
+      const row = l.trim();
+      const cut = row.lastIndexOf(' = ');
+      return (cut === -1 ? row : row.slice(0, cut)).trim();
+    }));
+    const gone = required.filter((subject) => !subjects.has(subject));
     assert.deepStrictEqual(gone, [],
       `claims id=${id} no longer judges rows this file pins by name: ${gone.join(', ')} — ` +
       'a subject was deleted, or REQUIRED_ROWS has to lose it on purpose');
