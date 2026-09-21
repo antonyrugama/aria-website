@@ -33,10 +33,14 @@
      - Layout. Nothing here measures anything, in any browser, at any width.
      - Every reader of the sheet. The line below enumerates the PREFIXED
        docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the regex frames
-       over its prose; what is not enumerated anywhere is the rest, the
-       twenty-odd places this file reads the sheet's RULES through
-       declarations(). Those are read as CSS, not as prose about CSS, so
-       nothing they say can overclaim -- but no test counts them.
+       over its prose; what is not enumerated anywhere is the rest. Most of
+       those read the sheet's RULES through declarations(), as CSS rather
+       than as prose about CSS, so nothing they say can overclaim. Four do
+       not: the docblock heading scan, the pointer check against
+       SHEET_POINTER_SHAPE, the quoted-run scan and the url() test, all of
+       which read the sheet's raw TEXT. The pointer check is the one that
+       reads prose about code, and the eighth review of #75 found the hole
+       it left. No test counts any of them.
      - The sheet's own reading rule, the HOW TO READ THIS COMMENT paragraph
        at the top of it. The devices below IMPLEMENT that rule; nothing
        reads it, so rewording it moves nothing -- measured, mutation M7-A4
@@ -176,12 +180,19 @@ const MACHINE_READ_PREFIXES = [
    Found by my own round-6 battery -- dropping the name from the bullet left
    the suite green, so the pointer was prose like any other. */
 const FRAMES_LIST_NAME = 'PROSE_FRAMES_OVER_THE_SHEET';
-/* The two lists the SHEET points at by name. Same device as
+/* The lists the SHEET points at by name. Same device as
    FRAMES_LIST_NAME one line up, pointed the other way: renaming either
    constant while the sheet went on naming the old one was green, and
    READER_PROBES is the sly one -- it is spelled in a test title too, so the
    citation multiset kept the title alive while the list it named walked away
-   underneath it (found in the seventh review of #75, RV7-1 and RV7-1b). */
+   underneath it (found in the seventh review of #75, RV7-1 and RV7-1b).
+   Membership is derived FROM the sheet below, not asserted against itself:
+   checking only the names on the list let the list be emptied, which turned
+   the whole device off in silence and let the sheet grow a dangling third
+   pointer (found in the eighth review of #75). The shape it reads is an
+   UPPER_SNAKE identifier -- a pointer spelled without an underscore, or in
+   lower case, is not seen by it. */
+const SHEET_POINTER_SHAPE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g;
 const LISTS_THE_SHEET_NAMES = ['UNREADABLE_TOKENS', 'READER_PROBES'];
 const PROSE_FRAMES_OVER_THE_SHEET = [
   'the paint stems the reader has',
@@ -463,8 +474,11 @@ const numerals = (text) => (text.match(/\d/g) || []).length;
    is the same drift one line down, in the paragraph warning about it.
    What the two rounds between them corrected: tabindex is fed through HTML's
    rules for parsing INTEGERS rather than validated, and a parsed value
-   outside the range of a long is an error just as a missing digit is; only
-   the OUTERMOST editing host takes a stop, and it is decided before href; an
+   outside the range of a long is an error just as a missing digit is; of two
+   nested editing HOSTS only the outermost takes a stop, and that is decided
+   before href -- but an <a href> that is merely CONTENT of a host takes no
+   stop either, where a <button> in the same place keeps one, so href is not
+   simply deferred to the host; an
    <input type="hidden"> takes none; a <details> takes its first <summary>
    CHILD rather than its first child, and one with no <summary> at all is the
    agent's business rather than this helper's.
@@ -576,6 +590,22 @@ const editable = (node) => {
   return true;
 };
 
+/* Whether an ancestor makes this node the CONTENT of an editing host.
+   Chrome's rule is narrower than "the outermost host takes the stop": a
+   <button>, <input>, <select>, <textarea>, <iframe> or <audio controls>
+   inside a host keeps its own stop, and a link-shaped element loses one --
+   measured over HTTP with full ring walks in the eighth review of #75.
+   A contenteditable="false" island between the node and the host ends the
+   walk as NOT content: measured, a link inside one takes its stop back. */
+const inEditingHost = (node) => {
+  for (let at = node.parentNode; at && at.nodeType === 1; at = at.parentNode) {
+    const own = ownEditable(at);
+    if (own === true) return true;
+    if (own === false) return false;
+  }
+  return false;
+};
+
 /* An <input type="hidden"> is not rendered at all, so it takes no tab stop
    even carrying tabindex="0". Markup decides this one, not the sheet. */
 const hiddenInput = (node) =>
@@ -644,6 +674,13 @@ function focusable(node) {
     throw new Error('focusable() cannot tell: an <area href> takes a tab stop only where a '
       + 'rendered <img usemap> uses its <map>');
   }
+  /* An <a href> that is CONTENT of an editing host takes no tab stop, while
+     a <button> or an <iframe> in the same place keeps its own. The docblock
+     used to say the outermost host is decided BEFORE href, which was true
+     only of elements not focusable by their tag: this one fell through
+     editable() into the branch below and was answered true, over-reporting
+     reachability (found in the eighth review of #75). */
+  if (node.tagName === 'A' && attr(node, 'href') !== null && inEditingHost(node)) return false;
   if (HREF_TAGS.includes(node.tagName)) return attr(node, 'href') !== null;
   if (node.tagName === 'IFRAME') return true;
   if (MEDIA_TAGS.includes(node.tagName)) return attr(node, 'controls') !== null;
@@ -840,6 +877,18 @@ const FOCUSABLE_PROBES = [
     answer: true, note: 'FOUND IN REVIEW: false. one below a long, same as above' },
   { name: '<div tabindex="-2147483648">', tag: 'div', attrs: { tabindex: '-2147483648' },
     answer: false, why: 'in range, so it is read as a negative index and asks to be out' },
+  { name: '<a href> inside <div contenteditable>', tag: 'a', attrs: { href: '/x' },
+    wrap: 'div', wrapAttrs: { contenteditable: '' }, answer: false,
+    note: 'FOUND IN REVIEW: true. content of an editing host, not the host: no stop' },
+  { name: '<button> inside <div contenteditable>', tag: 'button', wrap: 'div',
+    wrapAttrs: { contenteditable: '' }, answer: true,
+    note: 'FOUND IN REVIEW: true. a form control in a host KEEPS its own stop, which is '
+      + 'why the rule above is about links and not about hosts' },
+  { name: '<a href> under contenteditable="false" inside <div contenteditable>', tag: 'a',
+    attrs: { href: '/x' }, wrap: 'div', wrapAttrs: { contenteditable: 'false' },
+    outerWrap: 'div', outerWrapAttrs: { contenteditable: '' }, answer: true,
+    note: 'FOUND IN REVIEW: true. the island is not editable, so the link takes its stop '
+      + 'back -- measured, and a refusal here would throw away an answer the markup gives' },
   { name: '<div contenteditable> inside <div contenteditable>', tag: 'div',
     attrs: { contenteditable: '' }, wrap: 'div', wrapAttrs: { contenteditable: '' },
     answer: false,
@@ -878,7 +927,18 @@ test('focusable() answers the tab order the document can decide, and refuses the
 
   const got = FOCUSABLE_PROBES.map((probe) => {
     let answer;
-    try { answer = focusable(build(probe)); } catch { answer = 'cannot tell'; }
+    /* A refusal, not any crash: a bare catch let a TypeError anywhere in the
+       helper stand in for "cannot tell", so the eleven refused rows were
+       satisfied by `throw (undefined).boom` at their own sites (found in the
+       eighth review of #75). */
+    try {
+      answer = focusable(build(probe));
+    } catch (err) {
+      assert.match(err.message, /^focusable\(\) cannot tell: /,
+        'focusable() threw something that is not a refusal on ' + probe.name
+        + ': ' + err.message);
+      answer = 'cannot tell';
+    }
     return { name: probe.name, answer };
   });
   assert.deepEqual(got, FOCUSABLE_PROBES.map((p) => ({ name: p.name, answer: p.answer })),
@@ -896,7 +956,8 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 75, takesATabStop: 27, doesNot: 37, refused: 11, wereWrongBefore: 7, foundInReview: 23 });
+    { cases: 78, takesATabStop: 29, doesNot: 38, refused: 11, wereWrongBefore: 7,
+      foundInReview: 26 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -2441,6 +2502,11 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
   assert.ok(notCovered[0].includes(FRAMES_LIST_NAME),
     'the NOT COVERED block stopped naming ' + FRAMES_LIST_NAME + ', so the unprefixed '
     + 'readers are enumerated in code and unmentioned in the prose that claims to name them');
+  assert.deepEqual(
+    [...new Set([...PANE_CSS.matchAll(SHEET_POINTER_SHAPE)].map((m) => m[0]))].sort(),
+    [...LISTS_THE_SHEET_NAMES].sort(),
+    'the sheet points at a list this file does not track, or stopped pointing at one it '
+    + 'does: the list below is asserted against the sheet, not against itself');
   for (const name of LISTS_THE_SHEET_NAMES) {
     assert.ok(THIS_FILE.includes('const ' + name + ' = ['),
       'the sheet names ' + name + ' but this file declares no such list, so the pointer '
@@ -2501,10 +2567,12 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
     + 'check below compares against an empty set and can never fire');
   /* Asked per known title rather than by scanning this file for quoted runs.
      A scan pairs quote characters in order, so ONE unbalanced " anywhere
-     above shifts every pair after it -- this file holds 275 of them, an odd
-     number, and the shift is why my round-6 battery could paste a foreign
-     title into a comment and watch the suite stay green. Membership cannot
-     drift: each candidate is a string we already have. */
+     above shifts every pair after it, and this file is full of them. That
+     shift is why my round-6 battery could paste a foreign title into a
+     comment and watch the suite stay green. No count of them is typed here:
+     one was, and it went stale twice inside this pull request's own review
+     loop before the eighth review caught it. Membership cannot drift: each
+     candidate is a string we already have. */
   const normalised = THIS_FILE.replace(/\s+/g, ' ');
   const quotedForeign = [...foreign]
     .filter((title) => !TEST_TITLES.has(title) && normalised.includes('"' + title + '"'));
