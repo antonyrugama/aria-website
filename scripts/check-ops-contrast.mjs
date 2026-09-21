@@ -2138,10 +2138,12 @@ async function measureFocusIndicators(where) {
  *
  * Also NOT COVERED, and both are constants pinned in one direction only.
  * FOCUS_MIN_ADJACENT: raising it fails the run, lowering it to 1 does not,
- * because nothing here produces a sample between 1 and 8 — the thinnest real
- * one is printed every run and is two orders of magnitude clear. The unbound
- * direction is the unsafe one, where a starved sample would be judged rather
- * than refused; it is latent, not live. FOCUS_ADJACENT_RADIUS: the self-test
+ * because nothing here produces a sample between 1 and 8. How far the
+ * thinnest real sample sits above the floor is printed every run and is not
+ * written here — it is the same quantity, in the same shape, that
+ * Stadiora/Aria#10365 is about. The unbound direction is the unsafe one,
+ * where a starved sample would be judged rather than refused; it is latent,
+ * not live. FOCUS_ADJACENT_RADIUS: the self-test
  * cannot tell 1 from 4, because every fixture ring sits in a large uniform
  * surround, so widening it returns the same ratios off bigger samples. The
  * full shell run does catch it. Both would close with one more fixture — a
@@ -2607,10 +2609,12 @@ async function selfTest() {
     refuses('hdash', 'outline-style is dashed', 'draws a dashed outline, whose gaps are not ring');
     /* An element that arrives somewhere new when it is focused repaints its
        own surroundings, so the unchanged pixels adjacency is taken over are
-       whatever its shadow missed — 18 of them on macOS and 0 on Linux for
-       ops/assets/aria.css's .skip. This says so on both platforms instead,
-       and .hmove is that element: parked 40px up, sliding into place on
-       focus, under a shadow wide enough to cover what it lands on. */
+       whatever its shadow missed — which varies by platform and by theme, and
+       for ops/assets/aria.css's .skip ranges from none at all to a remnant
+       fat enough to judge on. That is why the move is refused everywhere,
+       before any pixel is counted, and .hmove is that element: parked 40px
+       up, sliding into place on focus, under a shadow wide enough to cover
+       what it lands on. */
     refuses('hmove', 'focusing it moved its box',
       'slides 40px into place when focused, repainting what its ring lands on');
 
