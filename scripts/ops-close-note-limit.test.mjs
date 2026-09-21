@@ -198,6 +198,7 @@ test('the message is announced rather than only drawn', async () => {
   const { note, hint, describedBy } = await openCloseForm(dom);
   assert.equal(hint.getAttribute('role'), 'status',
     'the limit message is not in a live region, so it reaches nobody who cannot see it');
-  assert.equal(note.getAttribute('aria-describedby'), describedBy,
-    'the note field does not point at the message about it');
+  assert.equal(hint.getAttribute('id'), describedBy,
+    'the note field points at an id that is not the message element, so the reference '
+    + 'dangles and nothing is announced with the field');
 });

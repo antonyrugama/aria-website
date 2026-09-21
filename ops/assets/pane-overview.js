@@ -260,7 +260,7 @@
         'Nothing here is a zero. This part is unread, not empty.'
       ], 3);
       var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
-      describeRetry(block, again);
+      nameRetry(block, again);
       again.addEventListener('click', function () { load(); });
       block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
       box.appendChild(block);
@@ -268,18 +268,33 @@
     }
 
     /* Two reads can fail at once, and then two buttons reading "Try again" are
-       on the page with nothing between them. Pointing each at its own headline
-       is what tells them apart in a screen reader's control list, and it keeps
-       the visible word — an aria-label would rename the button out from under
-       anyone driving it by voice. */
+       on the page with nothing between them.
+
+       aria-describedby was the first attempt and it was the wrong tool: it
+       supplies a DESCRIPTION, announced on focus, and every list that
+       enumerates controls — NVDA's Elements List, the VoiceOver rotor — reads
+       NAMES. Both entries stayed "Try again" there. Composing the name out of
+       the button and its own headline is what those lists read, and it keeps
+       the visible word as the first token, so voice control still works on
+       what the operator can see. aria-label would have replaced that word. */
     var retryN = 0;
-    function describeRetry(block, again) {
+    function nameRetry(block, again) {
       var kids = block.childNodes || [];
       for (var i = 0; i < kids.length; i++) {
         if (/^h[1-6]$/i.test(String(kids[i].tagName || ''))) {
           retryN += 1;
-          kids[i].id = kids[i].id || 'ov-failed-' + retryN;
-          again.setAttribute('aria-describedby', kids[i].id);
+          /* setAttribute, not .id — the DOM harness these are tested through
+             has no id accessor, so a property write leaves getAttribute('id')
+             null and every reference dangles inside the tests while working in
+             a browser. That is a false green by construction. */
+          var headingId = kids[i].getAttribute('id');
+          if (!headingId) {
+            headingId = 'ov-failed-' + retryN;
+            kids[i].setAttribute('id', headingId);
+          }
+          var buttonId = 'ov-retry-' + retryN;
+          again.setAttribute('id', buttonId);
+          again.setAttribute('aria-labelledby', buttonId + ' ' + headingId);
           return;
         }
       }
@@ -359,7 +374,11 @@
       if (openFailed) {
         tone = 'st-warn';
         title = 'Whether anything is wrong is unknown';
-        sub = 'The problems could not be read.';
+        /* No sub. "The problems could not be read" is the heading of the card
+           directly beneath this ribbon, and saying it twice in two inches is
+           the density the whole remodel is trying to remove. The title above
+           already states what is unknown. */
+        sub = '';
       } else if (rulesFailed && !active.length) {
         tone = 'st-warn';
         title = 'Nothing is open, and whether anything is watching is unknown';
@@ -1473,7 +1492,7 @@
         ];
         var block = S.stateBlock('warn', 'These figures could not be read', lines, 3);
         var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
-        describeRetry(block, again);
+        nameRetry(block, again);
         again.addEventListener('click', function () { load(); });
         block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
         box.appendChild(block);

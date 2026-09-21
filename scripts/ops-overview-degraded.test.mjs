@@ -344,10 +344,66 @@ test('each failed section offers its own retry rather than one for the pane', as
     (n) => n.tagName === 'BUTTON' && /Try again/.test(allText(n)));
   assert.equal(two.length, 2,
     'two sections failed and the pane did not offer a retry for each');
-  const described = two.map((b) => b.getAttribute('aria-describedby'));
-  assert.ok(described.every(Boolean) && described[0] !== described[1],
-    'two buttons both named "Try again" are on screen with nothing telling them apart: '
-    + `described by ${JSON.stringify(described)}`);
+
+  /* The accessible NAME each button ends up with, resolved the way an
+     assistive technology resolves it: follow every idref to the element it
+     names and read that element's text. An earlier version of this compared
+     the two attribute STRINGS, which is green for two references that both
+     dangle — and they did dangle, because the pane set the heading id by
+     property and this harness has no id accessor. Comparing strings asserts
+     that two pieces of markup differ, not that two controls are told apart. */
+  const names = two.map((button) => {
+    const refs = String(button.getAttribute('aria-labelledby') || '').split(/\s+/)
+      .filter(Boolean);
+    assert.ok(refs.length >= 2,
+      'the retry composes its name from fewer than two elements, so it cannot be naming '
+      + 'both itself and the section it belongs to');
+    return refs.map((id) => {
+      const target = findAll(both.doc.body, (n) => n.getAttribute && n.getAttribute('id') === id);
+      assert.equal(target.length, 1,
+        `aria-labelledby points at "${id}", which matches ${target.length} elements on the `
+        + 'page — a name built out of a reference that resolves to nothing is no name at all');
+      return allText(target[0]).trim();
+    }).join(' ');
+  });
+
+  assert.ok(names.every((n) => /^Try again\b/.test(n)),
+    'the visible word is no longer the first token of the accessible name, so anyone driving '
+    + `this by voice cannot say what they can see: ${JSON.stringify(names)}`);
+  assert.ok(names.every((n) => n.replace(/^Try again\s*/, '').length > 0),
+    `a retry's name is the bare word with nothing identifying its section: ${
+      JSON.stringify(names)}`);
+  assert.notEqual(names[0], names[1],
+    `two buttons resolve to the same accessible name: ${JSON.stringify(names)}`);
+});
+
+test('the failed section says what went wrong and that the gap is not a zero', async () => {
+  /* The ribbon shed "Nothing here is a zero: they are unread, not absent" on the
+     grounds that the card beneath carries it. Nothing bound that the card does,
+     so the sentence could have left the pane entirely and the suite would have
+     agreed. This is the assumption that word-reduction rests on.
+
+     The error string is asserted as the one the READ rejected with, not as a
+     phrase: an error message the pane invents is the same defect as no error
+     message, and a /could not/ predicate cannot tell them apart. */
+  const down = await boot({ problems: boom('the problems query timed out') });
+  const section = nodesWithClass(livePanel(down), 'state-block')
+    .find((b) => /The problems could not be read/.test(allText(b)));
+  assert.ok(section, 'no failed-section card to read');
+
+  const text = allText(section);
+  assert.match(text, /the problems query timed out/,
+    'the section reports that something failed without reporting what, so an operator has '
+    + 'nothing to act on and no way to tell a timeout from a permission error');
+  assert.match(text, /not a zero|unread, not empty/,
+    'the section does not say the gap is unread rather than empty — the one thing this pane '
+    + 'exists to keep straight, and the reason the ribbon was allowed to shed the sentence');
+
+  /* Two-sided: the healthy render says neither of these, so a finder matching
+     everything would not look like a pass. */
+  const healthy = allText(livePanel(await boot()));
+  assert.doesNotMatch(healthy, /the problems query timed out/,
+    'the healthy render already carries the error text, so its presence proves nothing');
 });
 
 /* ------------------------------------------- what the pane may not claim */
@@ -445,9 +501,21 @@ test('the figures failure claims the problems are unaffected only when they are'
 
    This is the positive half, and it is deliberately not an equality check
    against the prose: pinning the sentence would make every future wording
-   change a test edit, and the defect is emptiness, not wording. It sweeps
-   rather than naming sites so a fifth reading added later is covered without
-   anybody remembering to come back.
+   change a test edit, and the defect is emptiness, not wording.
+
+   WHAT IT COVERS, exactly, because a sweep invites a wider reading than it
+   earns: every heading and every hero-chip reachable from the fixture
+   combinations in `cases`. A reading added later is covered automatically
+   ONLY if it is a heading or a chip AND some case renders it. Two of the four
+   readings this file was written for were NOT reachable when the sweep was
+   first written — both need an empty queue — and it reported clean; the
+   battery caught it, reading the code did not.
+
+   NOT COVERED by it: the ribbon SUBS. An emptied sub renders no element at
+   all (`if (sub)` in ribbon()), so there is no empty <p> and nothing unnamed,
+   which is why they are outside a sweep whose subject is labels with no
+   words in them. They are prose, and prose is bound where it is load-bearing:
+   `the failed section says what went wrong...` above.
 
    chipTexts() cannot see this: it ends in .filter(Boolean), so an empty chip
    leaves the array it returns and the absence looks like success. */
