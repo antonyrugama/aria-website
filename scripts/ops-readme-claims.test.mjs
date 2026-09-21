@@ -1380,6 +1380,7 @@ DERIVED['dark-text-3'] = () => {
    the README, because the README's enumeration of them fell three behind. */
 const SWEEP_TEST = 'every repository file ops/README.md names is in the tree or declared deleted';
 const JUDGED_TEST = 'the run reports what it judged';
+const TABLE_TEST = 'every browser guard in the tree has a row in the checks table';
 const BLOCK_SET_TEST = 'every claims block is derived here, and every derivation has a block';
 
 DERIVED['claims-blocks'] = () => {
@@ -1393,13 +1394,13 @@ DERIVED['claims-blocks'] = () => {
      sit at column 0; a re-indent of either is a false red, which is the
      trade this narrowing accepts. */
   const self = read(path.join('scripts', SELF));
-  const tests = [
-    ...(self.includes('\ntest(SWEEP_TEST,') ? [SWEEP_TEST] : []),
-    ...(self.includes('\ntest(TABLE_TEST,') ? [TABLE_TEST] : []),
+  const checks = [
+    ...(self.includes('\ncheck(SWEEP_TEST,') ? [SWEEP_TEST] : []),
+    ...(self.includes('\ncheck(TABLE_TEST,') ? [TABLE_TEST] : []),
   ];
   return [
     ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
-    ...tests.map((name) => `and a test, ${name}`),
+    ...checks.map((name) => `and a check, ${name}`),
   ];
 };
 
@@ -1517,167 +1518,61 @@ DERIVED['deleted-assets'] = () => {
     });
 };
 
-/* Which tests actually RAN, as opposed to which registrations are still in
-   the text. Round 7 showed the difference matters and that this file had been
-   confusing the two: `claims-blocks` decides whether to carry a test's row by
-   looking for `\ntest(NAME,` in this source, and `test(NAME, { skip: true },
-   () => {...})` leaves that spelling untouched while the body never executes.
-   The README row still printed. The ratchet was silent. A `{ skip: true }`
-   added on its own, with the README byte-identical, was green.
+/* Not `test()`. That is the finding, and it took eight rounds to reach.
 
-   Two tests had a second net and one did not: the block tests and the two row-
-   set tests record into JUDGED and `the run reports what it judged` misses
-   them if they vanish, but that test could itself be DELETED outright with
-   nothing moving, which took every pin and every family check with it. Round
-   7 demonstrated exactly that.
+   A registration is not an execution and the two look identical in the source.
+   `test(NAME, { skip: true }, ...)` never runs the body; `test(NAME, { todo:
+   true }, ...)` DOES run it and then throws away what it found, reports the
+   file as passing, and exits 0 - and node's suppression of a user exit code is
+   narrower than that and worse: a PASSING todo leaves process.exitCode alone,
+   a FAILING one swallows it. The defect you want to hide is what makes the
+   body fail, so it supplies its own suppressor. Round 7 caught the skip half.
+   The battery caught todo inside the fix for it. Round 8 then showed that the
+   fix had only moved the floors and the pins out of reach, and that two words
+   still unbound every one of the twenty-four block comparisons.
 
-   So execution is recorded here instead of inferred from text. Every test
-   below CLOSES by adding its own name, the expected set is built from the same
-   derivations the tests are built from, and an exit handler - NOT a test,
-   because a test cannot police its own non-execution - fails the run for
-   anything that did not report in.
+   So there are no tests here. Every check is an ordinary module-scope call. A
+   file that registers none is still run by `node --test`, still counted, and
+   an uncaught throw at module scope still exits 1 - all three measured. There
+   is nothing to attach a flag to, because there is no registration.
 
-   The recorder is the LAST line of each body rather than the first, and that
-   placement is the whole mechanism rather than a detail. Recorded on entry,
-   `test(NAME, { todo: true }, ...)` defeats it: node RUNS a todo body, so the
-   name is recorded, and then tolerates every assertion that fails inside it.
-   That was green here and was found by the battery, not by a reviewer, in the
-   fix for the round that asked for it. Recorded on exit, a body that throws
-   never reaches the line, so skipped, deleted, renamed, todo-ed and simply
-   broken all land in the same place.
+   check() keeps what test() was actually giving us, which was never the
+   silencing: every check runs even after one fails, so a red run names ALL the
+   disagreeing blocks rather than the first. It also records its own name, and
+   the completeness check below - itself a module-scope call, not an exit
+   handler, because an exit handler cannot fail a node:test run and that was
+   measured too - is red if an expected name neither passed nor failed.
 
-   The residual, stated rather than implied: this handler can be deleted, and
-   then nothing checks. No guard closes that, and the NOT COVERED list says so
-   in those words. What it buys is that every OTHER defence in this file now
-   has to be removed in the open. */
+   The residual, stated rather than implied: check() and report() are the last
+   assertions in this file and nothing outranks them. Deleting a check() CALL
+   is caught by completeness; deleting the report() at the foot is not. That is
+   the same boundary the floors have and it is in NOT COVERED in those words. */
 const COMPLETED = new Set();
-const completed = (name) => { COMPLETED.add(name); };
+const FAILURES = [];
+const check = (name, body) => {
+  try { body(); COMPLETED.add(name); }
+  catch (error) { FAILURES.push([name, error]); }
+};
 
-process.on('exit', () => {
-  const expected = [
-    ...Object.keys(DERIVED).map((id) => `ops/README.md claims id=${id} still describe the code`),
-    BLOCK_SET_TEST, TABLE_TEST, SWEEP_TEST, JUDGED_TEST,
-  ];
-  const silent = expected.filter((name) => !COMPLETED.has(name));
-  if (silent.length === 0) return;
-  process.exitCode = 1;
-  console.error(`\n${silent.length} test(s) in ${SELF} did not run, so what they check `
-    + `was not checked:\n  ${silent.join('\n  ')}\n`
-    + 'A test that is skipped, deleted or renamed is indistinguishable from a passing one '
-    + 'in the summary line, which is why this is counted rather than read out of the source.\n');
-});
-
-/* ------------------------------------------------------------------ tests */
-
-test(BLOCK_SET_TEST, () => {
-  assert.deepStrictEqual([...BLOCKS.keys()].sort(), Object.keys(DERIVED).sort(),
-    'a claims block was added, renamed or dropped without a derivation to hold it');
-  completed(BLOCK_SET_TEST);
-});
-
-const JUDGED = {};
-
-for (const id of Object.keys(DERIVED)) {
-  test(`ops/README.md claims id=${id} still describe the code`, () => {
-    JUDGED[id] = judge(id, DERIVED[id]());
-    completed(`ops/README.md claims id=${id} still describe the code`);
+const report = (expected) => {
+  const ran = new Set([...COMPLETED, ...FAILURES.map(([name]) => name)]);
+  const silent = expected.filter((name) => !ran.has(name));
+  if (silent.length) {
+    FAILURES.push([`${silent.length} check(s) in ${SELF} never ran`, new Error(
+      `${silent.join('\n  ')}\nA check that is deleted or renamed is `
+      + 'indistinguishable from a passing one in a summary line, which is why this is '
+      + 'counted rather than read out of the source.')]);
+  }
+  if (!FAILURES.length) return;
+  for (const [name, error] of FAILURES) console.error(`\nFAILED  ${name}\n${error.message}`);
+  throw new assert.AssertionError({
+    message: `${FAILURES.length} check(s) failed in ${SELF}:\n  `
+      + FAILURES.map(([name]) => name).join('\n  '),
+    actual: FAILURES.length, expected: 0, operator: 'checks failed',
   });
-}
+};
 
-/* The checks table carries a row per check, in prose nothing can derive. What
-   IS derivable is the ROW SET: every browser guard in the tree has to have a
-   row there. A guard that lands next week is red here, the way the sixth one
-   (check-ops-dialog-hit.mjs, aria-website#95) was red in browser-guards while
-   the table beside it silently described five of six. The row's TEXT is not
-   judged — see NOT COVERED at the top of this file. */
-const TABLE_TEST = 'every browser guard in the tree has a row in the checks table';
-test(TABLE_TEST, () => {
-  const head = README.indexOf('| Check | What it can see that nothing else can |');
-  assert.ok(head > -1, 'ops/README.md: the checks table header is gone or reworded, so no row set can be read');
-  const body = README.slice(head).split(/\n(?!\|)/)[0];
-  const rows = body.split('\n').filter((l) => l.startsWith('|'));
-  assert.ok(rows.length > 2, 'ops/README.md: the checks table has no rows');
-  const guards = SCRIPTS.filter((f) => /^check-ops-.*\.mjs$/.test(f));
-  assert.ok(guards.length > 0, 'scripts/ holds no check-ops-*.mjs at all, so this test is judging nothing');
-  /* The guard has to be the SUBJECT of a row, which is its first cell, and of
-     exactly one. Asking whether the name appears anywhere in any row let a
-     row be deleted and its filename appended to the prose of another, which
-     leaves the table with no row for that guard and this test green. */
-  const subjects = rows.slice(2).map((row) => row.split('|')[1] || '');
-  const wrong = guards
-    .map((g) => [g, subjects.filter((cell) => cell.includes(g)).length])
-    .filter(([, n]) => n !== 1)
-    .map(([g, n]) => `${g} is the subject of ${n} rows`);
-  assert.deepStrictEqual(wrong, [],
-    'ops/README.md: every browser guard in this repository needs exactly one row of its own in ' +
-    'the checks table, named in that row\'s first cell');
-  JUDGED['checks table'] = rows.length - 2;
-  completed(TABLE_TEST);
-});
 
-/* The README names files. Every one of them is either in the tree or declared
-   dead in the deleted-assets block — which is what makes a deletion elsewhere
-   in the repository red here rather than silently stale. */
-test(SWEEP_TEST, () => {
-  const inTree = new Set([
-    ...PAGES.map((p) => `ops/${p}`),
-    ...list('ops/assets').map((a) => `ops/assets/${a}`),
-    ...list('scripts').map((s) => `scripts/${s}`),
-    ...WORKFLOWS.map((w) => `.github/workflows/${w}`)
-  ]);
-  const byBasename = new Map();
-  for (const file of inTree) byBasename.set(path.basename(file), file);
-
-  const deleted = new Set((BLOCKS.get('deleted-assets')?.lines || [])
-    .map((l) => l.trim().split('=')[0].trim()));
-  const deletedByBasename = new Map();
-  for (const file of deleted) deletedByBasename.set(path.basename(file), file);
-
-  const EXTENSIONS = new Set([...inTree, ...deleted]
-    .map((f) => path.extname(f).toLowerCase()).filter(Boolean));
-
-  /* Paths in the Aria monorepo rather than here. They are named with their
-     monorepo directory, which is what this recognises them by. */
-  const FOREIGN = /^(docs|app-backend|aria-api|mobile-app|coaches-web|packages)\//;
-
-  const lines = README.split('\n');
-  const missing = [];
-  let judged = 0;
-  lines.forEach((line, i) => {
-    for (const span of line.matchAll(/`([^`]+)`/g)) {
-      const candidate = /^([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)(?::\d+(?:[-,]\d+)*)?$/.exec(span[1]);
-      if (!candidate) continue;
-      const file = candidate[1];
-      if (FOREIGN.test(file)) continue;
-      /* A span carrying a DIRECTORY is a path whatever its extension, which
-         is how an invented `ops/assets/x.json` is caught rather than read as
-         prose. A bare basename is a path only if the tree or the
-         deleted-assets block uses that extension, because `payload.data` and
-         `availability.state` are spelled exactly like one otherwise. The
-         extension list is read off the files, never typed. */
-      if (!file.includes('/') && !EXTENSIONS.has(path.extname(file).toLowerCase())) continue;
-      judged += 1;
-      /* The spellings this README uses are resolved to repository paths before
-         they are looked up, rather than matched on their last segment: a span
-         carrying a directory is held to that directory, or `ops/assets/x.css`
-         and `made/up/x.css` both read as right because the leaf matches. A
-         bare `x.css` with no directory is the one spelling resolved by leaf,
-         which is how most of this file names an asset. A path declared DEAD is
-         resolved the same way, so `scripts/operate.css` is wrong even though
-         `operate.css` is a file this repository deleted. */
-      const resolve = (byLeaf) => (file.includes('/')
-        ? [file, `ops/${file.replace(/^\/?ops\//, '')}`]
-        : [file, byLeaf.get(file)].filter(Boolean));
-      if (resolve(deletedByBasename).some((c) => deleted.has(c))) continue;
-      if (resolve(byBasename).some((c) => inTree.has(c))) continue;
-      missing.push(`${README_PATH}:${i + 1}: names ${file}, which is neither in the tree nor in the deleted-assets block`);
-    }
-  });
-  assert.ok(judged > 0, 'no file path was judged, so this test proved nothing');
-  assert.deepStrictEqual(missing, [], `\n${missing.join('\n')}\n`);
-  JUDGED['file-paths'] = judged;
-  completed(SWEEP_TEST);
-});
 
 /* Some blocks cannot derive WHICH rows they carry, only what each row says.
    Two read their subjects from the README — `source-anchors` (which comment
@@ -1854,11 +1749,118 @@ const REQUIRED_ROWS = {
   ],
 };
 
+/* ----------------------------------------------------------------- checks */
+
+check(BLOCK_SET_TEST, () => {
+  assert.deepStrictEqual([...BLOCKS.keys()].sort(), Object.keys(DERIVED).sort(),
+    'a claims block was added, renamed or dropped without a derivation to hold it');
+});
+
+const JUDGED = {};
+
+for (const id of Object.keys(DERIVED)) {
+  check(`ops/README.md claims id=${id} still describe the code`, () => {
+    JUDGED[id] = judge(id, DERIVED[id]());
+  });
+}
+
+/* The checks table carries a row per check, in prose nothing can derive. What
+   IS derivable is the ROW SET: every browser guard in the tree has to have a
+   row there. A guard that lands next week is red here, the way the sixth one
+   (check-ops-dialog-hit.mjs, aria-website#95) was red in browser-guards while
+   the table beside it silently described five of six. The row's TEXT is not
+   judged — see NOT COVERED at the top of this file. */
+check(TABLE_TEST, () => {
+  const head = README.indexOf('| Check | What it can see that nothing else can |');
+  assert.ok(head > -1, 'ops/README.md: the checks table header is gone or reworded, so no row set can be read');
+  const body = README.slice(head).split(/\n(?!\|)/)[0];
+  const rows = body.split('\n').filter((l) => l.startsWith('|'));
+  assert.ok(rows.length > 2, 'ops/README.md: the checks table has no rows');
+  const guards = SCRIPTS.filter((f) => /^check-ops-.*\.mjs$/.test(f));
+  assert.ok(guards.length > 0, 'scripts/ holds no check-ops-*.mjs at all, so this test is judging nothing');
+  /* The guard has to be the SUBJECT of a row, which is its first cell, and of
+     exactly one. Asking whether the name appears anywhere in any row let a
+     row be deleted and its filename appended to the prose of another, which
+     leaves the table with no row for that guard and this test green. */
+  const subjects = rows.slice(2).map((row) => row.split('|')[1] || '');
+  const wrong = guards
+    .map((g) => [g, subjects.filter((cell) => cell.includes(g)).length])
+    .filter(([, n]) => n !== 1)
+    .map(([g, n]) => `${g} is the subject of ${n} rows`);
+  assert.deepStrictEqual(wrong, [],
+    'ops/README.md: every browser guard in this repository needs exactly one row of its own in ' +
+    'the checks table, named in that row\'s first cell');
+  JUDGED['checks table'] = rows.length - 2;
+});
+
+/* The README names files. Every one of them is either in the tree or declared
+   dead in the deleted-assets block — which is what makes a deletion elsewhere
+   in the repository red here rather than silently stale. */
+check(SWEEP_TEST, () => {
+  const inTree = new Set([
+    ...PAGES.map((p) => `ops/${p}`),
+    ...list('ops/assets').map((a) => `ops/assets/${a}`),
+    ...list('scripts').map((s) => `scripts/${s}`),
+    ...WORKFLOWS.map((w) => `.github/workflows/${w}`)
+  ]);
+  const byBasename = new Map();
+  for (const file of inTree) byBasename.set(path.basename(file), file);
+
+  const deleted = new Set((BLOCKS.get('deleted-assets')?.lines || [])
+    .map((l) => l.trim().split('=')[0].trim()));
+  const deletedByBasename = new Map();
+  for (const file of deleted) deletedByBasename.set(path.basename(file), file);
+
+  const EXTENSIONS = new Set([...inTree, ...deleted]
+    .map((f) => path.extname(f).toLowerCase()).filter(Boolean));
+
+  /* Paths in the Aria monorepo rather than here. They are named with their
+     monorepo directory, which is what this recognises them by. */
+  const FOREIGN = /^(docs|app-backend|aria-api|mobile-app|coaches-web|packages)\//;
+
+  const lines = README.split('\n');
+  const missing = [];
+  let judged = 0;
+  lines.forEach((line, i) => {
+    for (const span of line.matchAll(/`([^`]+)`/g)) {
+      const candidate = /^([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)(?::\d+(?:[-,]\d+)*)?$/.exec(span[1]);
+      if (!candidate) continue;
+      const file = candidate[1];
+      if (FOREIGN.test(file)) continue;
+      /* A span carrying a DIRECTORY is a path whatever its extension, which
+         is how an invented `ops/assets/x.json` is caught rather than read as
+         prose. A bare basename is a path only if the tree or the
+         deleted-assets block uses that extension, because `payload.data` and
+         `availability.state` are spelled exactly like one otherwise. The
+         extension list is read off the files, never typed. */
+      if (!file.includes('/') && !EXTENSIONS.has(path.extname(file).toLowerCase())) continue;
+      judged += 1;
+      /* The spellings this README uses are resolved to repository paths before
+         they are looked up, rather than matched on their last segment: a span
+         carrying a directory is held to that directory, or `ops/assets/x.css`
+         and `made/up/x.css` both read as right because the leaf matches. A
+         bare `x.css` with no directory is the one spelling resolved by leaf,
+         which is how most of this file names an asset. A path declared DEAD is
+         resolved the same way, so `scripts/operate.css` is wrong even though
+         `operate.css` is a file this repository deleted. */
+      const resolve = (byLeaf) => (file.includes('/')
+        ? [file, `ops/${file.replace(/^\/?ops\//, '')}`]
+        : [file, byLeaf.get(file)].filter(Boolean));
+      if (resolve(deletedByBasename).some((c) => deleted.has(c))) continue;
+      if (resolve(byBasename).some((c) => inTree.has(c))) continue;
+      missing.push(`${README_PATH}:${i + 1}: names ${file}, which is neither in the tree nor in the deleted-assets block`);
+    }
+  });
+  assert.ok(judged > 0, 'no file path was judged, so this test proved nothing');
+  assert.deepStrictEqual(missing, [], `\n${missing.join('\n')}\n`);
+  JUDGED['file-paths'] = judged;
+});
+
 /* A claims guard that judged nothing is the worst outcome this file has, and
    a green run says nothing about how much was compared. So the count goes in
    the log, per block, and the run is red if any of it is empty or if a
    README-subject block lost a row. */
-test(JUDGED_TEST, () => {
+check(JUDGED_TEST, () => {
   const rows = Object.keys(JUDGED).sort().map((id) => `  ${id}: ${JUDGED[id]}`);
   const total = Object.values(JUDGED).reduce((a, b) => a + b, 0);
   console.log(`ops/README.md claims judged against the code:\n${rows.join('\n')}\n  TOTAL: ${total}`);
@@ -1868,13 +1870,12 @@ test(JUDGED_TEST, () => {
     [...Object.keys(DERIVED), 'file-paths', 'checks table'].sort(),
     'a block was not judged in this run');
   assert.ok(total > 0, 'nothing was judged');
-  completed(JUDGED_TEST);
 });
 
-/* Module scope for the same reason as the ratchet below. Round 7 deleted the
-   test these used to sit inside, outright, and the run was green with every
-   pin and every family check gone. */
-{
+/* Named and routed through check() so a failure here joins the others rather
+   than aborting the run at the first one, and so completeness sees it. */
+const PINS_CHECK = 'every pinned row subject is still judged';
+check(PINS_CHECK, () => {
   for (const [id, required] of Object.entries(REQUIRED_ROWS)) {
     /* A key naming no block is inert - its subject set is empty, nothing is
        missing from it, and it passes while inflating FLOORS.pinnedBlocks.
@@ -1909,7 +1910,7 @@ test(JUDGED_TEST, () => {
       `${absent.map((n) => `.${n}`).join(', ')} — the family was narrowed, or REQUIRED_FAMILIES ` +
       'has to lose it on purpose');
   }
-}
+});
 
 
 /* The ratchet. Nothing above this can see a pin RETIRED, because every one of
@@ -1927,10 +1928,9 @@ test(JUDGED_TEST, () => {
    which was measured, not assumed. A module-scope assertion has no such switch.
    It cannot be skipped, todo-ed or tolerated, and a throw here exits 1.
 
-   So the checks that hold every other defence in this file live out here: the
-   floors, the row pins and the family pins. What stays a test is the judged
-   census, because JUDGED only fills while tests run. */
-{
+   So the checks that hold every other defence in this file live out here. */
+const RATCHET_CHECK = 'no defence in this file was retired without lowering a floor';
+check(RATCHET_CHECK, () => {
   const pinned = Object.keys(REQUIRED_ROWS).sort();
   assert.ok(pinned.length >= FLOORS.pinnedBlocks,
     `REQUIRED_ROWS pins ${pinned.length} blocks and FLOORS.pinnedBlocks is ${FLOORS.pinnedBlocks}: `
@@ -1942,4 +1942,9 @@ test(JUDGED_TEST, () => {
   assert.ok(REQUIRED_FAMILIES.length >= FLOORS.statusFamilies,
     `REQUIRED_FAMILIES holds ${REQUIRED_FAMILIES.length} families and FLOORS.statusFamilies is `
     + `${FLOORS.statusFamilies}: a family was retired. Held now: ${REQUIRED_FAMILIES.join(', ')}`);
-}
+});
+
+report([
+  ...Object.keys(DERIVED).map((id) => `ops/README.md claims id=${id} still describe the code`),
+  BLOCK_SET_TEST, TABLE_TEST, SWEEP_TEST, JUDGED_TEST, PINS_CHECK, RATCHET_CHECK,
+]);
