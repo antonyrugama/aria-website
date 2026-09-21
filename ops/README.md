@@ -2555,15 +2555,16 @@ the mechanism that stops claims drifting is not exempt from drifting.
 
 Which blocks those are is itself derived, out of the guard rather than out of a sentence here:
 the enumeration that used to sit in this paragraph said nine and fell three behind, missing two
-blocks added in review and one added by the commit that fixed it. Two row sets are held by a
-test instead of a block, and are the last two lines: the sweep requires every repository file
+blocks added in review and one added by the commit that fixed it. Some row sets are held by a
+test instead of a block rather than by a fence, and those are the `and a test,` lines — no count
+of them is written here, because the count written here was wrong twice: the sweep requires every repository file
 path this README spells in a code span to be in the tree or declared in `deleted-assets`, which
 is what makes a file deleted elsewhere red here rather than quietly stale — a span carrying a
 directory counts whatever its extension, and a bare `name.ext` counts when the tree uses that
 extension, which is what keeps `payload.data` out of it; and the checks table
 above must carry a row for every `check-ops-*.mjs` in `scripts/`, which is how the sixth browser
-guard got a row the day it landed instead of the day somebody noticed. Neither judges the
-**words** in the row — only that the row is there.
+guard got a row the day it landed instead of the day somebody noticed; and the ratchet holds the
+floors described above. None of them judges the **words** in a row — only that the row is there.
 
 ```claims id=claims-blocks
 claims id=assets-by-page
@@ -2592,6 +2593,7 @@ claims id=v1-v2-collision
 claims id=write-capable-assets
 and a test, every repository file ops/README.md names is in the tree or declared deleted
 and a test, every browser guard in the tree has a row in the checks table
+and a test, no defence in this file was retired without lowering a floor
 ```
 
 And which of them are pinned, with how many rows each pin holds:
