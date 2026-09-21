@@ -41,29 +41,43 @@
        (`bar.style.setProperty(...)`) already do it (RV22-A1, spelling
        corrected in round 27) -- and is likewise unread.
        The fourth route, an injected <style> ELEMENT, is NOT claimed to be
-       closed either, and this is the fifth round of narrowing that claim
-       rather than the first: what is asserted below is the TEXT of the
-       policy the page carries, and text is not a document. Measured in real
-       Chrome (RV25-1, re-measured in round 26): comment the meta out, move
-       it into <body>, or wrap it in <noscript>, and the page ships NO
-       policy Chrome enforces, while every assertion below still passes,
-       because each of those is still a Content-Security-Policy the file
-       spells once. Those three are the disclosure; the shapes that are
-       decidable from the TEXT are fixed instead of disclosed, and the ones
-       that have been are: <meta-x> (M26-A2), data-http-equiv= (M27-A2),
-       <meta&#160; (M27-A5), a tag that spells http-equiv twice, where the
-       parser keeps the FIRST and a regex took the last (M28-A1), and the
-       attribute name sitting inside another attribute's quoted VALUE
-       (M28-A2). The last two came from the twenty-seventh review and are
-       what replaced the byte-matching reader with metaTagsOf(), a cut-down
-       tokeniser that walks the tag the way the parser does; the two before
-       them came from the twenty-sixth.
-       The rule that sorts them: if the bytes say the tag is not a meta or
-       the attribute is not http-equiv, this reader is wrong to read it and
-       is made to red; if the bytes are a policy and only the PARSER knows
-       it was never applied, no reader of text can tell, and it goes above.
-       What IS bound, and all that is: IF this reader finds a policy in the
-       page's text, THEN the source list that governs a <style> element
+       closed either, and this is the sixth round of narrowing that claim
+       rather than the first. What is asserted below is the policy the page
+       carries -- and, since round 29, carries as a <meta> PRAGMA the parser
+       would build, in <head>, rather than as a string the page's text holds
+       somewhere. The page is parsed with nodesOf(); a policy in a comment,
+       in a <noscript>, inside another tag's quoted value, or anywhere
+       stillInHead() cannot place in the head is no policy here either, and
+       each of those reds. Those were the disclosure, in exactly these words,
+       through twenty-eight reviews: measured in real Chrome (RV25-1,
+       re-measured in rounds 26 and 29), comment the meta out, move it into
+       <body>, or wrap it in <noscript>, and the page ships NO policy Chrome
+       enforces -- while every assertion below passed, because each is still
+       a Content-Security-Policy the file spells once.
+       The shapes that are decidable from the page's BYTES are fixed rather
+       than disclosed, and the ones that have been are: <meta-x> (M26-A2),
+       data-http-equiv= (M27-A2), <meta&#160; (M27-A5), a tag that spells
+       http-equiv twice, where the parser keeps the FIRST and a regex took
+       the last (M28-A1), the attribute name sitting inside another
+       attribute's quoted VALUE (M28-A2), a whole <meta> tag written inside
+       another tag's quoted value (M29-A2), `&#104;ttp-equiv` and `&#99;ontent`,
+       which are not those attributes to a parser that decodes references
+       inside values only (M29-A3, M29-A4), and the three above (M29-A5,
+       M29-A6, M29-A7). One more was found while measuring those: a single
+       non-space character before the pragma -- a stray NBSP, a letter, a
+       <div> -- ends the head and puts the pragma in <body>, where Chrome
+       enforces nothing, and that reds too (M29-A9).
+       What is left, and all that is: whether the browser ENFORCES the policy
+       this reads. A header can deliver another one, and nothing here can see
+       a header. That is the line no reader of a FILE gets past.
+       The rule that sorts them: if the page's bytes say the tag is not a
+       meta, the attribute is not http-equiv, or the parser would not have
+       the pragma in head, this reader is wrong to read it and is made to
+       red; if the bytes are a pragma in head and only the SERVER knows what
+       else was sent, no reader of this file can tell, and it goes above.
+       What IS bound, and all that is: IF this reader finds a pragma the
+       parser would build in this page's head, THEN the source list that
+       governs a <style> element
        in it -- style-src-elem if the policy declares one, else style-src,
        else default-src -- is exactly 'self'. A hash or a nonce in whichever
        of those the chain RESOLVES to reds (RV22-2, RV23-1); a hash in a
@@ -294,33 +308,215 @@ const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
    RV20-2), by the backslash refusal that covers every escape in every sheet
    at once. */
 const RAW_HTML = read('alerts.html');
-const DECODED_HTML = RAW_HTML.replace(/&#(x[0-9a-f]+|\d+);/gi, (_m, n) => String.fromCodePoint(
-  n[0].toLowerCase() === 'x' ? parseInt(n.slice(1), 16) : parseInt(n, 10)));
-const LINK_TAGS = [...DECODED_HTML.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
-/* `\b` is a WORD boundary, not an attribute-name boundary: `data-href`
-   ends in `href` with a `-` in front of it, and `-` is not a word
-   character, so the first spelling of this returned the DECOY from
-   `<link rel="stylesheet" data-href="assets/empty.css" href="real.css">`
-   and read a sheet the page does not load while missing the one it does --
-   75 tests green with a fourth sheet painting every rail, and the escapes
-   and @imports inside that sheet carried past the refusals with it (found
-   in the twenty-first review of #75). An attribute name starts after
-   whitespace, a `/`, or the quote that closed the attribute before it.
-
-   Whitespace here is HTML's, which is NOT JS's `\s`. HTML separates a tag
-   name from an attribute, and an attribute name from its value, on exactly
-   TAB, LF, FF, CR and SPACE; `\s` also matches U+00A0 and the rest of the
-   Unicode space class, and none of those separate anything -- they are
-   ordinary characters INSIDE the attribute name. Using `\s` here read
-   `data<NBSP>content="..."` as the content attribute of a tag whose real
-   attribute is named `data<NBSP>content` (RV26-1, the same shape one level
-   down from the finding that named it). */
+/* The space characters HTML separates a tag name from an attribute with, and
+   an attribute name from its value with: exactly TAB, LF, FF, CR and SPACE.
+   JS's `\s` also matches U+00A0 and the rest of the Unicode space class, and
+   none of those separate anything -- they are ordinary characters INSIDE the
+   name. Reading with `\s` took `data<NBSP>content="..."` for the content
+   attribute of a tag whose real attribute is named `data<NBSP>content`
+   (RV26-1, the same shape one level down from the finding that named it). */
 const HTML_SP = ' \\t\\n\\f\\r';
 const SP = '[' + HTML_SP + ']';
-const attrOf = (tag, name) => {
-  const m = new RegExp('(?<=[' + HTML_SP + '/"\'])' + name + SP + '*=' + SP
-    + '*("([^"]*)"|\'([^\']*)\'|([^' + HTML_SP + '"\'>]+))', 'i').exec(tag);
-  return m ? (m[2] ?? m[3] ?? m[4]) : null;
+const HTML_SP_SET = new Set([' ', '\t', '\n', '\f', '\r']);
+/* A character reference is resolved by the parser in exactly two positions:
+   inside an attribute VALUE, and in text. Never in a tag name, never in an
+   attribute name, and never as a delimiter -- `&#34;` is four characters of
+   value, not a quote, and `&#62;` does not end a tag. This file decoded the
+   WHOLE page and then looked for tags in the result, which is the wrong
+   ORDER, and four payloads walked through it with every assertion green and
+   the page changed underneath (the twenty-eighth review of #75, all four
+   re-measured in real Chrome in round 29):
+     - `<meta &#104;ttp-equiv="Content-Security-Policy" content="...">`:
+       Chrome enforces NO policy, the attribute being named `&#104;ttp-equiv`.
+       The decoded text said the page carried one, and this read it.
+     - `&#99;ontent="..."` on the real pragma: same, a pragma with no content
+       attribute is no policy at all.
+     - `content="style-src 'self'&#34; &#39;unsafe-inlin&#101;&#39;;"`:
+       Chrome ships `'unsafe-inline'` in the source list that governs a
+       <style> ELEMENT and an injected <style> PAINTS. The decoded text held
+       a `"` that closed the value four characters in, so the reader saw
+       `style-src 'self'` and agreed with the bullet at the top of this file.
+     - `&#114;el="stylesheet"` on aria.css: the page loads with no design
+       system. The decoded text counted three sheets and read the missing
+       one's rules out of the file on disk.
+   So the walk below runs over RAW bytes, and this decoder is applied to
+   extracted attribute VALUES, one at a time, which is the position the
+   parser applies it in. Named references (`&amp;`) and numeric ones missing
+   their `;` are not resolved here at all: a page that spells one is REFUSED,
+   in the <link> test at the bottom of this file. */
+const decodeRefs = (s) => s.replace(/&#(x[0-9a-f]+|\d+);/gi, (_m, n) => String.fromCodePoint(
+  n[0].toLowerCase() === 'x' ? parseInt(n.slice(1), 16) : parseInt(n, 10)));
+/* Raw text and RCDATA: everything between one of these start tags and its
+   matching end tag is TEXT to the parser, not markup, so a `<meta>` written
+   inside one is not a tag and not a pragma. <noscript> is on the list
+   because this page is only ever visited with scripting ENABLED, which is
+   what makes its content raw text; a browser with scripting off parses that
+   content as markup, and nothing in this file would notice. */
+const RAW_TEXT_ELEMENTS = new Set(['script', 'style', 'noscript', 'textarea', 'title']);
+/* The nodes of a document, in document order: start tags carrying the
+   attribute MAP the tokeniser would build for them, end tags, comments and
+   doctypes. The walk is the HTML tokeniser's, cut down to what this page
+   needs.
+
+   It replaces two regex scans -- `<link\b[^>]*>` and a `<meta` lookahead --
+   that had no DOCUMENT state and so read as tags things the browser never
+   had. A whole `<meta http-equiv="Content-Security-Policy" content="...">`
+   written inside ANOTHER tag's quoted attribute value was read here as the
+   page's policy while Chrome saw one inert attribute on a <div> and shipped
+   no policy at all (the twenty-eighth review of #75, finding 2). A comment,
+   a doctype, and the text inside a <script> or a <noscript> are the same
+   shape one level down, and all four are decided here rather than disclosed.
+
+   What the walk does, in the tokeniser's order: `<` followed by an ASCII
+   letter starts a tag and nothing else does; `<!--` runs to the first
+   `-->`; `<!` and `<?` run to the first `>`; a tag name ends at HTML space,
+   `/` or `>`; then, repeatedly, skip space and `/`, read an attribute name
+   up to space, `/`, `>` or `=`, then an optional `=` and a double-quoted,
+   single-quoted or unquoted value. The FIRST spelling of an attribute name
+   wins, which is what the parser does with a duplicate (measured in Chrome,
+   round 28), and a `>` inside a quoted value does NOT end the tag, which is
+   what `[^>]*>` got wrong. Names are lowercased; values are decoded once,
+   with decodeRefs, and nothing else is.
+
+   Two shapes are DROPPED rather than read. A tag that never closes -- EOF
+   inside it, which an unterminated quote also produces -- is dropped,
+   because the parser throws it away too, and reading one would be this file
+   finding a policy in a tag the browser never built. An attribute whose name
+   starts with `=` (`<meta =http-equiv=...>`, which the parser keeps as an
+   attribute NAMED `=http-equiv`) is dropped as well. Neither drop can
+   INVENT a pragma or a sheet; both can only lose one, and losing one reds.
+
+   What it does not model, and what stillInHead() below refuses rather than
+   guesses at: where in the tree the parser would have PUT the node. `at`
+   and `end` are byte offsets so a caller can say "before that one", and
+   `end` for a raw-text start tag is where the walk resumed, past the text,
+   so the gaps between nodes hold the page's text and not its script. */
+function nodesOf(html) {
+  const out = [];
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) break;
+    if (html.startsWith('<!--', lt)) {
+      const close = html.indexOf('-->', lt + 4);
+      const end = close < 0 ? html.length : close + 3;
+      out.push({ kind: 'comment', name: '#comment', attrs: new Map(), at: lt, end, text: '' });
+      i = end;
+      continue;
+    }
+    if (html.startsWith('<!', lt) || html.startsWith('<?', lt)) {
+      const close = html.indexOf('>', lt);
+      const end = close < 0 ? html.length : close + 1;
+      out.push({ kind: 'doctype', name: '#doctype', attrs: new Map(), at: lt, end, text: '' });
+      i = end;
+      continue;
+    }
+    const isEnd = html[lt + 1] === '/';
+    let j = lt + (isEnd ? 2 : 1);
+    if (!/[a-zA-Z]/.test(html[j] || '')) { i = lt + 1; continue; }
+    let name = '';
+    while (j < html.length && !HTML_SP_SET.has(html[j]) && html[j] !== '/' && html[j] !== '>') {
+      name += html[j];
+      j += 1;
+    }
+    name = name.toLowerCase();
+    const attrs = new Map();
+    let closed = false;
+    while (j < html.length) {
+      while (j < html.length && (HTML_SP_SET.has(html[j]) || html[j] === '/')) j += 1;
+      if (j >= html.length) break;
+      if (html[j] === '>') { closed = true; j += 1; break; }
+      let attr = '';
+      while (j < html.length && !HTML_SP_SET.has(html[j])
+        && html[j] !== '/' && html[j] !== '>' && html[j] !== '=') {
+        attr += html[j];
+        j += 1;
+      }
+      while (j < html.length && HTML_SP_SET.has(html[j])) j += 1;
+      let value = '';
+      if (html[j] === '=') {
+        j += 1;
+        while (j < html.length && HTML_SP_SET.has(html[j])) j += 1;
+        if (html[j] === '"' || html[j] === "'") {
+          const quote = html[j];
+          j += 1;
+          while (j < html.length && html[j] !== quote) {
+            value += html[j];
+            j += 1;
+          }
+          j += 1;
+        } else {
+          while (j < html.length && !HTML_SP_SET.has(html[j]) && html[j] !== '>') {
+            value += html[j];
+            j += 1;
+          }
+        }
+      }
+      if (attr && !attrs.has(attr.toLowerCase())) attrs.set(attr.toLowerCase(), decodeRefs(value));
+    }
+    if (!closed) break;
+    let end = j;
+    if (!isEnd && RAW_TEXT_ELEMENTS.has(name)) {
+      const close = html.toLowerCase().indexOf('</' + name, j);
+      end = close < 0 ? html.length : close;
+    }
+    out.push({ kind: isEnd ? 'end' : 'start', name, attrs, at: lt, end, text: html.slice(lt, j) });
+    i = end;
+  }
+  return out;
+}
+const PAGE_NODES = nodesOf(RAW_HTML);
+const PAGE_TAGS = PAGE_NODES.filter((n) => n.kind === 'start');
+const LINK_TAGS = PAGE_TAGS.filter((n) => n.name === 'link');
+const META_TAGS = PAGE_TAGS.filter((n) => n.name === 'meta');
+/* The text between one node and the next. A raw-text start tag ends past its
+   text, so what is left in these gaps is the document's TEXT -- which is the
+   thing that ends <head> -- and not the body of a <script>. */
+const NODE_GAPS = PAGE_NODES.map((n, k) => RAW_HTML.slice(k ? PAGE_NODES[k - 1].end : 0, n.at));
+/* The names that keep the parser in <head>. <template> is deliberately NOT
+   among them: a <meta> inside a template is inert, this walk cannot tell
+   inside from after, and refusing is the direction that reds. */
+const HEAD_START_TAGS = new Set(['html', 'head', 'base', 'basefont', 'bgsound', 'link', 'meta',
+  'noframes', 'noscript', 'script', 'style', 'title']);
+const HEAD_END_TAGS = new Set(['noframes', 'noscript', 'script', 'style', 'title']);
+/* Whether the parser is still in <head> when it reaches this node, answered
+   CONSERVATIVELY: true only when every node before it is one of the handful
+   that keeps the parser there, and every byte of text before it is HTML
+   space. A <body> tag, an unknown element, a <template>, a `</head>`, one
+   non-space character -- any of those makes it false, and the caller reds
+   rather than reading on.
+
+   This is a REFUSAL, not a model of the insertion modes, and the difference
+   is which way it is wrong. It answers false for pages that really are still
+   in head: a pragma written after an explicit `</head>` is RE-PARENTED into
+   the head by the parser and enforced (measured in Chrome, round 29 -- the
+   meta's parent is HEAD and an injected <style> is blocked), and this says
+   false for it. That is a loud red about a policy that is really there. It
+   does not answer true for a node the parser moved OUT of head, because
+   every way head ends -- a start tag not on the list, an end tag not on the
+   list, or non-space text -- is on the false side of it.
+
+   Three shapes this and the walk above turn from green into red, each
+   measured in real Chrome as shipping NO policy the browser enforces
+   (RV25-1, re-measured in round 26 and again in round 29 against the
+   injected <style>'s own `.sheet`, which is null exactly when the policy
+   blocked it), and each green here through twenty-eight reviews: the pragma
+   commented out, the pragma wrapped in <noscript>, and the pragma moved into
+   <body>. The first two are dropped by the walk before they reach this; the
+   third is what this answers false for. They were the whole of the
+   disclosure in the bullet at the top of this file, and they are now bound
+   instead. A fourth, found while measuring them: ONE non-space character
+   before the pragma -- a stray NBSP, a letter, a <div>, a <meta-x> -- ends
+   the head, puts the pragma in <body>, and ships no policy either. That is
+   what the text check is for, and why it uses HTML's spaces: `trim()` would
+   read the NBSP as space and let it through. */
+const stillInHead = (node) => {
+  const idx = PAGE_NODES.indexOf(node);
+  return idx >= 0
+    && PAGE_NODES.slice(0, idx).every((n) => n.kind === 'comment' || n.kind === 'doctype'
+      || (n.kind === 'start' && HEAD_START_TAGS.has(n.name))
+      || (n.kind === 'end' && HEAD_END_TAGS.has(n.name)))
+    && NODE_GAPS.slice(0, idx + 1).every((g) => [...g].every((c) => HTML_SP_SET.has(c)));
 };
 /* `rel` is a space-separated TOKEN LIST, not a value: `rel="next stylesheet"`
    is a stylesheet to the browser, and an equality against the whole string
@@ -331,71 +527,36 @@ const attrOf = (tag, name) => {
    `alternate` stylesheet, or one with `media="print"` or `disabled`, is read
    although the browser does not apply it, which can only produce a false
    RED about a rule that is really there. */
-const relTokens = (tag) => (attrOf(tag, 'rel') || '').toLowerCase()
+const relTokens = (tag) => (tag.attrs.get('rel') || '').toLowerCase()
   .split(new RegExp(SP + '+')).filter(Boolean);
-/* Every <meta> tag in a page, as the attribute MAP the tokeniser would build
-   for it rather than as the bytes it is written in. The walk is the HTML
-   tokeniser's, cut down to what a well-formed tag needs: skip HTML space and
-   `/`, stop at an unquoted `>`, read a name up to space, `/`, `>` or `=`,
-   then an optional `=` and a double-quoted, single-quoted or unquoted value.
-   First spelling of a name wins, which is what the parser does with a
-   duplicate attribute, and a `>` inside a quoted value does NOT end the tag,
-   which is what `[^>]*>` got wrong. Names are lowercased; values are not.
-   What this deliberately does not do: character references are already
-   decoded upstream in DECODED_HTML. A tag that never closes -- EOF inside
-   the tag, which an unterminated quote also produces -- is DROPPED rather
-   than half-read, because that is what the parser does with it, and reading
-   one would be this reader finding a policy in a tag the browser threw away.
-   An attribute whose name starts with `=` (`<meta =http-equiv=...>`, a name
-   the parser keeps as `=http-equiv`) is dropped here instead, which cannot
-   invent a pragma: it can only lose one, and losing one reds. */
-const HTML_SP_SET = new Set([' ', '\t', '\n', '\f', '\r']);
-function metaTagsOf(html) {
-  const out = [];
-  const tag = new RegExp('<meta(?=[' + HTML_SP + '/>])', 'gi');
-  for (const m of html.matchAll(tag)) {
-    const attrs = new Map();
-    let i = m.index + m[0].length;
-    let closed = false;
-    while (i < html.length) {
-      while (i < html.length && (HTML_SP_SET.has(html[i]) || html[i] === '/')) i += 1;
-      if (i >= html.length) break;
-      if (html[i] === '>') { closed = true; break; }
-      let name = '';
-      while (i < html.length && !HTML_SP_SET.has(html[i])
-        && html[i] !== '/' && html[i] !== '>' && html[i] !== '=') {
-        name += html[i];
-        i += 1;
-      }
-      while (i < html.length && HTML_SP_SET.has(html[i])) i += 1;
-      let value = '';
-      if (html[i] === '=') {
-        i += 1;
-        while (i < html.length && HTML_SP_SET.has(html[i])) i += 1;
-        if (html[i] === '"' || html[i] === "'") {
-          const quote = html[i];
-          i += 1;
-          while (i < html.length && html[i] !== quote) {
-            value += html[i];
-            i += 1;
-          }
-          i += 1;
-        } else {
-          while (i < html.length && !HTML_SP_SET.has(html[i]) && html[i] !== '>') {
-            value += html[i];
-            i += 1;
-          }
-        }
-      }
-      if (name && !attrs.has(name.toLowerCase())) attrs.set(name.toLowerCase(), value);
-    }
-    if (closed) out.push(attrs);
-  }
-  return out;
-}
+/* The sheets ops/alerts.html loads, TYPED BY HAND, and the only statement
+   about this page in this file that owes nothing to the walk above. Two
+   readers are held against it: `html.includes(...)`, a raw substring scan,
+   in the test that says the page loads one design system, and a deepEqual
+   against PAGE_SHEETS, the parsed list, in the <link> test at the bottom.
+
+   It replaces a counter that matched `rel\s*=\s*...` over the decoded page
+   and compared its length with PAGE_SHEETS.length. That was called an
+   independent reading here and was not one: both sides came off the same
+   text through the same decoder, so `&#114;el="stylesheet"` on aria.css was
+   invisible to BOTH -- the page loads with no design system, and the two
+   readings agreed with each other that it loaded three sheets (the
+   twenty-eighth review of #75). A list a person typed cannot agree with a
+   reader's mistake.
+
+   An attribute-name boundary is what the old reader needed and this no
+   longer has to have: `data-href` ends in `href` with a `-` in front of it,
+   `\b` is a WORD boundary, and the first spelling of the <link> half
+   returned the DECOY from `<link rel="stylesheet" data-href="assets/empty.css"
+   href="real.css">` -- 75 tests green with a fourth sheet painting every
+   rail, and the escapes and @imports inside that sheet carried past the
+   refusals with it (twenty-first review of #75). The walk answers that by
+   construction: `data-href` is an attribute named `data-href`. */
+const V2_STYLESHEETS = ['assets/aria.css', 'assets/shell-pane-v2.css',
+  'assets/pane-alerts-v2.css'];
 const PAGE_SHEETS = LINK_TAGS
   .filter((t) => relTokens(t).includes('stylesheet'))
-  .map((t) => attrOf(t, 'href'));
+  .map((t) => t.attrs.get('href') ?? null);
 
 /* The PREFIXED docblock lines this file reads as DATA rather than as prose.
    Every reader OF A PREFIXED LINE goes through machineLine(), which refuses a
@@ -3096,12 +3257,20 @@ test('every test the stylesheet cites by name is a test this file registers', as
 
 test('the page loads one design system and one theme decision', () => {
   const html = read('alerts.html');
+  /* A TEXT scan, and it reds on a MENTION rather than on a load. Measured
+     round 29: a `data-href="assets/operate.css"` decoy beside a real href, and
+     a duplicate `href=` the parser discards, both red here although Chrome
+     requests only aria.css, shell-pane-v2.css and pane-alerts-v2.css in either
+     case (M29-C17, M29-C18 -- both published as false REDS, in the safe
+     direction for a v1 asset, which is why this stays a scan). What the page
+     actually LOADS is decided by the deepEqual against V2_STYLESHEETS below,
+     off the document walk; this loop only says the v1 names are absent. */
   for (const v1 of ['assets/ops.css', 'assets/operate.css', 'assets/shell.js', 'assets/icons.js']) {
     assert.ok(!html.includes(v1),
       'alerts.html loads ' + v1 + ' as well as the v2 sheets; both define .card, ' +
       '.rail, .topbar, .btn, .seg, .pill and .tbl from different token sets');
   }
-  for (const v2 of ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-alerts-v2.css',
+  for (const v2 of [...V2_STYLESHEETS,
     'assets/aria.js', 'assets/shell-pane-v2.js', 'assets/pane-alerts.js']) {
     assert.ok(html.includes(v2), 'alerts.html no longer loads ' + v2);
   }
@@ -3109,8 +3278,9 @@ test('the page loads one design system and one theme decision', () => {
     'the theme is decided in more than one place');
   assert.match(html, /Content-Security-Policy/,
     'the page no longer spells Content-Security-Policy anywhere -- which is as much as a scan '
-    + 'over text can say: whether what it spells is a meta element the parser APPLIES is on '
-    + 'the NOT COVERED list at the top of this file (RV25-1)');
+    + 'over text can say: whether what it spells is a <meta> pragma the parser builds, and '
+    + 'builds in <head>, is decided in the CSP test below, which parses the page and refuses '
+    + 'a pragma it cannot place there (RV25-1, bound in round 29)');
   assert.ok(!/unsafe-inline/.test(html), 'the CSP grew unsafe-inline');
   /* `no unsafe-inline` is not the same claim as `no inline styles`: a hash
      or a nonce opens the <style> route one sheet at a time, with no
@@ -3131,60 +3301,58 @@ test('the page loads one design system and one theme decision', () => {
      first is what this reads too. `style-src-attr` is NOT in this chain: it
      governs style ATTRIBUTES, not <style> elements, and the attribute route
      is not what the bullet claims to have closed. */
-  /* The policy is lifted out of DECODED_HTML, not out of the raw text, and
-     out of a TOKENISED attribute list, not a hand-rolled scan. Both halves
-     of that sentence are scar tissue: `&#115;tyle-src-elem` decodes to a
-     directive name the browser obeys and a raw scan never sees (RV20 in the
-     <link> half, RV24-1 here), and `data-content="..."` satisfies a scan for
-     content= that carries no attribute-name boundary, so the decoy is what
-     gets read (RV21 there, RV24-1 here). The <link> half of this page has
-     gone through both since round 21 and still reads attributes with attrOf,
-     a boundary-carrying matcher. The <meta> half went through the decode in
-     round 25, got boundaries on content= in the same round and on http-equiv
-     in round 27 (`data-http-equiv=` had read as the page's policy while the
-     page carried none, RV26-1), and then lost the boundaries altogether in
-     round 28 when they were replaced by the tokeniser below -- a boundary
-     answers "is this byte a separator", which is a strictly weaker question
-     than "is this position an attribute name". Both readers use HTML's space
-     characters rather than `\s` (see HTML_SP): the tag-name lookahead let
-     `<meta&#160;http-equiv=...` through, a tag whose NAME is the whole of
+  /* The policy is lifted out of a PARSE of the page's raw bytes, not out of
+     a scan over text, and not out of a copy of the page that was decoded
+     before anything looked for a tag in it. Every clause there is scar
+     tissue:
+       - a scan for `content=` has no attribute-name boundary, so
+         `data-content="..."` is what gets read (RV21 in the <link> half,
+         RV24-1 here), and a boundary answers "is this byte a separator",
+         which is strictly weaker than "is this position an attribute name":
+         `http-equiv="refresh" http-equiv="Content-Security-Policy"` keeps
+         the FIRST to the parser and the LAST to a regex, and
+         `data-old=' http-equiv="Content-Security-Policy"'` puts the name
+         inside another attribute's VALUE, where the space in front of it is
+         a space in a quoted string (RV27-1, which replaced the boundaries
+         with a tokeniser);
+       - a tokeniser with no DOCUMENT state reads a whole
+         `<meta http-equiv=... content=...>` written inside another tag's
+         quoted value as the page's policy, while Chrome sees one inert
+         attribute and ships none (RV28-2, which replaced the `<meta` scan
+         with the nodesOf() walk);
+       - and decoding the page BEFORE parsing it puts `&#104;ttp-equiv` and
+         `&#99;ontent` into the reader as the attributes the browser does
+         not have, and `&#34;` into a value as a quote the browser does not
+         see. Chrome enforces no policy for the first two and ships
+         `'unsafe-inline'` for the third (RV28-1, which moved the decode
+         from the whole document onto extracted attribute values).
+     The reader uses HTML's space characters rather than `\s` (see HTML_SP):
+     `<meta&#160;http-equiv=...` is a tag whose NAME is the whole of
      `meta&#160;http-equiv="content-security-policy"` to the parser, because
-     character references are not decoded inside a tag name.
+     character references are not decoded inside a tag name either.
 
-     One shape is refused rather than read: a page that spells
-     Content-Security-Policy more than once -- a commented-out old policy is
-     the way that happens -- is refused outright, because a policy inside a
-     comment is not text-decidable and which one the PARSER takes is not this
-     reader's decision. Same shape as the duplicate-attribute refusal on
-     <link> tags below. Two policies genuinely delivered would intersect, so
-     refusing is loud rather than wrong. */
-  assert.equal((DECODED_HTML.match(/Content-Security-Policy/gi) || []).length, 1,
-    'the page spells Content-Security-Policy more than once -- an old policy in a comment, a '
-    + 'second meta, or a report-only twin -- and this reader cannot tell which one the parser '
-    + 'takes');
-  /* The tag is TOKENISED into attributes rather than matched byte by byte,
-     because a boundary is a boundary on ONE character and an attribute is a
-     position in a grammar. Two payloads walked through the boundary version
-     and left the page with no policy while this block stayed green
-     (RV27-1): `http-equiv="refresh" http-equiv="Content-Security-Policy"`,
-     where the parser drops the duplicate and keeps the FIRST, and
-     `data-old=' http-equiv="Content-Security-Policy"'`, where the name sits
-     inside another attribute's VALUE and the space the lookbehind saw is a
-     space inside a quoted string. metaTagsOf walks the tag the way the
-     tokeniser does -- skip space and `/`, read a name, read an optional
-     `=` and a quoted, single-quoted or unquoted value, first spelling of a
-     name wins, end at the first UNQUOTED `>` -- so both are resolved the way
-     the browser resolves them, and neither is read as a policy. It also
-     reads two spellings the byte version could not: a single-quoted and an
-     unquoted http-equiv are policies to the parser, and are policies here
-     now (M28-A6, M28-A7) rather than fail-closed reds. */
-  const cspMetas = metaTagsOf(DECODED_HTML)
-    .filter((attrs) => (attrs.get('http-equiv') || '').toLowerCase()
-      === 'content-security-policy');
+     What this block does NOT do is decide where the parser put the pragma.
+     It refuses instead: stillInHead() is false for anything it cannot prove
+     is still in <head>, and a pragma it is false for is not read. */
+  const cspMetas = META_TAGS.filter((t) => (t.attrs.get('http-equiv') || '').toLowerCase()
+    === 'content-security-policy');
+  assert.deepEqual(cspMetas.filter((t) => !stillInHead(t)).map((t) => t.text), [],
+    'a <meta> pragma in this page is somewhere this reader cannot prove is still <head> -- '
+    + 'moved into <body>, put after a </head> or a <template>, or standing after text or an '
+    + 'element that ends the head -- and a pragma the parser does not see in head is not a '
+    + 'policy at all, so this refuses it rather than reading a policy the browser never had');
   assert.ok(cspMetas.length <= 1,
     'more than one <meta> tag in this page resolves to a Content-Security-Policy pragma, and '
     + 'which one the parser honours is not this reader\'s decision');
-  const csp = cspMetas.length ? (cspMetas[0].get('content') ?? null) : null;
+  /* No count of the string `Content-Security-Policy` in the page's text is
+     taken any more. It was here to refuse the one shape a scan could not
+     decide -- a commented-out old policy beside the live one -- and the walk
+     decides it: a comment is a comment node and holds no tags, so an old
+     policy inside one is not a pragma here, and commenting out the LIVE one
+     leaves this block with no policy and reds on the source list below. The
+     count is the thing that would have to be deleted for that shape to pass,
+     and it could only ever be a false red on the page's prose. */
+  const csp = cspMetas.length ? (cspMetas[0].attrs.get('content') ?? null) : null;
   const directives = new Map();
   for (const d of (csp || '').split(';')) {
     const parts = d.trim().split(/\s+/).filter(Boolean);
@@ -4184,10 +4352,11 @@ test('no sheet the page loads spells an ident with an escape, and no character r
     + 'bytes of a property name, a selector and an at-keyword against a literal: `--ac\\63` '
     + 'is `--acc` to the browser, `@\\69 mport` is `@import`, and neither holds its letters '
     + 'in a row. This file cannot decode one, so it refuses to read the sheet that has it');
-  assert.equal(DECODED_HTML.includes('&'), false,
-    'the page holds a character reference this reader cannot resolve -- a named one, or a '
-    + 'numeric one missing its `;` -- and the HTML parser resolves references the byte scans '
-    + 'below do not: `rel="&#115;tylesheet"` loads a fourth sheet that none of them counts');
+  assert.equal(decodeRefs(RAW_HTML).includes('&'), false,
+    'the page holds a character reference this reader cannot resolve -- a named one like '
+    + '`&amp;`, or a numeric one missing its `;` -- and the parser resolves references inside '
+    + 'an attribute value where decodeRefs leaves them alone: an href or a rel that spells '
+    + 'one is read here as bytes the browser never sees');
 });
 
 test('the ink on a severity is the -ink of the accent that severity draws', async () => {
@@ -4199,29 +4368,33 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     ] },
   });
   const classesOf = (n) => (((n.getAttribute && n.getAttribute('class')) || '').split(/\s+/));
-  const spelt = [...DECODED_HTML.matchAll(/rel\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)]
-    .filter((m) => (m[2] ?? m[3] ?? m[4] ?? '').toLowerCase().split(/[\s\r\n\t\f]+/)
-      .includes('stylesheet')).length;
-  assert.equal(PAGE_SHEETS.length, spelt,
-    'the page spells rel=stylesheet ' + spelt + ' times and this reads ' + PAGE_SHEETS.length
-    + ' sheets, so a sheet the browser loads is one this cannot see -- counted off the raw '
-    + 'text, because an equality between two readings of the same tag array agrees with '
-    + 'itself about a tag the array never held');
-  assert.deepEqual(LINK_TAGS.filter((t) => (t.match(/"/g) || []).length % 2
-    || (t.match(/'/g) || []).length % 2), [],
-    'a <link> tag holds an odd number of quotes, so the scan stopped at a > inside a quoted '
-    + 'attribute value and cut the tag in half');
-  /* A second hold on the same tags, and a refusal rather than a reading:
-     if `href` or `rel` appears twice in one tag, one of them is a decoy or
-     a duplicate, the parser takes exactly one, and this reader is not the
-     thing that should be deciding which. It reds instead. */
-  assert.deepEqual(LINK_TAGS.filter((t) => (t.match(/href\s*=/gi) || []).length > 1
-    || (t.match(/rel\s*=/gi) || []).length > 1), [],
-    'a <link> tag spells href= or rel= more than once -- as a duplicate, or inside a longer '
-    + 'attribute name like data-href -- and this reader cannot tell which one the parser '
-    + 'takes, so it refuses the tag rather than guessing and reading the wrong sheet');
-  assert.ok(PAGE_SHEETS.length >= 3, 'the page loads ' + PAGE_SHEETS.length + ' stylesheets, '
-    + 'so this is reading fewer sheets than the browser does');
+  /* The parsed sheet list against the list a PERSON typed, rather than
+     against a second reading of the same text. What stood here was a count
+     of `rel\s*=\s*...` matches over the decoded page, compared with
+     PAGE_SHEETS.length and described as counting "off the raw text" so the
+     two readings could not agree with each other about a tag neither had.
+     They agreed anyway: `&#114;el="stylesheet"` on the aria.css link is not
+     `rel=` to either of them, the page loads with NO design system, and both
+     sides counted three (the twenty-eighth review of #75; re-measured in
+     Chrome in round 29 -- the page renders unstyled and 76 tests were
+     green). The typed list cannot move with the reader, and it pins ORDER
+     and SPELLING as well as count, which the equality of two lengths never
+     did.
+
+     Deleted with it, as things this no longer needs to refuse: the
+     odd-quote check, because the walk cannot cut a tag in half -- an
+     unterminated quote runs to EOF and the tag is dropped, which reds here;
+     and the duplicate `href=`/`rel=` refusal, because the walk resolves a
+     duplicate attribute the way the parser does, keeping the first
+     (measured in Chrome, round 28), and `data-href` is an attribute named
+     `data-href` to it rather than a boundary problem. A refusal that can no
+     longer fire is prose claiming a guard. */
+  assert.deepEqual(PAGE_SHEETS, V2_STYLESHEETS,
+    'the sheets this reads out of ops/alerts.html are not the three the page is meant to '
+    + 'load, in order: ' + JSON.stringify(PAGE_SHEETS) + ' against '
+    + JSON.stringify(V2_STYLESHEETS) + '. Either the page changed, or a <link> in it is '
+    + 'spelt in a way this walk reads differently from the browser -- and the rules every '
+    + 'assertion below resolves come out of exactly these files');
   assert.deepEqual(PAGE_SHEETS.filter((href) => !href || !existsSync(new URL(href, OPS))), [],
     'the page links a stylesheet this cannot open on disk, so it is read as no declarations '
     + 'at all rather than as the rules it holds');
