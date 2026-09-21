@@ -2720,6 +2720,18 @@ function killTree(child, signal) {
   try { child.kill(signal); } catch (e) { /* already gone */ }
 }
 
+/* Waits for a child to be reaped, up to a ceiling. Returns immediately for one
+   that already has been: a browser that died on startup arrives that way, and
+   listening for an exit that has already fired would sit out the whole ceiling
+   for an event that is never coming again. */
+async function waitForExit(child, ms) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    child.once('exit', () => { clearTimeout(timer); resolve(); });
+  });
+}
+
 async function openPainter() {
   const opened = [];
   const unwind = async () => {
@@ -2819,21 +2831,18 @@ async function launchPainter(opened, unwind) {
        always leaked; an uninterrupted one now cleans up a tree instead of a
        process. */
     killTree(browser, 'SIGTERM');
-    /* A browser that died on startup arrives already reaped, so there is no
-       exit left to wait for and listening for one would sit out the ceiling
-       for an event that has already fired. A browser that is merely unresponsive
-       -- the port never published, the case this early return does NOT take --
-       is alive when kill() returns and is waited for below. */
+    await waitForExit(browser, EXIT_WAIT_MS);
+    /* SIGTERM is a request and the ceiling can expire without it being
+       honoured -- observed on this machine at load 30, where Chrome took
+       longer than five seconds to go away and the removal then ran over a
+       process that had not been reaped. Escalating is not enough on its own:
+       SIGKILL is a signal too, so it gets its own wait. The first version of
+       this release escalated and returned in the same breath, which is the bug
+       this whole PR is about, made once more one level down. */
     if (browser.exitCode === null && browser.signalCode === null) {
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, EXIT_WAIT_MS);
-        browser.once('exit', () => { clearTimeout(timer); resolve(); });
-      });
+      killTree(browser, 'SIGKILL');
+      await waitForExit(browser, EXIT_WAIT_MS);
     }
-    /* The parent being reaped does not reap what it left behind, and a
-       descendant that ignored SIGTERM is exactly the thing that writes the
-       directory back after it is removed. */
-    killTree(browser, 'SIGKILL');
   });
 
   /* A browser that has already exited will never publish a port, so sitting
