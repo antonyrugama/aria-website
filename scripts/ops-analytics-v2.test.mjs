@@ -2812,7 +2812,12 @@ async function launchPainter(opened, unwind) {
        and all able to write into it. Killing the one pid node knows about
        leaves the rest of the tree running, and "the browser exited" is then
        true of the parent and false of the thing still writing. `detached`
-       above is what makes the group exist to be signalled. */
+       above is what makes the group exist to be signalled. The tradeoff is
+       real and taken deliberately: its own group means a Ctrl-C at a terminal
+       no longer reaches Chrome, because the signal goes to the foreground
+       group and Chrome is no longer in it. An interrupted run leaks what it
+       always leaked; an uninterrupted one now cleans up a tree instead of a
+       process. */
     killTree(browser, 'SIGTERM');
     /* A browser that died on startup arrives already reaped, so there is no
        exit left to wait for and listening for one would sit out the ceiling
