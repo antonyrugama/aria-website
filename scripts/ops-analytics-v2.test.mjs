@@ -2792,14 +2792,11 @@ async function launchPainter(opened, unwind) {
   opened.push(async () => {
     teardown.browserExitedBeforeRemoval = spawned === null ||
       spawned.exitCode !== null || spawned.signalCode !== null;
-    /* Remove, then LOOK. An earlier version re-removed up to six times until
-       the directory stayed gone, and it was deleted rather than kept: on this
-       machine it never fired, and on CI it has reported one pass and no return
-       on every run since the group kill landed. A mechanism nobody has
-       observed doing anything is speculation, and re-removing quietly is the
-       wrong shape anyway -- a directory that comes back is the leak this whole
-       change is about, so it should fail the run and say so, not be tidied
-       away until the assertion stops noticing. */
+    /* Remove, then LOOK. An earlier version re-removed the directory until it
+       stayed gone; it was deleted rather than kept, because re-removing
+       quietly is the wrong shape -- a directory that comes back is the leak
+       this whole change is about, so it should fail the run and say so, not be
+       tidied away until the assertion stops noticing. */
     rmSync(profile, { recursive: true, force: true });
     await new Promise((r) => setTimeout(r, REMOVE_SETTLE_MS));
     teardown.profileReturned = existsSync(profile);
@@ -3093,13 +3090,12 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
      Two attempts at that sentence were both wrong -- one counted the handles
      and said one, the next said a leaked handle cannot survive a run that
      ended -- and the observation above needs neither. */
-  /* Printed on every run, not only on failure. P8, P9 and P10 of this PR's
-     mutation battery -- the group SIGKILL, the confirm loop, and signalling the
-     group rather than the pid -- are all GREEN on macOS, where the kernel reaps
-     the whole tree with the parent and none of the three can be load-bearing.
-     The behaviour they exist for is Linux-only, so CI is the only oracle, and a
-     mechanism nobody can see working is one nobody can tell has stopped. These
-     reading makes every CI run a measurement rather than a pass: a profile
+  /* Printed on every run, not only on failure. Deleting the SIGKILL escalation
+     leaves this file green here, and so does signalling the one pid instead of
+     the process group; both payloads were run at this head. Neither mechanism
+     is bound on this machine, so CI is the only place either has been observed
+     mattering -- and a mechanism nobody can see working is one nobody can tell
+     has stopped. So both readings go out on every run, green or red: a profile
      that came back is the leak, and a browser not reaped before the removal is
      the moment it leaks at. */
   console.log('  painter teardown: reaped before removal ' +
