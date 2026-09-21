@@ -1436,6 +1436,12 @@ const SCAN_SELF_TEST = {
   'want/class-sub.css': '.tbl tbody tr[class*="is-select"] > td { background: var(--cyan); }',
   'want/class-prefix.css': '.tbl tbody tr[class^="is-selected"] > td { background: var(--cyan); }',
   'want/class-suffix.css': '.tbl tbody tr[class$="selected"] > td { background: var(--cyan); }',
+  /* A wash gated on a dynamic pseudo the probe cannot enter is retried with
+     the pseudo stripped. `focus` listed before `focus-visible` in that
+     alternation matched the prefix and `\b` held against the hyphen, so
+     `:focus-visible` was rewritten to `-visible` -- a garbage selector that
+     matches nothing, which is an under-collection that fails silently. */
+  'want/focus-within.css': '.tbl tbody tr:focus-within > td { background: var(--cyan); }',
   'want/not-guard.css': '.tbl tbody tr:not(.plain) > td { background: var(--cyan); }',
   'skip/not-empty.css': '.field-error:not(:empty) { background: var(--cyan); }',
   'skip/row-level.css': '.tbl tbody tr.is-selected { background: var(--cyan); }',
