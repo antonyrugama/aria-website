@@ -162,11 +162,17 @@
            a section anywhere else is not carried. Two exist today -
            check-ops-shell-v2.mjs:583 and check-ops-contrast.mjs:2239 - and
            both are counted but not read.
-       (2) THREE PHRASES ONLY. BLIND_SPOT_HEADING recognises WHAT THIS DOES NOT
-           COVER, WHAT IT DOES NOT and NOT COVERED. A section headed any other
-           way is invisible to BOTH the bullet read and the whole-file count,
-           so it arrives in silence. The three are emitted into the block so
-           the README cannot describe a wider net than the regex casts.
+       (2) THE MATCHER HAS TO SEE THE HEADING, and that turns on TWO things:
+           the wording and the comment marker in front of it. A heading it
+           cannot see is invisible to BOTH the bullet read and the whole-file
+           count, so it arrives in silence. This docblock deliberately does not
+           say which headings those are. Round 3 of PR #111 killed two spellings
+           of that sentence: a list typed here drifts, and a list PARSED out of
+           BLIND_SPOT_HEADING read one of its two dimensions and was wrong in
+           both directions while staying green. The edge is MEASURED instead -
+           see HEADING_PROBES below, whose verdicts are the first lines of the
+           block. If you want to know what the matcher sees, read the census,
+           not a sentence.
        (3) HEADINGS, NOT BULLETS. A blind spot written into a bullet's body is
            not a line. Spans beyond the first are counted, summed over the
            bullets, but never named.
@@ -757,18 +763,34 @@ const BLIND_SPOT_HEADING =
    real predicate, and the census reports SEEN or INVISIBLE. Every spelling gets
    a line either way: the INVISIBLE ones are the net's actual edge, published
    rather than described, and a matcher that starts or stops seeing any of them
-   flips its line. The probes are the dimensions crossed -- three recognised
-   phrases and two unrecognised ones, against bare, indented, `*`, `/*` and `//`
-   markers, plus a mid-line mention that must stay INVISIBLE or the anchor has
-   come loose.
+   flips its line.
 
-   What this still does not bind: a spelling nobody thought to add to the table.
-   That is a smaller hole than a parse that reads one substring, and it is the
-   same hole every explicit test table has. */
+   The table is NOT the two dimensions crossed. It is a sample of them, and it
+   is worth being exact about which cells it holds, because the temptation is to
+   describe it as more. Markers appear against ONE recognised phrase and one
+   unrecognised one; the other phrases appear bare or indented only. A mid-line
+   mention is in there because if the `^` anchor came loose that row would flip
+   and nothing else would.
+
+   What this does NOT bind, all three published in the README's NOT COVERED:
+     (a) A (phrase, marker) cell no row occupies. Teaching the matcher a phrase
+         ONLY behind `/*` moved no row until `/* KNOWN GAPS` was added, and that
+         is a demonstration, not a proof that the remaining cells are safe.
+     (b) A phrase NARROWED so that it still matches every probed spelling of
+         itself. Every probe of a phrase has to differ in its continuation or
+         the narrowing walks through: `WHAT IT DOES NOT` was exercised only by
+         spellings continuing "measure" until `WHAT IT DOES NOT check` was
+         added, so narrowing it to `WHAT IT DOES NOT MEASURE` was green.
+     (c) A spelling nobody thought to add at all.
+   (a) and (b) are review round 4 of PR #111, both demonstrated green. The fix
+   for each was one ROW, not more analysis: the census's reach is its table, so
+   the table is where it grows. */
 const HEADING_PROBES = [
   'WHAT THIS DOES NOT COVER, in the words of what was measured:',
   '   WHAT IT DOES NOT measure:',
+  '   WHAT IT DOES NOT check, in so many words:',
   '   NOT COVERED, on purpose',
+  '   NOT COVERED at all:',
   '   not covered, in lower case',
   ' * NOT COVERED, after a continuation marker',
   '/* NOT COVERED, sharing the comment opener',
@@ -776,6 +798,7 @@ const HEADING_PROBES = [
   '// NOT COVERED, after a line comment',
   '   WHAT THIS SWEEP CANNOT SEE:',
   '   KNOWN GAPS:',
+  '/* KNOWN GAPS, behind a comment opener',
   '   see NOT COVERED above for the two panes',
 ];
 
