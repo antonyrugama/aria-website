@@ -1459,28 +1459,96 @@ test('the narrow layout drops every other date to a line of its own, clear of th
                                     on the strip beats `flex: 1` (83.97%);
                                     `translate: 50%` on a date beats
                                     `transform` (8.26%). All five were green.
+     "the subject is the last      a selector does not have to NAME an element
+      compound"                     to land on it. `.sp-xaxis-row span` is a
+                                    date, `.sp-xaxis > *` is a date, and
+                                    `.sp-xaxis-row > div:last-child` is the
+                                    strip -- the last compound of all three is
+                                    a bare type or universal selector, so a
+                                    matcher keyed on it saw none of them. The
+                                    first two move every date 12.48% at 320px
+                                    and the third renders no date at all; all
+                                    three were green.
      the whole thing                still cannot see a browser. What it can
-                                    be is CLOSED: every declaration these
-                                    elements are given is named here with a
-                                    measured reason, and anything else fails
-                                    until someone measures it too.
+                                    be is CLOSED on BOTH axes: which rules
+                                    reach these elements, and what those rules
+                                    are allowed to say.
 
-   So the list below is an allowlist of DECLARATIONS, not a checklist of
-   properties. A property missing from it is a failure, not a pass. */
-test('every declaration the date strip is given is one that has been measured', () => {
-  /* The subject of a selector is its last compound -- `.sp-xaxis span` and
-     `.sp-xaxis-loose span` both style a span, but only the first styles a
-     span of the positioned strip, and `.sp-xaxis-row` is not `.sp-xaxis`
-     however much of the string it shares. A descendant selector IS caught:
-     the subject of `.card .sp-xaxis` is `.sp-xaxis`. */
-  const CLASS_END = '(?![-\\w])';
-  const lastCompound = (selector) => selector.split(/[\s>+~]+/).filter(Boolean).pop() || '';
-  const subject = (className, tail) => (rule) => rule.selectors.some((raw) => {
-    const sel = raw.trim();
-    const own = new RegExp('(^|[^-\\w])\\.' + className + CLASS_END);
-    if (tail) return own.test(sel) && /(^|[\s>+~])span(?![-\w])/.test(lastCompound(sel));
-    return own.test(lastCompound(sel));
+   So there are two guards below, and they are closed worlds rather than
+   checklists. The first: a rule whose selector NAMES any of these elements
+   must be one of the ten selectors measured here -- a spelling nobody has
+   measured is a failure, whatever it says. The second: a declaration those
+   rules give must be one named here with the figure a browser produced when
+   it changed -- a property nobody has measured is a failure, whatever its
+   value. What escapes both, and cannot be closed by any scan of this file,
+   is a rule that reaches these elements WITHOUT naming them
+   (`.card div { margin-left: 24px }`). That is in the PR's NOT COVERED list.
+
+   The ten selectors, and the element each one is. Keyed on the exact text
+   because that is the point: `.sp-xaxis span` is measured and
+   `.sp-xaxis > *` is not, though they hit the same element. */
+const MEASURED_SELECTORS = new Map([
+  ['.sp-xaxis-row', 'the row'],
+  ['.sp-xaxis', 'the strip'],
+  ['.sp-xaxis span', 'a date'],
+  ['.sp-xaxis span:nth-child(even)', 'a date'],
+  ['.sp-xaxis-loose', 'the unpositioned fallback'],
+  ['.sp-xaxis-loose span', 'a date of the fallback'],
+  ['.sp-chart-wrap', 'the drawing\'s own row'],
+  ['.sp-chart-wrap .chart', 'the drawing'],
+  ['.sp-axis', 'the money gutter'],
+  ['.sp-xaxis-gutter', 'the cell under the money gutter'],
+]);
+
+/* A class token of the strip's own family, anywhere in a selector -- not
+   only in its last compound. `.sp-xaxis-row` is not a mention of `sp-xaxis`,
+   which is what the trailing guard is for. */
+const NAMES_THE_STRIP = new RegExp('(^|[^-\\w])\\.(?:'
+  + ['sp-xaxis-row', 'sp-xaxis-loose', 'sp-xaxis-gutter', 'sp-xaxis',
+    'sp-chart-wrap', 'sp-axis'].join('|')
+  + ')(?![-\\w])');
+
+const oneLine = (selector) => selector.trim().replace(/\s+/g, ' ');
+
+test('every rule that names the date strip is one that has been measured', () => {
+  const named = [];
+  RULES.forEach((rule) => rule.selectors.forEach((raw) => {
+    if (NAMES_THE_STRIP.test(oneLine(raw))) named.push({ rule, selector: oneLine(raw) });
+  }));
+  assert.ok(named.length >= MEASURED_SELECTORS.size,
+    'the stylesheet still names these elements');
+
+  named.forEach(({ rule, selector }) => {
+    assert.ok(MEASURED_SELECTORS.has(selector),
+      '`' + selector + '` in ' + (rule.media || 'the base sheet') + ' reaches the date '
+      + 'strip by a spelling nobody has measured. A selector does not have to NAME an '
+      + 'element to land on it, so this list is keyed on the exact text rather than on '
+      + 'which element the text resolves to: `.sp-xaxis-row span { margin-left: 24px }` '
+      + 'moves every date 12.48% of the plot at 320px, `.sp-xaxis > * { margin-left: '
+      + '24px }` the same 12.48%, and `.sp-xaxis-row > div:last-child { display: none }` '
+      + 'renders no date at all -- each of them green before this test existed, and the '
+      + 'last compound of all three is a bare type or universal selector. Measure it in '
+      + 'a browser and add it to MEASURED_SELECTORS with what it does, or spell the rule '
+      + 'as one of the ten that are already there');
   });
+
+  /* And every measured selector is really in the sheet, so the map cannot rot
+     into a list of names for rules that no longer exist. */
+  const present = new Set(named.map((one) => one.selector));
+  MEASURED_SELECTORS.forEach((_role, selector) => {
+    assert.ok(present.has(selector),
+      '`' + selector + '` is measured here but no longer in the stylesheet');
+  });
+});
+
+test('every declaration the date strip is given is one that has been measured', () => {
+  /* Which rules are which element is decided by the map above, not by a
+     rule about compounds -- the test before this one has already refused
+     every spelling that is not in it, so there is nothing here to infer.
+     `.sp-xaxis span` and `.sp-xaxis-loose span` both style a span; only the
+     first styles a span of the positioned strip, and the map says so. */
+  const subject = (role) => (rule) => rule.selectors
+    .some((raw) => MEASURED_SELECTORS.get(oneLine(raw)) === role);
 
   const ANY = null;                       // measured as unable to move a date sideways
 
@@ -1490,14 +1558,14 @@ test('every declaration the date strip is given is one that has been measured', 
      vertical offset). The sentence is what a browser measured when it
      changed. */
   const ALLOWED = [
-    ['the row', subject('sp-xaxis-row'), {
+    ['the row', subject('the row'), {
       display: [/^flex$/, 'the row is a flex row, so its first cell can reserve the '
         + 'scale column: without it -30.91% at 320px'],
       gap: [/^[\d.]+px$/, 'and puts the same gap after that cell as the drawing does, '
         + 'checked against the drawing\'s own below'],
       'margin-top': [ANY, 'vertical'],
     }],
-    ['the strip', subject('sp-xaxis'), {
+    ['the strip', subject('the strip'), {
       position: [/^relative$/, 'the strip is what a percentage inside it resolves '
         + 'against: without it -39.07% at 320px'],
       flex: [/^1(\s|$)/, 'and fills the rest of the row, which is what makes it the '
@@ -1511,7 +1579,7 @@ test('every declaration the date strip is given is one that has been measured', 
         + 'that is positioned independently of it'],
       color: [ANY, 'paint'],
     }],
-    ['a date', subject('sp-xaxis', 'span'), {
+    ['a date', subject('a date'), {
       position: [/^absolute$/, 'a date is placed by its own left, not by the date '
         + 'before it: without it -69.86%'],
       transform: [/^translateX\(-50%\)$/, 'and sits centred on its day rather than '
@@ -1520,21 +1588,45 @@ test('every declaration the date strip is given is one that has been measured', 
       'white-space': [/^nowrap$/, 'and is one line, or a wrapped date is centred on '
         + 'its own second line'],
     }],
-    ['the unpositioned fallback', subject('sp-xaxis-loose'), {
+    ['the unpositioned fallback', subject('the unpositioned fallback'), {
       display: [/^flex$/, 'the fallback lays its dates out in a row'],
       'flex-wrap': [/^wrap$/, 'that wraps, because it has no width to spread over'],
       gap: [/^[\d.]+px\s+[\d.]+px$/, 'and separates one date from the next, which in '
         + 'that state nothing else does: h() appends its children with no whitespace '
         + 'between them, so without this the six dates render as one unbroken string'],
     }],
-    ['a date of the fallback', subject('sp-xaxis-loose', 'span'), {
+    ['a date of the fallback', subject('a date of the fallback'), {
       position: [/^static$/, 'a fallback date claims no position at all'],
       transform: [/^none$/, 'and is not centred on a day it was never matched to'],
     }],
-    ['the drawing\'s own row', subject('sp-chart-wrap'), {
+    ['the drawing\'s own row', subject('the drawing\'s own row'), {
       display: [/^flex$/, 'the drawing sits in the same shape as the strip below it'],
       'align-items': [ANY, 'vertical'],
       gap: [/^[\d.]+px$/, 'with the gap the strip is checked against'],
+    }],
+    ['the drawing', subject('the drawing'), {
+      flex: [/^1(\s|$)/, 'the drawing takes the rest of its row exactly as the strip '
+        + 'takes the rest of its own, which is what makes one plot two boxes wide the '
+        + 'same. Move the drawing alone -- `.sp-chart-wrap .chart '
+        + '{ margin-left: 20px }` -- and every date stays where it was while the day it '
+        + 'names slides: 1.97% of the plot at 1440px, 11.48% at 320px'],
+      'min-width': [/^0$/, 'and may shrink below its content, for the same reason'],
+      height: [ANY, 'vertical'],
+    }],
+    ['the money gutter', subject('the money gutter'), {
+      position: [/^relative$/, 'the money scale places its own labels inside this cell'],
+      flex: [/^none$/, 'and is the width it is given rather than a share of the row, on '
+        + 'both rows at once: let the cell under it grow alone -- `.sp-xaxis-gutter '
+        + '{ flex: 1 }` -- and the strip starts somewhere the drawing does not: every date lands 47.68% of the plot from its day at '
+        + '1440px and 37.08% at 320px'],
+      width: [/^[\d.]+px$/, 'and is as wide as the cell under it, which is what lines '
+        + 'the strip up with the drawing: checked as one declaration below'],
+    }],
+    ['the cell under the money gutter', subject('the cell under the money gutter'), {
+      flex: [/^none$/, 'the empty cell is the width it is given, not a share: every date lands 47.68% of the plot from its day at '
+        + '1440px and 37.08% at 320px'],
+      width: [/^[\d.]+px$/, 'and that width is the money gutter\'s own, which is what '
+        + 'lines the strip up with the drawing: checked as one declaration below'],
     }],
   ];
 
@@ -2199,10 +2291,17 @@ const MARKUP_WRITE = /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*wri
    pattern allows for both.
 
    NOT COVERED, deliberately: `element.style.setProperty(...)`. The module
-   does that twice on purpose -- a share bar's width and a gridline label's
-   offset are lengths computed from the answer -- and CSSOM is not gated by
-   the policy. The clause below pins that exception rather than trusting it:
-   every `.style` contact in the module must BE a `setProperty` call. Also
+   does that three times on purpose -- a share bar's width, a gridline
+   label's offset and a date's left, all lengths computed from the answer --
+   and CSSOM is not gated by the policy. The clause below pins that exception
+   rather than trusting it: every `.style` contact in the module must be a
+   `setProperty` call FOR ONE OF THOSE THREE PROPERTIES. Pinning only the
+   form was a hole: the stylesheet allowlist further up cannot see CSSOM at
+   all, so `cell.style.setProperty('position', 'static')` added inside the
+   date loop's own `if (placed)` gate was a `setProperty` call, was green,
+   and put the worst date 69.86% of the plot from its day with two dates
+   touching. A fourth property here is a length this file has not reasoned
+   about, and it has to be argued for rather than typed. Also
    not covered: an attribute name assembled at runtime, which no source scan
    can see and which the page's own policy is the enforcement for. And three
    further spellings, verified SURVIVED rather than assumed: a namespaced
@@ -2240,13 +2339,32 @@ test('the pane module writes no markup and no style attribute', () => {
   assert.ok(!STYLE_ATTR_WRITE.test(PANE_CODE),
     'a style attribute is forbidden by the page\'s own policy');
 
-  /* The documented exception, held to its own words: CSSOM, and only CSSOM. */
-  const styleContacts = PANE_CODE.match(/\.style\b[\s\S]{0,14}/g) || [];
-  assert.ok(styleContacts.length > 0, 'the two computed lengths are still there to be checked');
-  styleContacts.forEach(function (contact) {
-    assert.match(contact, /^\.style\s*\.\s*setProperty\(/,
-      'the docblock allows CSSOM for two computed lengths and nothing else; this is: ' + contact);
+  /* The documented exception, held to its own words: CSSOM, for three named
+     lengths, and nothing else. Wide enough a capture to read the property
+     name out of the call, because the name is the half that matters. */
+  const CSSOM_LENGTH = /^\.style\s*\.\s*setProperty\(\s*'(?:width|top|left)'/;
+  [["  .style.setProperty('position', 'static');", false],
+    ['  .style.setProperty(\'margin-left\', \'24px\');', false],
+    ['  .style.marginLeft = \'24px\';', false],
+    ["  .style.setProperty('left', value);", true],
+  ].forEach(function (pair) {
+    assert.equal(CSSOM_LENGTH.test(pair[0].trim()), pair[1],
+      'the CSSOM clause reads this spelling wrong: ' + pair[0].trim());
   });
+
+  const styleContacts = PANE_CODE.match(/\.style\b[\s\S]{0,34}/g) || [];
+  styleContacts.forEach(function (contact) {
+    assert.match(contact, CSSOM_LENGTH,
+      'the docblock allows CSSOM for three computed lengths -- a bar\'s width, a gridline '
+      + 'label\'s top and a date\'s left -- and nothing else. Any other property set this '
+      + 'way is invisible to the stylesheet allowlist above: adding '
+      + '`cell.style.setProperty(\'position\', \'static\')` inside the date loop\'s own '
+      + '`if (placed)` gate put the worst date 69.86% of the plot from its day with two '
+      + 'dates touching (0.00px apart), and was green. This is: ' + contact);
+  });
+  assert.equal(styleContacts.length, 3,
+    'a fourth `.style` contact, or one fewer: the three are a bar\'s width, a gridline '
+    + 'label\'s top and a date\'s left');
 
   assert.ok(!/\bstyle\s*=/.test(PAGE_HTML), 'and none is written into the page either');
 });
