@@ -2509,7 +2509,7 @@ ops/assets/pane-releases.js "The chip carries the share and nothing else" = line
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
-ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 592
+ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 634
 ```
 
 ### What holds this README to the code
@@ -2644,7 +2644,7 @@ claims id=guard-blind-spots pins 15 rows by name
 claims id=guard-constants pins 9 rows by name
 claims id=pinned-blocks pins 4 rows by name
 claims id=shell-v2-pins pins 6 rows by name
-claims id=source-anchors pins 8 rows by name
+claims id=source-anchors pins 9 rows by name
 claims id=spend-colour-gate pins 21 rows by name
 claims id=spend-write-gate pins 3 rows by name
 claims id=sr-span-classes pins 2 rows by name
