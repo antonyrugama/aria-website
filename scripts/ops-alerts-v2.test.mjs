@@ -39,10 +39,13 @@
        too -- CSSOM is not governed by style-src at all, and aria.js and
        shell-pane-v2.js already do it (RV22-A1) -- and is likewise unread.
        Only the fourth route, an injected <style> ELEMENT, is closed, and
-       only while style-src stays exactly 'self': a hash or a nonce opens
-       it with no violation reported (RV22-2). Both of those are asserted
-       below, not assumed. ops/alerts.html appends no sheet today; nothing
-       in this file would notice if it did.
+       only while the source list that GOVERNS that route -- style-src-elem
+       if the policy declares one, else style-src, else default-src -- stays
+       exactly 'self': a hash or a nonce anywhere in that chain opens it
+       with no violation reported (RV22-2, RV23-1). That resolved list is
+       what is asserted below, not the directive that happens to be spelt
+       style-src. ops/alerts.html appends no sheet today; nothing in this
+       file would notice if it did.
      - Every reader of the sheet. The line below enumerates the PREFIXED
        docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the regex frames
        over its prose; what is not enumerated anywhere is the rest. Most of
@@ -2980,17 +2983,40 @@ test('the page loads one design system and one theme decision', () => {
   assert.match(html, /Content-Security-Policy/, 'the page lost its CSP meta tag');
   assert.ok(!/unsafe-inline/.test(html), 'the CSP grew unsafe-inline');
   /* `no unsafe-inline` is not the same claim as `no inline styles`: a hash
-     or a nonce in style-src opens the <style> route one sheet at a time,
-     with no violation reported, and the NOT COVERED bullet at the top of
-     this file says that route is CLOSED. So the source list is pinned
-     whole, not searched for one keyword (twenty-second review of #75). */
+     or a nonce opens the <style> route one sheet at a time, with no
+     violation reported, and the NOT COVERED bullet at the top of this file
+     says that route is CLOSED. So the source list is pinned whole, not
+     searched for one keyword (twenty-second review of #75).
+
+     Which list, though, is the whole of it. `style-src` is not what governs
+     a <style> ELEMENT when `style-src-elem` is present: CSP3 makes the
+     -elem directive the governing one and `style-src` merely its fallback,
+     so `style-src 'self'; style-src-elem 'self' 'sha256-...'` leaves the
+     directive byte-for-byte 'self' and paints anyway -- measured in Chrome,
+     0 violations (twenty-third review of #75). The fallback chain is
+     resolved here and the RESULT is pinned, rather than one directive being
+     read because it has the expected name. Directive names are ASCII
+     case-insensitive, so they are lowercased before the lookup; a duplicate
+     directive is ignored by the parser after its first occurrence, so the
+     first is what this reads too. `style-src-attr` is NOT in this chain: it
+     governs style ATTRIBUTES, not <style> elements, and the attribute route
+     is not what the bullet claims to have closed. */
   const cspMeta = /<meta[^>]*http-equiv="Content-Security-Policy"[^>]*>/i.exec(html);
   const csp = cspMeta ? (/content\s*=\s*"([^"]*)"/i.exec(cspMeta[0]) || [])[1] : null;
-  const styleSrc = /(?:^|;)\s*style-src\s+([^;]*)/.exec(csp || '');
-  assert.deepEqual(styleSrc ? styleSrc[1].trim().split(/\s+/) : null, ["'self'"],
-    'style-src is no longer exactly \'self\': a hash, a nonce or another source opens the '
-    + '<style> route that the NOT COVERED bullet at the top of this file says is closed, '
-    + 'and it opens it without reporting a violation');
+  const directives = new Map();
+  for (const d of (csp || '').split(';')) {
+    const parts = d.trim().split(/\s+/).filter(Boolean);
+    if (parts.length && !directives.has(parts[0].toLowerCase())) {
+      directives.set(parts[0].toLowerCase(), parts.slice(1));
+    }
+  }
+  const styleElem = ['style-src-elem', 'style-src', 'default-src']
+    .map((name) => directives.get(name)).find((list) => list !== undefined);
+  assert.deepEqual(styleElem === undefined ? null : styleElem, ["'self'"],
+    'the source list that governs a <style> ELEMENT is no longer exactly \'self\': a hash, a '
+    + 'nonce or another source -- in style-src-elem, in style-src, or in the default-src this '
+    + 'falls back to -- opens the <style> route that the NOT COVERED bullet at the top of this '
+    + 'file says is closed, and it opens it without reporting a violation');
 
   /* The sheet's own first sentence: "Loaded after assets/aria.css and
      assets/shell-pane-v2.css, on ops/alerts.html and nowhere else." Order
@@ -3399,9 +3425,12 @@ const READER_PROBES = [
   { css: '.probe { list-style: square inside magenta; }', refused: false, stemless: 'list-style',
     why: 'BLIND SPOT: list-style, named by the sheet, carries no paint stem' },
   { css: '.probe { filter: drop-shadow(0 0 1px magenta); }', refused: true,
-    why: 'NOT a blind spot, though paints("filter") is false: the only syntax that carries a '
-      + 'colour to filter is drop-shadow(), which is unclassified and refused everywhere. The '
-      + 'sheet named filter alongside the four real ones until this row was run' },
+    why: 'NOT a blind spot, though paints("filter") is false: BOTH syntaxes that carry a '
+      + 'colour to filter -- drop-shadow(), and a URL reference to an SVG filter that paints '
+      + 'one -- are unclassified functions, and those are refused everywhere. The sheet named '
+      + 'filter alongside the four real ones until this row was run. RV22-A2 corrected the '
+      + 'sheet\'s copy of this sentence and RV23-A1 caught that this second copy of it, the '
+      + 'row\'s own reason, had been left behind' },
   { css: '.probe { column-rule: 1px solid color-mix(in srgb, black 50%, white); }', refused: false,
     why: 'BLIND SPOT: the same, inside a classified colour function -- the exact payload of '
       + 'Stadiora/Aria#10632 finding 1' },
