@@ -2645,7 +2645,8 @@ const PAINT_PROGRAM = String.raw`(() => {
       }
       (moved ? painted : unpainted).push(moved ? cls : { cls: cls, where: where, carriers: els.length });
     }
-    return { painted: painted, unpainted: unpainted, toggles: toggles, classes: carriers.size };
+    return { painted: painted, unpainted: unpainted, toggles: toggles,
+      classes: carriers.size, seen: [...carriers.keys()].sort() };
   };
 
   /* Every property any loaded rule declares, longhand-expanded by the parser.
@@ -2866,6 +2867,16 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
 
       const verdict = await painter.evaluate(
         'window.__opsPaint.judge(' + JSON.stringify(declared.names) + ', 8)');
+
+      /* Every class the pane drew has to BE in the rebuilt tree, or the sweep
+         judges a smaller set than it walked and reports nothing about the
+         difference. A class the rebuild dropped is not a class that paints --
+         it is a class nobody looked at, and the two are indistinguishable
+         from the outside. Found by the battery: dropping the serialised
+         root's attributes took `app` off #app and the sweep stayed green. */
+      assert.deepEqual(verdict.seen, classesIn(tree),
+        name + ': the rebuilt tree carries a different set of classes than the pane ' +
+        'drew, so the sweep judged a set the pane does not produce');
       judged += verdict.classes;
       toggles += verdict.toggles;
       perState.push([name, verdict.classes, verdict.painted.length]);
@@ -2899,6 +2910,20 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
     painter.close();
   }
 });
+
+/* Every class in a serialised tree, from the class attribute the pane wrote.
+   The browser is asked for the same set off the rebuilt tree, and the two must
+   agree or the rebuild lost something. */
+function classesIn(spec) {
+  const out = new Set();
+  (function walk(node) {
+    if (node.t !== undefined) return;
+    const raw = node.a && node.a['class'];
+    if (raw && raw.trim()) for (const cls of raw.trim().split(/\s+/)) out.add(cls);
+    for (const child of node.c) walk(child);
+  })(spec);
+  return [...out].sort();
+}
 
 function countElements(spec) {
   if (spec.t !== undefined) return 0;
