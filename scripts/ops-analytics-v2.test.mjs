@@ -2567,33 +2567,34 @@ const PAINT_PROGRAM = String.raw`(() => {
     return el;
   };
 
-  /* The serialised root IS #app, so its own attributes go onto the page's own
-     #app rather than onto a copy of it nested inside. Anything matching on
-     #app itself — the id, its classes, the shell chrome around it — therefore
-     resolves against the element the page really has. */
+  /* The serialised root IS #app, and the page's own #app is left exactly as
+     the page dresses it -- class="app" and all. An earlier draft stripped
+     everything but the id and put the FIXTURE's attributes on instead, which
+     took 'class="app"' off a grid container (aria.css:187) and laid the whole
+     rebuilt tree out under something the real page never has. The fixture's
+     root carries only an id, and the Node side asserts that, so there is
+     nothing to merge; if that ever stops being true the test says so rather
+     than this silently picking one. */
   const build = (spec) => {
     const app = document.getElementById('app');
     if (!app) return { error: 'the page has no #app to rebuild into' };
     while (app.firstChild) app.removeChild(app.firstChild);
-    for (const name of app.getAttributeNames()) {
-      if (name !== 'id') app.removeAttribute(name);
-    }
-    for (const name of Object.keys(spec.a)) {
-      if (name === 'id') continue;
-      try { app.setAttribute(name, spec.a[name]); } catch (e) { /* refused */ }
-    }
     for (const child of spec.c) app.appendChild(make(child));
     document.body.offsetHeight;
     /* The root is #app itself, which querySelectorAll does not return, and the
        count on the Node side includes it. Counting the same thing on both
        sides is the point: a rebuild that dropped a subtree would otherwise be
        a guard that found nothing. */
-    return { built: app.querySelectorAll('*').length + 1 };
+    return { built: app.querySelectorAll('*').length + 1,
+      appAttrs: app.getAttributeNames().sort().join(' ') };
   };
 
   const judge = (props, cap) => {
     const app = document.getElementById('app');
-    const all = [app].concat([...app.querySelectorAll('*')]);
+    /* #app itself is the SHELL's element, not the pane's -- the page dresses it
+       class="app" and the pane never writes to it. This sweep is about the
+       classes the PANE draws, so the root is the container, not a subject. */
+    const all = [...app.querySelectorAll('*')];
 
     const snap = (el) => {
       const scope = [];
@@ -2860,6 +2861,20 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
       /* The rebuild has to have produced the tree the fake DOM drew, or a
          guard that finds nothing and a guard that is broken look identical
          from the outside. Counted on both sides. */
+      /* The rebuild puts the pane's tree under the PAGE's #app and does not
+         merge the fixture's own attributes onto it. That is only sound while
+         the fixture dresses its #app with nothing but an id -- a fixture that
+         added a class would need merging, and silently not getting it would
+         lay the tree out under an ancestor the real page does not have. */
+      assert.deepEqual(Object.keys(tree.a).sort(), ['id'],
+        name + ': the fixture now dresses #app with ' + JSON.stringify(tree.a) +
+        '. The rebuild leaves the real page\'s #app alone, so those attributes ' +
+        'are not on the element the tree is judged under');
+      assert.equal(built.appAttrs, 'class id',
+        name + ': the page\'s own #app carries "' + built.appAttrs + '" rather than ' +
+        '"class id", so the rebuilt tree is not sitting under the grid container ' +
+        'aria.css:187 gives the real pane');
+
       const expected = countElements(tree);
       assert.equal(built.built, expected,
         name + ': the browser rebuilt ' + built.built + ' elements from a tree of ' +
@@ -2916,12 +2931,14 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
    agree or the rebuild lost something. */
 function classesIn(spec) {
   const out = new Set();
+  /* The root is #app, which the shell owns and the pane never writes to, so it
+     is skipped on both sides -- judge() skips it too. */
   (function walk(node) {
     if (node.t !== undefined) return;
     const raw = node.a && node.a['class'];
     if (raw && raw.trim()) for (const cls of raw.trim().split(/\s+/)) out.add(cls);
     for (const child of node.c) walk(child);
-  })(spec);
+  })({ t: undefined, a: {}, c: spec.c });
   return [...out].sort();
 }
 
