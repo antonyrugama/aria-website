@@ -119,8 +119,10 @@
      cost is that a result parked somewhere no reader would go, but could
      scroll to, reads as on the page.
    - **The rendered-text question is asked of boxless carriers only.** A
-     carrier that owns a box is judged by that box and checkVisibility(). A
-     carrier with none — display:contents — is judged by the boxes its text
+     carrier that owns a box is judged by that box, by checkVisibility(), and
+     by its own content-visibility, which is named as a property because it
+     keeps the element rendered while skipping the text inside it. A carrier
+     with none — display:contents — is judged by the boxes its text
      produces AND by whether the region's innerText still contains the marker,
      because a Range inside a content-visibility:hidden subtree keeps
      reporting the rects it had when it was visible. The asymmetry is real: a
@@ -869,13 +871,14 @@ const FLOOR_HINTS = {
     'and aria-pressed on its control. Measured at this head, a one-row result view judges ' +
     'aria-current and not aria-pressed — the marked <tr> finds an unmarked peer among the ' +
     'detail card\'s rows (ops/assets/pane-users.js:1095, :1156, :1239) while the marked ' +
-    'control finds none outside the match table. applySelection writes aria-pressed on the ' +
-    'pick control of every rendered match row that has one (:551, from :652), so the ' +
-    'aria-pressed entries above, added up whatever their value, are how many pick controls ' +
-    `carried the ATTRIBUTE — not how many were drawn. The LOOKUP fixture in this file sent ` +
-    `${LOOKUP.matches.length} rows. Equal means one attribute-bearing pick control per row ` +
-    'sent; fewer means the page carried fewer of them than that, which a row that never ' +
-    'rendered and a control the pane stopped writing the attribute on both produce.'
+    'control finds none outside the match table. The census above counts every ' +
+    'aria-pressed attribute under #content, whatever wrote it, and applySelection writes ' +
+    'one on the pick control of every rendered match row that has one (:551, from :652). ' +
+    `The LOOKUP fixture in this file sent ${LOOKUP.matches.length} rows. Those are the two ` +
+    'numbers to hold against each other; what else on the page may carry the attribute is ' +
+    'not measured here, and a row that never rendered, a control the pane stopped writing ' +
+    'the attribute on, and a second control that started writing it all move the census ' +
+    'without moving the fixture.'
 };
 
 /* Fixture pre-flight.
@@ -1557,10 +1560,12 @@ const probeFor = (markers) => `(() => {
      Three predicates now, and each one of them was added because the pair
      before it passed something nobody could see: a box rules out display:none
      and a collapsed subtree, checkVisibility() rules out visibility:hidden and
-     content-visibility on an element that keeps its box, and reachability
-     rules out a box parked off the page. opacity is NOT asked about, because
-     a pane mid-transition would read as hidden and this gate decides whether
-     the run happens at all. */
+     a content-visibility:auto subtree that is currently skipped, and
+     reachability rules out a box parked off the page. content-visibility:hidden
+     is asked for by name, because it keeps the element rendered and skips only
+     its contents, so checkVisibility() reports true about a carrier painting
+     nothing. opacity is NOT asked about, because a pane mid-transition would
+     read as hidden and this gate decides whether the run happens at all. */
   const carriers = (m) => {
     const out = [];
     for (const el of content.querySelectorAll('*')) {
@@ -1617,6 +1622,15 @@ const probeFor = (markers) => `(() => {
     const own = el.getBoundingClientRect();
     if (own.width > 0 || own.height > 0) {
       if (!inReach(own)) return false;
+      /* content-visibility:hidden on the carrier itself is asked as a
+         property, because it is the one way to keep a box and paint no text:
+         the element is rendered, only its contents are skipped, so
+         checkVisibility() answers true about the element. Measured, a span
+         under "content-visibility: hidden; padding: 6px 24px" reports a
+         48x12 box, checkVisibility() true, and a card drawn with the version
+         numbers gone. Without the padding the box collapses and the boxless
+         path below catches it, which is what made this half survive a round. */
+      if (getComputedStyle(el).contentVisibility === 'hidden') return false;
       return typeof el.checkVisibility === 'function'
         ? el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })
         : true;
@@ -1809,7 +1823,8 @@ try {
           'and nothing carrying it — neither a box of its own nor the boxes its text ' +
           'produces — is both inside the area this page can be scrolled over and reported ' +
           'as rendered by the browser. Zero-area, display:none, visibility:hidden or ' +
-          'collapse, content-visibility, a position outside the document, and a carrier ' +
+          'collapse, content-visibility:hidden on the carrier or a skipped ' +
+          'content-visibility:auto subtree, a position outside the document, and a carrier ' +
           'with no box of its own whose text the page no longer renders as one run all ' +
           'land here and this check does not tell them apart; opacity it never asked ' +
           'about. The ' +
