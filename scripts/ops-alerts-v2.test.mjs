@@ -64,6 +64,20 @@
        nothing here can see a colour as a pixel --
        scripts/check-ops-contrast.mjs is the tool that judges contrast, and
        it is not run from here.
+     - What the sheet's count sentences MEAN beyond their number word.
+       sheetCount() resolves the word the sentence states and refuses a
+       NUMBER_ISH word either side of it; a modifier that is not a number
+       word is invisible to it, so "Two times six columns in 760px", "Half
+       of six columns", "Twice one card per problem" and "Double three
+       columns of label-and-value rows" each resolve to the component and
+       stay green (measured, the fifteenth review of #75). Wider word lists
+       were declined: the list would be the claim, and nothing would bind it.
+     - The WORDING of focusable()'s refusals. What is bound is that a shape
+       reaches the throw rather than an answer, through the probe rows that
+       say `refused`, and the `focusable() cannot tell: ` prefix every
+       message starts with. The causes a message names after that prefix are
+       prose -- reverting the <area> message to the two-cause wording it had
+       before the fifteenth review is green (measured, the same review).
      - Anything the operations API decides. The role checks below prove the
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
@@ -2597,6 +2611,7 @@ const SHEET_CITATIONS = [
   'every rule switch is a real checkbox, reachable, stateful and named',
   'every severity on the page is a word, not only a colour',
   'every status tone here paints the -ink of a tint aria.css also declares',
+  'the ink on a severity is the -ink of the accent that severity draws',
   'every test the stylesheet cites by name is a test this file registers',
   'every token this sheet paints with is one aria.css actually declares',
   'the accent this sheet adds is the one aria.css leaves out',
@@ -2605,7 +2620,7 @@ const SHEET_CITATIONS = [
   'the reader refuses what READER_PROBES says it refuses, and walks past what it says it misses',
   'the rules table scrolls inside a box a keyboard can reach and a screen reader can name',
   'the rules the sheet justifies by what the page draws name what it draws',
-  /* Five times: the sheet cites this one wherever a layout rule is justified
+  /* The sheet cites this one wherever a layout rule is justified
      by what the page draws -- the condition pill's phrasing, the rules
      table's columns, the cards per problem, the fact columns and the hero
      child the chip strip is. One entry per SITE, or deleting one site is
@@ -2887,7 +2902,7 @@ test('a pane that could not be read prints no numeral that could be read as a co
 
 /* ===================== the rules table as a region ===================== */
 
-/* Six columns hold a 760px minimum, so on a phone the rules table scrolls
+/* The rules table holds a minimum width, so on a phone it scrolls
    inside its own box. A box that scrolls sideways and cannot be focused
    belongs to a pointer: measured on the real page at 375px, that box reported
    clientWidth 343 against scrollWidth 967, with 624px of table past its own
@@ -3387,11 +3402,6 @@ test('every token this sheet paints with is one aria.css actually declares', () 
     'a rule asks for a custom property nothing declares, so it paints its fallback or nothing');
 });
 
-/* The docblock's "Status text takes the -ink variant of its tone, because the
-   base colour is the tint and the -ink is the text on that tint." Every .is-
-   rule is paired here with the tint aria.css declares beside its ink, so a
-   tone painted in its own tint -- the failure the sentence warns about -- is
-   a failure rather than a sentence. */
 /* The sheet says its three status-ink rules exist because aria.css declares
    .acc-bad and .acc-warn but no blue, so info problems need one declared
    here. Every clause of that is checkable, and none of it was checked
@@ -3557,14 +3567,18 @@ function sheetCount(pattern, says) {
      `[\w-]+` is free to start at the TAIL component of a compound the sheet
      joins with a space -- "Twenty six columns" resolves to 6, both edges are
      spaces, and 481 tests stay green on a one-word edit to the sheet (found
-     in the fourteenth review of #75). This is also what catches the dash
-     spellings the edge test above cannot see, and it is why that test is
-     still the ASCII `[\w-]` and claims nothing wider: a non-breaking hyphen
-     renders exactly like the ASCII one and is not word-ish, so "Sixty\u2011six
-     columns" walks past the edge test -- and dies here, because a compound
-     that changes the number has a number word in it. Widening the edge test
-     to `\p{Pd}` was tried and deleted: no payload made it the thing that
-     fired (M15-B1f). */
+     in the fourteenth review of #75). What this refuses is exactly one
+     thing: a NUMBER_ISH word immediately either side of the capture. That
+     covers the spellings the edge test cannot see -- "Sixty\u2011six columns"
+     walks past an ASCII edge test and dies here -- which is why widening
+     that test to `\p{Pd}` was tried and deleted, no payload having made it
+     the thing that fired (M15-B1f). It does NOT cover a modifier that is
+     not itself a number word: "Two times six columns", "Half of six
+     columns", "Twice one card per problem" and "Double three columns" all
+     resolve to the component and are green (the fifteenth review of #75).
+     That is on the NOT COVERED list at the top of this file rather than
+     chased with a wider word list, because the list would be the claim and
+     nothing would bind it. */
   const wordBefore = (prose.slice(0, span[0]).match(/([\w-]+)[^\w-]*$/) || [])[1];
   const wordAfter = (prose.slice(span[1]).match(/^[^\w-]*([\w-]+)/) || [])[1];
   const numberish = (word) => word !== undefined && NUMBER_ISH.has(word.toLowerCase());
@@ -3687,6 +3701,13 @@ test('the rules the sheet justifies by what the page draws name what it draws',
     }
   });
 
+/* The sheet's "Status text takes the -ink variant of its tone, because the
+   base colour is the tint and the -ink is the text on that tint." Every .is-
+   rule is paired here with the tint aria.css declares beside its ink, so a
+   tone painted in its own tint -- the failure the sentence warns about -- is
+   a failure rather than a sentence. WHICH tone is its own is the test below
+   this one; this one is blind to it, and said so nowhere until the fifteenth
+   review of #75 painted critical text amber and watched 73 tests pass. */
 test('every status tone here paints the -ink of a tint aria.css also declares', () => {
   const declared = new Set(
     declarations(ARIA_CSS).filter((d) => d.property.startsWith('--')).map((d) => d.property));
@@ -3715,7 +3736,56 @@ test('every status tone here paints the -ink of a tint aria.css also declares', 
   }));
 });
 
-/* --------------------------------------- the one exception, and its reason */
+/* WHICH tone is a severity's own, which the test above is blind to. The
+   pairing is read off the DRAWN card -- the accent class the page puts on it
+   and the ink classes inside it -- and never from a map typed here, because
+   an expectation derived from the thing under test moves with the mutation.
+   Paint .is-crit in --amber-ink and this is the test that goes red. */
+test('the ink on a severity is the -ink of the accent that severity draws', async () => {
+  const dom = await boot({
+    open: { problems: [
+      problem({ id: 'prb_c', reference: 'AO-811', severity: 'critical' }),
+      problem({ id: 'prb_w', reference: 'AO-812', severity: 'warning' }),
+      problem({ id: 'prb_i', reference: 'AO-813', severity: 'info' }),
+    ] },
+  });
+  const classesOf = (n) => (((n.getAttribute && n.getAttribute('class')) || '').split(/\s+/));
+  const both = [...declarations(ARIA_CSS), ...declarations(PANE_CSS)];
+  const tokenOf = (selector, property) => {
+    const found = both.filter((d) => d.selector === selector && d.property === property);
+    assert.equal(found.length, 1, selector + ' declares ' + property + ' ' + found.length
+      + ' times across the two sheets, so the tone it names is not one value');
+    const ref = /^var\(\s*(--[\w-]+?)(-ink)?\s*\)$/.exec(found[0].value);
+    assert.ok(ref, selector + ' paints ' + JSON.stringify(found[0].value) + ', which names no '
+      + 'token, so the sheet\'s sentence about -ink variants cannot be checked against it');
+    return ref[1];
+  };
+
+  const cards = problemCards(dom);
+  assert.ok(cards.length >= 3, 'the fixture draws ' + cards.length + ' problem cards, so this '
+    + 'cannot see whether DIFFERENT severities each take their own tone');
+
+  const seen = cards.map((card) => {
+    const accent = classesOf(card).filter((c) => /^acc-[\w-]+$/.test(c));
+    assert.equal(accent.length, 1, 'a problem card draws ' + accent.length + ' accent classes');
+    const inks = [...new Set(findAll(card, (n) => classesOf(n).some((c) => /^is-[\w-]+$/.test(c)))
+      .flatMap((n) => classesOf(n).filter((c) => /^is-[\w-]+$/.test(c))))];
+    assert.ok(inks.length, 'the ' + accent[0] + ' card draws no status ink at all');
+    const tone = tokenOf('.' + accent[0], '--acc');
+    return { card: accent[0], tone, wrong: inks.filter((c) => tokenOf('.' + c, 'color') !== tone) };
+  });
+  assert.deepEqual(seen.filter((r) => r.wrong.length).map((r) => r.card + ' draws '
+    + r.wrong.join(' ') + ' over ' + r.tone), [],
+    'a severity paints its text in the -ink of a tone other than the accent that severity '
+    + 'draws, so the sheet names one severity in two colours');
+  assert.equal(new Set(seen.map((r) => r.tone)).size, seen.length,
+    'two severities draw the same accent token, so agreeing with themselves proves nothing');
+  console.log('severity inks judged: ' + JSON.stringify({
+    cards: seen.length, tones: [...new Set(seen.map((r) => r.tone))].length,
+  }));
+});
+
+/* --------------------------------------------- the one exception, and its reason */
 
 /* WCAG relative luminance and contrast ratio, sRGB. Proved against two
    published figures before anything below is believed. */

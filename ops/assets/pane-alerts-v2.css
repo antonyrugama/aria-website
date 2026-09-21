@@ -70,7 +70,11 @@
    Status text takes the -ink variant of its tone, because the base colour is
    the tint and the -ink is the text on that tint. Every .is- rule here is
    paired with the tone token aria.css declares beside its -ink ("every
-   status tone here paints the -ink of a tint aria.css also declares").
+   status tone here paints the -ink of a tint aria.css also declares"), and
+   WHICH tone is its own is read off the drawn card rather than from this
+   sentence: the severity that draws .is-crit draws the accent whose token
+   this ink has to be the -ink of ("the ink on a severity is the -ink of the
+   accent that severity draws").
 
    Nothing here carries a status by colour alone: every severity on the page
    sits beside the same fact in words, written by assets/pane-alerts.js and
@@ -148,9 +152,8 @@
 
 /* ------------------------------------------------------------ the problems
 
-   One card per problem, in a column — one card for each is what the page
-   draws ("the rules the sheet justifies by what the page draws name what it
-   draws"). The card is the accent shape aria.css
+   One card per problem, in a column, which is what the page draws ("the
+   rules the sheet justifies by what the page draws name what it draws"). The card is the accent shape aria.css
    already has, so only the inside of it is declared here (NOT BOUND, see the
    top of this file). */
 
