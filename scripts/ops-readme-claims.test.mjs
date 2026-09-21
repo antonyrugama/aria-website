@@ -155,10 +155,20 @@
      reads a bare `name.ext` as a path only when the tree already has that
      extension, because `payload.data` and `availability.state` are spelled
      the same way. A span carrying a directory is swept whatever its
-     extension.
-   - Prose. This file judges the fenced blocks and the file paths the README
-     names. A sentence that restates a block's content in English, or makes a
-     claim no block carries, is not judged. The remedy used in the rewrite is
+     extension UNLESS its first segment is one of the Aria monorepo directories
+     the sweep skips by name - `grep -n FOREIGN` is that list, and round 13
+     counted eleven live spans in this README sitting behind it: every
+     `docs/mocks/...` path and the one `app-backend/...` path. The list is
+     typed, because the monorepo is not here to derive it from, and it is wrong
+     in BOTH directions - a monorepo directory missing from it (`coaches-mobile/`,
+     `watch-app/`) produces a FALSE red, and a path under one of the six is
+     never judged at all. Neither face is fixable from this repository, which is
+     why it is disclosed rather than counted.
+   - Prose. This file judges the fenced blocks, the file paths the README names,
+     the row sets held by a check rather than a fence, and - since round 9 - a
+     resolvable `file.ext:NN` citation inside a code span. A sentence that
+     restates a block's content in English, or makes a claim carrying no block,
+     no path and no citation, is not judged. The remedy used in the rewrite is
      to make the prose point AT a block rather than repeat it, but nothing
      enforces that.
    - Nothing, in the sense this bullet used to claim. It said a `{ todo: true }`
@@ -227,9 +237,13 @@
      control, but that array lives inside a template literal evaluated in the
      browser, so the five stays prose and stays unproven.
    - A blind spot a guard does not put in a bullet HEADING of its LEADING
-     docblock, under a recognised heading phrase - the census at the head of
-     the block reports which phrases those are, so that no sentence counts
-     them.
+     docblock, under a heading phrase the matcher recognises. WHICH phrases
+     those are is not written here and is enumerated nowhere: the census at the
+     head of the block SAMPLES the matcher - fixed spellings handed to the real
+     predicate, each carrying the verdict it gave - so a phrase nobody thought
+     to probe is recognised in silence. Round 13 demonstrated exactly that with
+     a fourth top-level branch. That gap is the third of the three the README
+     publishes, and this bullet does not close it.
      `guard-blind-spots` reads the leading bold run of each bullet under a
      NOT COVERED heading that OPENS its line - matching the phrase anywhere in
      a line anchors on check-ops-contrast.mjs pointing at the README's list
@@ -252,8 +266,9 @@
            BLIND_SPOT_HEADING read one of its two dimensions and was wrong in
            both directions while staying green. The edge is MEASURED instead -
            see HEADING_PROBES below, whose verdicts are the first lines of the
-           block. If you want to know what the matcher sees, read the census,
-           not a sentence.
+           block. If you want to know what the matcher sees, read the census
+           rather than a sentence - and read it as a SAMPLE, because a spelling
+           it does not hold is a spelling nobody measured.
        (3) HEADINGS, NOT BULLETS. A blind spot written into a bullet's body is
            not a line. Spans beyond the first are counted, summed over the
            bullets, but never named.
@@ -379,10 +394,16 @@ const leafIndex = (files) => {
 /* A path carrying a directory is held to that directory, or `ops/assets/x.css`
    and `made/up/x.css` both read as right because the leaf matches. A bare
    `x.css` is the one spelling resolved by leaf, which is how most of this file
-   names an asset. `/ops/` and `ops/` are the same place. */
-const resolveRepoPath = (file, byLeaf) => (file.includes('/')
-  ? [file, `ops/${file.replace(/^\/?ops\//, '')}`]
-  : [file, byLeaf.get(file)].filter(Boolean));
+   names an asset. A leading `./` or `/` is dropped first, because `ops/x`,
+   `./ops/x` and `/ops/x` are one place written three ways and round 13
+   demonstrated two of the three walking through the citation refusal while
+   the third was refused. */
+const resolveRepoPath = (file, byLeaf) => {
+  const bare = file.replace(/^\.\//, '').replace(/^\//, '');
+  return file.includes('/')
+    ? [file, bare, `ops/${bare.replace(/^ops\//, '')}`]
+    : [file, byLeaf.get(file)].filter(Boolean);
+};
 
 /* ------------------------------------------------------------ the blocks */
 

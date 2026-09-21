@@ -2347,7 +2347,9 @@ blind spots outside theirs: `check-ops-shell-v2.mjs` says what its icon
 sweep does not measure — an ink too close to what is behind it, and all of
 geometry but `stroke-width` — and `check-ops-contrast.mjs` carries a long
 `NOT COVERED, on purpose` section. Both are in `source-anchors` above, which is
-where every line number that points at CODE now lives — the one exception is the
+where every line number that points at code IN THIS REPOSITORY now lives — a citation into
+the Aria monorepo is outside the rule, not an exception to it, and `opsUsageView.ts:932` is
+still spelled twice below — and the one exception here is the
 citation that is itself the record of a drift, published row by row in
 `exempt-citations` below and counted by the run, which reports it as
 `prose line citations` — the number that used to sit in this
@@ -2626,7 +2628,9 @@ of them is written here, because the count written here was wrong twice: the swe
 code span that is **only** a repository file path — `node scripts/x.mjs` is a command, not a path,
 and is not judged — to name something in the tree or declared in `deleted-assets`, which
 is what makes a file deleted elsewhere red here rather than quietly stale — a span carrying a
-directory counts whatever its extension, and a bare `name.ext` counts when the tree uses that
+directory counts whatever its extension **unless its first segment is one of the Aria monorepo
+directories the sweep skips by name**, which is eleven live spans in this file and is NOT
+COVERED rather than judged, and a bare `name.ext` counts when the tree uses that
 extension, which is what keeps `payload.data` out of it; and the checks table
 above must carry a row for every `check-ops-*.mjs` in `scripts/`, which is how the sixth browser
 guard got a row the day it landed instead of the day somebody noticed; and another refuses a
@@ -2737,7 +2741,10 @@ is declared in the Aria monorepo, so nothing here can decide whether departure 8
 complete sweep of it, which is why that departure no longer claims to be one. The line-number
 refusal reads **code spans**, and only for files this repository has: a citation written in
 words, one outside backticks, and one into the monorepo — `opsUsageView.ts:932` is the only
-one — are all outside it, stated here rather than counted as clean. Inside a span it takes
+one of those — are outside it, stated here rather than counted as clean, and nothing here
+claims that list is closed: round 13 found two more spellings of a repository file, `./x` and
+`/x`, walking through it, and the resolver drops both prefixes now rather than the sentence
+gaining two rows. Inside a span it takes
 **every** citation, not only a span that is nothing but one. What it exempts is the
 `exempt-citations` block above, row by row rather than counted in this sentence, and that
 list's size is a floor: a list of things a guard refuses to judge is its own back door, so
