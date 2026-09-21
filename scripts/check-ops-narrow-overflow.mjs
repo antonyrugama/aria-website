@@ -38,9 +38,15 @@
    Mac had to find it by hand. 360px reproduces on any platform what CI's wider
    font metrics produce at 375px. 320px was added while auditing #7366, which
    filed the overflow this list used to describe at that width: it is the
-   narrowest width the check named but did not lay out, and the Severity
-   control it names fits it, measured on Linux CI across all ten panes, so the
-   width now holds a property rather than documenting a gap.
+   narrowest width the check named but did not lay out, and all ten v2 panes
+   now fit it on Linux CI. That is the whole of the claim. It is deliberately
+   not a claim that #7366's own control was retired here: that control is
+   `div.filter-item.filter-gap`, styled by assets/ops.css:434 and built only by
+   assets/shell.js and assets/operate.js, none of which any pane loads — see
+   the ops.css bullet below, which says this sweep has never laid that sheet
+   out at all. Only assets/pane-alerts.js draws a Severity control today, and
+   `.seg { min-width: 900px }` appended to ops.css leaves this check green at
+   320px on all ten panes while the same rule in assets/aria.css reds it.
 
    The stub is deliberately hostile rather than tidy. It sends a rule that
    cannot judge and whose reason is the longest sentence the vocabulary in
@@ -66,7 +72,7 @@
    own, and a failure card passes all five: it is the right file, it sets the
    right `data-pane`, the shell reaches ready, the top bar is written from the
    registry rather than from the read, and all three clear the floor of eight
-   elements — by 23, 30 and 115. Without a per-pane marker the sweep shrank from
+   elements, each with room to spare. Without a per-pane marker the sweep shrank from
    ten laid-out panes to seven and went on printing that it had swept ten.
 
    Two shells have existed, so the sweep reads two spellings of everything it
@@ -97,13 +103,38 @@
    - **An overflow a container clips.** The verdict is the width of the
      document, so an element that overruns inside an ancestor that clips it
      never reaches the document and is invisible here on every pane. Measured:
-     deleting the four per-pane copies of `.hero > .hero-chips { grid-column:
-     1 / -1 }` collapses the hero's title column to 0px on three panes and to
-     41px on App releases, and `.hero` itself then reports scrollWidth 398
-     against clientWidth 343 — while `documentElement.scrollWidth` stays 375
-     and this check stays green, byte-identically, in both states. That defect
-     class needs an element-level check and is filed as Stadiora/Aria#10397
-     rather than folded in.
+     deleting **all five** copies of `.hero > .hero-chips { grid-column: 1 / -1
+     }`, each at its own site inside its file's existing `@media (max-width:
+     980px)` block — pane-alerts-v2.css, pane-overview-v2.css,
+     pane-releases-v2.css, pane-settings-v2.css and the shared assets/aria.css
+     — collapses the hero's title column to 0px on three panes and to 41px on
+     App releases, and `.hero` itself then reports scrollWidth 398 against
+     clientWidth 343, while `documentElement.scrollWidth` stays 375 and this
+     check stays green in both states. Deleting only the four per-pane copies
+     is a no-op: 4bf94af (PR #92) added the fifth to the shared sheet, so
+     either set alone is masked by the other. This bullet published the
+     four-site version until round 2 of PR #103 re-ran it. That defect class
+     needs an element-level check; scripts/ops-hero-narrow.test.mjs already
+     binds the hero half of it on /ops/shell-v2.html, where the shared rule is
+     unmasked, and the rest is filed as Stadiora/Aria#10397.
+   - **Anything out of the document's flow, and anything past the left edge.**
+     `documentElement.scrollWidth` does not grow for a `position: fixed` box
+     however far past the right edge it sits, and it does not grow for any box
+     past the *left* edge either. The shell puts real chrome in fixed
+     positioning — shell-pane-v2.css:88, :114, :175, :293 — so this is not a
+     hypothetical shape here. Measured at 320px in both themes, one pseudo
+     element appended unscoped to assets/aria.css, one property changed
+     between rows: `body::after { content:''; position: fixed; left: 0; top: 0;
+     width: 900px; height: 8px }` leaves this check **green** on all ten panes,
+     a 900px bar hanging 580px past the edge; the identical box at `position:
+     absolute` reds it at `documentElement.scrollWidth` 900 against 320; and
+     that same absolute box at `left: -900px` is green again. The per-element
+     report cannot close either gap, because it filters on `box.right >
+     viewport + 0.5` and has no left-edge test. Note for anyone re-running it:
+     a `position: fixed` descendant of `.topbar` is NOT viewport-fixed, because
+     assets/aria.css gives `.topbar` a `backdrop-filter`, which makes it the
+     containing block. Round 1 of PR #103 tested this class there and got a
+     false negative for exactly that reason.
    - **Sub-pixel overflow.** The verdict is `documentElement.scrollWidth`
      against `documentElement.clientWidth`, and both are integers, so overflow
      below about half a pixel is not visible to it. The per-element report
@@ -116,8 +147,9 @@
      wider than 375px is either, so an overflow confined to any other width is
      invisible here on every pane. ops/assets/*.css declares thirteen width
      breakpoints for itself and no swept width reaches any of them —
-     `grep -rhoE '\((max|min)-width: *[0-9]+px\)' ops/assets/*.css` prints the
-     list rather than trusting this sentence to stay current. The phone widths
+     `grep -rhoE '\((max|min)-width: *[0-9]+px\)' ops/assets/*.css |
+     grep -oE '[0-9]+' | sort -nu` prints the list rather than trusting this
+     sentence to stay current. The phone widths
      above 375px that most current large handsets report are in the same gap.
      Not theoretical: it is why this check never saw Stadiora/Aria#7365, whose
      band starts at 861px — a number that is itself one of those breakpoints.
@@ -155,8 +187,8 @@ const SETTLE_MS = 2500;
 /* A floor, and only a floor: it says the pane put something on the page
    rather than nothing. It is not a claim that the pane drew its data — see
    WHAT THIS DOES NOT COVER above for the two panes where it did not. The
-   thinnest pane in this sweep today is Cloud costs, whose not-published card
-   is 19 elements. */
+   floor is set well under the thinnest pane's real count, which the run prints
+   and this comment deliberately does not restate. */
 const MIN_CONTENT_ELEMENTS = 8;
 
 /* The things a shell puts on screen INSTEAD of a pane. Each is a single card
