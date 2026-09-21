@@ -545,9 +545,13 @@ function invokes(workflow, command) {
   return runSteps(workflow).some((body) => at.test(body));
 }
 
+/* The browser guards, named once. Every block that describes "the browser
+   guards" is built from this list rather than from its own filter, so a guard
+   added next week reaches all of them at the same moment. */
+const BROWSER_GUARDS = SCRIPTS.filter((s) => /^check-ops-.*\.mjs$/.test(s));
+
 /* Every browser guard: the workflow that runs it, and what it renders. */
-DERIVED['browser-guards'] = () => SCRIPTS
-  .filter((s) => /^check-ops-.*\.mjs$/.test(s))
+DERIVED['browser-guards'] = () => BROWSER_GUARDS
   .map((script) => {
     const src = read(path.join('scripts', script));
     const command = `node scripts/${script}`;
@@ -560,6 +564,144 @@ DERIVED['browser-guards'] = () => SCRIPTS
     else where.push(...urls);
     return `${script} = ${workflows.join(', ') || '(no workflow)'}; ${where.join(' + ') || '(no page named in its source)'}`;
   });
+
+/* The text of a top-level declaration's value, from `=` to the `;` that closes
+   it outside every string, bracket and comment. A guard's array of viewports
+   spans lines and carries comments between its entries, so "everything up to
+   the first semicolon" reads half of one. */
+function literalAfter(src, from, what) {
+  let depth = 0;
+  let quote = null;
+  for (let i = from; i < src.length; i += 1) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === '\\') { i += 1; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '/' && src[i + 1] === '/') {
+      const eol = src.indexOf('\n', i);
+      if (eol === -1) break;
+      i = eol;
+      continue;
+    }
+    if (ch === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      if (end === -1) break;
+      i = end + 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+    else if (ch === ')' || ch === ']' || ch === '}') depth -= 1;
+    else if (ch === ';' && depth === 0) return src.slice(from, i);
+  }
+  return assert.fail(`${what}: the declaration never closes`);
+}
+
+/* The VALUE a guard's own constant holds, resolved by evaluating the
+   declaration rather than by matching its text. `const WIDTHS = [375, 360, 320]`
+   is three numbers here, not the string "375, 360, 320", so a fourth viewport
+   is a fourth entry rather than a longer line that a substring test still
+   passes. A declaration that is not a literal — one built from another binding,
+   or from a call — throws rather than being guessed at. */
+function constant(script, name) {
+  const src = read(path.join('scripts', script));
+  const at = new RegExp(String.raw`^const ${name}\s*=\s*`, 'm').exec(src);
+  assert.ok(at, `scripts/${script} declares no top-level const ${name}`);
+  const expr = literalAfter(src, at.index + at[0].length, `scripts/${script} const ${name}`);
+  try {
+    return vm.runInNewContext(`(${expr})`, Object.create(null), { timeout: 1000 });
+  } catch (err) {
+    return assert.fail(
+      `scripts/${script}: const ${name} is not a literal this check can resolve — ${err.message}`
+    );
+  }
+}
+
+/* The numbers the checks table leans on, taken out of the guards that hold
+   them. Every one of these was a typed word in a sentence until a guard moved
+   underneath it: `WIDTHS` gained 320px in aria-website#103 and the sentence
+   describing the sweep went on saying "375px and 360px" through a rebase onto
+   that very commit (Stadiora/Aria#10655's class, found again).
+
+   NOT derived here: a constant this list does not name, and a value that is not
+   a top-level `const` — the five hit-test spots per control live in an array
+   inside a template literal evaluated in the browser, so they stay prose. */
+const GUARD_CONSTANTS = [
+  ['check-ops-contrast.mjs', 'STATES'],
+  ['check-ops-dialog-hit.mjs', 'PAINT_COVERAGE_LIMIT'],
+  ['check-ops-narrow-overflow.mjs', 'WIDTHS'],
+  ['check-ops-result-view.mjs', 'WIDTH'],
+  ['check-ops-theme-redraw.mjs', 'PAINT_PROPS'],
+];
+
+DERIVED['guard-constants'] = () => GUARD_CONSTANTS.flatMap(([script, name]) => {
+  assert.ok(
+    BROWSER_GUARDS.includes(script),
+    `scripts/${script} is named in GUARD_CONSTANTS but is not a browser guard in this tree`
+  );
+  const value = constant(script, name);
+  if (!Array.isArray(value)) return [`${script} ${name} = ${String(value)}`];
+  return [
+    `${script} ${name} = ${value.join(', ')}`,
+    `${script} ${name} length = ${value.length}`,
+  ];
+});
+
+/* A guard's leading block comment, and nothing after it: three of these files
+   go on discussing their own blind spots hundreds of lines further down, next
+   to the code that has them. */
+function docblock(script) {
+  const src = read(path.join('scripts', script));
+  if (!src.startsWith('/*')) return null;
+  const close = src.indexOf('*/');
+  return close === -1 ? null : src.slice(0, close);
+}
+
+/* A heading, not a mention. check-ops-contrast.mjs's docblock points at THIS
+   file's NOT COVERED list without having a section of its own, and
+   check-ops-result-view.mjs refers to its own section thirty lines above where
+   that section starts. Matching the phrase anywhere in a line anchors on both
+   of those; it has to open the line. */
+const BLIND_SPOT_HEADING =
+  /^\s*(?:\*\s*)?(?:WHAT THIS DOES NOT COVER|WHAT IT DOES NOT|NOT COVERED)\b/i;
+
+/* What each guard says it cannot see, in its own words. Every browser guard
+   gets a line whatever shape its docblock is in — a guard that reformats its
+   bullets into prose flips from a list to `(section present, written as prose)`
+   and fails here, instead of dropping out of a list nobody counts.
+
+   Bullets are reassembled across lines before the heading is read. A bullet
+   whose bold opener wraps — check-ops-narrow-overflow.mjs has two — is a
+   heading this file silently dropped while the line-at-a-time version of this
+   derivation was being written, which is the failure it exists to catch, one
+   level up.
+
+   What this reads is the leading BOLD RUN of each bullet, so a second bold span
+   later in the same bullet is body text here, and a bullet with no bold opener
+   is reported as one rather than skipped. A blind spot written as prose inside
+   a bullet is not a line. The README's own summary of a section is prose and is
+   not judged; what is judged is that the headings are all present, in order. */
+DERIVED['guard-blind-spots'] = () => BROWSER_GUARDS.flatMap((script) => {
+  const doc = docblock(script);
+  if (doc === null) return [`${script} = (no leading docblock)`];
+  const lines = doc.split('\n');
+  const at = lines.findIndex((l) => BLIND_SPOT_HEADING.test(l));
+  if (at === -1) return [`${script} = (no blind-spot section)`];
+  const opens = /^\s*(?:\*\s*)?-\s+/;
+  const bullets = [];
+  for (const line of lines.slice(at + 1)) {
+    if (opens.test(line)) bullets.push([line.replace(opens, '')]);
+    else if (bullets.length) bullets[bullets.length - 1].push(line.trim());
+  }
+  if (bullets.length === 0) return [`${script} = (section present, written as prose)`];
+  return bullets.map((parts) => {
+    const text = parts.join(' ').replace(/\s+/g, ' ').trim();
+    const bold = /^\*\*(.+?)\*\*/.exec(text);
+    return `${script} = ${bold ? bold[1].trim() : '(bullet with no bold opener)'}`;
+  });
+});
 
 /* The focus ring on every sideways-scrolling box a v2 pane sheet declares.
    The box is found by its own `overflow-x: auto`, never by its class name, so

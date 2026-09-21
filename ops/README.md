@@ -2297,6 +2297,60 @@ check-ops-shell-v2.mjs = ops-shell-v2.yml; every page in ops/
 check-ops-theme-redraw.mjs = ops-theme-redraw.yml; every pane the registry declares + /ops/shell-v2.html
 ```
 
+The **numbers** in that table are not typed either. Each is the value the guard
+itself holds, evaluated out of its own declaration rather than matched as text —
+`const WIDTHS = [375, 360, 320]` is read here as three numbers, so a fourth
+viewport is a fourth entry rather than a longer line a substring test still
+passes. Every one of these was a word in a sentence until the guard moved
+underneath it.
+
+```claims id=guard-constants
+check-ops-contrast.mjs STATES = live, loading, empty, degraded
+check-ops-contrast.mjs STATES length = 4
+check-ops-dialog-hit.mjs PAINT_COVERAGE_LIMIT = 0
+check-ops-narrow-overflow.mjs WIDTHS = 375, 360
+check-ops-narrow-overflow.mjs WIDTHS length = 2
+check-ops-result-view.mjs WIDTH = 1280
+check-ops-theme-redraw.mjs PAINT_PROPS = color, backgroundColor, backgroundImage, borderTopColor, borderRightColor, borderBottomColor, borderLeftColor, outlineColor, textDecorationColor, caretColor, columnRuleColor, accentColor, fill, stroke, stopColor, boxShadow
+check-ops-theme-redraw.mjs PAINT_PROPS length = 16
+```
+
+The five hit-test spots per control are **not** in that block: they live in an
+array inside a template literal evaluated in the browser, not in a top-level
+declaration this check can resolve, so they stay prose and stay unproven here.
+
+What each guard says it **cannot** see is read out of the guard too — the bullet
+headings under its own NOT COVERED section, in its order. A guard whose docblock
+has no such section says so on its line rather than going quietly missing, and
+so does one that rewrites its bullets as prose. Summarising a list like this in
+a sentence is how the result-view row came to carry seven of nine.
+
+```claims id=guard-blind-spots
+check-ops-contrast.mjs = (no blind-spot section)
+check-ops-dialog-hit.mjs = (no blind-spot section)
+check-ops-narrow-overflow.mjs = People and usage, and Cloud costs, are measured with no figures in them.
+check-ops-narrow-overflow.mjs = Look up a user is measured before any lookup
+check-ops-narrow-overflow.mjs = An overflow a container clips.
+check-ops-narrow-overflow.mjs = Anything out of the document's flow, and anything past the left edge.
+check-ops-narrow-overflow.mjs = Sub-pixel overflow.
+check-ops-narrow-overflow.mjs = Every width that is not 375px, 360px or 320px.
+check-ops-narrow-overflow.mjs = ops/login.html and ops/setup.html.
+check-ops-result-view.mjs = One width, 1280px.
+check-ops-result-view.mjs = Contrast.
+check-ops-result-view.mjs = The accessibility tree.
+check-ops-result-view.mjs = A result view nobody drives.
+check-ops-result-view.mjs = A class judged per page, not per site.
+check-ops-result-view.mjs = A sibling combinator's reach.
+check-ops-result-view.mjs = Paint that is not a class.
+check-ops-shell-v2.mjs = (no blind-spot section)
+check-ops-theme-redraw.mjs = Pseudo-elements.
+check-ops-theme-redraw.mjs = Anything below the paint properties listed in PAINT_PROPS.
+check-ops-theme-redraw.mjs = A gradient referenced by url(#id).
+check-ops-theme-redraw.mjs = A page whose DOM differs between the toggled and the fresh load.
+check-ops-theme-redraw.mjs = The panes' populated states, for People and usage and Cloud costs.
+check-ops-theme-redraw.mjs = Any theme beyond the two.
+```
+
 The Cloud costs colour guard's own reach is not described here either. The block below is
 produced by **running** that guard's two matchers — `COLOUR_SLOT` and `rawColourSpellings`,
 lifted out of `scripts/ops-spend-v2.test.mjs` — over a fixed set of probes, so each line is the
@@ -2420,6 +2474,8 @@ claims id=csp-policy
 claims id=dark-text-3
 claims id=data-page-scoping
 claims id=deleted-assets
+claims id=guard-blind-spots
+claims id=guard-constants
 claims id=pane-read-endpoints
 claims id=panes
 claims id=scroll-wrapper-position
