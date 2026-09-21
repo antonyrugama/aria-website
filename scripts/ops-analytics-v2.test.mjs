@@ -2703,6 +2703,22 @@ const PAINT_PROGRAM = String.raw`(() => {
    newest-first, so the removal registered before the browser is the next thing
    popped -- which makes that ORDER load-bearing rather than incidental. */
 const EXIT_WAIT_MS = 5_000;
+/* The removal confirms rather than assumes. One pass is the normal case; the
+   extras exist for a descendant whose last writes land after the parent was
+   reaped. Bounded so a browser that genuinely will not die fails the run
+   instead of hanging it -- the whole point of Stadiora/Aria#10800. */
+const REMOVE_ATTEMPTS = 6;
+const REMOVE_SETTLE_MS = 150;
+
+/* Signals the child's whole process group, falling back to the single process
+   when there is no group to signal -- `detached` can be refused, and a child
+   that has already been reaped has no group left. Throwing out of a release
+   would be swallowed by the drain, so the failure mode to avoid is a throw,
+   not a missed signal. */
+function killTree(child, signal) {
+  try { process.kill(-child.pid, signal); return; } catch (e) { /* no group */ }
+  try { child.kill(signal); } catch (e) { /* already gone */ }
+}
 
 async function openPainter() {
   const opened = [];
@@ -2753,7 +2769,7 @@ async function launchPainter(opened, unwind) {
      milliseconds later. At the moment close() returns, the buggy version and
      the fixed one are byte-identical on disk. The mutation battery proved that
      by leaving two payloads green. */
-  const teardown = { browserExitedBeforeRemoval: null };
+  const teardown = { browserExitedBeforeRemoval: null, removalAttempts: 0, profileReturned: false };
   /* Not `browser` directly: chromePath() throws when there is no Chrome, and
      that throw lands between this line and the spawn below. A closure closing
      over the `const` would hit its temporal dead zone, the drain would swallow
@@ -2762,30 +2778,57 @@ async function launchPainter(opened, unwind) {
      holder reads "no browser exists", which is the honest answer there: a
      process that was never spawned cannot be writing into the directory. */
   let spawned = null;
-  opened.push(() => {
+  opened.push(async () => {
     teardown.browserExitedBeforeRemoval = spawned === null ||
       spawned.exitCode !== null || spawned.signalCode !== null;
-    rmSync(profile, { recursive: true, force: true });
+    /* Remove and CONFIRM, rather than remove and assume. Waiting for the
+       browser to be reaped closes the common recreation, and on this machine
+       it closes it completely -- but CI disagreed, failing 3 runs out of 5 on
+       heads whose removal already waited. The residue is bounded and cheap to
+       out-wait, so this re-removes anything that comes back and records both
+       how many passes it took and whether the directory ever returned, so a
+       failure says which of the two mechanisms produced it instead of leaving
+       the next reader to guess from a boolean. */
+    for (let i = 0; i < REMOVE_ATTEMPTS; i += 1) {
+      teardown.removalAttempts += 1;
+      rmSync(profile, { recursive: true, force: true });
+      if (!existsSync(profile)) {
+        await new Promise((r) => setTimeout(r, REMOVE_SETTLE_MS));
+        if (!existsSync(profile)) return;
+      }
+      teardown.profileReturned = true;
+    }
   });
   const browser = spawn(chromePath(), [
     '--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile,
     '--no-first-run', '--no-default-browser-check', '--no-sandbox', '--disable-gpu',
     '--disable-extensions', '--hide-scrollbars', '--force-device-scale-factor=1',
     'about:blank',
-  ], { stdio: 'ignore' });
+  ], { stdio: 'ignore', detached: true });
   spawned = browser;
   opened.push(async () => {
-    browser.kill();
+    /* Signal the process GROUP, not the process. Chrome is a process tree --
+       a zygote and one renderer per target, all holding --user-data-dir open
+       and all able to write into it. Killing the one pid node knows about
+       leaves the rest of the tree running, and "the browser exited" is then
+       true of the parent and false of the thing still writing. `detached`
+       above is what makes the group exist to be signalled. */
+    killTree(browser, 'SIGTERM');
     /* A browser that died on startup arrives already reaped, so there is no
        exit left to wait for and listening for one would sit out the ceiling
        for an event that has already fired. A browser that is merely unresponsive
        -- the port never published, the case this early return does NOT take --
        is alive when kill() returns and is waited for below. */
-    if (browser.exitCode !== null || browser.signalCode !== null) return;
-    await new Promise((resolve) => {
-      const timer = setTimeout(resolve, EXIT_WAIT_MS);
-      browser.once('exit', () => { clearTimeout(timer); resolve(); });
-    });
+    if (browser.exitCode === null && browser.signalCode === null) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, EXIT_WAIT_MS);
+        browser.once('exit', () => { clearTimeout(timer); resolve(); });
+      });
+    }
+    /* The parent being reaped does not reap what it left behind, and a
+       descendant that ignored SIGTERM is exactly the thing that writes the
+       directory back after it is removed. */
+    killTree(browser, 'SIGKILL');
   });
 
   /* A browser that has already exited will never publish a port, so sitting
@@ -3046,7 +3089,11 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
   assert.equal(existsSync(painter.profile), false,
     'the painter left its browser profile at ' + painter.profile + ' after a clean run. ' +
     'kill() is a signal, not a join: if the removal does not wait for the browser to exit, ' +
-    'it runs while Chrome is still writing its profile out and the files come back.');
+    'it runs while Chrome is still writing its profile out and the files come back. ' +
+    'Teardown recorded: ' + JSON.stringify(painter.teardown) + ' -- ' +
+    'browserExitedBeforeRemoval false means the removal ran too early, ' +
+    'profileReturned true with the attempts exhausted means something was still writing ' +
+    'after the parent was reaped, which is a descendant rather than the browser.');
 
   /* The line above binds that the removal HAPPENED. This binds that it happened
      at a safe moment, which is the actual subject of Stadiora/Aria#10854 and is
