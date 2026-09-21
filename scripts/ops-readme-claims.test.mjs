@@ -702,29 +702,41 @@ const BLIND_SPOT_HEADING =
    derivation was being written, which is the failure it exists to catch, one
    level up.
 
-   What this reads is the leading BOLD RUN of each bullet, so a second bold span
-   later in the same bullet is body text here, and a bullet with no bold opener
-   is reported as one rather than skipped. A blind spot written as prose inside
-   a bullet is not a line. The README's own summary of a section is prose and is
-   not judged; what is judged is that the headings are all present, in order. */
+   What this reads is the leading BOLD RUN of each bullet, so a bullet that
+   names two blind spots in two bold spans contributes only its first, and a
+   bullet with no bold opener is reported as one rather than skipped. That is a
+   real gap and not a theoretical one: check-ops-narrow-overflow.mjs's "Look up
+   a user" bullet also covers Aria quality, and only the first of the two is a
+   line here. Rather than parse the English that distinguishes a second heading
+   from ordinary body emphasis, every guard ends with a COUNT of its bullets
+   carrying more than one bold span. The count is exact and the heading it
+   belongs to is not named: it is a tripwire that refuses to hide a second span,
+   not an index of blind spots. A body that bolds a word moves it too, on
+   purpose — a departures record that fails loudly beats one that narrows
+   quietly. A blind spot written as prose inside a bullet is still not a line.
+   The README's own summary of a section is prose and is not judged; what is
+   judged is that the headings are all present, in order, and that the number of
+   bullets hiding a second span behind the first has not moved. */
 DERIVED['guard-blind-spots'] = () => BROWSER_GUARDS.flatMap((script) => {
+  const tail = (n) => `${script} = (bullets with a second bold span: ${n})`;
   const doc = docblock(script);
-  if (doc === null) return [`${script} = (no leading docblock)`];
+  if (doc === null) return [`${script} = (no leading docblock)`, tail(0)];
   const lines = doc.split('\n');
   const at = lines.findIndex((l) => BLIND_SPOT_HEADING.test(l));
-  if (at === -1) return [`${script} = (no blind-spot section)`];
+  if (at === -1) return [`${script} = (no blind-spot section)`, tail(0)];
   const opens = /^\s*(?:\*\s*)?-\s+/;
   const bullets = [];
   for (const line of lines.slice(at + 1)) {
     if (opens.test(line)) bullets.push([line.replace(opens, '')]);
     else if (bullets.length) bullets[bullets.length - 1].push(line.trim());
   }
-  if (bullets.length === 0) return [`${script} = (section present, written as prose)`];
-  return bullets.map((parts) => {
-    const text = parts.join(' ').replace(/\s+/g, ' ').trim();
+  if (bullets.length === 0) return [`${script} = (section present, written as prose)`, tail(0)];
+  const texts = bullets.map((parts) => parts.join(' ').replace(/\s+/g, ' ').trim());
+  const heads = texts.map((text) => {
     const bold = /^\*\*(.+?)\*\*/.exec(text);
     return `${script} = ${bold ? bold[1].trim() : '(bullet with no bold opener)'}`;
   });
+  return [...heads, tail(texts.filter((t) => (t.match(/\*\*(.+?)\*\*/g) || []).length > 1).length)];
 });
 
 /* The focus ring on every sideways-scrolling box a v2 pane sheet declares.
