@@ -604,6 +604,50 @@ test('the attention band counts the runs given up on and says what that means', 
     'the band reported nothing flagged while carrying two runs given up on');
 });
 
+test('a whole-queue read flags runs given up on even when nothing is overdue', async () => {
+  /* The headline count is what decides the band exists at all. With the stuck
+     half non-empty in every other fixture, the abandoned half was never the
+     reason anything was drawn, so half the count could be deleted and the band
+     would still appear -- for the wrong runs. */
+  const dom = await boot({
+    view: viewFixture({
+      attention: { completeness: 'whole_queue', stuck: [], abandoned: ['job_gone'] },
+      workingSet: {
+        returned: 1, truncated: false,
+        jobs: [jobFixture({ id: 'job_gone', progressGrade: 'abandoned' })],
+      },
+    }),
+  });
+  const text = liveText(dom);
+  assert.match(text, /Not clearing/,
+    'a queue holding a run given up on drew no attention band at all');
+  assert.match(text, /1 run given up on/,
+    'the band was drawn but did not count the run that caused it');
+  assert.doesNotMatch(text, /Nothing flagged/,
+    'the band reported nothing flagged over a run the platform had given up on');
+});
+
+test('a whole-queue read flags overdue runs even when nothing was given up on', async () => {
+  const dom = await boot({
+    view: viewFixture({
+      attention: { completeness: 'whole_queue', stuck: ['job_slow'], abandoned: [] },
+      workingSet: {
+        returned: 1, truncated: false,
+        jobs: [jobFixture({ id: 'job_slow', progressGrade: 'stuck' })],
+      },
+    }),
+  });
+  const text = liveText(dom);
+  assert.match(text, /Not clearing/,
+    'a queue holding an overdue run drew no attention band at all');
+  assert.match(text, /1 run overdue/,
+    'the band was drawn but did not count the overdue run that caused it');
+  assert.doesNotMatch(text, /0 runs overdue/,
+    'the band printed a zero over the very runs it was drawn for');
+  assert.doesNotMatch(text, /given up on/,
+    'the band reported runs given up on when none were');
+});
+
 test('a job with no grade reads as not started rather than as healthy', async () => {
   const dom = await boot({
     view: viewFixture({
@@ -935,6 +979,37 @@ test('a read that lands while the tab is hidden does not arm the next one', asyn
     + 'outlived the tab being visible');
 });
 
+test('a read that lands while paused does not arm the next one', async () => {
+  /* The Pause analogue of the hidden-tab rule above, and the one case the
+     `paused` term in scheduleTick() exists for. Pausing with the chain idle
+     only cancels a pending timer; a read ALREADY IN FLIGHT when Pause is
+     pressed lands afterwards and its success handler schedules the next tick.
+     Without this the pane can keep polling while the footer says it is
+     stopped, which is Stadiora/Aria#5543's shape exactly. */
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const dom = await boot({});
+  const realCall = dom.window.OpsSession.call;
+  dom.window.OpsSession.call = (endpoint, o) => gate.then(() => realCall(endpoint, o));
+
+  buttonNamed(dom, 'Read now').dispatch('click', {});
+  await settle();
+  buttonNamed(dom, 'Pause').dispatch('click', {});
+  await settle();
+  release();
+  await settle();
+
+  assert.equal(dom.clock.armed, 0,
+    'a read that landed after Pause armed the next tick anyway, so the pane kept polling '
+    + 'while its own footer said nothing was changing');
+
+  const reads = dom.calls.length;
+  await dom.clock.fire();
+  assert.equal(dom.calls.length, reads,
+    'a paused pane read again, so the pause was cosmetic');
+  assert.ok(buttonNamed(dom, 'Resume'), 'the footer did not report the pane as paused');
+});
+
 test('failures back off, and the pane keeps showing the last reading', async () => {
   const dom = await boot({ answers: [viewFixture(), new Error('gateway')] });
   assert.match(liveText(dom), /Aria is working on/, 'the first read did not draw');
@@ -1006,6 +1081,13 @@ test('the chain gives up, says so, and offers a way back', async () => {
 
   const again = buttonNamed(dom, 'Start again');
   assert.ok(again, 'a stopped pane offers no way to start it again');
+  /* It is the only way back from a stopped chain, so it is drawn as the
+     primary action rather than as one option among several. A class check is
+     the only handle on that here: the sweep cannot see a class that has been
+     REMOVED from the source, since it compares source literals against the
+     DOM and a deleted literal is simply no longer asked about. */
+  assert.ok((again.getAttribute('class') || '').split(/\s+/).includes('btn-primary'),
+    'the only way back from a stopped chain was not drawn as the primary action');
   const reads = dom.calls.length;
   again.dispatch('click', {});
   await settle();
@@ -1248,13 +1330,20 @@ test('the pane writes no class only the v1 sheet defines', async () => {
     }) }],
     ['a reading with nothing in it', { view: {} }],
     ['a failed first read', { answers: [new Error('the read failed')] }],
+    /* The pane's own stopped branch (:392, "Start again") is reachable only by
+       interaction, and it was the one pane-authored literal no state reached.
+       It looked reached, because the SHELL writes `btn-primary` on its own
+       failure card -- see the limit stated below. */
+    ['a chain that gave up', { answers: [viewFixture(), new Error('gateway')] },
+      async (dom) => { for (let i = 0; i < 5; i += 1) await dom.clock.fire(); }],
   ];
 
   const written = new Map();
-  for (const [label, opts] of states) {
+  for (const [label, opts, drive] of states) {
     const dom = await boot(opts);
+    if (drive) await drive(dom);
     let carried = 0;
-    for (const node of findAll(dom.content, (n) => n.getAttribute('class'))) {
+    for (const node of findAll(livePanel(dom), (n) => n.getAttribute('class'))) {
       carried += 1;
       for (const name of (node.getAttribute('class') || '').trim().split(/\s+/)) {
         if (name && !written.has(name)) written.set(name, label);
@@ -1283,14 +1372,21 @@ test('the pane writes no class only the v1 sheet defines', async () => {
      some branch writes, and one the sweep never saw means that branch was
      never booted.
 
-     Its reach is exactly this and no more: it catches an unreached branch only
-     when that branch writes a class NO reached branch writes. Measured, not
-     assumed -- dropping the failed-read state fails here naming `btn-primary`,
-     while dropping the bounded-empty state does not, because every class that
-     branch writes (`tiny muted`, `card-body`) is written elsewhere too. So it
-     narrows the state axis rather than closing it; what closes it for any
-     given band is a test that asserts that band's own words, the way :433
-     does for this one. */
+     Its reach is exactly this and no more, and the second half of it cost a
+     review round to find: it catches an unreached branch only when NO OTHER
+     NODE IN THE SWEPT PANEL carries that class -- and that includes nodes the
+     SHELL wrote, not just other pane branches. `btn-primary` is the worked
+     example. The pane writes it once, at :392, reachable only by interaction;
+     the shell writes it too, on the failure card it draws for `region.failed()`.
+     So the failed-read state made `btn-primary` look reached while the pane's
+     own branch was not, and a class change inside that branch survived the
+     whole repository. The state below drives the interaction, but the masking
+     is general: a shell-written name can hide a pane branch from this check.
+
+     So it narrows the state axis rather than closing it. What closes it for a
+     given band is a test asserting that band's own words, the way :433 does
+     for the bounded-empty one; what closes the class question in the resolved
+     sense is scripts/check-ops-result-view.mjs, in a real browser. */
   const source = read('assets/pane-jobs-live-v2.js');
   const inSource = new Set();
   for (const m of source.matchAll(/className:\s*'([^']*)'/g)) {
