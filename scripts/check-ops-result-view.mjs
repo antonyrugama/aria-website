@@ -1544,11 +1544,13 @@ const probeFor = (markers) => `(() => {
      of it does, which also covers a marker split across two siblings — their
      parent is then the innermost carrier.
 
-     Two predicates, deliberately: a box rules out display:none and a collapsed
-     subtree, checkVisibility() rules out visibility:hidden and
-     content-visibility, which keep their boxes. opacity is NOT asked about,
-     because a pane mid-transition would read as hidden and this gate decides
-     whether the run happens at all. */
+     Three predicates now, and each one of them was added because the pair
+     before it passed something nobody could see: a box rules out display:none
+     and a collapsed subtree, checkVisibility() rules out visibility:hidden and
+     content-visibility on an element that keeps its box, and reachability
+     rules out a box parked off the page. opacity is NOT asked about, because
+     a pane mid-transition would read as hidden and this gate decides whether
+     the run happens at all. */
   const carriers = (m) => {
     const out = [];
     for (const el of content.querySelectorAll('*')) {
@@ -1586,46 +1588,38 @@ const probeFor = (markers) => `(() => {
      red on an ordinary layout refactor that flattens a wrapper.
 
      So a carrier with no box of its own is measured by the boxes its own
-     contents produce — a Range over them is exactly that set — and its
-     renderedness is asked of the nearest ancestor that does own a box, which
-     is what display:none, content-visibility and a hidden ancestor all still
-     answer for. The Range is only consulted when the element produces no box
-     at all: a box with one zero dimension stays a failure, which is what
-     keeps transform:scale(0) red. */
-  const boxesOf = (el) => {
+     contents produce, which is what a Range over them is. The Range is
+     consulted only when the element produces no box at all: a box with one
+     zero dimension stays a failure, which is what keeps transform:scale(0)
+     red. */
+  /* innerText is the region's RENDERED text; textContent is all of it. The
+     difference is the second half of the boxless case: a Range inside a
+     content-visibility:hidden subtree still reports rects — measured, the same
+     [1198, 894, 40, 16] as when it was visible — and checkVisibility() on the
+     nearest boxed ancestor answers about that ancestor, which is not the thing
+     being skipped. innerText drops the whole skipped subtree, and drops
+     visibility:hidden and display:none with it. Lower-cased and
+     whitespace-collapsed so a text-transform is not a false red. */
+  const renderedText = content
+    ? String(content.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase()
+    : '';
+  const shows = (el, marker) => {
     const own = el.getBoundingClientRect();
-    if (own.width > 0 || own.height > 0) return [own];
+    if (own.width > 0 || own.height > 0) {
+      if (!inReach(own)) return false;
+      return typeof el.checkVisibility === 'function'
+        ? el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })
+        : true;
+    }
     const range = document.createRange();
     range.selectNodeContents(el);
-    return [].slice.call(range.getClientRects());
-  };
-  const boxed = (el) => {
-    let node = el;
-    while (node) {
-      const b = node.getBoundingClientRect();
-      if (b.width > 0 || b.height > 0) return node;
-      node = node.parentElement;
-    }
-    return null;
-  };
-  const onScreen = (el) => {
-    if (!boxesOf(el).some(inReach)) return false;
-    /* visibility is inherited, so the carrier's own computed value answers for
-       an ancestor that set it as well — and it is asked separately because the
-       ancestor consulted below may be the element that is still painting while
-       this one is not. */
-    const vis = getComputedStyle(el).visibility;
-    if (vis !== 'visible') return false;
-    const judge = boxed(el);
-    if (judge && typeof judge.checkVisibility === 'function') {
-      return judge.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true });
-    }
-    return true;
+    if (![].slice.call(range.getClientRects()).some(inReach)) return false;
+    return renderedText.indexOf(String(marker).replace(/\\s+/g, ' ').trim().toLowerCase()) !== -1;
   };
   const markers = ${JSON.stringify(markers)};
   const absent = markers.filter((m) => contentText.indexOf(m) === -1);
   const hiddenMarkers = markers.filter((m) => contentText.indexOf(m) !== -1
-    && !carriers(m).some(onScreen));
+    && !carriers(m).some((el) => shows(el, m)));
   const title = document.querySelector('.page-title');
   /* Two spellings. The pane header aria.js:253 builds writes the question into
      .page-sub, which is what all ten pages render. .page-question is
