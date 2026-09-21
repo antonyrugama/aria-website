@@ -363,16 +363,124 @@
     ]);
   }
 
+/* ------------------------------------------------------------ the folds */
+
+  /* At 375px this pane was 7841px tall — 9.7 screens of an 812px phone, 35
+     controls and 5 forms in one column, with no index and nothing to orient
+     against. The only way to reach a tool was to scroll past the others.
+     Stadiora/Aria#10827.
+
+     The approved mock does not answer this. docs/mocks/ops-dashboard-v2's
+     evaluations.html carries no media query at all, and the lowest breakpoint
+     anywhere in that mock set is 560px, so there is no drawing of this pane on
+     a phone to be faithful to. It is a decision, and this is the decision:
+     under 900px every band folds and the page opens as an index of what it
+     holds.
+
+     900 rather than a new number because it is the width this pane's own
+     sheet already collapses .q-grid, .evidence-form-grid, .u-score and .u-vs
+     to one column at. That is the point the page stops being a layout and
+     becomes a stack, which is the same point an index starts paying for
+     itself.
+
+     Every band starts closed, including the two that work. An operator
+     opening this on a phone has come to do one of these things, and one tap
+     with no scrolling beats 2048px of scrolling to find the third of five.
+     Uniformity is also what makes the index readable: a page where some
+     sections are open and some are shut reads as a bug.
+
+     The fold adds no visible words. A band already carries its title, a note
+     and a stamp chip, which is a summary line as it stands, and the density
+     the owner objected to is the reason not to write another. The control is
+     an icon button whose accessible name comes from the band's own title
+     through aria-labelledby, so the name cannot drift from the heading, and
+     aria-expanded is what says which way it is facing. The chevron is the
+     visible channel and the hidden body is the second; neither is a colour.
+
+     Above 900 the button is display:none in the sheet and every body is
+     shown, so the pane is byte-for-byte the layout it was at desktop. The
+     media query is watched rather than read once, so crossing the breakpoint
+     re-syncs instead of stranding the page in the other width's state.
+
+     The wrapper and the control are built with the band rather than moved
+     into place afterwards. Re-parenting a live head's siblings depends on
+     appendChild's removal semantics and on nothing else holding a reference
+     to them, which is more subtlety than a layout should owe; and shell.band
+     already takes an `end` list that lands inside .band-head, so the control
+     gets there through the shell's own interface instead of DOM surgery. */
+  var FOLD_AT = '(max-width: 900px)';
+  var watching = null;
+  var pending = [];
+  var foldSeq = 0;
+
+  /* A band whose rows live in one wrapper the narrow layout can fold away.
+     Returns the section to put on the page and the body to fill. */
+  function foldable(title, note, end) {
+    var bodyId = 'fold-body-' + (foldSeq += 1);
+    var body = h('div', { className: 'band-body' });
+    body.setAttribute('id', bodyId);
+
+    var button = h('button', { className: 'band-fold', type: 'button' }, [icon('chev')]);
+    button.setAttribute('aria-controls', bodyId);
+    /* Named from the same string the heading is built from, so the control
+       cannot announce something its band does not say. An aria-labelledby
+       into the heading reads identically and goes silent the day the id
+       misses, which is a failure this repo has already shipped once. */
+    button.setAttribute('aria-label', title);
+
+    var set = function (open) {
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      body.hidden = !open;
+    };
+    button.addEventListener('click', function () {
+      set(button.getAttribute('aria-expanded') !== 'true');
+    });
+
+    /* Above the breakpoint the control is display:none in the sheet and the
+       body is never collapsed, so there is no disclosure up there and the
+       button carries no aria-expanded. A control that cannot be operated,
+       over a target that is always open, announcing that it is expanded is a
+       claim about a widget that does not exist at that width. */
+    pending.push(function (narrow) {
+      if (narrow) { set(false); return; }
+      button.removeAttribute('aria-expanded');
+      body.hidden = false;
+    });
+
+    var section = shell.band(title, note, (end || []).concat([button]));
+    section.appendChild(body);
+    return { section: section, body: body };
+  }
+
+  /* Keeps every band built since the last render in step with the width.
+     Returns nothing: the listener owns the state from here. */
+  function installFolds() {
+    var folds = pending;
+    if (!folds.length) return;
+
+    var query = global.matchMedia(FOLD_AT);
+    var sync = function () {
+      for (var j = 0; j < folds.length; j++) folds[j](query.matches);
+    };
+    /* A pane can be rendered more than once into the same document, and a
+       listener left behind would go on driving bands that are no longer on
+       screen. */
+    if (watching) watching.query.removeEventListener('change', watching.sync);
+    query.addEventListener('change', sync);
+    watching = { query: query, sync: sync };
+    sync();
+  }
+
   /* The only way a band is built outside the preview. */
   function workingBand(title, note) {
-    return shell.band(title, note, [stamp('u-tag works', 'check', 'Works now')]);
+    return foldable(title, note, [stamp('u-tag works', 'check', 'Works now')]);
   }
 
   /* The only way a band gets into the preview, so every band in it is stamped
      by construction rather than by remembering to. Stamped per band rather
      than once at the top, because a screenshot is usually of one card. */
   function previewBand(title, note) {
-    return shell.band(title, note, [stamp('u-tag', 'warn', 'Invented figures')]);
+    return foldable(title, note, [stamp('u-tag', 'warn', 'Invented figures')]);
   }
 
   /* ------------------------------------------------------------- the forms */
@@ -540,21 +648,25 @@
       }
     });
 
-    var section = workingBand('Check a dataset declaration', 'Any signed-in role, and no dataset is stored');
-    section.appendChild(form);
-    section.appendChild(result);
+    var built = workingBand('Check a dataset declaration', 'Any signed-in role, and no dataset is stored');
+    var section = built.section;
+    var bandBody = built.body;
+    bandBody.appendChild(form);
+    bandBody.appendChild(result);
     return section;
   }
 
   function evidenceQuarantineSection() {
-    var section = workingBand('Put evidence into quarantine', 'Operator and owner, 5 MiB and 90 days at most');
+    var built = workingBand('Put evidence into quarantine', 'Operator and owner, 5 MiB and 90 days at most');
+    var section = built.section;
+    var bandBody = built.body;
 
     /* A padlock, not the warning triangle. Both callouts on this pane wore the
        triangle, so the one that is actually a warning — the trust note above
        the approval handoff — had no glyph of its own to be told apart by.
        This one states a boundary rather than a risk, and a boundary is a lock.
        Stadiora/Aria#10647. */
-    section.appendChild(h('div', { className: 'callout' }, [
+    bandBody.appendChild(h('div', { className: 'callout' }, [
       icon('lock'),
       h('div', {}, [
         h('strong', { text: 'Quarantine is not permission to use evidence.' }),
@@ -569,7 +681,7 @@
       denied.appendChild(shell.stateBlock('lock', 'Evidence import needs operator access', [
         'Your role can validate declarations above, which stores nothing. Putting bytes into quarantine is an operator and owner action.'
       ]));
-      section.appendChild(denied);
+      bandBody.appendChild(denied);
       return section;
     }
 
@@ -752,8 +864,8 @@
       });
     });
 
-    section.appendChild(form);
-    section.appendChild(status);
+    bandBody.appendChild(form);
+    bandBody.appendChild(status);
     return section;
   }
 
@@ -890,11 +1002,32 @@
       var resource = response && response.resource;
       var value = resource && resource.value;
       if (!value) throw new Error('The approval operation did not return a resource.');
-      approvalResult.hidden = false;
-      approvalResult.textContent = 'Approval request ' +
+      var message = 'Approval request ' +
         String(value.approvalRequestId || resource.id) + ' is ' +
         String(value.state) + ' at revision ' +
         String(value.revision || resource.revision) + '.';
+
+      /* Revealed in one task, filled in the next.
+
+         role="status" is a live region, and an assistive technology announces
+         one by diffing its contents between tasks. A region that was `hidden`
+         when the task began is not in the accessibility tree to diff against,
+         so revealing it and filling it in the same task can put the answer on
+         screen and nothing in the ear: the region arrives already holding its
+         text, which is indistinguishable from no change at all.
+         Stadiora/Aria#10809.
+
+         Splitting them buys a task in which the region exists and is empty,
+         so the text landing afterwards is a change inside something already
+         being watched. `#approval-result:empty` in pane-evaluations-v2.css
+         takes the padding and the ring off for precisely the width of that
+         gap, so the empty frame has no extent and nothing flickers. */
+      approvalResult.textContent = '';
+      approvalResult.hidden = false;
+      global.setTimeout(function () {
+        approvalResult.textContent = message;
+      }, 0);
+
       if (resource.id) {
         approvalGetId.value = resource.id;
         approvalDecisionId.value = resource.id;
@@ -995,8 +1128,10 @@
       });
     });
 
-    var section = workingBand('Qualified approval handoff', 'Metadata only; the backend enforces qualification');
-    section.appendChild(h('p', {
+    var built = workingBand('Qualified approval handoff', 'Metadata only; the backend enforces qualification');
+    var section = built.section;
+    var bandBody = built.body;
+    bandBody.appendChild(h('p', {
       className: 'field-hint',
       text: 'Bind exact quarantined bytes to an admission request. This workflow does not admit, reveal or export evidence.'
     }));
@@ -1010,7 +1145,7 @@
         ),
         approvalResult
       );
-      section.appendChild(h('div', { className: 'stack' }, sections));
+      bandBody.appendChild(h('div', { className: 'stack' }, sections));
       return section;
     }
     sections.push(
@@ -1034,7 +1169,7 @@
       ]),
       approvalResult
     );
-    section.appendChild(h('div', { className: 'stack' }, sections));
+    bandBody.appendChild(h('div', { className: 'stack' }, sections));
     return section;
   }
 
@@ -1099,7 +1234,9 @@
   }
 
   function scoresBand() {
-    var section = previewBand('How good are the answers', 'Scored after every release candidate');
+    var built = previewBand('How good are the answers', 'Scored after every release candidate');
+    var section = built.section;
+    var bandBody = built.body;
 
     var headline = shell.card('kpi');
     headline.appendChild(h('div', { className: 'card-body' }, [
@@ -1152,13 +1289,15 @@
       h('span', { text: INVENTED.safetyFloor })
     ]));
 
-    section.appendChild(h('div', { className: 'grid g-side' }, [headline, dimensions]));
+    bandBody.appendChild(h('div', { className: 'grid g-side' }, [headline, dimensions]));
     return section;
   }
 
   function regressionsBand() {
-    var section = previewBand('What regressed',
+    var built = previewBand('What regressed',
       'Dropped more than ' + INVENTED.regressionThreshold + ' since 1.1.2');
+    var section = built.section;
+    var bandBody = built.body;
     var body = h('tbody');
     INVENTED.regressions.forEach(function (entry) {
       body.appendChild(h('tr', {}, [
@@ -1196,7 +1335,7 @@
       icon('info'),
       h('span', { text: INVENTED.regressionFoot })
     ]));
-    section.appendChild(card);
+    bandBody.appendChild(card);
     return section;
   }
 
@@ -1220,7 +1359,9 @@
   }
 
   function shipBand() {
-    var section = previewBand('Can 1.2.0 ship');
+    var built = previewBand('Can 1.2.0 ship');
+    var section = built.section;
+    var bandBody = built.body;
 
     var compare = shell.card();
     compare.appendChild(shell.cardHead('1.1.2 against 1.2.0', 'Same cases, same grader'));
@@ -1269,7 +1410,7 @@
       h('span', { text: INVENTED.suiteFoot })
     ]));
 
-    section.appendChild(h('div', { className: 'grid g-main' }, [compare, suite]));
+    bandBody.appendChild(h('div', { className: 'grid g-main' }, [compare, suite]));
     return section;
   }
 
@@ -1280,13 +1421,18 @@
   }
 
   function render(root) {
-    root.appendChild(h('div', { className: 'stack' }, [
+    /* Drained before the sections are built, not after: a render that threw
+       half way would otherwise leave the next one driving dead bands. */
+    pending = [];
+    var stack = h('div', { className: 'stack' }, [
       datasetValidationSection(),
       evidenceQuarantineSection(),
       approvalSection(),
       soonBanner(),
       scoringPreview()
-    ]));
+    ]);
+    installFolds();
+    root.appendChild(stack);
   }
 
   shell.definePane('evals', render);

@@ -217,6 +217,28 @@ select.field-input { appearance: none; padding-right: 26px; }
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--emerald) 26%, transparent);
 }
 
+/* The approval answer slot, visible and still empty, has no extent.
+
+   assets/pane-evaluations.js reveals this region one task before it fills it,
+   so the accessibility tree gets a task in which the region exists and is
+   empty, and the text landing afterwards reads as a change to something
+   already being watched (Stadiora/Aria#10809). That gap is normally shorter
+   than a frame, but it is not guaranteed to be, and a 28px railed box
+   appearing empty and then filling is a flicker that means nothing.
+
+   `display` is deliberately untouched. `visibility: hidden`, `display: none`
+   and a zero `height` would each take the region back out of the
+   accessibility tree and undo the reveal this rule exists to cover. Dropping
+   the box's own decoration leaves it displayed, in the tree, and 0px tall.
+
+   Addressed by id rather than as `.form-alert:empty` for two reasons. The
+   class form also reaches the shell's own dialog alert, which is a shared
+   surface a pane sheet has no business restyling, and assets/shell-pane-v2.css
+   already collapses that one at :275 by the same argument. And 1,0,0 beats
+   `.form-alert.is-ok`, so the rail this has to switch off goes off wherever
+   the rule sits in the file, rather than only while it sits below. */
+#approval-result:empty { padding: 0; box-shadow: none; border-left-width: 0; }
+
 .q-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 
 .evidence-authority {
@@ -440,6 +462,60 @@ select.field-input { appearance: none; padding-right: 26px; }
 .u-list-end { display: flex; align-items: center; gap: 8px; }
 
 /* -------------------------------------------------------------- narrow */
+
+/* The folds. assets/pane-evaluations.js has the reasoning for why this pane
+   folds at all and why 900 is the width; this is only what it looks like.
+
+   .band-body exists because aria.css:365 makes .band a column flex container
+   with a 13px gap, so the bands' children were flex items spaced by their
+   parent. Moving them inside a wrapper would have collapsed every one of
+   those gaps to nothing at every width, desktop included. The wrapper
+   restores the container it interposed, exactly: same display, same
+   direction, same gap.
+
+   And it restores `display` under [hidden] too. `[hidden] { display: none }`
+   is a user-agent rule, so the author `display: flex` above beats it and the
+   attribute would have gone on being set and unset while every band stayed
+   open. Painting a box is how you stop `hidden` working. */
+.band-body { display: flex; flex-direction: column; gap: 13px; }
+.band-body[hidden] { display: none; }
+
+/* Above the fold width there is no control and nothing folded: the button is
+   out of the layout, out of the tab order and out of the accessibility tree,
+   and pane-evaluations.js shows every body. */
+.band-fold { display: none; }
+
+@media (max-width: 900px) {
+  /* Out of flow, so it cannot wrap onto a line of its own — .band-head is a
+     wrapping flex row (aria.css:366) and at 375 the title, the note and the
+     stamp already fill more than one line between them. Pinned to the top
+     right it is in the same place on every band, and the padding keeps the
+     title from running under it. */
+  .band > .band-head { position: relative; padding-right: 42px; }
+  .band-fold {
+    position: absolute; top: -4px; right: 0;
+    display: grid; place-items: center;
+    width: 36px; height: 36px;
+    padding: 0;
+    border: 0; border-radius: var(--r-sm, 8px);
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .band-fold:hover { background: var(--surface-2); color: var(--ink); }
+  .band-fold svg { width: 18px; height: 18px; transition: transform 140ms ease; }
+  /* The chevron points down at a band that will open downwards and up at one
+     already open. Rotation rather than two glyphs keeps it one element, so
+     the state cannot be half-applied. */
+  .band-fold[aria-expanded="true"] svg { transform: rotate(180deg); }
+}
+
+/* A chevron that spins is decoration on a state the attribute already
+   carries, and is not essential motion. */
+@media (prefers-reduced-motion: reduce) {
+  .band-fold svg { transition: none; }
+}
+
 @media (max-width: 1280px) {
   .u-score { grid-template-columns: minmax(0, 1fr) 110px 48px 78px; gap: 12px; }
 }
