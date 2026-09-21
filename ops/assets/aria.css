@@ -764,6 +764,58 @@ svg { display: block; }
 .meter.bad  { --c: var(--rose); }
 .meter.vio  { --c: var(--violet); }
 
+/* Stadiora/Aria#10825: severity was carried by `--c` and nothing else, so in
+   greyscale a bar meaning "in trouble" and a bar meaning "fine" were the same
+   bar. Severity is now also a NOTCH COUNT -- ok runs clean, warn carries one
+   notch, bad two, vio three -- so the band survives with the hue removed and
+   colour only reinforces it. Same reasoning as the 3px rail in #71.
+
+   Notches are grooves cut from the fill's trailing end, drawn as borders
+   because a border is geometry: `forced-colors` recolours it rather than
+   discarding it. Their colour is mixed from `--c` toward the page rather than
+   set to a surface token, so the groove keeps its contrast against the fill on
+   whichever card the meter is sitting on, in either theme.
+
+   Every groove sits STRICTLY INSIDE the fill, at 4px, 8px and 12px from its
+   trailing edge. A groove flush with that edge was tried first and discarded
+   after looking at it: at the edge a groove is not a groove, it just makes the
+   bar 2px shorter, so `warn` was indistinguishable from `ok`.
+
+   `overflow` keeps a groove from painting past a short fill onto bare track,
+   where it would read as a mark the bar had not reached. That trades an
+   over-count for an under-count, which is the conservative direction here --
+   but an under-count still misreports, so `ops-meter-severity.test.mjs` holds
+   a floor requiring every severity-bearing fill to be wide enough for its own
+   notches. Measured across 9 panes x 4 states x 2 themes, the narrowest one
+   today is 124.3px against the 14px three notches need. */
+.meter i { overflow: hidden; }
+.meter i::before,
+.meter i::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 0;
+  border: 0 solid color-mix(in srgb, var(--c, var(--cyan)) 30%, var(--bg));
+}
+.meter.warn i::after,
+.meter.bad  i::after,
+.meter.vio  i::after   { right: 4px; border-right-width: 2px; }
+.meter.bad  i::after,
+.meter.vio  i::after   { width: 6px; border-left-width: 2px; }
+.meter.vio  i::before  { right: 12px; border-right-width: 2px; }
+
+/* Measured, not assumed: under `forced-colors: active` Chrome drops
+   `background-image` to `none` and `box-shadow` to `none`, and the fill's
+   background-color was already transparent -- so the OLD fill painted nothing
+   at all and the meter lost its value, not merely its severity. The fill is
+   given a system colour here so the bar reads at all, and the notches are
+   flipped to `Canvas` so they stay legible as grooves against it. */
+@media (forced-colors: active) {
+  .meter i { background-color: CanvasText; }
+  .meter i::before,
+  .meter i::after { border-color: Canvas; }
+}
+
 /* Segmented capacity bar: budget consumed vs forecast remaining. */
 .budget {
   position: relative;
