@@ -740,6 +740,24 @@ const FOCUS_ADJACENT_RADIUS = 1;
    not stated here — a number typed in a comment is exactly what
    Stadiora/Aria#10365 was. The run prints the thinnest sample it took. */
 const FOCUS_MIN_ADJACENT = 8;
+/* Between two measured populations, not picked: the largest difference a
+   QUIET row has ever shown between two identical captures is 17 pixels
+   (local; 9 on the runner), and the row that is still painting shows 29,719
+   to 32,817. This floor is 30x above the first and 58x below the second. */
+const FOCUS_SETTLE_FLOOR = 512;
+const FOCUS_SETTLE_TRIES = 3;
+
+/* Pixels whose RGB differs between two equally-sized shots; -1 if they are
+   not the same size, which the caller already has a refusal for. */
+function shotDiffPx(a, b) {
+  if (!a || !b || a.width !== b.width || a.height !== b.height) return -1;
+  let n = 0;
+  for (let q = 0; q < a.data.length; q += 4) {
+    if (a.data[q] !== b.data[q] || a.data[q + 1] !== b.data[q + 1] ||
+        a.data[q + 2] !== b.data[q + 2]) n++;
+  }
+  return n;
+}
 
 /* Group a list of [r,g,b] pixels into surfaces the same way sampleBackdrops
    groups a rect, and for the same reason: a gradient is one surface spread
@@ -1839,8 +1857,28 @@ async function measureFocusIndicators(where) {
          generalised to another, which a phase-dependent animation defeats:
          such a fixture reds the intact tool, not the mutants. That is why
          there is none, and it is in NOT COVERED rather than implied away. */
-      const before0 = await focusShot(box);
-      const before = await focusShot(box);
+      /* SETTLE BEFORE MASKING. The mask above answers renderer noise -- a
+         pixel or two of re-rasterised text. It is the wrong instrument for a
+         page that has simply not finished painting, and on the runner those
+         are two populations, not one distribution with a tail: every quiet
+         row differs by at most 17 pixels, and the one row that is still
+         arriving differs by 29,719 to 32,817. Masking the second is not
+         noise rejection, it is deleting a fifth of the photograph -- and
+         because the mask is subtracted from the RING as well, that row was
+         judged over 76% of its own indicator and printed `ok`.
+         So the pair is taken again, up to FOCUS_SETTLE_TRIES times, until it
+         holds still. The floor sits between the two populations by a wide
+         margin in both directions, and a row that never settles is refused
+         below rather than measured through a hole. */
+      let before0, before, settleTries = 0, settleDiff = -1;
+      for (;;) {
+        before0 = await focusShot(box);
+        before = await focusShot(box);
+        settleTries++;
+        settleDiff = shotDiffPx(before0, before);
+        if (settleDiff >= 0 && settleDiff <= FOCUS_SETTLE_FLOOR) break;
+        if (settleTries >= FOCUS_SETTLE_TRIES) break;
+      }
       const focused = await evaluate(`(() => {
         const el = document.querySelector('[data-focus-site="${c.i}"]');
         /* Read immediately before focusing, not before the first screenshot:
@@ -2216,6 +2254,8 @@ async function measureFocusIndicators(where) {
     if (!measured) { rows.push({ ...row, refused: 'no photograph could be taken' }); continue; }
 
     const { nChanged, changed, after, bareShot, before, W, H, focused, noise, nNoise } = measured;
+    row.settleTries = settleTries;
+    row.settleDiff = settleDiff;
     row.noisePx = nNoise;
     row.clipPx = nNoiseAt ? nNoiseAt.clipPx : 0;
     row.focusVisible = focused.focusVisible;
@@ -3691,6 +3731,7 @@ try {
     const focusNoiseRows = [];
     const focusMotionRows = [];
     const focusEatenRows = [];
+    const focusSettleRows = [];
     const focusWorst = new Map();
     const focusBelow = [];
     const focusRefused = [];
@@ -3828,6 +3869,7 @@ try {
           }
           if (r.motionN > 0) focusMotionRows.push({ ...r, theme, state });
           if (r.adjLostToNoise > 0 || r.coreLostToNoise > 0) focusEatenRows.push({ ...r, theme, state });
+          if (r.settleTries > 1) focusSettleRows.push({ ...r, theme, state });
           /* Ownership is answered for the whole ring band or not at all, and
              the count of rows where it could not be is printed rather than
              left to be inferred from a refusal that quietly did not fire.
@@ -4160,6 +4202,14 @@ try {
          how much the mask removed from the CLIP -- most of a clip is
          background nobody measures -- but how much it removed from the two
          things a verdict is made of: the ring, and the surface beside it. */
+      console.log(`    ${focusSettleRows.length} of them were still painting when first ` +
+        `photographed and were re-photographed until they held still (floor ${FOCUS_SETTLE_FLOOR} ` +
+        `pixel(s), at most ${FOCUS_SETTLE_TRIES} attempts)`);
+      for (const r of focusSettleRows.sort((a, b) => b.settleDiff - a.settleDiff).slice(0, 5)) {
+        console.log(`      settled to ${r.settleDiff} pixel(s) after ${r.settleTries} attempt(s)` +
+          `  ${r.theme}/${r.state}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}` +
+          `  "${r.text}"`);
+      }
       console.log(`    ${focusEatenRows.length} of them had the noise mask remove a pixel that ` +
         'would otherwise have been ring or surface beside the ring');
       for (const r of focusEatenRows.sort((a, b) =>
