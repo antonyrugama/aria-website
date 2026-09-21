@@ -526,7 +526,15 @@
         var name = node.getAttribute(RETAIN_ATTR);
         if (!name) continue;
         if (held.scroll[name]) node.scrollLeft = held.scroll[name];
-        if (held.focus && name === held.focus && typeof node.focus === 'function') node.focus();
+        if (held.focus && name === held.focus && typeof node.focus === 'function') {
+          /* preventScroll matters as much as the focus itself. Calling focus()
+             bare makes the browser scroll the node into view, so a refresh
+             that correctly KEEPS focus still throws the page's vertical
+             position away -- measured at 1709 -> 811 on a long reading. The
+             point of this whole mechanism is that a refresh moves nothing the
+             operator did not move. */
+          node.focus({ preventScroll: true });
+        }
       }
     }
 

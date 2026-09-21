@@ -1188,19 +1188,46 @@ test('the pane writes no class only the v1 sheet defines', () => {
       }
     }
   };
+
+  /* Classes do not all arrive as literals on the className line. The pane
+     applies tones through lookup maps — `GRADE_TONE[grade]` — and harvesting
+     only the quoted text next to `className:` reintroduces, for maps, exactly
+     the hole that hand-keeping the list created for literals. So: find the
+     SCREAMING_CASE maps a className expression actually references, and
+     harvest their values too. Keys are unquoted, so only values are read. */
+  const maps = new Map();
+  for (const m of PANE_SRC.matchAll(/(?:var|const)\s+([A-Z][A-Z0-9_]*)\s*=\s*\{([^}]*)\}/g)) {
+    maps.set(m[1], m[2]);
+  }
+  let viaMap = 0;
+  const addExpr = (expr) => {
+    addAll(expr);
+    for (const id of expr.match(/\b[A-Z][A-Z0-9_]*\b/g) || []) {
+      if (maps.has(id)) { addAll(maps.get(id)); viaMap += 1; }
+    }
+  };
+
   for (const m of PANE_SRC.matchAll(/className:\s*([^\n]*)/g)) {
     /* Stop at the next property key, or the extractor reads `text:` too and
        every word of English prose on the line becomes a "class". */
-    addAll(m[1].split('}')[0].split(/,\s*(?=(?:[A-Za-z_$][\w$]*|'[^']*')\s*:)/)[0]);
+    addExpr(m[1].split('}')[0].split(/,\s*(?=(?:[A-Za-z_$][\w$]*|'[^']*')\s*:)/)[0]);
   }
   for (const m of PANE_SRC.matchAll(/S\.card\(([^)\n]*)\)/g)) addAll(m[1]);
 
   /* An extractor that quietly matched nothing would pass this test over every
      class in the file, so it has to show it found the shapes it claims to
-     read: a plain literal, a concatenated one, and a card grade. */
+     read. The map arm needs its own control: `written.size` is satisfied by
+     the literals alone, so a control that only counts cannot fail on the
+     shape it was added for. */
   assert.ok(written.size >= 25, `only ${written.size} classes extracted, so this proves little`);
+  assert.ok(viaMap >= 1, 'no className expression resolved through a lookup map, so the map '
+    + 'arm of this extractor is dead and proves nothing');
   for (const need of ['job-id', 'u-scroll', 'pill', 'kpi', 'tbl']) {
-    assert.ok(written.has(need), `the class extractor missed ${need}`);
+    assert.ok(written.has(need), `the class extractor missed the literal ${need}`);
+  }
+  for (const need of ['up', 'warn', 'down']) {
+    assert.ok(written.has(need), `the class extractor missed ${need}, which reaches the DOM `
+      + 'only through a lookup map');
   }
 
   const unpainted = [...written]
