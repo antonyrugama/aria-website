@@ -2516,6 +2516,16 @@ ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" =
 ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 634
 ```
 
+One citation is still spelled in this file, and it is the one just above: the drifted
+`pane-registry.js` pointer, kept because it is the **record** of a number that was wrong rather
+than a pointer anybody should follow. The guard refuses every other one, and what it exempts is
+published here rather than counted in a sentence — a list of things a guard declines to judge is
+its own back door, so its size is a floor and deleting a row is as red as adding one.
+
+```claims id=exempt-citations
+pane-registry.js:103-110 = exempt, the record of a citation that had already drifted
+```
+
 ### What holds this README to the code
 
 Seven issues were filed against this file in one day (`Stadiora/Aria#10457`, `#10474`, `#10510`,
@@ -2601,8 +2611,9 @@ Which blocks those are is itself derived, out of the guard rather than out of a 
 the enumeration that used to sit in this paragraph said nine and fell three behind, missing two
 blocks added in review and one added by the commit that fixed it. Some row sets are held by a
 check instead of a block rather than by a fence, and those are the `and a check,` lines — no count
-of them is written here, because the count written here was wrong twice: the sweep requires every repository file
-path this README spells in a code span to be in the tree or declared in `deleted-assets`, which
+of them is written here, because the count written here was wrong twice: the sweep requires every
+code span that is **only** a repository file path — `node scripts/x.mjs` is a command, not a path,
+and is not judged — to name something in the tree or declared in `deleted-assets`, which
 is what makes a file deleted elsewhere red here rather than quietly stale — a span carrying a
 directory counts whatever its extension, and a bare `name.ext` counts when the tree uses that
 extension, which is what keeps `payload.data` out of it; and the checks table
@@ -2624,6 +2635,7 @@ claims id=csp-policy
 claims id=dark-text-3
 claims id=data-page-scoping
 claims id=deleted-assets
+claims id=exempt-citations
 claims id=guard-blind-spots
 claims id=guard-constants
 claims id=pane-read-endpoints
@@ -2647,7 +2659,7 @@ and a check, ops/README.md prose spells no source line number
 And which of them are pinned, with how many rows each pin holds:
 
 ```claims id=pinned-blocks
-claims id=claims-blocks pins 2 rows by name
+claims id=claims-blocks pins 3 rows by name
 claims id=csp-pages pins 5 rows by name
 claims id=csp-policy pins 9 rows by name
 claims id=dark-text-3 pins 7 rows by name
@@ -2655,7 +2667,7 @@ claims id=data-page-scoping pins 2 rows by name
 claims id=deleted-assets pins 2 rows by name
 claims id=guard-blind-spots pins 15 rows by name
 claims id=guard-constants pins 9 rows by name
-claims id=pinned-blocks pins 5 rows by name
+claims id=pinned-blocks pins 6 rows by name
 claims id=shell-v2-pins pins 6 rows by name
 claims id=source-anchors pins 9 rows by name
 claims id=spend-colour-gate pins 21 rows by name
@@ -2666,9 +2678,10 @@ claims id=v1-v2-collision pins 1 rows by name
 claims id=write-capable-assets pins 2 rows by name
 claims id=v1-status-classes pins the families = badge, tag, callout, verdict
 floor: blocks pinned in REQUIRED_ROWS = at least 17
-floor: blocks derived in this file = at least 24
+floor: blocks derived in this file = at least 25
 floor: families pinned in REQUIRED_FAMILIES = at least 4
 floor: widest shared names printed by v1-v2-collision = exactly 8
+floor: citations exempt by name = exactly 1
 ```
 
 **NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
@@ -2701,9 +2714,11 @@ is declared in the Aria monorepo, so nothing here can decide whether departure 8
 complete sweep of it, which is why that departure no longer claims to be one. The line-number
 refusal reads **code spans**, and only for files this repository has: a citation written in
 words, one outside backticks, and one into the monorepo — `opsUsageView.ts:932` is the only
-one — are all outside it, stated here rather than counted as clean. One citation is exempt
-by name, the `pane-registry.js` pointer recorded below as an example of a number that had
-already drifted; it is listed in the guard and nowhere else, and deleting it is red too. A declaration is
+one — are all outside it, stated here rather than counted as clean. Inside a span it takes
+**every** citation, not only a span that is nothing but one. What it exempts is the
+`exempt-citations` block above, row by row rather than counted in this sentence, and that
+list's size is a floor: a list of things a guard refuses to judge is its own back door, so
+growing it is loud. A declaration is
 read the way a browser reads one — whitespace around the colon, `!important`, and a property
 declared twice in a rule resolving to the last of them — but CSS is otherwise parsed by text, so
 a value behind `var()`, a `calc()`, an `hsl()` or anything else this cannot resolve to a flat
