@@ -1604,29 +1604,22 @@
       [
         {
           title: 'What a run cost',
-          desc: 'The run record carries no price. The approved design shows a dollar figure ' +
-            'per run; nothing behind this page can produce one, and a made-up figure in a ' +
-            'cost column is worse than an empty one. Spend answers this per model and per ' +
-            'day instead.'
+          desc: 'The run record carries no price. Spend answers this per model and per day.'
         },
         {
           title: 'Who the run was for',
-          desc: 'Deliberate, and not a gap waiting to be filled. The run record has no ' +
-            'consent flag, so there is nothing a search could be filtered by; the route ' +
-            'therefore sends no account identity at all rather than one it cannot gate. ' +
-            'How many accounts a fault reached is above; which ones is not here, at any role.'
+          desc: 'The run record has no consent flag, so the route sends no account ' +
+            'identity it could not gate. Counts only, at every role.'
         },
         {
           title: 'Which app asked',
-          desc: 'Neither the run record nor the job table carries a client app or an ' +
-            'environment, so a filter by app would be a control that narrowed nothing. ' +
-            'Request type is the closest real answer and it is offered above.'
+          desc: 'Neither the run record nor the job table carries a client app. Request ' +
+            'type is the nearest real answer, and it is offered above.'
         },
         {
           title: 'Whether a run was refused on safety grounds',
-          desc: 'A run ends worked, failed or cancelled. A request Aria declined to answer ' +
-            'completed, because the refusal was the answer, so "refused" is not a state this ' +
-            'record can separate out.'
+          desc: 'A run ends worked, failed or cancelled. A refusal completed, because the ' +
+            'refusal was the answer.'
         }
       ].forEach(function (item) {
         var line = h('div', { className: 'omit-item' });

@@ -2094,6 +2094,28 @@ test('the four things this pane cannot answer are named rather than drawn empty'
     'a dollar figure is on the page, and nothing behind it can produce one');
 });
 
+/* The band's own subtitle promises the gaps are "named rather than drawn as an
+   empty figure", and a name with no reason under it is the same dead end as an
+   empty figure: the operator learns the pane will not answer and not why, so
+   they cannot tell a deliberate refusal from a broken read. The titles above
+   are bound; nothing bound the reasons, so all four could be emptied and this
+   file stayed green. Asserted as presence and not as wording, because pinning
+   the sentences would freeze the copy rather than the contract. */
+test('every gap the pane names carries a reason, not just a title', async () => {
+  const dom = await boot({});
+  const section = sectionWithHeading(dom, /cannot answer yet/);
+  const items = section.querySelectorAll('.omit-item');
+  assert.equal(items.length, 4, 'the band no longer draws four gaps');
+  for (const item of items) {
+    const title = allText(item.querySelectorAll('.omit-title')[0] || null).trim();
+    const descNode = item.querySelectorAll('.omit-desc')[0];
+    assert.ok(descNode, `"${title}" is named with no reason node at all`);
+    const desc = allText(descNode).trim();
+    assert.ok(desc.length > 0, `"${title}" is named with an empty reason`);
+    assert.notEqual(desc, title, `"${title}" repeats its own title instead of giving a reason`);
+  }
+});
+
 /* ============================== the rail =============================== */
 
 test('the rail badge counts failures, and clears rather than zeroing when nothing was read', async () => {
