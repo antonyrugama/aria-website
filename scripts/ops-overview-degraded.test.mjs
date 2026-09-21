@@ -126,9 +126,10 @@ const boom = (what) => Object.assign(new Error(what + ' is down'), { status: 503
 
 /* --------------------------------------------------------------- booting */
 
-/* The page ops/index.html builds, plus a rail: setBadge() writes onto a rail
-   item and silently does nothing without one, so a badge assertion needs the
-   item to exist before it can mean anything. */
+/* The page ops/index.html builds, plus a rail. No test here reads the rail,
+   but the pane sets a badge on it every render, and without a rail item that
+   call returns at its first line — so the rail is what makes the badge path
+   actually run rather than be skipped. */
 function buildPage(dom, body) {
   const el = (parent, tag, attrs = {}) => {
     const node = dom.element(tag);
@@ -228,10 +229,18 @@ function chipTexts(dom) {
   return strip.childNodes.map((n) => allText(n).trim()).filter(Boolean);
 }
 
-/* The rail badge beside Problems, as the label it is actually showing. */
-function railBadge(dom) {
-  const badge = nodesWithClass(dom.doc.getElementById('rail'), 'nav-badge')[0];
-  return badge ? allText(badge).trim() : null;
+
+/* The state block the queue card draws when it has no rows: the card's own
+   answer to why the list is short. */
+function quietBlockTitle(dom) {
+  const list = nodesWithClass(livePanel(dom), 'q-list')[0];
+  if (list && list.childNodes.length) return null;
+  const block = nodesWithClass(livePanel(dom), 'card-body')
+    .map((body) => nodesWithClass(body, 'state-block')[0])
+    .filter(Boolean)[0];
+  if (!block) return null;
+  const title = findAll(block, (n) => /^H[1-6]$/.test(n.tagName))[0];
+  return title ? allText(title).trim() : null;
 }
 
 /* A claim of the form "3 of 4 rules checking", resolved to its two numbers
@@ -332,17 +341,17 @@ test('an unreadable rules list is not printed as a count of rules', async () => 
 });
 
 test('an unreadable rules list is not printed as a system with nothing watching', async () => {
-  /* The positive half again, and this one needs its own fixture: "Nothing is
-     being checked" is a real and correct title when the rules read LANDS and
-     says no rule is judging. It is a lie only when nobody could read them. */
+  /* The positive half again, and it needs a problem on screen: with an empty
+     queue the ribbon answers from its unreadable-rules branch before it ever
+     reaches the unarmed one, so an empty-queue fixture would pass this test
+     without exercising the guard it is named for. */
   const unarmed = await boot({
-    problems: { problems: [] },
     rules: { rules: [{ id: 'r1', name: 'Checkout latency', enabled: true }], channels: [] },
   });
   assert.equal(ribbonTitle(unarmed), 'Nothing is being checked',
     'the unarmed fixture did not reach the title this test is about');
 
-  const down = await boot({ problems: { problems: [] }, rules: boom('rules') });
+  const down = await boot({ rules: boom('rules') });
   assert.notEqual(ribbonTitle(down), 'Nothing is being checked',
     'the pane stated that nothing is watching, from a read that never landed');
 });
@@ -357,15 +366,38 @@ test('a quiet queue is not called working when the checks could not be read', as
     'an empty queue was called health while whether anything was looking was unknown');
 });
 
-test('an unreadable queue puts no count beside Problems in the rail', async () => {
-  const healthy = await boot();
-  assert.equal(railBadge(healthy), '1',
-    'the healthy render set no rail badge, so its absence proves nothing');
+test('an unreadable queue is not called working either', async () => {
+  const quiet = await boot({ problems: { problems: [] } });
+  assert.equal(ribbonTitle(quiet), 'Everything is working',
+    'the quiet fixture did not reach the title this test is about');
 
   const down = await boot({ problems: boom('problems') });
-  assert.equal(railBadge(down), null,
-    'the rail carried a count of problems this pane could not read');
+  assert.notEqual(ribbonTitle(down), 'Everything is working',
+    'a queue nobody could read was reported as nothing being wrong');
 });
+
+test('the queue card does not call the checks stopped when they are unread', async () => {
+  const unarmed = await boot({
+    problems: { problems: [] },
+    rules: { rules: [{ id: 'r1', name: 'Checkout latency', enabled: true }], channels: [] },
+  });
+  assert.equal(quietBlockTitle(unarmed), 'The checks are not running',
+    'the unarmed fixture did not reach the block this test is about');
+
+  const down = await boot({ problems: { problems: [] }, rules: boom('rules') });
+  assert.notEqual(quietBlockTitle(down), 'The checks are not running',
+    'the queue card stated the checks had stopped, from a read that never landed');
+});
+
+/* NOT COVERED, with the reason rather than a weaker test.
+
+   `badgeProblems` takes a `failed` flag and clears the rail badge with it, the
+   way the Problems pane's does. No test here binds that flag, because none
+   can: when the problems read fails the pane already hands that function an
+   empty list, so the badge is cleared whether the flag is read or not, and
+   every mutation of the flag leaves this file green. It is kept for the case
+   the list stops being emptied, and it is named here rather than covered by
+   an assertion that would pass on its own regardless. */
 
 test('the figures failure claims the problems are unaffected only when they are', async () => {
   const summaryOnly = await boot({ summary: boom('the summary') });
