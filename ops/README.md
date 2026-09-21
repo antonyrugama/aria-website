@@ -1312,8 +1312,8 @@ those panes now.
     ops.css .table-wrap = position: relative
     pane-alerts-v2.css .scrollx = position: static (the sheet sets none)
     pane-analytics-v2.css .u-scroll = position: relative
-    pane-evaluations-v2.css .tbl-wrap = position: static (the sheet sets none)
-    pane-releases-v2.css .tbl-scroll = position: static (the sheet sets none)
+    pane-evaluations-v2.css .tbl-wrap = position: relative
+    pane-releases-v2.css .tbl-scroll = position: relative
     pane-run-history-v2.css .tbl-wrap = position: static (the sheet sets none)
     pane-settings-v2.css .tbl-wrap = position: static (the sheet sets none)
     pane-spend-v2.css .sp-scroll = position: static (the sheet sets none)
@@ -1321,9 +1321,11 @@ those panes now.
     ```
 
     `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
-    `login.html` and `setup.html` load and neither of them draws a table. `.u-scroll` on People
-    and usage is the one v2 wrapper that carries the repair. Every other wrapper in the block is
-    static, so the escape route above is open on them.
+    `login.html` and `setup.html` load and neither of them draws a table. Evaluations' `.tbl-wrap`
+    and Releases' `.tbl-scroll` were repaired under Stadiora/Aria#10706 and join `.u-scroll` in
+    carrying it; the escape route above is open on every wrapper still marked static. The block
+    is derived from the sheets on every run, so read the count off it rather than off this
+    sentence.
 
     This item used to add "no pane ships such a span today". That was false, and it was false in
     the most expensive way — a reassuring sentence nobody re-derived. Panes ship them:
@@ -1334,9 +1336,9 @@ those panes now.
     ```
 
     `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-users.js`
-    and `pane-releases.js` do the same inside `div.tbl-wrap` and `div.tbl-scroll`. All three
-    wrappers are static in the block above, so the containing block of those captions is not the
-    wrapper. Nothing is broken on screen anyway, for a reason this item had never stated: a
+    and `pane-releases.js` do the same inside `div.tbl-wrap` and `div.tbl-scroll`. Of those three
+    wrappers, Releases' is now positioned and the other two are still static in the block above,
+    so for those two the containing block of the caption is not the wrapper. Nothing is broken on screen anyway, for a reason this item had never stated: a
     1px-wide clipped caption's static position is the table's left edge, so resolving past the
     wrapper adds no scroll width to the right of anything. That is a claim about layout, not
     about text, and it is **not derived here** — `scripts/check-ops-narrow-overflow.mjs` is the
