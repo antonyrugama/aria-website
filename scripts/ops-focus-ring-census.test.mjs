@@ -18,9 +18,11 @@
  * resolved by assigning the declared value to a real element inside the real
  * page, under the real theme, and reading back what Chrome computed — so the
  * comparison is between VALUES, in the cascade's own terms, not between
- * spellings. That also means an expression this file cannot resolve to a
- * concrete colour is a FAILURE by name, never a skip: the ring is an ink, and
- * the conservative direction for an ink is to refuse.
+ * spellings. That also means an expression this file cannot resolve to one
+ * opaque colour — translucent, or tracking `currentColor` — is a FAILURE by
+ * name, never a skip: the ring is an ink, and the conservative direction for
+ * an ink is to refuse. The same assumption on a fill would be the safe one,
+ * so the direction is picked per role rather than once for the file.
  *
  * THE CLAIM, exactly. For every CSS rule under `ops/assets/` whose selector
  * carries a focus pseudo-class and whose declarations name an outline colour:
@@ -391,16 +393,44 @@ function connect(url) {
   };
 }
 
-/* 'rgb(8, 145, 178)' -> '#0891b2'. Chromium serialises a computed colour as
-   `rgb()` or `rgba()`; anything else here is an expression that did not
-   resolve, and is reported as itself so the failure names what it saw. */
+/* 'rgb(8, 145, 178)' -> '#0891b2', and null for anything that is not one
+   opaque colour.
+ *
+ * TWO serialisations, because Chromium uses both. A plain hex or `rgb()` in
+ * the stylesheet comes back as `rgb()`; anything that went through
+ * `color-mix()` comes back as `color(srgb r g b / a)` with the channels in
+ * 0..1. Reading only the first form would refuse every `color-mix()` ring —
+ * fail-closed, so it could not hide a defect, but it would red the build for
+ * a ring that is perfectly legible, and a guard that cries wolf gets deleted.
+ * The sibling oracle scripts/check-ops-contrast.mjs reads both for the same
+ * reason.
+ *
+ * Alpha is judged in BOTH forms and anything under 1 returns null. That is
+ * Stadiora/Aria#10651's defect: a translucent ring composites against
+ * whatever is behind it, so it has no colour to judge, and assuming it opaque
+ * reports it more contrasty than it is. */
 function hexOf(v) {
-  const m = /^rgba?\(([^)]+)\)$/.exec((v || '').trim());
-  if (!m) return null;
-  const n = m[1].split(/[,\s/]+/).filter(Boolean).map(Number);
-  if (n.length < 3 || !n.slice(0, 3).every(Number.isFinite)) return null;
-  if (n.length > 3 && n[3] !== 1) return null;
-  return '#' + n.slice(0, 3).map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
+  const text = (v || '').trim();
+  const pack = (r, g, b) => '#' + [r, g, b]
+    .map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
+
+  const rgb = /^rgba?\(([^)]+)\)$/.exec(text);
+  if (rgb) {
+    const n = rgb[1].split(/[,\s/]+/).filter(Boolean).map(Number);
+    if (n.length < 3 || !n.slice(0, 3).every(Number.isFinite)) return null;
+    if (n.length > 3 && n[3] !== 1) return null;
+    return pack(n[0], n[1], n[2]);
+  }
+
+  const srgb = /^color\(srgb ([^)]+)\)$/.exec(text);
+  if (srgb) {
+    const n = srgb[1].split(/[\s/]+/).filter(Boolean).map(Number);
+    if (n.length < 3 || !n.slice(0, 3).every(Number.isFinite)) return null;
+    if (n.length > 3 && n[3] !== 1) return null;
+    return pack(n[0] * 255, n[1] * 255, n[2] * 255);
+  }
+
+  return null;
 }
 
 /* -------------------------------------------------------------------- boot */
@@ -505,25 +535,30 @@ async function documentRing() {
 /* Resolve a declared value the way the cascade would, by giving it to a real
    element inside the real document and reading back what Chrome computed.
  *
- * `specified` separates two cases a computed value cannot: a rule that names
- * no colour at all (`outline-offset: -2px`, or an `outline` shorthand with
- * only a width and a style) computes to `currentColor`, and so does a rule
- * that names a colour Chrome could not resolve. The first inherits the shared
- * ring and is fine; the second is a ring with no knowable colour and is a
- * failure. Chrome's own shorthand parser answers it: reading `style.
- * outlineColor` back off the element returns the empty string when the
- * shorthand did not set it. */
+ * Done TWICE, on two probes whose `color` differs, because an outline colour
+ * that follows `currentColor` is not a fixed colour at all: an `outline`
+ * shorthand carrying only a width and a style computes that way, and so does
+ * one naming a custom property that did not resolve. Neither is a ring any
+ * oracle can check, and both look like an ordinary `rgb()` from the outside.
+ * If the two probes disagree, the value tracked their ink rather than naming
+ * one, and this file refuses it by name below. Two sentinels rather than one
+ * comparison against a chosen value, so a rule that literally declares the
+ * sentinel cannot be mistaken for `currentColor`. */
 async function resolveDeclared(prop, value) {
+  const key = JSON.stringify(prop === 'outline' ? 'outline' : 'outlineColor');
   return await evalJson(`(() => {
-    const el = document.createElement('div');
-    el.style.color = 'rgb(1, 2, 3)';
-    document.body.appendChild(el);
-    try {
-      el.style[${JSON.stringify(prop === 'outline' ? 'outline' : 'outlineColor')}] = ${JSON.stringify(value)};
-      const specified = el.style.outlineColor;
-      const computed = getComputedStyle(el).outlineColor;
-      return JSON.stringify({ specified, computed });
-    } finally { el.remove(); }
+    const read = (ink) => {
+      const el = document.createElement('div');
+      el.style.color = ink;
+      document.body.appendChild(el);
+      try {
+        el.style[${key}] = ${JSON.stringify(value)};
+        return getComputedStyle(el).outlineColor;
+      } finally { el.remove(); }
+    };
+    const a = read('rgb(1, 2, 3)');
+    const b = read('rgb(4, 5, 6)');
+    return JSON.stringify({ computed: a, fixed: a === b });
   })()`);
 }
 
@@ -560,7 +595,7 @@ for (const theme of THEMES) {
       findings.push({
         file: rule.file, line: rule.line, selector: rule.selector,
         offset: rule.offset, theme,
-        specified: got.specified, computed: got.computed,
+        fixed: got.fixed, computed: got.computed,
         ring: ring.colour, ringWidth: ring.width, ringStyle: ring.style,
         pageUsed: page.url
       });
@@ -583,7 +618,7 @@ for (const f of findings) {
     });
   }
   byRule.get(key).themes[f.theme] = {
-    colour: hexOf(f.computed), ring: hexOf(f.ring), raw: f.computed, specified: f.specified
+    colour: f.fixed ? hexOf(f.computed) : null, ring: hexOf(f.ring), raw: f.computed, fixed: f.fixed
   };
 }
 
@@ -594,7 +629,7 @@ const census = [...byRule.values()].map((r) => {
   for (const theme of THEMES) {
     const t = r.themes[theme];
     if (!t || t.colour === null) unresolvable = true;
-    themes[theme] = t ? { colour: t.colour, ring: t.ring } : null;
+    themes[theme] = t ? { colour: t.colour, ring: t.ring, raw: t.raw, fixed: t.fixed } : null;
     if (t && t.colour !== t.ring) diverges = true;
   }
   return { ...r, themes, diverges, unresolvable };
@@ -684,10 +719,22 @@ test('a document-level focus ring is in force on every page, in both themes', ()
   }
 });
 
-test('every declared ring colour resolves to an opaque colour', () => {
-  const bad = census.filter((r) => r.unresolvable);
-  assert.deepEqual(bad.map((r) => `${r.file} ${r.selector}`), [],
-    'a focus ring whose colour cannot be resolved is a ring no oracle can ever check');
+test('every declared ring colour resolves to one opaque colour', () => {
+  /* Fail closed, by name. The ring is an INK, and the conservative direction
+     for an ink is to refuse: reading a translucent ring as solid, or a
+     currentColor ring as whatever the probe happened to inherit, reports it
+     MORE contrasty than it is and hides the defect instead of over-reporting
+     it. The same assumption on a FILL would be the safe direction, which is
+     why this file picks the direction per role rather than once. */
+  const bad = census.filter((r) => r.unresolvable).map((r) => {
+    const why = THEMES.map((t) => {
+      const v = r.themes[t];
+      return `${t}: ${v && v.fixed === false ? `${v.raw}, which followed the element's own colour` : `${v ? v.raw : 'nothing'}, which is not an opaque colour`}`;
+    }).join('; ');
+    return `${r.file}:${r.line} ${r.selector} — ${why}`;
+  });
+  assert.deepEqual(bad, [],
+    'a focus ring whose colour cannot be resolved to one opaque value is a ring no oracle can ever check');
 });
 
 test('the census matches the contract written from the stylesheets', () => {
