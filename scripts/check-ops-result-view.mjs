@@ -898,38 +898,77 @@ const FLOOR_HINTS = {
  * rather than mere presence need an entry, and each says how it derives its
  * rule so a remodel moves the check rather than silently passing it.
  *
- * Its limit, measured: reading a rule out of source text is not evaluating it.
- * An unbalanced `/*` inside a string literal in the pane makes the comment
- * strip below run to the next real close and swallow the declaration, and the
- * run then says the pane no longer declares VIEW_ORDER — false about the file,
- * red rather than green, and pointing at the right line anyway. No such
- * literal exists in pane-spend.js today. */
+ * Its limit, stated because round 8 proved it twice: reading a declaration
+ * out of source text is NOT executing the module. `VIEW_ORDER = []` followed
+ * by `VIEW_ORDER.push('category', 'resourceGroup')` initialises to nothing and
+ * runs with two, and no amount of grammar on the initialiser closes that. So
+ * the check below refuses every file it cannot read as ONE declaration that
+ * nothing later writes to, and the sentences it does print say what the TEXT
+ * says and stop there. */
 const PREFLIGHT = [
   {
     pane: 'spend',
     check() {
       const rel = 'ops/assets/pane-spend.js';
-      const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-      /* Comments stripped — block as well as line, since pane-spend.js is
-         written almost entirely in block comments — and the declaration keyword
-         required, so prose quoting VIEW_ORDER cannot be read as the
-         declaration. Both are failure-OPEN shapes if left out: the check would
-         parse a comment and pass. */
-      const src = raw
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^[ \t]*\/\/.*$/gm, '');
-      const decl = src.match(/(?:var|let|const)\s+VIEW_ORDER\s*=\s*([^;]*);/);
-      if (!decl) {
+      const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+      /* NOT comment-stripped, and that is the fix rather than an oversight.
+         Stripping block comments first removed characters from INSIDE a quoted
+         grouping name: a name spelled 'category' with a block comment opened
+         and closed inside the quotes was read as "category", and the run then
+         said the fixture supplied one grouping and was missing "region" when
+         it supplied none and adding "region" alone would not have helped. Every transformation applied
+         before the read is a chance to report text the file does not contain,
+         so there are none. A comment anywhere inside the literal now makes an
+         item unreadable and lands on the refusal below, which is the right
+         answer: this check cannot see what the comment hides.
+
+         Two structural refusals stand in front of the grammar, because a
+         well-formed initialiser establishes nothing on its own:
+
+           var VIEW_ORDER = [];
+           VIEW_ORDER.push('category', 'resourceGroup');
+
+         passes any grammar, initialises to nothing, and runs with two — so a
+         second write to the name is refused outright rather than read past.
+         Likewise a second DECLARATION anywhere in the file, which is how a
+         dead `if (false) { var VIEW_ORDER = []; }`, a later reassignment, and
+         a string literal quoting the declaration all reached the parser with
+         the real one sitting untouched below them. */
+      const DECL = /(?:var|let|const)\s+VIEW_ORDER\s*=\s*([^;]*);/g;
+      const decls = [...src.matchAll(DECL)];
+      if (decls.length === 0) {
         return `${rel} no longer declares VIEW_ORDER as a var/let/const initialised in one ` +
           'statement, so this check cannot tell whether the COSTS fixture can draw the ' +
           'Group-the-bill-by switch. Re-derive it from whatever replaced it rather than ' +
           'deleting this check.';
       }
+      if (decls.length > 1) {
+        return `${rel} contains ${decls.length} texts this check would read as a VIEW_ORDER ` +
+          'declaration, and it cannot tell which one the module runs — a later ' +
+          'reassignment, a declaration in a branch, and a string quoting one all look ' +
+          'alike here. Teach it which is authoritative; do not assume the pane lost its ' +
+          'switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
+      }
+      const decl = decls[0];
+      /* Everything the name touches AFTER its one declaration. A read is fine;
+         a write is not, and the list is written out rather than inferred so
+         that a mutator it does not know is a gap in this comment rather than a
+         silent pass — see the limit note above the table. */
+      const rest = src.slice(decl.index + decl[0].length);
+      const WRITE = new RegExp('\\bVIEW_ORDER\\s*(?:=[^=]|\\[[^\\]]*\\]\\s*=[^=]|\\.\\s*' +
+        '(?:push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin|length\\s*=))');
+      const write = rest.match(WRITE);
+      if (write) {
+        return `${rel} writes to VIEW_ORDER after declaring it (${JSON.stringify(write[0].trim())}` +
+          '), so the text of the declaration is not the value the pane runs with and this ' +
+          'check cannot read the order at all. Teach it the new shape; do not assume the ' +
+          'pane lost its switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
+      }
       /* Read strictly, and refuse anything this grammar does not cover.
-         Everything below is a NARROWING of a looser parse that had been wrong
-         twice in the same way: a declaration it read only part of, reported as
-         the whole of VIEW_ORDER, over a pane drawing its switch from two
-         groupings and a fixture with nothing wrong with it.
+         Everything here is a NARROWING of a looser parse that had been wrong
+         four times in the same way: a declaration it read only part of,
+         reported as the whole of VIEW_ORDER, over a pane drawing its switch
+         from two groupings and a fixture with nothing wrong with it.
 
            ['category', RG]                  one quoted string out of two items
            ['category', // the pane's ...]   the apostrophe pairs with the next
@@ -941,13 +980,11 @@ const PREFLIGHT = [
          The last three all AGREED with a count of comma-items, so counting
          items was not the invariant either. What is checked now is the shape
          itself: the initialiser must be a bracketed list, and every item in it
-         must be a plain quoted literal with nothing else attached. Anything
-         else exits on the message below, which tells the reader to teach it
-         the shape and to leave EXPECTED_PAIRS.spend alone.
+         must be a plain quoted literal with nothing else attached.
 
-         An EMPTY array is not an unreadable shape: with no groupings viewCard
-         draws no switch for any fixture, so [] belongs in the fewer-than-two
-         case below and not here. */
+         An EMPTY array is not an unreadable shape: it is a declaration this
+         check can read, saying no groupings. What that means for the running
+         pane is a separate question and the message below does not answer it. */
       const init = decl[1].trim();
       const snip = (s) => JSON.stringify(s.length > 90 ? `${s.slice(0, 90)}…` : s);
       const unsupported = (what) =>
@@ -973,9 +1010,17 @@ const PREFLIGHT = [
       }
       const order = items.map((s) => s.slice(1, -1));
       if (order.length < 2) {
-        return `${rel} declares VIEW_ORDER as ${JSON.stringify(order)}, fewer than the two ` +
-          'groupings viewCard needs before it draws the switch at all, so EXPECTED_PAIRS.spend ' +
-          'is asking for a state the pane can no longer draw for any fixture.';
+        /* No causal claim. The earlier wording ended "a state the pane can no
+           longer draw for any fixture", which is a statement about the RUNNING
+           module, and this check has read a declaration. Under the push
+           payload above that sentence was false, and it named
+           EXPECTED_PAIRS.spend as the thing to change. */
+        return `the one VIEW_ORDER declaration this check can read in ${rel} initialises it ` +
+          `to ${JSON.stringify(order)}, and viewCard draws the Group-the-bill-by switch only ` +
+          'when two or more groupings arrive with rows. This check reads that declaration ' +
+          'and does not execute the module, so it reports the text and stops: if that is ' +
+          'the whole of the order then no fixture can produce the pair EXPECTED_PAIRS.spend ' +
+          'asks for, and if something else fills it then teach this check to see that.';
       }
       const has = (k) => Array.isArray(COSTS.views[k]?.rows) && COSTS.views[k].rows.length > 0;
       const supplied = order.filter(has);
@@ -996,8 +1041,9 @@ const PREFLIGHT = [
         'Group-the-bill-by switch only when two or more of them arrive with rows; this ' +
         `fixture is missing ${missing.map((k) => `"${k}"`).join(', ')}. Add rows for ` +
         `${missing.map((k) => `"${k}"`).join(', ')} rather than lowering ` +
-        'EXPECTED_PAIRS.spend — the aria-pressed pair on that switch is the only ARIA ' +
-        `state this pane declares, and a floor of 0 would let the switch vanish unnoticed.${serviceNote}`;
+        'EXPECTED_PAIRS.spend — the pair on that switch is where this pane\'s floor in ' +
+        'this file comes from, and a floor of 0 would let the switch vanish unnoticed.' +
+        `${serviceNote}`;
     }
   }
 ];
@@ -1484,6 +1530,54 @@ const probeFor = (markers) => `(() => {
   }
 
   const contentText = content ? clean(content) : '';
+
+  /* A marker in the DOM is not a marker on screen.
+
+     Setting display:none on the wrapper a pane hands to region.show() leaves
+     every marker in textContent and every node in querySelectorAll('*'), so
+     both result gates passed over a blank content area and the pane counted
+     as judged: a result view nothing paints, which is the defect class this
+     whole file exists to catch, occurring in its own entry gate. Judgement 1
+     could not catch it either, since it reports a class only where the class
+     lands on something with a box, and judgement 2's floor for that pane is 0.
+
+     So a marker counts only when something that CARRIES it is on screen. The
+     carrier is looked for innermost-first: #content contains the text of a
+     display:none child and has a box of its own, so asking whether any
+     element containing the marker is visible answers yes for every marker on
+     the page. An element is a carrier when it holds the marker and no child
+     of it does, which also covers a marker split across two siblings — their
+     parent is then the innermost carrier.
+
+     Two predicates, deliberately: a box rules out display:none and a collapsed
+     subtree, checkVisibility() rules out visibility:hidden and
+     content-visibility, which keep their boxes. opacity is NOT asked about,
+     because a pane mid-transition would read as hidden and this gate decides
+     whether the run happens at all. */
+  const carriers = (m) => {
+    const out = [];
+    for (const el of content.querySelectorAll('*')) {
+      if (clean(el).indexOf(m) === -1) continue;
+      let deeper = false;
+      for (const kid of el.children) {
+        if (clean(kid).indexOf(m) !== -1) { deeper = true; break; }
+      }
+      if (!deeper) out.push(el);
+    }
+    return out;
+  };
+  const onScreen = (el) => {
+    const box = el.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return false;
+    if (typeof el.checkVisibility === 'function') {
+      return el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true });
+    }
+    return true;
+  };
+  const markers = ${JSON.stringify(markers)};
+  const absent = markers.filter((m) => contentText.indexOf(m) === -1);
+  const hiddenMarkers = markers.filter((m) => contentText.indexOf(m) !== -1
+    && !carriers(m).some(onScreen));
   const title = document.querySelector('.page-title');
   /* Two spellings. The pane header aria.js:253 builds writes the question into
      .page-sub, which is what all ten pages render. .page-question is
@@ -1500,7 +1594,8 @@ const probeFor = (markers) => `(() => {
     sub: clean(sub),
     contentElements: content ? content.querySelectorAll('*').length : -1,
     contentText: contentText.slice(0, 4000),
-    missing: ${JSON.stringify(markers)}.filter((m) => contentText.indexOf(m) === -1),
+    missing: absent,
+    hiddenMarkers,
     sheetsRead,
     ruleCount: rules.length,
     classSites: visibleSites,
@@ -1652,6 +1747,19 @@ try {
           `starts ${JSON.stringify(seen.contentText.slice(0, 140))}.`);
         continue;
       }
+      /* Separated from the branch above on purpose. "The pane drew N elements
+         but not X" is false here: it drew X, and nothing on screen carries it.
+         Saying so would be this file making the reader's diagnosis harder in
+         exactly the way seven rounds of review have been about. */
+      if (seen.hiddenMarkers.length) {
+        failures.push(`${where}: the pane drew ` +
+          `${seen.hiddenMarkers.map((m) => JSON.stringify(m)).join(' and ')} into #content ` +
+          'and every element carrying it is off the screen — zero-area, display:none, ' +
+          'visibility:hidden or content-visibility. The result is in the DOM and not in ' +
+          'the pixels, so nothing below could judge what it paints and this run will not ' +
+          'count the pane as reaching a result view.');
+        continue;
+      }
       if (seen.sheetsRead === 0 || seen.ruleCount === 0) {
         failures.push(`${where}: no stylesheet could be read from the page ` +
           `(${seen.sheetsRead} sheets, ${seen.ruleCount} rules), so every class on it would ` +
@@ -1779,14 +1887,13 @@ for (const page of PAGES) {
          with the pane untouched printed it over a byte-identical result view.
          So it states the two numbers and stops. Round 7 caught the sentence
          adding a third number the first two refute: "look for the ONE state"
-         printed under "judged 2 here, fewer than 4". The shortfall is
-         subtracted, not assumed. */
+         printed under "judged 2 here, fewer than 4". Round 8 caught what was
+         left of the tail naming causes — "either the pane stopped writing one
+         or the fixture stopped producing the shape it needs" — over the same
+         floor-only payload, where neither had. The list of inputs is printed
+         once, below, for every branch. */
       saw = `It judged ${had} here, fewer than ${due} rather than none — its result view ` +
-        `declared ${inventory}${inTheme}. That is ${due - had} short: look for ` +
-        `${due - had === 1 ? 'a state' : 'states'} that stopped being drawn, or stopped ` +
-        'having an unmarked peer to compare against; either the pane stopped writing ' +
-        'one or the fixture stopped producing the shape it needs, and the counts above ' +
-        'are what tell those apart.';
+        `declared ${inventory}${inTheme}. That is ${due - had} short.`;
     } else if (declared.length) {
       /* One sentence covering both shapes this case takes — every value
          negative, and positives nobody could pair. The earlier wording, "no
@@ -1816,9 +1923,19 @@ for (const page of PAGES) {
        on had === 0 suppressed the users hint in exactly the case it was
        written for. */
     const hint = FLOOR_HINTS[page.key] ? ` ${FLOOR_HINTS[page.key]}` : '';
+    /* Three inputs produce this number and only one of them is on the page.
+       The lead used to end "so the pane has stopped drawing a state this check
+       was judging", and the tail used to offer the pane and the fixture as the
+       two candidates. Raising a floor with nothing else touched makes both
+       false, and a mis-calibrated floor is the incident this whole pre-flight
+       exists for — so the input that is most likely to be wrong was the one
+       input neither sentence named. They are enumerated now, and none is
+       chosen. */
     failures.push(`${page.key}: EXPECTED_PAIRS says its result view declares at least ${due} ` +
-      `ARIA state${due === 1 ? '' : 's'} to compare and ${had} were found, so the pane has ` +
-      `stopped drawing a state this check was judging. ${saw}${hint}`);
+      `ARIA state${due === 1 ? '' : 's'} to compare and ${had} were found. ${saw} Three ` +
+      'things decide that number and this check measured one of them: what the pane draws, ' +
+      'what the fixture sends, and the floor itself — EXPECTED_PAIRS in this file, which a ' +
+      `raise moves without touching the page. The census above is the measurement.${hint}`);
   }
 }
 
@@ -1878,7 +1995,12 @@ try {
 }
 
 if (failures.length) {
-  console.error('\nThe operations dashboard draws states no stylesheet it loads can paint:\n');
+  /* The heading covers everything in the list below it, and the list holds
+     missed floors, unreachable result views and sweep-size mismatches as well
+     as unpainted classes. Naming one of those as the finding was false on any
+     run that did not contain it — a floor raised with the pane untouched
+     printed it over twenty passing paint judgements. */
+  console.error('\nThe result views of the operations dashboard did not come back clean:\n');
   for (const f of failures) console.error('  - ' + f);
   console.error(
     '\nA state a pane can enter has to be visible in the state the pane enters it. ' +
