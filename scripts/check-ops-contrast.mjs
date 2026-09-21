@@ -263,7 +263,7 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
   .hclipmid { background: #FFFFFF; padding: 28px; width: 60px; }
   .hclip { background: #FFFFFF; box-shadow: 0 0 0 32px #767676; }
   .hclip:focus-visible { box-shadow: none; outline: 4px solid #767676;
-    outline-offset: 26px; }
+    outline-offset: 26px; background: #F5F5F5; }
   /* .hstub defeats the ring suppression on purpose: same !important, higher
      specificity. A page is allowed to do this, and when it does, the third
      photograph is not a photograph of the ring standing down — it is the
