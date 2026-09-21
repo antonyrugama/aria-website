@@ -463,10 +463,18 @@
       return section;
     }
 
-    /* Two of this pane's reads can fail at once, and then two buttons reading
-       "Try again" are on the page with nothing between them. A screen
-       reader's control list enumerates by NAME, so it reads as one control
-       twice rather than as two controls that differ by position.
+    /* A control whose whole name is "Try again" says the action and never its
+       object. A screen reader's control list enumerates by NAME, so an
+       operator pulling one up is told what the button does and not which read
+       it would repeat -- and this pane draws one of these on four different
+       failures.
+
+       #10760 says three are on screen at once. They are not: render() treats
+       both reads failing as the whole pane unreadable and returns through
+       region.failed(), so two of THESE can never share a screen. The pair the
+       pane can really draw is one of these beside the record-detail retry,
+       which carries its own `sr` span. So this is not about disambiguating a
+       pair; it is about one button, on its own, saying nothing.
 
        #10760 proposed aria-describedby. That is what PR #98 tried first on
        the Overview pane and then replaced, because a description is announced
@@ -486,10 +494,13 @@
       for (var i = 0; i < kids.length; i++) {
         if (/^h[1-6]$/i.test(String(kids[i].tagName || ''))) {
           retryN += 1;
-          /* setAttribute, not .id -- the DOM harness these are tested through
+          /* setAttribute, not .id. The DOM harness these are tested through
              has no id accessor, so a property write leaves getAttribute('id')
-             null and every reference dangles inside the tests while working in
-             a browser. That is a false green by construction. */
+             null: every reference would dangle in the tests while working in
+             a browser. That is a false RED, not a false green -- five of the
+             ten tests fail -- but it is the kind of false red that gets
+             "fixed" by loosening the assertion, and then the loosened
+             assertion is the false green. */
           var headingId = kids[i].getAttribute('id');
           if (!headingId) {
             headingId = 'pb-failed-' + retryN;

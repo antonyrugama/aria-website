@@ -50,8 +50,25 @@
 
      - Whether a screen reader actually announces the composed name. That is
        the user agent's accessible-name computation, not this repo's; what is
-       testable is that the references resolve and that the resolved text
-       differs per section.
+       testable is that the references resolve and that the resolved text is
+       what AccName's rules make of this markup.
+
+     - Most of AccName. `nameText()` implements TWO of its rules --
+       `aria-hidden` subtrees contribute nothing, and `aria-label` replaces
+       contents -- because those are the two this pane's markup can turn and
+       both were demonstrated wrong here in round 3 of the review. `title`,
+       form-control values, `::before` content and the embedded-control
+       recursion are NOT modelled, so a change that reached for one of those
+       would pass here and be wrong in a browser.
+
+       What closes the gap for the markup as shipped is a check the browser
+       answers, not this one. `Accessibility.getFullAXTree` over the real pane
+       in Chromium names the two retries "Try again The rules could not be
+       read" and "Try again reading AO-118", which is what the assertions
+       below say -- and under each of round 3's two mutations Chromium's
+       answer moves exactly the way this model's does. That probe is in the
+       PR, not in the repo: the Chrome-driven guards and their workflows are
+       another agent's files this week.
 
      - The shell's whole-pane retry, which `region.failed()` draws when BOTH
        reads fail. It is the only control on that panel, it is not
@@ -280,23 +297,61 @@ function retryButtons(dom) {
     (n) => n.tagName === 'BUTTON' && /^Try again\b/.test(allText(n).trim()));
 }
 
+/* The text a subtree contributes to an accessible NAME, which is not the text
+   it contains. Two rules out of AccName, and only two, because these are the
+   two the markup in this pane can actually turn:
+
+     - an `aria-hidden="true"` subtree contributes NOTHING. `allText()` reads
+       it, so a name built out of `allText()` certifies text the browser does
+       not speak. Round 3 of the review proved it: adding `aria-hidden` to the
+       record retry's `sr` span leaves the name in the DOM and takes it out of
+       the accessibility tree, and Chromium then names that button `Try again`
+       -- the exact defect #10760 is about, restored, while the suite stayed
+       green.
+
+     - an `aria-label` REPLACES the element's contents rather than adding to
+       them. Same shape: `aria-label="Retry"` on the button makes Chromium say
+       `Retry ...` while the visible word is still "Try again", which is the
+       failure `nameRetry()` exists to avoid.
+
+   Everything else AccName does -- `title`, form controls, `::before` content,
+   the recursion rules for embedded controls -- is NOT here and is listed as
+   not covered above. This is a subset chosen to match the markup, not an
+   implementation of the spec. */
+function nameText(node) {
+  if (!node) return '';
+  if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return '';
+  const label = node.getAttribute && node.getAttribute('aria-label');
+  if (label && String(label).trim()) return String(label).trim();
+  const own = node.textContent || '';
+  const kids = (node.childNodes || []).map(nameText).join(' ');
+  return (own + ' ' + kids).replace(/\s+/g, ' ').trim();
+}
+
 /* The name a control actually carries into a screen reader's control list:
-   aria-labelledby when it is there, otherwise the control's own text.
+   aria-labelledby when it is there, otherwise aria-label, otherwise the
+   control's own contents.
 
    Every referenced id is LOOKED UP and must exist exactly once, and the answer
-   is the concatenated TEXT of the elements found. Comparing the attribute
+   is the concatenated NAME TEXT of the elements found. Comparing the attribute
    string instead would accept two buttons naming ids that do not exist --
-   which is a name of nothing, twice. */
+   which is a name of nothing, twice.
+
+   The self-reference in `aria-labelledby` is the button itself, and AccName
+   consults that element's `aria-label` when it gets there even though it will
+   not follow its `aria-labelledby` a second time. `nameText()` does the same,
+   which is why an `aria-label` slipped onto the button turns the composed name
+   red here rather than only in Chromium. */
 function accessibleName(dom, button) {
   const refs = String(button.getAttribute('aria-labelledby') || '').trim();
-  if (!refs) return allText(button).trim();
+  if (!refs) return nameText(button);
   return refs.split(/\s+/).map((id) => {
     const found = dom.doc.querySelectorAll(`[id="${id}"]`);
     assert.equal(found.length, 1,
       `aria-labelledby names id "${id}" and ${found.length} elements carry it, so the `
       + 'composed name is a name of nothing');
-    return allText(found[0]).trim();
-  }).join(' ');
+    return nameText(found[0]);
+  }).join(' ').trim();
 }
 
 /* The section retries specifically: the ones `failedBand()` draws. Identified
@@ -324,7 +379,7 @@ function browserName(dom, button) {
   return String(button.getAttribute('aria-labelledby')).trim().split(/\s+/)
     .map((id) => {
       const found = dom.doc.getElementById(id);
-      return found ? allText(found).trim() : '';
+      return found ? nameText(found) : '';
     }).join(' ').trim();
 }
 
@@ -425,11 +480,13 @@ test('Problems and Overview give one word for one state', async () => {
      than transcribed, so a change to the shared label map is a change to
      both sides of the comparison.
 
-     Which is also the honest limit of this test: because the map is shared by
-     construction, no edit to it can make these two disagree, and nothing here
-     could catch one. What this binds is that the two panes take the same
-     STEPS over that map -- and dropping Overview's guard on the label lookup
-     does make it red (M14). */
+     Sharing the map does NOT make the two panes agree, and an earlier draft
+     of this comment said it did. They normalise differently: put `'   '` in
+     the map as the label for `notice` and this pane answers `notice` while
+     Overview answers three spaces, and this test goes red on it. What is out
+     of scope here is arbitrary edits to the map, which is a choice about how
+     wide to make the fixture -- not an impossibility. M14 is the mutation
+     this does bind: dropping Overview's guard on the label lookup. */
   const ovModel = dom.window.OpsAlertsModel;
   assert.ok(ovModel && ovModel.SEVERITY_LABEL,
     'alerts-model.js no longer publishes the label map both panes look in');
@@ -443,11 +500,13 @@ test('Problems and Overview give one word for one state', async () => {
   )(ovModel, vm.runInNewContext(`(function (value) { return ${ovTextOf[1]}; })`, {}));
 
   /* #10630's three tabulated payloads only. AO-4 is deliberately not here:
-     this pane's textOf() trims and Overview's does not, so a whitespace
-     severity is one the two files genuinely answer differently, and asserting
-     agreement on it would be asserting something untrue. That divergence is
-     an Overview defect, filed as Stadiora/Aria#10799 rather than fixed from
-     a PR that does not own that pane. */
+     this pane's textOf() TRIMS and Overview's does not, so the two answer
+     differently for any severity with surrounding whitespace -- `'   '` reads
+     "Unknown" here and as a blank prefix there, and `' critical '` reads
+     `critical` here and ` critical ` there. Asserting agreement on those
+     would be asserting something untrue. It is an Overview defect, filed as
+     Stadiora/Aria#10799 rather than fixed from a PR that does not own that
+     pane. */
   const severities = { 'AO-1': 'notice', 'AO-2': undefined, 'AO-3': 'constructor' };
   for (const [reference, severity] of Object.entries(severities)) {
     assert.equal(severityPill(dom, reference), overview(severity),

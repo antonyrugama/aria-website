@@ -673,12 +673,13 @@
        (`severityWords()` there too, Stadiora/Aria#10630), so two panes an
        operator moves between during one incident say one word for one state.
 
-       The two are not byte-identical and one case separates them: this
-       `textOf()` accepts any non-empty string, and the Problems pane's trims
-       first, so a severity of nothing but spaces reads as "Unknown" there and
-       as a blank prefix here. That is a defect of this file, not of the
-       agreement — filed rather than fixed on #10630's PR, which does not own
-       this pane's behaviour: Stadiora/Aria#10799.
+       The two are not byte-identical: this `textOf()` accepts any non-empty
+       string and the Problems pane's TRIMS first, so they differ on every
+       severity carrying surrounding whitespace. Nothing but spaces reads
+       "Unknown" there and as a blank prefix here; `' critical '` reads
+       `critical` there and ` critical ` here. That is a defect of this file,
+       not of the agreement — filed rather than fixed on #10630's PR, which
+       does not own this pane's behaviour: Stadiora/Aria#10799.
 
        Only a severity that did not arrive at all, or arrived as something
        that is not a word, falls back to "Unknown", because there is nothing
