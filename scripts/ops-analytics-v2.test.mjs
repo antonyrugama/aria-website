@@ -2742,13 +2742,38 @@ async function launchPainter(opened, unwind) {
   const origin = 'http://127.0.0.1:' + server.address().port;
 
   const profile = mkdtempSync(join(tmpdir(), 'ops-analytics-paint-'));
-  opened.push(() => rmSync(profile, { recursive: true, force: true }));
+  /* Read at the instant the removal runs, from Node's own bookkeeping rather
+     than from anything this function claims about itself: a child with a null
+     exitCode and a null signalCode has not been reaped, so it may still be
+     writing into the directory about to be removed.
+
+     This is here because the obvious assertion -- look for the directory after
+     close() returns -- cannot see the bug. The leak is a RECREATION: rmSync
+     removes the tree, Chrome's shutdown writes put a new one back a few
+     milliseconds later. At the moment close() returns, the buggy version and
+     the fixed one are byte-identical on disk. The mutation battery proved that
+     by leaving two payloads green. */
+  const teardown = { browserExitedBeforeRemoval: null };
+  /* Not `browser` directly: chromePath() throws when there is no Chrome, and
+     that throw lands between this line and the spawn below. A closure closing
+     over the `const` would hit its temporal dead zone, the drain would swallow
+     the ReferenceError as a best-effort release, and the profile would leak on
+     exactly the path Stadiora/Aria#10800 was filed to stop leaking on. A null
+     holder reads "no browser exists", which is the honest answer there: a
+     process that was never spawned cannot be writing into the directory. */
+  let spawned = null;
+  opened.push(() => {
+    teardown.browserExitedBeforeRemoval = spawned === null ||
+      spawned.exitCode !== null || spawned.signalCode !== null;
+    rmSync(profile, { recursive: true, force: true });
+  });
   const browser = spawn(chromePath(), [
     '--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile,
     '--no-first-run', '--no-default-browser-check', '--no-sandbox', '--disable-gpu',
     '--disable-extensions', '--hide-scrollbars', '--force-device-scale-factor=1',
     'about:blank',
   ], { stdio: 'ignore' });
+  spawned = browser;
   opened.push(async () => {
     browser.kill();
     /* Already dead -- the failure cases reach here that way -- so there is no
@@ -2832,7 +2857,7 @@ async function launchPainter(opened, unwind) {
      drift away from it and leave a handle the failure case would have let go.
      The profile path comes back with it so the caller can check that the
      release it just awaited actually emptied the disk. */
-  return { evaluate, close: unwind, profile };
+  return { evaluate, close: unwind, profile, teardown };
 }
 
 /* ------------------------------------------------------------- the test -- */
@@ -2881,12 +2906,21 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
     'the retention grid drew ' + headings.length + ' column headings');
 
   const painter = await openPainter();
-  /* Two-sided, and free: "the profile is gone afterwards" is also true of a
-     profile that was never there. */
-  assert.equal(existsSync(painter.profile), true,
-    'the painter handed back a profile directory that does not exist, so the removal ' +
-    'assertion at the end of this test would hold whatever the release did');
   try {
+    /* Inside the try, first statement. Two-sided -- "the profile is gone
+       afterwards" is also true of a profile that was never there -- and free,
+       since the painter is already open.
+
+       It sits inside rather than above because an assertion that throws ABOVE
+       the try skips the finally and leaks the browser, the server and the
+       profile it was written to police, and a leaked listening server holds
+       the event loop open so the run hangs instead of failing. The battery
+       caught that: the payload that hands back a wrong path took 20 minutes
+       and reported no failures at all, where it now fails in 30 seconds. */
+    assert.equal(existsSync(painter.profile), true,
+      'the painter handed back a profile directory that does not exist, so the removal ' +
+      'assertion at the end of this test would hold whatever the release did');
+
     const ready = await painter.evaluate(PAINT_PROGRAM);
     assert.equal(ready, 'ready', 'the paint program did not install');
 
@@ -3006,6 +3040,25 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
     'the painter left its browser profile at ' + painter.profile + ' after a clean run. ' +
     'kill() is a signal, not a join: if the removal does not wait for the browser to exit, ' +
     'it runs while Chrome is still writing its profile out and the files come back.');
+
+  /* The line above binds that the removal HAPPENED. This binds that it happened
+     at a safe moment, which is the actual subject of Stadiora/Aria#10854 and is
+     invisible to any amount of looking at the disk: the leak is a recreation,
+     so a directory checked the instant close() returns is absent in the broken
+     version too. It comes back afterwards.
+
+     Read from Node's child bookkeeping at the instant rmSync ran, so it is a
+     measurement of the moment rather than a flag the painter sets to report
+     its own good behaviour -- and it is decided by the same event loop every
+     time, where "look for leftover files" only finds them when Chrome's
+     shutdown loses the race, which is a coin this machine flips differently
+     under load than a quiet CI box does. */
+  assert.equal(painter.teardown.browserExitedBeforeRemoval, true,
+    'the profile was removed while the browser still had a null exitCode and a null ' +
+    'signalCode, so Chrome had not been reaped and may still have been writing into ' +
+    'the directory. kill() is a signal, not a join. Observed: ' +
+    JSON.stringify(painter.teardown.browserExitedBeforeRemoval) +
+    ' (null means the removal never ran at all).');
 });
 
 /* Every class in a serialised tree, from the class attribute the pane wrote.

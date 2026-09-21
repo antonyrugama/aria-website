@@ -62,11 +62,15 @@
    - The success path's release, which is bound in the file that owns it rather
      than here: ops-analytics-v2.test.mjs asserts its own profile directory is
      gone after close(), two-sided against the same directory existing before
-     it. That assertion exists because the argument this bullet used to make --
-     "the whole suite already is the proof, since it terminates" -- is true of
-     exactly one of the four releases. A listening server is the only one that
-     holds the event loop open, so a leaked directory is invisible to a
-     termination argument, and it really was being leaked (Stadiora/Aria#10854).
+     it, and asserts that the browser had been reaped at the instant the
+     removal ran. That assertion exists because the argument this bullet used
+     to make -- "the whole suite already is the proof, since it terminates" --
+     is true of exactly one of the four releases. A listening server is the
+     only one that holds the event loop open, so a leaked directory is
+     invisible to a termination argument, and it really was being leaked
+     (Stadiora/Aria#10854). The reaped-at-removal half is there because the
+     disk half cannot see that bug on its own: the leak is a recreation, so at
+     the moment close() returns the directory is absent either way.
    - The profile directory on case A's path. It is created and leaked there --
      mkdtempSync runs two statements before the throw -- but the window between
      the two is narrow enough that a poll from another process catches it only
