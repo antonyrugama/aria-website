@@ -1160,81 +1160,79 @@ test('the pane module writes no markup and no style attribute', () => {
   assert.ok(!/\sstyle="/.test(PAGE_SRC), 'jobs-live.html carries a style attribute');
 });
 
-test('the pane writes no class only the v1 sheet defines', () => {
+test('the pane writes no class only the v1 sheet defines', async () => {
   /* The page loads aria.css, shell-pane-v2.css and its own sheet. A class from
-     ops.css — the v1 sheet — is written into the DOM and painted by nothing,
+     ops.css -- the v1 sheet -- written into the DOM is painted by nothing,
      which fails silently and looks like a design choice (Stadiora/Aria#10646,
      #10647).
 
-     Two deliberate limits, because a guard that overstates its reach is worse
-     than one that admits a gap. FIRST, the names are DERIVED from the source
-     rather than listed here: a hand-kept list only ever proves what someone
-     remembered to put in it, and the class this guard was written to catch
-     (`mono`) was missing from exactly such a list while the list sat green.
-     SECOND, this is a source-level PRESENCE check. It asks whether the name
-     appears in any selector the page loads; it cannot tell `.mono` from
-     `.pill .mono`, so a class that is defined only as someone else's
-     descendant still passes here. That case is caught in a real browser by
-     scripts/check-ops-result-view.mjs, which drives this pane to a result view
-     and resolves every written class against the rules that actually reach it. */
+     This guard READS THE DOM rather than parsing the source, and that is the
+     whole point of it. Three earlier versions parsed: a hand-kept list of
+     names, then the literals next to `className:`, then those plus the values
+     of the lookup maps a className expression references. Each one was green
+     over a class delivered in a shape it had not been taught -- `mono`, then
+     the tone classes, then `S.link()`'s third argument. A parser has to know
+     every delivery shape in advance and silently passes the ones it does not;
+     booting the pane and reading `class` off what it actually built has no
+     shapes to miss.
+
+     The limit that remains is honest and statable: it sees the classes the
+     states below cause to be drawn, so a class that only appears in a state
+     nobody boots is outside it. Each state must contribute, or a boot that
+     quietly stopped drawing would shrink this guard without failing it.
+
+     Still a PRESENCE check: it asks whether the name appears in a selector the
+     page loads, so it cannot tell `.mono` from `.pill .mono`. The resolved
+     proof, in real Chrome against the rules that actually reach each node, is
+     scripts/check-ops-result-view.mjs. */
   const sheets = ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-jobs-live-v2.css']
     .map((f) => read(f)).join('\n');
 
-  const written = new Set();
-  const addAll = (text) => {
-    for (const lit of text.match(/'[^'\n]*'/g) || []) {
-      for (const name of lit.slice(1, -1).trim().split(/\s+/)) {
-        if (/^[a-z][\w-]*$/i.test(name)) written.add(name);
+  const states = [
+    ['a full reading', { view: viewFixture({
+      workingSet: { limit: 200, returned: 2, truncated: true,
+        jobs: [jobFixture({ id: 'job_1', progressGrade: 'healthy' }),
+          jobFixture({ id: 'job_2', progressGrade: 'stuck' })] },
+      attention: { completeness: 'working_set_only', stuck: ['job_2'], abandoned: ['job_1'] },
+    }) }],
+    ['an idle queue', { view: viewFixture({
+      queue: { open: 0, scope: 'all_open_states', byState: [], lanes: [] },
+      workingSet: { limit: 200, returned: 0, truncated: false, jobs: [] },
+    }) }],
+    ['a reading with nothing in it', { view: {} }],
+    ['a failed first read', { answers: [new Error('the read failed')] }],
+  ];
+
+  const written = new Map();
+  for (const [label, opts] of states) {
+    const dom = await boot(opts);
+    const before = written.size;
+    for (const node of findAll(dom.content, (n) => n.getAttribute('class'))) {
+      for (const name of (node.getAttribute('class') || '').trim().split(/\s+/)) {
+        if (name && !written.has(name)) written.set(name, label);
       }
     }
-  };
-
-  /* Classes do not all arrive as literals on the className line. The pane
-     applies tones through lookup maps — `GRADE_TONE[grade]` — and harvesting
-     only the quoted text next to `className:` reintroduces, for maps, exactly
-     the hole that hand-keeping the list created for literals. So: find the
-     SCREAMING_CASE maps a className expression actually references, and
-     harvest their values too. Keys are unquoted, so only values are read. */
-  const maps = new Map();
-  for (const m of PANE_SRC.matchAll(/(?:var|const)\s+([A-Z][A-Z0-9_]*)\s*=\s*\{([^}]*)\}/g)) {
-    maps.set(m[1], m[2]);
-  }
-  let viaMap = 0;
-  const addExpr = (expr) => {
-    addAll(expr);
-    for (const id of expr.match(/\b[A-Z][A-Z0-9_]*\b/g) || []) {
-      if (maps.has(id)) { addAll(maps.get(id)); viaMap += 1; }
-    }
-  };
-
-  for (const m of PANE_SRC.matchAll(/className:\s*([^\n]*)/g)) {
-    /* Stop at the next property key, or the extractor reads `text:` too and
-       every word of English prose on the line becomes a "class". */
-    addExpr(m[1].split('}')[0].split(/,\s*(?=(?:[A-Za-z_$][\w$]*|'[^']*')\s*:)/)[0]);
-  }
-  for (const m of PANE_SRC.matchAll(/S\.card\(([^)\n]*)\)/g)) addAll(m[1]);
-
-  /* An extractor that quietly matched nothing would pass this test over every
-     class in the file, so it has to show it found the shapes it claims to
-     read. The map arm needs its own control: `written.size` is satisfied by
-     the literals alone, so a control that only counts cannot fail on the
-     shape it was added for. */
-  assert.ok(written.size >= 25, `only ${written.size} classes extracted, so this proves little`);
-  assert.ok(viaMap >= 1, 'no className expression resolved through a lookup map, so the map '
-    + 'arm of this extractor is dead and proves nothing');
-  for (const need of ['job-id', 'u-scroll', 'pill', 'kpi', 'tbl']) {
-    assert.ok(written.has(need), `the class extractor missed the literal ${need}`);
-  }
-  for (const need of ['up', 'warn', 'down']) {
-    assert.ok(written.has(need), `the class extractor missed ${need}, which reaches the DOM `
-      + 'only through a lookup map');
+    assert.ok(written.size > before || before > 0,
+      `${label} drew no classes at all, so it is not contributing to this sweep`);
   }
 
-  const unpainted = [...written]
+  /* Controls on the sweep itself. A DOM that stopped being built, or a walker
+     that stopped walking, must fail here rather than pass over an empty set.
+     The named classes are one per delivery shape that has previously walked
+     past a version of this guard: a plain literal, a card grade, a lookup-map
+     tone, and S.link's third argument. */
+  assert.ok(written.size >= 35, `only ${written.size} classes seen, so this proves little`);
+  for (const need of ['job-id', 'u-scroll', 'tbl', 'kpi', 'pill', 'up', 'btn', 'btn-sm']) {
+    assert.ok(written.has(need), `the DOM sweep never saw ${need}, so its delivery shape is `
+      + 'outside the states this test boots');
+  }
+
+  const unpainted = [...written.keys()]
     .filter((name) => !new RegExp('\\.' + name + '(?![\\w-])').test(sheets))
     .sort();
   assert.deepStrictEqual(unpainted, [],
-    'the pane writes classes no sheet this page loads defines: ' + unpainted.join(', '));
+    'the pane writes classes no sheet this page loads defines: '
+    + unpainted.map((n) => `${n} (first seen in ${written.get(n)})`).join(', '));
 });
 
 test('every glyph is decorative and no status is a glyph alone', async () => {
