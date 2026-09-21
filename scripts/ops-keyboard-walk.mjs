@@ -394,7 +394,15 @@ const PAGE_HELPERS = `
         return s.display !== 'none' && el.getBoundingClientRect().height > 0;
       })
       .map((el) => ({ ...describe(el), display: getComputedStyle(el).display,
-        controls: el.querySelectorAll(INTERACTIVE).length })),
+        controls: el.querySelectorAll(INTERACTIVE).length,
+        /* Whether the controls inside are disabled is a CLAIM about them,
+           so it is counted rather than asserted. The document used to say
+           "the controls inside are disabled" beside a derived control
+           count: add one enabled field and the sentence goes false while
+           the number beside it stays true. */
+        controlsDisabled: Array.from(el.querySelectorAll(INTERACTIVE))
+          .filter((c) => window.__kbd.disabled(c)).length,
+        selfDisabled: window.__kbd.disabled(el) })),
     scrollers: () => Array.from(document.querySelectorAll('*')).filter((el) => {
       if (!visible(el)) return false;
       const s = getComputedStyle(el);
@@ -423,6 +431,20 @@ const PAGE_HELPERS = `
        <svg> chart against its axis tick numbers. A region's text is what is
        inside it; only a CONTROL has a visible label, and only its own text
        nodes are that label. */
+    /* WHAT THE 2.5.3 SWEEP READS IS THE ATTRIBUTE, NOT THE NAME. The
+       accessible name is computed, and 'aria-labelledby' OUTRANKS
+       'aria-label' in that computation -- Chrome's AX tree reports the
+       'aria-label' as 'superseded'. So a control whose visible text is in
+       its 'aria-label' and NOT in the heading 'aria-labelledby' points at is
+       a real Label-in-Name failure this sweep prints as clean. Rather than
+       grow a name-computation engine inside a traversal tool, the claim is
+       narrowed to the attribute and the unmeasured population is COUNTED
+       here, from the rendered DOM, so NOT COVERED can say how big it is
+       instead of calling it "some". */
+    labelledbyControls: () => Array.from(document.querySelectorAll('[aria-labelledby]'))
+      .filter((el) => visible(el) && el.matches(CONTROLS))
+      .map((el) => ({ ...describe(el),
+        alsoAriaLabel: el.hasAttribute('aria-label') })),
     mismatchedLabels: () => Array.from(document.querySelectorAll('[aria-label]'))
       .filter((el) => visible(el) && el.matches(CONTROLS))
       .map((el) => ({ ...describe(el),
@@ -479,6 +501,33 @@ async function resetFocus(url, viewport) {
 const COMPOSITE_MAX = 6;
 const TRAP_PRESSES = COMPOSITE_MAX * 2;
 
+/* ONE STOP IS "PRESS UNTIL THE ELEMENT CHANGES", IN BOTH DIRECTIONS. A
+   composite input consumes several presses without moving
+   `document.activeElement` -- that is `walk()`'s `pressesConsumed` -- so a
+   leg that presses once per stop arrives somewhere else entirely. The
+   retrace forward leg pressed Tab `core.length` times and landed THIRTEEN
+   stops short on evals/desktop, because the pane's composites had eaten the
+   difference. Both legs step through this now, so a mismatch means the ORDER
+   disagreed rather than the press accounting. Returns the elements landed
+   on, and the presses it took to land on them. */
+async function stepStops(n, press) {
+  const landed = [];
+  let presses = 0;
+  let from = (await active()).key;
+  for (let i = 0; i < n; i++) {
+    let to = from;
+    for (let held = 0; held < TRAP_PRESSES && to === from; held++) {
+      await press();
+      presses++;
+      to = (await active()).key;
+    }
+    landed.push(to);
+    if (to === from) break;
+    from = to;
+  }
+  return { landed, presses };
+}
+
 async function walk(limit) {
   const stops = [];
   let consumed = 1;
@@ -507,6 +556,11 @@ const results = [];
    and changes nothing about how one runs. */
 const ONLY = process.env.KBD_ONLY ? process.env.KBD_ONLY.split(',') : null;
 const ONLY_VP = process.env.KBD_VIEWPORT ? process.env.KBD_VIEWPORT.split(',') : null;
+/* Scoping the DIALOG probe narrows the sweep in exactly the way the other two
+   flags do, so it belongs in the same predicate: `fullSweep` decides whether
+   a missing finding means "fixed" or "not looked at", and skipping both
+   dialogs is not looking. */
+const SKIP_DIALOGS = Boolean(process.env.KBD_SKIP_DIALOGS);
 
 for (const p of PANES) {
   if (ONLY && !ONLY.includes(p.pane)) continue;
@@ -519,6 +573,7 @@ for (const p of PANES) {
     const candidates = await evalJson('JSON.stringify(window.__kbd.candidates())');
     const scrollers = await evalJson('JSON.stringify(window.__kbd.scrollers())');
     const mismatched = await evalJson('JSON.stringify(window.__kbd.mismatchedLabels())');
+    const labelledby = await evalJson('JSON.stringify(window.__kbd.labelledbyControls())');
     const dupIds = await evalJson('JSON.stringify(window.__kbd.duplicateIds())');
     /* WHICH FILES THIS PAGE ACTUALLY LOADED. A mutation battery can prove a
        payload landed in a file by byte comparison and still be measuring
@@ -596,14 +651,34 @@ for (const p of PANES) {
        rows M9 (press count, kills) and M9b (reverseMatches, survives). */
     const core = stops.filter((s, i) => !(i === stops.length - 1 &&
       (s.key === 'DOCUMENT' || (stops.length > 2 && s.key === stops[0].key))));
-    const fwd = Math.min(core.length, 12);
+    /* THE WHOLE WALK, NOT A PREFIX OF IT. This was `Math.min(core.length, 12)`
+       and the document still said "Shift+Tab is the exact inverse of Tab".
+       Eight of twenty walks hit that cap. On evals/desktop -- 46 stops, the
+       biggest pane here -- the 11 presses covered the skip link, the ten rail
+       items and the theme toggle: identical markup on all ten panes, and not
+       one control of the pane's own content. A reverse-order defect injected
+       at stop 11 was caught and the SAME defect at stop 12 was not. A prefix
+       check is a fine thing to run and a false thing to call an exact
+       inverse. */
+    const fwd = core.length;
     await resetFocus(p.url, v);
-    for (let i = 0; i < fwd; i++) await key('Tab');
-    const reverse = [];
-    for (let i = 0; i < fwd - 1; i++) {
-      await shiftTab();
-      reverse.push((await active()).key);
-    }
+    const fwdLeg = await stepStops(fwd, () => key('Tab'));
+    /* THE TWO DIRECTIONS HAVE TO COUNT THE SAME THING. The forward walk
+       already collapses a composite input to ONE stop -- `datetime-local`
+       has six internal fields and eats six presses without moving
+       `activeElement` -- but the reverse walk pressed Shift+Tab once per
+       EXPECTED STOP, so every composite desynchronised it by five and the
+       comparison went element-against-element out of step. Under the old
+       11-press prefix this was invisible: evals/desktop has 46 stops and its
+       composite sits at 39, so the cap ended the check 28 presses before the
+       first field of it. Uncapped it reported a mismatch on that walk. The
+       page is not at fault -- Shift+Tab walks a composite backwards exactly
+       as Tab walks it forwards -- the instrument was. Press until the
+       element CHANGES, bounded by the same trap budget the forward walk
+       uses, and compare stops to stops. */
+    const revLeg = await stepStops(fwd - 1, () => shiftTab());
+    const reverse = revLeg.landed;
+    const revPresses = revLeg.presses;
     const reverseExpected = core.slice(0, fwd - 1).map((s) => s.key).reverse();
 
     /* THE SKIP LINK. Identified from the markup, not assumed to be the first
@@ -670,7 +745,22 @@ for (const p of PANES) {
       pane: p.pane, title: p.title, url: p.url, viewport: v.name, documentTitle: title,
       candidates: candidates.length, stops: stops.length,
       stopList: stops, unreachable, unexpected, backwards,
-      reverseMatches: reverse.join('|') === reverseExpected.join('|'),
+      /* AN EMPTY RETRACE IS NOT A CLEAN ONE. `'' === ''` is true, so a walk
+         that made NO reverse press scored exactly like one that retraced
+         eleven. Prepending `throw new Error('boot-failed')` to
+         shell-pane-v2.js -- what a failed session gate or a syntax error
+         looks like -- produced one stop, zero candidates, zero presses, and
+         a document reading "Shift+Tab is the exact inverse of Tab on 1 of 1
+         walks", "Controls never reached by Tab 0", "Focus traps 0". Every
+         predicate over an empty sample is free. This is a third value, and
+         the document counts and names it rather than adding it to either
+         side. */
+      reverseMatches: reverse.length === 0 ? 'no-presses'
+        : reverse.join('|') === reverseExpected.join('|'),
+      reversePresses: revPresses,
+      reverseStops: reverse.length,
+      forwardLegPresses: fwdLeg.presses,
+      forwardLegLanded: fwdLeg.landed[fwdLeg.landed.length - 1],
       reverseGot: reverse, reverseExpected,
       trapped: stops.some((s) => s.trappedAfter !== undefined),
       composites: stops.filter((s) => s.pressesConsumed > 1)
@@ -686,16 +776,27 @@ for (const p of PANES) {
          with no tabindex at all, so el.tabIndex === -1 says nothing; local
          Chrome does it and Safari and Firefox do not. What matters for the
          audit is the DECLARATION: a scroller the page never marks focusable
-         is reachable only where the browser volunteers. */
+         is reachable only where the browser volunteers.
+
+         AND `tabindex="-1"` IS A DECLARATION THAT THE ANSWER IS NO. The
+         first version tested `tabindex === null`, so the one shape this
+         whole tool exists to find -- Stadiora/Aria#10822, a scrolling table
+         carrying -1, out of the tab order, its clipped columns unreachable
+         -- read as DECLARED and printed 0. Putting -1 back on settings'
+         three tables took the pane from 13 stops to 10 and the audit called
+         it clean. A declaration only counts if it puts the container IN the
+         tab order, so a negative index is undeclared for this purpose and
+         says so in its own row. */
       scrollers,
-      undeclaredScrollers: scrollers.filter((s) => s.tabindex === null)
-        .map((s) => ({ ...s, reachedByWalk: reached.has(s.key) })),
-      mismatched, dupIds, disabledVisible, hiddenPainted, loaded,
+      undeclaredScrollers: scrollers.filter((s) => s.tabindex === null || Number(s.tabindex) < 0)
+        .map((s) => ({ ...s, reachedByWalk: reached.has(s.key),
+          why: s.tabindex === null ? 'no tabindex attribute' : `tabindex="${s.tabindex}" is out of the tab order` })),
+      mismatched, labelledby, dupIds, disabledVisible, hiddenPainted, loaded,
       skip: { declared: skipDecl, first, firstIsSkip, afterSkip, target: skipTarget },
       rerender
     });
     process.stderr.write(`${p.pane}/${v.name}: ${stops.length} stops, ${candidates.length} candidates, ` +
-      `${unreachable.length} unreachable, ${scrollers.filter((s) => s.tabindex === null).length} undeclared scrollers, ` +
+      `${unreachable.length} unreachable, ${scrollers.filter((s) => s.tabindex === null || Number(s.tabindex) < 0).length} undeclared scrollers, ` +
       `${hiddenPainted.length} hidden-but-painted\n`);
   }
 }
@@ -729,7 +830,7 @@ const DIALOGS = [
 const dialogResults = [];
 for (const d of DIALOGS) {
   if (ONLY && !ONLY.includes(d.pane)) continue;
-  if (process.env.KBD_SKIP_DIALOGS) continue;
+  if (SKIP_DIALOGS) continue;
   await resetFocus(d.url, VIEWPORTS[0]);
   await evalJson('JSON.stringify(window.__kbd.tagAll())');
   const target = await evalJson(`JSON.stringify((() => {
@@ -830,60 +931,67 @@ const sum = (rows, f) => rows.reduce((a, w) => a + f(w), 0);
 /* DISTINCT ELEMENTS, NOT OCCURRENCES. Every pane is walked at two widths, so
    a headline that sums across walks reports 4 for two elements and then the
    findings list two of them. The count and the list must be the same
-   population or one of them is lying. */
-const distinct = (rows, f) => new Set(rows.flatMap((w) => f(w).map((x) => w.pane + '|' + x.path))).size;
-const list = (rows, f) => rows.flatMap((w) => f(w).map((x) => ({ w, x })));
+   population or one of them is lying.
+
+   AND THE KEY HAS TO SEPARATE SIBLINGS. `pathOf()` stops at five ancestors
+   and two classes, so settings' three `div.tbl-wrap` boxes -- three
+   different tables, three different labels -- produce one byte-identical
+   path. Keying on the path alone collapsed them: the shipped document said
+   the walk found 3 declared scroll containers when its own record held 5,
+   and with those three undeclared it printed a headline of 1 above a list of
+   3. The key now carries the element's ORDINAL among same-path rows in the
+   same walk, and `sameWalkCollision` below turns the remaining possibility
+   into a refusal rather than a smaller number. */
+const keyed = (rows, f) => rows.flatMap((w) => {
+  const xs = f(w);
+  return xs.map((x, i) => ({
+    w, x, key: `${w.pane}|${x.path}#${xs.filter((y, j) => y.path === x.path && j < i).length}`
+  }));
+});
+const distinct = (rows, f) => new Set(keyed(rows, f).map((r) => r.key)).size;
+const list = (rows, f) => keyed(rows, f);
 const md = [];
 const P = (...x) => md.push(...x);
 
 const totals = {
   walks: R.length,
   panes: new Set(R.map((w) => w.pane)).size,
+  viewports: [...new Set(R.map((w) => w.viewport))]
+    .map((n) => { const v = VIEWPORTS.find((x) => x.name === n); return `${n} ${v.width}×${v.height}`; })
+    .join(' and '),
   stops: sum(R, (w) => w.stops),
   candidates: sum(R, (w) => w.candidates),
   unreachable: sum(R, (w) => w.unreachable.length),
   traps: R.filter((w) => w.trapped).length,
-  reverseOk: R.filter((w) => w.reverseMatches).length,
+  /* `'no-presses'` IS TRUTHY, so a plain filter would have counted a walk
+     that never pressed Shift+Tab as a clean retrace -- the empty-sample
+     defect surviving into the summary of the fix for it. */
+  reverseOk: R.filter((w) => w.reverseMatches === true).length,
+  reverseVacuous: R.filter((w) => w.reverseMatches === 'no-presses').length,
+  unexpected: sum(R, (w) => w.unexpected.length),
+  wrapped: R.filter((w) => w.endedBy === 'wrapped').length,
+  leftDocument: R.filter((w) => w.endedBy === 'left-document').length,
+  hitLimit: R.filter((w) => w.endedBy === 'limit').length,
+  reversePresses: sum(R, (w) => w.reversePresses),
+  reverseStops: sum(R, (w) => w.reverseStops),
   backwards: sum(R, (w) => w.backwards.length),
   skipFirst: R.filter((w) => w.skip.firstIsSkip).length,
   skipLands: R.filter((w) => w.skip.afterSkip && w.skip.afterSkip.path === 'main#content').length,
   rerenderKept: R.filter((w) => w.rerender && w.rerender.kept).length,
   labels: sum(R, (w) => w.mismatched.length),
+  /* The size of what the line above does NOT measure, counted rather than
+     described. `nameFromHeading` are controls whose accessible name comes
+     from a heading this tool never reads; `nameSuperseded` are the ones
+     that ALSO carry an `aria-label`, where the attribute the sweep reads is
+     not the name the browser computes. */
+  nameFromHeading: distinct(R, (w) => w.labelledby),
+  nameSuperseded: distinct(R, (w) => w.labelledby.filter((x) => x.alsoAriaLabel)),
   dupIds: sum(R, (w) => w.dupIds.length),
-  undeclaredScrollers: distinct(R, (w) => w.undeclaredScrollers),
-  hiddenPainted: distinct(R, (w) => w.hiddenPainted),
-  declaredScrollers: distinct(R, (w) => w.scrollers.filter((x) => x.tabindex !== null)),
+  declaredScrollers: distinct(R, (w) => w.scrollers.filter((x) => x.tabindex !== null && Number(x.tabindex) >= 0)),
   dialogs: D.length,
   dialogsClean: D.filter((x) => x.focusEntered && x.heldForward && x.heldBackward &&
     x.wrapCorrect && x.closedByEscape && x.focusRestored).length
 };
-
-P('# Keyboard-operator walkthrough of the ops dashboard', '');
-P('_Generated by `scripts/ops-keyboard-walk.mjs`. Every number below is read out of',
-  'the run that produced this file; none is typed. Re-run the tool to regenerate it._', '');
-P('Nobody had ever driven this dashboard from a keyboard. Forty screenshots exist of',
-  'what it looks like; this is the first record of what it is like to **use** without',
-  'a mouse. Contrast is not in scope — it is already proven at 1,632 text sites and',
-  '200 focus indicators by `scripts/check-ops-contrast.mjs`. This is traversal.', '');
-
-P('## What was measured', '');
-P('| | |', '|---|---|');
-P(`| Panes walked | ${totals.panes}, at desktop 1440×900 and 375×812 — **${totals.walks} walks** |`);
-P(`| Tab stops recorded | ${totals.stops} |`);
-P(`| Interactive controls found | ${totals.candidates} |`);
-P(`| Controls never reached by Tab | **${totals.unreachable}** |`);
-P(`| Focus traps | **${totals.traps}** |`);
-P(`| Walks whose Shift+Tab exactly retraces Tab | ${totals.reverseOk}/${totals.walks} |`);
-P(`| Stops that jump backwards in reading order | **${totals.backwards}** |`);
-P(`| Walks where the skip link is the first stop | ${totals.skipFirst}/${totals.walks} |`);
-P(`| Walks where it lands on \`main#content\` | ${totals.skipLands}/${totals.walks} |`);
-P(`| Walks where focus survives the theme re-render | ${totals.rerenderKept}/${totals.walks} |`);
-P(`| Accessible names missing their visible text (WCAG 2.5.3) | ${totals.labels} |`);
-P(`| Duplicate \`id\` attributes | ${totals.dupIds} |`);
-P(`| Modal dialogs probed | ${totals.dialogs}, ${totals.dialogsClean} clean on all six properties |`);
-P(`| **Scroll containers never declared focusable** | **${totals.undeclaredScrollers}** |`);
-P(`| **Elements marked \`hidden\` that the stylesheet still paints** | **${totals.hiddenPainted}** |`);
-P('');
 
 /* THE FILED ISSUE NUMBERS, RECONCILED AGAINST THE RUN. A findings document
    that references an issue for a finding the run no longer produces is the
@@ -897,11 +1005,10 @@ const FILED = {
   'hidden-painted': 'Stadiora/Aria#10869'
 };
 
-P('## Findings', '');
 const findings = [];
 
-for (const { w, x } of list(R, (w) => w.undeclaredScrollers)) {
-  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers)) {
+  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'undeclared-scroller',
     title: 'A sideways-scrolling table is never declared keyboard-focusable',
     body: [
@@ -919,8 +1026,8 @@ for (const { w, x } of list(R, (w) => w.undeclaredScrollers)) {
     ].join('\n') });
 }
 
-for (const { w, x } of list(d, (w) => w.hiddenPainted)) {
-  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+for (const { w, x, key } of list(R, (w) => w.hiddenPainted)) {
+  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'hidden-painted',
     title: `An element the code hides is still painted (\`${x.tag}\`)`,
     body: [
@@ -932,59 +1039,164 @@ for (const { w, x } of list(d, (w) => w.hiddenPainted)) {
       '`hidden` is a UA `display: none` rule and the weakest one in the cascade. Any author `display` ' +
       'on the same element silently defeats it.',
       x.controls
-        ? '\nThe controls inside are `disabled`, so a keyboard operator can see three labelled fields ' +
-          'they can neither reach nor operate, with no visible indication of why.'
-        : '\nThe button is not disabled: it is a fully operable control the code has decided should not exist.'
+        ? `\n${x.controlsDisabled} of the ${x.controls} controls inside are \`disabled\`, so a ` +
+          `keyboard operator can see ${x.controls} labelled fields they can neither reach nor ` +
+          'operate, with no visible indication of why.'
+        : (x.selfDisabled
+          ? `\nThe ${x.tag} is \`disabled\`, so it is inert as well as invisible to the code that hid it.`
+          : `\nThe ${x.tag} is **not** disabled: it is a fully operable control the code has decided ` +
+            'should not exist.')
     ].join('\n') });
 }
 
-for (const { w, x } of list(R, (w) => w.unreachable)) {
-  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+/* COUNTED AND NAMED, OR NEITHER. The retrace column used to be a bare
+   fraction: a walk that failed it appeared in the headline as 19/20 and
+   nowhere else, which is the same two-populations defect as counting
+   findings over twenty walks and listing them over ten. Every walk the
+   fraction excludes is enumerated here with the stop it first disagreed on. */
+for (const { w, x, key } of list(R, (w) => (w.reverseMatches === false
+  ? [{ path: w.reverseGot.findIndex((k, i) => k !== w.reverseExpected[i]) }] : []))) {
+  const at = x.path;
+  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
+    kind: 'reverse-order',
+    title: 'Shift+Tab does not retrace the Tab order',
+    body: `On **${w.pane}/${w.viewport}** the reverse walk diverges at retraced stop ${at}: ` +
+      `Shift+Tab landed on \`${w.reverseGot[at]}\` where the forward order says ` +
+      `\`${w.reverseExpected[at]}\`. ${w.reverseStops} stops were retraced over ` +
+      `${w.reversePresses} presses against ${w.stops} forward stops.` });
+}
+
+for (const { w, x, key } of list(R, (w) => w.unreachable)) {
+  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'unreachable',
     title: 'An enabled, visible control is never reached by Tab',
     body: `\`${x.path}\` (${x.tag}, ${Math.round(x.rect.w)}×${Math.round(x.rect.h)}px) on **${w.pane}/${w.viewport}**.` });
 }
-for (const { w, x } of list(R, (w) => w.backwards)) {
-  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+for (const { w, x, key } of list(R, (w) => w.backwards)) {
+  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'backwards',
     title: 'Tab order does not follow reading order',
     body: `\`${x.stop.path}\` (DOM rank ${x.rank}) is reached after \`${x.afterPath}\` (rank ${x.afterRank}).` });
 }
-for (const { w, x } of list(d, (w) => w.mismatched)) {
-  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport,
+for (const { w, x, key } of list(R, (w) => w.mismatched)) {
+  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'label-in-name',
     title: 'Accessible name does not contain the visible label (WCAG 2.5.3)',
     body: `\`${x.path}\` reads "${x.text}" and is named "${x.ariaLabel}".` });
 }
 
-if (!findings.length) P('_None._', '');
 /* RECONCILED ONLY ON A FULL SWEEP, because a scoped run has not walked the
    pane most findings live on and "the finding did not reproduce" would then
    mean "you did not look". The first version of this check did not make that
    distinction and refused on every KBD_ONLY run. A partial document says so
    in its own text instead. */
-const fullSweep = ONLY === null && ONLY_VP === null;
+const fullSweep = ONLY === null && ONLY_VP === null && !SKIP_DIALOGS;
 if (fullSweep) {
+  /* A WALK WITH NOTHING TO WALK IS A REFUSAL. Prepending a `throw` to
+     shell-pane-v2.js -- a failed session gate, a syntax error, a pane that
+     never mounts -- leaves one stop and zero candidates, and every predicate
+     here is then vacuously clean: no unreachable controls, no traps, no
+     backwards stops, and a retrace that "matches". The document read exactly
+     like a healthy one. Ten panes at two widths cannot produce a walk with
+     no focusable content, so this is not a threshold, it is an impossibility
+     check. */
+  /* A TRUNCATED WALK IS A SHRUNKEN SAMPLE. Ending at the press limit means
+     the walk never came back to its first stop and never left the document,
+     so the stop list is a PREFIX -- and every count taken over it (stops,
+     unreachable, backwards, the retrace) is taken over less page than the
+     headline claims. The limit is 3x the candidate count, so reaching it
+     means something is cycling; report nothing rather than report short. */
+  const truncated = R.filter((w) => w.endedBy === 'limit');
+  if (truncated.length) {
+    throw new Error(`${truncated.length} walk(s) ended at the press limit ` +
+      `(${truncated.map((w) => w.pane + '/' + w.viewport).join(', ')}): the stop list is a ` +
+      'prefix and every count over it would be short');
+  }
+  const empty = R.filter((w) => w.candidates === 0);
+  if (empty.length) {
+    throw new Error(`${empty.length} walk(s) found zero focusable candidates ` +
+      `(${empty.map((w) => w.pane + '/' + w.viewport).join(', ')}): the page did not ` +
+      'boot, and every clean verdict in this document would be vacuous');
+  }
   for (const k of Object.keys(FILED)) {
     if (!findings.some((f) => f.kind === k)) {
       throw new Error(`FILED names ${k} (${FILED[k]}) but this full sweep produced no finding of that kind`);
     }
   }
-} else {
+}
+/* ONE POPULATION. The headline counts and the findings list used to be read
+   off DIFFERENT sets of walks -- the count over all twenty, the list over
+   the ten desktop ones -- so a defect present only at 375px was counted in
+   the headline, named nowhere, given no issue number, and the run still
+   exited 0. Both numbers are now derived from this one array. A finding
+   cannot be counted without being named because the count IS the naming.
+
+   AND A GROUP THAT MATCHED THE SAME WALK TWICE IS A KEY COLLISION, NOT A
+   FINDING SEEN TWICE. Each walk visits an element at most once, so a
+   duplicate pane/viewport inside one group means two different elements
+   collapsed into one key -- the headline would print smaller than its own
+   list. That is a refusal, not a smaller number. */
+const groups = [];
+const byKey = new Map();
+for (const f of findings) {
+  if (!byKey.has(f.key)) { const g = { ...f, where: [] }; byKey.set(f.key, g); groups.push(g); }
+  const g = byKey.get(f.key);
+  const seen = `${f.pane}/${f.viewport}`;
+  if (g.where.includes(seen)) {
+    throw new Error(`finding key ${f.key} matched two elements in the same walk (${seen}): ` +
+      'the key collides, so the headline count would print smaller than the list under it');
+  }
+  g.where.push(seen);
+}
+const countKind = (k) => groups.filter((g) => g.kind === k).length;
+
+
+P('# Keyboard-operator walkthrough of the ops dashboard', '');
+P('_Generated by `scripts/ops-keyboard-walk.mjs`. Every number below is read out of',
+  'the run that produced this file; none is typed. Re-run the tool to regenerate it._', '');
+P('Nobody had ever driven this dashboard from a keyboard. Forty screenshots exist of',
+  'what it looks like; this is the first record of what it is like to **use** without',
+  'a mouse. Contrast is not in scope: `scripts/check-ops-contrast.mjs` owns it and',
+  'reports its own site count on every run. Nothing in this document measured a',
+  'colour. This is traversal.', '');
+
+P('## What was measured', '');
+P('| | |', '|---|---|');
+/* THE WIDTHS ARE THE ONES THAT RAN. Typed as "at desktop 1440×900 and
+   375×812" this line was false on every scoped run -- the document said it
+   had walked two widths while holding one. A description of the sweep is a
+   claim about the sweep and gets derived like every other. */
+P(`| Panes walked | ${totals.panes}, at ${totals.viewports} — **${totals.walks} walks** |`);
+P(`| Tab stops recorded | ${totals.stops} |`);
+P(`| Interactive controls found | ${totals.candidates} |`);
+P(`| Controls never reached by Tab | **${totals.unreachable}** |`);
+P(`| Focus traps | **${totals.traps}** |`);
+P(`| Walks whose Shift+Tab exactly retraces Tab | ${totals.reverseOk}/${totals.walks}, ` +
+  `**${totals.reverseStops} stops retraced** over ${totals.reversePresses} Shift+Tab presses |`);
+P(`| Walks that made no Shift+Tab press at all (scored neither way) | **${totals.reverseVacuous}** |`);
+P(`| Stops that jump backwards in reading order | **${totals.backwards}** |`);
+P(`| Walks where the skip link is the first stop | ${totals.skipFirst}/${totals.walks} |`);
+P(`| Walks where it lands on \`main#content\` | ${totals.skipLands}/${totals.walks} |`);
+P(`| Walks where focus survives the theme re-render | ${totals.rerenderKept}/${totals.walks} |`);
+P(`| \`aria-label\` attributes missing their visible text (WCAG 2.5.3) | ${totals.labels} |`);
+P(`| Duplicate \`id\` attributes | ${totals.dupIds} |`);
+P(`| Modal dialogs probed | ${totals.dialogs}, ${totals.dialogsClean} clean on all six properties |`);
+P(`| **Scroll containers never declared focusable** | **${countKind('undeclared-scroller')}** |`);
+P(`| **Elements marked \`hidden\` that the stylesheet still paints** | **${countKind('hidden-painted')}** |`);
+P('');
+
+P('## Findings', '');
+if (!groups.length) P('_None._', '');
+if (!fullSweep) {
   P('_Scoped run: only part of the dashboard was walked, and the filed-issue ' +
     'reconciliation is skipped. This document is not the audit._', '');
 }
-const byTitle = new Map();
-for (const f of findings) {
-  const k = f.title + '|' + f.body;
-  if (!byTitle.has(k)) byTitle.set(k, { ...f, where: [] });
-  byTitle.get(k).where.push(`${f.pane}/${f.viewport}`);
-}
 let i = 0;
-for (const f of byTitle.values()) {
+for (const f of groups) {
   i++;
   P(`### F${i}. ${f.title}`, '');
   P(f.body, '');
+  P(`Seen on: ${f.where.join(', ')}${f.where.length > 1 ? ` (measured on ${f.where[0]})` : ''}.`, '');
   P(FILED[f.kind] ? `Filed as ${FILED[f.kind]}. Not fixed here: this audit reports, it does not repair.`
     : '**Not filed.**', '');
 }
@@ -1000,14 +1212,32 @@ P(`- **No focus traps.** ${totals.walks} walks, ${totals.stops} stops, ` +
   `Chrome ships, which is the ${COMPOSITE_MAX}-field \`datetime-local\`.`);
 P(`- **Nothing unreachable.** ${totals.candidates} enabled, visible, interactive controls; ` +
   `${totals.unreachable} were not reached by Tab.`);
-P(`- **Tab order is reading order** on every pane at both widths: ${totals.backwards} stops ` +
-  'out of DOM order across the whole sweep.');
-P(`- **Shift+Tab is the exact inverse of Tab** on ${totals.reverseOk} of ${totals.walks} walks.`);
+/* TWO NUMBERS THE RUN COMPUTED AND THE DOCUMENT USED TO SWALLOW. Both bear
+   on how much the walk is worth: a stop on a non-interactive element is
+   either a real defect or a gap in this tool's idea of "interactive", and a
+   walk that ran out of document instead of wrapping covered a different
+   amount of the page than one that came back round. Printing them is how
+   the next reader finds out the tool disagreed with itself. */
+P(`- **${totals.unexpected} stops landed on something this tool does not call interactive**, ` +
+  `and ${totals.wrapped} of ${totals.walks} walks ended by wrapping back to their first stop ` +
+  `(${totals.leftDocument} ran out of document instead, and ${totals.hitLimit} hit the press ` +
+  'limit). The terminal stop is timing-dependent in Chrome; the first two endings are both ' +
+  'complete walks and neither is a defect. The third is a truncated one, and a full sweep ' +
+  'refuses rather than reporting over it.');
+P(`- **Tab order is reading order** on all ${totals.walks} walks: ${totals.backwards} stops ` +
+  'out of DOM order, where a stop is out of order if its element precedes the previous ' +
+  'stop\'s element in document order.');
+P(`- **Shift+Tab is the exact inverse of Tab** on ${totals.reverseOk} of ${totals.walks} walks, over` +
+  ` the WHOLE walk rather than a prefix of it: ${totals.reverseStops} stops retraced against` +
+  ` ${totals.stops} forward stops, which took ${totals.reversePresses} presses because a composite` +
+  ` input consumes several. ${totals.reverseVacuous} walks made no press and are counted on` +
+  ' neither side.');
 P(`- **The skip link works.** It is the first stop on ${totals.skipFirst}/${totals.walks} walks and ` +
   `Enter lands focus on \`main#content\` on ${totals.skipLands}/${totals.walks}.`);
 P(`- **Focus survives a re-render** on ${totals.rerenderKept}/${totals.walks} walks: the theme toggle ` +
   'rebuilds the pane and focus stays on the button that did it.');
-P(`- **No duplicate ids** (${totals.dupIds}) and **no Label-in-Name defects** (${totals.labels}).`);
+P(`- **No duplicate ids** (${totals.dupIds}), and **no \`aria-label\` that drops its visible text** ` +
+  `(${totals.labels}). That is the attribute, not the computed accessible name — see NOT COVERED.`);
 P('');
 
 P('### The modal dialog', '');
@@ -1027,14 +1257,31 @@ P('Each was opened **by Tab and Enter**, never by `element.focus()`: a dialog op
 P('## NOT COVERED', '');
 P('- **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is',
   '  answered only for the two mechanical proxies a browser can be asked about — duplicate `id`',
-  '  attributes and accessible names that drop their visible text. An element announced twice for',
-  '  any other reason would not be seen.');
+  '  attributes and `aria-label` attributes that drop their visible text. An element announced',
+  '  twice for any other reason would not be seen.');
+/* THE NUMBER IN THIS BULLET IS THE SIZE OF THE HOLE, MEASURED. A NOT COVERED
+   claim that says "some controls" is unfalsifiable; one that says how many
+   moves when the dashboard does, and it came from the run rather than from a
+   grep over source text -- `\b` does not match before a digit and a regex
+   over the source is not value resolution. */
+P(`- **The computed accessible name.** The 2.5.3 row above reads the \`aria-label\` ATTRIBUTE.`,
+  `  The name a browser actually computes prefers \`aria-labelledby\`, which outranks it —`,
+  `  Chrome's AX tree marks the \`aria-label\` \`superseded\`. This sweep saw`,
+  `  **${totals.nameFromHeading} interactive controls named by \`aria-labelledby\`**`,
+  `  (${totals.nameSuperseded} of them also carrying an \`aria-label\`), and judged none of them.`,
+  '  That count is the HAPPY PATH: the ones this dashboard is known to build — the "Try again"',
+  '  buttons the overview and alerts panes name from the heading of the panel that failed —',
+  '  exist only after a panel fails to load, and nothing here induces that state.',
+  '  A control whose visible text sits in its `aria-label` and not in the heading it points at is',
+  '  a real Label-in-Name failure this document prints as clean. `<label>` and `title` are',
+  '  likewise unread.');
 P('- **Roving-tabindex widgets.** No pane ships one, so arrow-key navigation inside a composite',
   '  widget is untested. If one is added this tool will report its single stop and say nothing',
   '  about whether the arrows work.');
 P('- **The rail drawer.** `ops/assets/operate.js` builds a drawer as well as the confirmation',
-  '  dialog, but nothing in the ten panes opens one, so it is unmeasured. The two dialogs in the',
-  '  table above are the only overlays reachable from the keyboard in this dashboard.');
+  `  dialog, but nothing in the ${totals.panes} panes opens one, so it is unmeasured. The`,
+  `  ${totals.dialogs} dialogs in the table above are the only overlays reachable from the`,
+  '  keyboard in this dashboard.');
 P('- **Browsers other than the one that ran.** Everything above is Chrome. The one place that',
   '  matters is called out in the finding that depends on it.');
 P('- **Non-Tab keys.** Enter is pressed on exactly three controls — the skip link, the theme',

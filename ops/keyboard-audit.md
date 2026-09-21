@@ -5,24 +5,26 @@ the run that produced this file; none is typed. Re-run the tool to regenerate it
 
 Nobody had ever driven this dashboard from a keyboard. Forty screenshots exist of
 what it looks like; this is the first record of what it is like to **use** without
-a mouse. Contrast is not in scope — it is already proven at 1,632 text sites and
-200 focus indicators by `scripts/check-ops-contrast.mjs`. This is traversal.
+a mouse. Contrast is not in scope: `scripts/check-ops-contrast.mjs` owns it and
+reports its own site count on every run. Nothing in this document measured a
+colour. This is traversal.
 
 ## What was measured
 
 | | |
 |---|---|
-| Panes walked | 10, at desktop 1440×900 and 375×812 — **20 walks** |
+| Panes walked | 10, at desktop 1440×900 and 375px 375×812 — **20 walks** |
 | Tab stops recorded | 312 |
 | Interactive controls found | 280 |
 | Controls never reached by Tab | **0** |
 | Focus traps | **0** |
-| Walks whose Shift+Tab exactly retraces Tab | 20/20 |
+| Walks whose Shift+Tab exactly retraces Tab | 20/20, **272 stops retraced** over 284 Shift+Tab presses |
+| Walks that made no Shift+Tab press at all (scored neither way) | **0** |
 | Stops that jump backwards in reading order | **0** |
 | Walks where the skip link is the first stop | 20/20 |
 | Walks where it lands on `main#content` | 20/20 |
 | Walks where focus survives the theme re-render | 20/20 |
-| Accessible names missing their visible text (WCAG 2.5.3) | 0 |
+| `aria-label` attributes missing their visible text (WCAG 2.5.3) | 0 |
 | Duplicate `id` attributes | 0 |
 | Modal dialogs probed | 2, 2 clean on all six properties |
 | **Scroll containers never declared focusable** | **1** |
@@ -36,7 +38,9 @@ a mouse. Contrast is not in scope — it is already proven at 1,632 text sites a
 
 The walk **did** reach it (stop 4 of 8), but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox do not, and neither does any Chrome older than that. It announces as a bare `div`.
 
-Every other pane with a scrolling table declares it — the walk found 3 scroll containers carrying an explicit `tabindex`, with `role="region"` and a label, which is the pattern Stadiora/Aria#10822 established. This one was missed.
+Every other pane with a scrolling table declares it — the walk found 5 scroll containers carrying an explicit `tabindex`, with `role="region"` and a label, which is the pattern Stadiora/Aria#10822 established. This one was missed.
+
+Seen on: history/375px.
 
 Filed as Stadiora/Aria#10868. Not fixed here: this audit reports, it does not repair.
 
@@ -46,7 +50,9 @@ Filed as Stadiora/Aria#10868. Not fixed here: this audit reports, it does not re
 
 `hidden` is a UA `display: none` rule and the weakest one in the cascade. Any author `display` on the same element silently defeats it.
 
-The controls inside are `disabled`, so a keyboard operator can see three labelled fields they can neither reach nor operate, with no visible indication of why.
+The 3 controls inside are `disabled`, so a keyboard operator can see 3 labelled fields they can neither reach nor operate, with no visible indication of why.
+
+Seen on: evals/desktop.
 
 Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not repair.
 
@@ -58,17 +64,20 @@ Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not re
 
 The button is not disabled: it is a fully operable control the code has decided should not exist.
 
+Seen on: settings/desktop, settings/375px (measured on settings/desktop).
+
 Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not repair.
 
 ## What is clean, and how that is known
 
 - **No focus traps.** 20 walks, 312 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
 - **Nothing unreachable.** 280 enabled, visible, interactive controls; 0 were not reached by Tab.
-- **Tab order is reading order** on every pane at both widths: 0 stops out of DOM order across the whole sweep.
-- **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks.
+- **12 stops landed on something this tool does not call interactive**, and 10 of 20 walks ended by wrapping back to their first stop (10 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
+- **Tab order is reading order** on all 20 walks: 0 stops out of DOM order, where a stop is out of order if its element precedes the previous stop's element in document order.
+- **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks, over the WHOLE walk rather than a prefix of it: 272 stops retraced against 312 forward stops, which took 284 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
 - **The skip link works.** It is the first stop on 20/20 walks and Enter lands focus on `main#content` on 20/20.
 - **Focus survives a re-render** on 20/20 walks: the theme toggle rebuilds the pane and focus stays on the button that did it.
-- **No duplicate ids** (0) and **no Label-in-Name defects** (0).
+- **No duplicate ids** (0), and **no `aria-label` that drops its visible text** (0). That is the attribute, not the computed accessible name — see NOT COVERED.
 
 ### The modal dialog
 
@@ -86,14 +95,23 @@ it has controls is a coincidence, not a trap.
 
 - **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is
   answered only for the two mechanical proxies a browser can be asked about — duplicate `id`
-  attributes and accessible names that drop their visible text. An element announced twice for
-  any other reason would not be seen.
+  attributes and `aria-label` attributes that drop their visible text. An element announced
+  twice for any other reason would not be seen.
+- **The computed accessible name.** The 2.5.3 row above reads the `aria-label` ATTRIBUTE.
+  The name a browser actually computes prefers `aria-labelledby`, which outranks it —
+  Chrome's AX tree marks the `aria-label` `superseded`. This sweep saw
+  **0 interactive controls named by `aria-labelledby`**
+  (0 of them also carrying an `aria-label`), and judged none of them.
+  A control whose visible text sits in its `aria-label` and not in the heading it points at is
+  a real Label-in-Name failure this document prints as clean. `<label>` and `title` are
+  likewise unread.
 - **Roving-tabindex widgets.** No pane ships one, so arrow-key navigation inside a composite
   widget is untested. If one is added this tool will report its single stop and say nothing
   about whether the arrows work.
 - **The rail drawer.** `ops/assets/operate.js` builds a drawer as well as the confirmation
-  dialog, but nothing in the ten panes opens one, so it is unmeasured. The two dialogs in the
-  table above are the only overlays reachable from the keyboard in this dashboard.
+  dialog, but nothing in the 10 panes opens one, so it is unmeasured. The
+  2 dialogs in the table above are the only overlays reachable from the
+  keyboard in this dashboard.
 - **Browsers other than the one that ran.** Everything above is Chrome. The one place that
   matters is called out in the finding that depends on it.
 - **Non-Tab keys.** Enter is pressed on exactly three controls — the skip link, the theme
