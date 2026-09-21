@@ -148,13 +148,13 @@
      claim no block carries, is not judged. The remedy used in the rewrite is
      to make the prose point AT a block rather than repeat it, but nothing
      enforces that.
-   - A test marked `{ todo: true }`. Node runs the body, discards its failures,
-     reports the file as passing and exits 0 - and it does that whatever this
-     file does with process.exitCode, a throw, or an explicit process.exit(1)
-     from the exit handler. All four were probed. The COMPLETED handler cannot
-     see it, which is why nothing load-bearing is a test any more: the floors
-     and the pins are module-scope assertions, and the only test left holding
-     anything is the judged census.
+   - Nothing, in the sense this bullet used to claim. It said a `{ todo: true }`
+     test was a hole the COMPLETED handler could not see, and then told the
+     reader nothing load-bearing was a test any more. Twenty-seven of the
+     twenty-eight were, including every block comparison. There are no tests in
+     this file now, so there is no flag to attach and the bullet has nothing
+     left to disclose. What replaced it is two lines down: report() is the last
+     assertion and nothing outranks it.
    - The floor assertions themselves. FLOORS is three integers and a count has
      nothing inside it to delete, but the three `assert.ok(... >= FLOORS....)`
      lines are ordinary code: edit one to `true ||` and the defect it guards
@@ -164,16 +164,17 @@
      rather than a one-word flag that leaves the source spelling intact. If the
      CONSTANT is deleted rather than the assert, the run is red - `pinned-blocks`
      prints all three floors, so the derivation throws.
-   - The COMPLETED exit handler itself. It is the one construct here that nothing
-     else watches, and deleting it puts every test in this file back to being
-     silently skippable. That is not a gap a guard can close - something has to
-     be last - so it is named instead. Round 7 falsified the sentence that used
-     to stand here, which claimed a pin or a derivation could not go quietly:
-     deleting `the run reports what it judged` outright was green and took
-     every pin with it. What is true now is narrower and checked: a test that
-     does not RUN is a failing run, whether it was skipped, deleted or renamed,
-     so removing a defence means removing its expected name from the handler
-     too - and that edit is in the diff, in one place, by name.
+   - The report() call at the foot of this file, and check() itself. They are
+     the last assertions here and nothing outranks them: delete report() and
+     nothing is reported; make check() swallow. That is not a gap a guard can
+     close - something has to be last - so it is named instead. Two sentences
+     that used to stand here were falsified in successive rounds, which is why
+     this one is deliberately small: round 7 killed "a pin or a derivation
+     cannot go quietly" by deleting a whole test, and round 8 killed "nothing
+     load-bearing is a test any more" with two `{ todo: true }` flags. What is
+     true and checked: a check that does not RUN is a failing run, whether it
+     was deleted or renamed, so removing a defence means removing its expected
+     name from report() too - and that edit is in the diff, by name.
    - A defence SWAPPED rather than retired. The three FLOORS count blocks
      pinned, blocks derived and families held. Each is a floor, so each sees a
      NET shrink and nothing else: delete one derivation and add a trivial one

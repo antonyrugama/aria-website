@@ -2559,16 +2559,25 @@ regress the floors exist to end.
 None of that helps if the check never runs, and for seven review rounds every one of these
 checks was a `test()`, which is a thing that can be **silenced in place**. `{ skip: true }` never
 runs the body and leaves the source spelling untouched. `{ todo: true }` is worse: it runs the
-body and then **discards what it found**, and node reports the file as passing and exits 0
-whatever the file does with `process.exitCode` — measured, including a throw and an explicit
-`process.exit(1)` from an exit handler. Deleting a test outright moved nothing at all and took
-every pin with it.
+body, **discards what it found**, and reports the file as passing — and node's suppression is
+narrower than that and worse, because a *passing* todo leaves `process.exitCode` alone while a
+*failing* one swallows it. The defect you want to hide is what makes the body fail, so it
+supplies its own suppressor. Deleting a test outright moved nothing at all and took every pin
+with it.
 
-So the floors, the row pins and the family pins are **not tests**. They are module-scope
-assertions, which have no flag to attach and exit 1 when they throw. The judged census stays a
-test because its input only exists once tests have run, and a completion recorder plus an exit
-handler catches that one being skipped, deleted or renamed — but **not** `todo`, which is
-stated in the guard's NOT COVERED list rather than left to be discovered.
+Round 7 answered that by moving the floors and the pins out of `test()`, and this paragraph then
+said nothing load-bearing was a test any more. That was false: **twenty-seven of the twenty-eight
+tests were load-bearing**, including all twenty-four block comparisons, which are the whole point
+of the file. Two one-word flags reinstated this PR's founding defect — `PAINT_COVERAGE_LIMIT`
+printed as `0.05` while the guard allowed `0.25` — and the run was green.
+
+So **there are no tests here at all.** Every check is an ordinary module-scope call. A file that
+registers none is still run and counted by `node --test`, exits 0 when module scope completes,
+and exits 1 on an uncaught throw — all three measured. There is nothing to attach a flag to,
+because there is no registration. Every check still runs after one fails, so a red run names all
+the disagreeing blocks rather than the first, and a check that neither passed nor failed is a red
+run of its own. What remains uncovered is the last assertion itself, in the guard's NOT COVERED
+list in those words.
 
 **How many blocks that is, and how many rows each pins, is derived** rather than counted here,
 and the reason is this paragraph's own history: it said "five" correctly, and then PR #111 added
@@ -2580,7 +2589,7 @@ the mechanism that stops claims drifting is not exempt from drifting.
 Which blocks those are is itself derived, out of the guard rather than out of a sentence here:
 the enumeration that used to sit in this paragraph said nine and fell three behind, missing two
 blocks added in review and one added by the commit that fixed it. Some row sets are held by a
-test instead of a block rather than by a fence, and those are the `and a test,` lines — no count
+check instead of a block rather than by a fence, and those are the `and a check,` lines — no count
 of them is written here, because the count written here was wrong twice: the sweep requires every repository file
 path this README spells in a code span to be in the tree or declared in `deleted-assets`, which
 is what makes a file deleted elsewhere red here rather than quietly stale — a span carrying a
@@ -2615,8 +2624,8 @@ claims id=table-focus-rings
 claims id=v1-status-classes
 claims id=v1-v2-collision
 claims id=write-capable-assets
-and a test, every repository file ops/README.md names is in the tree or declared deleted
-and a test, every browser guard in the tree has a row in the checks table
+and a check, every repository file ops/README.md names is in the tree or declared deleted
+and a check, every browser guard in the tree has a row in the checks table
 ```
 
 And which of them are pinned, with how many rows each pin holds:
