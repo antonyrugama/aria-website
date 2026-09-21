@@ -2324,7 +2324,14 @@ async function measureFocusIndicators(where) {
  * — the tagged node went missing, focus was lost, the page scrolled, the box
  * moved, the third photograph came back a different size — are fail-closed
  * and unexercised, because `outline` does not participate in layout and
- * nothing on this page or the shell reacts to its removal. They are latent
+ * nothing on this page or the shell reacts to its removal. One of the five
+ * is additionally DEMONSTRATED, though not covered: this PR's battery
+ * deletes the `data-ring-node` tag and the missing-node refusal fires by
+ * name. That is worth knowing and it does not move the branch off this list,
+ * because a mutation run once at review time is not a standing assertion —
+ * only something the suite runs every time is. The distinction is the whole
+ * difference between "this branch can fire" and "this branch is watched".
+ * All five are latent
  * guards against a future stylesheet where it does, and they are listed
  * individually rather than counted, so adding a sixth without a proof is
  * visible rather than absorbed. One thing they do NOT need to catch: a
@@ -2341,13 +2348,20 @@ async function measureFocusIndicators(where) {
  * hands back PNG colour type 2.
  *
  * Also NOT COVERED, and both are constants pinned in one direction only.
- * FOCUS_MIN_ADJACENT: raising it fails the run, lowering it to 1 does not,
- * because nothing here produces a sample between 1 and 8. How far the
- * thinnest real sample sits above the floor is printed every run and is not
- * written here — it is the same quantity, in the same shape, that
- * Stadiora/Aria#10365 is about. The unbound direction is the unsafe one,
- * where a starved sample would be judged rather than refused; it is latent,
- * not live. FOCUS_ADJACENT_RADIUS: the self-test
+ * FOCUS_MIN_ADJACENT: raising it FAR ENOUGH fails the run, because a sample
+ * under the floor is refused and a refusal nothing freezes is a failure.
+ * Raising it a LITTLE does not, and that distinction is not a quibble — this
+ * PR's battery raises it 8 → 9 as a tolerance control and the run is
+ * unmoved, because the thinnest sample the shell produces sits far above the
+ * floor. (An earlier draft of this paragraph said "raising it fails the run"
+ * flat, which its own battery disproves. That is Stadiora/Aria#10365's exact
+ * shape occurring inside a file written to be about it, and it is recorded
+ * rather than quietly corrected.) How far above is printed every run and is
+ * deliberately not written here, for the same reason. Lowering it to 1 does
+ * not fail either, because nothing here produces a sample between 1 and 8.
+ * So what is pinned is the floor's ORDER, not its value. The unbound
+ * direction is the unsafe one, where a starved sample would be judged rather
+ * than refused; it is latent, not live. FOCUS_ADJACENT_RADIUS: the self-test
  * cannot tell 1 from 4, because every fixture ring sits in a large uniform
  * surround, so widening it returns the same ratios off bigger samples. The
  * full shell run does catch it. Both would close with one more fixture — a
@@ -3531,9 +3545,13 @@ try {
          that was signed off.
 
          A substring test, and nothing here constrains `because` to be
-         distinctive. Correct for the four live entries and mutation-proven
-         against a WRONG reason (F14, F27); NOT proven against an AMBIGUOUS
-         one. "beside its ring" is a substring of three different refusal
+         distinctive. Correct for every live entry — each is asked about one
+         control and one refusal reason — and mutation-proven against a WRONG
+         reason (F14, F27); NOT proven against an AMBIGUOUS one. The count of
+         live entries is deliberately not written here: it was "four" until
+         this PR deleted two of them, which is Stadiora/Aria#10365's shape
+         again and is why the sentence no longer carries a number.
+         "beside its ring" is a substring of three different refusal
          messages, so a `because` shortened to that would silently cover a
          refusal nobody signed off. Named rather than closed, for the reason
          in NOT COVERED: an assertion added here mid-review is guard code
