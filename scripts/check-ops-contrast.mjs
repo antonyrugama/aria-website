@@ -2246,7 +2246,7 @@ async function measureFocusIndicators(where) {
       const last = FOCUS_PADS[FOCUS_PADS.length - 1];
       if ((onEdge || !nChanged) && pad !== last) continue;
 
-      measured = { box, pad, nChanged, changed, after, bareShot, before, W, H, focused, onEdge, noise, nNoise };
+      measured = { box, pad, nChanged, changed, after, bareShot, before, W, H, focused, onEdge, noise, nNoise, settleTries, settleDiff };
       break;
     }
 
@@ -2254,8 +2254,8 @@ async function measureFocusIndicators(where) {
     if (!measured) { rows.push({ ...row, refused: 'no photograph could be taken' }); continue; }
 
     const { nChanged, changed, after, bareShot, before, W, H, focused, noise, nNoise } = measured;
-    row.settleTries = settleTries;
-    row.settleDiff = settleDiff;
+    row.settleTries = measured.settleTries;
+    row.settleDiff = measured.settleDiff;
     row.noisePx = nNoise;
     row.clipPx = nNoiseAt ? nNoiseAt.clipPx : 0;
     row.focusVisible = focused.focusVisible;
