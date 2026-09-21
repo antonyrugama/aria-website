@@ -571,9 +571,10 @@ const sampleRects = (rects) => `(() => {
    accessibleName is read the way a reader resolves it, aria-label first, so a
    role that names nothing cannot pass as a named region.
 
-   fresh reports whether the element was drawn after the marking pass below;
-   it is false everywhere until that pass runs, and the one arm that reads it
-   asserts it found some. */
+   fresh is read off the ABSENCE of the marker the pick arm writes, so it is
+   true everywhere until that pass runs and means "drawn after it" only once it
+   has. The one arm that reads it reads it after the pass, and asserts it found
+   some. */
 const SCROLLERS_LIST = `[...document.querySelectorAll('#lookupResult .tbl-wrap')].map((wrap) => {
     const caption = wrap.querySelector('caption');
     return {
@@ -1021,6 +1022,181 @@ try {
       return JSON.stringify(seen || { missing: true });
     })()`));
 
+    /* Isolates the observation of the TABLE, which every rendered arm leaves
+       redundant: on a rendered path the tree moves too, so the tree watcher
+       covers it.
+
+       Measured, not reasoned: the first version of this arm grew a cell in the
+       real Devices table and the pane still marked it with the table's
+       observation deleted. The reason is worth keeping. A box that starts
+       clipping grows a horizontal scrollbar, and in this browser that
+       scrollbar takes 17.25px of the WRAP's own height (85.75 -> 103), so the
+       wrap's own observation sees every fits-to-clips transition a real table
+       can make. Isolation by geometry has to hold in both dimensions, and the
+       check that missed it read clientWidth only.
+
+       So: overflow-x: scroll, which reserves the gutter up front and leaves
+       the wrap's box still while the table inside it grows. The growth is a
+       write to an existing Text node's .data, a characterData record, and the
+       pane's MutationObserver takes childList and subtree only. Synthetic and
+       stated as such; out of flow and sized from a constructed sheet because
+       users.html sends style-src 'self' with no 'unsafe-inline'.
+
+       The isolation is then asserted rather than inferred: the arm runs its
+       own ResizeObserver over the same two elements and reports which of them
+       actually fired. */
+    const grown = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync('#growWrap { position: absolute; left: -9999px; top: 0;' +
+        ' width: 300px; overflow-x: scroll; }' +
+        '#growWrap table { table-layout: auto; white-space: nowrap; }');
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tbl-wrap';
+      wrap.id = 'growWrap';
+      const table = document.createElement('table');
+      const caption = document.createElement('caption');
+      caption.className = 'sr';
+      caption.textContent = 'A table that grew inside a still box';
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.textContent = 'x';
+      row.appendChild(cell);
+      table.appendChild(caption);
+      table.appendChild(row);
+      wrap.appendChild(table);
+      document.getElementById('lookupResult').appendChild(wrap);
+      await sleep(600);
+
+      const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width * 100) / 100, h: Math.round(r.height * 100) / 100 };
+      };
+      const before = {
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+        wrap: rect(wrap), table: rect(table),
+      };
+
+      const fired = { wrap: 0, table: 0 };
+      const spy = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          if (e.target === wrap) fired.wrap++;
+          else if (e.target === table) fired.table++;
+        }
+      });
+      spy.observe(wrap);
+      spy.observe(table);
+      await sleep(200);
+      fired.wrap = 0;
+      fired.table = 0;
+
+      const text = [...cell.childNodes].find((n) => n.nodeType === 3);
+      /* Non-breaking spaces so the cell cannot answer by wrapping. */
+      text.data = 'W\u00a0'.repeat(120);
+      await sleep(600);
+      spy.disconnect();
+
+      const out = {
+        before, fired,
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        wrap: rect(wrap), table: rect(table),
+        overflows: wrap.scrollWidth > wrap.clientWidth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+        role: wrap.getAttribute('role'),
+        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
+      };
+      out.boxMoved = out.wrap.w !== before.wrap.w || out.wrap.h !== before.wrap.h;
+      wrap.remove();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+      return JSON.stringify(out);
+    })()`));
+
+    /* The other half of the same isolation. watchScroller observes the wrap
+       AND the table inside it, and on every rendered path both boxes move at
+       once -- a viewport change resizes the card and re-lays the table -- so
+       either observation alone covers the other and neither is bound by a
+       rendered arm. The arm above moves the table under a still wrap; this one
+       moves the wrap under a still table, which only the wrap's own
+       observation can see.
+
+       Synthetic, and stated as such, because no real width does this: a card
+       narrow enough to clip also re-lays the table inside it. Out of flow and
+       sized from a constructed sheet for the same reason the injected arm is
+       -- users.html sends style-src 'self' with no 'unsafe-inline'. It is
+       appended wide and left to be seen (the tree watcher's job), then
+       narrowed with no tree change at all, which is the ResizeObserver's. */
+    const squeezed = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sheet = new CSSStyleSheet();
+      const at = (w) => '#squeezeWrap { position: absolute; left: -9999px; top: 0;' +
+        ' width: ' + w + 'px; overflow-x: auto; }' +
+        '#squeezeWrap table { width: 900px; table-layout: fixed; }';
+      sheet.replaceSync(at(1200));
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tbl-wrap';
+      wrap.id = 'squeezeWrap';
+      const table = document.createElement('table');
+      const caption = document.createElement('caption');
+      caption.className = 'sr';
+      caption.textContent = 'A table whose box was squeezed, not a rendered one';
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.textContent = 'x';
+      row.appendChild(cell);
+      table.appendChild(caption);
+      table.appendChild(row);
+      wrap.appendChild(table);
+      document.getElementById('lookupResult').appendChild(wrap);
+
+      await sleep(600);
+      const wide = {
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        tableWidth: table.getBoundingClientRect().width,
+        tableHeight: table.getBoundingClientRect().height,
+        overflows: wrap.scrollWidth > wrap.clientWidth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+      };
+      /* Same instrument as the arm above: which observation could have seen
+         this, measured rather than argued. */
+      const fired = { wrap: 0, table: 0 };
+      const spy = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          if (e.target === wrap) fired.wrap++;
+          else if (e.target === table) fired.table++;
+        }
+      });
+      spy.observe(wrap);
+      spy.observe(table);
+      await sleep(200);
+      fired.wrap = 0;
+      fired.table = 0;
+      /* No node added, removed or re-parented: the tree watcher cannot see
+         this, and the table's own box is fixed at 900px so its observation has
+         nothing to report either. */
+      sheet.replaceSync(at(120));
+      await sleep(600);
+      spy.disconnect();
+      const out = {
+        wide, fired,
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        tableWidth: table.getBoundingClientRect().width,
+        tableMoved: table.getBoundingClientRect().width !== wide.tableWidth
+          || table.getBoundingClientRect().height !== wide.tableHeight,
+        overflows: wrap.scrollWidth > wrap.clientWidth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+        role: wrap.getAttribute('role'),
+        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
+      };
+      wrap.remove();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+      return JSON.stringify(out);
+    })()`));
+
     /* Back to the width the affordance is not supposed to exist at. Nothing
        else in this run goes from clipping to fitting, and an invariant
        asserted only in the direction that adds the attribute is half an
@@ -1032,7 +1208,8 @@ try {
 
     census[theme] = { styles, textContrast, narrow,
       scrollers: { wide: scrollersWide, narrow: scrollersNarrow, keyboard,
-        repick: repick.wraps, injected, immediate, rewide: scrollersRewide },
+        repick: repick.wraps, injected, immediate, grown, squeezed,
+        rewide: scrollersRewide },
       graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
@@ -1342,6 +1519,15 @@ for (const theme of THEMES) {
        that, because the shell draws this pane only when it is the active one.
      - every other pane. ops/assets/pane-run-history-v2.js has the same defect
        and is held by another agent; #10822 stays open against it.
+     - either observation of watchScroller ALONE, on a rendered path. The pane
+       observes each wrap and the table inside it, and every real path moves
+       both boxes at once, so on a rendered arm either one covers the other and
+       neither is bound. The two arms that isolate them are therefore both
+       synthetic and say so. The load-bearing reason is worth keeping: a box
+       that starts clipping grows a horizontal scrollbar, and in this browser
+       that takes 17.25px of the WRAP's own height, so even "the table grew
+       inside a card that did not move" is visible to the wrap's observation
+       unless the gutter is reserved up front.
      - the pre-fix state, as an OUTCOME, on this browser. Chrome has focused
        scroll containers natively since 127, so on the harness browser a wrap
        with no tabindex still focuses, still scrolls on ArrowRight and still
@@ -1493,6 +1679,68 @@ for (const theme of THEMES) {
     assert.equal(w.role, 'region', `the injected wrap announces role ${JSON.stringify(w.role)}`);
     assert.equal(w.accessibleName, 'An injected table, not a rendered one',
       `the injected wrap is named ${JSON.stringify(w.accessibleName)}, which is not its caption`);
+  });
+
+  /* Binds the observation of the TABLE, which nothing else in this file
+     reaches. The gutter is reserved up front so the wrap's box cannot move,
+     the growth is a characterData write the tree watcher does not take, and
+     the arm carries its own ResizeObserver over both elements so "only the
+     table could have seen this" is a measurement rather than an argument. */
+  test(`[${theme}] a table that outgrows a box that did not move becomes reachable`, () => {
+    const g = census[theme].scrollers.grown;
+    assert.equal(g.before.hasTabindex, false,
+      `the grow wrap measured ${g.before.clientWidth}/${g.before.scrollWidth} and was ` +
+      'already a tab stop before anything grew, so this arm started in the state it ' +
+      'is supposed to produce');
+    assert.equal(g.overflows, true,
+      `growing the cell did not make the box clip (${g.clientWidth}/${g.scrollWidth})`);
+    assert.equal(g.boxMoved, false,
+      `the wrap's own box went ${JSON.stringify(g.before.wrap)} -> ${JSON.stringify(g.wrap)}, ` +
+      "so its own observation could have reported this and the table's is not isolated");
+    assert.equal(g.fired.wrap, 0,
+      `a ResizeObserver on the wrap fired ${g.fired.wrap} time(s) for this growth, so ` +
+      'the pane\'s observation of the wrap covers it and this arm binds nothing');
+    assert.ok(g.fired.table > 0,
+      'a ResizeObserver on the table did not fire at all, so nothing here was ' +
+      'observable and the arm cannot fail from what it names');
+    assert.equal(g.tabIndex, 0,
+      `the table grew to clip ${g.scrollWidth - g.clientWidth}px inside a box that did ` +
+      `not move and the wrap still reports tabIndex ${g.tabIndex}: nothing is ` +
+      'observing the table itself');
+    assert.equal(g.role, 'region', `it announces role ${JSON.stringify(g.role)}`);
+    assert.equal(g.accessibleName, 'A table that grew inside a still box',
+      `it is named ${JSON.stringify(g.accessibleName)}, which is not its caption`);
+  });
+
+  /* The mirror image, binding the observation of the WRAP: its box narrows
+     under a table whose own box does not move, with no tree change at all.
+     Synthetic, and could not be otherwise -- a real card that narrows also
+     re-lays the table inside it, which is why these two observations cover for
+     each other on every rendered path. Same instrument as the arm above. */
+  test(`[${theme}] a box that shrinks under a table that did not becomes reachable`, () => {
+    const q = census[theme].scrollers.squeezed;
+    assert.equal(q.wide.hasTabindex, false,
+      `the squeeze wrap was a tab stop at ${q.wide.clientWidth}px wide ` +
+      `(${q.wide.clientWidth}/${q.wide.scrollWidth}), before anything was squeezed`);
+    assert.equal(q.overflows, true,
+      `narrowing the wrap to ${q.clientWidth}px did not make it clip ` +
+      `(${q.clientWidth}/${q.scrollWidth})`);
+    assert.equal(q.tableMoved, false,
+      `the table's own box moved (${q.wide.tableWidth} -> ${q.tableWidth} wide), so the ` +
+      "table's observation could have reported this and the wrap's is not isolated");
+    assert.equal(q.fired.table, 0,
+      `a ResizeObserver on the table fired ${q.fired.table} time(s) for this squeeze, ` +
+      'so the pane\'s observation of the table covers it and this arm binds nothing');
+    assert.ok(q.fired.wrap > 0,
+      'a ResizeObserver on the wrap did not fire at all, so nothing here was ' +
+      'observable and the arm cannot fail from what it names');
+    assert.equal(q.tabIndex, 0,
+      `the wrap narrowed under a still table until it clipped ` +
+      `${q.scrollWidth - q.clientWidth}px and still reports tabIndex ${q.tabIndex}: ` +
+      'nothing is observing the box itself');
+    assert.equal(q.role, 'region', `it announces role ${JSON.stringify(q.role)}`);
+    assert.equal(q.accessibleName, 'A table whose box was squeezed, not a rendered one',
+      `it is named ${JSON.stringify(q.accessibleName)}, which is not its caption`);
   });
 
   /* The whole chain, timed: paint, MutationObserver, settle, measure, write.
