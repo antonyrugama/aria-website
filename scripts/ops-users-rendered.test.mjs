@@ -569,12 +569,14 @@ const sampleRects = (rects) => `(() => {
    integers -- is not dodgeable here and is declared under NOT COVERED.
 
    accessibleName is read the way a reader resolves it, aria-label first, so a
-   role that names nothing cannot pass as a named region. */
-const SCROLLERS = `(() => {
-  const out = [];
-  for (const wrap of document.querySelectorAll('#lookupResult .tbl-wrap')) {
+   role that names nothing cannot pass as a named region.
+
+   fresh reports whether the element was drawn after the marking pass below;
+   it is false everywhere until that pass runs, and the one arm that reads it
+   asserts it found some. */
+const SCROLLERS_LIST = `[...document.querySelectorAll('#lookupResult .tbl-wrap')].map((wrap) => {
     const caption = wrap.querySelector('caption');
-    out.push({
+    return {
       caption: caption ? caption.textContent.trim() : null,
       clientWidth: wrap.clientWidth,
       scrollWidth: wrap.scrollWidth,
@@ -583,10 +585,11 @@ const SCROLLERS = `(() => {
       tabIndex: wrap.tabIndex,
       role: wrap.getAttribute('role'),
       accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
-    });
-  }
-  return JSON.stringify(out);
-})()`;
+      fresh: !wrap.hasAttribute('data-gen'),
+    };
+  })`;
+
+const SCROLLERS = `JSON.stringify(${SCROLLERS_LIST})`;
 
 const STYLE = (selector) => `(() => {
   const el = document.querySelector(${JSON.stringify(selector)});
@@ -719,8 +722,19 @@ try {
 
     const after = await evaluate(`(() => {
       const wrap = document.getElementById('kbdScroller');
+      const cs = getComputedStyle(wrap);
+      const rect = wrap.getBoundingClientRect();
       return JSON.stringify({ after: wrap.scrollLeft,
-        stillFocused: document.activeElement === wrap });
+        stillFocused: document.activeElement === wrap,
+        /* Read after real key events, not after the .focus() above: whether a
+           box is drawing a focus ring at all is a decision the browser makes
+           from how focus arrived. */
+        focusVisible: wrap.matches(':focus-visible'),
+        outlineStyle: cs.outlineStyle,
+        outlineWidth: Number.parseFloat(cs.outlineWidth),
+        outlineOffset: Number.parseFloat(cs.outlineOffset),
+        right: rect.right,
+        viewportWidth: document.documentElement.clientWidth });
     })()`);
     return { present: true, ...JSON.parse(found), ...JSON.parse(after) };
   };
@@ -882,8 +896,46 @@ try {
       });
     })()`));
 
+    /* Binds the MutationObserver, which nothing above can reach. Picking the
+       second match replaces the account column with a detail the stub serves
+       identically, so no box that is already observed changes size and the
+       ResizeObserver has nothing to report -- but three wrap elements are new
+       and unobserved. Only a watcher of the tree itself can see them.
+       The wraps standing before the pick are marked, so "new" is read off the
+       DOM rather than assumed. */
+    const repick = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (const w of document.querySelectorAll('#lookupResult .tbl-wrap')) {
+        w.setAttribute('data-gen', 'before');
+      }
+      const rows = [...document.querySelectorAll('.match-row')];
+      const other = rows.find((r) => !r.classList.contains('is-selected'));
+      if (!other) return JSON.stringify({ error: 'only one match row was drawn' });
+      other.querySelector('.match-row-btn').click();
+      for (let i = 0; i < 60; i++) {
+        await sleep(50);
+        if (other.classList.contains('is-selected')) break;
+      }
+      await sleep(700);
+      if (!other.classList.contains('is-selected')) {
+        return JSON.stringify({ error: 'the second pick never selected' });
+      }
+      return JSON.stringify({ wraps: ${SCROLLERS_LIST} });
+    })()`));
+    if (repick.error) throw new Error(`[${theme}] ${repick.error}`);
+
+    /* Back to the width the affordance is not supposed to exist at. Nothing
+       else in this run goes from clipping to fitting, and an invariant
+       asserted only in the direction that adds the attribute is half an
+       invariant: the arm that takes it off again has to be driven too. */
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width: 1280, height: 1600, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 400));
+    const scrollersRewide = JSON.parse(await evaluate(SCROLLERS));
+
     census[theme] = { styles, textContrast, narrow,
-      scrollers: { wide: scrollersWide, narrow: scrollersNarrow, keyboard },
+      scrollers: { wide: scrollersWide, narrow: scrollersNarrow, keyboard,
+        repick: repick.wraps, rewide: scrollersRewide },
       graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
@@ -1255,5 +1307,80 @@ for (const theme of THEMES) {
       'edge stayed out of reach');
     assert.equal(k.stillFocused, true,
       'focus left the wrap during the presses, so what scrolled may not be it');
+  });
+
+  /* The affordance has to arrive on boxes that were not there when the pane
+     last painted, and leave when the window stops clipping them. Neither is
+     reachable from the two arms above: the first reads one render, the second
+     reads one width. */
+  test(`[${theme}] a table drawn after the first paint is reachable too`, () => {
+    const wraps = census[theme].scrollers.repick;
+    const fresh = wraps.filter((w) => w.fresh);
+    assert.ok(fresh.length >= 2,
+      `picking the second account replaced ${fresh.length} of the ${wraps.length} ` +
+      'wraps, so this arm cannot see a box the pane had never measured');
+
+    const clipping = fresh.filter((w) => w.overflows);
+    assert.ok(clipping.length >= 1,
+      'none of the replaced tables clipped at 375px, so this assertion could not ' +
+      'have failed from what it names — ' +
+      fresh.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
+
+    for (const w of clipping) {
+      assert.equal(w.tabIndex, 0,
+        `the wrap holding "${w.caption}" was drawn by the second pick, clips ` +
+        `${w.scrollWidth - w.clientWidth}px and reports tabIndex ${w.tabIndex}: ` +
+        'a box added without a size change anywhere is seen by nothing but a ' +
+        'watcher of the tree');
+      assert.equal(w.role, 'region',
+        `the newly drawn wrap holding "${w.caption}" is a tab stop with role ` +
+        `${JSON.stringify(w.role)}`);
+      assert.ok(w.accessibleName.length > 0,
+        `the newly drawn wrap holding "${w.caption}" is an unnamed region`);
+    }
+  });
+
+  test(`[${theme}] widening the window takes the tab stops back off`, () => {
+    const wraps = census[theme].scrollers.rewide;
+    assert.ok(wraps.length >= 3,
+      `only ${wraps.length} wraps were on the page after the width went back to 1280`);
+
+    const fitting = wraps.filter((w) => !w.overflows);
+    assert.ok(fitting.length >= 3,
+      'the tables still clipped at 1280px, so this arm never reached the state it ' +
+      'names — ' + wraps.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
+
+    for (const w of fitting) {
+      assert.equal(w.hasTabindex, false,
+        `the wrap holding "${w.caption}" fits again (${w.clientWidth}/${w.scrollWidth}) ` +
+        `and kept tabIndex ${w.tabIndex} from when it clipped: the stop is now dead`);
+      assert.equal(w.role, null,
+        `the wrap holding "${w.caption}" fits again and still announces ` +
+        `role ${JSON.stringify(w.role)}`);
+      assert.equal(w.accessibleName, '',
+        `the wrap holding "${w.caption}" fits again and still carries the name ` +
+        `${JSON.stringify(w.accessibleName)}`);
+    }
+  });
+
+  /* aria.css:180 draws every focus ring at outline-offset 2px, which on a box
+     that clips puts the ring outside the thing it is naming and over whatever
+     is next to it. pane-users-v2.css pulls it inside. PR #85's finding is the
+     reference: at a positive offset the adjacent surface is often the
+     control's own halo, and no recolouring answers that. */
+  test(`[${theme}] the focus ring on a scroll box is drawn inside it`, () => {
+    const k = census[theme].scrollers.keyboard;
+    assert.equal(k.focusVisible, true,
+      `the wrap holding "${k.caption}" did not match :focus-visible after eight real ` +
+      'key presses, so its outline is whatever an unfocused box computes and the ' +
+      'rest of this test would assert nothing');
+    assert.notEqual(k.outlineStyle, 'none',
+      'the focused scroll box draws no outline at all');
+    assert.ok(k.outlineWidth > 0,
+      `the focused scroll box draws a ${k.outlineWidth}px outline`);
+    assert.ok(k.outlineOffset <= 0,
+      `the focused scroll box puts its ring at outline-offset ${k.outlineOffset}px, ` +
+      'outside the box, where it overlaps the card beside it rather than marking ' +
+      'the box it belongs to');
   });
 }
