@@ -24,13 +24,20 @@
    and the exact original line whose removal or inversion makes that test fail.
    A test with no such line is a test that pins nothing. */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { stub } from './ops-api-stub.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
+const REPO = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
 
 const REGISTRY_SRC = read('assets/pane-registry.js');
@@ -38,6 +45,12 @@ const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
 const PANE_SRC = read('assets/pane-analytics.js');
 const PAGE_HTML = read('analytics.html');
+
+/* The sheets the page loads, read off the page rather than listed, so a sheet
+   added or dropped moves every check that reads them. */
+const SHEETS = (PAGE_HTML.match(/<link\b[^>]*\brel="stylesheet"[^>]*>/g) || [])
+  .map((tag) => (/\bhref="([^"]+)"/.exec(tag) || [])[1])
+  .filter(Boolean);
 
 const TOKENS = {
   '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
@@ -2351,32 +2364,101 @@ test('the page loads the v2 system and not the v1 one', () => {
     'the page lost its content security policy');
 });
 
-/* Every class name the sheets this page loads can paint, taken from the
-   selector LISTS rather than from the file text. These stylesheets name
-   classes in their prose constantly -- the cohort block alone mentions
-   `.tbl th`, `.u-scroll` and `.u-cohort` inside comments -- and a class that
-   appears only in a comment paints nothing, so a scan of the raw bytes would
-   call the very defect this guards against painted. `cssRules` strips comments
-   before it splits, and `@media` bodies come back through it as rules of their
-   own, so a class defined only at one width still counts as painted. */
-const PAINTED = (() => {
-  const hrefs = (PAGE_HTML.match(/<link\b[^>]*\brel="stylesheet"[^>]*>/g) || [])
-    .map((tag) => (/\bhref="([^"]+)"/.exec(tag) || [])[1])
-    .filter(Boolean);
-  const bySheet = new Map();
-  for (const href of hrefs) {
-    for (const rule of cssRules(read(href))) {
-      for (const selector of rule.selectors) {
-        /* Leading digits cannot start a class name, which is what keeps
-           `padding: 0 .5em` out of this even when a selector carries one. */
-        for (const found of selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) {
-          if (!bySheet.has(found[1])) bySheet.set(found[1], href);
-        }
-      }
-    }
-  }
-  return { hrefs, bySheet };
-})();
+/* ===================== the classes this pane draws ======================
+ *
+ * Stadiora/Aria#10456 shipped an `is-selected` row on the users pane that no
+ * rule matched: the selection was in the DOM and invisible on screen. This
+ * block exists so that cannot happen here.
+ *
+ * WHAT USED TO BE HERE, AND WHY IT WAS REPLACED
+ *
+ * A class was "painted" if any selector in any loaded sheet mentioned it. The
+ * independent review of PR #81 defeated that twice, with `u-when` put back on
+ * the cohort heading (Stadiora/Aria#10678, item 1):
+ *
+ *   - `.ops-v1 .u-when { color: red }` at the top of `pane-analytics-v2.css`.
+ *     An ancestor no ops page can have. The sweep stayed green.
+ *   - `.u-when { }`. An empty body. The sweep stayed green.
+ *
+ * Both are the same fault: a selector's TEXT was read as evidence of painting.
+ * The subject set is now decided by what the browser does with the rule.
+ *
+ * HOW IT IS DECIDED NOW
+ *
+ * The pane is driven through its seven answer shapes in the fake DOM, exactly
+ * as before, and the tree it draws is serialised — tag, namespace, every
+ * attribute, every text node, in order. Real Chrome then loads
+ * `/ops/analytics.html` over HTTP, and each serialised tree is rebuilt inside
+ * the page's own `#app`, so every element sits under its real ancestors with
+ * the page's real stylesheets and real `:root` tokens.
+ *
+ * Then, for each class the pane drew, on each element that carries it:
+ *
+ *     remove the class -> lay out again -> read computed values
+ *
+ * A class that changes nothing on any element that carries it paints nothing.
+ * That is one measurement and it closes both shapes: `.ops-v1 .u-when` never
+ * matches, because the rebuilt tree has the ancestors the pane actually draws
+ * and none of them is `.ops-v1`; and an empty body has nothing to withdraw.
+ * It also handles the cases a synthetic probe gets wrong — `.pill.ghost` is
+ * `background: transparent`, which moves nothing on a bare probe and moves the
+ * real pill off `.pill`'s own fill.
+ *
+ * WHY THE TREE IS REBUILT RATHER THAN THE PANE DRIVEN IN THE BROWSER
+ *
+ * `scripts/ops-api-stub.mjs` answers `/api/ops/usage` with an empty envelope,
+ * on purpose — `check-ops-result-view.mjs` pins that answer. Six of the seven
+ * states here need payloads that stub does not serve, and the fixtures that
+ * build them are this file's. Rebuilding the drawn tree keeps one set of
+ * fixtures and reaches all seven states; driving the pane in the browser would
+ * need a second set, and two fixture sets drift.
+ *
+ * The rebuild is faithful in the way that matters to the cascade: structure,
+ * order, element type, namespace, every attribute (so `[hidden]`, `[aria-*]`
+ * and `[data-*]` selectors resolve), and text (so `:empty` and
+ * `:first-of-type` resolve). The pane writes no inline styles and a separate
+ * test in this file holds that.
+ *
+ * NOT COVERED — the list is the point, and each line is a thing this check
+ * does NOT decide, so the next reader does not have to find out by being
+ * wrong about it:
+ *
+ *   - Interaction states. The sweep reads the resting element. A class whose
+ *     only rule is under `:hover`, `:focus-visible` or `:active` moves nothing
+ *     at rest and would be reported unpainted. None of the pane's classes is
+ *     in that shape today; if one becomes so, it belongs in
+ *     UNPAINTED_ON_PURPOSE with its state named, not in a widened sweep, and
+ *     `scripts/ops-hover-contrast.test.mjs` is what drives hover here.
+ *   - Viewport-conditional rules. One width is read, at the browser's default
+ *     window. A class painted only inside a `@media (max-width: …)` block
+ *     would read as painting nothing. `scripts/ops-hero-narrow.test.mjs` and
+ *     `scripts/check-ops-narrow-overflow.mjs` are the narrow-width instruments.
+ *   - Whether what a class paints is CORRECT, legible, or contrasting. This
+ *     answers "does any value move", and a class that moved one value the
+ *     wrong way passes. `scripts/check-ops-contrast.mjs` is the AA oracle.
+ *   - Classes no answer shape draws. Two of them, named in NEVER_REACHED
+ *     below with the branch that would draw them; they are checked for a
+ *     DEFINING rule by selector text, which is weaker, and that weakness is
+ *     the reason the list is two long rather than open-ended.
+ *   - Classes the source computes rather than writes. Named in
+ *     COMPUTED_SITES; the tone classes ARE swept, because they are drawn —
+ *     what is unread is the source text, not the paint.
+ *   - Print and forced-colours. `@media print` and
+ *     `(forced-colors: active)` rules are never entered.
+ *   - Panes other than this one. The sweep is over `pane-analytics.js`.
+ *     `scripts/ops-painted-classes.test.mjs` covers releases and evaluations
+ *     the same way.
+ */
+
+/* The properties the loaded sheets declare are read out of the BROWSER's own
+   parsed rules, in PAINT_PROGRAM's props(), rather than out of the text of the
+   sheets. `rule.style` is a CSSStyleDeclaration, so Chrome has already
+   expanded every shorthand into the longhands it derives: `border: 1px solid x`
+   arrives as border-top-color and the rest, where a text scan would have handed
+   back `border` and missed every longhand a class can move on its own. A
+   property no rule declares cannot be moved by a class, so this is the same
+   answer as reading all ~340 computed properties, for a fraction of the work --
+   and it is a narrowing done by value, not by pattern. */
 
 /* Classes the pane writes deliberately without a rule behind them. Empty
    today, and kept as the place a query hook would be declared with its
@@ -2384,24 +2466,13 @@ const PAINTED = (() => {
    say a purpose for is. */
 const UNPAINTED_ON_PURPOSE = new Map([]);
 
-test('every class this pane draws is one a sheet the page loads can paint', async () => {
-  /* A guard that reads no stylesheet judges nothing and passes. */
-  assert.deepEqual(PAINTED.hrefs,
-    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css'],
-    'the page stopped loading the sheets this check reads: ' + JSON.stringify(PAINTED.hrefs));
-  /* Every sheet contributed, rather than one of them parsing to nothing and
-     the total still looking healthy on the strength of the other two. */
-  assert.deepEqual([...new Set(PAINTED.bySheet.values())].sort(), PAINTED.hrefs.slice().sort(),
-    'a sheet the page loads yielded no class at all: ' +
-    JSON.stringify([...new Set(PAINTED.bySheet.values())]));
-  assert.ok(PAINTED.bySheet.size > 150,
-    'only ' + PAINTED.bySheet.size + ' classes were read out of three stylesheets, ' +
-    'so the selector scan is finding a fraction of what is there');
-
-  /* Both states the pane can reach with figures on screen, plus the three it
-     reaches without them: `u-when` and `u-size` were on the cohort heading,
-     which only the populated states draw. */
-  const states = [
+/* The seven answer shapes. Four of them draw figures — every app, one app,
+   the partial window, and groups under the reporting floor, which draws its
+   groups and withholds their rates. Three do not: not ready, too little data,
+   and a read that failed. `u-when` and `u-size` live on the cohort heading,
+   which only the four drawing states reach. */
+function sweepStates() {
+  return [
     ['every app', {}],
     ['one app', { search: '?scope=mobile' }],
     ['a window the pipeline has only part of', { usage: partial90() }],
@@ -2415,37 +2486,324 @@ test('every class this pane draws is one a sheet the page loads can paint', asyn
     }],
     ['a read that failed', { usage: new Error('The operations API did not answer.') }],
   ];
+}
 
-  const unpainted = new Map();
-  let judged = 0;
+/* The floor separates a pane that drew an answer from a pane that drew
+   nothing, and the check that uses it counts only what the PANE drew, under
+   `#content` -- a count over `#app` would include the rail, the topbar and the
+   gate, which a broken pane leaves behind and which would carry it over any
+   floor on their own.
+
+   Both arms are measured by the test below rather than stated here:
+
+     - above: the thinnest state the pane can draw. Measured at 33 (an answer
+       that is not ready), then 35 (too little data), then 36 (a read that
+       failed). Stadiora/Aria#10678 item 3: the sentence here used to claim the
+       thinnest was 36, giving the floor 11 of headroom. Three states are
+       thinner than that and the real headroom is 8.
+     - below: what an unmounted pane leaves. Measured at 0, because `#content`
+       is the pane's own region and the shell hands it over empty.
+
+   Neither number is typed into an assertion. The test derives both and prints
+   them, so this comment is a record of a run rather than a claim ahead of one. */
+const CONTENT_FLOOR = 25;
+
+function serialise(node) {
+  if (node.nodeType === 3) return { t: String(node.textContent || '') };
+  const attrs = {};
+  for (const name of node.attributeNames) attrs[name] = node.getAttribute(name);
+  return {
+    g: (node.tagName || 'div').toLowerCase(),
+    ns: node.namespaceURI && node.namespaceURI.indexOf('svg') !== -1 ? 'svg' : null,
+    a: attrs,
+    c: (node.childNodes || []).map(serialise),
+  };
+}
+
+/* ------------------------------------------------------- the browser ---- */
+
+/* This file is otherwise pure Node against the fake DOM, and stays that way:
+   Chrome is launched inside the one test that needs a cascade, and only when
+   that test runs. A missing browser fails THAT test and leaves the other
+   ~180 alone. It fails rather than skips — a fake DOM has no cascade, so a
+   skip here would be a guard reporting a pass it never earned. */
+function chromePath() {
+  const candidates = [
+    process.env.CHROME_PATH, process.env.CHROME_BIN,
+    '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium', '/usr/bin/chromium-browser',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ].filter(Boolean);
+  for (const candidate of candidates) if (existsSync(candidate)) return candidate;
+  throw new Error('no Chrome or Chromium found, and this check cannot fall back to the ' +
+    'fake DOM: the fake DOM has no cascade and the cascade is what is being read. ' +
+    'Set CHROME_PATH.');
+}
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+/* The page program. Two entry points: rebuild a serialised tree inside the
+   page's own #app, and judge a list of classes against it.
+
+   No backtick appears between here and the end of this template. One inside a
+   String.raw body terminates it, and the error names a line in the middle of
+   the CSS-looking text rather than the quote that did it. */
+const PAINT_PROGRAM = String.raw`(() => {
+  const SVG = 'http://www.w3.org/2000/svg';
+
+  const make = (spec) => {
+    if (spec.t !== undefined) return document.createTextNode(spec.t);
+    const el = spec.ns === 'svg' ? document.createElementNS(SVG, spec.g) : document.createElement(spec.g);
+    for (const name of Object.keys(spec.a)) {
+      try { el.setAttribute(name, spec.a[name]); } catch (e) { /* a name the parser refuses */ }
+    }
+    for (const child of spec.c) el.appendChild(make(child));
+    return el;
+  };
+
+  /* The serialised root IS #app, and the page's own #app is left exactly as
+     the page dresses it -- class="app" and all. An earlier draft stripped
+     everything but the id and put the FIXTURE's attributes on instead, which
+     took 'class="app"' off a grid container (aria.css:187) and laid the whole
+     rebuilt tree out under something the real page never has. The fixture's
+     root carries only an id, and the Node side asserts that, so there is
+     nothing to merge; if that ever stops being true the test says so rather
+     than this silently picking one. */
+  const build = (spec) => {
+    const app = document.getElementById('app');
+    if (!app) return { error: 'the page has no #app to rebuild into' };
+    while (app.firstChild) app.removeChild(app.firstChild);
+    for (const child of spec.c) app.appendChild(make(child));
+    document.body.offsetHeight;
+    /* The root is #app itself, which querySelectorAll does not return, and the
+       count on the Node side includes it. Counting the same thing on both
+       sides is the point: a rebuild that dropped a subtree would otherwise be
+       a guard that found nothing. */
+    return { built: app.querySelectorAll('*').length + 1,
+      appAttrs: app.getAttributeNames().sort().join(' ') };
+  };
+
+  const judge = (props, cap) => {
+    const app = document.getElementById('app');
+    /* #app itself is the SHELL's element, not the pane's -- the page dresses it
+       class="app" and the pane never writes to it. This sweep is about the
+       classes the PANE draws, so the root is the container, not a subject. */
+    const all = [...app.querySelectorAll('*')];
+
+    const snap = (el) => {
+      const scope = [];
+      const parent = el.parentElement || el;
+      (function walk(n) { scope.push(n); for (const k of n.children) walk(k); })(parent);
+      for (let a = el.parentElement; a; a = a.parentElement) scope.push(a);
+      let out = '';
+      for (const n of scope) {
+        for (const pseudo of [null, '::before', '::after']) {
+          const cs = getComputedStyle(n, pseudo);
+          for (let i = 0; i < props.length; i++) out += cs.getPropertyValue(props[i]) + '|';
+        }
+        out += ';';
+      }
+      return out;
+    };
+
+    const carriers = new Map();
+    for (const el of all) {
+      const raw = el.getAttribute('class');
+      if (!raw || !raw.trim()) continue;
+      for (const cls of raw.trim().split(/\s+/)) {
+        if (!carriers.has(cls)) carriers.set(cls, []);
+        carriers.get(cls).push(el);
+      }
+    }
+
+    const painted = [];
+    const unpainted = [];
+    let toggles = 0;
+    for (const [cls, els] of carriers) {
+      let moved = false;
+      let where = '';
+      for (let i = 0; i < els.length && i < cap && !moved; i++) {
+        const el = els[i];
+        const original = el.getAttribute('class');
+        if (!where) {
+          where = el.tagName.toLowerCase() + '.' + original.trim().split(/\s+/).join('.');
+        }
+        const before = snap(el);
+        const kept = original.trim().split(/\s+/).filter((c) => c !== cls).join(' ');
+        if (kept) el.setAttribute('class', kept); else el.removeAttribute('class');
+        document.body.offsetHeight;
+        const after = snap(el);
+        el.setAttribute('class', original);
+        document.body.offsetHeight;
+        toggles += 1;
+        if (before !== after) moved = true;
+      }
+      (moved ? painted : unpainted).push(moved ? cls : { cls: cls, where: where, carriers: els.length });
+    }
+    return { painted: painted, unpainted: unpainted, toggles: toggles,
+      classes: carriers.size, seen: [...carriers.keys()].sort() };
+  };
+
+  /* Every property any loaded rule declares, longhand-expanded by the parser.
+     Media rules and their nesting are walked; a sheet the browser refuses to
+     expose its rules for is reported rather than skipped, because a silently
+     short list would make every class look unpainted. */
+  const props = () => {
+    const names = new Set();
+    const blocked = [];
+    const walk = (rules) => {
+      for (const rule of rules) {
+        if (rule.style) for (const name of rule.style) names.add(name);
+        if (rule.cssRules) walk(rule.cssRules);
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      let rules = null;
+      try { rules = sheet.cssRules; } catch (e) { rules = null; }
+      if (!rules) { blocked.push(sheet.href || '(inline)'); continue; }
+      walk(rules);
+    }
+    return { names: [...names].sort(), blocked: blocked, sheets: document.styleSheets.length };
+  };
+
+  window.__opsPaint = { build: build, judge: judge, props: props };
+  return 'ready';
+})()`;
+
+/* One browser, one page load, reused across the seven states. Torn down by
+   the test that opened it. */
+async function openPainter() {
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    if (url.pathname.startsWith('/api/')) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(stub(url.pathname)));
+      return;
+    }
+    const abs = join(REPO, decodeURIComponent(url.pathname));
+    if (!abs.startsWith(REPO) || !existsSync(abs) || statSync(abs).isDirectory()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': MIME[extname(abs)] || 'application/octet-stream' });
+    res.end(readFileSync(abs));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = 'http://127.0.0.1:' + server.address().port;
+
+  const profile = mkdtempSync(join(tmpdir(), 'ops-analytics-paint-'));
+  const browser = spawn(chromePath(), [
+    '--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile,
+    '--no-first-run', '--no-default-browser-check', '--no-sandbox', '--disable-gpu',
+    '--disable-extensions', '--hide-scrollbars', '--force-device-scale-factor=1',
+    'about:blank',
+  ], { stdio: 'ignore' });
+
+  let port = null;
+  for (let i = 0; i < 300 && port === null; i += 1) {
+    await new Promise((r) => setTimeout(r, 100));
+    try { port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch (e) { /* not yet */ }
+  }
+  if (!port) throw new Error('Chrome never published a DevTools port');
+  const targets = await (await fetch('http://127.0.0.1:' + port + '/json/list')).json();
+  const socket = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket.addEventListener('open', resolve);
+    socket.addEventListener('error', reject);
+  });
+  let nextId = 1;
+  const pending = new Map();
+  socket.addEventListener('message', (event) => {
+    const message = JSON.parse(event.data);
+    if (!message.id || !pending.has(message.id)) return;
+    const slot = pending.get(message.id);
+    pending.delete(message.id);
+    if (message.error) slot.reject(new Error(JSON.stringify(message.error)));
+    else slot.resolve(message.result);
+  });
+  const send = (method, params) => new Promise((resolve, reject) => {
+    const id = nextId += 1;
+    pending.set(id, { resolve, reject });
+    socket.send(JSON.stringify({ id, method, params: params || {} }));
+  });
+
+  await send('Page.enable');
+  await send('Runtime.enable');
+  const evaluate = async (expression) => {
+    const result = await send('Runtime.evaluate', {
+      expression, returnByValue: true, awaitPromise: true,
+    });
+    if (result.exceptionDetails) {
+      throw new Error('the page threw: ' + (result.exceptionDetails.exception
+        ? result.exceptionDetails.exception.description
+        : result.exceptionDetails.text));
+    }
+    return result.result.value;
+  };
+
+  await send('Emulation.setDeviceMetricsOverride',
+    { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: 'try { localStorage.setItem("ops-theme", "dark");' +
+      ' localStorage.setItem("ops-api-base", ' + JSON.stringify(origin) + ');' +
+      ' sessionStorage.setItem("ops-refresh", JSON.stringify({ t: "stub", s: "adm_1" })); } catch (e) {}',
+  });
+  await send('Page.navigate', { url: origin + '/ops/analytics.html' });
+  for (let i = 0; i < 300; i += 1) {
+    const ready = await evaluate('(() => { try { return !!document.getElementById("app") && ' +
+      'document.body.classList.contains("is-ready"); } catch (e) { return false; } })()');
+    if (ready) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  const close = () => {
+    try { socket.close(); } catch (e) { /* gone */ }
+    try { browser.kill(); } catch (e) { /* gone */ }
+    try { server.close(); } catch (e) { /* gone */ }
+    try { rmSync(profile, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+  };
+  return { evaluate, close };
+}
+
+/* ------------------------------------------------------------- the test -- */
+
+test('every class this pane draws is one a loaded sheet moves a value with', async () => {
+  /* The sheets have to be the ones the page loads, or this judges a set
+     nobody sees. Read off the page rather than listed here. */
+  const hrefs = SHEETS;
+  assert.deepEqual(hrefs,
+    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css'],
+    'the page stopped loading the sheets this check reads: ' + JSON.stringify(hrefs));
+
+  /* Seven states, in the fake DOM, exactly as the rest of this file drives the
+     pane. The tree each one draws is serialised for the browser. */
+  const states = sweepStates();
+  const trees = [];
+  const thinnest = [];
   for (const [name, options] of states) {
     const dom = await boot(options);
     const app = dom.doc.getElementById('app');
     assert.ok(app, 'the page lost #app on ' + name);
-    const classed = findAll(app, (n) => (n.className || '').trim() !== '');
 
-    /* The sweep reads the whole of #app, which is the shell's chrome as well
-       as the pane's panels, because the pane writes into the filter bar too.
-       The floor below counts only what the PANE drew: a pane that never
-       mounted still leaves the rail, the topbar and the gate behind it, so a
-       floor over #app is a floor a broken pane walks under. The thinnest of
-       these states is the failed read, at 36 classed elements. */
+    /* The floor counts only what the PANE drew. A pane that never mounted
+       still leaves the rail, the topbar and the gate behind it, so a floor
+       over #app is a floor a broken pane walks under. */
     const content = dom.doc.getElementById('content');
     assert.ok(content, 'the pane drew no result region at all on ' + name);
     const drew = findAll(content, (n) => (n.className || '').trim() !== '');
-    assert.ok(drew.length > 25,
+    assert.ok(drew.length > CONTENT_FLOOR,
       'the pane drew only ' + drew.length + ' classed elements on ' + name +
-      ', so this state was judged empty');
+      ', at or under the floor of ' + CONTENT_FLOOR + ', so this state was judged empty');
+    thinnest.push([name, drew.length]);
 
-    for (const node of classed) {
-      for (const cls of node.className.trim().split(/\s+/)) {
-        judged += 1;
-        if (PAINTED.bySheet.has(cls) || UNPAINTED_ON_PURPOSE.has(cls)) continue;
-        const where = (node.tagName || '?').toLowerCase() + '.' +
-          node.className.trim().split(/\s+/).join('.');
-        if (!unpainted.has(cls)) unpainted.set(cls, name + ': <' + where + '>');
-      }
-    }
+    trees.push([name, serialise(app)]);
   }
 
   /* The heading row this check exists for has to be inside what it walked, or
@@ -2459,11 +2817,292 @@ test('every class this pane draws is one a sheet the page loads can paint', asyn
   assert.ok(headings.length >= 3,
     'the retention grid drew ' + headings.length + ' column headings');
 
-  assert.ok(judged > 400, 'only ' + judged + ' class names were judged across seven states');
-  assert.deepEqual([...unpainted.entries()], [],
-    'the pane draws classes no sheet the page loads defines, which paint nothing and ' +
-    'are invisible to every other check: ' + JSON.stringify([...unpainted.entries()]));
+  const painter = await openPainter();
+  try {
+    const ready = await painter.evaluate(PAINT_PROGRAM);
+    assert.equal(ready, 'ready', 'the paint program did not install');
+
+    /* Fail closed on a token-blind page. Every colour in these sheets is
+       color-mix() over a custom property; on a page where --cyan resolves to
+       nothing, every one of those declarations is invalid at computed-value
+       time, every toggle moves nothing, and the check reports the whole pane
+       unpainted for a reason that has nothing to do with the pane. Asserted
+       before a single class is judged. */
+    const cyan = await painter.evaluate(
+      'getComputedStyle(document.documentElement).getPropertyValue("--cyan").trim()');
+    assert.ok(cyan && cyan.length > 0,
+      'the page resolved no --cyan, so its design tokens are not in scope and ' +
+      'every colour these sheets set would read as painting nothing');
+
+    /* The properties to read, from the browser's own parsed rules. A sheet it
+       will not expose is a hole in the narrowing, so it fails rather than
+       shortens the list silently. */
+    const declared = await painter.evaluate('window.__opsPaint.props()');
+    assert.deepEqual(declared.blocked, [],
+      'the browser would not expose the rules of ' + JSON.stringify(declared.blocked) +
+      ', so the properties those sheets declare are not in the read and a class ' +
+      'that only moves one of them would be reported as painting nothing');
+    assert.equal(declared.sheets, SHEETS.length,
+      'the page holds ' + declared.sheets + ' stylesheets and the markup links ' +
+      SHEETS.length + ', so the read is over a different set than the page loads');
+    assert.ok(declared.names.length > 80,
+      'only ' + declared.names.length + ' properties were read out of the loaded ' +
+      'sheets, so the narrowing is dropping most of what a class could move');
+
+    const unpainted = new Map();
+    let judged = 0;
+    let toggles = 0;
+    const perState = [];
+    for (const [name, tree] of trees) {
+      const built = await painter.evaluate(
+        'window.__opsPaint.build(' + JSON.stringify(tree) + ')');
+      assert.equal(built.error, undefined, name + ': ' + built.error);
+
+      /* The rebuild has to have produced the tree the fake DOM drew, or a
+         guard that finds nothing and a guard that is broken look identical
+         from the outside. Counted on both sides. */
+      /* The rebuild puts the pane's tree under the PAGE's #app and does not
+         merge the fixture's own attributes onto it. That is only sound while
+         the fixture dresses its #app with nothing but an id -- a fixture that
+         added a class would need merging, and silently not getting it would
+         lay the tree out under an ancestor the real page does not have. */
+      assert.deepEqual(Object.keys(tree.a).sort(), ['id'],
+        name + ': the fixture now dresses #app with ' + JSON.stringify(tree.a) +
+        '. The rebuild leaves the real page\'s #app alone, so those attributes ' +
+        'are not on the element the tree is judged under');
+      assert.equal(built.appAttrs, 'class id',
+        name + ': the page\'s own #app carries "' + built.appAttrs + '" rather than ' +
+        '"class id", so the rebuilt tree is not sitting under the grid container ' +
+        'aria.css:187 gives the real pane');
+
+      const expected = countElements(tree);
+      assert.equal(built.built, expected,
+        name + ': the browser rebuilt ' + built.built + ' elements from a tree of ' +
+        expected + ', so the page is not holding what the pane drew');
+
+      const verdict = await painter.evaluate(
+        'window.__opsPaint.judge(' + JSON.stringify(declared.names) + ', 8)');
+
+      /* Every class the pane drew has to BE in the rebuilt tree, or the sweep
+         judges a smaller set than it walked and reports nothing about the
+         difference. A class the rebuild dropped is not a class that paints --
+         it is a class nobody looked at, and the two are indistinguishable
+         from the outside. Found by the battery: dropping the serialised
+         root's attributes took `app` off #app and the sweep stayed green. */
+      assert.deepEqual(verdict.seen, classesIn(tree),
+        name + ': the rebuilt tree carries a different set of classes than the pane ' +
+        'drew, so the sweep judged a set the pane does not produce');
+      judged += verdict.classes;
+      toggles += verdict.toggles;
+      perState.push([name, verdict.classes, verdict.painted.length]);
+      for (const miss of verdict.unpainted) {
+        if (UNPAINTED_ON_PURPOSE.has(miss.cls)) continue;
+        if (!unpainted.has(miss.cls)) {
+          unpainted.set(miss.cls, name + ': <' + miss.where + '> and ' +
+            (miss.carriers - 1) + ' other element(s)');
+        }
+      }
+    }
+
+    /* Counted from the run. A loop that ran zero times asserts nothing. */
+    assert.ok(judged > 250,
+      'only ' + judged + ' class placements were judged across seven states');
+    assert.ok(toggles > 250, 'only ' + toggles + ' classes were actually removed and ' +
+      'the page laid out again, so most of this sweep asserted nothing');
+
+    console.log('  analytics paint: ' + trees.length + ' states, ' + judged +
+      ' class placements, ' + toggles + ' toggles, ' + declared.names.length +
+      ' declared properties read');
+    console.log('  analytics floor: thinnest states ' +
+      thinnest.slice().sort((a, b) => a[1] - b[1]).slice(0, 3)
+        .map(([n, c]) => n + ' ' + c).join(', ') + ' against a floor of ' + CONTENT_FLOOR);
+
+    assert.deepEqual([...unpainted.entries()], [],
+      'the pane draws classes that move no value any loaded sheet sets, so they paint ' +
+      'nothing and are invisible to every other check: ' +
+      JSON.stringify([...unpainted.entries()]));
+  } finally {
+    painter.close();
+  }
 });
+
+/* Every class in a serialised tree, from the class attribute the pane wrote.
+   The browser is asked for the same set off the rebuilt tree, and the two must
+   agree or the rebuild lost something. */
+function classesIn(spec) {
+  const out = new Set();
+  /* The root is #app, which the shell owns and the pane never writes to, so it
+     is skipped on both sides -- judge() skips it too. */
+  (function walk(node) {
+    if (node.t !== undefined) return;
+    const raw = node.a && node.a['class'];
+    if (raw && raw.trim()) for (const cls of raw.trim().split(/\s+/)) out.add(cls);
+    for (const child of node.c) walk(child);
+  })({ t: undefined, a: {}, c: spec.c });
+  return [...out].sort();
+}
+
+function countElements(spec) {
+  if (spec.t !== undefined) return 0;
+  return spec.c.reduce((n, child) => n + countElements(child), 0) + 1;
+}
+
+/* The floor's own headroom, stated as a measurement rather than a sentence.
+   Stadiora/Aria#10678 item 3: the comment used to claim the thinnest state was
+   36 classed elements, giving the floor of 25 eleven of headroom. Three states
+   are thinner than 36. */
+test('the reporting floor sits under the thinnest answer this pane can draw', async () => {
+  const counts = [];
+  for (const [name, options] of sweepStates()) {
+    const dom = await boot(options);
+    const content = dom.doc.getElementById('content');
+    counts.push([name, findAll(content, (n) => (n.className || '').trim() !== '').length]);
+  }
+  const [thinnestName, thinnest] = counts.slice().sort((a, b) => a[1] - b[1])[0];
+  assert.ok(thinnest > CONTENT_FLOOR,
+    'the thinnest state, ' + thinnestName + ', draws ' + thinnest + ' classed elements, ' +
+    'at or under the floor of ' + CONTENT_FLOOR + ', so the floor no longer separates ' +
+    'a drawn pane from an unmounted one');
+
+  /* The other arm: the floor has to be above what an unmounted pane leaves
+     behind, or it is a number every state clears including the broken one.
+     Measured by emptying the result region the way a pane that never ran
+     would leave it. */
+  const dom = await boot({});
+  const content = dom.doc.getElementById('content');
+  while (content.childNodes.length) content.removeChild(content.childNodes[0]);
+  const unmounted = findAll(content, (n) => (n.className || '').trim() !== '').length;
+  assert.ok(unmounted < CONTENT_FLOOR,
+    'an unmounted pane leaves ' + unmounted + ' classed elements under #content, at or ' +
+    'above the floor of ' + CONTENT_FLOOR + ', so the floor would pass a pane that ' +
+    'never drew anything');
+
+  console.log('  analytics floor: thinnest drawn state ' + thinnestName + ' at ' + thinnest +
+    ', unmounted at ' + unmounted + ', floor ' + CONTENT_FLOOR +
+    ' — ' + (thinnest - CONTENT_FLOOR) + ' of headroom above, ' +
+    (CONTENT_FLOOR - unmounted) + ' below');
+});
+
+/* Every class the pane's own source can write is either drawn by one of the
+   seven answers above, or named here with the branch that would draw it.
+   Stadiora/Aria#10678 item 2: the sweep judges what seven answer shapes DRAW,
+   which is not every branch the source has, and the difference was stated as
+   zero.
+
+   The scan below is deliberately not a single pattern over the source. This
+   pane writes a class four ways -- a className property, an assignment, an
+   SVG 'class' attribute, and a ternary of two literals -- and a scan that
+   knows one of them reports the others as absent rather than as unread. That
+   is how ln-pt hid from an earlier draft of this very check: it is an SVG
+   attribute, so a className scan never saw it, and a class the sweep had
+   never judged looked accounted for. Instead every SITE is found first, and
+   a site that yields no literal has to be named below or this fails. */
+const COMPUTED_SITES = new Map([
+  ['toneClass(one.color)', 'pane-analytics.js:82 builds "tone-" + a value from ' +
+    'SERIES_TONE, so the class is concatenated rather than written. The tones ARE ' +
+    'drawn by the sweep above, which judges them; they are unreadable here, not unjudged.'],
+]);
+
+const NEVER_REACHED = new Map([
+  ['kpi-foot', 'pane-analytics.js:716 draws a KPI footnote only for a tile that ' +
+    'carries one, and no tile in any of the seven answers does. aria.css:505 defines it.'],
+  ['ln-pt', 'pane-analytics.js:399 marks a single isolated reading -- one day with ' +
+    'figures between two days without -- and no fixture here produces one. ' +
+    'pane-analytics-v2.css:48 defines it.'],
+]);
+
+test('the classes this pane can write are the ones the sweep judged, plus a named few', async () => {
+  const drawn = new Set();
+  for (const [, options] of sweepStates()) {
+    const dom = await boot(options);
+    for (const node of findAll(dom.doc.getElementById('app'),
+      (n) => (n.className || '').trim() !== '')) {
+      for (const cls of node.className.trim().split(/\s+/)) drawn.add(cls);
+    }
+  }
+  /* SVG carries its class as an attribute, and the fake DOM keeps it there
+     rather than on className, so the walk above cannot see it. Read both. */
+  for (const [, options] of sweepStates()) {
+    const dom = await boot(options);
+    for (const node of findAll(dom.doc.getElementById('app'),
+      (n) => (n.getAttribute && (n.getAttribute('class') || '').trim() !== ''))) {
+      for (const cls of node.getAttribute('class').trim().split(/\s+/)) drawn.add(cls);
+    }
+  }
+
+  /* Every site in the pane's source that puts a class on an element. Found by
+     position, then read for literals, so a shape this scan cannot read is a
+     failure rather than a silence. */
+  const SITE = /(?:\.className\s*(?:\+?=)|\bclassName\s*:|'class'\s*:)/g;
+  const sites = [];
+  for (const found of PANE_SRC.matchAll(SITE)) {
+    /* The value can run past the end of the line in a ternary, so read to the
+       next line break that is not inside the expression: two lines is enough
+       for every shape in this file and is checked by the unread count below. */
+    const after = PANE_SRC.slice(found.index + found[0].length, found.index + found[0].length + 160);
+    const value = after.split('\n').slice(0, 2).join('\n');
+    const literals = [...value.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+    const line = PANE_SRC.slice(0, found.index).split('\n').length;
+    sites.push({ line, value: value.trim(), literals });
+  }
+  assert.ok(sites.length > 60,
+    'only ' + sites.length + ' class-writing sites were found in pane-analytics.js, ' +
+    'so the site scan is finding a fraction of what is there');
+
+  const literals = new Set();
+  const unread = [];
+  for (const site of sites) {
+    /* A site whose first literal is not the class -- an attribute object where
+       'class' is computed -- yields nothing here and has to be named. */
+    const first = /^\s*'([^']*)'/.exec(site.value);
+    const ternary = /^\s*[^,;\n]*\?\s*'([^']*)'\s*:\s*'([^']*)'/.exec(site.value);
+    if (ternary) {
+      for (const part of [ternary[1], ternary[2]]) {
+        for (const cls of part.trim().split(/\s+/)) if (cls) literals.add(cls);
+      }
+    } else if (first) {
+      for (const cls of first[1].trim().split(/\s+/)) if (cls) literals.add(cls);
+    } else {
+      unread.push(site.value.split('\n')[0].replace(/[,;].*$/, '').replace(/[)\s}]*$/, ')').trim());
+    }
+  }
+
+  assert.deepEqual([...new Set(unread)].sort(), [...COMPUTED_SITES.keys()].sort(),
+    'a class-writing site in pane-analytics.js produces no literal this scan can read ' +
+    'and is not named as computed, so the classes it writes are unaccounted for: ' +
+    JSON.stringify([...new Set(unread)]));
+
+  const missing = [...literals].filter((cls) => !drawn.has(cls)).sort();
+  assert.deepEqual(missing, [...NEVER_REACHED.keys()].sort(),
+    'the set of classes no answer shape reaches has changed. The sweep above judges ' +
+    'what seven answers DRAW, so anything here is a class it never saw: ' +
+    JSON.stringify(missing.map((cls) => [cls, NEVER_REACHED.get(cls) || 'no reason recorded'])));
+
+  /* Both of them are defined by a sheet the page loads, so neither is a second
+     live instance of #10456 hiding behind a branch the fixtures do not reach.
+     A selector-list read is all this needs: it asserts a rule EXISTS for the
+     class, not that the rule paints -- the sweep above is what judges paint,
+     and it cannot reach these two. */
+  const named = new Set();
+  for (const href of SHEETS) {
+    for (const rule of cssRules(read(href))) {
+      for (const selector of rule.selectors) {
+        for (const found of selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) named.add(found[1]);
+      }
+    }
+  }
+  for (const cls of NEVER_REACHED.keys()) {
+    assert.ok(named.has(cls),
+      cls + ' is a class this pane can write, no answer shape here reaches it, and no ' +
+      'sheet the page loads names it either -- which is exactly the shape of #10456');
+  }
+
+  console.log('  analytics literals: ' + drawn.size + ' classes drawn and judged, ' +
+    sites.length + ' class-writing sites in the pane source, ' + literals.size +
+    ' readable classes, ' + (literals.size - missing.length) + ' of ' + literals.size +
+    ' reached by the seven answers, ' + COMPUTED_SITES.size + ' computed site(s) named');
+});
+
 
 test('the retention grid keeps the heading class that paints and none that do not', async () => {
   const dom = await boot({});
@@ -2485,9 +3124,18 @@ test('the retention grid keeps the heading class that paints and none that do no
      column headed on the left sits away from the numbers under it. */
   assert.deepEqual((size.className || '').trim().split(/\s+/), ['r'],
     'the People heading is no longer exactly the class that paints it: ' + size.className);
+  /* Stadiora/Aria#10678 item 5: this was one assert.equal(…, 1, 'no rule
+     right-aligns …'), which fires on 0 and on 2 and says the same thing both
+     times -- so a SECOND right-aligning rule failed the build claiming the
+     opposite of what happened. The two outcomes are different facts and now
+     say so. */
   const aligns = cssRules(read('assets/aria.css'))
     .filter((rule) => rule.targets(/\.tbl\s+th\.r\b/))
     .filter((rule) => /text-align:\s*right/.test(rule.body));
-  assert.equal(aligns.length, 1,
+  assert.ok(aligns.length > 0,
     'no rule in aria.css right-aligns .tbl th.r, so `r` on the heading paints nothing either');
+  assert.ok(aligns.length < 2,
+    aligns.length + ' rules in aria.css right-align .tbl th.r. The class still paints, ' +
+    'but two rules setting one property is a cascade this check can no longer read as ' +
+    'one fact: ' + JSON.stringify(aligns.map((rule) => rule.selectors.join(', '))));
 });

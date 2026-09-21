@@ -216,12 +216,14 @@
 
 /* ------------------------------------------------------------ responsive */
 
-@media (max-width: 980px) {
-  /* aria.css drops the hero to two columns below 980px and moves its third
-     child to a row of its own — written against the mock, where that child is
-     a .row. Here it is the chip strip. */
-  .hero > .hero-chips { grid-column: 1 / -1; }
-}
+/* The scoped `.hero > .hero-chips { grid-column: 1 / -1 }` copy that used to
+   sit in a `@media (max-width: 980px)` block here is gone: `aria.css:932` now
+   carries that line for every pane, so this was the same selector at the same
+   specificity with the same value, one sheet later in the cascade. Measured
+   identical at 360/375/768/980/981/1280px in both themes, before and after
+   its removal — and `scripts/ops-hero-narrow.test.mjs` now drives this page,
+   so the shared rule is observed doing the work here rather than assumed to.
+   Stadiora/Aria#10397 criterion 4. */
 
 @media (max-width: 720px) {
   /* A card head with a title, a subtitle and a source chip does not fit a
