@@ -52,6 +52,12 @@
      and a row describing a guard it no longer describes is invisible here.
      The table is also found by its exact header line, so reformatting that
      header is a failure rather than a silent skip.
+   - A file path spelled without a directory AND with an extension no file in
+     `ops/`, `ops/assets/`, `scripts/` or `.github/workflows/` uses. The sweep
+     reads a bare `name.ext` as a path only when the tree already has that
+     extension, because `payload.data` and `availability.state` are spelled
+     the same way. A span carrying a directory is swept whatever its
+     extension.
    - Prose. This file judges the fenced blocks and the file paths the README
      names. A sentence that restates a block's content in English, or makes a
      claim no block carries, is not judged. The remedy used in the rewrite is
@@ -129,11 +135,22 @@ const WORKFLOWS = list('.github/workflows').filter((f) => f.endsWith('.yml'));
    that never closes are failures too. A claims fence shown as an EXAMPLE
    inside another fenced block is read as a real one: this reader is
    line-based and does not track an enclosing fence, which is why the format
-   is described in prose here and never demonstrated. */
+   is described in prose here and never demonstrated. A fence inside a
+   blockquote or a list item is a real block to CommonMark and cannot be
+   judged here either, so it is refused by name rather than skipped. */
 function claimBlocks(md) {
   const lines = md.split('\n');
   const blocks = new Map();
   for (let i = 0; i < lines.length; i += 1) {
+    /* A fence inside a Markdown container — a blockquote, a list item — is
+       a real claims block to CommonMark and is NOT parsed here. It is a
+       failure rather than a silent skip, which is the whole point of
+       taking any line that says `claims` after a fence. */
+    const contained = /^[>\s]*>[>\s]*(`{3,}|~{3,})\s*claims\b/.exec(lines[i])
+      || /^\s*(?:[-*+]|\d+[.)])\s+(`{3,}|~{3,})\s*claims\b/.exec(lines[i]);
+    assert.ok(!contained,
+      `${README_PATH}:${i + 1}: a claims fence inside a Markdown container (blockquote or list ` +
+      'item). This reader is line-based and cannot judge one; move it to the top level.');
     const fence = /^(\s*)(`{3,}|~{3,})\s*claims\b(.*)$/.exec(lines[i]);
     if (!fence) continue;
     const open = /^\s+id=([a-z0-9-]+)\s*$/.exec(fence[3]);
@@ -163,10 +180,14 @@ const BLOCKS = claimBlocks(README);
 
 /* ------------------------------------------------------- what a page loads */
 
-const ASSET_REF = /(?:<link\b[^>]*\bhref=|<script\b[^>]*\bsrc=)["']assets\/([A-Za-z0-9._-]+)["']/g;
+const ASSET_REF = /(?:<link\b[^>]*\bhref\s*=\s*|<script\b[^>]*\bsrc\s*=\s*)["']assets\/([A-Za-z0-9._-]+)["']/g;
 
+/* Comments are cut before the tags are counted: a page that keeps an old
+   <link> commented out does not load it, and counting it made `ops.css`
+   read as loaded by a page that only remembers it. Whitespace around the
+   `=` is legal HTML and is read here for the same reason. */
 function loadedAssets(page) {
-  const html = read(path.join('ops', page));
+  const html = read(path.join('ops', page)).replace(/<!--[\s\S]*?-->/g, '');
   return [...html.matchAll(ASSET_REF)].map((m) => m[1]);
 }
 
@@ -438,7 +459,7 @@ function v1StatusClasses() {
 function classTokens(src) {
   const tokens = new Set();
   const add = (text) => text.split(/\s+/).filter(Boolean).forEach((t) => tokens.add(t));
-  for (const m of src.matchAll(/\bclass="([^"]*)"/g)) add(m[1]);
+  for (const m of src.matchAll(/\bclass\s*=\s*(["'])([^"']*)\1/g)) add(m[2]);
   for (const m of src.matchAll(/\bclassName\s*[:=]\s*(['"`])([^'"`]*)\1/g)) add(m[2]);
   for (const m of src.matchAll(/\bsetAttribute\(\s*(['"`])class(?:Name)?\1\s*,([^)]*)\)/g)) {
     for (const lit of m[2].matchAll(/(['"`])([^'"`]*)\1/g)) add(lit[2]);
@@ -747,6 +768,9 @@ test(SWEEP_TEST, () => {
   const deletedByBasename = new Map();
   for (const file of deleted) deletedByBasename.set(path.basename(file), file);
 
+  const EXTENSIONS = new Set([...inTree, ...deleted]
+    .map((f) => path.extname(f).toLowerCase()).filter(Boolean));
+
   /* Paths in the Aria monorepo rather than here. They are named with their
      monorepo directory, which is what this recognises them by. */
   const FOREIGN = /^(docs|app-backend|aria-api|mobile-app|coaches-web|packages)\//;
@@ -756,10 +780,17 @@ test(SWEEP_TEST, () => {
   let judged = 0;
   lines.forEach((line, i) => {
     for (const span of line.matchAll(/`([^`]+)`/g)) {
-      const candidate = /^([A-Za-z0-9._/-]+\.(?:css|js|mjs|html|yml))(?::\d+(?:[-,]\d+)*)?$/.exec(span[1]);
+      const candidate = /^([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)(?::\d+(?:[-,]\d+)*)?$/.exec(span[1]);
       if (!candidate) continue;
       const file = candidate[1];
       if (FOREIGN.test(file)) continue;
+      /* A span carrying a DIRECTORY is a path whatever its extension, which
+         is how an invented `ops/assets/x.json` is caught rather than read as
+         prose. A bare basename is a path only if the tree or the
+         deleted-assets block uses that extension, because `payload.data` and
+         `availability.state` are spelled exactly like one otherwise. The
+         extension list is read off the files, never typed. */
+      if (!file.includes('/') && !EXTENSIONS.has(path.extname(file).toLowerCase())) continue;
       judged += 1;
       /* The spellings this README uses are resolved to repository paths before
          they are looked up, rather than matched on their last segment: a span
@@ -785,10 +816,10 @@ test(SWEEP_TEST, () => {
 /* Five blocks cannot derive WHICH rows they carry, only what each row says.
    Two read their subjects from the README — `source-anchors` (which comment
    to go and find) and `deleted-assets` (which absent path to look for) — and
-   two read them from a hand-written array up in this file:
+   three read them from a hand-written array up in this file:
    `v1-status-classes` from V1_STATUS_FAMILIES and V1_STATUS_SINGLETONS,
-   `spend-colour-gate` from
-   COLOUR_PROBES. In all four, deleting a subject deletes the expectation with
+   `spend-colour-gate` from COLOUR_PROBES and `spend-write-gate` from
+   WRITE_PROBES. In all five, deleting a subject deletes the expectation with
    it and runs green.
 
    So the pin is the SET, keyed per row, not the count. A count absorbs every
@@ -799,6 +830,13 @@ test(SWEEP_TEST, () => {
 
    Every other block derives its row set from the tree, the pages, the
    registry or the sheets, so shrinking one is already red without a pin. */
+/* The status families, pinned as prefixes rather than as rows. For each one
+   the members are recomputed from ops.css HERE, independently of
+   V1_STATUS_FAMILIES, so narrowing a family prefix in that array shrinks the
+   block while this still demands all seven `.badge*` rows. A family leaves
+   only by being deleted in both places. */
+const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
+
 const REQUIRED_ROWS = {
   'source-anchors': [
     'ops/assets/pane-analytics.js "`features.coverageNote` carries two facts"',
@@ -813,11 +851,12 @@ const REQUIRED_ROWS = {
      WRITE_PROBES: a pin computed from the array it is pinning moves with the
      deletion and pins nothing. Deleting a subject means deleting it twice, in
      two places in this file, both in the diff. */
-  /* One literal per family, so a family deleted from V1_STATUS_FAMILIES takes
-     a pinned row with it, plus every hand-chosen singleton. The rest of each
-     family is derived out of ops.css and needs no pin. */
+  /* The seven hand-chosen singletons. The four families are pinned by
+     REQUIRED_FAMILIES below instead, because one representative row per
+     family is not a pin on the family: narrow `badge` to `badge-ok` in
+     V1_STATUS_FAMILIES, drop the six other rows, and a pin on `.badge-ok`
+     is still satisfied. */
   'v1-status-classes': [
-    '.badge-ok', '.tag-mobile', '.callout-warn', '.verdict-better',
     '.flagchip', '.build', '.masked', '.reveal-note',
     '.nav-count', '.btn-danger', '.field-error',
   ],
@@ -866,5 +905,19 @@ test('the run reports what it judged', () => {
     assert.deepStrictEqual(gone, [],
       `claims id=${id} no longer judges rows this file pins by name: ${gone.join(', ')} — ` +
       'a subject was deleted, or REQUIRED_ROWS has to lose it on purpose');
+  }
+  const statusRows = new Set((BLOCKS.get('v1-status-classes')?.lines || [])
+    .map((l) => l.trim().split(' = ')[0].trim()));
+  const sheet = read('ops/assets/ops.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const declared = new Set([...sheet.matchAll(/\.([A-Za-z][A-Za-z0-9_-]*)/g)].map((m) => m[1]));
+  for (const family of REQUIRED_FAMILIES) {
+    const members = [...declared].filter((n) => n === family || n.startsWith(`${family}-`)).sort();
+    assert.ok(members.length > 0,
+      `ops/assets/ops.css declares no .${family} class, so that family is judging nothing`);
+    const absent = members.filter((n) => !statusRows.has(`.${n}`));
+    assert.deepStrictEqual(absent, [],
+      `claims id=v1-status-classes no longer carries every .${family} class ops.css declares: ` +
+      `${absent.map((n) => `.${n}`).join(', ')} — the family was narrowed, or REQUIRED_FAMILIES ` +
+      'has to lose it on purpose');
   }
 });

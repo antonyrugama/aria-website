@@ -1895,9 +1895,13 @@ pane's own classes, each because a shared rule assumes content this pane does no
 
 ### Known contrast debt, inherited — a historical record
 
-**Nothing in this section describes a pairing any page draws today.** It is the record of the
-v1 status palette: what it measured, the arithmetic the figures come from, and the two
-page-scoped fixes that were shipped against it. Both of those fixes have since been deleted,
+**This section is a record of the v1 status palette, not a reading of what pages paint today**
+— what it measured, the arithmetic the figures come from, and the two page-scoped fixes that
+were shipped against it. Which of these classes anything still draws is the block below, and
+that block is derived: a row naming a page and reading `painted where drawn` is a live pairing
+rather than history. `.field-error` is one today, on the four pages that draw it, because
+`login.html` and `setup.html` still load `ops.css` — its 5.321 below is the ratio those two
+pages still paint. Both of those fixes have since been deleted,
 and every pane is now on the v2 layer, with its own `pane-*-v2.css` and its own inks. It is kept
 because the arithmetic recomputes from the shipped tokens and the palette owner acts on these
 numbers, and because the first pane to draw one of these classes again inherits the debt with it.
@@ -1965,8 +1969,13 @@ Three lines in that block are worth reading twice:
   same story and no longer is: `aria-website#83` gave `pane-users-v2.css` a `.locked.masked` rule,
   which is why the block now reads `painted where drawn` for it. Nothing in this section was
   edited to say so — the block is derived, so the sibling merge moved the line itself.
-- **Everything else is drawn by no page at all.** The whole badge, flagchip, platform-tag and
-  verdict vocabulary below is declared in `ops.css` and assembled by nothing the scan can see.
+- **`.field-error` is drawn on four pages and painted on all four.** It is the one pairing in
+  this record that is still live rather than historical, which is why the 5.321 figure below is
+  a measurement of the sign-in and setup pages as they stand and not of a page that is gone.
+
+The badge, flagchip, platform-tag and verdict vocabularies are assembled by nothing the scan can
+see — every one of their rows reads `(no page)` — but that too is the block's answer rather than
+this sentence's, and a class that starts being drawn again moves its own line.
 
 What the figures were. The ratios are computed rather than eyeballed, and are reproducible from
 the shipped tokens. The badge tint is semi-transparent, so the background that decides is the
@@ -2046,8 +2055,8 @@ Deliberately untouched on those two pages, with the worst figure each reached on
 figure is of `ops.css`'s rule, which is no longer what the users pane loads — `--text-3` on a
 selected row 4.771, and `.field-error` 5.321. `.field-error` had a second reason: the sign-in
 page draws it too, and darkening it under a page scope would have given one component two inks
-across pages for no contrast gain. That is still true, and `.field-error` is the one class in
-this record that is drawn on four pages and painted on all four.
+across pages for no contrast gain. That is still true, and the block above is where the
+pages it is drawn on are counted.
 
 What was left unfixed. These were recorded so that the first pane to draw one did not ship it
 unnoticed, and that is still what they are for; the block above is what now decides whether
@@ -2282,7 +2291,9 @@ the enumeration that used to sit in this paragraph said nine and fell three behi
 blocks added in review and one added by the commit that fixed it. Two row sets are held by a
 test instead of a block, and are the last two lines: the sweep requires every repository file
 path this README spells in a code span to be in the tree or declared in `deleted-assets`, which
-is what makes a file deleted elsewhere red here rather than quietly stale; and the checks table
+is what makes a file deleted elsewhere red here rather than quietly stale — a span carrying a
+directory counts whatever its extension, and a bare `name.ext` counts when the tree uses that
+extension, which is what keeps `payload.data` out of it; and the checks table
 above must carry a row for every `check-ops-*.mjs` in `scripts/`, which is how the sixth browser
 guard got a row the day it landed instead of the day somebody noticed. Neither judges the
 **words** in the row — only that the row is there.
@@ -2310,10 +2321,12 @@ and a test, every browser guard in the tree has a row in the checks table
 
 **NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
 restating a block in English, or claiming something no block carries, is nobody's red. Only
-statically spelled `assets/…` tags are seen, so a runtime-injected asset is invisible. The
+statically spelled `assets/…` tags are seen, so a runtime-injected asset is invisible; a tag
+inside an HTML comment is cut before the count, because a page that only remembers a stylesheet
+does not load it. The
 fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
-are the class tokens written in a page and the scripts it loads — `class=` and `class:`,
-`className`, `classList` and `setAttribute('class', …)`, each with a literal — and that error runs
+are the class tokens written in a page and the scripts it loads — `class=` in either quote,
+`class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal — and that error runs
 **both ways**, so neither value is the safe one to trust: a name in a comment counts as a draw, and
 a class assembled at run time or spelled through some other helper is invisible, so a `(no page)`
 can be an under-report exactly as a named page can be an over-report. `painted where drawn` asks
