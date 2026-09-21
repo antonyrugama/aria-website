@@ -72,11 +72,14 @@
        the twenty-ninth review, each one a place where the walk's idea of
        which bytes are MARKUP disagreed with the parser's: a comment closed
        by `--!>`, `<!-->` or `<!--->` rather than `-->` (M30-A1, M30-A2,
-       M30-A3), and a pragma inside <noframes>, which is raw text (M30-A5).
+       M30-A3), and a pragma inside <noframes>, which is raw text (M30-A6).
        The fifth, a double-escaped <script>, is REFUSED rather than fixed
-       (M30-A4): `<script><!--<script>` moves the end of the element
+       (M30-A5): `<script><!--<script>` moves the end of the element
        somewhere this walk cannot compute, so it declines to read the page
-       at all instead of reading a pragma out of script text.
+       at all instead of reading a pragma out of script text. A sixth came
+       out of the thirtieth: a raw-text element ends where the TOKENISER
+       ends it, not at the first `</name`, so `</scriptx a="` ends a
+       <script> in no browser and ended one here (M31-A1).
        What is left, and all that is: whether the browser ENFORCES the policy
        this reads. A header can deliver another one, and nothing here can see
        a header. That is the line no reader of a FILE gets past.
@@ -282,26 +285,32 @@ const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
    entirely, which is valid HTML, so a fourth sheet written that way repainted
    every card with 75 tests green (found in the eighteenth review of #75).
 
-   The tag scan below stops at the first `>`, which no HTML parser does: a
-   `>` inside a quoted attribute value cuts a tag in half and the half with
-   the `rel` on it disappears, which is a fourth sheet neither side of an
-   equality drawn from THIS ARRAY can notice (found in the nineteenth review
-   of #75). Two independent readings of the page's raw text hold it instead
-   of one, and neither is computed from this array: the number of
-   `rel=stylesheet` spellings in the file, and the quote PARITY of each tag,
-   which is odd exactly when the scan cut one in half.
+   The tag scan that used to stand below stopped at the first `>`, which no
+   HTML parser does: a `>` inside a quoted attribute value cut a tag in half
+   and the half with the `rel` on it disappeared, which was a fourth sheet
+   neither side of an equality drawn from THIS ARRAY could notice (found in
+   the nineteenth review of #75). Two further readings of the raw text held
+   it then -- a count of `rel=stylesheet` spellings and the quote PARITY of
+   each tag. Both are GONE, with the scan they were propping up: the walk
+   below reads a quoted attribute value the way the parser does, so a `>`
+   inside one no longer cuts a tag in half, and a quote left open runs to
+   the next `"` anywhere in the document -- or, if there is none, to EOF,
+   where the tag is dropped exactly as the parser drops it. What holds the
+   invariant now is a single equality against the list above, `PAGE_SHEETS`
+   against `V2_STYLESHEETS` in the accent-ink test at the bottom of this
+   file, and every read of the walk is gated on it having refused nothing.
 
-   Both of those read BYTES where the parser reads a decoded attribute, and
-   `rel="&#115;tylesheet"` is `rel="stylesheet"` to the browser and to
-   neither of them: a fourth sheet loaded that way repainted every card with
-   75 tests green (found in the twentieth review of #75). So the references
-   this reader can resolve it RESOLVES -- numeric, decimal and hex, decoded
-   once below, and both readings run over the decoded text -- and the ones
-   it cannot it REFUSES: `no character reference in the page survives the
-   decoder` fails on any `&` the decode leaves behind, which is every named
-   reference and every numeric one missing its `;`. That refusal is blunt in
-   the loud direction: an `&amp;` in this page's PROSE would red it too, and
-   the page has none today.
+   The walk reads BYTES where the parser reads a DECODED attribute value,
+   and `rel="&#115;tylesheet"` is `rel="stylesheet"` to the browser and not
+   to it: a fourth sheet loaded that way repainted every card with 75 tests
+   green (found in the twentieth review of #75). So the references it can
+   resolve it RESOLVES -- numeric, decimal and hex, applied to each
+   extracted attribute value on its own, which is the position the parser
+   resolves them in -- and the ones it cannot it REFUSES: `no character
+   reference in the page survives the decoder` fails on any `&` the decode
+   leaves behind, which is every named reference and every numeric one
+   missing its `;`. That refusal is blunt in the loud direction: an `&amp;`
+   in this page's PROSE would red it too, and the page has none today.
 
    What it still cannot see, in the browser's sense of "loads": anything a
    script injects. That USED to say the CSP closed it, and the CSP does not.
@@ -400,6 +409,31 @@ const commentEndOf = (html, lt) => {
   }
   return html.length;
 };
+/* Where a raw-text element ENDS, which is not the first `</name` in it. The
+   tokeniser's end-tag-name states only close the element when the name is
+   followed by HTML space, `/` or `>`; on anything else -- another letter,
+   or EOF -- they emit `</` and the buffered name as CHARACTERS and stay in
+   raw text. So `</scriptx` does not end a <script>, and reading it as one
+   built a tag named `scriptx` whose quoted attribute value then ran past
+   the real `</script>` and swallowed a whole <link rel=stylesheet>: Chrome
+   loaded four sheets and painted every card rgb(255, 0, 0) while 76 tests
+   passed and the refusal list stayed EMPTY (the thirtieth review of #75,
+   M30R-1). It is one instance per raw-text name, so the round that widened
+   the list above widened this with it.
+
+   The condition is a single character class rather than a state machine,
+   which is why this is DECIDED here and the double-escaped <script> below
+   is refused: the cost of being right about it is this loop. */
+const appropriateEndOf = (html, name, from) => {
+  const lower = html.toLowerCase();
+  let close = lower.indexOf('</' + name, from);
+  while (close >= 0) {
+    const after = html[close + 2 + name.length];
+    if (after !== undefined && (HTML_SP_SET.has(after) || after === '/' || after === '>')) break;
+    close = lower.indexOf('</' + name, close + 2);
+  }
+  return close;
+};
 /* The nodes of a document, in document order: start tags carrying the
    attribute MAP the tokeniser would build for them, end tags, comments and
    doctypes. The walk is the HTML tokeniser's, cut down to what this page
@@ -414,8 +448,11 @@ const commentEndOf = (html, lt) => {
    a doctype, and the text inside a <script> or a <noscript> are the same
    shape one level down. Each is DECIDED here for the spellings named below
    and REFUSED where it is not: the refusal list this returns is asserted
-   empty by both tests that read the walk, so a page wearing a shape this
-   walk does not model reds rather than being guessed at.
+   empty by every test that reads the walk, and WHICH tests those are is
+   derived from this file's source by the census at the bottom rather than
+   counted in this sentence -- the sentence said "both" when there were
+   three (the thirtieth review of #75, finding 2). So a page wearing a shape
+   this walk does not model reds rather than being guessed at.
 
    What the walk does, in the tokeniser's order: `<` followed by an ASCII
    letter starts a tag and nothing else does; `<!--` runs to wherever
@@ -430,7 +467,8 @@ const commentEndOf = (html, lt) => {
    with decodeRefs, and nothing else is.
 
    Two shapes are DROPPED rather than read. A tag that never closes -- EOF
-   inside it, which an unterminated quote also produces -- is dropped,
+   inside it, which an unterminated quote produces when no later `"` closes
+   the value -- is dropped,
    because the parser throws it away too, and reading one would be this file
    finding a policy in a tag the browser never built. An attribute whose name
    starts with `=` (`<meta =http-equiv=...>`, which the parser keeps as an
@@ -519,7 +557,7 @@ function nodesOf(html, refusals = []) {
     let end = j;
     if (!isEnd && name === 'plaintext') end = html.length;
     else if (!isEnd && RAW_TEXT_ELEMENTS.has(name)) {
-      const close = html.toLowerCase().indexOf('</' + name, j);
+      const close = appropriateEndOf(html, name, j);
       end = close < 0 ? html.length : close;
       if (name === 'script') {
         const text = html.slice(j, end).toLowerCase();
@@ -536,9 +574,12 @@ function nodesOf(html, refusals = []) {
   }
   return out;
 }
-/* Shapes the walk refused to model on THIS page. Both tests that read the
-   walk assert this is empty before they read anything out of it, so the
-   refusal is a red rather than a comment nobody runs. */
+/* Shapes the walk refused to model on THIS page. Every test that reads the
+   walk asserts this is empty, so the refusal is a red rather than a comment
+   nobody runs -- and the set of those tests is derived from this file's
+   source by `every test that reads the document walk asserts the walk
+   refused nothing`, because the sentence that used to stand here counted
+   them by hand and counted wrong. */
 const WALK_REFUSALS = [];
 const PAGE_NODES = nodesOf(RAW_HTML, WALK_REFUSALS);
 const PAGE_TAGS = PAGE_NODES.filter((n) => n.kind === 'start');
@@ -551,8 +592,14 @@ const META_TAGS = PAGE_TAGS.filter((n) => n.name === 'meta');
    qualifier is the finding: `noframes` was off the list and a `--!>` ended a
    comment the walk read past, so a gap held bytes the parser did not treat
    as text and a head-ending letter hid inside them (the twenty-ninth review
-   of #75, M29R-3 and M29R-5). The one shape left where a gap could still be
-   script is refused by the walk rather than measured here. */
+   of #75, M29R-3 and M29R-5). A raw-text element also ends where the
+   tokeniser ends it rather than at the first `</name`, which is the whole
+   of appropriateEndOf() above: `</scriptx a="` ended a <script> here and
+   nowhere else, and the tag the walk built out of it swallowed a <link>
+   that loaded a fourth stylesheet and painted every card rgb(255, 0, 0)
+   (the thirtieth review of #75, M30R-1). The one shape left where a gap
+   could still be script -- a double-escaped <script> -- is refused by the
+   walk rather than measured here. */
 const NODE_GAPS = PAGE_NODES.map((n, k) => RAW_HTML.slice(k ? PAGE_NODES[k - 1].end : 0, n.at));
 /* The names that keep the parser in <head>. <template> is deliberately NOT
    among them: a <meta> inside a template is inert, this walk cannot tell
@@ -4441,6 +4488,10 @@ test('every status tone here paints the -ink of a tint aria.css also declares', 
    reviews kept finding. */
 test('no sheet the page loads spells an ident with an escape, and no character reference '
   + 'in the page survives the decoder', () => {
+  assert.deepEqual(WALK_REFUSALS, [],
+    'the document walk refused to model a shape in this page, so nothing below may read a '
+    + 'node out of it: PAGE_SHEETS is the walk\'s answer, and a sheet it never saw holds no '
+    + 'escape and spells no reference here no matter what is written in it');
   assert.deepEqual(PAGE_SHEETS.filter((href) => read(href).includes('\\')), [],
     'a sheet the page loads holds a CSS escape, and every reader in this file compares the '
     + 'bytes of a property name, a selector and an at-keyword against a literal: `--ac\\63` '
@@ -4451,6 +4502,74 @@ test('no sheet the page loads spells an ident with an escape, and no character r
     + '`&amp;`, or a numeric one missing its `;` -- and the parser resolves references inside '
     + 'an attribute value where decodeRefs leaves them alone: an href or a rel that spells '
     + 'one is read here as bytes the browser never sees');
+});
+
+/* How many tests read the walk, counted by MACHINE rather than typed into a
+   sentence. Two docblocks above said "both tests that read the walk assert
+   the refusal list is empty"; there were three, and the third -- the escape
+   and character-reference test right above this one -- asserted nothing of
+   the kind. The sentence was not merely unproven, it was untrue, and
+   re-typing it as "three" would leave the next reader in exactly the same
+   position (the thirtieth review of #75, finding 2).
+
+   So no number is typed in prose any more. The reader set is derived here
+   from this file's own source: seed with nodesOf(), take the fixpoint of
+   top-level definitions that mention something already in the set, and a
+   test is a READER if its text names one of them. What the shape misses,
+   said plainly: it sees top-level statements and top-level comment blocks
+   that begin at column 0 -- a docblock is its own statement here, so prose
+   above a definition cannot leak into it -- and it sees the GATE only as
+   the literal `assert.deepEqual(WALK_REFUSALS, []` -- a gate written any
+   other way reds this test rather than passing it, and a test that merely
+   mentions a name in a comment inside its own body is counted as a reader
+   and has to carry the gate. Both of those are the loud direction. The
+   quiet direction -- a read this cannot see -- is a read from inside a
+   nested function defined in another test, which nothing in this file
+   does. */
+test('every test that reads the document walk asserts the walk refused nothing', () => {
+  assert.deepEqual(WALK_REFUSALS, [],
+    'the document walk refused to model a shape in this page, and this test is itself a '
+    + 'reader of it: the set it derives below is the walk\'s own output');
+  const lines = THIS_FILE.split('\n');
+  const heads = [];
+  lines.forEach((l, i) => {
+    if (/^(const|let|var|function|class|test|describe|\/\*)/.test(l)) heads.push(i);
+  });
+  const stmts = heads.map((at, k) => ({
+    at,
+    text: lines.slice(at, k + 1 < heads.length ? heads[k + 1] : lines.length).join('\n'),
+  }));
+  const walkNames = new Set(['nodesOf']);
+  for (let pass = 0; pass < 12; pass += 1) {
+    for (const s of stmts) {
+      const name = (s.text.match(/^(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/)
+        || [])[1];
+      if (!name || walkNames.has(name)) continue;
+      const rhs = s.text.slice(s.text.indexOf('=') + 1);
+      if ([...walkNames].some((w) => new RegExp('\\b' + w + '\\b').test(rhs))) walkNames.add(name);
+    }
+  }
+  const titleOf = (s) => (s.text.match(/^test\(\s*'([^']*)'/) || ['', s.text.slice(0, 60)])[1];
+  const tests = stmts.filter((s) => /^test\(/.test(s.text));
+  const readers = tests.filter((s) => [...walkNames]
+    .some((w) => new RegExp('\\b' + w + '\\b').test(s.text)));
+  const ungated = readers.filter((s) => !s.text.includes('assert.deepEqual(WALK_REFUSALS, []'));
+  assert.deepEqual(ungated.map((s) => titleOf(s) + ' (line ' + (s.at + 1) + ')'), [],
+    'a test reads a value the document walk produced without first asserting the walk refused '
+    + 'nothing, so on a page the walk cannot tokenise it reads a node the parser never built '
+    + 'and passes. Add `assert.deepEqual(WALK_REFUSALS, [], ...)` to it, or stop reading the '
+    + 'walk in it');
+  const counts = {
+    walkNames: walkNames.size,
+    tests: tests.length,
+    readers: readers.length,
+    gated: readers.length - ungated.length,
+  };
+  assert.deepEqual(counts, { walkNames: 8, tests: 77, readers: 4, gated: 4 },
+    'the shape of this file moved under the reader census: ' + JSON.stringify(counts) + '. '
+    + 'That is not a failure by itself -- it is this count refusing to be a sentence nobody '
+    + 'checks. Read the numbers, and if they are right, write them here');
+  console.log('walk readers judged: ' + JSON.stringify(counts));
 });
 
 test('the ink on a severity is the -ink of the accent that severity draws', async () => {
@@ -4476,9 +4595,11 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
      did.
 
      Deleted with it, as things this no longer needs to refuse: the
-     odd-quote check, because the walk cannot cut a tag in half -- an
-     unterminated quote runs to EOF and the tag is dropped, which reds here;
-     and the duplicate `href=`/`rel=` refusal, because the walk resolves a
+     odd-quote check, because the walk cannot cut a tag in half -- a quote
+     left open runs to the next `"` in the document, as the parser's does,
+     and a tag that reaches EOF without closing is dropped by both, which
+     reds here; and the duplicate `href=`/`rel=` refusal, because the walk
+     resolves a
      duplicate attribute the way the parser does, keeping the first
      (measured in Chrome, round 28), and `data-href` is an attribute named
      `data-href` to it rather than a boundary problem. A refusal that can no
