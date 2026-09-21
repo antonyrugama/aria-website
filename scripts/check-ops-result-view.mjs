@@ -924,17 +924,27 @@ const PREFLIGHT = [
           'this check cannot tell whether the COSTS fixture can draw the Group-the-bill-by ' +
           'switch. Re-derive it from whatever replaced it rather than deleting this check.';
       }
+      const body = decl[1].trim();
       const order = [...decl[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
-      /* An EMPTY array is not an unreadable shape. Routing [] to the message
-         below told the reader "do not assume the pane lost its switch" in the
-         one case where the pane has certainly lost it: with no groupings,
-         viewCard draws no switch for any fixture. Only a non-empty body this
-         cannot parse is a shape problem. */
-      if (!order.length && decl[1].trim() !== '') {
-        return `${rel} declares VIEW_ORDER but this check could not read any grouping names ` +
-          `out of ${JSON.stringify(decl[1].trim())} — it reads quoted string literals, and ` +
-          'that is not what this is. Teach it the new shape; do not assume the pane lost ' +
-          'its switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
+      /* A PARTLY read array is not a short array. ['category', RG] yields one
+         quoted string, and reporting that as the whole of VIEW_ORDER said the
+         pane could no longer draw its switch while the pane drew it from two
+         groupings. So the items are counted independently of the strings, and
+         anything this cannot account for falls to the unsupported-shape
+         message below, which tells the reader not to touch the floor.
+
+         An EMPTY array, by contrast, is not an unreadable shape: with no
+         groupings viewCard draws no switch for any fixture, so [] belongs in
+         the fewer-than-two case and not in the shape case. */
+      const items = body === '' ? []
+        : body.split(',').map((s) => s.trim()).filter((s) => s !== '');
+      if (order.length !== items.length) {
+        return `${rel} declares VIEW_ORDER as ${JSON.stringify(body)} and this check read ` +
+          `${order.length} quoted grouping name${order.length === 1 ? '' : 's'} out of ` +
+          `${items.length} item${items.length === 1 ? '' : 's'} — it reads quoted string ` +
+          'literals, and at least one of those is not one. Teach it the new shape; do not ' +
+          'assume the pane lost its switch, and do not touch EXPECTED_PAIRS.spend on the ' +
+          'strength of this.';
       }
       if (order.length < 2) {
         return `${rel} declares VIEW_ORDER as ${JSON.stringify(order)}, fewer than the two ` +
@@ -945,15 +955,20 @@ const PREFLIGHT = [
       const supplied = order.filter(has);
       if (supplied.length >= 2) return null;
       const missing = order.filter((k) => !has(k));
+      /* The whole point of reading VIEW_ORDER at run time is that the rule can
+         change, so the note about "service" has to be conditional on the rule
+         just read. Printed unconditionally it contradicted the sentence above
+         it the moment the pane put "service" INTO the order. */
+      const serviceNote = order.includes('service') ? '' :
+        ' Note that "service" does NOT count: the pane excludes it from the switch on ' +
+        'purpose (ops/assets/pane-spend.js:288-302) and draws it as a table instead.';
       return `the COSTS fixture supplies ${supplied.length} of the groupings the pane ` +
         `switches between. ${rel} reads ${JSON.stringify(order)} and viewCard draws the ` +
         'Group-the-bill-by switch only when two or more of them arrive with rows; this ' +
         `fixture is missing ${missing.map((k) => `"${k}"`).join(', ')}. Add rows for ` +
         `${missing.map((k) => `"${k}"`).join(', ')} rather than lowering ` +
         'EXPECTED_PAIRS.spend — the aria-pressed pair on that switch is the only ARIA ' +
-        'state this pane declares, and a floor of 0 would let the switch vanish unnoticed. ' +
-        'Note that "service" does NOT count: the pane excludes it from the switch on ' +
-        'purpose (ops/assets/pane-spend.js:288-302) and draws it as a table instead.';
+        `state this pane declares, and a floor of 0 would let the switch vanish unnoticed.${serviceNote}`;
     }
   }
 ];
@@ -991,8 +1006,11 @@ const PREFLIGHT = [
     if (problem) problems.push(`${entry.pane}: ${problem}`);
   }
   if (problems.length) {
-    console.error('\nA fixture in this file cannot produce the state its floor demands, so ' +
-      'the run would fail on a bare count with the cause 300 lines away:\n');
+    /* Neutral about which side is at fault: the same block reports a fixture
+       that cannot produce the state AND a declaration this check cannot read,
+       and the second is not a fixture problem. */
+    console.error('\nA pre-flight check stopped this run before Chrome started, so the cause ' +
+      'is here rather than 300 lines below as a bare count of 0:\n');
     for (const p of problems) console.error(`  - ${p}\n`);
     process.exit(1);
   }
