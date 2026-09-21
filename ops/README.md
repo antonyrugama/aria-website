@@ -955,24 +955,35 @@ than only by the page's `connect-src`.
 The pane that has no data yet says so, and says it without a promise it cannot keep: the state
 tells you the reporting behind it is unbuilt and that the release which builds it points the
 pane at it. It does not claim figures will appear "without another release", and the reason is
-not that the routes are unnamed. Every pane that names a read route names it in the envelope it
-hands its reader, and these are the routes:
+not that the routes are unnamed. Every `pane-*.js` in the tree has a line here, and the line is
+every `/api/…` string literal that file spells:
 
 ```claims id=pane-read-endpoints
+pane-alerts.js = /api/ops/alerts/problems, /api/ops/alerts/problems/, /api/ops/alerts/rules, /api/ops/alerts/rules/
 pane-analytics.js = /api/ops/usage
-pane-jobs-live-v2.js = /api/ops/alerts/problems
-pane-overview.js = /api/ops/summary
+pane-data.js = (no route literal)
+pane-evaluations.js = /api/ops/ciel/operations
+pane-jobs-live-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
+pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
+pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
-pane-run-history-v2.js = /api/ops/alerts/problems
+pane-run-history-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
 pane-spend.js = /api/ops/costs
+pane-users.js = /api/ops/users/, /api/ops/users/lookup
 ```
 
-A backend publishing either route changes nothing on its own, because a fixture is read only
-from `localStorage` on a loopback origin and a pane pointed at one is not pointed at the route.
-The README said the two fixture-capable panes' values were both `null`, which was false against
-those files at the head that said it; the block above is read out of every pane source, one hop
-from the `endpoint:` in the read envelope to the declaration it names. A pane that named a route
-this could not resolve would say so on its own line rather than drop out of the list.
+A backend publishing `/api/ops/usage` or `/api/ops/costs` changes nothing on its own, because a
+fixture is read only from `localStorage` on a loopback origin and a pane pointed at one is not
+pointed at the route. The README said the two fixture-capable panes' `endpoint` values were both
+`null`, which was false against both files at the head that said it.
+
+The block is a **literal scan**, not a call graph. A pane that builds a URL by concatenation
+shows the prefix it spells — `/api/ops/users/` and `/api/ops/alerts/problems/` are that, not
+routes of their own — and a route named only in a comment would appear here too. What the block
+does guarantee is that no pane leaves the list: a file with nothing matched says
+`(no route literal)` rather than dropping out, which is how the first spelling of this block hid
+three panes that do name routes. Whether a named route is ever *called*, and by what, is not
+decided here.
 
 ## The Settings pane
 
@@ -1298,11 +1309,26 @@ those panes now.
     `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
     `login.html` and `setup.html` load and neither of them draws a table. `.u-scroll` on People
     and usage is the one v2 wrapper that carries the repair. Every other wrapper in the block is
-    static, so the escape route above is open on them the moment a pane puts an absolutely
-    positioned screen-reader span inside one. **No pane ships such a span today** — that is why nothing is
-    broken on screen — which makes this an open gap rather than a shipped guard, and the guard
-    this README is checked by now says so out loud instead of describing a rule that moved out
-    from underneath it. Tracked as `Stadiora/Aria#10706`.
+    static, so the escape route above is open on them.
+
+    This item used to add "no pane ships such a span today". That was false, and it was false in
+    the most expensive way — a reassuring sentence nobody re-derived. Panes ship them:
+
+    ```claims id=sr-span-classes
+    absolutely positioned screen-reader classes = aria.css .sr, ops.css .sr-only
+    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-releases.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
+    ```
+
+    `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-users.js`
+    and `pane-releases.js` do the same inside `div.tbl-wrap` and `div.tbl-scroll`. All three
+    wrappers are static in the block above, so the containing block of those captions is not the
+    wrapper. Nothing is broken on screen anyway, for a reason this item had never stated: a
+    1px-wide clipped caption's static position is the table's left edge, so resolving past the
+    wrapper adds no scroll width to the right of anything. That is a claim about layout, not
+    about text, and it is **not derived here** — `scripts/check-ops-narrow-overflow.mjs` is the
+    oracle that would catch it if it stopped being true. The gap stays open because a span whose
+    static position is *not* at the left edge would escape, and nothing in this tree stops one
+    being added. Tracked as `Stadiora/Aria#10706`.
 
     **Not covered here.** The original item carried measured figures — a document scroll width
     going from 375px to 1118px on Settings and to 434px on App releases with the declaration
@@ -2380,6 +2406,7 @@ claims id=shell-v2-pins
 claims id=source-anchors
 claims id=spend-colour-gate
 claims id=spend-write-gate
+claims id=sr-span-classes
 claims id=table-focus-rings
 claims id=v1-status-classes
 claims id=v1-v2-collision
@@ -2400,12 +2427,18 @@ that command, so a name in a comment or inside an `echo` is not read as running 
 off by an `if:`, or a job nothing triggers, is beyond this file. The
 fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
 are the class tokens written in a page and the scripts it loads — `class=` in either quote,
-`class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal — and that error runs
+`class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal and each
+held to the same name guard as the page attributes above, so `data-class` is not `class` — and that error runs
 **both ways**, so neither value is the safe one to trust: a name in a comment counts as a draw, and
 a class assembled at run time or spelled through some other helper is invisible, so a `(no page)`
 can be an under-report exactly as a named page can be an over-report. `painted where drawn` asks
 only whether some rule in a stylesheet that page loads names the class, not whether it applies,
-wins or paints anything. A guard's page
+wins or paints anything. CSS is read as text with a browser's case rules — `POSITION:` is `position:`,
+`Auto` is `auto`, and a custom property name keeps its case because CSS says that one is
+case-sensitive — and an empty value (`--x: ;`, which is legal) stays a declaration rather than
+disappearing. Route blocks list the `/api/…` literals a pane source spells, not the calls it
+makes. Whether one element is drawn *inside* another is never decided here; that is what
+`check-ops-narrow-overflow.mjs` measures. A guard's page
 set is read from `OpsPaneRegistry` and the `/ops/*.html` literals in its source. `OpsUsagePayload`
 is declared in the Aria monorepo, so nothing here can decide whether departure 8's list is a
 complete sweep of it, which is why that departure no longer claims to be one. A declaration is
@@ -2504,8 +2537,13 @@ the run and a wrong number does not:
   of this trade. `backdrop-filter` is a deliberate omission of a different kind — it alters the
   backdrop, which the screenshot samples correctly — and that reasoning is specific to
   `backdrop-filter`, not a general property of the screenshot: `text-shadow` is painted on the
-  real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four today (its
-  one `filter` is a `:hover` the sweep never enters), so the refusals cost no coverage.
+  real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four on a
+  glyph today, so the refusals cost no coverage — but "the shell has one `filter`" was itself
+  an overclaim. The only CSS `filter` a shell page loads is `aria.css:592`'s
+  `.btn-primary:hover`, which the sweep never enters; `ops.css:278`/`:281`/`:477` carry three
+  more that no v2 page loads; and `aria.js:463`, `:544` and `:623` each set a `filter`
+  **presentation attribute** on an SVG chart stroke, which is shipped, rendered, and simply not
+  a text node the sweep samples.
   `::first-line` and `::first-letter` are refused on the same terms — see the pseudo-element
   paragraph below — and likewise match nothing on the shell today.
 

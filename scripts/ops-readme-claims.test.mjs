@@ -75,18 +75,38 @@
      the rendered pair in a browser and is the oracle for both.
    - How CSS is parsed at all. A rule's declarations are read in SOURCE order
      and normalised the way a browser reads them - whitespace around the
-     colon, `!important`, and a property declared twice in one rule resolving
-     to the LAST one - but the parse is still text, not a cascade engine. A
+     colon, `!important`, a property declared twice in one rule resolving
+     to the LAST one, an EMPTY value (`--x: ;` is legal and is kept as a
+     declaration with no value rather than dropped), and ASCII case: a
+     browser reads `POSITION:` and `Auto` as `position:` and `auto`, so both
+     are folded, while a CUSTOM property name is case-SENSITIVE and keeps
+     its case, which is why `--PanelBg` and `--panelbg` stay two tokens. The
+     parse is still text, not a cascade engine. A
      value behind `var()`, a `calc()` or an `hsl()` is not resolved; it is
      named as unresolvable where a block accounts for its tokens. `@media`
      and `@supports` bodies are flattened into the same rule list, so a
      `:root` inside one counts as a later `:root` whether or not its
      condition holds - an over-report, which is the safe direction for the
      `later :root rules redeclaring any of them` line.
-   - A pane's read route is resolved ONE hop: from the `endpoint:` in the
-     envelope it hands its reader to a string literal declared in the same
-     file. A route assembled at run time, or imported from elsewhere, is
-     named on its own line as unresolved rather than omitted.
+   - Which routes a pane CALLS. `pane-read-endpoints` is a literal scan: it
+     lists every `/api/…` string literal in every `pane-*.js`, and every
+     such file gets a line, `(no route literal)` included, so a pane cannot
+     leave the list by having nothing matched in it. The first spelling of
+     this block keyed on one `endpoint:` per file with a NON-GLOBAL match
+     and dropped three panes and two second routes on the floor. The scan
+     over-reports a concatenation prefix (`/api/ops/users/`) and a route
+     named only in a comment, and it cannot see a URL assembled from pieces
+     or imported from another file. Whether a listed route is ever called,
+     by what, and with which method, is not decided here.
+   - Whether an element is drawn INSIDE another. `sr-span-classes` derives
+     the clipped, absolutely positioned screen-reader classes a sheet
+     declares and the ops assets that draw one, which is text. The DOM
+     relationship item 15 turns on - that such a span sits inside a static
+     scroll wrapper - and the layout consequence of it are NOT derived here;
+     `scripts/check-ops-narrow-overflow.mjs` measures the page and is the
+     oracle. The class scan wants all three of `position: absolute`, a
+     `clip`/`clip-path` and a `1px` side, so a screen-reader idiom spelled
+     any other way is invisible to it.
    - A file path spelled without a directory AND with an extension no file in
      `ops/`, `ops/assets/`, `scripts/` or `.github/workflows/` uses. The sweep
      reads a bare `name.ext` as a path only when the tree already has that
@@ -119,8 +139,10 @@
    - Which pages can DRAW a class is read from the class tokens written in the
      page and in the scripts that page loads: `class=` and `class:`,
      `className`, `classList.add|remove|toggle` and `setAttribute('class', …)`,
-     each with a literal. The error runs BOTH ways and NEITHER value is the
-     strong one. A name in a comment counts as a draw site, so a named page can
+     each with a literal, each guarded against being the tail of a longer
+     name the same way the page attributes are, so `data-class` is not
+     `class` and `x-className` is not `className`. The error runs BOTH ways
+     and NEITHER value is the strong one. A name in a comment counts as a draw site, so a named page can
      be an over-report; a class assembled at run time (`'badge-' + tone`) or
      written through a helper this list does not name is invisible, so a
      `(no page)` can be an under-report — `ops/assets/icons.js` already spells
@@ -369,10 +391,18 @@ const declarations = (body) =>
     .map((d) => d.trim())
     .filter(Boolean)
     .map((d) => {
-      const m = /^([^:]+?)\s*:\s*([\s\S]+)$/.exec(d);
+      const m = /^([^:]+?)\s*:\s*([\s\S]*)$/.exec(d);
       if (!m) return d;
+      /* CSS property names are ASCII case-insensitive - `POSITION:` is
+         `position:` to a browser - but a CUSTOM property name is NOT, so
+         `--PanelBg` keeps its case and `--panelbg` stays a different token. */
+      const prop = m[1].startsWith('--') ? m[1] : m[1].toLowerCase();
       const bang = /^([\s\S]*?)\s*!\s*important$/i.exec(m[2]);
-      return `${m[1]}: ${bang ? `${bang[1].trim()} !important` : m[2].trim()}`;
+      const value = bang ? `${bang[1].trim()} !important` : m[2].trim();
+      /* An EMPTY value is legal - `--x: ;` is the space-toggle idiom - and
+         requiring one character after the colon made the whole declaration
+         invisible rather than unresolvable. */
+      return value ? `${prop}: ${value}` : `${prop}:`;
     });
 
 /* A declared value with `!important` taken off, for the matchers that ask
@@ -623,8 +653,8 @@ function v1StatusClasses() {
 function classTokens(src) {
   const tokens = new Set();
   const add = (text) => text.split(/\s+/).filter(Boolean).forEach((t) => tokens.add(t));
-  for (const m of src.matchAll(/\bclass\s*=\s*(["'])([^"']*)\1/g)) add(m[2]);
-  for (const m of src.matchAll(/\bclassName\s*[:=]\s*(['"`])([^'"`]*)\1/g)) add(m[2]);
+  for (const m of src.matchAll(/(?<![-\w])class\s*=\s*(["'])([^"']*)\1/g)) add(m[2]);
+  for (const m of src.matchAll(/(?<![-\w])className\s*[:=]\s*(['"`])([^'"`]*)\1/g)) add(m[2]);
   for (const m of src.matchAll(/\bsetAttribute\(\s*(['"`])class(?:Name)?\1\s*,([^)]*)\)/g)) {
     for (const lit of m[2].matchAll(/(['"`])([^'"`]*)\1/g)) add(lit[2]);
   }
@@ -636,7 +666,7 @@ function classTokens(src) {
   }
   /* The ternary and concatenation idiom the panes use for a variant:
      `className: 'pill' + (warn ? ' warn' : '')` — each literal is a token. */
-  for (const m of src.matchAll(/\bclassName\s*[:=]\s*([^,\n]*)/g)) {
+  for (const m of src.matchAll(/(?<![-\w])className\s*[:=]\s*([^,\n]*)/g)) {
     for (const lit of m[1].matchAll(/(['"`])([^'"`]*)\1/g)) add(lit[2]);
   }
   return tokens;
@@ -680,11 +710,11 @@ DERIVED['v1-status-classes'] = () => v1StatusClasses().map((cls) => {
    `overflow-x: auto` missed `overflow-x: scroll`, which is the same box to a
    browser. */
 function scrollsSideways(body) {
-  const scrolls = /^(auto|scroll|overlay)$/;
+  const scrolls = /^(auto|scroll|overlay)$/i;
   for (const decl of declarations(body).map(declared)) {
-    const long = /^overflow-x:\s*([a-z]+)$/.exec(decl);
+    const long = /^overflow-x:\s*([a-z]+)$/i.exec(decl);
     if (long && scrolls.test(long[1])) return true;
-    const short = /^overflow:\s*([a-z]+)(?:\s+[a-z]+)?$/.exec(decl);
+    const short = /^overflow:\s*([a-z]+)(?:\s+[a-z]+)?$/i.exec(decl);
     if (short && scrolls.test(short[1])) return true;
   }
   return false;
@@ -842,25 +872,51 @@ DERIVED['data-page-scoping'] = () => {
   ];
 };
 
-/* The route each fixture-capable pane names in the envelope it hands to its
-   reader, resolved one hop from `endpoint: IDENT` to IDENT's declaration
-   rather than read off a sentence. The README said both were `null`; they are
-   two published-looking paths, and the sentence resting on them said a
-   backend publishing a route would change nothing. */
-DERIVED['pane-read-endpoints'] = () => {
-  const out = [];
-  for (const file of ASSETS.filter((a) => /^pane-.*\.js$/.test(a))) {
+/* Every API route a pane source NAMES, read as string literals out of the
+   file rather than off one `endpoint:` key. Round 11 found three panes that
+   named routes and dropped out of this list entirely and two more that named
+   a second route the single non-global `.exec` never reached, while the
+   README claimed every pane that names a route is on the list. Every
+   `pane-*.js` gets a line now, `(no route literal)` included, so a pane
+   cannot leave the list by having nothing matched in it. */
+DERIVED['pane-read-endpoints'] = () =>
+  ASSETS.filter((a) => /^pane-.*\.js$/.test(a)).map((file) => {
     const src = read(path.join('ops/assets', file));
-    const use = /\bendpoint\s*:\s*(?:([A-Za-z_$][\w$]*)|'([^']*)'|"([^"]*)")/.exec(src);
-    if (!use) continue;
-    if (use[2] !== undefined || use[3] !== undefined) {
-      out.push(`${file} = ${use[2] ?? use[3]}`);
-      continue;
+    const routes = [...new Set([...src.matchAll(/(['"`])(\/api\/[^'"`\s]*)\1/g)].map((m) => m[2]))].sort();
+    return `${file} = ${routes.length ? routes.join(', ') : '(no route literal)'}`;
+  });
+
+/* Item 15 used to say no pane ships an absolutely positioned screen-reader
+   span inside one of those static wrappers. Three do. This derives the
+   screen-reader classes a loaded sheet declares `position: absolute` on, and
+   every ops asset that draws one, so the item can never again rest on a
+   "no pane does this" that no one re-checked. Containment - whether a given
+   span is drawn INSIDE a scroll wrapper - is a DOM question and is NOT
+   decided here; see NOT COVERED. */
+DERIVED['sr-span-classes'] = () => {
+  const sheets = ASSETS.filter((a) => a.endsWith('.css')).sort();
+  const found = [];
+  for (const sheet of sheets) {
+    for (const rule of cssRules(read(path.join('ops/assets', sheet)))) {
+      const decls = declarations(rule.body).map(declared);
+      const absolute = decls.some((d) => /^position:\s*absolute$/i.test(d));
+      const clipped = decls.some((d) => /^clip(-path)?:/i.test(d));
+      const tiny = decls.some((d) => /^(width|height):\s*1px$/i.test(d));
+      if (!absolute || !clipped || !tiny) continue;
+      for (const sel of rule.selectors) {
+        const m = /^\.([-\w]+)$/.exec(sel);
+        if (m) found.push(`${sheet} .${m[1]}`);
+      }
     }
-    const decl = new RegExp(String.raw`\b(?:var|let|const)\s+${use[1]}\s*=\s*(?:'([^']*)'|"([^"]*)")`).exec(src);
-    out.push(`${file} = ${decl ? (decl[1] ?? decl[2]) : `${use[1]} (this cannot resolve it)`}`);
   }
-  return out;
+  const classNames = new Set(found.map((f) => f.split(' .')[1]));
+  const drawn = ASSETS.filter((a) => a.endsWith('.js'))
+    .filter((a) => [...classTokens(read(path.join('ops/assets', a)))].some((t) => classNames.has(t)))
+    .sort();
+  return [
+    `absolutely positioned screen-reader classes = ${found.sort().join(', ') || '(none)'}`,
+    `ops assets drawing one = ${drawn.join(', ') || '(none)'}`
+  ];
 };
 
 DERIVED['dark-text-3'] = () => {
@@ -873,7 +929,7 @@ DERIVED['dark-text-3'] = () => {
      WINS, the way the cascade resolves a property declared twice in one rule. */
   const values = new Map();
   for (const decl of declarations(dark.body)) {
-    const m = /^(--\S+):\s*([\s\S]+)$/.exec(decl);
+    const m = /^(--\S+):\s*([\s\S]*)$/.exec(decl);
     if (m) values.set(m[1], declared(m[2]));
   }
   const tokens = new Map();
