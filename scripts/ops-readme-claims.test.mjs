@@ -148,14 +148,16 @@
      claim no block carries, is not judged. The remedy used in the rewrite is
      to make the prose point AT a block rather than repeat it, but nothing
      enforces that.
-   - This file's own wholesale removal, and that is not a gap a guard can
-     close. Every defence here can be deleted by somebody who also deletes the
-     claim it holds up; what the floors buy is narrower and is the thing that
-     actually went wrong twice: a PIN or a DERIVATION cannot go quietly, which
-     they could in rounds 5 and 6 and which reinstated live defects both times.
-     The ratchet test's own name is a row in `claims-blocks`, so deleting the
-     test moves a line - but deleting that line too is green, and saying so is
-     the point of this bullet.
+   - The RAN exit handler itself. It is the one construct here that nothing
+     else watches, and deleting it puts every test in this file back to being
+     silently skippable. That is not a gap a guard can close - something has to
+     be last - so it is named instead. Round 7 falsified the sentence that used
+     to stand here, which claimed a pin or a derivation could not go quietly:
+     deleting `the run reports what it judged` outright was green and took
+     every pin with it. What is true now is narrower and checked: a test that
+     does not RUN is a failing run, whether it was skipped, deleted or renamed,
+     so removing a defence means removing its expected name from the handler
+     too - and that edit is in the diff, in one place, by name.
    - A defence SWAPPED rather than retired. The three FLOORS count blocks
      pinned, blocks derived and families held. Each is a floor, so each sees a
      NET shrink and nothing else: delete one derivation and add a trivial one

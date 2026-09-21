@@ -2343,8 +2343,9 @@ paragraph checkable rather than a promise. A bolded word in a body moves it too.
 Bullets are read out of each guard's **leading docblock**, and two guards state
 blind spots outside theirs: `check-ops-shell-v2.mjs:583` says what its icon
 sweep does not measure — an ink too close to what is behind it, and all of
-geometry but `stroke-width` — and `check-ops-contrast.mjs:2239` carries a long
-`NOT COVERED, on purpose` section. Neither is carried below, and until the round
+geometry but `stroke-width` — and `check-ops-contrast.mjs` carries a long
+`NOT COVERED, on purpose` section. Both line numbers are in `source-anchors` above rather than
+spelled here: the one that used to sit in this sentence was wrong by 343 lines. Neither is carried below, and until the round
 that found this both read `(no blind-spot section)`, which is the same sentence
 a guard with nothing to declare would print. The sentinel now says which
 docblock it looked in, and every guard carries a count of the lines **anywhere**
@@ -2500,6 +2501,8 @@ alerting note, not the Custom-range comment, and both `pane-users.js` citations 
 lines short — which is why none of them are typed any more.
 
 ```claims id=source-anchors
+scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
+scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 136
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
@@ -2528,10 +2531,12 @@ prints what it judged, per block, in CI.
 
 Some blocks cannot derive **which** rows they carry, only what each row says, because their
 subjects are written in the guard rather than read out of the tree: `source-anchors` and
-`deleted-assets` name theirs directly, and `v1-status-classes`, `spend-colour-gate`,
-`spend-write-gate`, `guard-constants` and the census rows of `guard-blind-spots` take theirs from
-hand-written arrays — no sheet says which of its classes carry status, no tree lists the files it
-has lost, and no guard declares which of its constants are load-bearing. They still derive every
+`deleted-assets` name theirs directly, and the rest take theirs from hand-written arrays — no
+sheet says which of its classes carry status, no tree lists the files it has lost, and no guard
+declares which of its constants are load-bearing. **Which blocks those are is the
+`pinned-blocks` block below, not a list here**; the list that used to be here named seven and
+there were twelve, and the five it missed were five live holes of exactly the kind the pins
+exist to close. They still derive every
 **value**. What that shape cannot catch by itself is a **subject deleted**, which shrinks the
 expectation along with the claim, so each is pinned **row by row** in the guard — by name, not by
 count, because a count is absorbed the moment the block grows — and a row can only go by deleting
@@ -2544,7 +2549,21 @@ ran **green at 28/28**, which put back a constant the round before had just prot
 pin list with another pin list only moves the hole; a count has nothing inside it to delete, so
 that is where the regress stops. A floor does not make a retirement impossible — it makes it
 **loud**: going green after one needs the integer lowered in the guard *and* the row it prints
-here changed, and both of those are visible in a diff. Growing any of the three is free.
+here changed, and both of those are visible in a diff. Growing any of the three is free. A floor
+counts **pins that name a real block** — a key naming nothing used to be inert and still counted,
+which is round 7's `E1` — and it sees a **net** shrink only, so a derivation deleted and a trivial
+one added in the same commit passes it. That hole is stated in the guard's NOT COVERED list in
+those words; keying per block would catch it and would be another hand-written list, which is the
+regress the floors exist to end.
+
+None of that helps if the test holding it never runs, and for six review rounds nothing here
+could tell a test that ran from a registration still in the text. `test(NAME, { skip: true },
+...)` leaves the source spelling untouched; deleting `the run reports what it judged` outright
+moved nothing at all and took every pin with it. Both were **green**. So every test now records
+its own name when it executes, and an exit handler — not a test, since a test cannot police its
+own non-execution — fails the run for any expected name that did not report in. Skip, delete,
+rename and throw-before-the-first-line all land in the same place. What is **not** covered is
+the handler itself, which is named in the guard's NOT COVERED list: something has to be last.
 
 **How many blocks that is, and how many rows each pins, is derived** rather than counted here,
 and the reason is this paragraph's own history: it said "five" correctly, and then PR #111 added
@@ -2599,15 +2618,20 @@ and a test, no defence in this file was retired without lowering a floor
 And which of them are pinned, with how many rows each pin holds:
 
 ```claims id=pinned-blocks
+claims id=csp-pages pins 5 rows by name
+claims id=csp-policy pins 9 rows by name
+claims id=dark-text-3 pins 7 rows by name
+claims id=data-page-scoping pins 2 rows by name
 claims id=deleted-assets pins 2 rows by name
 claims id=guard-blind-spots pins 15 rows by name
 claims id=guard-constants pins 9 rows by name
-claims id=source-anchors pins 6 rows by name
+claims id=shell-v2-pins pins 6 rows by name
+claims id=source-anchors pins 8 rows by name
 claims id=spend-colour-gate pins 21 rows by name
 claims id=spend-write-gate pins 3 rows by name
 claims id=v1-status-classes pins 7 rows by name
 claims id=v1-status-classes pins the families badge, tag, callout, verdict
-floor: blocks pinned in REQUIRED_ROWS = at least 7
+floor: blocks pinned in REQUIRED_ROWS = at least 12
 floor: blocks derived in this file = at least 24
 floor: families pinned in REQUIRED_FAMILIES = at least 4
 ```
