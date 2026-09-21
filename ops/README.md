@@ -292,7 +292,7 @@ ops/
 ```
 
 The tree above says what each file is **for**. What each file is **loaded by** is not written
-here in prose, because prose is what went wrong: seven issues were filed against this README in
+here in prose, because prose is what went wrong: eight issues were filed against this README in
 one day, every one of them a sentence describing the code more broadly or more narrowly than the
 code behaves. The block below is read out of the `<link>` and `<script>` tags in `ops/*.html` by
 `scripts/ops-readme-claims.test.mjs` and compared line for line, so a page that stops loading
@@ -374,8 +374,10 @@ ops/assets/settings.css = gone; loaded by no page; named by no script
 monorepo, ported here so the panes can be remodelled one at a time. They sit **beside** `ops.css`
 and `shell.js` rather than replacing them: the two sheets declare a great many of the same class
 names from different token sets, so **a page loads one or the other, never both.** How many, and
-which of them carry the most selectors in `ops.css` — the widest eight, ties broken on the first
-letter, so the list is a sample of that width and not all of it — is counted out of the sheets. A
+which of them carry the most selectors in `ops.css` — the widest few, ties broken on the first
+letter, so the list is a sample of that width and not all of it — is counted out of the sheets.
+**How many** is a floor in `pinned-blocks` below rather than a number in this sentence: the
+sample was free to shrink from eight rows to three, README lines and all, until round 9. A
 list typed here once said `ops.css` declares `.pill` and `.tbl`, and it declares neither, and
 never did.
 
@@ -1920,8 +1922,8 @@ answer.
 
 Two invariants on this pane are held by its own `node:test` file and by measurement in review,
 not by a repo guard. Since [Stadiora/Aria#10492](https://github.com/Stadiora/Aria/issues/10492)
-`scripts/check-ops-narrow-overflow.mjs` does render `ops/analytics.html`, at 375px and 360px in
-both themes — but with an empty `/api/ops/usage` envelope, so what it lays out is this pane's
+`scripts/check-ops-narrow-overflow.mjs` does render `ops/analytics.html`, at each width in the
+`guard-constants` block below, in both themes — but with an empty `/api/ops/usage` envelope, so what it lays out is this pane's
 no-data card and not a populated pane. Since
 [Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462)
 `scripts/check-ops-theme-redraw.mjs` does render this pane's own page too, in both theme
@@ -2093,8 +2095,8 @@ Three lines in that block are worth reading twice:
   under "drawn by nothing built so far", and said in as many words that Settings draws none. The
   4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
   paints it now. No figure in this file describes what does. `check-ops-contrast.mjs` is **not**
-  that oracle either: it fixes its page to `/ops/shell-v2.html` (`scripts/check-ops-contrast.mjs:92`,
-  loaded at `:3277`) and never opens `settings.html`, so the live pairing is unmeasured by
+  that oracle either: `scripts/check-ops-contrast.mjs` fixes its page to `/ops/shell-v2.html`
+  and never opens `settings.html`, so the live pairing is unmeasured by
   anything in the tree. That is a gap, stated as one rather than closed with a pointer at a guard
   that does not look.
 - **Two classes were written with nothing behind them, and are not any more.** `.masked` and
@@ -2254,8 +2256,9 @@ regression and reusable as a starting point. It serves this repository, answers 
 and the reads behind every pane except two — `/api/ops/usage` gets an empty envelope and
 `/api/ops/costs` a period that has not published, so People and usage and Cloud costs are laid
 out with no figures in them — lays **every
-pane the registry declares** out in headless Chrome at **375px and 360px** in both themes, and
-fails if `documentElement.scrollWidth` exceeds the viewport. Two widths because an overflow that
+pane the registry declares** out in headless Chrome at **each width in the `guard-constants`
+block below**, in both themes, and
+fails if `documentElement.scrollWidth` exceeds the viewport. More than one width because an overflow that
 reproduced on CI's fonts at 375px reproduced on macOS only at 360px, and a guard a reviewer
 cannot make fail locally is a guard that gets argued with instead of read. Before it measures a
 pane it requires that pane to have drawn a string only its loaded state draws, because the panes
@@ -2285,12 +2288,12 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
 | `scripts/ops-spend-v2.test.mjs` | That each of the three cuts of the bill — the two the switch offers and the per-service table — adds up to the billed total exactly and that the line says so in both directions — reconciled, and the gap named when they do not — and that a sum which cannot be checked says that instead of reporting a gap of zero; that the `ungrouped` row is drawn and marked rather than hidden and is inside the sum; that a row with no figure prints words and is not added up as a zero; that the change pill's chevron follows the figure's own sign and that a rise and a fall are not the same glyph; that the per-service rows are drawn once and no state of the switch draws them again; that activating the switch hands focus back to the button that was activated, and only when focus was there to begin with; that a forecast is drawn only when the route sent one; that the age of the answer is printed beside the total once the poller is behind — the stale path — and against the answer's own publish lag rather than a constant in the pane; that the day line breaks on a day past the end of a stretch instead of joining across it; that each of the five availability states gets its own words and an unknown sixth still gets some; that the chart is named with its data and draws no `<text>` inside the figure; that the day chart carries the dates the route labelled under it and names both of its lines, so the dashed one is not just a texture; that a period billed only part way through says how far and to which day, and one billed to its own end does not repeat what the range name says; that the way out of an empty period travels to the closed month rather than back to the period it escapes — read from the link's `href`, not from its words; that no view button is offered for a grouping the answer did not carry; that the box holding the per-service table is reachable from a keyboard and names itself from the answer's own label, because at 320px the whole Change column is past its visible edge; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup. **Not covered**: that money is divided once at display and never summed as a float — every figure in the fixture is a whole number of dollars, so rounding each row to cents before summing changes no output and no mutation can make it red; it becomes testable when a fixture row carries a fraction of a cent. In a property whose name carries none of the colour-bearing words the value scan gates on — `text-decoration`, `text-emphasis` and `mask-image` are the three shapes — **anything the spelling clause cannot read** is seen by neither clause: a named colour, an `oklch()`, a `lab()`, a `color-mix()`. Not only the named colour `text-decoration: underline crimson` names (`Stadiora/Aria#10663`). The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Which properties are gated and which spellings are read is the `spend-colour-gate` block below, produced by running the guard's own two matchers rather than by reading them. Which exotic ways to write markup or a style attribute walk through the module guard, and whether the module writes any of them, is the `spend-write-gate` block below — run against the guard's own two patterns rather than counted in a sentence here, which is how this row came to say "none of the four" about a list of three. |
-| `node scripts/check-ops-result-view.mjs` | Whether a state the JavaScript can enter is one a loaded stylesheet can **paint**. It drives every pane the registry declares past its landing state to a result view, proves it arrived by a string only that view draws, and then asks two things in real Chrome with no pointer over the page: that every class the pane wrote is reached by at least one rule from a sheet that page loads, and that every positive `aria-current`/`-selected`/`-pressed`/`-checked`/`-expanded` is painted differently from the same shape without it. `Stadiora/Aria#10456` is the shape: `pane-users.js` wrote `is-selected` on the picked match, no sheet `users.html` loads had a rule for it, and every other guard stayed green for the life of the defect. Known failures are enumerated in `KNOWN_UNPAINTED`, and each entry must still reproduce. **Not covered**, from its own docblock: one width (1280px); contrast, since two states that differ imperceptibly both pass; the accessibility tree, since the state is read off the markup rather than out of Chrome; any result view nobody drives — one per pane; a class judged per page rather than per site; the reach of a `~` or `+` clause; and paint that is not a class at all. |
+| `node scripts/check-ops-result-view.mjs` | Whether a state the JavaScript can enter is one a loaded stylesheet can **paint**. It drives every pane the registry declares past its landing state to a result view, proves it arrived by a string only that view draws, and then asks two things in real Chrome with no pointer over the page: that every class the pane wrote is reached by at least one rule from a sheet that page loads, and that every positive `aria-current`/`-selected`/`-pressed`/`-checked`/`-expanded` is painted differently from the same shape without it. `Stadiora/Aria#10456` is the shape: `pane-users.js` wrote `is-selected` on the picked match, no sheet `users.html` loads had a rule for it, and every other guard stayed green for the life of the defect. Known failures are enumerated in `KNOWN_UNPAINTED` and `KNOWN_UNPAINTED_STATE`, and each entry must still reproduce. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here — summarising is how this row came to list seven of that docblock's nine. The bullets themselves stay in the guard; the block binds their headings and, where a bullet hides a second blind spot behind a second bold span, the count of the spans beyond the first, summed over its bullets. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon on `/ops/shell-v2.html`** reaches that page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. All of that is measured on that one page, which is the only page in the repository that draws `aria.js`'s charts and its icon gallery. It does load every other page in `ops/` afterwards, in both themes, but only to catch a console error or a page that rendered nothing: a pane shipping an unpainted icon is **not** seen here. |
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
-| `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at 375px **and 360px** in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
-| `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the page. A colour resolved at **draw time** is only correct for the theme it was drawn in; this loads every pane `assets/pane-registry.js` declares plus `/ops/shell-v2.html`, clicks the real button, and requires **every node's** resolved paint to equal the paint that node carries on a **fresh load** of the same page in the theme the button switched to — sixteen paint properties per node, with a `url(#id)` gradient resolved to its stops, because the ids are minted per draw. Two assertions stand either side of that one: that the two fresh loads differ at all, so the comparison is not vacuous on a page the theme never reached, and, on the pages that draw `aria.js`'s charts, that every shape painted from a token holds the palette's pinned value — the only one of the three that would notice `aria.css` drifting away from the palette, since a page compared against itself agrees with itself. Both directions, every page. **Not covered**, from its own docblock: pseudo-elements, any property outside those sixteen, a gradient that changed in a way its stops do not record, a page whose DOM differs between the two loads (reported as not comparable rather than passed), the populated states of People and usage and Cloud costs — the shared stub answers both with an empty envelope — and any theme beyond dark and light. |
-| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and the two PNGs must be byte-identical — a scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It fails rather than skips when it opens no dialog. |
+| `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at **each width in the `guard-constants` block below** — the list is read out of the guard, because this row said "375px and 360px" through the rebase onto the commit that added a third — in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten — **measured once and written down, not derived**: which panes answer an empty read with a failure card is a runtime behaviour, and the ten is the registry's, bound by the `panes` block above. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
+| `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the page. A colour resolved at **draw time** is only correct for the theme it was drawn in; this loads every pane `assets/pane-registry.js` declares plus `/ops/shell-v2.html`, clicks the real button, and requires **every node's** resolved paint to equal the paint that node carries on a **fresh load** of the same page in the theme the button switched to — sixteen paint properties per node, with a `url(#id)` gradient resolved to its stops, because the ids are minted per draw. Two assertions stand either side of that one: that the two fresh loads differ at all, so the comparison is not vacuous on a page the theme never reached, and, on the pages that draw `aria.js`'s charts, that every shape painted from a token holds the palette's pinned value — the only one of the three that would notice `aria.css` drifting away from the palette, since a page compared against itself agrees with itself. Both directions, every page. The sixteen are `PAINT_PROPS`, listed in the `guard-constants` block below. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here. |
+| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and almost every pixel must be unchanged — the comparison is not byte equality but **two gates in series**, both in the `guard-constants` block below: a pixel counts as changed only once it moves by more than `PAINT_PIXEL_DELTA`, and the run passes while the share of pixels that did counts under `PAINT_COVERAGE_LIMIT`. Both holes run the flattering way and both are real: a scrim that dims the whole plate by two units of 255 changes every pixel and scores a coverage of zero, and a scrim over a twentieth of the dialog passes however hard it dims that twentieth. A scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It fails rather than skips when it opens no dialog. |
 
 The `33` in that first row is not typed either. It is the size of the guard's own two pinned
 tables — the per-theme palette and the tokens it holds invariant across themes — counted out of
@@ -2319,6 +2322,149 @@ check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry
 check-ops-result-view.mjs = ops-result-view.yml; every pane the registry declares + /ops/run-history.html
 check-ops-shell-v2.mjs = ops-shell-v2.yml; every page in ops/
 check-ops-theme-redraw.mjs = ops-theme-redraw.yml; every pane the registry declares + /ops/shell-v2.html
+```
+
+The **numbers** in that table are not typed either. Each is the value the guard
+itself holds, evaluated out of its own declaration rather than matched as text —
+`const WIDTHS = [375, 360, 320]` is read here as three numbers, so a fourth
+viewport is a fourth entry rather than a longer line a substring test still
+passes. Every one of these was a word in a sentence until the guard moved
+underneath it.
+
+```claims id=guard-constants
+check-ops-contrast.mjs STATES = live, loading, empty, degraded
+check-ops-contrast.mjs STATES length = 4
+check-ops-dialog-hit.mjs PAINT_PIXEL_DELTA = 2
+check-ops-dialog-hit.mjs PAINT_COVERAGE_LIMIT = 0.05
+check-ops-narrow-overflow.mjs WIDTHS = 375, 360, 320
+check-ops-narrow-overflow.mjs WIDTHS length = 3
+check-ops-result-view.mjs WIDTH = 1280
+check-ops-theme-redraw.mjs PAINT_PROPS = color, backgroundColor, backgroundImage, borderTopColor, borderRightColor, borderBottomColor, borderLeftColor, outlineColor, textDecorationColor, caretColor, columnRuleColor, accentColor, fill, stroke, stopColor, boxShadow
+check-ops-theme-redraw.mjs PAINT_PROPS length = 16
+```
+
+The five hit-test spots per control are **not** in that block: they live in an
+array inside a template literal evaluated in the browser, not in a top-level
+declaration this check can resolve, so they stay prose and stay unproven here.
+
+What each guard says it **cannot** see is read out of the guard too — the
+**leading bold run** of each bullet under its own NOT COVERED section, in its
+order. A guard whose docblock has no such section says so on its line rather
+than going quietly missing, and so does one that rewrites its bullets as prose.
+Summarising a list like this in a sentence is how the result-view row came to
+carry seven of nine.
+
+A heading is not the bullet. A bullet that names two blind spots in two bold
+spans contributes only its first, and `check-ops-narrow-overflow.mjs` has one:
+**Look up a user is measured before any lookup** also covers **Aria quality
+before any operation is submitted**, and only the first of those two is a line
+below. Telling a second heading from ordinary body emphasis needs the English
+parsed, so this does not try — each guard instead ends with an exact **count of
+the bold spans beyond the first, summed over its bullets**. Summed, not counted
+per bullet: a per-bullet tally is a boolean, and a third span added to a bullet
+that already carried two would not move it. That number names nothing; it
+refuses to hide something, and it is what makes the narrower claim in this
+paragraph checkable rather than a promise. A bolded word in a body moves it too.
+
+Bullets are read out of each guard's **leading docblock**, and two guards state
+blind spots outside theirs: `check-ops-shell-v2.mjs` says what its icon
+sweep does not measure — an ink too close to what is behind it, and all of
+geometry but `stroke-width` — and `check-ops-contrast.mjs` carries a long
+`NOT COVERED, on purpose` section. Both are in `source-anchors` above, which is
+where every line number that points at code IN THIS REPOSITORY now lives — a citation into
+the Aria monorepo is outside the rule, not an exception to it, and `opsUsageView.ts:932` is
+still spelled twice below — and the one exception here is the
+citation that is itself the record of a drift, published row by row in
+`exempt-citations` below and counted by the run, which reports it as
+`prose line citations` — the number that used to sit in this
+sentence was wrong by 343 lines, and the round that removed it re-typed the other
+one here, three lines up, in the same sentence that said it had not. Neither is carried below, and until the round
+that found this both read `(no blind-spot section)`, which is the same sentence
+a guard with nothing to declare would print. The sentinel now says which
+docblock it looked in, and every guard carries a count of the lines **anywhere**
+in it that open like a blind-spot heading, so a section outside the docblock
+flips a line rather than arriving in silence — **provided the matcher can see
+its heading at all**, which depends on the wording *and* on the comment marker
+it sits behind.
+
+That edge is not described here. It is **measured** and published at the head of
+the block: one row per probed heading line, each handed to the real matcher and
+reported `SEEN` or `INVISIBLE`, under a row carrying **how many** there are so
+that no paragraph has to. (The paragraph below used to carry it, and when the
+table grew this one was updated and that one was not.) The `INVISIBLE` rows are the
+interesting half — a section headed `KNOWN GAPS:` or `What this sweep cannot
+see:` is read by nothing and counted by nothing, and so is a recognised phrase
+written after `//`. They are in the block precisely because they are holes, and
+because a matcher that starts or stops seeing any of them flips its line either
+way.
+
+The first spelling of this paragraph claimed a three-phrase list, parsed out of
+the matcher's own source, was "the net's real width". Round 3 of PR #111 showed
+it was not, twice: reverting the marker half of the matcher left the published
+list **identical**, and a phrase added as a second top-level branch was matched
+by the matcher and **missing** from the list. Both were green. A regex parsed
+for one substring of one of its two dimensions is a description of a net, not a
+measurement of one, and over-firing was disclosed before under-firing — the
+wrong way round in a file whose defect class is the quiet direction.
+
+Within the phrases the census below reports as SEEN, the count is syntactic and deliberately dumb —
+a line inside `check-ops-narrow-overflow.mjs` refers back to its own section and
+counts as a second one — because a dumb tripwire that fires is worth more here than a
+clever one that reads English.
+
+```claims id=guard-blind-spots
+(heading probes = 14)
+(heading probe: "WHAT THIS DOES NOT COVER, in the words of what was measured:" = SEEN)
+(heading probe: "   WHAT IT DOES NOT measure:" = SEEN)
+(heading probe: "   WHAT IT DOES NOT check, in so many words:" = SEEN)
+(heading probe: "   NOT COVERED, on purpose" = SEEN)
+(heading probe: "   NOT COVERED at all:" = SEEN)
+(heading probe: "   not covered, in lower case" = SEEN)
+(heading probe: " * NOT COVERED, after a continuation marker" = SEEN)
+(heading probe: "/* NOT COVERED, sharing the comment opener" = SEEN)
+(heading probe: "/** NOT COVERED, sharing a doc-comment opener" = SEEN)
+(heading probe: "// NOT COVERED, after a line comment" = INVISIBLE)
+(heading probe: "   WHAT THIS SWEEP CANNOT SEE:" = INVISIBLE)
+(heading probe: "   KNOWN GAPS:" = INVISIBLE)
+(heading probe: "/* KNOWN GAPS, behind a comment opener" = INVISIBLE)
+(heading probe: "   see NOT COVERED above for the two panes" = INVISIBLE)
+check-ops-contrast.mjs = (no blind-spot section in the leading docblock)
+check-ops-contrast.mjs = (bold spans beyond the first, summed: 0)
+check-ops-contrast.mjs = (lines that open like a blind-spot heading: 1)
+check-ops-dialog-hit.mjs = (no blind-spot section in the leading docblock)
+check-ops-dialog-hit.mjs = (bold spans beyond the first, summed: 0)
+check-ops-dialog-hit.mjs = (lines that open like a blind-spot heading: 0)
+check-ops-narrow-overflow.mjs = People and usage, and Cloud costs, are measured with no figures in them.
+check-ops-narrow-overflow.mjs = Look up a user is measured before any lookup
+check-ops-narrow-overflow.mjs = An overflow a container clips.
+check-ops-narrow-overflow.mjs = Anything out of the document's flow, and anything past the left edge.
+check-ops-narrow-overflow.mjs = Sub-pixel overflow.
+check-ops-narrow-overflow.mjs = Every width that is not 375px, 360px or 320px.
+check-ops-narrow-overflow.mjs = ops/login.html and ops/setup.html.
+check-ops-narrow-overflow.mjs = (bold spans beyond the first, summed: 3)
+check-ops-narrow-overflow.mjs = (lines that open like a blind-spot heading: 2)
+check-ops-result-view.mjs = One width, 1280px.
+check-ops-result-view.mjs = Contrast.
+check-ops-result-view.mjs = The accessibility tree.
+check-ops-result-view.mjs = A result view nobody drives.
+check-ops-result-view.mjs = A class judged per page, not per site.
+check-ops-result-view.mjs = A sibling combinator's reach.
+check-ops-result-view.mjs = Paint that is not a class.
+check-ops-result-view.mjs = Panes with no state pair.
+check-ops-result-view.mjs = A state with no unmarked twin on the page.
+check-ops-result-view.mjs = (bold spans beyond the first, summed: 0)
+check-ops-result-view.mjs = (lines that open like a blind-spot heading: 1)
+check-ops-shell-v2.mjs = (no blind-spot section in the leading docblock)
+check-ops-shell-v2.mjs = (bold spans beyond the first, summed: 0)
+check-ops-shell-v2.mjs = (lines that open like a blind-spot heading: 1)
+check-ops-theme-redraw.mjs = Pseudo-elements.
+check-ops-theme-redraw.mjs = Anything below the paint properties listed in PAINT_PROPS.
+check-ops-theme-redraw.mjs = A gradient referenced by url(#id).
+check-ops-theme-redraw.mjs = A page whose DOM differs between the toggled and the fresh load.
+check-ops-theme-redraw.mjs = The panes' populated states, for People and usage and Cloud costs.
+check-ops-theme-redraw.mjs = Any theme beyond the two.
+check-ops-theme-redraw.mjs = (bold spans beyond the first, summed: 0)
+check-ops-theme-redraw.mjs = (lines that open like a blind-spot heading: 1)
 ```
 
 The Cloud costs colour guard's own reach is not described here either. The block below is
@@ -2388,19 +2534,36 @@ alerting note, not the Custom-range comment, and both `pane-users.js` citations 
 lines short — which is why none of them are typed any more.
 
 ```claims id=source-anchors
+scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
+scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 138
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
+ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 634
+```
+
+One citation is still spelled in this file, and it is the one just above: the drifted
+`pane-registry.js` pointer, kept because it is the **record** of a number that was wrong rather
+than a pointer anybody should follow. The guard refuses every other one, and what it exempts is
+published here rather than counted in a sentence — a list of things a guard declines to judge is
+its own back door, so its size is a floor and deleting a row is as red as adding one.
+
+```claims id=exempt-citations
+pane-registry.js:103-110 = exempt, the record of a citation that had already drifted
 ```
 
 ### What holds this README to the code
 
-Seven issues were filed against this file in one day (`Stadiora/Aria#10457`, `#10474`, `#10510`,
-`#10639`, `#10641`, `#10655`, `#10663`), all of them the same defect: a sentence describing the
-code more broadly, or more narrowly, than the code behaves. A README that describes a guard more
+Eight issues were filed against this file in one day (`Stadiora/Aria#10457`, `#10474`, `#10510`,
+`#10639`, `#10641`, `#10655`, `#10663`, `#10677`), all of them the same defect: a sentence
+describing the code more broadly, or more narrowly, than the code behaves. That number and that
+list are **not derived** — the issues live in another repository's tracker, so nothing here can
+count them; they are in the NOT COVERED list at the head of the guard for exactly that reason,
+and round 11 found this sentence saying seven and omitting the issue this PR's own table opens
+with. A README that describes a guard more
 broadly than it behaves is worse than no README, because the next reader stops looking.
 
 So the numbers and lists this file is read **for** are not typed here. They are in fenced blocks
@@ -2414,25 +2577,96 @@ block here must be one it derives — and a `claims` fence it cannot parse is a 
 a block quietly skipped — so a block cannot be added, renamed or dropped silently, and the run
 prints what it judged, per block, in CI.
 
-Five blocks cannot derive **which** rows they carry, only what each row says: `source-anchors`
-and `deleted-assets` read their subjects out of this file, and `v1-status-classes`,
-`spend-colour-gate` and `spend-write-gate` read theirs from hand-written arrays in the guard,
-because no sheet says which of its classes carry status and no tree lists the files it has lost.
-All five still derive every **value**. What that shape cannot catch by itself is a subject
-deleted, so all five are pinned **row by row** in the guard — by name, not by count, because a
-count is absorbed the moment the block grows — and a row can only go by deleting it there too.
+Some blocks cannot derive **which** rows they carry, only what each row says, because their
+subjects are written in the guard rather than read out of the tree: `source-anchors` and
+`deleted-assets` name theirs directly, and the rest take theirs from hand-written arrays — no
+sheet says which of its classes carry status, no tree lists the files it has lost, and no guard
+declares which of its constants are load-bearing. **Which blocks those are is the
+`pinned-blocks` block below, not a list here**; the list that used to be here named seven when
+there were twelve, and review round 8 then found five more blocks outside the pins entirely — so
+the count in that sentence was short twice, in the same direction, and the five it missed each
+time were live holes of exactly the kind the pins
+exist to close. They still derive every
+**value**. What that shape cannot catch by itself is a **subject deleted**, which shrinks the
+expectation along with the claim, so each is pinned **row by row** in the guard — by name, not by
+count, because a count is absorbed the moment the block grows — and a row can only go by deleting
+it there too.
+
+The pin list is itself hand-written, so the same question applies one level up, and the answer
+there is different: **floors**, plain integers, in the `floor:` rows of the block below — how
+many of them there are is those rows' business, not this sentence's, which is the same trade the
+census above makes.
+Round 6 of this PR's review showed that retiring a pin together with its line in `pinned-blocks`
+ran **green at 28/28**, which put back a constant the round before had just protected. Pinning a
+pin list with another pin list only moves the hole; a count has nothing inside it to delete, so
+that is where the regress stops. A floor does not make a retirement impossible — it makes it
+**loud**: going green after one needs the integer lowered in the guard *and* the row it prints
+here changed, and both of those are visible in a diff. Growing an `at least` floor is free; an
+`exactly` floor refuses growth as well, and the two have **different reasons**: a sample that
+quietly grew would leave the sentence describing it as wrong as a sample that shrank, while an
+allowlist of things a guard refuses to judge is a weakening whichever way it moves. Which floors
+are which is in the rows below, not in this sentence — round 11 found this sentence counting one
+`exactly` floor four lines after the paragraph that says how many there are is the rows' business
+and not a paragraph's. A floor
+counts **pins that name a real block** — a key naming nothing used to be inert and still counted,
+which is round 7's `E1` — and it sees a **net** shrink only, so a derivation deleted and a trivial
+one added in the same commit passes it. That hole is stated in the guard's NOT COVERED list in
+those words; keying per block would catch it and would be another hand-written list, which is the
+regress the floors exist to end.
+
+None of that helps if the check never runs, and for seven review rounds every one of these
+checks was a `test()`, which is a thing that can be **silenced in place**. `{ skip: true }` never
+runs the body and leaves the source spelling untouched. `{ todo: true }` is worse: it runs the
+body, **discards what it found**, and reports the file as passing — and node's suppression is
+narrower than that and worse, because a *passing* todo leaves `process.exitCode` alone while a
+*failing* one swallows it. The defect you want to hide is what makes the body fail, so it
+supplies its own suppressor. Deleting a test outright moved nothing at all and took every pin
+with it.
+
+Round 7 answered that by moving the floors and the pins out of `test()`, and this paragraph then
+said nothing load-bearing was a test any more. That was false: **twenty-seven of the twenty-eight
+tests were load-bearing**, including all twenty-four block comparisons, which are the whole point
+of the file. Two one-word flags reinstated this PR's founding defect — `PAINT_COVERAGE_LIMIT`
+printed as `0.05` while the guard allowed `0.25` — and the run was green.
+
+So **there are no tests here at all.** Every check is an ordinary module-scope call. A file that
+registers none is still run and counted by `node --test`, exits 0 when module scope completes,
+and exits 1 on an uncaught throw — all three measured. There is nothing to attach a flag to,
+because there is no registration. Every check still runs after one fails, so a red run names all
+the disagreeing blocks rather than the first, and a check that neither passed nor failed is a red
+run of its own. What remains uncovered is the last assertion itself, in the guard's NOT COVERED
+list in those words.
+
+**How many blocks that is, and how many rows each pins, is derived** rather than counted here,
+and the reason is this paragraph's own history: it said "five" correctly, and then PR #111 added
+two more blocks of exactly this shape and left it saying five for four review rounds. For those
+four rounds deleting a pinned-shaped row and its README line together was **green** — which
+silently reinstated two defects earlier rounds of that same PR had fixed. A sentence counting
+the mechanism that stops claims drifting is not exempt from drifting.
 
 Which blocks those are is itself derived, out of the guard rather than out of a sentence here:
 the enumeration that used to sit in this paragraph said nine and fell three behind, missing two
-blocks added in review and one added by the commit that fixed it. Two row sets are held by a
-test instead of a block, and are the last two lines: the sweep requires every repository file
-path this README spells in a code span to be in the tree or declared in `deleted-assets`, which
+blocks added in review and one added by the commit that fixed it. Some row sets are held by a
+check instead of a block rather than by a fence, and those are the `and a check,` lines — no count
+of them is written here, because the count written here was wrong twice: the sweep requires every
+code span that is **only** a repository file path — `node scripts/x.mjs` is a command, not a path,
+and is not judged — to name something in the tree or declared in `deleted-assets`, which
 is what makes a file deleted elsewhere red here rather than quietly stale — a span carrying a
-directory counts whatever its extension, and a bare `name.ext` counts when the tree uses that
+directory counts whatever its extension **unless its first segment is one of the Aria monorepo
+directories the sweep skips by name**, which is eleven live spans in this file and is NOT
+COVERED rather than judged, and a bare `name.ext` counts when the tree uses that
 extension, which is what keeps `payload.data` out of it; and the checks table
 above must carry a row for every `check-ops-*.mjs` in `scripts/`, which is how the sixth browser
-guard got a row the day it landed instead of the day somebody noticed. Neither judges the
-**words** in the row — only that the row is there.
+guard got a row the day it landed instead of the day somebody noticed; and another refuses a
+**source line number** written as `file.ext:NN` inside a code span, for any file this repository
+has — in words, outside a span, or into the Aria monorepo is NOT COVERED and said so there,
+because five of the false claims found on
+the PR that built this were a `file:line` citation that was true when written and drifted after,
+one of them re-typed by the round that removed it. Prose may name a file; the line belongs in
+`source-anchors`, where it is derived, or nowhere. The ratchet that holds the floors is **not**
+one of those rows — it has no `and a check,` line and is bound a different way, by being named in
+`report()`'s expected list, so deleting it reports itself. None of these judges the **words** in a
+row — only that the row is there.
 
 ```claims id=claims-blocks
 claims id=assets-by-page
@@ -2444,8 +2678,12 @@ claims id=csp-policy
 claims id=dark-text-3
 claims id=data-page-scoping
 claims id=deleted-assets
+claims id=exempt-citations
+claims id=guard-blind-spots
+claims id=guard-constants
 claims id=pane-read-endpoints
 claims id=panes
+claims id=pinned-blocks
 claims id=scroll-wrapper-position
 claims id=shell-v2-pins
 claims id=source-anchors
@@ -2456,8 +2694,37 @@ claims id=table-focus-rings
 claims id=v1-status-classes
 claims id=v1-v2-collision
 claims id=write-capable-assets
-and a test, every repository file ops/README.md names is in the tree or declared deleted
-and a test, every browser guard in the tree has a row in the checks table
+and a check, every repository file ops/README.md names is in the tree or declared deleted
+and a check, every browser guard in the tree has a row in the checks table
+and a check, ops/README.md prose spells no source line number
+```
+
+And which of them are pinned, with how many rows each pin holds:
+
+```claims id=pinned-blocks
+claims id=claims-blocks pins 3 rows by name
+claims id=csp-pages pins 5 rows by name
+claims id=csp-policy pins 9 rows by name
+claims id=dark-text-3 pins 7 rows by name
+claims id=data-page-scoping pins 2 rows by name
+claims id=deleted-assets pins 2 rows by name
+claims id=guard-blind-spots pins 15 rows by name
+claims id=guard-constants pins 9 rows by name
+claims id=pinned-blocks pins 6 rows by name
+claims id=shell-v2-pins pins 6 rows by name
+claims id=source-anchors pins 9 rows by name
+claims id=spend-colour-gate pins 21 rows by name
+claims id=spend-write-gate pins 3 rows by name
+claims id=sr-span-classes pins 2 rows by name
+claims id=v1-status-classes pins 7 rows by name
+claims id=v1-v2-collision pins 1 rows by name
+claims id=write-capable-assets pins 2 rows by name
+claims id=v1-status-classes pins the families = badge, tag, callout, verdict
+floor: blocks pinned in REQUIRED_ROWS = at least 17
+floor: blocks derived in this file = at least 25
+floor: families pinned in REQUIRED_FAMILIES = at least 4
+floor: widest shared names printed by v1-v2-collision = exactly 8
+floor: citations exempt by name = exactly 1
 ```
 
 **NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
@@ -2473,8 +2740,16 @@ that command, so a name in a comment or inside an `echo` is not read as running 
 off by an `if:`, or a job nothing triggers, is beyond this file. The
 fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
 are the class tokens written in a page and the scripts it loads — `class=` in either quote,
-`class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal and each
-held to the same name guard as the page attributes above, so `data-class` is not `class` — and that error runs
+`class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal — but
+**not** all held to the same name guard as the page attributes above. `class=` and `className`
+refuse a preceding letter, digit, hyphen or underscore, so `data-class` is not `class`;
+`classList` and `setAttribute` use a plain word boundary, which a hyphen satisfies, so
+`data-classList` IS read as `classList`. Round 11 demonstrated that, and it is left rather than
+tightened because the error it causes is an OVER-report, the direction this table already
+declares untrustworthy. `class:` is in neither group: it requires a line start, `{`, `,` or
+whitespace in front, which is STRICTER than both, so `(class: 'a')` is missed — an
+UNDER-report, and the one spelling here whose error runs the other way. Round 12 found it
+outside both halves of this sentence; no ops asset spells it that way today — and that error runs
 **both ways**, so neither value is the safe one to trust: a name in a comment counts as a draw, and
 a class assembled at run time or spelled through some other helper is invisible, so a `(no page)`
 can be an under-report exactly as a named page can be an over-report. `painted where drawn` asks
@@ -2487,7 +2762,17 @@ makes. Whether one element is drawn *inside* another is never decided here; that
 `check-ops-narrow-overflow.mjs` measures. A guard's page
 set is read from `OpsPaneRegistry` and the `/ops/*.html` literals in its source. `OpsUsagePayload`
 is declared in the Aria monorepo, so nothing here can decide whether departure 8's list is a
-complete sweep of it, which is why that departure no longer claims to be one. A declaration is
+complete sweep of it, which is why that departure no longer claims to be one. The line-number
+refusal reads **code spans**, and only for files this repository has: a citation written in
+words, one outside backticks, and one into the monorepo — `opsUsageView.ts:932` is the only
+one of those — are outside it, stated here rather than counted as clean, and nothing here
+claims that list is closed: round 13 found two more spellings of a repository file, `./x` and
+`/x`, walking through it, and the resolver drops both prefixes now rather than the sentence
+gaining two rows. Inside a span it takes
+**every** citation, not only a span that is nothing but one. What it exempts is the
+`exempt-citations` block above, row by row rather than counted in this sentence, and that
+list's size is a floor: a list of things a guard refuses to judge is its own back door, so
+growing it is loud. A declaration is
 read the way a browser reads one — whitespace around the colon, `!important`, and a property
 declared twice in a rule resolving to the last of them — but CSS is otherwise parsed by text, so
 a value behind `var()`, a `calc()`, an `hsl()` or anything else this cannot resolve to a flat
@@ -2503,10 +2788,58 @@ like `/api/ops/users/` is listed as the literal it is, and a route named in a co
 Contrast ratios are
 pixels, not arithmetic over the tree: `check-ops-contrast.mjs` is that oracle. And the
 `deleted-assets` list is checked for absence only — the pull request each line names is not
-verifiable from a shallow checkout.
+verifiable from a shallow checkout. A guard's **constant** is read only where `GUARD_CONSTANTS`
+names one, and only as a top-level `const NAME = …;`: the declaration's right-hand side is
+evaluated in a fresh `vm` realm carrying **no free variables** — its intrinsics are there, which
+is exactly why `Math.round` resolves — so a value built from **another binding** in its own file
+throws rather than being guessed at. A value built from a **pure call on a built-in** —
+`Math.round(1280.4)` — does not throw; it evaluates, and the resolved number is what is bound.
+That is the honest edge: the rule is "no free variables", not "no calls". A guard added next week
+carries no numbers here until somebody names one of its constants. The five hit-test spots per control are
+the worked example — they live in an array inside a template literal evaluated in the browser,
+so they stay prose and stay unproven. A guard's **blind spots** are the leading bold run of each
+bullet under a NOT COVERED heading that opens its own line, reassembled across wrapped lines, so
+**a second blind spot named in a second bold span of the same bullet is not a line here** —
+`check-ops-narrow-overflow.mjs` carries such spans, and in one of them the second span is a second
+blind spot, Aria quality before any operation is submitted. How many bullets carry one is not
+written here: the block binds the SUM, so a span moved from one bullet to another would leave a
+per-bullet count false and the bound number unchanged. What is bound instead is the exact
+**count of the spans beyond the first, summed** per guard, so the second span cannot arrive or
+leave unseen even though it is not named; a bolded word in a bullet's body moves that count too,
+and so does a third span on a bullet that already carried two — the per-bullet tally this started
+as did not, which round 1 of PR #111 demonstrated. Bullets come from the **leading docblock**
+only: `check-ops-shell-v2.mjs` and `check-ops-contrast.mjs` state blind spots outside theirs
+and are **not** carried here, only counted — their line numbers are in `source-anchors` above,
+not spelled here, because the one that used to sit in this sentence was wrong by 343 lines — and counted only because the matcher can see
+their headings. Which headings it can see is **measured, not described**: the block opens with a
+row per probed heading line, handed to the real matcher and reported `SEEN` or `INVISIBLE`, under
+a derived count of them. A section
+headed `KNOWN GAPS:`, or headed a recognised phrase but written after `//`, is read by nothing
+and counted by nothing — those rows are in the block as holes. Round 3 of PR #111 demonstrated
+that the parse this replaced could publish a list the matcher did not agree with, in both
+directions, while staying green. Those rows **sample** the two dimensions rather than crossing
+them, and round 4 walked through two cells they had left empty: a phrase taught only behind
+`/*`, and `WHAT IT DOES NOT` narrowed to `WHAT IT DOES NOT MEASURE`, which every spelling then
+probed happened to still match. Both were green; both are now rows.
 
-The guard's own docblock carries that NOT COVERED list too, beside the code it is about; the
-list of blocks is the `claims-blocks` block above, derived from the guard's own derivations.
+**Three things the census still does not bind**, and it is worth stating them as flatly as the
+rows themselves. First, **a (phrase, marker) cell no row occupies** — the rows cannot cover
+every pairing — the count is the first row of the block above, not a number here — and a
+matcher change confined to an empty cell moves nothing. Second, **a phrase
+narrowed so that it still matches every probed spelling of itself**; each phrase needs two rows
+differing in what follows it, and where only one exists the narrowing walks through. Third, **a
+spelling nobody thought to add at all.** Each is the ordinary limit of an explicit test table,
+which is a smaller and much louder hole than the parse it replaced — but none of the three is
+covered, and the fix for the first two, when someone demonstrates one, is a **row**, not a wider
+analysis.
+
+A blind spot written into a bullet's body with no bold at all is not a
+line and is not counted, and a bullet with no bold opener is reported as one rather than
+skipped. A section written as prose says so on its guard's line; it is not read.
+
+The guard's own docblock carries that NOT COVERED list too, beside the code it is about —
+including these three — and the list of blocks is the `claims-blocks` block above, derived from
+the guard's own derivations.
 
 ### Measuring contrast where the colour lands
 
@@ -2590,9 +2923,10 @@ the run and a wrong number does not:
   `backdrop-filter`, not a general property of the screenshot: `text-shadow` is painted on the
   real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four on a
   glyph today, so the refusals cost no coverage — but "the shell has one `filter`" was itself
-  an overclaim. The only CSS `filter` a shell page loads is `aria.css:592`'s
-  `.btn-primary:hover`, which the sweep never enters; `ops.css:278`/`:281`/`:477` carry three
-  more that no v2 page loads; and `aria.js:463`, `:544` and `:623` each set a `filter`
+  an overclaim. The only CSS `filter` a shell page loads is `aria.css`'s
+  `.btn-primary:hover` — line number in `source-anchors`, not here — which the sweep never
+  enters; `ops.css` carries three
+  more that no v2 page loads; and three sites in `aria.js` each set a `filter`
   **presentation attribute** on an SVG chart stroke, which is shipped, rendered, and simply not
   a text node the sweep samples.
   `::first-line` and `::first-letter` are refused on the same terms — see the pseudo-element
