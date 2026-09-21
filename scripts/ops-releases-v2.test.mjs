@@ -1212,3 +1212,32 @@ test('an answer with no omissions field draws no note and does not fail', async 
   assert.equal(findAll(panel(withOne, 'live'),
     (n) => (n.className || '').split(/\s+/).includes('is-note')).length, 1);
 });
+
+/* The configuration this pane will actually be in most often, and the one the
+   battery found unbound: Android finished, iOS still phasing. Every other
+   fixture here leaves Android staged at 20%, so the share sentence reaches the
+   unreadable clause by being APPENDED to a measured ceiling, and the branch
+   that returns the clause on its own is never taken. With no measured ceiling
+   the next branch is "no store is capping the rollout, so this share is
+   take-up" — the exact false claim, in the case where nothing else on the
+   sentence contradicts it. */
+test('one store phasing and the other finished still says the ceiling is unreadable', async () => {
+  const data = releasesFixture();
+  const ios = production(data, 'ios');
+  ios.state = 'rolling_out';
+  ios.rolloutBasisPoints = null;
+  const android = production(data, 'android');
+  android.state = 'live';
+  android.rolloutBasisPoints = 10_000;
+  const dom = await boot({ releases: data });
+
+  assert.doesNotMatch(shareCardText(dom), /no store is capping/,
+    'the sentence claims no store is capping while Apple is capping by an ' +
+    'amount it will not report');
+  assert.match(shareCardText(dom), /iOS: a phased release the store does not measure/,
+    'the sentence does not name the unreadable ceiling either, so the ' +
+    'assertion above would pass on a sentence that says nothing');
+  assert.doesNotMatch(shareCardText(dom), /a ceiling the store set/,
+    'a measured ceiling is being reported where there is none, which would ' +
+    'mean this fixture never reached the branch under test');
+});
