@@ -538,6 +538,33 @@ test('a lane whose oldest job fell past the bound is never drawn as empty', asyn
     + 'an operator away');
 });
 
+/* `Nothing waiting.` is the answer to `state: 'none'` and to nothing else.
+   Reached by a lane whose `oldestQueued` is missing, and by one carrying a
+   state this pane has no sentence for — a fourth variant, or a renamed one.
+   Both are unreachable against today's closed union, which is exactly why
+   nothing bound them: the branch that catches them was the same `else` that
+   draws a genuine empty lane, so an unread field printed the sentence for a
+   measured zero. Every other absence surface on this pane degrades to a dash,
+   an absent card or an "unread" scope; this one degraded to a confident
+   English claim that a lane has no queue. */
+for (const [name, oldestQueued] of [
+  ['missing entirely', undefined],
+  ['a state this pane has no sentence for', { state: 'estimated', ageMs: 125000 }],
+]) {
+  test(`a lane whose oldest-queued answer is ${name} says the read did not say`, async () => {
+    const dom = await boot({
+      view: viewFixture({ queue: { lanes: [laneFixture({ oldestQueued })] } }),
+    });
+    const text = liveText(dom);
+    assert.match(text, /This read did not say whether anything is waiting here\./,
+      'an unreadable oldest-queued answer did not say so');
+    assert.doesNotMatch(text, /Nothing waiting\./,
+      'an unreadable oldest-queued answer was drawn as a measured empty lane');
+    assert.doesNotMatch(text, /Longest wait/,
+      'an unreadable oldest-queued answer was drawn as a measured wait');
+  });
+}
+
 /* ============================ the work itself ========================== */
 
 test('a running job is graded with the baseline it was graded against', async () => {

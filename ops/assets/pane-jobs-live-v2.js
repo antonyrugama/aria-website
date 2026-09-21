@@ -44,7 +44,12 @@
 
      oldestQueued unknown   the lane has a real queue and every job in it fell
                             past the read's bound. Drawn as an unknown age,
-                            never as "nothing waiting".
+                            never as "nothing waiting". "Nothing waiting" is
+                            the answer to `none` alone -- a lane carrying no
+                            answer, or one this pane has no sentence for, says
+                            the read did not say, because a confident empty
+                            lane over an unread field is the reading that
+                            sends an operator away.
 
      attention scoped       `completeness` says whether the stuck and given-up
                             lists were read over the whole queue or only the
@@ -741,8 +746,15 @@
              an unknown age rather than as nothing waiting, which is the one
              reading that would send an operator away. */
           waitText = 'Something is waiting and its age is past the end of this read.';
-        } else {
+        } else if (oldest.state === 'none') {
           waitText = 'Nothing waiting.';
+        } else {
+          /* Not one of the three answers the route publishes, or no answer at
+             all. "Nothing waiting" here would be a confident absence over a
+             field this pane could not read -- the same shape as the truncated
+             `completeness` below, and the one reading the comment at the top
+             of this file rules out for every lane. */
+          waitText = 'This read did not say whether anything is waiting here.';
         }
         body.appendChild(h('p', { className: 'tiny muted mt-sm', text: waitText }));
 
