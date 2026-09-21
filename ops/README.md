@@ -954,9 +954,25 @@ than only by the page's `connect-src`.
 
 The pane that has no data yet says so, and says it without a promise it cannot keep: the state
 tells you the reporting behind it is unbuilt and that the release which builds it points the
-pane at it. It does not claim figures will appear "without another release", because both
-`endpoint` values are `null` in these files and a backend publishing a route would change
-nothing on its own.
+pane at it. It does not claim figures will appear "without another release", and the reason is
+not that the routes are unnamed. Every pane that names a read route names it in the envelope it
+hands its reader, and these are the routes:
+
+```claims id=pane-read-endpoints
+pane-analytics.js = /api/ops/usage
+pane-jobs-live-v2.js = /api/ops/alerts/problems
+pane-overview.js = /api/ops/summary
+pane-releases.js = /api/ops/releases
+pane-run-history-v2.js = /api/ops/alerts/problems
+pane-spend.js = /api/ops/costs
+```
+
+A backend publishing either route changes nothing on its own, because a fixture is read only
+from `localStorage` on a loopback origin and a pane pointed at one is not pointed at the route.
+The README said the two fixture-capable panes' values were both `null`, which was false against
+those files at the head that said it; the block above is read out of every pane source, one hop
+from the `endpoint:` in the read envelope to the declaration it names. A pane that named a route
+this could not resolve would say so on its own line rather than drop out of the list.
 
 ## The Settings pane
 
@@ -1184,12 +1200,20 @@ those panes now.
    clears 4.5:1 on every one of them = true
    every other opaque token in that block = --ai, --border, --border-strong, --brand, --brand-bright, --control-border, --control-border-hover, --crit, --cta-end, --info, --ok, --s1, --s2, --s3, --s4, --s5, --s6, --text, --text-2, --text-3, --text-inverse, --warn
    tokens in that block this cannot read as a flat colour = --glow, --ink-mix, --scrim, --shadow-1, --shadow-2, --shadow-3, --tint, --tint-line, --tint-soft, --topbar-bg
+   later :root rules redeclaring any of them = (none)
    ```
 
-   Every token in that `:root` is on one of those three lines, and a colour is resolved from its
+   Every custom property that block declares is on exactly one of those three lines, under
+   whatever name CSS allows — `--panel_bg` and `--PanelBg` are legal custom properties and used
+   to fall through a `[a-z0-9-]` name class into none of the lists. A colour is resolved from its
    **value** rather than matched by its spelling: `#abc`, `#AABBCC` and `rgb(170, 187, 204)` are
    one colour here, where the block once read only the six-digit hex and a surface written any
-   other way was measured against nothing.
+   other way was measured against nothing. A property declared twice in that rule resolves to the
+   **last** declaration, as it does in a browser. The surfaces are the tokens named `--bg` and
+   `--surface-*`, spelled exactly that way; anything else opaque is named on the second line, so a
+   surface introduced under some other name is a red run rather than a silent omission. The fourth
+   line exists because `ops.css` declares `:root` more than once and a later one wins: a token
+   redeclared below this block would not be the colour measured above.
 
    What it does **not** answer is where the ink lands: `--topbar-bg` and `--scrim` are `rgba()`
    and composite over whatever is behind them, so no arithmetic over this block can judge the
@@ -1503,11 +1527,21 @@ reads its own sample text:
 
 `assets/pane-users-v2.css` carries this pane's own shapes.
 
-One inherited leftover is worth naming here rather than fixing: the light-theme badge block at
-the end of `ops.css` is scoped `[data-theme="light"] body:is([data-page="releases"],
-[data-page="users"])`, and neither page carries `data-page` any more — releases lost it in #55
-and this change takes the last one. The block now matches nothing. `ops.css` is not this change's
-to edit, so it is filed rather than deleted here.
+One inherited leftover used to be named here rather than fixed: a light-theme badge block at the
+end of `ops.css`, scoped `[data-theme="light"] body:is([data-page="releases"],
+[data-page="users"])`, matching nothing once releases lost its `data-page` in #55 and this change
+took the last one. **That block is gone** — deleted from `ops.css` in `aria-website` #74 — and
+this paragraph described it as still filed here for as long as it took somebody to look. What is
+true now is derived rather than described:
+
+```claims id=data-page-scoping
+ops.css rules scoped to a data-page attribute = (none)
+pages carrying a data-page attribute = login.html, setup.html
+```
+
+The two pages still carrying the attribute are the pair that never moved to the v2 shell, and no
+rule anywhere in `ops.css` selects on it, so the attribute currently styles nothing. If either
+half of that changes, the block above is a red run rather than a stale sentence.
 
 ### What happened on v2: where the pane departs from the mock
 
@@ -1893,9 +1927,16 @@ decision.
    `ops_cost_range_unsupported`: offering it would put a control on screen whose only outcome is
    a failure card with a retry that cannot succeed. Neither is this pane's decision to revisit.
 
-This pane's invariants are held by `scripts/ops-spend-v2.test.mjs` and by measurement in review;
-as with People and usage, no browser guard renders `ops/spend.html`, tracked as
-[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462).
+This pane's invariants are held by `scripts/ops-spend-v2.test.mjs` and by measurement in review.
+Browser guards **do** render `ops/spend.html` — `check-ops-shell-v2.mjs` names every page in
+`ops/`, and the registry-driven sweeps reach every pane the registry declares, which includes
+this one; the `browser-guards` block below derives that reach rather than asserting it here. What
+none of them renders is a *populated* Cloud costs pane: `scripts/ops-api-stub.mjs` answers
+`/api/ops/costs` with an empty envelope, exactly as People and usage describes for
+`/api/ops/usage`, so those sweeps lay out this pane's no-data card. That gap is tracked as
+[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462); the sentence this replaces
+said no guard rendered the page at all, two sections above a derived block saying one renders
+every page in `ops/`.
 
 ### Where Cloud costs departs from the shared page furniture
 
@@ -2330,7 +2371,9 @@ claims id=claims-blocks
 claims id=csp-pages
 claims id=csp-policy
 claims id=dark-text-3
+claims id=data-page-scoping
 claims id=deleted-assets
+claims id=pane-read-endpoints
 claims id=panes
 claims id=scroll-wrapper-position
 claims id=shell-v2-pins
@@ -2365,7 +2408,15 @@ only whether some rule in a stylesheet that page loads names the class, not whet
 wins or paints anything. A guard's page
 set is read from `OpsPaneRegistry` and the `/ops/*.html` literals in its source. `OpsUsagePayload`
 is declared in the Aria monorepo, so nothing here can decide whether departure 8's list is a
-complete sweep of it, which is why that departure no longer claims to be one. Contrast ratios are
+complete sweep of it, which is why that departure no longer claims to be one. A declaration is
+read the way a browser reads one — whitespace around the colon, `!important`, and a property
+declared twice in a rule resolving to the last of them — but CSS is otherwise parsed by text, so
+a value behind `var()`, a `calc()`, an `hsl()` or anything else this cannot resolve to a flat
+colour is **named** as unresolvable rather than measured or dropped. `@media` and `@supports`
+blocks are flattened, so a `:root` inside one counts as a later `:root` whether or not its
+condition holds: that direction over-reports rather than hides. A pane's read route is resolved
+one hop, from `endpoint:` to a string literal declared in the same file; a route built at run
+time would be named as unresolved. Contrast ratios are
 pixels, not arithmetic over the tree: `check-ops-contrast.mjs` is that oracle. And the
 `deleted-assets` list is checked for absence only — the pull request each line names is not
 verifiable from a shallow checkout.

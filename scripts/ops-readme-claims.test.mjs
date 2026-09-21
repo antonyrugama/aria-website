@@ -66,11 +66,27 @@
      resolved from its VALUE - hex in three or six digits, `rgb()` in either
      notation - rather than matched by one spelling, and a value it cannot
      read as a flat colour is NAMED on a third line rather than skipped, so
-     every token in that block is accounted for. It cannot judge a
+     every token in that block is accounted for, under whatever name CSS
+     allows it: `--panel_bg` and `--PanelBg` are legal custom properties and
+     a `[a-z0-9-]` name class dropped both of them. It cannot judge a
      translucent token - `--topbar-bg` and `--scrim` are `rgba()` and
      composite over whatever is behind them - and it does not know which
      surface a given run of text sits on. `check-ops-contrast.mjs` measures
      the rendered pair in a browser and is the oracle for both.
+   - How CSS is parsed at all. A rule's declarations are read in SOURCE order
+     and normalised the way a browser reads them - whitespace around the
+     colon, `!important`, and a property declared twice in one rule resolving
+     to the LAST one - but the parse is still text, not a cascade engine. A
+     value behind `var()`, a `calc()` or an `hsl()` is not resolved; it is
+     named as unresolvable where a block accounts for its tokens. `@media`
+     and `@supports` bodies are flattened into the same rule list, so a
+     `:root` inside one counts as a later `:root` whether or not its
+     condition holds - an over-report, which is the safe direction for the
+     `later :root rules redeclaring any of them` line.
+   - A pane's read route is resolved ONE hop: from the `endpoint:` in the
+     envelope it hands its reader to a string literal declared in the same
+     file. A route assembled at run time, or imported from elsewhere, is
+     named on its own line as unresolved rather than omitted.
    - A file path spelled without a directory AND with an extension no file in
      `ops/`, `ops/assets/`, `scripts/` or `.github/workflows/` uses. The sweep
      reads a bare `name.ext` as a path only when the tree already has that
@@ -337,7 +353,31 @@ function cssRules(css) {
   return out;
 }
 
-const declarations = (body) => body.split(';').map((d) => d.trim()).filter(Boolean).sort();
+/* The declarations of one rule, IN SOURCE ORDER, spelled the way a browser
+   reads them rather than the way the author typed them.  Two separate defects
+   lived in the one-line version this replaces.  It SORTED, which is a lie
+   about a cascade: a property declared twice in one rule resolves to the LAST
+   one, and sorting decided it by value instead - `--surface-hover: #000000`
+   added under `--surface-hover: #1E2833` was resolved to the wrong colour.
+   And it left the text as typed, so `position : relative` (a legal space
+   before the colon) and `overflow-x: scroll !important` were invisible to
+   every matcher keyed on `prop:`.  Call sites that want a stable printed
+   order sort for themselves. */
+const declarations = (body) =>
+  body
+    .split(';')
+    .map((d) => d.trim())
+    .filter(Boolean)
+    .map((d) => {
+      const m = /^([^:]+?)\s*:\s*([\s\S]+)$/.exec(d);
+      if (!m) return d;
+      const bang = /^([\s\S]*?)\s*!\s*important$/i.exec(m[2]);
+      return `${m[1]}: ${bang ? `${bang[1].trim()} !important` : m[2].trim()}`;
+    });
+
+/* A declared value with `!important` taken off, for the matchers that ask
+   what a declaration SAYS rather than how loudly it says it. */
+const declared = (decl) => decl.replace(/\s*!important$/i, '');
 
 /* ------------------------------------------------------------ comparison */
 
@@ -641,10 +681,10 @@ DERIVED['v1-status-classes'] = () => v1StatusClasses().map((cls) => {
    browser. */
 function scrollsSideways(body) {
   const scrolls = /^(auto|scroll|overlay)$/;
-  for (const decl of declarations(body)) {
-    const long = /^overflow-x\s*:\s*([a-z]+)$/.exec(decl);
+  for (const decl of declarations(body).map(declared)) {
+    const long = /^overflow-x:\s*([a-z]+)$/.exec(decl);
     if (long && scrolls.test(long[1])) return true;
-    const short = /^overflow\s*:\s*([a-z]+)(?:\s+[a-z]+)?$/.exec(decl);
+    const short = /^overflow:\s*([a-z]+)(?:\s+[a-z]+)?$/.exec(decl);
     if (short && scrolls.test(short[1])) return true;
   }
   return false;
@@ -784,22 +824,68 @@ function flatColour(value) {
   return `#${channels.map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
 }
 
+/* Two claims that were prose until round 10 found both of them false at the
+   same head: a deleted `[data-theme="light"]` block described as still filed
+   in `ops.css`, and "no browser guard renders ops/spend.html" beside a block
+   in this same README deriving that one of them renders every page in ops/.
+   The second needed no new derivation - browser-guards already answered it -
+   and this is the first. */
+DERIVED['data-page-scoping'] = () => {
+  const scoped = cssRules(read('ops/assets/ops.css'))
+    .filter((rule) => rule.selectors.some((sel) => /data-page/.test(sel)))
+    .flatMap((rule) => rule.selectors)
+    .sort();
+  const carriers = PAGES.filter((page) => new RegExp(attrPresent('data-page'), 'i').test(markup(page)));
+  return [
+    `ops.css rules scoped to a data-page attribute = ${scoped.length ? scoped.join('; ') : '(none)'}`,
+    `pages carrying a data-page attribute = ${carriers.length ? carriers.sort().join(', ') : '(none)'}`,
+  ];
+};
+
+/* The route each fixture-capable pane names in the envelope it hands to its
+   reader, resolved one hop from `endpoint: IDENT` to IDENT's declaration
+   rather than read off a sentence. The README said both were `null`; they are
+   two published-looking paths, and the sentence resting on them said a
+   backend publishing a route would change nothing. */
+DERIVED['pane-read-endpoints'] = () => {
+  const out = [];
+  for (const file of ASSETS.filter((a) => /^pane-.*\.js$/.test(a))) {
+    const src = read(path.join('ops/assets', file));
+    const use = /\bendpoint\s*:\s*(?:([A-Za-z_$][\w$]*)|'([^']*)'|"([^"]*)")/.exec(src);
+    if (!use) continue;
+    if (use[2] !== undefined || use[3] !== undefined) {
+      out.push(`${file} = ${use[2] ?? use[3]}`);
+      continue;
+    }
+    const decl = new RegExp(String.raw`\b(?:var|let|const)\s+${use[1]}\s*=\s*(?:'([^']*)'|"([^"]*)")`).exec(src);
+    out.push(`${file} = ${decl ? (decl[1] ?? decl[2]) : `${use[1]} (this cannot resolve it)`}`);
+  }
+  return out;
+};
+
 DERIVED['dark-text-3'] = () => {
-  const dark = cssRules(read('ops/assets/ops.css'))
-    .find((rule) => rule.selectors.includes(':root'));
+  const sheet = cssRules(read('ops/assets/ops.css'));
+  const dark = sheet.find((rule) => rule.selectors.includes(':root'));
   assert.ok(dark, 'ops.css declares no :root');
+  /* Every custom property the block declares, under whatever name CSS lets it
+     have - `--panel_bg` and `--PanelBg` are legal and used to fall through a
+     `[a-z0-9-]` name class into nothing at all - resolved LAST-DECLARATION-
+     WINS, the way the cascade resolves a property declared twice in one rule. */
+  const values = new Map();
+  for (const decl of declarations(dark.body)) {
+    const m = /^(--\S+):\s*([\s\S]+)$/.exec(decl);
+    if (m) values.set(m[1], declared(m[2]));
+  }
   const tokens = new Map();
   const unresolved = [];
-  for (const decl of declarations(dark.body)) {
-    const m = /^(--[a-z0-9-]+)\s*:\s*(.+)$/.exec(decl);
-    if (!m) continue;
-    const colour = flatColour(m[2]);
-    if (colour) tokens.set(m[1], colour);
-    else unresolved.push(m[1]);
+  for (const [name, value] of values) {
+    const colour = flatColour(value);
+    if (colour) tokens.set(name, colour);
+    else unresolved.push(name);
   }
   const ink = tokens.get('--text-3');
   assert.ok(ink, 'ops.css\'s dark :root declares no --text-3');
-  const surfaces = [...tokens.entries()].filter(([name]) => /^--(bg|surface-)/.test(name));
+  const surfaces = [...tokens.entries()].filter(([name]) => /^--(bg|surface-.+)$/.test(name));
   assert.ok(surfaces.length > 0, 'ops.css\'s dark :root declares no background tokens');
   const worst = surfaces
     .map(([name, hex]) => ({ name, hex, r: ratio(ink, hex) }))
@@ -810,6 +896,17 @@ DERIVED['dark-text-3'] = () => {
      and a token that appears in neither line is a red run until somebody
      decides which of the two it is. */
   const others = [...tokens.keys()].filter((name) => !surfaces.some(([s]) => s === name)).sort();
+  /* ops.css declares `:root` more than once. A later one wins, so a token
+     redeclared below this block is not the colour measured above - name any
+     that appear rather than measuring the first block and calling it the
+     theme. */
+  const overridden = sheet
+    .filter((rule) => rule !== dark && rule.selectors.includes(':root'))
+    .flatMap((rule) => declarations(rule.body))
+    .map((decl) => /^(--\S+):/.exec(decl))
+    .filter((m) => m && values.has(m[1]))
+    .map((m) => m[1])
+    .sort();
   return [
     `--text-3 in ops.css's dark :root = ${ink}`,
     `surfaces it is measured against = ${surfaces.map(([name]) => name).sort().join(', ')}`,
@@ -817,6 +914,7 @@ DERIVED['dark-text-3'] = () => {
     `clears 4.5:1 on every one of them = ${surfaces.every((s) => ratio(ink, s[1]) >= 4.5)}`,
     `every other opaque token in that block = ${others.join(', ')}`,
     `tokens in that block this cannot read as a flat colour = ${unresolved.sort().join(', ')}`,
+    `later :root rules redeclaring any of them = ${overridden.length ? overridden.join(', ') : '(none)'}`,
   ];
 };
 
