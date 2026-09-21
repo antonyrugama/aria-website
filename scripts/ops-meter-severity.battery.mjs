@@ -126,7 +126,7 @@ const BATTERY = [
   },
   {
     id: 'T10', file: CSS, expect: 'KILL',
-    why: 'REPAIRS Stadiora/Aria#10848 rather than breaking anything -- flattens the light fill to a flat mid grey so every light meter clears 3:1 against its own track. The ratchet holding that shortfall must red when the shortfall goes, or it outlives the issue in silence. Also raised in review: the trip was `worst < VALUE_CONTRAST + 1`, which left everything in [3, 4) green, and a repair aimed at the SC 1.4.11 threshold lands exactly there. Only `background-image`, so the forced-colors `background-color` still wins in that block.',
+    why: 'Flattens every light-theme fill to one flat mid grey. It clears 3:1 against the track (3.81:1) and against the card (4.67:1), so both contrast claims pass -- and all four tones become the same colour. Written when this row REPAIRED Stadiora/Aria#10848 and was killed by the inverted ratchet detecting its own discharge; the ratchet is gone with the issue and the payload now binds claim 9 instead, which is the honest job for it. A repair that satisfies a contrast claim by deleting the hue is exactly the shortcut #10848 invites.',
     apply: (s) => replaceOnce(s, '.meter i {\n  position: absolute;',
       '[data-theme="light"] .meter i { background-image: linear-gradient(90deg, #737373, #737373); box-shadow: none; }\n.meter i {\n  position: absolute;')
   },
@@ -152,6 +152,28 @@ const BATTERY = [
     why: 'Scrolls each meter to the TOP of the viewport rather than its centre, which is where the sticky headers at aria.css:239 and :382 sit. Binds the occlusion check: centring is not decoration, it is what holds the capture clear of the page chrome, and with nothing asserting it the sweep could measure a sticky header and report it as a bar.',
     apply: (s) => replaceOnce(s, "el.scrollIntoView({ block: 'center', inline: 'nearest' });",
       "el.scrollIntoView({ block: 'start', inline: 'nearest' });")
+  },
+  {
+    id: 'T15', file: CSS, expect: 'KILL',
+    why: 'THE row for Stadiora/Aria#10848: puts the defect back exactly as it shipped, by routing the fill through `--c` instead of `--c-ink`. This is the mutation the fix exists for, and it is a one-token revert rather than a synthetic payload, so a kill here is the claim binding the real defect and not a caricature of it. Expected to red claim 7 with light-theme readings at 2.27:1 and to leave dark untouched, because the dark block defines each `-ink` as an alias of its base token.',
+    apply: (s) => replaceOnce(s,
+      'background: linear-gradient(90deg, color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 65%, transparent), var(--c-ink, var(--cyan-ink)));',
+      'background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--cyan)) 65%, transparent), var(--c, var(--cyan)));')
+  },
+  {
+    id: 'T16', file: CSS, expect: 'KILL',
+    why: 'Drops `--c-ink` from `.meter.warn` alone, leaving `--c` in place. The tone still reaches the glow and no longer reaches the fill, so a warn bar paints the `var(--cyan-ink)` fallback -- the wrong colour at full contrast, which every ratio-measuring claim in this file is blind to by construction. Binds claim 10, the hazard this change introduces rather than one it inherits.',
+    apply: (s) => replaceOnce(s, '.meter.warn { --c: var(--amber);   --c-ink: var(--amber-ink); }',
+      '.meter.warn { --c: var(--amber); }')
+  },
+  {
+    id: 'T17', file: CSS, expect: 'KILL',
+    why: 'Aimed at claim 8, and the only payload that reaches it. Makes the light-theme track OPAQUE and dark and lightens the fills to sit between it and the card: the fill then clears 3:1 against the track it is measured against and fails against the card it sits on. It takes a change this contrived because the track is a translucent wash OF the card, so the two normally move together -- which is the honest limit on claim 8 and is recorded as such in the guard header.',
+    apply: (s) => replaceOnce(s, '.meter i {\n  position: absolute;',
+      '[data-theme="light"] .meter { background: #1a1a1a; }\n' +
+      '[data-theme="light"] .meter i { background-image: linear-gradient(90deg, ' +
+      'color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 30%, white), ' +
+      'color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 30%, white)); }\n.meter i {\n  position: absolute;')
   }
 ];
 
