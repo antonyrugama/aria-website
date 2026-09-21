@@ -150,21 +150,34 @@
      of what stays out: check-ops-dialog-hit.mjs hit-tests five spots per
      control, but that array lives inside a template literal evaluated in the
      browser, so the five stays prose and stays unproven.
-   - A blind spot a guard does not put in a bullet HEADING.
+   - A blind spot a guard does not put in a bullet HEADING of its LEADING
+     docblock, under one of THREE recognised heading phrases.
      `guard-blind-spots` reads the leading bold run of each bullet under a
      NOT COVERED heading that OPENS its line - matching the phrase anywhere in
      a line anchors on check-ops-contrast.mjs pointing at the README's list
      and on check-ops-result-view.mjs referring to its own section thirty
-     lines above where that section starts. Bullets are reassembled across
-     wrapped lines, because the first spelling of this derivation read one
-     line at a time and silently lost the two blind spots whose bold openers
-     wrap in check-ops-narrow-overflow.mjs. A second bold span later in the
-     same bullet is body text; a blind spot written into a bullet's body is
-     not a line; a bullet with no bold opener is reported as one rather than
-     skipped; and a section written as prose says so on its guard's line
-     instead of contributing nothing. Whether the guard's own account of its
-     blind spots is TRUE is not decided here - only that the README carries
-     the same list, in the same order.
+     lines above where that section starts. Three restrictions are load-bearing
+     and each is a hole:
+       (1) LEADING DOCBLOCK ONLY. docblock() slices the first block comment, so
+           a section anywhere else is not carried. Two exist today -
+           check-ops-shell-v2.mjs:583 and check-ops-contrast.mjs:2239 - and
+           both are counted but not read.
+       (2) THREE PHRASES ONLY. BLIND_SPOT_HEADING recognises WHAT THIS DOES NOT
+           COVER, WHAT IT DOES NOT and NOT COVERED. A section headed any other
+           way is invisible to BOTH the bullet read and the whole-file count,
+           so it arrives in silence. The three are emitted into the block so
+           the README cannot describe a wider net than the regex casts.
+       (3) HEADINGS, NOT BULLETS. A blind spot written into a bullet's body is
+           not a line. Spans beyond the first are counted, summed over the
+           bullets, but never named.
+     Bullets are reassembled across wrapped lines, because the first spelling
+     of this derivation read one line at a time and silently lost the ONE blind
+     spot whose bold opener wraps in check-ops-narrow-overflow.mjs. A bullet
+     with no bold opener is reported as one rather than skipped, and a section
+     written as prose says so on its guard's line instead of contributing
+     nothing. Whether the guard's own account of its blind spots is TRUE is not
+     decided here - only that the README carries the same list, in the same
+     order.
    - `<link>` and `<script>` tags only, spelled statically with a literal
      `assets/…` URL. An asset injected at runtime is invisible to the loader
      map, as is one loaded by a page outside `ops/`. A tag inside an HTML
@@ -730,7 +743,19 @@ const BLIND_SPOT_HEADING =
    README's own summary of a section is prose and is not judged; what is judged
    is that the headings are all present, in order, and that neither count has
    moved. */
-DERIVED['guard-blind-spots'] = () => BROWSER_GUARDS.flatMap((script) => {
+/* The heading phrases the regex above actually recognises, read out of its own
+   source so the README cannot claim a wider net than the regex casts. A section
+   headed any other way is invisible to the bullet read AND to the whole-file
+   count below, which is the one direction that fails quietly. */
+function recognisedHeadings() {
+  const alt = /\(\?:([^()]*)\)\\b/.exec(BLIND_SPOT_HEADING.source);
+  assert.ok(alt, 'BLIND_SPOT_HEADING no longer ends in a (?:a|b|c) alternation');
+  return alt[1].split('|').map((phrase) => phrase.trim());
+}
+
+DERIVED['guard-blind-spots'] = () => [
+  `(headings recognised: ${recognisedHeadings().join(' | ')})`,
+  ...BROWSER_GUARDS.flatMap((script) => {
   const headings = read(path.join('scripts', script))
     .split('\n').filter((l) => BLIND_SPOT_HEADING.test(l)).length;
   const tail = (n) => [
@@ -756,7 +781,8 @@ DERIVED['guard-blind-spots'] = () => BROWSER_GUARDS.flatMap((script) => {
   });
   const extra = texts.reduce((n, t) => n + Math.max(0, (t.match(/\*\*(.+?)\*\*/g) || []).length - 1), 0);
   return [...heads, ...tail(extra)];
-});
+  }),
+];
 
 /* The focus ring on every sideways-scrolling box a v2 pane sheet declares.
    The box is found by its own `overflow-x: auto`, never by its class name, so
