@@ -101,6 +101,16 @@
      extent, so a reader should not take a frozen entry as a screenshot
      waiting to happen -- it is a box that will not hold the next thing put
      in it.
+   - The stale-document condition in `navigate()`. It has never fired, in
+     any run, including two written to force it (R12/R13: every document
+     response delayed 1500ms, with the mark and without it, both green at
+     160 observations and both reporting `0 answered by the document being
+     left`). The document request is itself a read, so the network condition
+     pre-empts it. The race it guards -- `Page.navigate` resolving before
+     Chrome announces the document request, inside the 150ms the fingerprint
+     needs to stabilise -- is real but I could not stage it, because the
+     announcement is not something a test can delay. Treat that count as an
+     instrument reporting zero, not as a proven condition.
    - The repair itself. Adding `position: relative` to the seven static
      wrappers is a change to pane sheets this file does not own. */
 
@@ -437,7 +447,19 @@ function trackNetwork(cdp) {
    plausibly identical, so nothing downstream would look wrong.
 
    Marking the outgoing document is what makes the swap observable: a fresh
-   document cannot carry a property set on its predecessor. */
+   document cannot carry a property set on its predecessor.
+
+   Measured, and reported honestly: this mark has never fired. Delaying every
+   document response by 1500ms to hold the window open as wide as it goes
+   still produced `0 answered by the document being left` across 200 settle
+   points, with the mark present and with it deleted, both at 160 observations
+   (battery runs R12 and R13). The reason is that the document request is
+   itself a read, so the network condition answers first and keeps answering
+   until the new document commits. The mark is kept as an INSTRUMENT, not as a
+   load-bearing condition: the count line below reports it every run, so if a
+   contended host ever wins the race the number stops being zero and says so.
+   Read the `0 answered by the document being left` figure as this claim's
+   own null result, not as coverage. */
 async function navigate(cdp, url) {
   await evaluate(cdp, 'window.__sweepStale = true, 1').catch(() => {});
   await cdp.send('Page.navigate', { url });
