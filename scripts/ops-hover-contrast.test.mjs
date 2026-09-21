@@ -88,9 +88,11 @@ const TONES_EXPECTED = ['up', 'down', 'warn', 'none'];
    it, never the other way round. */
 const TONES_ALL = ['up', 'down', 'warn', 'info', 'acc', 'vio', 'ghost', 'none'];
 
-/* Rows the subject is known to draw across both themes. A floor written as a
-   literal, never derived from the census it polices -- a floor computed from
-   the list it guards shrinks with it and proves nothing. */
+/* Rows the subject must draw OF ITS OWN across both themes -- one per health
+   signal the fixture declares. A floor written as a literal, never derived
+   from the census it polices, and never counting the rows this file composes:
+   a floor the matrix can satisfy by itself would pass on a degraded pane that
+   rendered no table at all. */
 const ROW_FLOOR = 5;
 
 const THEMES = ['dark', 'light'];
@@ -735,7 +737,11 @@ async function sweepTheme(theme) {
     }
   }
   await hoverAt(2, 2);
-  return { readings, engagement, rowCount: rows.length };
+  /* Counted WITHOUT the composed rows. The matrix appends eight rows of its
+     own, so a floor over every row in the tbody would be satisfied by the
+     matrix alone and would pass on a pane that rendered nothing -- which is
+     the degraded state this subject falls into if its payload is wrong. */
+  return { readings, engagement, rowCount: rows.filter((r) => !r.matrix).length };
 }
 
 /* ------------------------------------------------------------------- boot */
@@ -865,7 +871,8 @@ test('the sweep judged a real board, not an empty one', async () => {
   for (const theme of THEMES) {
     const { readings, rowCount } = all[theme];
     assert.ok(rowCount >= ROW_FLOOR,
-      `${theme}: ${rowCount} table rows rendered, below the declared floor of ${ROW_FLOOR}`);
+      `${theme}: the page drew ${rowCount} table row(s) of its own, below the declared ` +
+      `floor of ${ROW_FLOOR} -- the composed tone rows do not count toward it`);
     assert.ok(readings.length > 0, `${theme}: zero ink sites measured`);
     const organic = new Set(readings.filter((r) => r.tone && !r.matrix).map((r) => r.tone));
     for (const t of TONES_EXPECTED) {
