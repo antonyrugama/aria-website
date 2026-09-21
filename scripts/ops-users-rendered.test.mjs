@@ -73,6 +73,16 @@
  * one band is not where it is named. On the real page they sit 16 of 255
  * apart in dark and 18 in light; flatten the chip and they close to 1 and 0.
  *
+ * Stadiora/Aria#10713 then found the walk was run on ONE side of each
+ * four-sided shape — the ring on its left, the mask on its top — while the
+ * test names certified the shape. Reducing `inset 0 0 0 1px` to
+ * `inset 1px 0 0 0` left a ring that is no longer a ring fully certified, and
+ * a `border-bottom-color` at 20% alpha left a mask edge reading ~1.2:1
+ * against the card fully certified. Every shape is now walked on all four
+ * sides and reports its WORST side, with the losing side named in the
+ * failure, and each side's edge sample count carries its own floor so that a
+ * short side walked over nothing cannot hide inside a healthy total.
+ *
  * NOT COVERED, stated rather than implied:
  *
  *   - forced-colours / prefers-contrast. The mask's dashed border is chosen
@@ -85,19 +95,23 @@
  *   - every text site on the pane. Four are measured, named in TEXT_SITES,
  *     and they are the four this change moves. scripts/check-ops-contrast.mjs
  *     sweeps /ops/shell-v2.html only and does not reach this pane at all.
- *   - hover and focus. The pressed control's hover step and the :focus-visible
- *     outline it must not be mistaken for are both unmeasured here.
+ *   - hover. The pressed control's hover step is not measured here; the
+ *     selected row's hovered cells are, in scripts/ops-hover-contrast.test.mjs
+ *     (Stadiora/Aria#10754). The :focus-visible outline the pressed ring must
+ *     not be mistaken for is unmeasured in both.
  *   - the hatch on the mask chip, as a texture. Nothing asserts the chip is
  *     hatched RATHER than flat; what is asserted is that its interior is not
  *     the card surface. Removing the hatch raises every figure here, so it is
  *     the loud direction the band scan exists to catch, not the quiet one.
- *   - any width but 1280 and 375. The narrow pass resizes to 375 and asserts
- *     two things: that the "Selected" mark is still on the reference's line,
- *     and that the cell the floor sets is not wider than the viewport.
- *     Page-level sideways scroll is not checked here — .tbl-wrap absorbs it,
- *     so a document-width assertion in this file cannot fail from anything
- *     this change owns. scripts/check-ops-narrow-overflow.mjs sweeps all ten
- *     panes at 375px and 360px in both themes and does check it.
+ *   - any width but 1280 and 375. At 1280 the name cell's floor is checked
+ *     from above — it must not push the match table past .tbl-wrap — and at
+ *     375 from below, that the "Selected" mark is still on the reference's
+ *     line and the cell is no wider than the viewport. The upper arm is loose:
+ *     the cell lays out at 345px of its own accord at 1280, so a floor only
+ *     bites there above ~345. Page-level sideways scroll is not checked here —
+ *     .tbl-wrap absorbs it, so a document-width assertion in this file cannot
+ *     fail from anything this change owns. scripts/check-ops-narrow-overflow.mjs
+ *     sweeps all ten panes at 375px and 360px in both themes and does check it.
  *   - the account record beyond its masked chips, and every card below it.
  */
 import assert from 'node:assert/strict';
@@ -390,19 +404,41 @@ const stripProbe = (selector, side) => `(() => {
   if (!el) return null;
   const r = el.getBoundingClientRect();
   const cs = getComputedStyle(el);
-  const radius = parseFloat(cs.borderTopLeftRadius) || 0;
+  const side = ${JSON.stringify(side)};
+  /* The two corners that actually bound THIS side, so a shape with uneven
+     corners does not get the top-left one's skip applied to its bottom edge. */
+  const corner = {
+    top: ['borderTopLeftRadius', 'borderTopRightRadius'],
+    right: ['borderTopRightRadius', 'borderBottomRightRadius'],
+    bottom: ['borderBottomLeftRadius', 'borderBottomRightRadius'],
+    left: ['borderTopLeftRadius', 'borderBottomLeftRadius']
+  }[side];
+  const radius = Math.max(...corner.map((p) => parseFloat(cs[p]) || 0));
   const ctx = globalThis.__plate;
   const px = (x, y) => { const d = ctx.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2]]; };
-  const along = ${JSON.stringify(side)} === 'top'
-    ? { from: Math.round(r.x), to: Math.round(r.right), fixed: Math.round(r.y) }
-    : { from: Math.round(r.y), to: Math.round(r.bottom), fixed: Math.round(r.x) };
-  const span = along.to - along.from;
+  /* One walk, four sides. \`inward\` flips the offset so that a positive d is
+     always INTO the box and a negative d always out of it, whichever edge is
+     being read; the fixed coordinate is the last pixel row or column that is
+     still inside. Getting this backwards on the far sides would report the
+     surface outside as the interior and vice versa — and both bands would
+     still be full, so nothing about the sample counts would show it. */
+  const vertical = side === 'left' || side === 'right';
+  const inward = (side === 'top' || side === 'left') ? 1 : -1;
+  const fixed = side === 'top' ? Math.round(r.y)
+    : side === 'bottom' ? Math.round(r.bottom) - 1
+    : side === 'left' ? Math.round(r.x)
+    : Math.round(r.right) - 1;
+  const from = vertical ? Math.round(r.y) : Math.round(r.x);
+  const to = vertical ? Math.round(r.bottom) : Math.round(r.right);
+  const span = to - from;
   const skip = Math.min(Math.ceil(radius) + 3, Math.floor(span / 3));
-  const out = { edgeLine: [], interior: [], outside: [], radius, skip,
+  const out = { side, edgeLine: [], interior: [], outside: [], radius, skip,
     box: { w: r.width, h: r.height } };
-  for (let t = along.from + skip; t < along.to - skip; t++) {
-    const at = (d) => (${JSON.stringify(side)} === 'top'
-      ? px(t, along.fixed + d) : px(along.fixed + d, t));
+  for (let t = from + skip; t < to - skip; t++) {
+    const at = (d) => {
+      const o = fixed + d * inward;
+      return vertical ? px(o, t) : px(t, o);
+    };
     out.edgeLine.push(at(0));
     for (let d = 2; d <= 5; d++) out.interior.push(at(d));
     for (let d = -4; d <= -2; d++) out.outside.push(at(d));
@@ -436,6 +472,56 @@ function readStrip(raw, where) {
     colours: { interior: distinct(strip.interior), outside: distinct(strip.outside) },
     radius: strip.radius, skip: strip.skip, box: strip.box,
     edgeLine: strip.edgeLine };
+}
+
+const SIDES = ['top', 'right', 'bottom', 'left'];
+
+/* Stadiora/Aria#10713. A ring and a dashed border are four-sided shapes, and
+   until this they were each measured on ONE side — the ring on its left, the
+   mask on its top. Both claims ("clears 3:1 against both surfaces it sits
+   between") were therefore true of a quarter of the shape and asserted of all
+   of it. The proofs on the issue: reduce `inset 0 0 0 1px` to `inset 1px 0 0
+   0` and the ring certification survived for something that is no longer a
+   ring; give the mask a `border-bottom-color` at 20% alpha and the mask
+   certification survived for an edge reading ~1.2:1 against the card.
+
+   Every side is walked, and the SHAPE's figure is the worst side's. Which
+   side lost is carried through to the assertion message, because "3.1:1 on
+   the bottom" and "3.1:1 on the left" send a reader to different rules. */
+function readShape(perSide, where) {
+  const sides = {};
+  for (const side of SIDES) sides[side] = readStrip(perSide[side], `${where} (${side})`);
+  const worstSideBy = (key) =>
+    SIDES.reduce((w, s) => (sides[s][key] < sides[w][key] ? s : w), SIDES[0]);
+  const inSide = worstSideBy('vsInterior');
+  const outSide = worstSideBy('vsOutside');
+  const total = (key) => SIDES.reduce((n, s) => n + sides[s].samples[key], 0);
+  return {
+    sides,
+    interiorSide: inSide, outsideSide: outSide,
+    vsInterior: sides[inSide].vsInterior, vsOutside: sides[outSide].vsOutside,
+    /* The edge colour reported is the one the losing side actually read, so
+       the pair printed in a failure is the pair that produced the figure. */
+    edge: sides[inSide].edge, edgeOutside: sides[outSide].edge,
+    worstInterior: sides[inSide].worstInterior,
+    worstOutside: sides[outSide].worstOutside,
+    samples: { edge: total('edge'), interior: total('interior'), outside: total('outside') },
+    perSideSamples: SIDES.reduce((o, s) => (o[s] = sides[s].samples, o), {}),
+    colours: {
+      interior: Math.max(...SIDES.map((s) => sides[s].colours.interior)),
+      outside: Math.max(...SIDES.map((s) => sides[s].colours.outside))
+    },
+    box: sides.top.box
+  };
+}
+
+/* The worst reading of one shape's edge against ANOTHER shape's edge, side by
+   corresponding side. Left against left, top against top: a ring's left edge
+   compared with a plain button's bottom edge would be comparing two different
+   rules and reporting the difference as a state difference. */
+function shapeVsShape(a, b) {
+  return round(SIDES.reduce((lo, s) => Math.min(lo,
+    b.sides[s].edgeLine.reduce((m, p) => Math.min(m, contrast(a.sides[s].edge, p)), Infinity)), Infinity));
 }
 
 /* The rects an element's own TEXT occupies, not its box: a chip that is part
@@ -621,20 +707,21 @@ try {
     const plate = await cdp.send('Page.captureScreenshot', { format: 'png' });
     await evaluate(loadPlate(plate.data));
 
-    /* The pressed ring's left edge, the mask's top edge, and — for the claim
-       that the two controls do not look alike with colour taken out — the same
-       left edge of the unpressed control. */
-    const ring = readStrip(await evaluate(stripProbe(PAIRS.pressedBtn, 'left')),
-      'the pressed control');
-    const mask = readStrip(await evaluate(stripProbe(PAIRS.maskedChip, 'top')),
-      'the mask chip');
-    const unpressed = readStrip(await evaluate(stripProbe(PAIRS.unpressedBtn, 'left')),
-      'the unpressed control');
+    /* Every side of every shape. A four-sided ring and a four-sided dashed
+       border are only as strong as the side that reads worst, and reading one
+       side certified the other three by assumption — Stadiora/Aria#10713. */
+    const probeShape = async (selector, where) => {
+      const perSide = {};
+      for (const side of SIDES) perSide[side] = await evaluate(stripProbe(selector, side));
+      return readShape(perSide, where);
+    };
+    const ring = await probeShape(PAIRS.pressedBtn, 'the pressed control');
+    const mask = await probeShape(PAIRS.maskedChip, 'the mask chip');
+    const unpressed = await probeShape(PAIRS.unpressedBtn, 'the unpressed control');
     /* Worst case, not corresponding case: every pixel of the unpressed
-       control's edge line, and the one that reads closest to the pressed
-       ring wins. */
-    const ringVsUnpressed = round(unpressed.edgeLine
-      .reduce((lo, p) => Math.min(lo, contrast(ring.edge, p)), Infinity));
+       control's edge line on the same side, and the one that reads closest to
+       the pressed ring wins. */
+    const ringVsUnpressed = shapeVsShape(ring, unpressed);
 
     const textContrast = [];
     for (const t of texts) {
@@ -643,6 +730,31 @@ try {
         ink: t.color, backdrop: [r, g, b], pixels: n,
         ratio: round(contrast(opaqueInk(t.color), [r, g, b])) });
     }
+
+    /* Stadiora/Aria#10713. The floor on .match-name was bound only from
+       below, by the 375px pass: it proves 200px is ENOUGH to keep the mark on
+       the reference's line. Nothing proved it is not too MUCH — raising it to
+       360px survived the whole suite, and a floor that large drags the match
+       table past the card at desktop width and puts the account column behind
+       a horizontal scrollbar for every lookup.
+
+       Read on .tbl-wrap, which is the element that clips (`overflow-x: auto`,
+       pane-users-v2.css:240). Reading it on an ancestor reports the viewport's
+       own width and can never fail; reading it on <html> cannot fail either,
+       because the wrap absorbs the overflow by scrolling — that exact mistake
+       was caught in this file once already. */
+    const wide = JSON.parse(await evaluate(`(() => {
+      const th = document.querySelector('tr.is-selected th.match-name');
+      const wrap = th.closest('.tbl-wrap');
+      const table = wrap.querySelector('table');
+      return JSON.stringify({
+        viewport: document.documentElement.clientWidth,
+        cellWidth: th.getBoundingClientRect().width,
+        wrapScrollWidth: wrap.scrollWidth, wrapClientWidth: wrap.clientWidth,
+        tableWidth: table.getBoundingClientRect().width,
+        floor: Number.parseFloat(getComputedStyle(th).minWidth)
+      });
+    })()`));
 
     /* The narrow pass. One question: is the "Selected" mark still on the line
        the reference is on, or has the column squeezed it onto its own? */
@@ -662,7 +774,7 @@ try {
       });
     })()`));
 
-    census[theme] = { styles, textContrast, narrow,
+    census[theme] = { styles, textContrast, narrow, wide,
       graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
@@ -738,17 +850,23 @@ for (const theme of THEMES) {
     const c = census[theme];
     const { pressedCode, unpressedCode } = c.styles;
 
-    /* Weight carries no colour at all. */
+    /* Weight carries no colour at all. Magnitude, not just direction:
+       Stadiora/Aria#10713 proved `620` -> `521` survived a bare `>`, which is
+       a 21-unit step no reader can see and, under forced-colours where the
+       ring and the fill both resolve away, the only channel left. The floor is
+       one full CSS weight rank. */
     const pressedWeight = Number(pressedCode['font-weight']);
     const unpressedWeight = Number(unpressedCode['font-weight']);
-    assert.ok(pressedWeight > unpressedWeight,
+    assert.ok(pressedWeight - unpressedWeight >= 100,
       `the pressed reference is set at ${pressedWeight} and the unpressed one at ` +
-      `${unpressedWeight}: weight is not carrying the state`);
+      `${unpressedWeight}, a step of ${pressedWeight - unpressedWeight}: under a full ` +
+      'weight rank, weight is not carrying the state');
 
     /* Luminance discards hue, so a ratio here is what a greyscale screen sees.
        The ring against the unpressed control's own edge line is the "these two
        controls do not look alike" claim with colour taken out of it, and it is
-       the WORST pixel of that line rather than a corresponding one. */
+       the WORST pixel of that line, on every side, rather than a corresponding
+       one on one side. */
     const { ring, unpressed, ringVsUnpressed } = c.graphics;
     assert.ok(ringVsUnpressed >= AA_GRAPHIC,
       `the pressed control's edge reads at ${ringVsUnpressed}:1 in luminance against the ` +
@@ -756,15 +874,21 @@ for (const theme of THEMES) {
       `under ${AA_GRAPHIC}:1`);
   });
 
-  test(`[${theme}] the pressed ring clears 3:1 against both surfaces it sits between`, () => {
+  test(`[${theme}] the pressed ring clears 3:1 on every side, against both surfaces it sits between`, () => {
     const { ring } = census[theme].graphics;
+    for (const side of SIDES) {
+      assert.ok(ring.sides[side].samples.edge >= 4,
+        `the ring's ${side} edge was walked over ${ring.sides[side].samples.edge} pixel(s), ` +
+        'too few for its figure below to be an assertion about the edge rather than a corner');
+    }
     assert.ok(ring.vsInterior >= AA_GRAPHIC,
-      `the ring reads ${ring.vsInterior}:1 against the worst pixel of the pressed control ` +
-      `fill it encloses (${ring.edge} vs ${ring.worstInterior}), over ` +
-      `${ring.samples.interior} samples`);
+      `the ring reads ${ring.vsInterior}:1 on its ${ring.interiorSide} side against the worst ` +
+      `pixel of the 4px band of pressed fill inboard of it (${ring.edge} vs ` +
+      `${ring.worstInterior}), over ${ring.samples.interior} samples across four sides`);
     assert.ok(ring.vsOutside >= AA_GRAPHIC,
-      `the ring reads ${ring.vsOutside}:1 against the worst pixel of the picked row cell ` +
-      `beside it (${ring.edge} vs ${ring.worstOutside}), over ${ring.samples.outside} samples`);
+      `the ring reads ${ring.vsOutside}:1 on its ${ring.outsideSide} side against the worst ` +
+      `pixel of the 3px band of picked row cell outboard of it (${ring.edgeOutside} vs ` +
+      `${ring.worstOutside}), over ${ring.samples.outside} samples across four sides`);
   });
 }
 
@@ -824,12 +948,20 @@ for (const theme of THEMES) {
       'the masked address the fixture sent is not on screen verbatim');
   });
 
-  test(`[${theme}] the mask's dashed edge clears 3:1 against both surfaces`, () => {
+  test(`[${theme}] the mask's dashed edge clears 3:1 on every side, against both surfaces`, () => {
     const { mask } = census[theme].graphics;
     /* .locked's background is a hatch, so the interior is two alternating
        colours and the claim is about the LOUD one. The sample counts are
        asserted because a band that collapses to one pixel is how this check
-       reported 3.55:1 for a surface that measured 2.98:1. */
+       reported 3.55:1 for a surface that measured 2.98:1. Now counted across
+       four sides, with a per-side floor as well, so a short side walked over
+       nothing cannot hide inside a healthy total — a dashed border sampled
+       over nine pixels can land entirely in its own gaps. */
+    for (const side of SIDES) {
+      assert.ok(mask.sides[side].samples.edge >= 4,
+        `the mask's ${side} edge was walked over ${mask.sides[side].samples.edge} pixel(s), ` +
+        'too few to have found a dash rather than the gaps between them');
+    }
     assert.ok(mask.samples.interior >= 40 && mask.samples.outside >= 30,
       `the mask's neighbouring bands were read at ${mask.samples.interior} interior and ` +
       `${mask.samples.outside} outside samples, which is too few to have walked the edge`);
@@ -842,11 +974,13 @@ for (const theme of THEMES) {
       'that near-identity is precisely how a single-pixel sample of a hatched interior came ' +
       'back holding the card surface and published it as the interior');
     assert.ok(mask.vsInterior >= AA_GRAPHIC,
-      `the dashed edge reads ${mask.vsInterior}:1 against the worst pixel of the mask chip ` +
-      `interior (${mask.edge} vs ${mask.worstInterior}), over ${mask.samples.interior} samples`);
+      `the dashed edge reads ${mask.vsInterior}:1 on its ${mask.interiorSide} side against ` +
+      `the worst pixel of the mask chip interior (${mask.edge} vs ${mask.worstInterior}), ` +
+      `over ${mask.samples.interior} samples across four sides`);
     assert.ok(mask.vsOutside >= AA_GRAPHIC,
-      `the dashed edge reads ${mask.vsOutside}:1 against the worst pixel of the card surface ` +
-      `outside it (${mask.edge} vs ${mask.worstOutside}), over ${mask.samples.outside} samples`);
+      `the dashed edge reads ${mask.vsOutside}:1 on its ${mask.outsideSide} side against the ` +
+      `worst pixel of the card surface outside it (${mask.edgeOutside} vs ` +
+      `${mask.worstOutside}), over ${mask.samples.outside} samples across four sides`);
   });
 }
 
@@ -867,6 +1001,29 @@ for (const theme of THEMES) {
     assert.ok(gap > otherGap,
       `the address under the reference sits ${gap}px below it and a caption elsewhere on ` +
       `the pane sits ${otherGap}px below its own line: the rhythm is not the cell's`);
+  });
+
+  /* Stadiora/Aria#10713: the floor's other arm. The 375px test below proves
+     the floor is enough; this proves it is not so much that it costs the
+     desktop layout a scrollbar on every lookup.
+
+     What it can and cannot see, stated rather than implied: at 1280px the
+     cell lays out at 345px of its own accord, so the 200px floor is not
+     load-bearing here at all and this arm only bites once a floor is raised
+     past the natural width — measured, that is somewhere between 345 and 360.
+     It is an upper bound, not a tight one, and the 375px arm is what holds
+     the lower end. */
+  test(`[${theme}] the name cell's floor does not push the match table past its own wrapper`, () => {
+    const { wide } = census[theme];
+    assert.equal(wide.viewport, 1280,
+      `this arm is about the desktop layout and was measured at ${wide.viewport}px`);
+    assert.ok(wide.floor >= 200,
+      `the floor resolves to ${wide.floor}px, under the 200px the 375px arm needs`);
+    assert.ok(wide.wrapScrollWidth <= wide.wrapClientWidth,
+      `at ${wide.viewport}px the match table lays out ${wide.tableWidth}px wide inside a ` +
+      `${wide.wrapClientWidth}px wrapper whose content measures ${wide.wrapScrollWidth}px, ` +
+      `so th.match-name's ${wide.floor}px floor (against a natural ${wide.cellWidth}px) has ` +
+      'put the account column behind a horizontal scrollbar at desktop width');
   });
 
   test(`[${theme}] at 375px the "Selected" mark is still on the reference's line`, () => {

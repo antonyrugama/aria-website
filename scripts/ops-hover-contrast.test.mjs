@@ -36,18 +36,36 @@
  * The composite is what the eye receives, so the composite is what is judged,
  * at the WORST frequent pixel in the element's own box rather than an average.
  *
+ * COMPOUND STATES (Stadiora/Aria#10754)
+ *
+ * A pane sheet can put its own background on the CELLS of a row, and a cell
+ * background paints over a row background, so such a pane's hovered row is a
+ * backdrop this file would never otherwise see. `pane-users-v2.css` does
+ * exactly that: a SELECTED row's cells carry `color-mix(var(--cyan) 10%)` and
+ * a selected HOVERED row's carry 15%, over the shared row tint still painting
+ * underneath. Neither sweep in this repository had entered that state -- the
+ * old one never hovers, and the first revision of this one swept only a pane
+ * with no wash of its own.
+ *
+ * So the users pane is a second subject here, driven to a real selection with
+ * a real lookup and a real click before a single row is hovered. Selection is
+ * proven on its own terms, the same way hover is: the selected row's cell
+ * background must differ from an unselected row's, and the selected HOVERED
+ * cell must differ from the selected unhovered one. A compound state that
+ * never compounded would otherwise be judged as its own weaker half and pass.
+ *
  * NOT COVERED
  *
- * - Panes whose sheets add their own row wash. `pane-users-v2.css:287` washes
- *   a SELECTED hovered row's cells with `color-mix(var(--cyan) 15%)`, a
- *   different backdrop from the shared tint this sweeps, and it needs a
- *   selection to exist. Unmeasured here, and named in the PR.
  * - Tones no subject page composes inside a row. The census reports the tone
  *   vocabulary it judged; TONES_EXPECTED below is the independently stated
  *   list it must cover, and a tone missing from a real hovered row is a
  *   failure, never a silent skip.
  * - Non-table hover surfaces (.nav-item, .btn, .seg button, .card.lift). This
  *   issue is about table rows; those are unswept here.
+ * - Selection washes other than the users pane's. The sweep judges the wash
+ *   the subject list names; a pane that grows one and is not added here is
+ *   unswept, which is why SELECTION_SUBJECTS below is asserted against the
+ *   sheets rather than trusted.
  * - Contrast only. No hover-specific focus, motion or pointer-target check.
  */
 import test, { after } from 'node:test';
@@ -62,11 +80,25 @@ import { inflateSync } from 'node:zlib';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/* The subject: the releases pane ends each health row with a pill, which is
-   the "badge inside a hoverable table row" pairing #5501 is about. It is
+/* The first subject: the releases pane ends each health row with a pill, which
+   is the "badge inside a hoverable table row" pairing #5501 is about. It is
    reachable on an auth stub plus one fixture, and it loads the shared sheet
    the hover tint lives in. */
 const SUBJECT = '/ops/releases.html';
+
+/* The second subject, for #10754: the users pane is the only pane whose sheet
+   washes a row's CELLS, which is a backdrop the shared tint alone never
+   produces. It needs a lookup and a pick before the state exists at all. */
+const SUBJECT_USERS = '/ops/users.html';
+
+/* The sheets that put a background on a table CELL in a state the shared
+   hover rule cannot reach. Written as a literal contract and checked against
+   the sheets below: if a pane grows such a rule and is not swept here, that
+   check fails rather than this file quietly judging one pane fewer. A cell
+   background is the interesting case precisely because `.tbl` is
+   border-collapse: collapse, so it paints OVER the row's hover tint instead
+   of being replaced by it. */
+const SELECTION_SUBJECTS = ['ops/assets/pane-users-v2.css'];
 
 /* WCAG 2.2 SC 1.4.3, normal text. `.pill` is 11.5px at weight 540, which is
    neither 18pt nor 14pt-bold, so the large-text allowance of 3:1 does not
@@ -94,6 +126,20 @@ const TONES_ALL = ['up', 'down', 'warn', 'info', 'acc', 'vio', 'ghost', 'none'];
    a floor the matrix can satisfy by itself would pass on a degraded pane that
    rendered no table at all. */
 const ROW_FLOOR = 5;
+
+/* The users subject's own floor: the match table the lookup draws. Two
+   matches in the fixture, and the account record underneath adds more rows
+   still, so a run that judged fewer than two has lost the table this state
+   lives in. Literal, for the same reason ROW_FLOOR is. */
+const USERS_ROW_FLOOR = 2;
+
+/* Ink sites the sweep must judge inside a row that is BOTH selected and
+   hovered, per theme. The picked match row carries a state pill, a tier pill,
+   the "Selected" mark, the masked address and a relative timestamp, so this
+   is a floor well under what a healthy run reaches -- its job is to fail a run
+   in which the compound state collapsed to nothing rather than to describe
+   one that worked. */
+const COMPOUND_INK_FLOOR = 4;
 
 const THEMES = ['dark', 'light'];
 const VIEWPORT = { width: 1440, height: 1000 };
@@ -192,6 +238,55 @@ const RELEASES = {
   }
 };
 
+/* ----------------------------------------------------- users fixture (#10754)
+
+   Enough of the users pane's payload to reach a match table and an account
+   record. Every address is .invalid and every masked value arrives already
+   masked, on the same terms as that pane's own fixtures: this file never
+   writes a personal value into a page whose first promise is that it does not
+   show one. Two matches of the same shape, so the difference between the
+   picked row and the other one is being picked and nothing else. */
+const PICKED_REF = 'ath_2277';
+const OTHER_REF = 'ath_2419';
+
+const USERS_LOOKUP = {
+  recorded: { at: ago(1000), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
+  matchCount: 2,
+  matches: [
+    { reference: PICKED_REF, maskedEmail: 'a•••@example.invalid',
+      state: { key: 'active', label: 'Active', tone: 'ok' },
+      tier: { key: 'pro', label: 'Athlete Pro', brand: true },
+      platforms: [{ key: 'mobile', label: 'Mobile' }],
+      lastActiveAt: ago(3 * HOUR), flags: [] },
+    { reference: OTHER_REF, maskedEmail: 'b•••@example.invalid',
+      state: { key: 'active', label: 'Active', tone: 'ok' },
+      tier: { key: 'pro', label: 'Athlete Pro', brand: true },
+      platforms: [{ key: 'mobile', label: 'Mobile' }],
+      lastActiveAt: ago(30 * HOUR), flags: [] }
+  ]
+};
+
+const USERS_DETAIL = {
+  reference: PICKED_REF, kind: 'athlete',
+  state: { key: 'active', label: 'Active', tone: 'ok' },
+  tier: { key: 'pro', label: 'Athlete Pro', brand: true },
+  memberSince: ago(400 * DAY),
+  recorded: { at: ago(500), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
+  summary: { fields: [
+    { key: 'email', label: 'Email', masked: true, maskedValue: 'a•••@example.invalid', reveal: 'allowed' },
+    { key: 'locale', label: 'Locale', masked: false, value: 'es-ES' }
+  ] },
+  activity: { windowDays: 7, events: [
+    { occurredAt: ago(3 * HOUR), label: 'Chat reply', tone: 'ok', reference: 'run_88214' }
+  ] },
+  devices: [{ label: 'iPhone', appVersion: '1.1.2', os: 'iOS 18.2', lastSeenAt: ago(2 * HOUR) }],
+  billing: { fields: [{ key: 'tier', label: 'Tier', masked: false, value: 'Athlete Pro' }] },
+  access: { windowDays: 90, entries: [
+    { occurredAt: ago(2 * DAY), actor: 'ops_owner_1', fields: 'email', reason: 'SUP-4471', revealed: true }
+  ] },
+  supportActions: { available: [{ key: 'resend', label: 'Resend verification email' }] }
+};
+
 function stub(pathname) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
@@ -204,6 +299,8 @@ function stub(pathname) {
       authTime: Math.floor(NOW / 1000), reauthWindowSeconds: 900 } };
   }
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
+  if (pathname.startsWith('/api/ops/users/lookup')) return { data: USERS_LOOKUP };
+  if (/^\/api\/ops\/users\/[^/]+$/.test(pathname)) return { data: USERS_DETAIL };
   return { data: {} };
 }
 
@@ -593,6 +690,71 @@ const MATRIX = `(() => {
   return JSON.stringify({ added: tbody.querySelectorAll('[data-hover-matrix]').length });
 })()`;
 
+/* --------------------------------------------- the compound state (#10754)
+
+   From the users pane's landing state to a picked match. The form is filled
+   through the native value setter and submitted with a real submit event, and
+   the pick control is CLICKED, so applySelection, the account read and the
+   repaint all actually happen -- a class written by hand would paint the wash
+   without proving the pane can reach the state.
+
+   The SECOND match is picked, not the first, so the selected row has an
+   unselected row above it as well as the table head: an unselected sibling in
+   the same table is what the selection proof below compares against, and it
+   has to be one the same sheets and the same nesting depth produced. */
+const PICK_MATCH = `(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const id = document.getElementById('lookupIdentifier');
+  const reason = document.getElementById('lookupReason');
+  if (!id || !reason) return JSON.stringify({ error: 'the lookup form is not on the page' });
+  const set = (el, v) => {
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  set(id, ${JSON.stringify(PICKED_REF)});
+  set(reason, 'SUP-4471');
+  id.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  for (let i = 0; i < 160; i++) { await sleep(50); if (document.querySelectorAll('.match-row-btn').length > 1) break; }
+  const picks = [...document.querySelectorAll('.match-row-btn')];
+  if (picks.length < 2) return JSON.stringify({ error: 'the lookup drew ' + picks.length + ' match row(s), so there is no unselected sibling to compare against' });
+  picks[1].click();
+  for (let i = 0; i < 160; i++) { await sleep(50); if (document.querySelector('.match-row.is-selected')) break; }
+  await sleep(700);
+  const sel = document.querySelector('.match-row.is-selected');
+  if (!sel) return JSON.stringify({ error: 'the pick never selected a row' });
+  return JSON.stringify({ selected: 1, rows: document.querySelectorAll('.match-row').length });
+})()`;
+
+/* Mark the selected row and one unselected row in the SAME table, and report
+   the cell background each currently carries. The wash is on the cells, so
+   the row's own computed background is not the thing that moved and reading
+   it would report every selected row as unselected. */
+const SELECTION_CENSUS = `(() => {
+  const sel = document.querySelector('.tbl tbody tr.is-selected');
+  if (!sel) return JSON.stringify({ selected: null });
+  const table = sel.closest('table');
+  const other = [...table.querySelectorAll('tbody tr')].find((r) => r !== sel && !r.classList.contains('is-selected'));
+  const cellBg = (row) => {
+    const cell = row && row.querySelector('th, td');
+    return cell ? getComputedStyle(cell).backgroundColor : null;
+  };
+  sel.dataset.hoverSelected = '1';
+  if (other) other.dataset.hoverUnselected = '1';
+  return JSON.stringify({
+    selected: sel.dataset.hoverRow === undefined ? null : Number(sel.dataset.hoverRow),
+    unselected: other && other.dataset.hoverRow !== undefined ? Number(other.dataset.hoverRow) : null,
+    selectedCellBg: cellBg(sel), unselectedCellBg: cellBg(other)
+  });
+})()`;
+
+/* The cell background of a named row, read while whatever state is current is
+   current. Used to prove the hovered selected cell is a THIRD surface and not
+   the selected one over again. */
+const CELL_BG = (r) => `(() => {
+  const row = document.querySelector('[data-hover-row="${r}"]');
+  const cell = row && row.querySelector('th, td');
+  return JSON.stringify({ bg: cell ? getComputedStyle(cell).backgroundColor : null });
+})()`;
 /* Put the row in view and report where to aim, in viewport coordinates for the
    input dispatch and page coordinates for the clip. A few pixels in from the
    row's left edge lands inside the row and outside every pill. */
@@ -679,37 +841,104 @@ async function hoverAt(x, y) {
   await new Promise((r) => setTimeout(r, 60));
 }
 
-/* Sweep one theme: for every row, capture it unhovered, drive real pointer
-   input onto it, PROVE the hover rule engaged twice over -- the row's own
-   computed background changed AND the painted pixels changed -- and only then
-   measure each ink inside it against what is now under it. */
-async function sweepTheme(theme) {
+/* Sweep one subject in one theme: for every row, capture it unhovered, drive
+   real pointer input onto it, PROVE the hover rule engaged twice over -- the
+   row's own computed background changed AND the painted pixels changed -- and
+   only then measure each ink inside it against what is now under it.
+
+   When the subject declares a compound state, it is driven first and proven
+   on its own terms before any row is hovered, and the reading for the
+   selected row carries the cell backgrounds of all three states so a run in
+   which the states collapsed into one another cannot pass as one in which
+   they did not. */
+async function sweepSubject(theme, subject) {
   await setTheme(theme, true);
-  await load(`${base}${SUBJECT}`);
+  await load(`${base}${subject.url}`);
   await evalJson(NO_MOTION);
   const painted = await evalJson(`JSON.stringify({ theme: document.documentElement.dataset.theme })`);
   assert.equal(painted.theme, theme, `page painted ${painted.theme} when asked for ${theme}`);
 
-  const built = await evalJson(MATRIX);
-  assert.equal(built.added, TONES_ALL.length,
-    `the tone matrix added ${built.added} rows, not the ${TONES_ALL.length} tones declared`);
+  let drive = null;
+  if (subject.prepare) {
+    drive = await evalJson(subject.prepare);
+    assert.ok(!drive.error, `${theme} ${subject.key}: ${drive.error}`);
+  }
+
+  let built = null;
+  if (subject.matrix) {
+    built = await evalJson(MATRIX);
+    assert.equal(built.added, TONES_ALL.length,
+      `the tone matrix added ${built.added} rows, not the ${TONES_ALL.length} tones declared`);
+  }
   const rows = await evalJson(ROW_CENSUS);
+
+  /* Read AFTER ROW_CENSUS, which is what stamps data-hover-row. */
+  const selection = subject.selection ? await evalJson(SELECTION_CENSUS) : { selected: null };
+  if (subject.selection) {
+    assert.notEqual(selection.selected, null,
+      `${theme} ${subject.key}: no .tbl row carries .is-selected after the pick, so the ` +
+      'compound state this subject exists for was never entered');
+    assert.notEqual(selection.unselected, null,
+      `${theme} ${subject.key}: the selected row has no unselected sibling in its own table, ` +
+      'so "the wash changed something" cannot be told from "every row looks like this"');
+    assert.notEqual(selection.selectedCellBg, selection.unselectedCellBg,
+      `${theme} ${subject.key}: a selected cell and an unselected cell in the same table both ` +
+      `compute ${selection.selectedCellBg}, so selection painted nothing and every reading ` +
+      'below would be an unselected reading wearing a selected label');
+  }
+
   const readings = [];
+  const unhovered = [];
   const engagement = [];
   for (const row of rows) {
     if (!row.inks.length) continue;
     await hoverAt(2, 2);
     const geom = await evalJson(ROW_GEOM(row.r));
     const off = await evalJson(ROW_STATE(row.r));
+    const cellOff = await evalJson(CELL_BG(row.r));
     const imgOff = await shoot(off.clip);
+
+    /* The compound state has two halves and only one of them is hover. The
+       wash a selected row carries is on the cells whether or not a pointer is
+       near it, and nothing in this repository measures THAT either: the old
+       sweep composes synthetic sites on a fixture page and never drives a
+       pane to a selection at all. So the selected row is read twice, and the
+       unhovered half is judged by its own test below -- a fix that cleared
+       only the hovered half would leave the state it is a step up from
+       failing, and this file would have called that done. */
+    if (row.r === selection.selected) {
+      await evalJson(HIDE_INK);
+      const bareOff = await shoot(off.clip);
+      await evalJson(SHOW_INK);
+      assert.ok(differs(imgOff, bareOff),
+        `${theme} ${subject.key} row ${row.r}: hiding the ink changed no pixels in the ` +
+        'unhovered capture');
+      for (const site of row.inks) {
+        const live = off.inks.find((i) => i.key === site.key);
+        const ink = parseColor(live.color);
+        const px = cropPixels(bareOff, off.clip, live.box);
+        if (!px.length) continue;
+        const bd = backdropFor(px, ink.rgb);
+        if (!bd) continue;
+        unhovered.push({
+          theme, subject: subject.key, row: row.r, key: site.key, tag: site.tag, cls: site.cls,
+          tone: site.tone, text: site.text, ink: live.color,
+          backdrop: bd.rgb.map((c) => Math.round(c)),
+          ratio: +contrast(composite(ink, bd.rgb), bd.rgb).toFixed(3)
+        });
+      }
+    }
 
     await hoverAt(geom.aim.x, geom.aim.y);
     const on = await evalJson(ROW_STATE(row.r));
+    const cellOn = await evalJson(CELL_BG(row.r));
     const imgOn = await shoot(on.clip);
 
     engagement.push({
-      r: row.r, matches: on.hovered, bgOff: off.bg, bgOn: on.bg,
-      bgChanged: off.bg !== on.bg, pixelsChanged: differs(imgOff, imgOn)
+      subject: subject.key, r: row.r, matches: on.hovered, bgOff: off.bg, bgOn: on.bg,
+      bgChanged: off.bg !== on.bg, pixelsChanged: differs(imgOff, imgOn),
+      selected: row.r === selection.selected,
+      cellBgOff: cellOff.bg, cellBgOn: cellOn.bg
     });
 
     await evalJson(HIDE_INK);
@@ -729,7 +958,9 @@ async function sweepTheme(theme) {
       if (!bd) continue;
       const fg = composite(ink, bd.rgb);
       readings.push({
-        theme, row: row.r, matrix: row.matrix, key: site.key, tag: site.tag, cls: site.cls,
+        theme, subject: subject.key, row: row.r, matrix: row.matrix,
+        selected: row.r === selection.selected,
+        key: site.key, tag: site.tag, cls: site.cls,
         badgeCls: site.badgeCls, tone: site.tone,
         text: site.text, ink: live.color, backdrop: bd.rgb.map((c) => Math.round(c)),
         share: +(bd.n / px.length).toFixed(3), ratio: +contrast(fg, bd.rgb).toFixed(3)
@@ -741,7 +972,8 @@ async function sweepTheme(theme) {
      own, so a floor over every row in the tbody would be satisfied by the
      matrix alone and would pass on a pane that rendered nothing -- which is
      the degraded state this subject falls into if its payload is wrong. */
-  return { readings, engagement, rowCount: rows.filter((r) => !r.matrix).length };
+  return { subject: subject.key, readings, unhovered, engagement, selection, drive,
+    rowCount: rows.filter((r) => !r.matrix).length };
 }
 
 /* ------------------------------------------------------------------- boot */
@@ -815,6 +1047,15 @@ async function load(url, settle = 600) {
   await new Promise((r) => setTimeout(r, settle));
 }
 
+/* The subjects, and what each is here to answer. Declared after the page
+   programmes because the users subject carries one. */
+const SUBJECTS = [
+  { key: 'releases', url: SUBJECT, matrix: true, prepare: null, selection: false,
+    rowFloor: ROW_FLOOR },
+  { key: 'users', url: SUBJECT_USERS, matrix: false, prepare: PICK_MATCH, selection: true,
+    rowFloor: USERS_ROW_FLOOR }
+];
+
 /* The sweep is driven once and shared, because it takes a real browser and a
    real pointer per row. Memoised rather than run at import time so that a
    failure inside it is reported as a failing assertion in a named test, not
@@ -824,11 +1065,19 @@ function sweep() {
   if (!sweepPromise) {
     sweepPromise = (async () => {
       const out = {};
-      for (const theme of THEMES) out[theme] = await sweepTheme(theme);
+      for (const theme of THEMES) {
+        out[theme] = {};
+        for (const subject of SUBJECTS) out[theme][subject.key] = await sweepSubject(theme, subject);
+      }
       return out;
     })();
   }
   return sweepPromise;
+}
+
+/* Every reading in a theme, across every subject, flattened. */
+function allReadings(perTheme) {
+  return SUBJECTS.flatMap((s) => perTheme[s.key].readings);
 }
 
 /* ------------------------------------------------------------------ tests */
@@ -838,6 +1087,23 @@ test('the subject page is the one that pairs a badge with a table row', async ()
   assert.match(html, /assets\/aria\.css/, `${SUBJECT} does not load aria.css, so it cannot exercise its hover rule`);
   const js = fs.readFileSync(path.join(ROOT, 'ops/assets/pane-releases.js'), 'utf8');
   assert.match(js, /pill\(/, 'pane-releases.js no longer builds pills; the subject page must be re-chosen');
+});
+
+/* The compound subject rests on three things the page can drop without any
+   assertion here noticing at run time: it must load the shared sheet the
+   hover tint lives in, it must load the sheet that washes the cells, and the
+   pane must still write the class the wash is keyed to. A page that stopped
+   loading pane-users-v2.css would sweep clean and cover nothing. */
+test('the compound subject loads both sheets the state needs, and still writes the class', async () => {
+  const html = fs.readFileSync(path.join(ROOT, SUBJECT_USERS.replace(/^\//, '')), 'utf8');
+  assert.match(html, /assets\/aria\.css/,
+    `${SUBJECT_USERS} does not load aria.css, so it cannot exercise the shared hover rule`);
+  assert.match(html, /assets\/pane-users-v2\.css/,
+    `${SUBJECT_USERS} does not load pane-users-v2.css, so the selection wash is not on the page ` +
+    'and every "selected + hovered" reading would be a plain hovered reading');
+  const js = fs.readFileSync(path.join(ROOT, 'ops/assets/pane-users.js'), 'utf8');
+  assert.match(js, /is-selected/,
+    'pane-users.js no longer writes is-selected; the wash is keyed to a class nothing sets');
 });
 
 test('the tone list this sweep declares is the tone list aria.css defines', async () => {
@@ -853,26 +1119,108 @@ test('the tone list this sweep declares is the tone list aria.css defines', asyn
 test('real pointer input engages :hover on every judged row, in both themes', async () => {
   const all = await sweep();
   for (const theme of THEMES) {
-    const eng = all[theme].engagement;
-    assert.ok(eng.length, `${theme}: no row was driven at all`);
-    for (const e of eng) {
-      assert.equal(e.matches, true, `${theme} row ${e.r}: :hover did not match after pointer input`);
-      assert.equal(e.bgChanged, true,
-        `${theme} row ${e.r}: computed background stayed ${e.bgOff} under the pointer, ` +
-        'so every reading on it would be an unhovered reading wearing a hover label');
-      assert.equal(e.pixelsChanged, true,
-        `${theme} row ${e.r}: the row repainted no pixels under the pointer`);
+    for (const s of SUBJECTS) {
+      const eng = all[theme][s.key].engagement;
+      assert.ok(eng.length, `${theme} ${s.key}: no row was driven at all`);
+      for (const e of eng) {
+        assert.equal(e.matches, true,
+          `${theme} ${s.key} row ${e.r}: :hover did not match after pointer input`);
+        assert.equal(e.bgChanged, true,
+          `${theme} ${s.key} row ${e.r}: computed background stayed ${e.bgOff} under the pointer, ` +
+          'so every reading on it would be an unhovered reading wearing a hover label');
+        assert.equal(e.pixelsChanged, true,
+          `${theme} ${s.key} row ${e.r}: the row repainted no pixels under the pointer`);
+      }
     }
+  }
+});
+
+/* Stadiora/Aria#10754. Hover engagement above is proven on the ROW's own
+   background, which is the surface the shared tint moves. A pane that washes
+   the CELLS paints over that, so the row's background changing says nothing
+   about whether the surface the text actually sits on moved. This binds the
+   other half: selected differs from unselected, and selected+hovered differs
+   from selected. Without the second arm the compound state could collapse
+   onto the plain selected state and every reading below would be a
+   single-state reading wearing a compound label. */
+test('the selected + hovered state is a third surface, not one of its halves', async () => {
+  const all = await sweep();
+  for (const theme of THEMES) {
+    for (const s of SUBJECTS.filter((x) => x.selection)) {
+      const run = all[theme][s.key];
+      const picked = run.engagement.find((e) => e.selected);
+      assert.ok(picked,
+        `${theme} ${s.key}: no hovered row was the selected one, so the compound state ` +
+        'was never measured');
+      assert.ok(picked.cellBgOff && picked.cellBgOn,
+        `${theme} ${s.key}: the selected row's cell background could not be read`);
+      assert.notEqual(picked.cellBgOn, picked.cellBgOff,
+        `${theme} ${s.key}: the selected row's CELL background stayed ${picked.cellBgOff} ` +
+        'under the pointer. The shared hover rule paints the ROW, and a cell background ' +
+        'paints over it, so this state is the plain selected state and the readings on it ' +
+        'are not compound readings');
+      assert.notEqual(picked.cellBgOff, run.selection.unselectedCellBg,
+        `${theme} ${s.key}: the selected cell and an unselected cell both compute ` +
+        `${picked.cellBgOff}`);
+    }
+  }
+});
+
+/* The reason this file exists at all: the compound state has to be JUDGED,
+   not merely reached. A run that entered it and then measured no ink inside
+   it would satisfy every proof above and cover nothing. */
+test('the compound state carries real ink sites, in both themes', async () => {
+  const all = await sweep();
+  for (const theme of THEMES) {
+    for (const s of SUBJECTS.filter((x) => x.selection)) {
+      const compound = all[theme][s.key].readings.filter((r) => r.selected);
+      assert.ok(compound.length >= COMPOUND_INK_FLOOR,
+        `${theme} ${s.key}: ${compound.length} ink site(s) judged inside the selected hovered ` +
+        `row, below the declared floor of ${COMPOUND_INK_FLOOR}`);
+    }
+  }
+});
+
+/* The subject list is a literal, so it can go stale the moment another pane
+   grows a cell wash. This reads the sheets for the shape -- a rule whose
+   selector reaches a `> th`/`> td` under a `.tbl tbody tr` state class and
+   sets a background -- and insists every sheet carrying one is a subject
+   swept above. A new pane's wash fails here instead of going unmeasured. */
+test('every sheet that washes a table CELL is a subject this sweep drives', async () => {
+  const sheets = fs.readdirSync(path.join(ROOT, 'ops/assets'))
+    .filter((f) => f.endsWith('.css')).map((f) => 'ops/assets/' + f);
+  const found = [];
+  for (const rel of sheets) {
+    const css = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    for (const m of css.matchAll(/([^{}]*\{[^{}]*\})/g)) {
+      const [sel, body] = m[1].split('{');
+      if (!/\.tbl\s+tbody\s+tr[.:][^,{]*>\s*(th|td)/.test(sel)) continue;
+      if (!/(^|[;\s])background(-color)?\s*:/.test(body)) continue;
+      found.push(rel);
+      break;
+    }
+  }
+  assert.deepEqual([...new Set(found)].sort(), [...SELECTION_SUBJECTS].sort(),
+    'a stylesheet puts a background on a table CELL in a state the shared hover rule cannot ' +
+    'reach, and it is not in SELECTION_SUBJECTS. Such a wash paints OVER the row tint this ' +
+    'file sweeps, so it is a backdrop nothing measures until a subject drives it');
+  for (const rel of SELECTION_SUBJECTS) {
+    const pane = path.basename(rel).replace(/^pane-|-v2\.css$/g, '');
+    assert.ok(SUBJECTS.some((s) => s.selection && s.url.includes(pane)),
+      `${rel} washes a cell but no subject with a selection drives ${pane}`);
   }
 });
 
 test('the sweep judged a real board, not an empty one', async () => {
   const all = await sweep();
   for (const theme of THEMES) {
-    const { readings, rowCount } = all[theme];
-    assert.ok(rowCount >= ROW_FLOOR,
-      `${theme}: the page drew ${rowCount} table row(s) of its own, below the declared ` +
-      `floor of ${ROW_FLOOR} -- the composed tone rows do not count toward it`);
+    for (const s of SUBJECTS) {
+      const { rowCount } = all[theme][s.key];
+      assert.ok(rowCount >= s.rowFloor,
+        `${theme} ${s.key}: the page drew ${rowCount} table row(s) of its own, below the ` +
+        `declared floor of ${s.rowFloor} -- the composed tone rows do not count toward it`);
+    }
+    const { readings } = all[theme].releases;
     assert.ok(readings.length > 0, `${theme}: zero ink sites measured`);
     const organic = new Set(readings.filter((r) => r.tone && !r.matrix).map((r) => r.tone));
     for (const t of TONES_EXPECTED) {
@@ -889,12 +1237,41 @@ test('the sweep judged a real board, not an empty one', async () => {
   }
 });
 
+/* The other half of the compound state. A selected row carries its wash with
+   or without a pointer on it, and the hovered reading is a STEP UP from this
+   one, so a repaint that cleared only the hovered half would leave the state
+   underneath it failing while this file reported the pane safe. Bound in its
+   own test, and printed, so the two halves can never be confused for each
+   other in a log. */
+test('the selected row clears AA unhovered as well, not only under the pointer', async () => {
+  const all = await sweep();
+  const failures = [];
+  for (const theme of THEMES) {
+    for (const s of SUBJECTS.filter((x) => x.selection)) {
+      const rs = [...all[theme][s.key].unhovered].sort((a, b) => a.ratio - b.ratio);
+      assert.ok(rs.length >= COMPOUND_INK_FLOOR,
+        `${theme} ${s.key}: ${rs.length} ink site(s) judged on the selected row unhovered, ` +
+        `below the declared floor of ${COMPOUND_INK_FLOOR}`);
+      console.log(`\n${theme}: selected, NOT hovered -- ${rs.length} site(s), worst three:`);
+      for (const r of rs.slice(0, 3)) {
+        console.log(`  ${r.ratio.toFixed(3)}  ` +
+          `${(r.tone ? '.pill.' + r.tone : r.tag + (r.cls ? '.' + r.cls.split(/\s+/).join('.') : '')).padEnd(22)} ` +
+          `ink ${r.ink} on ${hex(r.backdrop)}  "${r.text}"`);
+      }
+      for (const r of rs) if (r.ratio < AA) failures.push(r);
+    }
+  }
+  assert.deepEqual(failures.map((f) =>
+    `${f.theme} ${f.subject} selected "${f.text}" ${f.ratio} on ${hex(f.backdrop)}`), [],
+  `ink below the ${AA}:1 floor on a selected row that is not hovered`);
+});
+
 test('every ink inside a hovered table row clears AA against what is under it', async () => {
   const all = await sweep();
   const failures = [];
   let judged = 0;
   for (const theme of THEMES) {
-    for (const r of all[theme].readings) {
+    for (const r of allReadings(all[theme])) {
       judged++;
       if (r.ratio < AA) failures.push(r);
     }
@@ -904,18 +1281,52 @@ test('every ink inside a hovered table row clears AA against what is under it', 
      nothing is the worst false green available here, and a count of zero is
      an assertion failure below, not a quiet pass. */
   for (const theme of THEMES) {
-    const rs = [...all[theme].readings].sort((a, b) => a.ratio - b.ratio);
+    const rs = allReadings(all[theme]).sort((a, b) => a.ratio - b.ratio);
+    const rows = SUBJECTS.reduce((n, s) => n + all[theme][s.key].engagement.length, 0);
+    const compound = rs.filter((r) => r.selected).length;
     console.log(`\n${theme}: ${rs.length} hovered ink site(s) judged, ` +
-      `${all[theme].engagement.length} row(s) hovered; worst five:`);
+      `${rows} row(s) hovered, ${compound} of them selected + hovered; worst five:`);
     for (const r of rs.slice(0, 5)) {
-      console.log(`  ${r.ratio.toFixed(3)}  ` +
+      console.log(`  ${r.ratio.toFixed(3)}  ${r.subject.padEnd(9)}` +
+        `${(r.selected ? 'sel+hov ' : '        ')}` +
         `${(r.tone ? '.pill.' + r.tone : r.tag + (r.cls ? '.' + r.cls.split(/\s+/).join('.') : '')).padEnd(22)} ` +
         `ink ${r.ink} on ${hex(r.backdrop)}  "${r.text}"`);
+    }
+    /* The compound state's own worst sites, printed whether or not they fail,
+       so #10754's numbers are in the log of every run rather than only in the
+       run that catches a regression. */
+    const sel = rs.filter((r) => r.selected);
+    if (sel.length) {
+      console.log(`${theme}: selected + hovered, worst three of ${sel.length}:`);
+      for (const r of sel.slice(0, 3)) {
+        console.log(`  ${r.ratio.toFixed(3)}  ` +
+          `${(r.tone ? '.pill.' + r.tone : r.tag + (r.cls ? '.' + r.cls.split(/\s+/).join('.') : '')).padEnd(22)} ` +
+          `ink ${r.ink} on ${hex(r.backdrop)}  "${r.text}"`);
+      }
     }
   }
   assert.ok(judged > 0, 'the sweep judged nothing, which is not a pass');
   assert.deepEqual(failures.map((f) =>
-    `${f.theme} ${f.tone ? '.pill.' + f.tone : f.tag + '.' + f.cls} "${f.text}" ` +
+    `${f.theme} ${f.subject}${f.selected ? ' selected+hovered' : ''} ` +
+    `${f.tone ? '.pill.' + f.tone : f.tag + '.' + f.cls} "${f.text}" ` +
     `${f.ratio} on ${hex(f.backdrop)}`), [],
   `ink below the ${AA}:1 floor inside a hovered row`);
+
+  if (process.env.OPS_HOVER_CENSUS) {
+    console.log('OPS_HOVER_CENSUS_JSON_BEGIN');
+    console.log(JSON.stringify(THEMES.reduce((acc, theme) => {
+      const row = (r, state) => ({
+        subject: r.subject, state, tone: r.tone, tag: r.tag, cls: r.cls,
+        text: r.text, ink: r.ink, backdrop: r.backdrop, ratio: r.ratio
+      });
+      acc[theme] = [
+        ...allReadings(all[theme]).map((r) =>
+          row(r, r.selected ? 'selected+hovered' : 'hovered')),
+        ...SUBJECTS.filter((s) => s.selection)
+          .flatMap((s) => all[theme][s.key].unhovered).map((r) => row(r, 'selected'))
+      ];
+      return acc;
+    }, {}), null, 1));
+    console.log('OPS_HOVER_CENSUS_JSON_END');
+  }
 });
