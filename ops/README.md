@@ -2265,9 +2265,9 @@ stored reading — which on this pane is most of them.
 | `node scripts/check-ops-result-view.mjs` | Whether a state the JavaScript can enter is one a loaded stylesheet can **paint**. It drives every pane the registry declares past its landing state to a result view, proves it arrived by a string only that view draws, and then asks two things in real Chrome with no pointer over the page: that every class the pane wrote is reached by at least one rule from a sheet that page loads, and that every positive `aria-current`/`-selected`/`-pressed`/`-checked`/`-expanded` is painted differently from the same shape without it. `Stadiora/Aria#10456` is the shape: `pane-users.js` wrote `is-selected` on the picked match, no sheet `users.html` loads had a rule for it, and every other guard stayed green for the life of the defect. Known failures are enumerated in `KNOWN_UNPAINTED` and `KNOWN_UNPAINTED_STATE`, and each entry must still reproduce. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here — summarising is how this row came to list seven of that docblock's nine. The bullets themselves stay in the guard; the block binds their headings and, where a bullet hides a second blind spot behind a second bold span, the count of such bullets. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon on `/ops/shell-v2.html`** reaches that page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. All of that is measured on that one page, which is the only page in the repository that draws `aria.js`'s charts and its icon gallery. It does load every other page in `ops/` afterwards, in both themes, but only to catch a console error or a page that rendered nothing: a pane shipping an unpainted icon is **not** seen here. |
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
-| `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at **each width in the `guard-constants` block below** — the list is read out of the guard, because this row said "375px and 360px" through the rebase onto the commit that added a third — in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
+| `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at **each width in the `guard-constants` block below** — the list is read out of the guard, because this row said "375px and 360px" through the rebase onto the commit that added a third — in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten — **measured once and written down, not derived**: which panes answer an empty read with a failure card is a runtime behaviour, and the ten is the registry's, bound by the `panes` block above. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the page. A colour resolved at **draw time** is only correct for the theme it was drawn in; this loads every pane `assets/pane-registry.js` declares plus `/ops/shell-v2.html`, clicks the real button, and requires **every node's** resolved paint to equal the paint that node carries on a **fresh load** of the same page in the theme the button switched to — sixteen paint properties per node, with a `url(#id)` gradient resolved to its stops, because the ids are minted per draw. Two assertions stand either side of that one: that the two fresh loads differ at all, so the comparison is not vacuous on a page the theme never reached, and, on the pages that draw `aria.js`'s charts, that every shape painted from a token holds the palette's pinned value — the only one of the three that would notice `aria.css` drifting away from the palette, since a page compared against itself agrees with itself. Both directions, every page. The sixteen are `PAINT_PROPS`, listed in the `guard-constants` block below. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here. |
-| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and almost every pixel must be unchanged — the comparison is a **coverage threshold**, `PAINT_COVERAGE_LIMIT` in the `guard-constants` block below, not byte equality, so a change under that share of the dialog's pixels passes. A scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It fails rather than skips when it opens no dialog. |
+| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and almost every pixel must be unchanged — the comparison is not byte equality but **two gates in series**, both in the `guard-constants` block below: a pixel counts as changed only once it moves by more than `PAINT_PIXEL_DELTA`, and the run passes while the share of pixels that did counts under `PAINT_COVERAGE_LIMIT`. Both holes run the flattering way and both are real: a scrim that dims the whole plate by two units of 255 changes every pixel and scores a coverage of zero, and a scrim over a twentieth of the dialog passes however hard it dims that twentieth. A scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It fails rather than skips when it opens no dialog. |
 
 The `33` in that first row is not typed either. It is the size of the guard's own two pinned
 tables — the per-theme palette and the tokens it holds invariant across themes — counted out of
@@ -2308,6 +2308,7 @@ underneath it.
 ```claims id=guard-constants
 check-ops-contrast.mjs STATES = live, loading, empty, degraded
 check-ops-contrast.mjs STATES length = 4
+check-ops-dialog-hit.mjs PAINT_PIXEL_DELTA = 2
 check-ops-dialog-hit.mjs PAINT_COVERAGE_LIMIT = 0.05
 check-ops-narrow-overflow.mjs WIDTHS = 375, 360, 320
 check-ops-narrow-overflow.mjs WIDTHS length = 3
@@ -2332,17 +2333,34 @@ spans contributes only its first, and `check-ops-narrow-overflow.mjs` has one:
 **Look up a user is measured before any lookup** also covers **Aria quality
 before any operation is submitted**, and only the first of those two is a line
 below. Telling a second heading from ordinary body emphasis needs the English
-parsed, so this does not try — each guard instead ends with an exact **count**
-of its bullets carrying more than one bold span. That number names nothing; it
+parsed, so this does not try — each guard instead ends with an exact **count of
+the bold spans beyond the first, summed over its bullets**. Summed, not counted
+per bullet: a per-bullet tally is a boolean, and a third span added to a bullet
+that already carried two would not move it. That number names nothing; it
 refuses to hide something, and it is what makes the narrower claim in this
-paragraph checkable rather than a promise. A bolded word in a body moves it too,
-on purpose.
+paragraph checkable rather than a promise. A bolded word in a body moves it too.
+
+Bullets are read out of each guard's **leading docblock**, and two guards state
+blind spots outside theirs: `check-ops-shell-v2.mjs:583` says what its icon
+sweep does not measure — an ink too close to what is behind it, and all of
+geometry but `stroke-width` — and `check-ops-contrast.mjs:2239` carries a long
+`NOT COVERED, on purpose` section. Neither is carried below, and until the round
+that found this both read `(no blind-spot section)`, which is the same sentence
+a guard with nothing to declare would print. The sentinel now says which
+docblock it looked in, and every guard carries a count of the lines **anywhere**
+in it that open like a blind-spot heading, so a section outside the docblock
+flips a line rather than arriving in silence. That count is syntactic and
+deliberately dumb — `check-ops-narrow-overflow.mjs:189` refers back to its own
+section and counts as a second one — because a dumb tripwire that fires is
+worth more here than a clever one that reads English.
 
 ```claims id=guard-blind-spots
-check-ops-contrast.mjs = (no blind-spot section)
-check-ops-contrast.mjs = (bullets with a second bold span: 0)
-check-ops-dialog-hit.mjs = (no blind-spot section)
-check-ops-dialog-hit.mjs = (bullets with a second bold span: 0)
+check-ops-contrast.mjs = (no blind-spot section in the leading docblock)
+check-ops-contrast.mjs = (bold spans beyond the first, summed: 0)
+check-ops-contrast.mjs = (lines that open like a blind-spot heading: 1)
+check-ops-dialog-hit.mjs = (no blind-spot section in the leading docblock)
+check-ops-dialog-hit.mjs = (bold spans beyond the first, summed: 0)
+check-ops-dialog-hit.mjs = (lines that open like a blind-spot heading: 0)
 check-ops-narrow-overflow.mjs = People and usage, and Cloud costs, are measured with no figures in them.
 check-ops-narrow-overflow.mjs = Look up a user is measured before any lookup
 check-ops-narrow-overflow.mjs = An overflow a container clips.
@@ -2350,7 +2368,8 @@ check-ops-narrow-overflow.mjs = Anything out of the document's flow, and anythin
 check-ops-narrow-overflow.mjs = Sub-pixel overflow.
 check-ops-narrow-overflow.mjs = Every width that is not 375px, 360px or 320px.
 check-ops-narrow-overflow.mjs = ops/login.html and ops/setup.html.
-check-ops-narrow-overflow.mjs = (bullets with a second bold span: 3)
+check-ops-narrow-overflow.mjs = (bold spans beyond the first, summed: 3)
+check-ops-narrow-overflow.mjs = (lines that open like a blind-spot heading: 2)
 check-ops-result-view.mjs = One width, 1280px.
 check-ops-result-view.mjs = Contrast.
 check-ops-result-view.mjs = The accessibility tree.
@@ -2360,16 +2379,19 @@ check-ops-result-view.mjs = A sibling combinator's reach.
 check-ops-result-view.mjs = Paint that is not a class.
 check-ops-result-view.mjs = Panes with no state pair.
 check-ops-result-view.mjs = A state with no unmarked twin on the page.
-check-ops-result-view.mjs = (bullets with a second bold span: 0)
-check-ops-shell-v2.mjs = (no blind-spot section)
-check-ops-shell-v2.mjs = (bullets with a second bold span: 0)
+check-ops-result-view.mjs = (bold spans beyond the first, summed: 0)
+check-ops-result-view.mjs = (lines that open like a blind-spot heading: 1)
+check-ops-shell-v2.mjs = (no blind-spot section in the leading docblock)
+check-ops-shell-v2.mjs = (bold spans beyond the first, summed: 0)
+check-ops-shell-v2.mjs = (lines that open like a blind-spot heading: 1)
 check-ops-theme-redraw.mjs = Pseudo-elements.
 check-ops-theme-redraw.mjs = Anything below the paint properties listed in PAINT_PROPS.
 check-ops-theme-redraw.mjs = A gradient referenced by url(#id).
 check-ops-theme-redraw.mjs = A page whose DOM differs between the toggled and the fresh load.
 check-ops-theme-redraw.mjs = The panes' populated states, for People and usage and Cloud costs.
 check-ops-theme-redraw.mjs = Any theme beyond the two.
-check-ops-theme-redraw.mjs = (bullets with a second bold span: 0)
+check-ops-theme-redraw.mjs = (bold spans beyond the first, summed: 0)
+check-ops-theme-redraw.mjs = (lines that open like a blind-spot heading: 1)
 ```
 
 The Cloud costs colour guard's own reach is not described here either. The block below is
@@ -2566,8 +2588,12 @@ bullet under a NOT COVERED heading that opens its own line, reassembled across w
 **a second blind spot named in a second bold span of the same bullet is not a line here** — three
 bullets in `check-ops-narrow-overflow.mjs` carry a second span and in one of them it is a second
 blind spot, Aria quality before any operation is submitted. What is bound instead is the exact
-**count** of such bullets per guard, so the second span cannot arrive or leave unseen even though
-it is not named; a bolded word in a bullet's body moves that count too. A blind spot written into
+**count of the spans beyond the first, summed** per guard, so the second span cannot arrive or
+leave unseen even though it is not named; a bolded word in a bullet's body moves that count too,
+and so does a third span on a bullet that already carried two — the per-bullet tally this started
+as did not, which round 1 of PR #111 demonstrated. Bullets come from the **leading docblock**
+only: `check-ops-shell-v2.mjs:583` and `check-ops-contrast.mjs:2239` state blind spots outside
+theirs and are **not** carried here, only counted. A blind spot written into
 a bullet's body with no bold at all is not a line and is not counted, and a bullet with no bold
 opener is reported as one rather than skipped. A section written as prose says so on its guard's
 line; it is not read.
