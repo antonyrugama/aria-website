@@ -986,11 +986,21 @@
 
        Every caller uses the RESOLVED value rather than testing with this and
        rendering the raw field, because a predicate that trims over a value
-       that does not is the same defect wearing the fix. Five sites did that
-       when the trim landed and all five are fixed; the count is here because
-       the first sweep reported three and shipped the miss in this comment.
-       `ops-overview-blank-text.test.mjs` binds each of the five, so a sixth
-       added later is caught by nothing — check the render, not this line. */
+       that does not is the same defect wearing the fix.
+
+       No count of those callers lives here. Three were written into this
+       comment across three rounds of PR #124's review and all three were
+       wrong; the invariant is checked by
+       `ops-overview-blank-text.test.mjs`'s "padding any string the answer
+       carries changes nothing on the screen", which pads every string the
+       fixture holds and requires the rendered panel to come back
+       byte-identical. Check the render, not this line.
+
+       And note what this function returns for a value that does not
+       resolve: null. `S.h` maps that to an empty string, but a caller that
+       CONCATENATES it prints the four characters `null` — which is how
+       `chartName()` came to say "over the last 7 whole UTC days, null to
+       null" in review round 3. Concatenating callers must guard. */
     function textOf(value) {
       if (typeof value !== 'string') return null;
       var trimmed = value.trim();
@@ -1548,9 +1558,18 @@
 
     function chartName(series, labels, win) {
       var head = 'People active each day, one line per app, over ' + windowPhrase(win);
-      if (labels.length) {
-        head += ', ' + labelAt(labels, 0) +
-          (labels.length > 1 ? ' to ' + labelAt(labels, labels.length - 1) : '');
+      var first = labelAt(labels, 0);
+      var last = labelAt(labels, labels.length - 1);
+      /* Named only when BOTH ends resolve, and this guard is the whole point.
+         `labelAt()` returns null for a label that is blank or not a string,
+         and this is a string concatenation: without the guard the four
+         characters `null` land in the accessible name, which for a
+         role="img" chart is the only thing a screen-reader user gets. Saying
+         nothing costs nothing here -- `windowPhrase(win)` has already said
+         how long the window is. Naming one end and not the other would read
+         as a one-day window, so a half-resolved pair says neither. */
+      if (first && last) {
+        head += ', ' + first + (labels.length > 1 ? ' to ' + last : '');
       }
       return head + '. ' + series.map(function (one) {
         return seriesSentence(one, labels);

@@ -291,8 +291,17 @@ function noteText(dom) {
 function routeRows(dom) {
   return findAll(shownPanel(dom), (n) => hasClass(n, 'c-route')).map((row) => {
     const lines = findAll(row, (n) => hasClass(n, 'strong'));
+    const pills = findAll(row, (n) => hasClass(n, 'pill'));
     return {
       name: lines.length ? allText(lines[0]).trim() : '',
+      /* The status chip, read separately from the row.
+         A routing row is TWO statements -- `channelNote()`'s sentence and
+         this chip -- and round 3 of PR #124's review showed they need two
+         assertions: the note was bound positively while the chip was bound
+         only by "carries no digit", and `CHANNEL_STATUS.ok.label` is
+         `'Connected'`, which has no digit in it. So a green Connected chip
+         sat next to "No destination has been set" at 850/0. */
+      chip: pills.length ? allText(pills[pills.length - 1]).replace(/\s+/g, ' ').trim() : '',
       text: allText(row).replace(/\s+/g, ' ').trim(),
     };
   });
@@ -511,7 +520,19 @@ test('the shared API stub sends a shape the pane can draw destinations from', as
      different names counted as three distinct states, which is precisely the
      fixture defect the assertion claims to reject. Round 2 of the review
      proved it by giving all three channels Teams' delivered state and leaving
-     their labels alone: 848/848 green. */
+     their labels alone: 848/848 green.
+
+     The stripping is `slice(name.length)`, which is only right because the
+     name is the first text in the row. Nothing said so, and round 3 of the
+     review pointed out that anything drawn before the name would silently
+     chop state text instead -- leaving name fragments in `states` and
+     restoring the exact defect this block exists to reject, with no
+     failure. So the assumption is now asserted rather than assumed. */
+  for (const r of rows) {
+    assert.ok(r.text.startsWith(r.name),
+      `the row for "${r.name}" reads "${r.text}", which does not start with its own `
+      + 'name -- slicing the name off below would cut state text instead');
+  }
   const states = rows.map((r) => r.text.slice(r.name.length).trim());
   assert.equal(new Set(states).size, rows.length,
     `the stub's destinations draw as ${JSON.stringify(states)} -- the fixture exercises `
@@ -587,19 +608,43 @@ test('one render does not both deny and report a delivery', async () => {
   assert.ok(rows.length >= 2,
     `the finder saw ${rows.length} routing rows, so the agreement below is vacuous`);
 
+  /* The chip finder, demonstrated on a render where the chip says something
+     ELSE. A finder that returns '' for every row would satisfy nothing below
+     and look like a pass; this is the render that proves it reads the chip
+     and that the chip varies with the payload. */
+  const wired = prodChannels();
+  wired.forEach((c) => {
+    c.configured = true;
+    c.lastDeliveryStatus = 'ok';
+    c.lastSuccessAt = new Date(Date.now() - 300_000).toISOString();
+  });
+  const wiredChips = routeRows(await boot({ rules: { rules: prodRules(), channels: wired } }))
+    .map((r) => r.chip);
+  assert.ok(wiredChips.length >= 2 && wiredChips.every((c) => c === 'Connected'),
+    `the chip finder read ${JSON.stringify(wiredChips)} on a payload whose destinations `
+    + 'are all set up and delivering, so it is not reading the chip');
+
   /* Asserted as the EXPECTED STATE of every row, not as the absence of two
      spellings. The first draft tested `!/Connected|Set up/`, which round 2
      of the review broke by having the unconfigured branch return a "Last
      delivered ..." string: the note still denied, the rows still reported,
      and the test passed because it had never heard of that wording. An
      oracle that recognises a finite list of ways to be wrong is a filter, not
-     a test. */
+     a test.
+
+     A row is TWO statements, and round 3 of the review found the second one
+     bound by nothing. `channelNote()`'s sentence was pinned positively; the
+     CHIP was covered only by `doesNotMatch(/\d/)`, and `Connected` carries
+     no digit -- so relaxing `channel.configured === true` to
+     `channel.configured` on the chip alone rendered "Microsoft Teams · No
+     destination has been set · Connected" at 15/15 and 850/0. Both halves
+     are now stated positively, by name. */
   for (const row of rows) {
     assert.match(row.text, /No destination has been set/,
       `the note says "${note}" while a routing row says "${row.text}"`);
-    assert.doesNotMatch(row.text, /\d/,
-      `a routing row reports a figure -- "${row.text}" -- over a destination the note `
-      + 'says is not set up at all');
+    assert.equal(row.chip, 'Not configured',
+      `the row for "${row.name}" says "No destination has been set" under a `
+      + `"${row.chip}" chip -- the sentence and the chip disagree on one render`);
   }
 
   /* And the direction is the strict one, so the pane treats a value that is

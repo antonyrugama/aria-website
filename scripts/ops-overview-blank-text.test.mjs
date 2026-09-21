@@ -16,12 +16,16 @@
    test below.
 
    The last two of those five were found by the independent review of PR #124,
-   not by the sweep. THREE MORE were found by the rendered sweep at the bottom
-   of this file, and none of those three is a `textOf()` call site at all --
-   `app.label || app.app`, and `one.label || one.key` twice -- so no census of
-   `textOf()` calls, however carefully counted, could ever have reached them.
-   That is the argument for the sweep in one line: it asks the screen what it
-   drew rather than asking the source what it should have.
+   not by the sweep. SIX MORE were found by the rendered sweep at the bottom
+   of this file, and not one of the six is a `textOf()` call site at all -- so
+   no census of `textOf()` calls, however carefully counted, could ever have
+   reached them. That is the argument for the sweep in one line: it asks the
+   screen what it drew rather than asking the source what it should have.
+
+   The six are not listed here. A list in a comment is what this file is
+   arguing against, and three of them were counted wrong in the first
+   draft of this very paragraph. `git log -p` has them; the sweep at the
+   bottom of the file has the invariant.
 
    How these bind, and why it is not a source grep:
 
@@ -55,8 +59,9 @@
        on the next edit to the file it describes. `padding any string the
        answer carries changes nothing on the screen`, at the bottom of this
        file, is what replaced it: the invariant the census existed to assert,
-       checked against the render. It binds every call site at once and
-       cannot drift against a line number, because it does not know any. */
+       checked against the render. It binds every call site the fixtures'
+       own strings reach -- which is not all of them, and the block above
+       that test says which parts of the pane it does not reach. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -108,8 +113,17 @@ function summaryFixture() {
     },
     cost: {
       availability: { state: 'ready' },
-      window: { days: 7 }, total: { usd: 128.4 },
-      comparison: { changeBasisPoints: -420 },
+      /* `micros`, not `total.usd`. Round 3 of PR #124's review found the
+         earlier shape meant `costTile()` read `cost.micros` as null and every
+         sweep render took the tile's unavailable branch -- so the whole tile,
+         including `cost.comparison.label`, was outside the experiment while
+         the sweep looked like it covered it. The baseline gate below now
+         asserts the figure reached the screen. */
+      micros: 128_400_000, currency: 'USD',
+      window: { days: 7, dayOfPeriod: 12, daysInPeriod: 31 },
+      comparison: { changeBasisPoints: -420, label: 'the same days last month' },
+      basis: 'spend',
+      asOf: hoursAgo(20),
     },
     release: {
       availability: { state: 'ready' },
@@ -124,7 +138,11 @@ function summaryFixture() {
        `appendNote()` with the note -- the shorter of that function's two
        callers and the one that needs no chart data to get to. */
     activity: { availability: { state: 'ready' }, days: [], note: 'Backfilled on 3 Sep.' },
-    omissions: [],
+    /* One real omission, so `omissionsCard()`'s own strings are inside the
+       sweep rather than beside it. */
+    omissions: [
+      { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' },
+    ],
   };
 }
 
@@ -455,6 +473,91 @@ test('an omission with nothing usable to name it is not drawn at all', async () 
 });
 
 /* ===================================================================== */
+/* A resolved label that resolves to NOTHING                             */
+/* ===================================================================== */
+
+/* The chart's spoken name, which is where a `null` would be heard. */
+function chartNames(dom) {
+  return findAll(livePanel(dom), (n) => n.getAttribute && n.getAttribute('aria-label'))
+    .map((n) => n.getAttribute('aria-label'))
+    .filter((s) => /People active each day/.test(s));
+}
+
+/* The two day labels under the chart, with their whitespace untouched. */
+const axisTexts = (dom) =>
+  findAll(livePanel(dom), (n) => hasClass(n, 'axis-x')).map(rawText);
+
+test('a day label that resolves to nothing is left out, not said as the word "null"',
+  async () => {
+    /* Round 3 of PR #124's review. `labelAt()` resolves a day label through
+       `textOf()`, which is the point -- but three of its callers guard the
+       null it returns and `chartName()` concatenated it, so the fix for a
+       blank label REPLACED the blank with the four characters `null`.
+       `Aria.h` is `el.textContent = String(opts[k])`, so the x axis did the
+       same thing in visible text.
+
+       Both are worse than the defect: a blank prints nothing, and `null`
+       prints a word the answer never sent, into a `role="img"` label that is
+       the only thing a screen-reader user gets from this chart. */
+    const good = await boot(chartedFixture());
+    const saidWell = chartNames(good);
+    assert.equal(saidWell.length, 1,
+      'the finder does not see a chart name on a render that HAS one, so every '
+      + 'assertion below would pass over nothing');
+    assert.match(saidWell[0], /14 Sep to 20 Sep/,
+      `the baseline chart name is "${saidWell[0]}" -- it does not name its own days, so `
+      + 'this test is not reading the sentence it means to');
+    assert.equal(axisTexts(good).length, 1, 'the axis finder sees no axis on a drawn chart');
+    assert.match(axisTexts(good)[0], /14 Sep/, 'the axis does not carry the fixture label');
+
+    for (const [label, what] of [['   ', 'spaces'], ['', 'empty'], [20260914, 'a number']]) {
+      const fixture = chartedFixture();
+      fixture.activity.labels[0] = label;
+      const dom = await boot(fixture);
+
+      const said = chartNames(dom);
+      assert.equal(said.length, 1, `the chart stopped being drawn at all on ${what}`);
+      assert.doesNotMatch(said[0], /null/,
+        `a label of ${what} made the chart say "${said[0]}" -- textOf() returned null and `
+        + 'it was concatenated into the accessible name');
+      assert.doesNotMatch(said[0], /, +to 20 Sep/,
+        `a label of ${what} left a dangling range in "${said[0]}"`);
+
+      /* The axis is a different mechanism and needs a different assertion.
+         `S.h` is `if (opts.text !== undefined) el.textContent = opts.text`,
+         with no `String()`, and the DOM setter maps null to the empty
+         string -- so the axis cannot print "null" the way a concatenation
+         can, and asserting that it does not would assert nothing.
+
+         What it CAN do, and did before this PR, is print the label's own
+         padding. So the axis is pinned to exactly what should be left:
+         the end that resolved, and nothing standing in for the one that
+         did not. */
+      assert.deepEqual(axisTexts(dom), ['20 Sep'],
+        `a label of ${what} drew the axis as ${JSON.stringify(axisTexts(dom))}`);
+    }
+  });
+
+test('a day range is named only when both of its ends resolve', async () => {
+  /* Half a range is worse than none: "over the last 7 whole UTC days, 14 Sep"
+     reads as a one-day window. The window is already stated, so a pair that
+     cannot be completed says neither end. */
+  const fixture = chartedFixture();
+  fixture.activity.labels[6] = '   ';
+  const said = chartNames(await boot(fixture));
+  assert.equal(said.length, 1, 'the chart stopped being drawn');
+  assert.doesNotMatch(said[0], /14 Sep/,
+    `only the near end resolved and the chart still said it: "${said[0]}"`);
+  assert.match(said[0], /over the last 7 whole UTC days\./,
+    `the window sentence did not close cleanly: "${said[0]}"`);
+
+  /* And the series sentence's own use of the same label drops its clause
+     rather than carrying the null into it. */
+  assert.doesNotMatch(said[0], /on null|ending [\d,]+ on\b/,
+    `the series sentence carried an unresolved day: "${said[0]}"`);
+});
+
+/* ===================================================================== */
 /* The sweep itself, rather than a list claiming one happened             */
 /* ===================================================================== */
 
@@ -469,10 +572,44 @@ test('an omission with nothing usable to name it is not drawn at all', async () 
 
    So the census is gone, and this is what replaced it: the invariant the
    census existed to assert, checked against the render instead of against a
-   reading of the source. PADDING A FIELD MUST CHANGE NOTHING ON SCREEN. It
-   binds every `textOf()` call site at once, it binds sites added after this
-   was written, and it cannot go stale against a line number because it does
-   not know any. */
+   reading of the source. PADDING A FIELD MUST CHANGE NOTHING ON SCREEN.
+
+   What it binds, stated exactly, because round 3 of the review found the
+   first wording of this paragraph claiming more than it does:
+
+     - Every call site THE FIXTURE'S OWN STRINGS REACH. It walks
+       `stringPaths(fixture)`, not the source, so a field the fixture does
+       not carry is not swept, and a branch the fixture does not enter is
+       not swept either. The `exercised` list and the baseline gate below
+       are what keep that honest: the gate names a value from each region
+       and fails if it is missing from the render.
+
+     - Sites added after this was written, on fields the fixture carries.
+
+   It cannot go stale against a line number, because it does not know any.
+
+   NOT SWEPT, and named rather than left to be discovered:
+
+     - The queue. `problemsFixture()` is `{ problems: [] }`, so nothing in
+       `queueItem()` is reached -- `problem.summary`, `problem.title`,
+       `problem.workPaneLabel`, `problem.reference`,
+       `problem.acknowledgedByEmail`, `severityWords()` and `PANE_FILE`.
+       The severity half is covered by
+       `scripts/ops-alerts-severity-retry.test.mjs`; the rest is not.
+       Sweeping it would need four more lookup exceptions -- `severity`,
+       `status`, `workPane` and the tone key -- and an exception list that
+       large stops meaning anything.
+
+     - Any field `/api/ops/summary` can send that neither fixture carries.
+       `stringPaths()` reports 34 paths for `summaryFixture()` and 47 for
+       `chartedFixture()`, of which 27 and 39 are swept and the rest are
+       lookups; the route's full shape is larger than either.
+
+     - Anything the pane puts somewhere `saidBy()` does not read. It reads
+       text nodes and `aria-label`, and nothing else -- not `title`, `alt`,
+       `aria-description`, `placeholder` or `data-*`. `pane-overview.js`
+       puts `one.key || one.label` into `data-series`, unresolved, and this
+       sweep cannot see it. Nothing renders `data-series` to a user today. */
 
 /* The same fixture with a drawn chart, so `chartCard()`'s legend and
    `seriesSentence()` are on screen. `summaryFixture()` deliberately carries
@@ -535,11 +672,14 @@ const setPath = (obj, path, value) => {
    one at a time and justified, because "the sweep has exceptions" is how a
    sweep stops meaning anything.
 
-   Each of these is verified below to be a LOOKUP: the padded render differs,
-   and it differs by losing a lookup rather than by carrying padding. */
+   Each of these is verified below to be a LOOKUP, twice over:
+   padding it changes the render (so the exception is not stale), and the
+   padded value does not reach the screen verbatim (so the field is being
+   looked up, not printed). */
 const LOOKUP_FIELDS = new Set([
   /* Parsed as a date, not printed as a word. */
   'generatedAt',
+  'cost.asOf',
   /* Enum keys the route sends, matched exactly against a state table. A
      padded one SHOULD fall to "unavailable" -- that is the pane refusing to
      read a state it does not recognise, which is the behaviour the honesty
@@ -547,9 +687,14 @@ const LOOKUP_FIELDS = new Set([
   'people.availability.state',
   'aiRuns.availability.state',
   'release.availability.state',
+  'cost.availability.state',
+  /* An ISO 4217 code handed to Intl.NumberFormat, which throws on a padded
+     one and drops the tile to an unsymbolled number. A currency code is not
+     a word this pane prints. */
+  'cost.currency',
 ]);
 
-async function sweep(make, extraLookups) {
+async function sweep(make, extraLookups, expectSwept) {
   const base = make();
   const paths = stringPaths(base);
   assert.ok(paths.length >= 15,
@@ -557,9 +702,19 @@ async function sweep(make, extraLookups) {
     + 'be reading it properly');
 
   const clean = saidBy(livePanel(await boot(make())));
-  assert.ok(clean.includes('2.4.1') && clean.includes('production'),
-    'the baseline render does not carry the fixture\'s own values, so every comparison '
-    + 'below would be comparing two blanks');
+  /* Each of these is a value from a DIFFERENT region of the fixture, so a
+     region that silently stopped rendering cannot sit inside the sweep
+     looking covered. The cost tile did exactly that: `costTile()` reads
+     `cost.micros` and the fixture carried `total.usd`, so every render took
+     the unavailable branch and `clean.includes('128')` was false while the
+     two values checked here were both true. A sweep that cannot say which
+     parts of the screen it reached is not a sweep. */
+  for (const reached of ['2.4.1', 'production', '128.40', 'No budget bar']) {
+    assert.ok(clean.includes(reached),
+      `the baseline render does not carry "${reached}", so the region of the fixture `
+      + 'that value comes from was never drawn and every comparison below passes over '
+      + 'nothing');
+  }
 
   const drifted = [];
   const exercised = [];
@@ -574,6 +729,16 @@ async function sweep(make, extraLookups) {
       assert.notEqual(padded, clean,
         `"${key}" is on the lookup-exception list but padding it changes nothing, so the `
         + 'exception is stale and is hiding whatever it now covers');
+      /* And it differs the RIGHT way. "This is a lookup, so a padded value
+         legitimately changes the render" was asserted by nobody until round
+         3 of the review pointed out that a listed field which started
+         carrying its padding onto the screen would satisfy the line above
+         and be hidden by the exception that excuses it. A lookup may change
+         what is drawn; it may not put its own whitespace on the screen. */
+      assert.ok(!padded.includes('  ' + getPath(base, path) + '  '),
+        `"${key}" is excused as a lookup, but its padded value reached the screen `
+        + 'verbatim -- it is being printed, not looked up, and the exception is hiding '
+        + 'a real call site');
       continue;
     }
     exercised.push(key);
@@ -589,9 +754,12 @@ async function sweep(make, extraLookups) {
     }
   }
 
-  assert.ok(exercised.length >= 10,
-    `only ${exercised.length} fields were actually swept; the exception list has eaten `
-    + 'the test');
+  /* Pinned exactly, not floored. A floor cannot tell "the fixture lost a
+     field" from "the fixture never had it", and the whole reason this sweep
+     had to be narrowed is that nobody could say what it reached. Change the
+     fixture, change this number, and the diff says which happened. */
+  assert.equal(exercised.length, expectSwept,
+    `${exercised.length} fields were swept, not ${expectSwept}: ${JSON.stringify(exercised)}`);
   assert.deepEqual(drifted, [],
     `padding these fields changed the rendered text: ${JSON.stringify(drifted)} -- each `
     + 'is a textOf() call site that decides with the resolved value and draws the raw '
@@ -599,7 +767,7 @@ async function sweep(make, extraLookups) {
 }
 
 test('padding any string the answer carries changes nothing on the screen', async () => {
-  await sweep(summaryFixture, new Set());
+  await sweep(summaryFixture, new Set(), 27);
 });
 
 test('padding any string changes nothing on the screen with the chart drawn too',
@@ -610,5 +778,5 @@ test('padding any string changes nothing on the screen with the chart drawn too'
        legend and the spoken sentence live on the other side of it. */
     await sweep(chartedFixture, new Set([
       'activity.availability.state',
-    ]));
+    ]), 39);
   });
