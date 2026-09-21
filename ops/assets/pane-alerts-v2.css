@@ -72,9 +72,10 @@
    paired with the tone token aria.css declares beside its -ink ("every
    status tone here paints the -ink of a tint aria.css also declares"), and
    WHICH tone is its own is read off the drawn card rather than from this
-   sentence: the severity that draws .is-crit draws the accent whose token
-   this ink has to be the -ink of ("the ink on a severity is the -ink of the
-   accent that severity draws").
+   sentence: the severity that draws .is-crit draws the accent CLASS whose
+   declared token this ink has to be the -ink of ("the ink on a severity is
+   the -ink of the accent that severity draws"). What that class declares,
+   not what the cascade finally paints — see NOT BOUND above.
 
    Nothing here carries a status by colour alone: every severity on the page
    sits beside the same fact in words, written by assets/pane-alerts.js and

@@ -87,7 +87,23 @@
        review of #75, which cited this very test for an invented padding
        rule and stayed green). The sheet's own HOW TO READ says a citation
        cannot go stale IN PLACE, which is the narrower thing that is true.
-     - Anything the operations API decides. The role checks below prove the
+     - The CASCADE, for the accent and ink a severity draws. The pairing
+       test reads the classes off the drawn card and then reads what each
+       class DECLARES, across every sheet the page loads; a second rule
+       naming the same class is a failure whatever it would have won. A rule
+       that overrides the tone WITHOUT naming the class is invisible:
+       `.p-item { --acc: var(--emerald); }` repaints every card's rail in a
+       real browser and is green here (measured, RV17-1e in the seventeenth
+       review of #75). Specificity is not modelled anywhere in this file,
+       and scripts/check-ops-contrast.mjs is the tool that reads pixels.
+     - Anything the operations API decides.
+     - What the scripts this file and the sheet POINT AT do. Both name
+       scripts/check-ops-*.mjs tools in prose; the test "every script this
+       file and the sheet point at is a script that exists" resolves those
+       filenames on disk, so a renamed or deleted tool is red rather than a
+       dangling pointer (the seventeenth review of #75 renamed both and
+       stayed green). What they MEASURE is theirs to prove, not this
+       file's. The role checks below prove the
        pane draws a fact rather than a control that would be refused; the
        server enforces the same rules independently and is tested in the Aria
        monorepo.
@@ -139,7 +155,7 @@
        The enumeration below is the part of this file a reader should distrust
        first. */
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import nodeTest from 'node:test';
 import vm from 'node:vm';
 
@@ -171,6 +187,13 @@ const PANE_SRC = read('assets/pane-alerts.js');
 const PANE_CSS = read('assets/pane-alerts-v2.css');
 const ARIA_CSS = read('assets/aria.css');
 const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
+
+/* Every stylesheet the PAGE loads, in the order it loads them, taken from the
+   page rather than typed here: a reader that knows about two of the three
+   sheets is blind to whatever the third declares, and the sixteenth review
+   put an accent override in shell-pane-v2.css and watched 482 tests pass. */
+const PAGE_SHEETS = [...read('alerts.html').matchAll(
+  /<link[^>]+rel="stylesheet"[^>]+href="assets\/([\w.-]+)"/g)].map((m) => m[1]);
 
 /* The PREFIXED docblock lines this file reads as DATA rather than as prose.
    Every reader OF A PREFIXED LINE goes through machineLine(), which refuses a
@@ -3749,7 +3772,10 @@ test('every status tone here paints the -ink of a tint aria.css also declares', 
    pairing is read off the DRAWN card -- the accent class the page puts on it
    and the ink classes inside it -- and never from a map typed here, because
    an expectation derived from the thing under test moves with the mutation.
-   Paint .is-crit in --amber-ink and this is the test that goes red. */
+   Paint .is-crit in --amber-ink and this is the test that goes red.
+   What is read off the card is its CLASSES; what each class declares is read
+   out of the sheets the page loads, and the cascade between them is not
+   modelled (NOT COVERED, at the top of this file). */
 test('the ink on a severity is the -ink of the accent that severity draws', async () => {
   const dom = await boot({
     open: { problems: [
@@ -3759,7 +3785,10 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     ] },
   });
   const classesOf = (n) => (((n.getAttribute && n.getAttribute('class')) || '').split(/\s+/));
-  const both = [...declarations(ARIA_CSS), ...declarations(PANE_CSS)];
+  assert.ok(PAGE_SHEETS.length >= 3, 'the page loads ' + PAGE_SHEETS.length + ' stylesheets, '
+    + 'so this is reading fewer sheets than the browser does');
+  const both = PAGE_SHEETS.flatMap((name) => declarations(read('assets/' + name))
+    .map((d) => ({ ...d, sheet: name })));
   /* Per ROLE, not one pattern for both: a lazy `(--[\w-]+?)(-ink)?` strips
      the suffix off whichever side it is handed, so an accent painted in its
      own -ink agreed with the ink and the card's whole stripe changed colour
@@ -3767,10 +3796,26 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
      #75). The tint side must NOT end in -ink and the ink side must, which is
      what "the -ink of" means and is the shape the neighbouring status-tone
      test already used. */
+  /* Every rule in every loaded sheet that NAMES this class and paints this
+     property, not only the one whose selector is spelled exactly `.acc-bad`.
+     The cascade is not modelled -- that way lies a specificity engine in a
+     test file -- so the invariant is the stricter and simpler one: a second
+     rule naming the class is a failure whatever it would have won, which is
+     what the round-17 lookup could not see. `.p-item.acc-bad { --acc }` and
+     the same rule in a third sheet both changed the colour of every card's
+     rail in a real browser with 482 tests green (found in the seventeenth
+     review of #75). A rule that overrides the tone WITHOUT naming the class
+     is still invisible and is on the NOT COVERED list. */
+  const names = (selector, cls) => selector.split(/[\s>+~,]+/).some((part) =>
+    part.split(/(?=[.:#[])/).some((atom) => atom === cls));
   const resolve = (selector, property, wantInk) => {
-    const found = both.filter((d) => d.selector === selector && d.property === property);
-    assert.equal(found.length, 1, selector + ' declares ' + property + ' ' + found.length
-      + ' times across the two sheets, so the tone it names is not one value');
+    const found = both.filter((d) => names(d.selector, selector) && d.property === property);
+    assert.equal(found.length, 1, selector + ' is painted ' + property + ' by ' + found.length
+      + ' rules across the sheets the page loads (' + (found.map((d) => d.sheet + ' '
+      + d.selector).join(', ') || 'none') + '), so the tone it names is not one value');
+    assert.equal(found[0].selector, selector, selector + '\'s only ' + property + ' comes from '
+      + found[0].sheet + ' ' + found[0].selector + ', which is a different rule wearing the '
+      + 'same class, so what the card draws is not what this class declares');
     const ref = (wantInk ? /^var\(\s*(--[\w-]+)-ink\s*\)$/ : /^var\(\s*(--[\w-]+)\s*\)$/)
       .exec(found[0].value);
     assert.ok(ref && !(!wantInk && /-ink$/.test(ref[1])),
@@ -3803,6 +3848,24 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
   console.log('severity inks judged: ' + JSON.stringify({
     cards: seen.length, tones: [...new Set(seen.map((r) => r.tone))].length,
   }));
+});
+
+/* Both files point at sibling tools by filename -- the sheet at
+   scripts/check-ops-narrow-overflow.mjs for the 375px measurement it does not
+   make, this file at scripts/check-ops-contrast.mjs for the contrast it
+   cannot judge. Neither pointer resolved: renaming both tools left 482 tests
+   green (found in the seventeenth review of #75). Same class the eighth
+   review closed for UPPER_SNAKE pointers with SHEET_POINTER_SHAPE. */
+test('every script this file and the sheet point at is a script that exists', () => {
+  const named = (text) => [...text.matchAll(/scripts\/([\w.-]+\.mjs)/g)].map((m) => m[1]);
+  const pointers = [...new Set([...named(PANE_CSS), ...named(THIS_FILE)])];
+  assert.ok(pointers.length >= 2, 'the two files point at ' + pointers.length + ' sibling '
+    + 'scripts, so this is watching fewer pointers than they write');
+  const missing = pointers.filter((name) =>
+    !existsSync(new URL('../scripts/' + name, OPS)));
+  assert.deepEqual(missing, [], 'a file points at a script that does not exist, so the reader '
+    + 'it sends someone to for the thing neither file measures is a dangling name');
+  console.log('script pointers judged: ' + JSON.stringify({ pointers: pointers.length }));
 });
 
 /* --------------------------------------------- the one exception, and its reason */
