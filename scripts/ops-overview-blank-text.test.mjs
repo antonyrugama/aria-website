@@ -491,14 +491,21 @@ test('a day label that resolves to nothing is left out, not said as the word "nu
   async () => {
     /* Round 3 of PR #124's review. `labelAt()` resolves a day label through
        `textOf()`, which is the point -- but three of its callers guard the
-       null it returns and `chartName()` concatenated it, so the fix for a
-       blank label REPLACED the blank with the four characters `null`.
-       `Aria.h` is `el.textContent = String(opts[k])`, so the x axis did the
-       same thing in visible text.
+       null it returns and `chartName()` CONCATENATED it, so the fix for a
+       blank label replaced the blank with the four characters `null`.
 
-       Both are worse than the defect: a blank prints nothing, and `null`
-       prints a word the answer never sent, into a `role="img"` label that is
-       the only thing a screen-reader user gets from this chart. */
+       Only the concatenation. The x axis hands the same null to `S.h`,
+       which assigns it to `textContent` with no `String()`, and the DOM
+       setter maps null to the empty string -- so the axis prints nothing
+       and needs the different assertion further down. (`aria.js`'s own
+       `h()` DOES coerce, and would have printed the word; this pane does
+       not use it. Reading the wrong `h` is how the first draft of this
+       test came to assert something that could not fail.)
+
+       The concatenation is worse than the defect it replaced: a blank
+       prints nothing, and `null` prints a word the answer never sent, into
+       a `role="img"` label that is the only thing a screen-reader user
+       gets from this chart. */
     const good = await boot(chartedFixture());
     const saidWell = chartNames(good);
     assert.equal(saidWell.length, 1,
@@ -666,16 +673,24 @@ const setPath = (obj, path, value) => {
   const last = path[path.length - 1];
   path.slice(0, -1).reduce((o, k) => o[k], obj)[last] = value;
 };
+const withPath = (obj, path, value) => { setPath(obj, path, value); return obj; };
+
+/* Not a date, not an ISO 4217 code, not an availability state, and holding
+   no whitespace for a render to normalise away. */
+const SENTINEL = 'Zq7Sentinel';
 
 /* Fields whose value is not a word the pane prints but a key it looks
    something up by, so padding them legitimately changes the render. Named
    one at a time and justified, because "the sweep has exceptions" is how a
    sweep stops meaning anything.
 
-   Each of these is verified below to be a LOOKUP, twice over:
-   padding it changes the render (so the exception is not stale), and the
-   padded value does not reach the screen verbatim (so the field is being
-   looked up, not printed). */
+   Each of these is verified below to be a LOOKUP, two ways: padding it
+   changes the render, so the exception is not stale; and SUBSTITUTING an
+   unrecognisable value for it leaves nothing of that value on the screen,
+   so the field is looked up rather than printed. The substitution is the
+   one that matters -- review round 4 walked past two different string tests
+   over the padded render, and a padded value can be reformatted into
+   anything while a substituted one cannot hide. */
 const LOOKUP_FIELDS = new Set([
   /* Parsed as a date, not printed as a word. */
   'generatedAt',
@@ -733,12 +748,26 @@ async function sweep(make, extraLookups, expectSwept) {
          legitimately changes the render" was asserted by nobody until round
          3 of the review pointed out that a listed field which started
          carrying its padding onto the screen would satisfy the line above
-         and be hidden by the exception that excuses it. A lookup may change
-         what is drawn; it may not put its own whitespace on the screen. */
-      assert.ok(!padded.includes('  ' + getPath(base, path) + '  '),
-        `"${key}" is excused as a lookup, but its padded value reached the screen `
-        + 'verbatim -- it is being printed, not looked up, and the exception is hiding '
-        + 'a real call site');
+         and be hidden by the exception that excuses it.
+
+         Round 4 then broke the obvious check. Rejecting a verbatim echo of
+         the padding walks past a payload that prints the padded value with
+         its whitespace COLLAPSED -- `128.40 ( USD )` -- and so does counting
+         occurrences of the value, because that payload prints the currency
+         in BOTH renders and the count does not move. Both passed 64/64.
+
+         So this is a different experiment rather than a better string test.
+         A padded value can be reformatted into anything; a SUBSTITUTED one
+         cannot hide. Replace the field with a sentinel that is not a date,
+         not a currency code and not a state name, and ask whether it reaches
+         the screen. A field that is looked up cannot print a key it does not
+         recognise. A field that is printed prints the sentinel, in whatever
+         spelling -- there is no whitespace in it to normalise away. */
+      const swapped = saidBy(livePanel(await boot(withPath(make(), path, SENTINEL))));
+      assert.ok(!swapped.includes(SENTINEL),
+        `"${key}" is excused as a lookup, but substituting an unrecognisable value put `
+        + 'it on the screen -- the field is being printed, not looked up, and the '
+        + 'exception is hiding a real call site');
       continue;
     }
     exercised.push(key);
