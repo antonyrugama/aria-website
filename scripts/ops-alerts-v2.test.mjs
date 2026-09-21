@@ -95,17 +95,18 @@
        cannot go stale IN PLACE, which is the narrower thing that is true.
      - The CASCADE, for the accent and ink a severity draws. The pairing
        test reads the classes off the drawn card and then reads what each
-       class DECLARES, across every sheet the page loads; a second rule
-       naming the same class is a failure whatever it would have won, and a
-       selector that mentions the class in a shape the reader cannot take
-       apart -- inside :is(), :where(), or an attribute test -- is refused
-       rather than answered, because answering it wrongly is what left
-       `:is(.acc-bad) { --acc: var(--emerald); }` green through the
-       eighteenth review. A rule that overrides the tone WITHOUT mentioning
-       the class at all is invisible: `.p-item { --acc: var(--emerald); }`
-       repaints every card's rail in a real browser and is green here
-       (measured, RV17-1e in the seventeenth review of #75). Specificity is
-       not modelled anywhere in this file, and scripts/check-ops-contrast.mjs
+       class DECLARES, across every sheet the page loads. The two sides are
+       held differently and the difference is the point. For --acc, the six
+       rules that paint it are LISTED, so a rule spelled any other way is
+       red for being on no list -- `.p-item { --acc }`, green through three
+       reviews as RV17-1e, reds now, and so do the escape spellings. For
+       the ink, `color` is painted by 77 rules across the three sheets and
+       no list is possible, so it is the reader that refuses: a selector
+       mentioning the class it cannot take apart, or holding a backslash or
+       `[class`, is a failure. What stays invisible is an ink rule that
+       mentions the class nowhere in its text -- by element, by another
+       class, or by an attribute that is not `class`. Specificity is not
+       modelled anywhere in this file, and scripts/check-ops-contrast.mjs
        is the tool that reads pixels.
      - Anything the operations API decides.
      - What the scripts this file and the sheet POINT AT do. Both name
@@ -208,12 +209,22 @@ const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
    read `rel` before `href` and dropped `<link href=... rel=stylesheet>`
    entirely, which is valid HTML, so a fourth sheet written that way repainted
    every card with 75 tests green (found in the eighteenth review of #75).
-   What it still cannot see: a sheet pulled in by @import from inside another
-   sheet, an inline <style> block, and anything a script injects. None of the
-   three exist here -- no sheet imports, and the page's CSP has no
-   'unsafe-inline' -- and the count below is an equality against a second,
-   cruder reading of the same tags rather than a floor, because a floor
-   cannot notice the sheet it never saw. */
+
+   The tag scan below stops at the first `>`, which no HTML parser does: a
+   `>` inside a quoted attribute value cuts a tag in half and the half with
+   the `rel` on it disappears, which is a fourth sheet neither side of an
+   equality drawn from THIS ARRAY can notice (found in the nineteenth review
+   of #75). Two independent readings of the page's raw text hold it instead
+   of one, and neither is computed from this array: the number of
+   `rel=stylesheet` spellings in the file, and the quote PARITY of each tag,
+   which is odd exactly when the scan cut one in half.
+
+   What it still cannot see, in the browser's sense of "loads": an inline
+   <style> block and anything a script injects -- both closed by the page's
+   CSP having no 'unsafe-inline', which is asserted, not assumed. A sheet
+   pulled in by @import is invisible to this and its rules really do paint
+   (measured, RV19-2a); it is not read here, it is REFUSED below, because
+   the reader that would have to follow it is a second stylesheet loader. */
 const LINK_TAGS = [...read('alerts.html').matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
 const attrOf = (tag, name) => {
   const m = new RegExp('\\b' + name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\'|([^\\s"\'>]+))', 'i')
@@ -3814,18 +3825,43 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     ] },
   });
   const classesOf = (n) => (((n.getAttribute && n.getAttribute('class')) || '').split(/\s+/));
-  assert.equal(PAGE_SHEETS.length, LINK_TAGS.filter((t) => /stylesheet/i.test(t)).length,
-    'the page writes ' + LINK_TAGS.filter((t) => /stylesheet/i.test(t)).length + ' <link> tags '
-    + 'mentioning a stylesheet and this reads ' + PAGE_SHEETS.length + ' of them, so a sheet '
-    + 'the browser loads is one this cannot see -- an equality, because the floor that stood '
-    + 'here could not notice a fourth sheet at all');
+  const spelt = (read('alerts.html').match(/rel\s*=\s*["']?\s*stylesheet/gi) || []).length;
+  assert.equal(PAGE_SHEETS.length, spelt,
+    'the page spells rel=stylesheet ' + spelt + ' times and this reads ' + PAGE_SHEETS.length
+    + ' sheets, so a sheet the browser loads is one this cannot see -- counted off the raw '
+    + 'text, because an equality between two readings of the same tag array agrees with '
+    + 'itself about a tag the array never held');
+  assert.deepEqual(LINK_TAGS.filter((t) => (t.match(/"/g) || []).length % 2
+    || (t.match(/'/g) || []).length % 2), [],
+    'a <link> tag holds an odd number of quotes, so the scan stopped at a > inside a quoted '
+    + 'attribute value and cut the tag in half');
   assert.ok(PAGE_SHEETS.length >= 3, 'the page loads ' + PAGE_SHEETS.length + ' stylesheets, '
     + 'so this is reading fewer sheets than the browser does');
   assert.deepEqual(PAGE_SHEETS.filter((href) => !href || !existsSync(new URL(href, OPS))), [],
     'the page links a stylesheet this cannot open on disk, so it is read as no declarations '
     + 'at all rather than as the rules it holds');
+  assert.deepEqual(PAGE_SHEETS.filter((href) => /@import/i.test(read(href))), [],
+    'a sheet the page loads pulls in another sheet with @import, whose rules the browser '
+    + 'applies and declarations() discards, so what this resolves is not what the page paints');
   const both = PAGE_SHEETS.flatMap((href) => declarations(read(href))
     .map((d) => ({ ...d, sheet: href })));
+  /* Every rule that paints --acc, in every sheet the page loads, listed by
+     hand. INVERTED on purpose: the reader does not decide which rules are
+     about a severity class, it requires the set of accent painters to be
+     exactly this one, so a rule spelled any other way -- `:is(.acc-bad)`,
+     `.acc\-bad`, `.\61 cc-bad`, `[class*='cc-bad']`, or `.p-item` naming no
+     severity at all -- is a failure for being on no list rather than for
+     being understood. Three consecutive reviews of #75 found a spelling the
+     previous round's understanding missed; a list cannot be out-spelt. The
+     price is that a NEW accent anywhere in the design system reds this until
+     it is added here, which is the direction that fails loudly. */
+  const ACCENT_PAINTERS = ['.acc-acc', '.acc-bad', '.acc-blue', '.acc-ok', '.acc-vio',
+    '.acc-warn'];
+  assert.deepEqual([...new Set(both.filter((d) => d.property === '--acc')
+    .map((d) => d.selector))].sort(), ACCENT_PAINTERS,
+    'the sheets the page loads paint --acc from a rule that is not on ACCENT_PAINTERS, so '
+    + 'the accent a severity card draws may be decided somewhere this test never resolves; '
+    + 'add it after checking it cannot repaint a severity');
   /* Per ROLE, not one pattern for both: a lazy `(--[\w-]+?)(-ink)?` strips
      the suffix off whichever side it is handed, so an accent painted in its
      own -ink agreed with the ink and the card's whole stripe changed colour
@@ -3849,10 +3885,19 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
      green (found in the eighteenth review of #75). Silently answering the
      shapes it cannot parse is the unsafe direction, so the shapes it cannot
      parse are REFUSED instead: any selector that MENTIONS the class as a
-     token while names() denies it is a failure naming the selector. That
-     cannot regress into a fourth spelling the way widening the splitter
-     could. A rule that never mentions the class stays invisible and is on
-     the NOT COVERED list. */
+     token while names() denies it is a failure naming the selector.
+
+     That was written here as a closed set, and the next review opened it:
+     `.acc\-bad` and `.\61 cc-bad` are the same class to a browser and hold
+     none of its letters in a row, so they were neither named nor mentioned
+     nor refused (found in the nineteenth review of #75, RV19-1a/1b). The
+     lesson taken is not a better decoder. --acc stopped being decided by
+     this reader at all, above, and what remains here is a third REFUSAL on
+     the two characters this reader cannot follow: a backslash, which starts
+     an escape, and `[class`, which tests the attribute rather than naming a
+     class. What stays invisible on the ink side is a rule that mentions the
+     class nowhere in its text -- by element, by some other class, or by an
+     attribute that is not `class` -- and that is on the NOT COVERED list. */
   const names = (selector, cls) => selector.split(/[\s>+~,]+/).some((part) =>
     part.split(/(?=[.:#[])/).some((atom) => atom === cls));
   const mentions = (selector, cls) =>
@@ -3864,6 +3909,11 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
       selector + ' is mentioned by a ' + property + ' rule whose selector this reader cannot '
       + 'take apart -- a class inside :is(), :where() or an attribute test is not an atom of '
       + 'a compound -- so it is refused rather than answered as a rule about some other class');
+    assert.deepEqual(both.filter((d) => d.property === property
+      && /\\|\[class/.test(d.selector)).map((d) => d.sheet + ' ' + d.selector), [],
+      'a ' + property + ' rule is selected by a CSS escape or by testing the class ATTRIBUTE, '
+      + 'and this reader decodes neither, so which class it paints is refused rather than '
+      + 'answered from the letters that happen to be in it');
     const found = both.filter((d) => names(d.selector, selector) && d.property === property);
     assert.equal(found.length, 1, selector + ' is painted ' + property + ' by ' + found.length
       + ' rules across the sheets the page loads (' + (found.map((d) => d.sheet + ' '
@@ -3915,7 +3965,12 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
    The two sides are counted SEPARATELY. A union against a floor is satisfied
    by this file's own docblock, three lines up, so the sheet could stop
    pointing anywhere at all and the test stayed green while its message went
-   on claiming otherwise (found in the eighteenth review of #75). */
+   on claiming otherwise (found in the eighteenth review of #75). The sheet
+   side is really held -- renaming the sheet's pointer reds. The GUARD side
+   is not: this file's own comments name sibling scripts in several places,
+   including this one, so that floor can only fall if a comment is edited,
+   and it is a floor rather than a claim (noted by the nineteenth review,
+   which declined to file it for want of a mutation that isolates it). */
 test('every script this file and the sheet point at is a script that exists', () => {
   const named = (text) => [...text.matchAll(/scripts\/([\w.-]+\.mjs)/g)].map((m) => m[1]);
   const fromSheet = [...new Set(named(PANE_CSS))];
