@@ -1,8 +1,8 @@
 # Fidelity audit: the built ops dashboard against the approved mocks
 
-Measured 21 Sep 2026 against `54a8c42`, comparing the ten built panes with the
-approved mock set (`docs/mocks/ops-dashboard-v2/` in the monorepo, whose
-`review.html` is the ten-pane contact sheet the user signed off).
+Measured 21 Sep 2026. Built side: `aria-website@483cccc`. Approved side:
+`docs/mocks/ops-dashboard-v2/` at `Stadiora/Aria@main`, whose `review.html` is
+the ten-pane contact sheet the user signed off.
 
 This is a fidelity audit, not a pixel diff. The mocks are static HTML with
 invented figures and the panes render real shapes, so an exact comparison would
@@ -14,6 +14,12 @@ roles, and whether the four preview states still cohere.
 decide on.
 
 ## How it was measured, and what the measurement cannot see
+
+**The approved side is `docs/mocks/ops-dashboard-v2/` at `Stadiora/Aria@main`**,
+not the tree as it stood when the user signed it off. That distinction is not
+cosmetic: the mock set has itself been changed since approval, and an earlier
+revision of this audit measured the older tree and published a colour finding
+that is false of the mocks as they stand. See correction 9.
 
 Both sides were booted over HTTP in headless Chrome at 1280 and 375, in both
 themes, and forced into the same preview state before extraction — the mocks
@@ -49,10 +55,16 @@ be read:
    The determinations below are therefore taken from **the rendered band calls
    themselves** — the first argument of every band call in each pane file —
    compared against the titles named inside the cannot-answer lists, which are a
-   separate and opposite set. Note the call is not spelled the same everywhere:
-   most panes use `S.band(`, `pane-users.js` uses `shell.band(`, and
-   `pane-evaluations.js` builds its sections without either, so a sweep that
-   greps only for `S.band(` silently returns nothing for two of the ten panes.
+   separate and opposite set. Note the call is not spelled the same everywhere,
+   and a naive sweep is wrong in two different ways. `pane-users.js` uses
+   `shell.band(`, so a grep for `S.band(` returns **nothing** for it.
+   `pane-evaluations.js` also uses `shell.band(`, but only twice — at
+   `:368` and `:375`, inside the `workingBand()` / `previewBand()` wrappers —
+   and the first argument at both sites is the parameter `title`, not a literal.
+   A sweep that reads first arguments therefore returns **two parameter names**
+   for that pane, which is worse than nothing because it looks like an answer.
+   Its real band titles are at the wrapper call sites (`:543`, `:550`, `:998`,
+   `:1102`, `:1160`, `:1223`) and were read from there.
 2. **Look up a user could not be rendered at all.** The pane reads
    `/api/ops/users/lookup` and `/api/ops/users/<id>`, neither of which the stub
    serves, and it draws nothing until a search is submitted. Inventing a fixture
@@ -69,11 +81,26 @@ be read:
 | | |
 |---|---|
 | Type scale | **No drift.** Identical on both sides, both themes. |
-| Colour roles | **Changed, and the change is corrective.** The mock's own light-theme secondary ink fails WCAG AA. |
+| Colour roles | **No drift.** Every shared role matches exactly, both themes. The mock's palette was itself fixed for AA, by `Stadiora/Aria#10042`. |
 | Pane questions | **Nine of ten verbatim.** One changed. |
 | Section hierarchy | **Divergence on 8 of 10 panes**; four of the eight acknowledge it on screen, four have no machinery to. |
 | Preview states | **Coherent**, with one pane that ignores the control for a defensible reason. |
 | Type identity | **Inert.** Both sheets ask for Geist; the built dashboard has never rendered in it. |
+
+**On colour, the two sets have converged rather than drifted.** Every heading
+role the audit samples resolves to an identical `rgb()` on both sides, in both
+themes: band, hero and card titles at `rgb(232,238,246)` dark / `rgb(11,18,32)`
+light, KPI labels at `rgb(126,141,163)` / `rgb(85,99,122)`, and the rose accent
+at `rgb(251,113,133)` / `rgb(159,18,57)`.
+
+That agreement is not an accident and it is worth stating, because the obvious
+reading of the history is the opposite one. The approved set as signed off in
+`Stadiora/Aria#9941` (18 Sep) carried a light palette that failed WCAG AA — its
+secondary ink measured 3.05:1 to 3.43:1 across the four light surfaces. It was
+fixed the next day, **in the mock set itself**, by `Stadiora/Aria#10042`,
+*"make the v2 palette meet WCAG AA, with a rendered-pixel guard"*. The built
+dashboard carries the same values. So the palette moved once, correctively, on
+both sides, and there is nothing here to file.
 
 The headline is that most of what left the built dashboard left because **no
 route serves it**, and on four of the eight diverging panes the pane says so in a
@@ -166,7 +193,7 @@ Both stylesheets declare the same stack:
 The mocks load Geist and Geist Mono from Google Fonts, so the approved design
 was reviewed in Geist. The built dashboard ships **no `@font-face` rule, no font
 link, and no font file** — `grep -rl "@font-face" ops/` and
-`find . -name "*.woff*"` both return nothing at `54a8c42` — and its CSP sets
+`find . -name "*.woff*"` both return nothing at `483cccc` — and its CSP sets
 `font-src 'self'`. Every named family therefore falls through to the system
 default.
 
@@ -276,47 +303,39 @@ invented. There is no data for a state to vary.
 
 The brief asked for this explicitly, and it is not a short list.
 
-**1. The mock's light theme fails WCAG AA; the built dashboard passes.** The
-secondary ink used for every supporting line and label:
+**1. The mock collapses at 375px; the built pane does not.** This is the clearest
+single image in the audit, and the one place where the measurement is starker than
+the screenshot. In the approved Overview at 375, the hero's resolved grid is:
 
-The light theme has four surfaces this ink can sit on, so the ratio is a range,
-not a number. Measured against each:
+| | approved mock | built pane |
+|---|---|---|
+| `getComputedStyle(.hero).gridTemplateColumns` | `279px 0px` | `46px 233px` |
+| `.hero-title` box width | **0px** | 233px |
+| `.hero-title` content width | 78px | 233px |
+| `scrollWidth > clientWidth` | **true** | false |
 
-| surface | token | mock `rgb(124,140,161)` | built `rgb(85,99,122)` |
-|---|---|---|---|
-| `#FFFFFF` | `--surface` | 3.43:1 | 6.08:1 |
-| `#F7FAFD` | `--surface-2` | 3.27:1 | 5.81:1 |
-| `#F4F7FB` | `--bg` | 3.19:1 | 5.66:1 |
-| `#EDF2F8` | `--surface-3` | 3.05:1 | 5.40:1 |
+The chips take 279px of the hero's 343px and **the title column resolves to
+zero**. The title is not merely narrow, it has no box: 78px of text in a 0px
+container. The built pane gives the orb its 46px and the title the remaining
+233px, unclipped.
 
-**The mock's secondary ink fails AA on every surface in its own light theme**,
-and white is the most favourable of the four — quoting only the white figure
-would have flattered it. The built ink passes on all four.
+This is issue `Stadiora/Aria#10397`, and the approved mock is where it came from.
+Measured with `hero375.mjs`, which reads the resolved track list rather than
+`documentElement.scrollWidth` — the scroll width is blind here, because `.hero`
+clips, so the document stays 375 either way.
 
-The rose accent — the ink used for the critical pill and the failure row — moved
-the same way, `rgb(225,29,72)` to `rgb(159,18,57)`: 4.70:1 to 8.02:1 on white,
-and 4.17:1 to 7.12:1 on `--surface-3`. (It is one ink among several that changed;
-these are the two the audit sampled, not the whole palette.) Restoring the mock's
-palette would reintroduce a measured accessibility defect across all ten panes.
-
-**2. The mock collapses at 375px; the built pane does not.** This is the clearest
-single image in the audit. In the approved Overview at 375, the status banner's
-title is crushed into a column roughly 30px wide and reads vertically as
-"All sys no…", because the chips beside it claim the row's width. The built pane
-renders the same hero cleanly at full width. This is issue #10397, and the mock
-is where it came from.
-
-**3. The mock cannot ship under the dashboard's CSP.** The ten mock pages carry
-672 inline `style=` attributes between them. The served dashboard sets a CSP with
+**2. The mock cannot ship under the dashboard's CSP.** The eleven mock pages carry
+677 inline `style=` attributes between them (676 across the ten panes, one in the
+`review.html` contact sheet). The served dashboard sets a CSP with
 no `'unsafe-inline'`, so a faithful port was never possible; every one of those
 declarations had to become a class. The structural divergence in finding 4 is
 partly the residue of that translation.
 
-**4. The mock is off its own type scale in one place.** `evaluations.html` sets
+**3. The mock is off its own type scale in one place.** `evaluations.html` sets
 `style="font-size:18px"` on a `.hero-title`, the only hero on either side not at
 19px. The built pane is on-scale.
 
-**5. Panes label what they cannot answer.** Nothing in the approved set does
+**4. Panes label what they cannot answer.** Nothing in the approved set does
 this. "No API yet", "What this pane cannot answer yet", "Not drawn here, and
 why" and "INVENTED FIGURES" are all inventions of the build, and they are the
 reason this audit could tell a missing route from a design regression at all. A
@@ -372,3 +391,29 @@ because they are failures of the *correction*, not of the original audit:
    (`pane-alerts.js`) carries no machinery either. Its divergence is an addition
    rather than a loss, so it files nothing, but it belongs in the count.
 8. The PR description still published five claims this document had retracted.
+
+A third round then found the largest error of all, and it was in the audit's
+**baseline** rather than in any single claim:
+
+9. **The whole audit was run against the wrong copy of the approved mocks.** It
+   served the review snapshot of `Stadiora/Aria#9941` — the set as the user saw
+   it during approval — rather than `docs/mocks/ops-dashboard-v2/` at `main`.
+   Every file in the mock set differs between the two. The consequence was a
+   headline finding that was **false of the mocks as they stand**: the audit
+   reported, in the present tense, that the approved light palette fails WCAG AA
+   and that the built dashboard is better for having fixed it. In fact
+   `Stadiora/Aria#10042` fixed the mock set itself on 19 Sep, two days before
+   this audit ran, and the built dashboard and the approved mocks now carry
+   **identical** inks.
+
+   All 320 extractions were re-run against `main`. The correction is precisely
+   bounded, and the bound was measured rather than assumed: the band-spine
+   comparison is **byte-identical** between the two baselines, and no type size
+   changed, so findings 1, 2, 4 and 5 and issues #10804, #10805 and #10807 are
+   untouched. Exactly three colour readings and one mock hero string differ.
+   The colour finding has been replaced by the convergence note in the summary.
+
+   *A baseline is an input, and this audit never stated which one it used. It
+   states it now, in the second paragraph, because every number below is a
+   claim about a comparison and a comparison is only as identified as its two
+   sides.*
