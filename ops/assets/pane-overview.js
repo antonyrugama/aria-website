@@ -668,13 +668,10 @@
        dashboard has a word for.
 
        An unrecognised severity is shown exactly as it arrived rather than
-       translated, which is what alerts-model.js says its lookups do. For a
-       plain unrecognised word the Problems pane prints the same thing for the
-       same problem (pane-alerts.js:741), so two panes an operator moves
-       between during one incident say one word for one state. It does not
-       hold for the two cases below: that pane prints a function for
-       `constructor` and nothing at all for a severity that never arrived, and
-       fixing it is not in this pane's gift.
+       translated, which is what alerts-model.js says its lookups do. The
+       Problems pane takes the same three steps for the same problem
+       (`severityWords()` there too, Stadiora/Aria#10630), so two panes an
+       operator moves between during one incident say one word for one state.
 
        Only a severity that did not arrive at all, or arrived as something
        that is not a word, falls back to "Unknown", because there is nothing
