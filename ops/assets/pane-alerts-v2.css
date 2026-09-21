@@ -107,8 +107,9 @@
        overflow-x, which
        the focus-ring test reads to find the box it belongs to, and the ones
        justified by what the page draws — the rules table's six columns, the
-       words in the condition pill, one card per problem and the three fact
-       columns — which are checked against the drawn page;
+       words in the condition pill, one card per problem, the three fact
+       columns and the chip strip's place in the hero — which are checked
+       against the drawn page;
      - what the problems answer and the closed-problem record carry: that an
        answer holds an observed value and a threshold but no full scale, and
        that the note is the one line in the record a person wrote rather than

@@ -728,19 +728,27 @@ function focusable(node) {
     throw new Error('focusable() cannot tell: a radio group takes one tab stop between all '
       + 'its members, and which members are in the group is decided by the owner form');
   }
+  /* ABOVE the non-negative tabindex branch, for the reason the radio group is:
+     a tabindex does not make the rest of the document legible from this node.
+     An <area> is a stop only where a RENDERED <img usemap> uses the <map> it
+     sits in, and that is as true of a tabindex as it is of an href -- measured,
+     same ring walk, and the pair is the proof: <area tabindex="0"> with no href
+     takes a stop when the map is used and none when it is not, with identical
+     markup on the node. It was answered `true` by the branch five lines below,
+     which over-reported reachability (found in the twelfth review of #75).
+     With NEITHER an href nor a tabindex it is a stop in no arrangement --
+     measured both ways round -- and a NEGATIVE tabindex was answered false
+     above, so only the two undecidable shapes reach the throw. */
+  if (node.tagName === 'AREA') {
+    if (attr(node, 'href') === null && index === null) return false;
+    throw new Error('focusable() cannot tell: an <area> with an href or a non-negative '
+      + 'tabindex takes a tab stop only where a rendered <img usemap> uses its <map>');
+  }
   if (index !== null) return index >= 0;
 
   /* Before the href branch: an <a contenteditable> with no href is an editing
      host and a real tab stop, which asking about href first answers wrong. */
   if (editable(node)) return true;
-  /* An <area> is a stop only when a RENDERED <img usemap> uses the <map> it
-     sits in -- a fact about the rest of the document, not about the node --
-     so a linked one is refused. One with no href is never a stop anywhere. */
-  if (node.tagName === 'AREA') {
-    if (attr(node, 'href') === null) return false;
-    throw new Error('focusable() cannot tell: an <area href> takes a tab stop only where a '
-      + 'rendered <img usemap> uses its <map>');
-  }
   /* An <a href> that is CONTENT of an editing host takes no tab stop, while
      a <button> or an <iframe> in the same place keeps its own. The docblock
      used to say the outermost host is decided BEFORE href, which was true
@@ -932,7 +940,18 @@ const FOCUSABLE_PROBES = [
   { name: '<area href>', tag: 'area', attrs: { href: '/ops/alerts.html' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. a stop only inside a <map> a rendered <img usemap> uses' },
   { name: '<area> with no href', tag: 'area', answer: false,
-    note: 'FOUND IN REVIEW: true. no href, no link, no stop in any arrangement' },
+    note: 'FOUND IN REVIEW: true. no href and no tabindex, so no stop in any arrangement '
+      + '-- measured with the map used and unused' },
+  { name: '<area tabindex="0"> with no href', tag: 'area', attrs: { tabindex: '0' },
+    answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. measured: a stop when a rendered <img usemap> uses the '
+      + 'map, none when it does not, with identical markup on the node' },
+  { name: '<area href tabindex="0">', tag: 'area',
+    attrs: { href: '/ops/alerts.html', tabindex: '0' }, answer: 'cannot tell',
+    note: 'FOUND IN REVIEW: true. the tabindex does not make the used-map fact legible' },
+  { name: '<area tabindex="-1"> with no href', tag: 'area', attrs: { tabindex: '-1' },
+    answer: false,
+    why: 'out of the ring whatever the map does, and answered above the refusal' },
   { name: '<details> with a <summary> child', tag: 'details', childBefore: ['summary'],
     answer: false, why: 'the <summary> is the stop; its <details> is not' },
   { name: '<details> with no <summary>', tag: 'details', answer: 'cannot tell',
@@ -1050,8 +1069,8 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 84, takesATabStop: 31, doesNot: 42, refused: 11, wereWrongBefore: 7,
-      foundInReview: 32 });
+    { cases: 87, takesATabStop: 31, doesNot: 43, refused: 13, wereWrongBefore: 7,
+      foundInReview: 34 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -3434,6 +3453,30 @@ const COUNT_WORDS = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
 };
 
+/* WHERE group 1 is, rather than whether the source happens to spell the
+   required capture somewhere in it. Asking `source.includes(...)` was green
+   for /(\w+) columns in ([\w-]+) leaves/i -- a legal caller that widens the
+   pattern to also take the width, which is the obvious next widening here --
+   and MX-6 walked back in with the sheet saying sixty-six and the page
+   drawing six (found in the twelfth review of #75). The scan skips escapes
+   and character classes, and treats (?: and lookarounds as non-capturing
+   while treating (?<name> as capturing, so a named first group fails the
+   check rather than passing it. What it does NOT understand: nothing else --
+   a pattern built by string concatenation is read the same way, because it
+   is read off `source` after construction. */
+const firstGroupAt = (source) => {
+  let inClass = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '\\') { i += 1; continue; }
+    if (inClass) { if (ch === ']') inClass = false; continue; }
+    if (ch === '[') { inClass = true; continue; }
+    if (ch !== '(') continue;
+    if (source[i + 1] !== '?' || /^\(\?<[^=!]/.test(source.slice(i))) return i;
+  }
+  return -1;
+};
+
 /* The number the SHEET states, at one named site, resolved from its word.
    A pattern that stops matching is a failure, not a zero: the sentence
    moving or being reworded is exactly the drift this reads it to catch. And
@@ -3451,9 +3494,11 @@ function sheetCount(pattern, says) {
      reach the check below, which already fails with the right message. The
      shape is required rather than trusted, so the next caller cannot
      reintroduce it. */
-  assert.ok(pattern.source.includes('([\\w-]+)'),
-    'sheetCount() was handed a pattern that does not capture ([\\w-]+), so a hyphenated '
-    + 'compound number word would resolve to its last component: ' + pattern.source);
+  const at = firstGroupAt(pattern.source);
+  assert.ok(at >= 0 && pattern.source.startsWith('([\\w-]+)', at),
+    'sheetCount() reads group 1 and was handed a pattern whose FIRST capture is not '
+    + '([\\w-]+), so a hyphenated compound number word would resolve to its last '
+    + 'component: ' + pattern.source);
   const all = [...prose.matchAll(new RegExp(pattern.source, pattern.flags.replace('g', '') + 'g'))];
   assert.equal(all.length, 1, 'pane-alerts-v2.css states ' + JSON.stringify(says) + ' in '
     + all.length + ' places, not one: the sentence this test reads the count out of has '
