@@ -92,16 +92,18 @@
       file: 'jobs-live.html', icon: 'live', label: 'Happening now', group: 'Right now',
       railId: 'jobs',
       question: 'What is Aria working on, and is anything stuck?',
-      /* Neither control this pane used to draw could act on its read. The
-         alerting record is kept per request type, so no app narrows it, and
-         the pane said so underneath in a note; the alerting watches production
-         and only production, so staging was refused rather than answered. Two
-         controls and an apology are the same defect as a button with no route
-         behind it: they say the narrowing is within reach. The note below is
-         the whole of what was true about them. */
+      /* The pane now reads GET /api/ops/jobs, and none of the three controls
+         survives the change either. The job lifecycle record is keyed by job
+         type rather than by app, so no app narrows it; it is written by
+         production workers only, so an environment control has one answer; and
+         a range control would contradict the page, which is the present tense
+         and always covers exactly now. A control that cannot reach the read
+         behind it says the narrowing is available when it is not, which is the
+         same defect as a button with no route. The note below is what is
+         actually true about them. */
       wave: 'W2', scope: false, range: false, env: false,
-      filterNote: 'The alerting record is kept per request type and covers production only, ' +
-        'so there is no app or environment filter'
+      filterNote: 'The job lifecycle record is kept per job type and is written by production ' +
+        'workers only, so there is no app or environment filter'
     },
     history: {
       file: 'run-history.html', icon: 'history', label: 'What happened', group: 'Right now',

@@ -56,10 +56,11 @@
 <script src="assets/session.js"></script>
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
-<!-- Happening now draws the alerting record, so it shares the Problems pane's
-     model: the panes cannot disagree about what "still open" means, about when
-     a count is a floor, or about whether anything was watching. -->
-<script src="assets/alerts-model.js"></script>
+<!-- Happening now reads GET /api/ops/jobs directly and needs no shared model:
+     every figure on the page comes out of that one response, so there is
+     nothing here for a second pane to disagree with. It no longer loads
+     assets/alerts-model.js, which it used only while it was standing in for a
+     queue it could not see. -->
 <script src="assets/pane-jobs-live-v2.js"></script>
 </body>
 </html>
