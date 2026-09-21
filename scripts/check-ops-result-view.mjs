@@ -136,25 +136,22 @@
      a pane mid-transition would read as hidden. The repo's own 1x1 `.sr`
      spans are accepted carriers for the same reason, so a marker that only a
      screen reader can reach satisfies this gate today.
-   - **The text question is asked of the carrier's own subtree, so a marker
-     split across what the page separates still passes.** Both paths now ask
-     what the carrier itself draws: walk its subtree, skip any element the
-     browser is not drawing the text of (display:none, visibility hidden or
-     collapse, content-visibility:hidden), join what is left with nothing
-     between, and look for the marker. Joining with nothing between is
-     deliberate — it exists to catch text drawn nowhere, not to adjudicate
-     spacing — and the cost is that a refactor splitting a marker into two
-     flex items, so the page renders "2." and "9.1" with the row's gap between
-     them, reads as shown. Reachability is asked of the carrier — its own box
-     if it has one, otherwise the boxes a Range over its contents produces,
-     which is how display:contents stays green — and again of every element
-     inside the walk, by its own box where it has one and by a Range over its
-     contents where it does not, so a half parked off the document is not
-     joined to the half on screen however it is wrapped. visibility is read
-     per element and silences only that element's own text, since a descendant
-     can set it back to visible; at the CARRIER the question is still asked as
-     a veto, so a carrier that is itself visibility:hidden with a visible
-     descendant reads as not shown.
+   - **The marker is judged from the text's own rects, so a marker split
+     across what the page separates still passes.** Walk the carrier's
+     subtree, stop at any element the browser lays nothing out under
+     (display:none, content-visibility:hidden, a skipped
+     content-visibility:auto subtree), drop the own text of any element at
+     visibility hidden or collapse, keep a text node only when a Range over it
+     reports a non-empty box inside the reachable area (or, under a
+     position:fixed ancestor, the viewport), and join what is left with
+     nothing between. Nothing about an ELEMENT decides it: three consecutive
+     rounds found a state where the box that proved reachability and the text
+     that proved presence came from different nodes, so the evidence is now
+     taken from the text itself. The cost of joining with nothing between is
+     that a refactor splitting a marker into two flex items, so the page
+     renders "2." and "9.1" with the row's gap between them, reads as shown;
+     that is deliberate, since this clause exists to catch text drawn nowhere
+     rather than to adjudicate spacing.
    - **Any painted occurrence answers for all of them.** A marker that a pane
      renders twice passes when either occurrence is painted and reachable, so
      a result view that loses the copy a reader is meant to read while an
@@ -1609,48 +1606,47 @@ const probeFor = (markers) => `(() => {
      appending a hidden copy of the version number inside the span that
      renders it: the span stopped being a carrier because a child now held
      the marker too, the hidden copy was measured in its place, and a pane
-     whose result was untouched on the screenshot failed. So an element is
-     ALSO a carrier when its own text holds the marker.
+     whose result was untouched on the screenshot failed. Round 12 answered
+     that with "unless the element's own text holds the marker", round 14
+     widened own text from one text node to a run of adjacent ones, and round
+     16 broke both by splitting the version number across two ORDINARY inline
+     spans beside the hidden duplicate: no run of direct text nodes held it,
+     so the visible parent was discarded for the hidden copy once more.
 
-     Its own text means a RUN of its direct text nodes with no element child
-     between them. Round 12 wrote that as a single text node and round 14
-     split one version number into Text("2.") and Text("9.1") beside a hidden
-     duplicate: neither node held "2.9.1", so the visible parent was thrown
-     away for the hidden copy and a card nobody had touched on the screenshot
-     failed. Adjacent text nodes render as one run whatever the DOM writer did
-     with node boundaries, so joining them invents nothing; an element child
-     between them may be a block, a flex item or absolutely positioned, so
-     joining ACROSS one would, and that is where a run still ends.
+     All three are one mistake — choosing which element to measure by reading
+     text the browser may not be drawing. A child takes the carrier role from
+     its parent only when the child DRAWS the marker, so that question is now
+     asked with drawnText(), the same walk that decides the verdict. A hidden
+     duplicate draws nothing, so it never displaces its parent, and the "own
+     text" escape hatch and both of its widenings are deleted rather than
+     patched a third time.
 
-     Five predicates now, and each one of them was added because the set
-     before it passed something nobody could see: a box rules out display:none
-     and a collapsed subtree, checkVisibility() rules out visibility:hidden and
-     a content-visibility:auto subtree that is currently skipped, reachability
-     rules out a box parked off the page, content-visibility:hidden is
-     asked for by name, because it keeps the element rendered and skips only
-     its contents, so checkVisibility() reports true about a carrier painting
-     nothing, and the carrier's own painted text rules out a marker whose
-     TEXT is suppressed below the element the other four are asked about.
-     opacity is NOT asked about, because a pane mid-transition would
-     read as hidden and this gate decides whether the run happens at all. */
+     One predicate now, asked of the carrier's own subtree: the text a reader
+     could actually read out of it. Five stood here — a box, checkVisibility(),
+     reachability, content-visibility:hidden by name, and painted text — and
+     three consecutive rounds found a state that satisfied the first four and
+     painted nothing, because all four were asked about the ELEMENT while the
+     text they stood in for lives in the nodes under it. Round 14 hid both
+     halves of a split version number: box fine, checkVisibility() true, on
+     screen, blank card. Round 15 wrapped a half parked at left:-99999px in a
+     0x0 overflow:visible span, which has no box to fail. Round 16 made the
+     carrier's box reachable through an unrelated EMPTY descendant while the
+     text itself sat off the document, and the card read "2." alone.
+
+     So the element-level proxies are gone and the walk below answers all of
+     it against the rects of the text itself. opacity is still NOT asked
+     about, because a pane mid-transition would read as hidden and this gate
+     decides whether the run happens at all. */
   const carriers = (m) => {
     const out = [];
+    const want = flat(m);
     for (const el of content.querySelectorAll('*')) {
       if (clean(el).indexOf(m) === -1) continue;
       let deeper = false;
       for (const kid of el.children) {
-        if (clean(kid).indexOf(m) !== -1) { deeper = true; break; }
+        if (drawnText(kid).indexOf(want) !== -1) { deeper = true; break; }
       }
-      let ownText = false;
-      let run = '';
-      for (const n of el.childNodes) {
-        if (n.nodeType === 3) { run += String(n.nodeValue); continue; }
-        if (n.nodeType !== 1) continue;
-        if (run.replace(/\\s+/g, ' ').trim().indexOf(m) !== -1) { ownText = true; break; }
-        run = '';
-      }
-      if (!ownText && run.replace(/\\s+/g, ' ').trim().indexOf(m) !== -1) ownText = true;
-      if (!deeper || ownText) out.push(el);
+      if (!deeper) out.push(el);
     }
     return out;
   };
@@ -1712,135 +1708,89 @@ const probeFor = (markers) => `(() => {
     }
     return false;
   };
-  /* An element's own box is not the only thing that paints its text.
-     display:contents removes the box and keeps the text: measured on this
-     dashboard, a span carrying "2.9.1" under display:contents reports a
-     0x0 rect AND checkVisibility() false while its text is laid out at
-     (1198, 894) 39.97x16 and is legible on the screenshot. Asking that
-     element alone reports a visible result as unreachable, which is a false
-     red on an ordinary layout refactor that flattens a wrapper.
+  /* WHAT A CARRIER PAINTS, asked of the text and not of the element.
 
-     So a carrier with no box of its own is measured by the boxes its own
-     contents produce, which is what a Range over them is. The Range is
-     consulted only when the element produces no box at all: a box with one
-     zero dimension stays a failure, which is what keeps transform:scale(0)
-     red. */
-  /* WHERE a carrier is and WHAT IT PAINTS are two questions, and until round
-     14 the second one was asked about the wrong node half the time.
+     Three rounds of this were asked about the element: does it have a box, is
+     it reachable, does checkVisibility() like it, and then separately, does
+     its text still contain the marker. Each round found a state where those
+     answers came from different nodes. Round 14 gave both halves of a split
+     version number visibility:hidden — their parent is then the carrier, with
+     a 39.98x20.25 box, visibility:visible, checkVisibility() true and both
+     halves painted by nobody; measured, exit 0, ten panes judged, blank card.
+     Round 16 left the text itself off the document and put an ordinary empty
+     span inside the carrier: the carrier's box was reachable because of the
+     span, and the text that made it a carrier was nowhere; measured, exit 0
+     and a card reading "2." only.
 
-     A carrier is the innermost element holding the marker, and "innermost"
-     stops at the element, not at the text: split a version number into two
-     spans holding "2." and "9.1", give BOTH spans visibility:hidden, and
-     neither child holds the whole marker, so their parent is the carrier —
-     with a 39.98x20.25 box, visibility:visible, checkVisibility() true and
-     both halves of its text painted by nobody. Measured, that run exited 0
-     with ten panes judged and the version card blank on the screenshot. The
-     same shape defeated the boxless path too, because a Range reports the
-     rects of text that visibility:hidden is not drawing.
+     So there is one question and it is asked per TEXT NODE: is this run of
+     text being drawn, and do its own rects land somewhere a reader can reach.
+     A Range over the node's contents gives exactly the boxes the browser laid
+     that text out in, which is why the evidence can no longer come from a
+     different node than the text does. What survives the walk is joined and
+     compared to the marker.
 
-     So the text question is now asked of the carrier's OWN subtree, and asked
-     the same way on both paths: walk it, skip any element the browser is not
-     drawing the text of — display:none, visibility hidden or collapse,
-     content-visibility:hidden — and join what is left. Joining with nothing
-     between, because two runs of text separated by an inline boundary are one
-     run on screen, and because this clause exists to catch text that is not
-     drawn AT ALL rather than to adjudicate spacing.
+     Joined with nothing between, because two runs separated by an inline
+     boundary are one run on screen, and because this clause exists to catch
+     text that is not drawn AT ALL rather than to adjudicate spacing. The cost
+     is stated in the docblock: a marker split across two flex items is joined
+     here and passes.
 
-     This replaced a clause that asked whether #content's innerText still held
-     the marker: the region's rendered text, not the carrier's. Round 12 had
-     already shown what that buys — hide one occurrence and move a second off
-     the document, and the boxless path took reachable geometry from the first
-     and rendered text from the second — and the repair then was to read the
-     two suppressors off the element first. Round 14 went below the element
-     instead. A per-carrier walk answers both, costs the region-wide clause
-     nothing to delete, and ends the asymmetry where a boxed carrier was never
-     asked what it painted at all.
+     A Range is the right instrument twice over. display:contents removes the
+     box and keeps the text — measured on this dashboard, a span carrying
+     "2.9.1" under display:contents reports a 0x0 rect AND checkVisibility()
+     false while its text is laid out at (1198, 894) 39.97x16 and is legible
+     on the screenshot — and a zero-area overflow:visible wrapper, round 15's
+     payload, has no box to fail either. Neither one hides its TEXT's rects.
 
-     visibility and content-visibility are still read off the element and its
-     chain as well, by suppressed(): visibility inherits, so the carrier's own
-     computed value carries its ancestors', and content-visibility:hidden does
-     not inherit and is looked for upward, because a skipped subtree keeps
-     reporting the rects it had when it was visible — measured, the same
-     [1198, 894, 40, 16]. The walk below covers those two INSIDE the carrier;
-     suppressed() covers them above it.
+     What still stops the walk, and why each is read where it is read:
+     display:none and content-visibility:hidden are read per element and end
+     the descent, because nothing under them is laid out — and a
+     content-visibility:hidden subtree keeps reporting the rects it had when
+     it was visible, measured, the same [1198, 894, 40, 16], so the property
+     has to be asked for by name rather than measured. visibility is read per
+     element and silences only that element's OWN text, because it inherits
+     but any descendant may set it back to visible; round 15 found the version
+     that dropped such a descendant, a false red. content-visibility:auto is
+     asked through checkVisibility(), and only of an element that HAS a box,
+     because checkVisibility() reports false for a display:contents element
+     and round 10 shipped that false red.
 
      Lower-cased and whitespace-collapsed so a text-transform is not a false
-     red. Reachability is asked again inside the walk, of every element in it:
-     joining what a page draws in two places is the point, but joining a half
-     parked at left:-99999px to the half on screen rebuilds a marker no reader
-     can read, and measured, that exited 0 with the version card showing "2."
-     and nothing else. An element with a real box is judged by that box; one
-     with none, or a degenerate one, is judged by the boxes a Range over its
-     contents produces — the same two-step the carrier itself gets, and it is
-     here because round 15 wrapped the parked half in a 0x0 span and walked
-     straight through the box-only version of this test.
-
-     visibility is read per element and only silences that element's OWN text,
-     because it inherits but a descendant can set it back to visible; display
-     and content-visibility stop the walk, because nothing under them renders
-     at all. */
+     red. Memoized, because carriers() calls it once per child per candidate
+     per marker. */
   const flat = (s) => String(s).replace(/\\s+/g, ' ').trim().toLowerCase();
-  const placed = (n) => {
-    const reaches = viewportAnchored(n) ? inView : inReach;
-    const box = n.getBoundingClientRect();
-    if (box.width > 0 && box.height > 0) return reaches(box);
-    const r = document.createRange();
-    r.selectNodeContents(n);
-    return [].slice.call(r.getClientRects()).some(reaches);
-  };
+  const drawnCache = new Map();
   const drawnText = (el) => {
+    if (drawnCache.has(el)) return drawnCache.get(el);
     let out = '';
     const walk = (node) => {
       const vis = getComputedStyle(node).visibility;
       const draws = vis !== 'hidden' && vis !== 'collapse';
+      const reaches = viewportAnchored(node) ? inView : inReach;
       for (const n of node.childNodes) {
-        if (n.nodeType === 3) { if (draws) out += String(n.nodeValue); continue; }
+        if (n.nodeType === 3) {
+          if (!draws) continue;
+          const r = document.createRange();
+          r.selectNodeContents(n);
+          if ([].slice.call(r.getClientRects()).some(reaches)) out += String(n.nodeValue);
+          continue;
+        }
         if (n.nodeType !== 1) continue;
         const cs = getComputedStyle(n);
         if (cs.display === 'none' || cs.contentVisibility === 'hidden') continue;
-        if (!placed(n)) continue;
+        const box = n.getBoundingClientRect();
+        if ((box.width > 0 || box.height > 0) && typeof n.checkVisibility === 'function'
+          && !n.checkVisibility({ contentVisibilityAuto: true })) continue;
         walk(n);
       }
     };
     const own = getComputedStyle(el);
-    if (own.display === 'none' || own.contentVisibility === 'hidden') return '';
-    walk(el);
-    return flat(out);
+    if (own.display !== 'none' && own.contentVisibility !== 'hidden') walk(el);
+    const text = flat(out);
+    drawnCache.set(el, text);
+    return text;
   };
-  const suppressed = (el) => {
-    const own = getComputedStyle(el);
-    if (own.visibility === 'hidden' || own.visibility === 'collapse') return true;
-    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
-      if (getComputedStyle(n).contentVisibility === 'hidden') return true;
-    }
-    return false;
-  };
-  const shows = (el, marker) => {
-    const reaches = viewportAnchored(el) ? inView : inReach;
-    const own = el.getBoundingClientRect();
-    if (own.width > 0 || own.height > 0) {
-      if (!reaches(own)) return false;
-      /* content-visibility:hidden on the carrier itself is asked as a
-         property, because it is the one way to keep a box and paint no text:
-         the element is rendered, only its contents are skipped, so
-         checkVisibility() answers true about the element. Measured, a span
-         under "content-visibility: hidden; padding: 6px 24px" reports a
-         48x12 box, checkVisibility() true, and a card drawn with the version
-         numbers gone. Without the padding the box collapses and the boxless
-         path below catches it, which is what made this half survive a round. */
-      if (getComputedStyle(el).contentVisibility === 'hidden') return false;
-      if (typeof el.checkVisibility === 'function'
-        && !el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) {
-        return false;
-      }
-      return drawnText(el).indexOf(flat(marker)) !== -1;
-    }
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    if (![].slice.call(range.getClientRects()).some(reaches)) return false;
-    if (suppressed(el)) return false;
-    return drawnText(el).indexOf(flat(marker)) !== -1;
-  };
+  const shows = (el, marker) => drawnText(el).indexOf(flat(marker)) !== -1;
   const markers = ${JSON.stringify(markers)};
   const absent = markers.filter((m) => contentText.indexOf(m) === -1);
   const hiddenMarkers = markers.filter((m) => contentText.indexOf(m) !== -1
@@ -2020,17 +1970,16 @@ try {
       if (seen.hiddenMarkers.length) {
         failures.push(`${where}: the pane drew ` +
           `${seen.hiddenMarkers.map((m) => JSON.stringify(m)).join(' and ')} into #content ` +
-          'and nothing carrying it — neither a box of its own nor the boxes its text ' +
-          'produces, every occurrence of it judged on its own — is at once inside the area ' +
-          'this page can be scrolled over (or, under a position:fixed ancestor, inside the ' +
-          'viewport), reported as rendered by the browser, and still drawing that text ' +
-          'itself. Zero-area, display:none, visibility:hidden or ' +
-          'collapse, content-visibility:hidden on the carrier or a skipped ' +
-          'content-visibility:auto subtree, a position outside the document, and a carrier ' +
-          'whose own text is suppressed below it all ' +
-          'land here and this check does not tell them apart; opacity it never asked ' +
-          'about. The ' +
-          'result is in the DOM, nothing below could judge what it paints, and this run ' +
+          'and no run of that text is drawn where a reader could read it. Every occurrence ' +
+          'was judged on its own, and by the rects of the TEXT rather than of any element ' +
+          'around it: none of them is at once laid out with a non-empty box, inside the ' +
+          'area this page can be scrolled over (or, under a position:fixed ancestor, inside ' +
+          'the viewport), and free of display:none, visibility:hidden or collapse, ' +
+          'content-visibility:hidden, and a skipped content-visibility:auto subtree between ' +
+          'it and the element holding it. Zero-area text, a position outside the document, ' +
+          'and text silenced anywhere under the carrier all land here and this check does ' +
+          'not tell them apart; opacity it never asked about. The ' +
+          'result is in the DOM, nothing below it paints, and this run ' +
           'will not count the pane as reaching a result view.');
         continue;
       }
