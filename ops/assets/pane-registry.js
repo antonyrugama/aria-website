@@ -3,12 +3,12 @@
    and which delivery wave builds it.
 
    This used to live inside assets/shell.js. It moved out when the v2 shell
-   arrived, because two shells now boot pane pages — assets/shell.js for the
-   panes still on the v1 design system, assets/shell-pane-v2.js for the ones
-   remodelled onto v2 — and a second copy of this table is the one way a pane
-   page could start disagreeing with the rail about its own name, its own
-   question, or which roles may open it. Both shells read this file. Neither
-   declares a pane.
+   arrived: a pane page boots one pane shell, more than one exists here, and
+   a second copy of this table is the one way a pane page could start
+   disagreeing with the rail about its own name, its own question, or which
+   roles may open it. Whichever pane shell a page boots reads this file; no
+   shell declares a pane. How many there are, and which panes are on which,
+   are deliberately not written: a population not written cannot go stale.
 
    Loaded before whichever shell a page uses. A page that loads a shell and not
    this file throws at boot rather than rendering a shell with no panes in it;
@@ -48,14 +48,14 @@
      filterNote says so where the control would have been.
 
      scripts/ops-registry-filters.test.mjs holds this to the panes themselves.
-     It boots every pane on the v2 bootstrap once per value the registry offers
-     and reads back the call the pane made, so a filter declared here that
-     never reaches a read, and a value whose only answer is a refusal, both
-     turn it red. Declaring one is therefore a claim about behaviour rather
-     than a line in a table — except for spend, which is still on the v1 shell
-     and which that file cannot boot at all: there it holds the declaration
-     still, by name and by value, and nothing yet holds the behaviour. That
-     file's own header lists what it does not cover. */
+     It boots every pane that declares a filter, once per value the registry
+     offers, and reads back the call the pane made, so a filter declared here
+     that never reaches a read, and a value whose only answer is a refusal,
+     both turn it red. Declaring one is therefore a claim about behaviour
+     rather than a line in a table. That file's own header states what it does
+     not cover and where uncovered claims are held instead; this comment does
+     not repeat it, because a copy of a coverage map goes stale the day the
+     map moves and nothing turns red when it does. */
   var WAVES = {
     W2: 'Operate panes',
     W3: 'Understand panes',

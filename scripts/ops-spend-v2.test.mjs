@@ -938,39 +938,53 @@ test('the pane reads once on boot, not twice', async () => {
 /* --------------------------------------- the windows the registry offers
 
    scripts/ops-registry-filters.test.mjs holds "a filter a pane declares must
-   move something" for every pane it can boot, and excuses this one. Its
-   NOT COVERED entry reads:
+   move something" for every pane that declares one. Until Stadiora/Aria#10798
+   it excused this one, on the grounds that the pane was still on the v1 shell
+   and mid-conversion -- which stopped being true the day that conversion
+   merged, and is held false now by the test above at 'the page loads the v2
+   system and none of v1'. A coverage exclusion resting on a fact that has
+   quietly expired gets read at face value by the next person deciding whether
+   a pane is tested. So the exclusion was not reworded, it was DELETED: that
+   file now boots this pane from a two-field answer and RUNS four of its
+   sections against it -- `1. the coverage lock`, `2. a declared filter changes
+   what the pane does`, `3. a filter reaches the read` and `6. no value costs
+   the pane its answer`, named by banner rather than by number because that
+   file carries two numbering schemes. That last one is the one the exclusion
+   used to say could not be held from a client. (RUNS, not proves: section 2
+   is an OR across a pane's values and is the floor under a pane that answers
+   every value identically, so it is sections 3 and 6 that a window added to
+   the declaration has to get past.) There is no longer an
+   excuse here to keep true, which is the only kind that cannot go stale.
 
-     `spend`. It is the one pane with a declared filter that this file does
-     not boot: it is the last pane on the v1 shell (assets/shell.js) rather
-     than the v2 bootstrap every pane here loads, and it is mid-conversion in
-     antonyrugama/aria-website#65. [...] What the lock cannot see is whether
-     the pane acts on any of them; that waits on v2.
+   The two tests below stay, because they are not the same claim. That file
+   asks whether the window reaches the read; these ask what the pane does with
+   it once it has -- under this pane's own fixture, which carries the figures
+   the headline is drawn from. The list of windows is read from the registry
+   rather than typed, so a fifth window added to the declaration is covered
+   the moment it is declared. The EXPECTATION is not: each window's expected
+   arrival is that exact string in `query.range`. That is held next door by
+   the section banner `3. a filter reaches the read` -- named by its heading
+   rather than by a number, because that file numbers its sections 1 to 6 and
+   separately numbers three rules in a CONTRACT block, and the two schemes
+   disagree. (HONOURED records spend's filter, not that section, as 'read'.)
+   Either way the expectation is the registry's, not anything this pane
+   computes.
 
-   v2 arrived in that PR. The stated reason is now false -- ops/spend.html
-   loads assets/shell-pane-v2.js and the test above at 'the page loads the v2
-   system and none of v1' holds that -- and Stadiora/Aria#10798 tracks the two
-   docblocks that still say otherwise. Those two files are held by open PRs
-   (antonyrugama/aria-website#117 and #120) and are not edited here.
+   The second test's expectation is likewise the registry's, not the pane's:
+   the two label tables deliberately differ ('This month' against 'This month
+   to date'), so the binding asserted is that the pane's headline STARTS WITH
+   the registry's label -- the pane may extend a name, it may not rename one.
+   Asserting equality would pin the extension; asserting nothing would let the
+   four names be dealt out in any order, which is the swap this catches, in
+   both directions run (3m/12m and month/last-month).
 
-   What IS done here is the half the excuse was covering: the behaviour. Two
-   claims at this pane's own anchors, so the exclusion can be deleted against
-   evidence rather than against hope.
-
-   The list of windows is read from the registry rather than typed, so a fifth
-   window added to the declaration is covered the moment it is declared. The
-   EXPECTATION is not: each window's expected arrival is that exact string in
-   `query.range`, which is the contract stated in that file's rule 2 ('read'),
-   not anything this pane computes.
-
-   NOT COVERED here, and stated rather than implied: that file's rule 3, "no
-   value a pane offers may COST it its answer". This pane empties only when the
-   ROUTE says the period is not available (notReady, pane-spend.js:1143) -- it
-   holds no window allowlist of its own -- so whether a given window costs it
-   its answer is a fact about the cost route, and a fixture answering every
-   window happily would assert nothing but the fixture. It was written that way
-   first and taken out for exactly that reason. The claim lives where it can
-   fail: app-backend's own tests for GET /api/ops/costs. */
+   What a PREFIX cannot catch, stated rather than implied: a label that keeps
+   the registry's name and then contradicts it further along the string --
+   'Last 12 months, which is Last 3 months of billing' passes. Round 3's
+   reviewer ran it. Nothing here binds the tail, and an assertion that did
+   would be pinning wording rather than the window, which is the trade taken
+   deliberately: this catches a name swapped for another window's, not a name
+   argued with. */
 
 /* The registry as the shell loads it, without booting a pane. */
 function registryPanes() {
@@ -978,6 +992,16 @@ function registryPanes() {
   vm.runInContext('var global = window;', context);
   vm.runInContext(REGISTRY_SRC, context, { filename: 'pane-registry.js' });
   return context.window.OpsPaneRegistry.PANES;
+}
+
+/* The registry's own names for the windows -- what the filter bar prints on
+   the control. Read the same way, from the same source, so the expectation is
+   never the pane's copy of it. */
+function registryRanges() {
+  const context = vm.createContext({ window: {} });
+  vm.runInContext('var global = window;', context);
+  vm.runInContext(REGISTRY_SRC, context, { filename: 'pane-registry.js' });
+  return context.window.OpsPaneRegistry.RANGES;
 }
 
 test('every window the registry offers Cloud costs reaches the read under its own name',
@@ -1008,11 +1032,54 @@ test('no window the registry offers Cloud costs leaves the headline describing d
         search: '?range=' + window,
         costs: payload({ range: window, billedThrough: 5 }),
       });
-      const heads = runs(livePanel(dom))
-        .filter((run) => /^\d+ \w+ \d{4} to \d+ \w+ \d{4}$/.test(run));
-      assert.equal(heads.length, 0,
+      /* The headline node itself, not a run count. region() builds liveBox
+         unconditionally with data-state="live degraded", and only show() and
+         degraded() ever write to it (shell-pane-v2.js:630,635, both through
+         fill(), which clears first). empty() fills emptyBox and never touches
+         liveBox at all, so a refusal leaves whatever was last painted
+         standing -- offscreen, since applyState('empty') is what takes it off
+         the page. Either way `livePanel(dom)` is truthy on every path, so a
+         filter over its runs returns [] for "the pane never drew anything"
+         exactly as it does for "the pane drew a good headline". Asserting the
+         node is what tells those two apart, and is why the weaker
+         assert.ok(live, ...) this started as was dropped: it tests the
+         harness's scaffolding and stays green on a pane that drew nothing.
+
+         NOT COVERED here, and demonstrated rather than assumed: a load that
+         paints a headline and THEN refuses leaves this assertion green, on a
+         node the reader cannot see. Round 2's reviewer ran it. The pane has
+         no such path today -- one load() reaches exactly one of show(),
+         degraded(), empty() or failed() -- and the state itself is held next
+         door, where rule 6 of scripts/ops-registry-filters.test.mjs turns red
+         on it naming the window. This oracle is about the headline, and it is
+         the state oracle's job to say which box is on screen. */
+      const head = livePanel(dom).querySelectorAll('.kpi-label')[0];
+      assert.ok(head,
+        'the bar offers ' + window + ' and the pane drew no period headline at all, so there '
+        + 'is nothing naming the window above the figures');
+
+      const named = String(head.textContent || '').trim();
+      assert.ok(!/^\d+ \w+ \d{4} to \d+ \w+ \d{4}$/.test(named),
         'the bar offers ' + window + ' and the pane has no name for it, so the headline falls '
-        + 'back to describing the period in dates under a control that named it: ' + heads[0]);
+        + 'back to describing the period in dates under a control that named it: ' + named);
+      assert.notEqual(named, 'This period',
+        'the bar offers ' + window + ' and the pane has no name for it and the answer carried '
+        + 'no dates either, so the headline is the anonymous fallback: ' + named);
+
+      /* And it is THIS window's name. The expectation comes from the registry
+         -- the thing the operator actually clicked -- not from the pane's own
+         table, which is the map under test. Prefix rather than equality
+         because the pane may say more ('This month to date' for 'This
+         month'); it may not START with something else. What comes after the
+         registry's name is not bound -- see the docblock above the test. */
+      const offered = String(registryRanges()[window] || '');
+      assert.ok(offered,
+        'the registry offers spend the window ' + window + ' and has no label for it, so the '
+        + 'bar draws a control with no name on it');
+      assert.ok(named.startsWith(offered),
+        'the operator picked "' + offered + '" and the figures are headed "' + named + '". A '
+        + 'headline naming a different window than the control that produced it puts one '
+        + 'period\'s money under another period\'s name.');
     }
   });
 
