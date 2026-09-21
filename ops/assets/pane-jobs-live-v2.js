@@ -158,7 +158,12 @@
     abandoned: 'Given up on',
     unknown: 'Not measurable'
   };
-  var GRADE_TONE = { healthy: 'ok', stuck: 'warn', abandoned: 'crit', unknown: 'info' };
+  /* aria.css's pill modifiers, not ops.css's badge ones: this page loads
+     aria.css. `unknown` deliberately maps to no modifier, which is the
+     neutral pill -- a grade the route could not decide should not be painted
+     in a colour that decides it. An unrecognised grade falls to the same
+     neutral, for the same reason. */
+  var GRADE_TONE = { healthy: 'up', stuck: 'warn', abandoned: 'down', unknown: '' };
 
   /* Anything that looks like a contact detail, replaced before it reaches the
      DOM. Kept from the previous pane unchanged: the route prints service facts
@@ -455,7 +460,7 @@
 
       var quiet = open === 0;
       body.appendChild(h('p', {
-        className: 'page-question',
+        className: 'page-sub',
         text: open === null
           ? 'The queue could not be counted.'
           : quiet
@@ -468,7 +473,7 @@
          fact about the queue rather than a fact about the read. */
       if (quiet) {
         body.appendChild(h('p', {
-          className: 'small muted',
+          className: 'tiny muted',
           text: 'Counted, not assumed: every lane answered and every state was asked about. ' +
             'This is an idle queue, not an unread one.'
         }));
@@ -498,12 +503,21 @@
       return box;
     }
 
+    /* The figure card in the v2 vocabulary: a .card.kpi holding a label, a
+       value and an optional line of meta. The names are aria.css's, which is
+       the sheet this page loads. An earlier draft of this pane used .tile /
+       .tile-value / .tile-label, which are ops.css's -- the v1 sheet, which
+       jobs-live.html does not load -- so every figure on the page rendered at
+       body size in the body face with no tile around it at all. Unpainted
+       classes fail silently and look like a design choice. */
     function tile(label, value, meta) {
-      var node = h('div', { className: 'tile' });
-      node.appendChild(h('div', { className: 'tile-value', text: value }));
-      node.appendChild(h('div', { className: 'tile-label', text: label }));
-      if (meta) node.appendChild(h('div', { className: 'tile-meta', text: meta }));
-      return node;
+      var box = S.card('kpi');
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(h('div', { className: 'kpi-label', text: label }));
+      body.appendChild(h('div', { className: 'kpi-val', text: value }));
+      if (meta) body.appendChild(h('div', { className: 'kpi-meta' }, [h('span', { text: meta })]));
+      box.appendChild(body);
+      return box;
     }
 
     /* ------------------------------------------------------- what is wrong */
@@ -562,7 +576,7 @@
         var types = {};
         named.forEach(function (job) { types[job.jobType] = (types[job.jobType] || 0) + 1; });
         body.appendChild(h('p', {
-          className: 'small mt-sm',
+          className: 'tiny muted mt-sm',
           text: 'Affecting ' + Object.keys(types).sort().map(function (jobType) {
             return jobTypeLabel(jobType) + ' (' + types[jobType] + ')';
           }).join(', ') + '.'
@@ -602,7 +616,7 @@
       if (!lanes.length) {
         var none = S.card();
         none.appendChild(h('div', { className: 'card-body' }, [
-          h('p', { className: 'small', text: 'No lane was reported. This read did not say how ' +
+          h('p', { className: 'tiny muted', text: 'No lane was reported. This read did not say how ' +
             'work is distributed, which is not the same as work not being distributed.' })
         ]));
         section.appendChild(none);
@@ -616,13 +630,13 @@
         box.appendChild(S.cardHead(LANE_LABEL[lane.lane] || lane.lane, null));
         var body = h('div', { className: 'card-body' });
 
-        body.appendChild(h('p', { className: 'small muted', text: LANE_NOTE[lane.lane] || '' }));
+        body.appendChild(h('p', { className: 'tiny muted', text: LANE_NOTE[lane.lane] || '' }));
 
         var counts = h('div', { className: 'row row-wrap gap-sm mt-sm' });
         ['queued', 'running', 'canceling'].forEach(function (state) {
           var value = stateCount(lane.byState, state);
           counts.appendChild(h('span', {
-            className: 'badge ' + (value ? 'badge-info' : ''),
+            className: 'pill' + (value ? ' info' : ''),
             text: STATE_LABEL[state] + ' ' + (value === null ? fmt.none : fmt.int(value))
           }));
         });
@@ -640,7 +654,7 @@
         } else {
           waitText = 'Nothing waiting.';
         }
-        body.appendChild(h('p', { className: 'small mt-sm', text: waitText }));
+        body.appendChild(h('p', { className: 'tiny muted mt-sm', text: waitText }));
 
         /* `jobTypes` is a sorted array of NAMES -- opsJobsView.ts builds it as
            `[...new Set(laneCounts.map(row => row.jobType))].sort()`. It carries
@@ -653,15 +667,24 @@
            this pane exists to avoid. If the route ever changes this shape the
            line goes empty and says so, which is visible, rather than printing
            dashes, which is not. */
-        var types = list(lane.jobTypes).filter(function (name) {
+        var declared = list(lane.jobTypes);
+        var types = declared.filter(function (name) {
           return typeof name === 'string' && name;
         });
-        body.appendChild(h('p', {
-          className: 'tiny muted',
-          text: types.length
-            ? 'In this lane now: ' + types.map(jobTypeLabel).join(', ') + '.'
-            : 'Nothing of any kind in this lane right now.'
-        }));
+        var typesText;
+        if (types.length) {
+          typesText = 'In this lane now: ' + types.map(jobTypeLabel).join(', ') + '.';
+        } else if (declared.length) {
+          /* The route listed something and none of it was readable as a name.
+             That is a shape this pane does not understand, and saying
+             "nothing of any kind" over it would be a confident claim about a
+             lane whose badges above may well say four are waiting. */
+          typesText = 'The kinds of work in this lane were reported in a shape this page ' +
+            'cannot read, so they are unread rather than absent.';
+        } else {
+          typesText = 'Nothing of any kind in this lane right now.';
+        }
+        body.appendChild(h('p', { className: 'tiny muted', text: typesText }));
 
         box.appendChild(body);
         grid.appendChild(box);
@@ -677,7 +700,7 @@
       var box = S.card();
       var body = h('div', { className: 'card-body' });
       body.appendChild(h('p', {
-        className: 'small',
+        className: 'tiny muted',
         text: 'This read returned no jobs and still reports itself as bounded at ' +
           (fmt.isNum(workingSet.limit) ? fmt.int(workingSet.limit) : fmt.none) +
           ', so it cannot be read as an empty queue. The counts above came from a ' +
@@ -711,7 +734,7 @@
         var grade = job.progressGrade;
         var row = h('tr', {}, [
           h('td', {}, [
-            h('div', { className: 'cell-strong', text: jobTypeLabel(job.jobType) }),
+            h('div', { className: 't-main', text: jobTypeLabel(job.jobType) }),
             h('div', { className: 'tiny muted mono', text: coded(String(job.id || '')) })
           ]),
           h('td', { text: LANE_LABEL[job.lane] || job.lane || fmt.none }),
@@ -722,7 +745,7 @@
           h('td', {}, [
             grade
               ? h('span', {
-                className: 'badge badge-' + (GRADE_TONE[grade] || 'info'),
+                className: 'pill' + (GRADE_TONE[grade] ? ' ' + GRADE_TONE[grade] : ''),
                 text: GRADE_LABEL[grade] || grade
               })
               : h('span', { className: 'muted', text: 'Not started' })
@@ -804,7 +827,7 @@
       var failedByType = list(throughput.failedByType);
       if (failedByType.length) {
         body.appendChild(h('p', {
-          className: 'small mt',
+          className: 'tiny muted mt',
           text: 'Failures were ' + failedByType.map(function (entry) {
             return jobTypeLabel(entry.jobType) + ' (' + fmt.int(entry.jobs) + ')';
           }).join(', ') + '.'

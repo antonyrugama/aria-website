@@ -1,0 +1,281 @@
+{
+  "generatedAt": "2026-09-24T14:32:11.000Z",
+  "recording": {
+    "state": "recording",
+    "lastRecordedAt": "2026-09-24T14:32:07.000Z"
+  },
+  "queue": {
+    "open": 19,
+    "byState": [
+      {
+        "state": "queued",
+        "jobs": 11
+      },
+      {
+        "state": "running",
+        "jobs": 6
+      },
+      {
+        "state": "canceling",
+        "jobs": 2
+      }
+    ],
+    "lanes": [
+      {
+        "lane": "gpu",
+        "open": 7,
+        "byState": [
+          {
+            "state": "queued",
+            "jobs": 4
+          },
+          {
+            "state": "running",
+            "jobs": 3
+          },
+          {
+            "state": "canceling",
+            "jobs": 0
+          }
+        ],
+        "jobTypes": [
+          "video_analysis"
+        ],
+        "oldestQueued": {
+          "state": "unknown",
+          "reason": "beyond_working_set"
+        }
+      },
+      {
+        "lane": "background",
+        "open": 12,
+        "byState": [
+          {
+            "state": "queued",
+            "jobs": 7
+          },
+          {
+            "state": "running",
+            "jobs": 3
+          },
+          {
+            "state": "canceling",
+            "jobs": 2
+          }
+        ],
+        "jobTypes": [
+          "nutrition_plan",
+          "sprint_scoring",
+          "training_plan",
+          "weekly_report"
+        ],
+        "oldestQueued": {
+          "state": "known",
+          "ageMs": 412000
+        }
+      }
+    ]
+  },
+  "workingSet": {
+    "limit": 200,
+    "returned": 8,
+    "truncated": true,
+    "jobs": [
+      {
+        "id": "job_1",
+        "userId": 101,
+        "jobType": "video_analysis",
+        "lane": "gpu",
+        "state": "running",
+        "progress": 62,
+        "queuedAt": "2026-09-24T14:19:49.000Z",
+        "startedAt": "2026-09-24T14:20:31.000Z",
+        "heartbeatAt": "2026-09-24T14:31:59.000Z",
+        "ageMs": 742000,
+        "queuedMs": 42000,
+        "runningMs": 700000,
+        "sinceHeartbeatMs": 12000,
+        "progressGrade": "healthy",
+        "baselineMedianMs": 640000
+      },
+      {
+        "id": "job_2",
+        "userId": 102,
+        "jobType": "video_analysis",
+        "lane": "gpu",
+        "state": "running",
+        "progress": 18,
+        "queuedAt": "2026-09-24T13:38:51.000Z",
+        "startedAt": "2026-09-24T13:39:31.000Z",
+        "heartbeatAt": "2026-09-24T14:31:51.000Z",
+        "ageMs": 3200000,
+        "queuedMs": 40000,
+        "runningMs": 3160000,
+        "sinceHeartbeatMs": 20000,
+        "progressGrade": "stuck",
+        "baselineMedianMs": 640000
+      },
+      {
+        "id": "job_3",
+        "userId": 103,
+        "jobType": "sprint_scoring",
+        "lane": "background",
+        "state": "queued",
+        "progress": 0,
+        "queuedAt": "2026-09-24T14:25:19.000Z",
+        "startedAt": null,
+        "heartbeatAt": null,
+        "ageMs": 412000,
+        "queuedMs": 412000,
+        "runningMs": null,
+        "sinceHeartbeatMs": null,
+        "progressGrade": null,
+        "baselineMedianMs": null
+      },
+      {
+        "id": "job_4",
+        "userId": 104,
+        "jobType": "training_plan",
+        "lane": "background",
+        "state": "running",
+        "progress": 0,
+        "queuedAt": "2026-09-24T14:00:51.000Z",
+        "startedAt": "2026-09-24T14:01:51.000Z",
+        "heartbeatAt": "2026-09-24T14:11:31.000Z",
+        "ageMs": 1880000,
+        "queuedMs": 60000,
+        "runningMs": 1820000,
+        "sinceHeartbeatMs": 1240000,
+        "progressGrade": "abandoned",
+        "baselineMedianMs": 220000
+      },
+      {
+        "id": "job_5",
+        "userId": 105,
+        "jobType": "training_plan",
+        "lane": "background",
+        "state": "running",
+        "progress": 44,
+        "queuedAt": "2026-09-24T14:28:37.000Z",
+        "startedAt": "2026-09-24T14:29:01.000Z",
+        "heartbeatAt": "2026-09-24T14:32:05.000Z",
+        "ageMs": 214000,
+        "queuedMs": 24000,
+        "runningMs": 190000,
+        "sinceHeartbeatMs": 6000,
+        "progressGrade": "healthy",
+        "baselineMedianMs": 220000
+      },
+      {
+        "id": "job_6",
+        "userId": 106,
+        "jobType": "nutrition_plan",
+        "lane": "background",
+        "state": "running",
+        "progress": 0,
+        "queuedAt": "2026-09-24T14:29:33.000Z",
+        "startedAt": "2026-09-24T14:29:51.000Z",
+        "heartbeatAt": "2026-09-24T14:32:02.000Z",
+        "ageMs": 158000,
+        "queuedMs": 18000,
+        "runningMs": 140000,
+        "sinceHeartbeatMs": 9000,
+        "progressGrade": "unknown",
+        "baselineMedianMs": null
+      },
+      {
+        "id": "job_7",
+        "userId": 107,
+        "jobType": "weekly_report",
+        "lane": "background",
+        "state": "queued",
+        "progress": 0,
+        "queuedAt": "2026-09-24T14:30:35.000Z",
+        "startedAt": null,
+        "heartbeatAt": null,
+        "ageMs": 96000,
+        "queuedMs": 96000,
+        "runningMs": null,
+        "sinceHeartbeatMs": null,
+        "progressGrade": null,
+        "baselineMedianMs": null
+      },
+      {
+        "id": "job_8",
+        "userId": 108,
+        "jobType": "nutrition_plan",
+        "lane": "background",
+        "state": "canceling",
+        "progress": 0,
+        "queuedAt": "2026-09-24T14:21:31.000Z",
+        "startedAt": "2026-09-24T14:22:11.000Z",
+        "heartbeatAt": "2026-09-24T14:31:40.000Z",
+        "ageMs": 640000,
+        "queuedMs": 40000,
+        "runningMs": 600000,
+        "sinceHeartbeatMs": 31000,
+        "progressGrade": "unknown",
+        "baselineMedianMs": null
+      }
+    ]
+  },
+  "attention": {
+    "completeness": "working_set_only",
+    "stuck": [
+      "job_2"
+    ],
+    "abandoned": [
+      "job_4"
+    ]
+  },
+  "throughput": {
+    "window": {
+      "minutes": 60,
+      "from": "2026-09-24T13:32:11.000Z",
+      "to": "2026-09-24T14:32:11.000Z"
+    },
+    "completed": 124,
+    "failed": 9,
+    "canceled": 3,
+    "finished": 136,
+    "successRate": {
+      "numerator": 124,
+      "denominator": 133
+    },
+    "failedByType": [
+      {
+        "jobType": "video_analysis",
+        "jobs": 6
+      },
+      {
+        "jobType": "training_plan",
+        "jobs": 3
+      }
+    ]
+  },
+  "baseline": {
+    "window": {
+      "days": 7,
+      "from": "2026-09-17T14:32:11.000Z",
+      "to": "2026-09-24T14:32:11.000Z"
+    },
+    "minSamples": 20,
+    "stuckMedianMultiple": 3,
+    "types": [
+      {
+        "jobType": "training_plan",
+        "medianDurationMs": 220000,
+        "samples": 31
+      },
+      {
+        "jobType": "video_analysis",
+        "medianDurationMs": 640000,
+        "samples": 48
+      }
+    ]
+  },
+  "capacity": {
+    "slots": null,
+    "reason": "Nothing records how many workers exist or how many jobs each may hold, so in-flight work has no denominator to be drawn against."
+  }
+}

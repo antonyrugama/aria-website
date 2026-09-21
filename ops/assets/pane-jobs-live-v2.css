@@ -11,6 +11,14 @@
    Nothing here introduces a colour. Every value is a token from aria.css,
    which is WCAG AA by construction, or a color-mix of one. */
 
+/* ------------------------------------------------------------- figures
+
+   aria.css lays the meta row out without wrapping, which fits a tile carrying
+   one short pill. These carry a short sentence instead -- "847 of 848",
+   "Nothing finished to divide" -- so they wrap. Same override, same reason, as
+   the pane this one replaced. */
+.kpi-meta { flex-wrap: wrap; row-gap: 4px; }
+
 /* ------------------------------------------------------- not drawn here
 
    What no route serves yet, named in the same shape the Overview and What

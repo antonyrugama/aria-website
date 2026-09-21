@@ -299,7 +299,7 @@ code behaves. The block below is read out of the `<link>` and `<script>` tags in
 something, or a file that is deleted, is a red test rather than a stale sentence.
 
 ```claims id=assets-by-page
-alerts-model.js = alerts.html, index.html, jobs-live.html, run-history.html
+alerts-model.js = alerts.html, index.html, run-history.html
 api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
 aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
@@ -964,7 +964,7 @@ pane-alerts.js = /api/ops/alerts/problems, /api/ops/alerts/problems/, /api/ops/a
 pane-analytics.js = /api/ops/usage
 pane-data.js = (no route literal)
 pane-evaluations.js = /api/ops/ciel/operations
-pane-jobs-live-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
+pane-jobs-live-v2.js = /api/ops/jobs
 pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
 pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
@@ -1313,6 +1313,7 @@ those panes now.
     pane-alerts-v2.css .scrollx = position: static (the sheet sets none)
     pane-analytics-v2.css .u-scroll = position: relative
     pane-evaluations-v2.css .tbl-wrap = position: relative
+    pane-jobs-live-v2.css .u-scroll = position: relative
     pane-releases-v2.css .tbl-scroll = position: relative
     pane-run-history-v2.css .tbl-wrap = position: static (the sheet sets none)
     pane-settings-v2.css .tbl-wrap = position: static (the sheet sets none)
@@ -1737,6 +1738,7 @@ its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is 
 pane-alerts-v2.css .scrollx = outline-offset: -2px
 pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
+pane-jobs-live-v2.css .u-scroll = outline-offset: -2px
 pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
 pane-run-history-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
@@ -2365,7 +2367,7 @@ lines short — which is why none of them are typed any more.
 
 ```claims id=source-anchors
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 136
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 138
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 173
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
