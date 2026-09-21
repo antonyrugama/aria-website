@@ -35,12 +35,18 @@
        docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the regex frames
        over its prose; what is not enumerated anywhere is the rest. Most of
        those read the sheet's RULES through declarations(), as CSS rather
-       than as prose about CSS, so nothing they say can overclaim. Four do
-       not: the docblock heading scan, the pointer check against
-       SHEET_POINTER_SHAPE, the quoted-run scan and the url() test, all of
-       which read the sheet's raw TEXT. The pointer check is the one that
-       reads prose about code, and the eighth review of #75 found the hole
-       it left. No test counts any of them.
+       than as prose about CSS, so nothing they say can overclaim. The rest
+       read its raw TEXT, and NO COUNT OF THEM IS WRITTEN HERE. This
+       sentence said "three" while four were read, and then "four" while
+       five were; both times the new reader arrived in the same commit as
+       the word, and the second time the new reader was the one added to
+       close the first half of this very bullet (found in the third and
+       eighteenth reviews of #75). The raw-text readers as of this commit,
+       a snapshot and not a claim about later ones: the docblock heading
+       scan, the two pointer checks, the quoted-run scan, the url() test.
+       Nothing counts them, nothing reads that snapshot, and a list that
+       nothing reads cannot be trusted to stay complete -- which is the
+       whole reason the two lists below are read rather than written.
      - The sheet's own reading rule, the HOW TO READ THIS COMMENT paragraph
        at the top of it. The devices below IMPLEMENT that rule; nothing
        reads it EXCEPT the test title quoted inside it, which the citation
@@ -90,12 +96,17 @@
      - The CASCADE, for the accent and ink a severity draws. The pairing
        test reads the classes off the drawn card and then reads what each
        class DECLARES, across every sheet the page loads; a second rule
-       naming the same class is a failure whatever it would have won. A rule
-       that overrides the tone WITHOUT naming the class is invisible:
-       `.p-item { --acc: var(--emerald); }` repaints every card's rail in a
-       real browser and is green here (measured, RV17-1e in the seventeenth
-       review of #75). Specificity is not modelled anywhere in this file,
-       and scripts/check-ops-contrast.mjs is the tool that reads pixels.
+       naming the same class is a failure whatever it would have won, and a
+       selector that mentions the class in a shape the reader cannot take
+       apart -- inside :is(), :where(), or an attribute test -- is refused
+       rather than answered, because answering it wrongly is what left
+       `:is(.acc-bad) { --acc: var(--emerald); }` green through the
+       eighteenth review. A rule that overrides the tone WITHOUT mentioning
+       the class at all is invisible: `.p-item { --acc: var(--emerald); }`
+       repaints every card's rail in a real browser and is green here
+       (measured, RV17-1e in the seventeenth review of #75). Specificity is
+       not modelled anywhere in this file, and scripts/check-ops-contrast.mjs
+       is the tool that reads pixels.
      - Anything the operations API decides.
      - What the scripts this file and the sheet POINT AT do. Both name
        scripts/check-ops-*.mjs tools in prose; the test "every script this
@@ -191,9 +202,27 @@ const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
 /* Every stylesheet the PAGE loads, in the order it loads them, taken from the
    page rather than typed here: a reader that knows about two of the three
    sheets is blind to whatever the third declares, and the sixteenth review
-   put an accent override in shell-pane-v2.css and watched 482 tests pass. */
-const PAGE_SHEETS = [...read('alerts.html').matchAll(
-  /<link[^>]+rel="stylesheet"[^>]+href="assets\/([\w.-]+)"/g)].map((m) => m[1]);
+   put an accent override in shell-pane-v2.css and watched 482 tests pass.
+
+   Attribute ORDER and quoting are not assumed: the first spelling of this
+   read `rel` before `href` and dropped `<link href=... rel=stylesheet>`
+   entirely, which is valid HTML, so a fourth sheet written that way repainted
+   every card with 75 tests green (found in the eighteenth review of #75).
+   What it still cannot see: a sheet pulled in by @import from inside another
+   sheet, an inline <style> block, and anything a script injects. None of the
+   three exist here -- no sheet imports, and the page's CSP has no
+   'unsafe-inline' -- and the count below is an equality against a second,
+   cruder reading of the same tags rather than a floor, because a floor
+   cannot notice the sheet it never saw. */
+const LINK_TAGS = [...read('alerts.html').matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
+const attrOf = (tag, name) => {
+  const m = new RegExp('\\b' + name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\'|([^\\s"\'>]+))', 'i')
+    .exec(tag);
+  return m ? (m[2] ?? m[3] ?? m[4]) : null;
+};
+const PAGE_SHEETS = LINK_TAGS
+  .filter((t) => (attrOf(t, 'rel') || '').trim().toLowerCase() === 'stylesheet')
+  .map((t) => attrOf(t, 'href'));
 
 /* The PREFIXED docblock lines this file reads as DATA rather than as prose.
    Every reader OF A PREFIXED LINE goes through machineLine(), which refuses a
@@ -3785,10 +3814,18 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     ] },
   });
   const classesOf = (n) => (((n.getAttribute && n.getAttribute('class')) || '').split(/\s+/));
+  assert.equal(PAGE_SHEETS.length, LINK_TAGS.filter((t) => /stylesheet/i.test(t)).length,
+    'the page writes ' + LINK_TAGS.filter((t) => /stylesheet/i.test(t)).length + ' <link> tags '
+    + 'mentioning a stylesheet and this reads ' + PAGE_SHEETS.length + ' of them, so a sheet '
+    + 'the browser loads is one this cannot see -- an equality, because the floor that stood '
+    + 'here could not notice a fourth sheet at all');
   assert.ok(PAGE_SHEETS.length >= 3, 'the page loads ' + PAGE_SHEETS.length + ' stylesheets, '
     + 'so this is reading fewer sheets than the browser does');
-  const both = PAGE_SHEETS.flatMap((name) => declarations(read('assets/' + name))
-    .map((d) => ({ ...d, sheet: name })));
+  assert.deepEqual(PAGE_SHEETS.filter((href) => !href || !existsSync(new URL(href, OPS))), [],
+    'the page links a stylesheet this cannot open on disk, so it is read as no declarations '
+    + 'at all rather than as the rules it holds');
+  const both = PAGE_SHEETS.flatMap((href) => declarations(read(href))
+    .map((d) => ({ ...d, sheet: href })));
   /* Per ROLE, not one pattern for both: a lazy `(--[\w-]+?)(-ink)?` strips
      the suffix off whichever side it is handed, so an accent painted in its
      own -ink agreed with the ink and the card's whole stripe changed colour
@@ -3804,11 +3841,29 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
      what the round-17 lookup could not see. `.p-item.acc-bad { --acc }` and
      the same rule in a third sheet both changed the colour of every card's
      rail in a real browser with 482 tests green (found in the seventeenth
-     review of #75). A rule that overrides the tone WITHOUT naming the class
-     is still invisible and is on the NOT COVERED list. */
+     review of #75).
+
+     names() only recognises the class as a whole ATOM of a compound, so
+     `:is(.acc-bad)`, `:is(.y, .acc-bad)` and `[class~='acc-bad']` were all
+     answered "not about your class" and repainted the rail with 75 tests
+     green (found in the eighteenth review of #75). Silently answering the
+     shapes it cannot parse is the unsafe direction, so the shapes it cannot
+     parse are REFUSED instead: any selector that MENTIONS the class as a
+     token while names() denies it is a failure naming the selector. That
+     cannot regress into a fourth spelling the way widening the splitter
+     could. A rule that never mentions the class stays invisible and is on
+     the NOT COVERED list. */
   const names = (selector, cls) => selector.split(/[\s>+~,]+/).some((part) =>
     part.split(/(?=[.:#[])/).some((atom) => atom === cls));
+  const mentions = (selector, cls) =>
+    new RegExp('(?<![\\w-])' + cls.slice(1) + '(?![\\w-])').test(selector);
   const resolve = (selector, property, wantInk) => {
+    assert.deepEqual(both.filter((d) => d.property === property
+      && mentions(d.selector, selector) && !names(d.selector, selector))
+      .map((d) => d.sheet + ' ' + d.selector), [],
+      selector + ' is mentioned by a ' + property + ' rule whose selector this reader cannot '
+      + 'take apart -- a class inside :is(), :where() or an attribute test is not an atom of '
+      + 'a compound -- so it is refused rather than answered as a rule about some other class');
     const found = both.filter((d) => names(d.selector, selector) && d.property === property);
     assert.equal(found.length, 1, selector + ' is painted ' + property + ' by ' + found.length
       + ' rules across the sheets the page loads (' + (found.map((d) => d.sheet + ' '
@@ -3855,17 +3910,28 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
    make, this file at scripts/check-ops-contrast.mjs for the contrast it
    cannot judge. Neither pointer resolved: renaming both tools left 482 tests
    green (found in the seventeenth review of #75). Same class the eighth
-   review closed for UPPER_SNAKE pointers with SHEET_POINTER_SHAPE. */
+   review closed for UPPER_SNAKE pointers with SHEET_POINTER_SHAPE.
+
+   The two sides are counted SEPARATELY. A union against a floor is satisfied
+   by this file's own docblock, three lines up, so the sheet could stop
+   pointing anywhere at all and the test stayed green while its message went
+   on claiming otherwise (found in the eighteenth review of #75). */
 test('every script this file and the sheet point at is a script that exists', () => {
   const named = (text) => [...text.matchAll(/scripts\/([\w.-]+\.mjs)/g)].map((m) => m[1]);
-  const pointers = [...new Set([...named(PANE_CSS), ...named(THIS_FILE)])];
-  assert.ok(pointers.length >= 2, 'the two files point at ' + pointers.length + ' sibling '
-    + 'scripts, so this is watching fewer pointers than they write');
+  const fromSheet = [...new Set(named(PANE_CSS))];
+  const fromGuard = [...new Set(named(THIS_FILE))];
+  assert.ok(fromSheet.length, 'the sheet points at no sibling script at all, so this is '
+    + 'watching one side of a pair of files and calling it both');
+  assert.ok(fromGuard.length, 'this file points at no sibling script at all, so this is '
+    + 'watching one side of a pair of files and calling it both');
+  const pointers = [...new Set([...fromSheet, ...fromGuard])];
   const missing = pointers.filter((name) =>
     !existsSync(new URL('../scripts/' + name, OPS)));
   assert.deepEqual(missing, [], 'a file points at a script that does not exist, so the reader '
     + 'it sends someone to for the thing neither file measures is a dangling name');
-  console.log('script pointers judged: ' + JSON.stringify({ pointers: pointers.length }));
+  console.log('script pointers judged: ' + JSON.stringify({
+    pointers: pointers.length, fromSheet: fromSheet.length, fromGuard: fromGuard.length,
+  }));
 });
 
 /* --------------------------------------------- the one exception, and its reason */
