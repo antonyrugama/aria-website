@@ -63,8 +63,18 @@ and identically for `GeistMono-Variable.woff2`.
 
 What that keeps: ASCII, Latin-1 Supplement and Latin Extended-A — so every
 European diacritic a person's name is likely to carry — plus the punctuation and
-arrows the dashboard draws. Scanning `ops/**` and `scripts/*.mjs` found the
-source uses exactly twelve distinct non-ASCII characters: `§ ° ± · × — " " • … → −`.
+arrows the dashboard draws.
+
+Two different measurements of "what the dashboard uses", and they disagree by an
+order of magnitude, so both are stated rather than the flattering one. Scanning
+the 86 source files under `ops/**` and `scripts/*.mjs` finds **twelve** distinct
+non-ASCII characters: `§ ° ± · × — " " • … → −`. Rendering all ten panes in both
+themes and all four preview states finds **one**: U+00B7 MIDDLE DOT. The other
+eleven live in comments, in prose, and in branches the stub data does not reach.
+
+Neither figure is the reason the subset is as wide as it is. Production renders
+names from an API; the stub renders `Ada Lovelace`. The subset is sized for the
+first and can only ever be checked against the second.
 
 What it drops: Cyrillic, Greek, Vietnamese, box drawing (172 glyphs in Mono
 alone), circled numerals and vulgar fractions.

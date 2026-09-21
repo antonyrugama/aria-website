@@ -45,6 +45,9 @@ const MONO = 'ops/assets/fonts/GeistMono-Variable.woff2';
 
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
 
+const OUTDIR = path.join(ROOT, '.probe');
+fs.mkdirSync(OUTDIR, { recursive: true });
+
 /* ------------------------------------------------------------ the battery */
 
 /* Each mutation returns the bytes it wants written. `expect` is what the row
@@ -99,9 +102,9 @@ const BATTERY = [
       "  src: url('fonts/Geist-Variable.woff2') format('woff2');\n  unicode-range: U+0020-007E;\n  font-weight: 100 900;")
   },
   {
-    id: 'T7', file: SANS, binary: true, expect: 'KILL', needs: '.fontwork/Geist-no-emdash.woff2',
-    why: 'The real thing T6 simulates: swaps the vendored sans subset for one actually built without U+2014 EM DASH, a character 55 files in ops/ render. Confirms the coverage claim binds the BYTES that ship, not only the CSS that describes them.',
-    apply: () => fs.readFileSync(path.join(ROOT, '.fontwork/Geist-no-emdash.woff2'))
+    id: 'T7', file: SANS, binary: true, expect: 'KILL', needs: '.fontwork/Geist-no-middot.woff2',
+    why: 'The real thing T6 simulates: swaps the vendored sans subset for one actually built without U+00B7 MIDDLE DOT. Confirms the coverage claim binds the BYTES that ship, not only the CSS describing them. Aimed at U+2014 EM DASH first, on a source scan that found it in 55 files, and that row SURVIVED -- rendering the panes showed U+00B7 is the only non-ASCII character the stub data ever puts on screen, so the em-dash payload applied to a character no pane draws.',
+    apply: () => fs.readFileSync(path.join(ROOT, '.fontwork/Geist-no-middot.woff2'))
   }
 ];
 
@@ -165,11 +168,21 @@ function runSuite() {
   else verdict = 'CRASH';
 
   const failed = [...new Set([...out.matchAll(/^\s*\u2716\s+(claim [^(]+)\(/gm)].map((m) => m[1].trim()))];
-  const firstMessage = (/AssertionError[^\n]*\n\s*([^\n]+)/.exec(out) || [])[1]
-    || (/\u2716 failing tests:[\s\S]*?\n\s*([A-Z][^\n]{20,200})/.exec(out) || [])[1]
-    || '';
+
+  /* The assertion's OWN WORDS, which is the column a reviewer actually reads.
+     The first draft of this regex captured the line after the AssertionError
+     header, which for a deepEqual failure is `+ actual - expected` and for an
+     `ok` failure is a stack frame -- four of seven rows published a stack
+     frame as though it were evidence. Node puts the message on the header
+     line itself and may wrap it, so the capture runs to the diff marker, the
+     first stack frame or the object dump, whichever comes first. */
+  const messages = [];
+  for (const m of out.matchAll(/AssertionError \[[A-Z_]+\]:\s*([\s\S]*?)(?=\n\s*(?:\+ actual|- expected|at [A-Za-z]|\{\s*$|$))/g)) {
+    const text = m[1].replace(/\s+/g, ' ').trim();
+    if (text && !messages.includes(text)) messages.push(text);
+  }
   const swept = (/^# swept ([^\n]+)$/m.exec(out) || [])[1] || '';
-  return { verdict, fails, passes, status: res.status, failed, firstMessage: firstMessage.trim(), swept, out };
+  return { verdict, fails, passes, status: res.status, failed, messages, swept, out };
 }
 
 /* ------------------------------------------------------------- the driver */
@@ -209,7 +222,7 @@ for (const m of BATTERY) {
        vanishes is how a battery comes to prove less than it claims. */
     rows.push({ ...m, anchor: null, applied: null, scored: 'SKIPPED',
       r: { verdict: 'SKIPPED', failed: [], status: null, fails: null, passes: null,
-        firstMessage: `fixture ${m.needs} is absent; rebuild it with the pyftsubset command in ops/assets/fonts/README.md, dropping U+2014 from --unicodes` } });
+        messages: [`fixture ${m.needs} is absent; rebuild it with the pyftsubset command in ops/assets/fonts/README.md, dropping U+00B7 from --unicodes`] } });
     process.stderr.write(`\n=== ${m.id} SKIPPED (no ${m.needs})\n`);
     continue;
   }
@@ -239,6 +252,7 @@ for (const m of BATTERY) {
     }
 
     const r = runSuite();
+    fs.writeFileSync(path.join(OUTDIR, `battery-${m.id}.log`), r.out);
     const scored = r.verdict === 'CRASH' ? 'CRASH'
       : (m.expect === 'KILL' ? (r.verdict === 'RED' ? 'KILL' : 'SURVIVED')
         : (r.verdict === 'GREEN' ? 'GREEN' : 'UNEXPECTED RED'));
@@ -246,7 +260,7 @@ for (const m of BATTERY) {
     process.stderr.write(`    -> ${scored}  (exit ${r.status}, pass ${r.passes}, fail ${r.fails})\n`);
     if (r.verdict === 'CRASH') process.stderr.write(r.out.split('\n').slice(-25).join('\n') + '\n');
   } catch (e) {
-    rows.push({ ...m, anchor, applied, r: { verdict: 'ERROR', failed: [], firstMessage: e.message, status: null, fails: null, passes: null }, scored: 'ERROR' });
+    rows.push({ ...m, anchor, applied, r: { verdict: 'ERROR', failed: [], messages: [e.message], status: null, fails: null, passes: null }, scored: 'ERROR' });
     process.stderr.write(`    -> ERROR ${e.message}\n`);
   } finally {
     restoreAll();
@@ -281,8 +295,11 @@ lines.push('');
 lines.push('#### The failing assertion, in its own words');
 lines.push('');
 for (const r of rows) {
-  if (!r.r.firstMessage) continue;
-  lines.push(`**${r.id}** — ${r.r.firstMessage}`);
+  const msgs = r.r.messages || [];
+  if (!msgs.length) continue;
+  lines.push(`**${r.id}**`);
+  lines.push('');
+  for (const msg of msgs.slice(0, 4)) lines.push(`> ${msg.slice(0, 600)}`);
   lines.push('');
 }
 lines.push('#### Application proof (content, not size)');
@@ -296,6 +313,6 @@ const bad = rows.filter((r) => !['KILL', 'GREEN', 'SKIPPED'].includes(r.scored))
 lines.push(bad.length ? `**${bad.length} row(s) did not score as intended: ${bad.map((b) => `${b.id}=${b.scored}`).join(', ')}**` : 'Every row scored as intended.');
 
 const report = lines.join('\n');
-fs.writeFileSync(path.join(ROOT, '.probe/battery.md'), `${report}\n`);
+fs.writeFileSync(path.join(OUTDIR, 'battery.md'), `${report}\n`);
 console.log(report);
 process.exit(bad.length ? 1 : 0);

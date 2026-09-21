@@ -36,6 +36,19 @@
  *    rather than as tofu. Sweeping all four preview states is what puts
  *    different text through it.
  *
+ *    NOT COVERED, and worth being exact about, because this claim is easy to
+ *    read as stronger than it is. It detects a face that stops loading with
+ *    total reliability, because that falls every site on every pane at once.
+ *    It detects a missing CODEPOINT only for codepoints the stub data puts on
+ *    screen, and rendering all ten panes in both themes and all four states
+ *    shows that set is exactly one character wide: U+00B7 MIDDLE DOT, in 40 of
+ *    the 80 pane-states. The subset is deliberately much wider than that --
+ *    all of Latin-1 Supplement and Latin Extended-A -- because production
+ *    renders people's names and the stub renders `Ada Lovelace`. So the width
+ *    of the subset is a judgement this sweep cannot check, and the mutation
+ *    that proves the claim binds the shipped bytes at all (T7 in the battery)
+ *    has exactly one character available to it.
+ *
  *    `document.fonts.check()` looks like it would answer this more cheaply and
  *    does not answer it at all: measured against these subsets it returns
  *    `true` for Cyrillic, CJK and emoji alike, because it reports family
