@@ -2322,7 +2322,10 @@ and a test, every browser guard in the tree has a row in the checks table
 restating a block in English, or claiming something no block carries, is nobody's red. Only
 statically spelled `assets/…` tags are seen, so a runtime-injected asset is invisible; a tag
 inside an HTML comment is cut before the count, because a page that only remembers a stylesheet
-does not load it. The
+does not load it. Every attribute this file reads out of a page goes through one matcher that
+allows whitespace around the `=` and takes the value quoted either way or unquoted, so a legal
+respelling is not a hole in one check and a red in another; markup a script writes into the page
+at runtime is not read at all. The
 fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
 are the class tokens written in a page and the scripts it loads — `class=` in either quote,
 `class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal — and that error runs

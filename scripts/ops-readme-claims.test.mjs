@@ -65,7 +65,12 @@
      enforces that.
    - `<link>` and `<script>` tags only, spelled statically with a literal
      `assets/…` URL. An asset injected at runtime is invisible to the loader
-     map, as is one loaded by a page outside `ops/`.
+     map, as is one loaded by a page outside `ops/`. Every attribute read out
+     of a page — `href`, `src`, `http-equiv`, `style` — goes through one
+     matcher that allows whitespace around the `=` and reads the value quoted
+     either way or unquoted, so a legal respelling is not a hole in one check
+     and not in another. An attribute whose NAME is assembled at runtime is
+     still invisible, and so is markup a script writes into the page.
    - The test-fixture map sees this repo's `read('assets/NAME')` idiom. A test
      that opens an asset another way reads as "nothing loads it".
    - Which pages can DRAW a class is read from the class tokens written in the
@@ -180,15 +185,32 @@ const BLOCKS = claimBlocks(README);
 
 /* ------------------------------------------------------- what a page loads */
 
-const ASSET_REF = /(?:<link\b[^>]*\bhref\s*=\s*|<script\b[^>]*\bsrc\s*=\s*)["']assets\/([A-Za-z0-9._-]+)["']/g;
+/* One spelling of "this attribute holds this value", used everywhere an
+   attribute is read out of a page, rather than four regexes that drift apart.
+   Whitespace around the `=` is legal HTML, and so is an unquoted value with
+   no spaces in it: `href = assets/ops.css` loads the sheet exactly as
+   `href="assets/ops.css"` does. Round 6 taught the loader map both shapes and
+   left the three matchers beside it tight, which round 7 then found as a
+   green run; there is now one place to teach. */
+const attr = (name, value) =>
+  String.raw`(?<![-\w])${name}\s*=\s*(?:"${value}"|'${value}'|(?:${value})(?=[\s/>]))`;
 
-/* Comments are cut before the tags are counted: a page that keeps an old
-   <link> commented out does not load it, and counting it made `ops.css`
-   read as loaded by a page that only remembers it. Whitespace around the
-   `=` is legal HTML and is read here for the same reason. */
+const ASSET_REF = new RegExp(`(?:<link\\b[^>]*${attr('href', String.raw`assets\/([A-Za-z0-9._-]+)`)}|<script\\b[^>]*${attr('src', String.raw`assets\/([A-Za-z0-9._-]+)`)})`, 'g');
+
+/* Comments are cut before any tag in a page is counted: a page that keeps an
+   old <link> commented out does not load it, and counting it made `ops.css`
+   read as loaded by a page that only remembers it. Every reading of page
+   markup in this file goes through here, so a commented-out tag is invisible
+   to all of them and not just to the loader map. */
+function markup(page) {
+  return read(path.join('ops', page)).replace(/<!--[\s\S]*?-->/g, '');
+}
+
+/* Whitespace around the `=` is legal HTML and is read wherever an attribute
+   is matched here -- `href = "assets/ops.css"` loads the sheet, and a
+   tighter regex answered that it does not. */
 function loadedAssets(page) {
-  const html = read(path.join('ops', page)).replace(/<!--[\s\S]*?-->/g, '');
-  return [...html.matchAll(ASSET_REF)].map((m) => m[1]);
+  return [...markup(page).matchAll(ASSET_REF)].map((m) => m.slice(1).find(Boolean));
 }
 
 const LOADERS = new Map(ASSETS.map((a) => [a, []]));
@@ -673,12 +695,17 @@ DERIVED['claims-blocks'] = () => {
 /* What the content security policy costs, counted rather than remembered:
    how many pages would need a hash if the theme were inlined, and whether the
    two things the policy forbids are actually absent from the markup. A page
-   that grows an inline script or a style attribute is red here. */
+   that grows an inline script or a style attribute is red here -- including
+   when it spells the attribute `style = "..."`, which is legal HTML that a
+   tighter regex read as absent, and excluding one it only keeps in a
+   comment, which the browser does not run either. */
 DERIVED['csp-pages'] = () => {
-  const csp = PAGES.filter((page) => /http-equiv=["']Content-Security-Policy["']/i.test(read(path.join('ops', page))));
+  const declares = new RegExp(attr('http-equiv', 'Content-Security-Policy'), 'i');
+  const styleAttr = new RegExp(attr('style', String.raw`[^\s"'=<>\`]+`), 'i');
+  const csp = PAGES.filter((page) => declares.test(markup(page)));
   const themed = PAGES.filter((page) => loadedAssets(page).includes('theme.js'));
-  const inlineScript = PAGES.filter((page) => /<script(?![^>]*\bsrc=)[^>]*>/i.test(read(path.join('ops', page))));
-  const inlineStyle = PAGES.filter((page) => /\sstyle=["']/i.test(read(path.join('ops', page))));
+  const inlineScript = PAGES.filter((page) => /<script(?![^>]*\bsrc\s*=)[^>]*>/i.test(markup(page)));
+  const inlineStyle = PAGES.filter((page) => styleAttr.test(markup(page)));
   return [
     `pages in ops/ = ${PAGES.length}`,
     `pages declaring the policy in a <meta> = ${csp.length}`,
