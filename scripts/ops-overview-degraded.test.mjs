@@ -476,11 +476,19 @@ test('no degraded reading is drawn as an empty heading or an empty chip', async 
   const cases = [
     ['the problems read', { problems: boom('problems') }],
     ['the rules read', { rules: boom('rules') }],
-    ['the rules read with an open problem', { rules: boom('rules') }],
     ['the summary read', { summary: boom('the summary') }],
     ['the problems and rules reads', { problems: boom('problems'), rules: boom('rules') }],
     ['the problems and summary reads',
       { problems: boom('problems'), summary: boom('the summary') }],
+    /* An empty queue is not a variation, it is the only way two of the four
+       readings are reachable at all: the ribbon's "nothing open and nothing
+       known to be watching" needs !active.length, and the queue card only
+       draws its state block when it has no rows. Without these two rows the
+       sweep walks straight past them and reports clean — which is exactly
+       what it did, and the battery caught it as a green mutation. */
+    ['the rules read, with a quiet queue', { problems: { problems: [] }, rules: boom('rules') }],
+    ['the summary read, with a quiet queue',
+      { problems: { problems: [] }, summary: boom('the summary') }],
   ];
   for (const [what, options] of cases) {
     const seen = emptyLabels(await boot(options));
