@@ -337,8 +337,17 @@ test('at 375 the rail runs unbroken from the first stage to the last', async () 
   const rails = await evaluate(`(() => {
     const steps = [...document.querySelector('.pipe-track').children];
     /* The ::before box is not an element, so it is reconstructed from the
-       step's own border box and the resolved inset values — which is a
-       resolution of the rendered value, not a read of the sheet. */
+       step's own border box and the resolved values — which is a resolution
+       of the rendered value, not a read of the sheet.
+
+       The bottom edge comes from the USED HEIGHT, not from the 'bottom'
+       inset, and the difference is not pedantry. An absolutely positioned box
+       with 'top', 'bottom' and 'height' all set is over-constrained, and CSS
+       resolves that by ignoring 'bottom'. Deriving the run from 'bottom'
+       therefore reports the rail the sheet asks for rather than the rail
+       Chrome draws: deleting 'height: auto' from the '.done' rule collapses
+       every rail to 3px on screen and left this test green, which is the
+       false green the battery for this PR caught in its own author's work. */
     return steps.map((li, i) => {
       const box = li.getBoundingClientRect();
       const before = getComputedStyle(li, '::before');
@@ -346,7 +355,7 @@ test('at 375 the rail runs unbroken from the first stage to the last', async () 
       const next = steps[i + 1] ? steps[i + 1].querySelector('.pipe-node').getBoundingClientRect() : null;
       const shown = before.display !== 'none';
       const railTop = box.top + parseFloat(before.top);
-      const railBottom = box.bottom - parseFloat(before.bottom);
+      const railBottom = railTop + parseFloat(before.height);
       return { label: li.querySelector('.pipe-label').textContent,
         last: i === steps.length - 1,
         shown,
@@ -683,10 +692,15 @@ test('at 375 the fold control is a finger-sized target clear of its own title', 
       w: Math.round(b.width), h: Math.round(b.height),
       onScreen: b.left >= 0 && b.right <= document.documentElement.clientWidth,
       overlapsTitle: b.left < t.right && b.right > t.left && b.top < t.bottom && b.bottom > t.top,
-      /* The head is a wrapping flex row. The control is out of flow so it
-         cannot take a line of its own; if it ever did, the head would be
-         taller than the one line of text it holds at the top. */
-      withinHead: b.top >= head.top - 8 && b.right <= head.right + 1
+      /* Pinned, measured as an offset from the head's own top right corner.
+         The head is a wrapping flex row; a control left in that flow lands
+         under the text rather than beside it and pushes the head taller. The
+         tolerance is a few pixels rather than 'head.top - 8', which was
+         loose enough to accept a button sitting 65px down and 42px in — the
+         state the battery produced by deleting the pin, with this assertion
+         still green. */
+      fromTop: Math.round(b.top - head.top),
+      fromRight: Math.round(head.right - b.right)
     };
   })()`);
 
@@ -694,7 +708,10 @@ test('at 375 the fold control is a finger-sized target clear of its own title', 
     `the control should be at least a 36px target, saw ${seen.w}x${seen.h}`);
   assert.equal(seen.onScreen, true, 'the control should be inside the viewport at 375');
   assert.equal(seen.overlapsTitle, false, 'the control should not sit on top of its band title');
-  assert.equal(seen.withinHead, true, 'the control should be pinned to its band head');
+  assert.ok(seen.fromTop <= 8,
+    `the control should sit at the top of its band head, saw ${seen.fromTop}px down`);
+  assert.ok(seen.fromRight <= 8,
+    `the control should sit against the head's right edge, saw ${seen.fromRight}px in`);
 });
 
 test('at 375 a stage that has not been reached still rails down the column', async () => {
