@@ -1,0 +1,537 @@
+/* Two operator-facing defects on the Problems pane, bound on the rendered DOM.
+
+   Stadiora/Aria#10630 — the severity pill printed whatever the answer put in
+   `severity`, through an unguarded lookup on a plain object literal. An absent
+   severity drew a pill with NO TEXT (shell-pane-v2.js:97 skips textContent
+   when `opts.text` is undefined), and a severity of `constructor` printed
+   `function Object() { [native code] }` onto the screen, because
+   `SEVERITY_LABEL['constructor']` is `Object`. The Overview pane was hardened
+   for this in #10393 and this one was not, and the two panes disagreeing
+   during one incident is its own defect.
+
+   Stadiora/Aria#10760 — `failedBand()` built every per-section retry as a bare
+   `text: 'Try again'`, so a screen reader's control list -- which enumerates
+   by NAME -- was told the action and never its object. The issue's "three at
+   once" count does NOT reproduce, and the tests below say why where they sit:
+   `render()` treats two failed reads as the whole pane unreadable, so two
+   section retries can never share a screen. What reproduces is the name.
+
+   What makes these bind behaviour rather than strings:
+
+     - Every severity assertion reads the pill INSIDE the card for a named
+       reference, so it cannot be satisfied by some other pill on the page, and
+       the three expected words come from #10630's own table rather than from
+       `SEVERITY_LABEL`. An expectation computed from the map under test moves
+       with the mutation.
+
+     - The `[native code]` sweep is byte-checked against the render path. A
+       sweep that reached nothing looks identical to a sweep that found nothing,
+       so the same render that must not contain `[native code]` is first
+       required to contain all three hostile titles AND the literal word
+       `constructor`. If the payload never reached the screen, that check fails
+       before the absence check can pass for the wrong reason.
+
+     - Every accessible name is RESOLVED, never compared as an attribute
+       string. `aria-labelledby` is split on whitespace, each id is looked up,
+       exactly one element must carry it, and the assertion is on the
+       concatenated TEXT. A dangling reference is a name of nothing, and
+       comparing the attribute would pass on two buttons pointing at ids that
+       do not exist.
+
+   NOT COVERED here, deliberately:
+
+     - That `retryN` keeps ids unique. Only one `failedBand()` retry is on
+       screen at a time and a re-render discards the previous one, so no render
+       this pane can reach puts two of these ids in the document and nothing
+       here can tell an incrementing counter from a constant.
+
+     - Whether a screen reader actually announces the composed name. That is
+       the user agent's accessible-name computation, not this repo's; what is
+       testable is that the references resolve and that the resolved text
+       differs per section.
+
+     - The record-detail retry's OWN name. It already carries an `sr` span
+       naming the reference it re-reads, so it was never one of the
+       undifferentiated names, and it is bound by
+       `scripts/ops-alerts-v2.test.mjs`. It appears here only as the second
+       control in the one two-retry state the pane can really draw.
+
+     - The shell's whole-pane retry, which `region.failed()` draws when BOTH
+       reads fail. It is the only control on that panel, it is not
+       `failedBand()`'s, and `shell-pane-v2.js` is not this pane's to change.
+
+     - Anything about the pill's COLOUR. `SEVERITY_PILL[tone]` already falls
+       back for every hostile key (an object built-in makes `tone` a function,
+       and a function used as a key misses), so there was nothing to fix and
+       nothing here asserts a class. */
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import vm from 'node:vm';
+
+import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+
+const OPS = new URL('../ops/', import.meta.url);
+const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
+
+const REGISTRY_SRC = read('assets/pane-registry.js');
+const ARIA_SRC = read('assets/aria.js');
+const SHELL_SRC = read('assets/shell-pane-v2.js');
+const MODEL_SRC = read('assets/alerts-model.js');
+const PANE_SRC = read('assets/pane-alerts.js');
+
+const TOKENS = {
+  '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
+  '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
+  '--line-2': '#1F2A36', '--ink': '#E6EDF3',
+};
+
+const MINUTE = 60000;
+const at = (ago) => new Date(Date.now() - ago).toISOString();
+
+/* ------------------------------------------------------------- fixtures */
+
+function problem(over) {
+  return Object.assign({
+    id: 'prb_1', reference: 'AO-118',
+    ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
+    ruleThreshold: 'below 95% for 10m',
+    severity: 'critical', category: 'ai_reliability', categoryLabel: 'AI reliability',
+    status: 'open',
+    title: 'Plan generation keeps giving up',
+    summary: 'About one request in ten ends without a plan.',
+    scopeKey: 'aria', scopeLabel: 'Aria (athletes)',
+    observedValue: 8900, thresholdValue: 9500, durationSeconds: 600,
+    detail: null,
+    workPane: 'jobs-live', workPaneLabel: 'Happening now',
+    firstBreachedAt: at(50 * MINUTE), firedAt: at(45 * MINUTE),
+    lastObservedAt: at(MINUTE), conditionClearedAt: null,
+    acknowledgedAt: null, acknowledgedByEmail: null,
+    closedAt: null, closedByEmail: null, closeReason: null,
+  }, over || {});
+}
+
+function rulesFixture() {
+  return {
+    rules: [{
+      ruleKey: 'ai_success_rate', title: 'AI success rate', category: 'ai_reliability',
+      categoryLabel: 'AI reliability', severity: 'critical', enabled: true,
+      threshold: 'below 95% for 10m', scopeLabel: 'Aria (athletes)',
+      lastEvaluatedAt: at(MINUTE), lastFiredAt: at(45 * MINUTE),
+    }],
+    evaluatedAt: at(MINUTE), coverage: { evaluated: 1, total: 1 },
+  };
+}
+
+/* The three payloads from #10630's table, as the route can send them: a
+   severity outside the three this pane knows, a record with no severity field
+   at all, and one naming an object built-in. The third is the only one that
+   separates a checked lookup from a bare `SEVERITY_LABEL[x] || x` — a fixture
+   of ordinary words cannot tell those apart.
+
+   AO-4 is not in #10630's table and is here because the fix has a second
+   `textOf()` in it that the table's three payloads cannot reach. A severity
+   column holding whitespace is an ordinary thing for a text column to hold,
+   and it lands on defect 1's symptom by a different route: `'   ' || 'Unknown'`
+   is truthy, so a pill of three spaces is a blank chip again. */
+function hostileSeverities() {
+  const absent = problem({ id: 'p2', reference: 'AO-2', title: 'Field absent' });
+  delete absent.severity;
+  return [
+    problem({ id: 'p1', reference: 'AO-1', severity: 'notice', title: 'Unrecognised word' }),
+    absent,
+    problem({ id: 'p3', reference: 'AO-3', severity: 'constructor', title: 'Object built-in' }),
+    problem({ id: 'p4', reference: 'AO-4', severity: '   ', title: 'Nothing but spaces' }),
+  ];
+}
+
+/* ------------------------------------------------------------------ boot */
+
+function buildPage(dom, body) {
+  const el = (parent, tag, attrs = {}) => {
+    const node = dom.element(tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    parent.appendChild(node);
+    return node;
+  };
+  body.setAttribute('data-pane', 'alerts');
+  body.className = 'is-booting';
+  const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
+  el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
+  el(body, 'main', { class: 'gate gate-failed gate-center', id: 'gateFailed', tabindex: '-1' });
+  const appGate = el(body, 'div', { class: 'gate gate-app' });
+  el(appGate, 'div', { id: 'app' });
+}
+
+/* Loads the page the way ops/alerts.html loads it. `open` and `rules` take an
+   Error to make that read fail. */
+async function boot(options) {
+  const opts = options || {};
+  const answers = {
+    open: opts.open === undefined ? { problems: [problem()] } : opts.open,
+    closed: opts.closed === undefined ? { problems: [] } : opts.closed,
+    rules: opts.rules === undefined ? rulesFixture() : opts.rules,
+    detail: opts.detail === undefined
+      ? { runbook: [], timeline: [], ruleHistory: [] } : opts.detail,
+  };
+
+  const dom = makeDom({
+    tokens: TOKENS, href: 'https://ops.example.invalid/ops/alerts.html',
+  });
+  const body = dom.element('body');
+  dom.root.appendChild(body);
+  dom.doc.body = body;
+  buildPage(dom, body);
+
+  function answerFor(endpoint, o) {
+    if (endpoint === '/api/ops/alerts/rules') return answers.rules;
+    if (endpoint === '/api/ops/alerts/problems') {
+      return (o && o.query && o.query.status === 'closed') ? answers.closed : answers.open;
+    }
+    if (endpoint.indexOf('/api/ops/alerts/problems/') === 0) return answers.detail;
+    return undefined;
+  }
+
+  dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
+  dom.window.OpsSession = {
+    state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role: 'owner' } },
+    boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
+    call: (endpoint, o) => {
+      const answer = answerFor(endpoint, o);
+      if (answer instanceof Error) return Promise.reject(answer);
+      if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
+      return Promise.resolve({ data: answer });
+    },
+    signOut: () => Promise.resolve(),
+    role: () => 'owner',
+    hasRole: () => true,
+    daysLeft: () => 12,
+  };
+
+  vm.createContext(dom.window);
+  vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
+  vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
+  vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
+  vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
+  vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-alerts.js' });
+
+  for (let i = 0; i < 14; i += 1) await new Promise((r) => setImmediate(r));
+
+  /* `answers` is handed back live so a test can repair a read BETWEEN loads
+     and then use a real control on the page to make the pane ask again. Without
+     it a retry can only be asserted to exist, not to do anything -- which is
+     how a button wired to a no-op stays green. */
+  return Object.assign(dom, { answers });
+}
+
+const boom = (what) => new Error('the ' + what + ' read failed');
+
+/* ---------------------------------------------------------- reading it */
+
+const hasClass = (node, name) =>
+  String(node.className || '').split(/\s+/).indexOf(name) !== -1;
+
+const nodesWithClass = (root, name) => findAll(root, (n) => hasClass(n, name));
+
+/* The panel showing. `region.empty()` fills a DIFFERENT box from
+   `region.show()` and `region.degraded()`, so a test that always reads the
+   live one reads '' for an empty render and would pass every absence
+   assertion here for the wrong reason. */
+function shownPanel(dom) {
+  const boxes = dom.doc.getElementById('content').querySelectorAll('[data-state]')
+    .filter((n) => n.getAttribute('data-shown') !== null);
+  assert.equal(boxes.length, 1,
+    `the shell has ${boxes.length} panels on screen at once, so "what the operator sees" `
+    + 'is not a single answer and nothing below means what it says');
+  return boxes[0];
+}
+
+/* The one problem card carrying a given reference, found by its own text
+   rather than by position, so reordering the fixture cannot silently change
+   which card an assertion is about. */
+function cardFor(dom, reference) {
+  const cards = nodesWithClass(shownPanel(dom), 'p-head')
+    .filter((n) => allText(n).indexOf(reference) !== -1);
+  assert.equal(cards.length, 1,
+    `${cards.length} problem heads carry ${reference}; the pill read below would be `
+    + 'ambiguous or absent');
+  return cards[0];
+}
+
+/* The severity pill inside one card: the first `pill` that is not the
+   reference chip and not one of the live-condition chips. Those carry their
+   own extra classes, so this asks for a plain `pill <tone>` and asserts there
+   is exactly one. */
+function severityPill(dom, reference) {
+  const head = cardFor(dom, reference);
+  const pills = nodesWithClass(head, 'pill').filter((n) => {
+    const classes = String(n.className || '').split(/\s+/);
+    return classes.indexOf('ghost') === -1 && classes.indexOf('p-live') === -1;
+  });
+  assert.equal(pills.length, 1,
+    `${reference} has ${pills.length} candidate severity pills, so the text read below `
+    + 'does not identify one element');
+  return allText(pills[0]).trim();
+}
+
+/* Every control on screen whose visible word is "Try again" -- including the
+   record-detail retry, whose own `sr` span adds " reading AO-118" after it.
+   The count is what the render produced; nothing here says how many there
+   should be. */
+function retryButtons(dom) {
+  return findAll(shownPanel(dom),
+    (n) => n.tagName === 'BUTTON' && /^Try again\b/.test(allText(n).trim()));
+}
+
+/* The name a control actually carries into a screen reader's control list:
+   aria-labelledby when it is there, otherwise the control's own text.
+
+   Every referenced id is LOOKED UP and must exist exactly once, and the answer
+   is the concatenated TEXT of the elements found. Comparing the attribute
+   string instead would accept two buttons naming ids that do not exist --
+   which is a name of nothing, twice. */
+function accessibleName(dom, button) {
+  const refs = String(button.getAttribute('aria-labelledby') || '').trim();
+  if (!refs) return allText(button).trim();
+  return refs.split(/\s+/).map((id) => {
+    const found = dom.doc.querySelectorAll(`[id="${id}"]`);
+    assert.equal(found.length, 1,
+      `aria-labelledby names id "${id}" and ${found.length} elements carry it, so the `
+      + 'composed name is a name of nothing');
+    return allText(found[0]).trim();
+  }).join(' ');
+}
+
+/* The section retries specifically: the ones `failedBand()` draws. Identified
+   by carrying a composed name at all, which is what this change adds. */
+const sectionRetries = (dom) =>
+  retryButtons(dom).filter((b) => b.getAttribute('aria-labelledby'));
+
+async function settle(n) {
+  for (let i = 0; i < (n || 14); i += 1) await new Promise((r) => setImmediate(r));
+}
+
+function buttonWithText(dom, text) {
+  const found = findAll(shownPanel(dom),
+    (n) => n.tagName === 'BUTTON' && allText(n).trim().indexOf(text) === 0);
+  assert.equal(found.length, 1, `${found.length} controls read "${text}"`);
+  return found[0];
+}
+
+/* -------------------------------------------------- #10630, the severity */
+
+/* #10630's table, as its own statement of what the screen should read. Written
+   here rather than computed from SEVERITY_LABEL: an expectation derived from
+   the map under test moves with the mutation and agrees with itself. */
+const EXPECTED_PILLS = [
+  ['AO-1', 'notice'],
+  ['AO-2', 'Unknown'],
+  ['AO-3', 'constructor'],
+  ['AO-4', 'Unknown'],
+];
+
+test('every severity the route can send prints as a word', async () => {
+  const dom = await boot({ open: { problems: hostileSeverities() } });
+
+  for (const [reference, word] of EXPECTED_PILLS) {
+    assert.equal(severityPill(dom, reference), word,
+      `${reference}'s severity pill reads something other than "${word}"`);
+  }
+});
+
+test('a record with no severity field is not a blank chip', async () => {
+  const dom = await boot({ open: { problems: hostileSeverities() } });
+
+  /* The specific shape of defect 1: the pill rendered, and had nothing in it.
+     An operator was shown an empty chip and told nothing was missing. */
+  assert.notEqual(severityPill(dom, 'AO-2'), '',
+    'the pill for a record with no severity is on screen with no text in it');
+  /* The same symptom by the other route: a severity of whitespace is truthy,
+     so an unguarded fallback prints it and the chip is blank again. */
+  assert.notEqual(severityPill(dom, 'AO-4'), '',
+    'the pill for a whitespace severity is on screen with no text in it');
+});
+
+test('a severity naming an object built-in does not put JavaScript on screen', async () => {
+  const dom = await boot({ open: { problems: hostileSeverities() } });
+  const screen = allText(shownPanel(dom));
+
+  /* Byte-check before the absence check. A sweep that never reached the
+     hostile render looks exactly like a sweep that found it clean, so this
+     first requires the three payloads to BE on the screen. `constructor` is
+     required as a literal because that is what the pane should now print for
+     AO-3 — if it printed nothing, or `Unknown`, the absence below would pass
+     while the record was silently dropped. */
+  for (const title of ['Unrecognised word', 'Field absent', 'Object built-in',
+    'Nothing but spaces']) {
+    assert.ok(screen.indexOf(title) !== -1,
+      `"${title}" never reached the screen, so the sweep below reads a render that `
+      + 'does not contain the payload it is named for');
+  }
+  assert.ok(screen.indexOf('constructor') !== -1,
+    'the word `constructor` is not on screen at all, so the sweep below proves nothing');
+
+  assert.doesNotMatch(screen, /\[native code\]/,
+    'the pane printed the source of a JavaScript function onto the operator\'s screen');
+  assert.doesNotMatch(screen, /function\s+Object\s*\(/,
+    'the pane printed a JavaScript function onto the operator\'s screen');
+});
+
+/* The Overview pane is the other half of the same incident, and #10630 is
+   about the two disagreeing. This compares the two panes' answers to ONE
+   payload rather than trusting that both files happen to say "Unknown". */
+test('Problems and Overview give one word for one state', async () => {
+  const dom = await boot({ open: { problems: hostileSeverities() } });
+
+  const ovSrc = read('assets/pane-overview.js');
+  const words = /function severityWords\(severity\) \{\s*return ([^;]+);/.exec(ovSrc);
+  assert.ok(words, 'pane-overview.js no longer has a severityWords() to agree with');
+
+  /* Run Overview's own expression, on Overview's own maps, against the same
+     three severities — so this compares BEHAVIOUR, not two copies of a
+     sentence. */
+  const overview = vm.runInNewContext(
+    `(function (model, textOf) { return function (severity) { return ${words[1]}; }; })`,
+    {},
+  )(
+    { SEVERITY_LABEL: { critical: 'Critical', warning: 'Warning', info: 'Info' } },
+    (v) => ((typeof v === 'string' && v) ? v : null),
+  );
+
+  /* #10630's three tabulated payloads only. AO-4 is deliberately not here:
+     this pane's textOf() trims and Overview's does not, so a whitespace
+     severity is one the two files genuinely answer differently, and asserting
+     agreement on it would be asserting something untrue. */
+  const severities = { 'AO-1': 'notice', 'AO-2': undefined, 'AO-3': 'constructor' };
+  for (const [reference, severity] of Object.entries(severities)) {
+    assert.equal(severityPill(dom, reference), overview(severity),
+      `the two panes print different words for severity ${String(severity)} during one `
+      + 'incident');
+  }
+});
+
+/* ----------------------------------------------------- #10760, the names */
+
+/* What #10760 says, and what the pane can actually reach.
+
+   The issue describes THREE retries called "Try again" at once. That count
+   does not reproduce, and saying so is part of the fix. `render()` short-
+   circuits: two failed reads are the whole pane unreadable
+   (`pane-alerts.js:413`, `region.failed()`), so the two `failedBand()` retries
+   can never be on screen together, and the third call site is inside
+   `emptyState()`, which fills a different panel from the live one.
+
+   What DOES reproduce is the defect under the count. One section retry is
+   reachable in three different states, its accessible name was the single
+   word "Try again" in all three, and nothing in it said which read had
+   failed. It can also share a screen with the record-detail retry, which
+   already names its own object. So the assertions below are about what the
+   name SAYS, and the multi-control case they are motivated by is the one the
+   pane can really draw.
+
+   The issue proposes aria-describedby. That is superseded by what PR #98
+   actually shipped on Overview after trying it: a description is announced on
+   focus, and the lists that enumerate controls read NAMES. */
+
+/* The two headlines the pane writes for these two reads, and the fixture that
+   makes each one the only failure. Stated here as the contract rather than
+   read back out of the render, so a render that stopped saying which read
+   failed cannot satisfy these by agreeing with itself. */
+const SECTION_FAILURES = [
+  ['The problems could not be read', () => ({ open: boom('problems') })],
+  ['The rules could not be read', () => ({ rules: boom('rules') })],
+];
+
+test('a section retry names the read that failed', async () => {
+  const seen = [];
+  for (const [headline, fixture] of SECTION_FAILURES) {
+    const dom = await boot(fixture());
+    const retries = sectionRetries(dom);
+    assert.equal(retries.length, 1,
+      `${retries.length} section retries are on screen for "${headline}", so the name `
+      + 'read below does not identify one control');
+    const name = accessibleName(dom, retries[0]);
+    assert.ok(name.indexOf(headline) !== -1,
+      `the retry for "${headline}" is called ${JSON.stringify(name)}, which does not say `
+      + 'which section is missing');
+    seen.push(name);
+  }
+
+  /* The other half: the name is composed per section, not one constant that
+     happens to contain a headline. Hard-coding either sentence into
+     failedBand() would pass the loop above on one state and fail here. */
+  assert.equal(new Set(seen).size, seen.length,
+    `both failure states name their retry ${JSON.stringify(seen)}, which is the same name `
+    + 'for two different missing sections');
+});
+
+test('a section retry and a record retry do not read as one control twice', async () => {
+  /* The multi-control state the pane can really reach: the rules read failed,
+     so the live panel carries a section retry, and a record whose detail read
+     also failed carries its own. Two controls, both visibly "Try again". */
+  const dom = await boot({ rules: boom('rules'), detail: boom('detail') });
+  assert.equal(retryButtons(dom).length, 1, 'the rules failure did not draw its retry alone');
+
+  buttonWithText(dom, 'Details').dispatch('click');
+  await settle();
+
+  const retries = retryButtons(dom);
+  assert.equal(retries.length, 2,
+    `${retries.length} controls read "Try again" after the detail read failed, so this is `
+    + 'not the two-control state the test is named for');
+
+  const names = retries.map((b) => accessibleName(dom, b));
+  assert.equal(new Set(names).size, names.length,
+    `a control list reads ${JSON.stringify(names)}, which is the same name twice`);
+  assert.equal(names.filter((n) => n.indexOf('The rules could not be read') !== -1).length, 1,
+    'neither name says the rules are the thing that could not be read');
+});
+
+test('the visible word stays the first token of the composed name', async () => {
+  const dom = await boot({ rules: boom('rules') });
+
+  /* Voice control says the word it can see. aria-label would have replaced
+     it; aria-labelledby beginning with the button's own id keeps it. */
+  for (const button of sectionRetries(dom)) {
+    const first = String(button.getAttribute('aria-labelledby')).trim().split(/\s+/)[0];
+    assert.equal(first, button.getAttribute('id'),
+      'the composed name does not start with the button itself, so the word the operator '
+      + 'can see is not the start of the name they can say');
+    assert.match(accessibleName(dom, button), /^Try again\b/,
+      'the composed name does not begin with the visible word');
+  }
+});
+
+test('a retry drawn on the empty panel is named too', async () => {
+  /* The third `failedBand()` call site is in `emptyState()`, which fills a
+     different panel from the live one. One retry, and it is the only control
+     there, so an unnamed one here is a hole the tests above cannot see. */
+  const dom = await boot({ open: { problems: [] }, rules: boom('rules') });
+  assert.equal(shownPanel(dom).getAttribute('data-state'), 'empty',
+    'the fixture did not reach the empty panel, so this is not the call site described');
+
+  const retries = sectionRetries(dom);
+  assert.equal(retries.length, 1,
+    `the empty panel drew ${retries.length} named retries, not the one this test is about`);
+  assert.ok(accessibleName(dom, retries[0]).indexOf('The rules could not be read') !== -1,
+    'the empty panel\'s retry does not name the read that failed');
+});
+
+test('naming the retry did not stop it reading again', async () => {
+  /* A name is worthless on a button that stopped working, and an id written
+     onto a control is exactly the kind of change that can replace it. Press
+     it with the read repaired and the section comes back. */
+  const dom = await boot({ rules: boom('rules') });
+  const retries = sectionRetries(dom);
+  assert.equal(retries.length, 1, 'the failed render is not the one described');
+
+  dom.answers.rules = rulesFixture();
+  retries[0].dispatch('click');
+  await settle(20);
+
+  assert.equal(sectionRetries(dom).length, 0,
+    'the rules read was repaired and the failed section is still on screen, so the retry '
+    + 'is wired to nothing');
+  assert.ok(allText(shownPanel(dom)).indexOf('The rules could not be read') === -1,
+    'the pane still says the rules could not be read after a successful re-read');
+});
