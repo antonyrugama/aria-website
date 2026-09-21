@@ -2,11 +2,28 @@
    destination nothing has ever been sent to.
 
    The 26-route data-reality audit found that on the live dashboard four of
-   the eight alert rules have never reached a verdict (Stadiora/Aria#10812)
-   and neither delivery channel has ever been configured, with seven problems
-   open and the oldest 51 days old (Stadiora/Aria#10811). The pane half of
-   both is one question: does a rule that has never looked render like a rule
-   that looked and found nothing?
+   the eight alert rules have never reached a verdict (Stadiora/Aria#10812),
+   with seven problems open, the oldest 51 days old, and not one notification
+   ever delivered (Stadiora/Aria#10811). The pane half of both is one
+   question: does a rule that has never looked render like a rule that looked
+   and found nothing?
+
+   "Not one notification ever delivered" is the durable half and the only one
+   asserted here: every row of `ops_alert_notifications` carries
+   `delivered_at` null. Whether a destination is CONFIGURED is not a fact
+   about history at all -- the route computes `configured` from the live
+   environment at request time (`isOpsAlertChannelConfigured`), so it can
+   differ between two reads a minute apart, and this file states nothing
+   about its value.
+
+   It is also not a proxy for the thing above. `ops_alert_channel_state`
+   carries `last_success_at` for the channel, written by whatever last used
+   it; on 2026-09-21 the email row carried a success at the same instant as a
+   handover, while all nine notifications were still undelivered. So a
+   channel that reports a delivery is not evidence that anything in this
+   queue was delivered, and the pane cannot tell the two apart from the
+   payload it is given. What it does instead is decline the claim -- see "a
+   destination that has delivered stops the sentence" below.
 
    Measured before anything here was written, the answer was already mostly
    yes. The ribbon says "4 rules watching" and not 8, a note under it says
@@ -145,9 +162,12 @@ function prodRules() {
   ];
 }
 
-/* `ops_alert_channel_state` as the audit read it: both rows unconfigured,
-   both failure reasons `config`, both `last_success_at` null. Nothing has
-   ever been delivered because nothing was ever set up to deliver it. */
+/* A `channels` payload with nothing configured and nothing ever delivered.
+
+   Not a snapshot of `ops_alert_channel_state`, and deliberately not called
+   one: `configured` is computed from the live environment per request, so a
+   fixture asserting today's value would be a claim that goes stale without
+   failing. This is the shape the pane is being tested against. */
 function prodChannels() {
   return [
     { channel: 'teams', label: 'Microsoft Teams', configured: false,
