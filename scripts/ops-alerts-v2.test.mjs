@@ -619,10 +619,18 @@ const suppressedBy = (node) => {
    gives the stop to the outer only. A contenteditable="false" between them
    breaks the chain, and the inner one is a host again. 'inherit' and any
    unrecognised value state nothing either way. */
+/* No .trim(), for the reason hiddenInput() has none: contenteditable is an
+   enumerated attribute, matched ASCII case-insensitively against the value
+   AS WRITTEN, and anything that is not one of its keywords -- whitespace
+   included -- falls to the inherit state rather than to true or false.
+   Measured: <div contenteditable=" TRUE "> takes no tab stop and reports
+   isContentEditable false, and a " FALSE " island does not break an editing
+   host the way a `false` one does. Trimming answered both the opposite way,
+   in the over-reporting direction (found in the fourteenth review of #75). */
 const ownEditable = (node) => {
   const value = attr(node, 'contenteditable');
   if (value === null) return null;
-  const word = value.trim().toLowerCase();
+  const word = value.toLowerCase();
   if (word === 'false') return false;
   if (word === '' || word === 'true' || word === 'plaintext-only') return true;
   return null;
@@ -745,8 +753,9 @@ function focusable(node) {
      NEGATIVE tabindex was answered false above and never reaches here. */
   if (node.tagName === 'AREA') {
     if (attr(node, 'href') === null && index === null && ownEditable(node) !== true) return false;
-    throw new Error('focusable() cannot tell: an <area> with an href or a non-negative '
-      + 'tabindex takes a tab stop only where a rendered <img usemap> uses its <map>');
+    throw new Error('focusable() cannot tell: an <area> that an href, a non-negative '
+      + 'tabindex or its own contenteditable could make reachable takes a tab stop only '
+      + 'where a rendered <img usemap> uses its <map>');
   }
   if (index !== null) return index >= 0;
 
@@ -850,6 +859,19 @@ const FOCUSABLE_PROBES = [
     answer: true },
   { name: '<div contenteditable="plaintext-only">', tag: 'div',
     attrs: { contenteditable: 'plaintext-only' }, answer: true },
+  { name: '<div contenteditable="TRUE">', tag: 'div', attrs: { contenteditable: 'TRUE' },
+    answer: true,
+    note: 'FOUND IN REVIEW: true. the keyword match is ASCII case-insensitive, and stays so' },
+  { name: '<div contenteditable=" TRUE ">', tag: 'div', attrs: { contenteditable: ' TRUE ' },
+    answer: false,
+    note: 'FOUND IN REVIEW: true. an enumerated attribute is matched on the value as '
+      + 'written, so the padded keyword falls to the inherit state -- measured, no stop' },
+  { name: '<div contenteditable="true ">', tag: 'div', attrs: { contenteditable: 'true ' },
+    answer: false,
+    note: 'FOUND IN REVIEW: true. one trailing space is enough -- measured, no stop' },
+  { name: '<div contenteditable=" plaintext-only ">', tag: 'div',
+    attrs: { contenteditable: ' plaintext-only ' }, answer: false,
+    note: 'FOUND IN REVIEW: true. measured, no stop' },
   { name: '<div contenteditable="false">', tag: 'div', attrs: { contenteditable: 'false' },
     answer: false },
   { name: '<div contenteditable="inherit">', tag: 'div', attrs: { contenteditable: 'inherit' },
@@ -957,10 +979,14 @@ const FOCUSABLE_PROBES = [
   { name: '<area tabindex="-1"> with no href', tag: 'area', attrs: { tabindex: '-1' },
     answer: false,
     why: 'out of the ring whatever the map does, and answered above the refusal' },
-  { name: '<area contenteditable> with no href', tag: 'area',
+  { name: '<area contenteditable="true"> with no href', tag: 'area',
     attrs: { contenteditable: 'true' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. an own contenteditable makes it a stop in a used map '
       + 'and not in an unused one, exactly as a tabindex does' },
+  { name: '<area contenteditable=" TRUE "> with no href', tag: 'area',
+    attrs: { contenteditable: ' TRUE ' }, answer: false,
+    note: 'FOUND IN REVIEW: true. the padded keyword is not editability, so the node does '
+      + 'settle it -- measured in a used map, no stop' },
   { name: '<area contenteditable="false"> with no href', tag: 'area',
     attrs: { contenteditable: 'false' }, answer: false,
     note: 'FOUND IN REVIEW: true. the false state is not editability, and it is a stop in '
@@ -1001,6 +1027,11 @@ const FOCUSABLE_PROBES = [
     wrapAttrs: { contenteditable: '' }, answer: true,
     note: 'FOUND IN REVIEW: true. the node is its OWN island, so it is not content of the '
       + 'host and keeps its stop -- measured' },
+  { name: '<a href contenteditable=" FALSE "> inside <div contenteditable>', tag: 'a',
+    attrs: { href: '/x', contenteditable: ' FALSE ' }, wrap: 'div',
+    wrapAttrs: { contenteditable: '' }, answer: false,
+    note: 'FOUND IN REVIEW: true. a padded keyword is not the false state, so it is no '
+      + 'island: the host reaches through it and the link loses its stop -- measured' },
   { name: '<a href contenteditable="true"> inside <div contenteditable>', tag: 'a',
     attrs: { href: '/x', contenteditable: 'true' }, wrap: 'div',
     wrapAttrs: { contenteditable: '' }, answer: false,
@@ -1086,8 +1117,8 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 90, takesATabStop: 31, doesNot: 45, refused: 14, wereWrongBefore: 7,
-      foundInReview: 37 });
+    { cases: 96, takesATabStop: 32, doesNot: 50, refused: 14, wereWrongBefore: 7,
+      foundInReview: 43 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
@@ -2576,9 +2607,11 @@ const SHEET_CITATIONS = [
   'the rules the sheet justifies by what the page draws name what it draws',
   /* Five times: the sheet cites this one wherever a layout rule is justified
      by what the page draws -- the condition pill's phrasing, the rules
-     table's six columns, one card per problem, the three fact columns and
-     the hero child the chip strip is. One entry per SITE, or deleting one
-     site is green. */
+     table's columns, the cards per problem, the fact columns and the hero
+     child the chip strip is. One entry per SITE, or deleting one site is
+     green. The numbers are deliberately not restated here: each is read out
+     of the sheet by sheetCount() at one site, and a second spelling of it
+     with no reader is the overclaiming this file exists to stop. */
   'the rules the sheet justifies by what the page draws name what it draws',
   'the rules the sheet justifies by what the page draws name what it draws',
   'the rules the sheet justifies by what the page draws name what it draws',
@@ -3452,8 +3485,8 @@ test('every rule switch is a real checkbox, reachable, stateful and named', asyn
 });
 
 /* Layout rules in the sheet that are justified by facts about what
-   assets/pane-alerts.js draws -- the rules table's six columns, the condition
-   pill's words being "Still happening", one card per problem and three fact
+   assets/pane-alerts.js draws -- the rules table's columns, the condition
+   pill's words being "Still happening", the cards per problem and the fact
    columns -- and every one of those justifications was prose
    (Stadiora/Aria#10632: the first two found in the second review of the fix,
    the last two in the TENTH, still unbound while the sheet claimed every
@@ -3469,6 +3502,14 @@ test('every rule switch is a real checkbox, reachable, stateful and named', asyn
 const COUNT_WORDS = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
 };
+
+/* Words that can be PART of a stated number, which is a wider list than the
+   ten this file can resolve: the check below asks what the sheet states, not
+   what it can read. `and` is here for "six and twenty", which no sentence in
+   the sheet has and every neighbour test would otherwise wave through. */
+const NUMBER_ISH = new Set(('zero one two three four five six seven eight nine ten eleven twelve '
+  + 'thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty '
+  + 'sixty seventy eighty ninety hundred thousand million billion dozen score and').split(' '));
 
 /* The number the SHEET states, at one named site, resolved from its word.
    A pattern that stops matching is a failure, not a zero: the sentence
@@ -3502,12 +3543,27 @@ function sheetCount(pattern, says) {
   const span = found.indices && found.indices[1];
   assert.ok(Array.isArray(span), 'sheetCount() reads group 1 and was handed a pattern '
     + 'that has none, so nothing can be resolved from it: ' + pattern.source);
-  const nextTo = (ch) => /[\w-]/.test(ch || '');
+  const nextTo = (ch) => ch !== undefined && (/[\w]/u.test(ch) || /\p{Pd}/u.test(ch));
+  const context = JSON.stringify(prose.slice(Math.max(0, span[0] - 16), span[1] + 16));
   assert.ok(!nextTo(prose[span[0] - 1]) && !nextTo(prose[span[1]]),
-    'pane-alerts-v2.css states ' + JSON.stringify(prose.slice(span[0] - 12, span[1] + 12))
-    + ' and the pattern for ' + JSON.stringify(says) + ' captured only '
-    + JSON.stringify(prose.slice(span[0], span[1])) + ' of the number word, so a compound '
-    + 'the sheet states would resolve to one component of itself');
+    'pane-alerts-v2.css states ' + context + ' and the pattern for ' + JSON.stringify(says)
+    + ' captured only ' + JSON.stringify(prose.slice(span[0], span[1])) + ' of the number '
+    + 'word, so a compound the sheet states would resolve to one component of itself');
+  /* WHERE the capture is allowed to begin, which the run being whole does
+     not settle: three of the four patterns start with the capture itself, so
+     `[\w-]+` is free to start at the TAIL component of a compound the sheet
+     joins with a space -- "Twenty six columns" resolves to 6, both edges are
+     spaces, and 481 tests stay green on a one-word edit to the sheet (found
+     in the fourteenth review of #75). Any dash is a dash: the edge test
+     above reads `\p{Pd}`, so the non-breaking hyphen that renders exactly
+     like the ASCII one is not a second way in. */
+  const wordBefore = (prose.slice(0, span[0]).match(/([\w-]+)[^\w-]*$/) || [])[1];
+  const wordAfter = (prose.slice(span[1]).match(/^[^\w-]*([\w-]+)/) || [])[1];
+  const numberish = (word) => word !== undefined && NUMBER_ISH.has(word.toLowerCase());
+  assert.ok(!numberish(wordBefore) && !numberish(wordAfter),
+    'pane-alerts-v2.css states ' + context + ' and the pattern for ' + JSON.stringify(says)
+    + ' captured ' + JSON.stringify(prose.slice(span[0], span[1])) + ' with a number word '
+    + 'beside it, so the sheet states a compound and this resolves one component of it');
   const word = found[1].toLowerCase();
   assert.ok(Object.prototype.hasOwnProperty.call(COUNT_WORDS, word),
     'pane-alerts-v2.css states ' + JSON.stringify(word) + ' where ' + JSON.stringify(says)

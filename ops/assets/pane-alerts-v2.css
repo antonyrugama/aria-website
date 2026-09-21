@@ -106,8 +106,8 @@
      - every layout rule below, bar the ones named next: .scrollx's own
        overflow-x, which
        the focus-ring test reads to find the box it belongs to, and the ones
-       justified by what the page draws — the rules table's six columns, the
-       words in the condition pill, one card per problem, the three fact
+       justified by what the page draws — the rules table's columns, the
+       words in the condition pill, the cards per problem, the fact
        columns and the chip strip's place in the hero — which are checked
        against the drawn page. Each item named there is checked; the list's
        own completeness is not, and it went one short for a round;
@@ -328,7 +328,7 @@
 .scrollx:focus-visible { outline-offset: -2px; }
 
 /* Six columns in 760px leaves the rule's name in a strip barely wider than
-   one word, which turns every row into a paragraph. Six is what the table
+   one word, which turns every row into a paragraph. That is what the table
    draws ("the rules the sheet justifies by what the page draws name what it
    draws"). Percentage widths do not
    fix it: `table-layout: auto` treats them as hints and keeps shrinking the
