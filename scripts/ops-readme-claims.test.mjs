@@ -703,7 +703,7 @@ function docblock(script) {
    that section starts. Matching the phrase anywhere in a line anchors on both
    of those; it has to open the line. */
 const BLIND_SPOT_HEADING =
-  /^\s*(?:\*\s*)?(?:WHAT THIS DOES NOT COVER|WHAT IT DOES NOT|NOT COVERED)\b/i;
+  /^\s*(?:\/\*+\s*|\*\s*)?(?:WHAT THIS DOES NOT COVER|WHAT IT DOES NOT|NOT COVERED)\b/i;
 
 /* What each guard says it cannot see, in its own words. Every browser guard
    gets a line whatever shape its docblock is in — a guard that reformats its
