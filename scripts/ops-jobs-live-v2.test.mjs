@@ -560,6 +560,50 @@ test('a running job is graded with the baseline it was graded against', async ()
   assert.match(text, /42s/, 'the baseline the verdict was drawn against was not published');
 });
 
+test('a run the route gave up on says so on its row, and is not read as on time', async () => {
+  /* The most consequential single reading on this pane: the platform has
+     stopped hearing from the worker and the reaper will fail this run. It is
+     the opposite of "On time", and until this test existed the two could be
+     swapped with every guard in the repository staying green. */
+  const dom = await boot({
+    view: viewFixture({
+      workingSet: {
+        returned: 1,
+        truncated: false,
+        jobs: [jobFixture({
+          id: 'job_gone', jobType: 'video_analysis', state: 'running',
+          queuedMs: 4000, runningMs: 900000, baselineMedianMs: 42000,
+          progressGrade: 'abandoned',
+        })],
+      },
+    }),
+  });
+  const text = liveText(dom);
+  assert.match(text, /Given up on/, 'a run graded abandoned was not read as given up on');
+  assert.doesNotMatch(text, /On time/,
+    'a run the route gave up on was read as on time, which is the opposite of what it is');
+});
+
+test('the attention band counts the runs given up on and says what that means', async () => {
+  const dom = await boot({
+    view: viewFixture({
+      attention: { completeness: 'working_set_only', stuck: [], abandoned: ['job_gone', 'job_x'] },
+      workingSet: {
+        returned: 1,
+        truncated: false,
+        jobs: [jobFixture({ id: 'job_gone', progressGrade: 'abandoned' })],
+      },
+    }),
+  });
+  const text = liveText(dom);
+  assert.match(text, /2 runs given up on/,
+    'the band did not count the runs the route reported as given up on');
+  assert.match(text, /reaper will fail/,
+    'the band counted them without saying what being given up on means');
+  assert.doesNotMatch(text, /Nothing flagged/,
+    'the band reported nothing flagged while carrying two runs given up on');
+});
+
 test('a job with no grade reads as not started rather than as healthy', async () => {
   const dom = await boot({
     view: viewFixture({
@@ -1199,6 +1243,9 @@ test('the pane writes no class only the v1 sheet defines', async () => {
       queue: { open: 0, scope: 'all_open_states', byState: [], lanes: [] },
       workingSet: { limit: 200, returned: 0, truncated: false, jobs: [] },
     }) }],
+    ['a bounded read that came back empty', { view: viewFixture({
+      workingSet: { limit: 200, returned: 0, truncated: true, jobs: [] },
+    }) }],
     ['a reading with nothing in it', { view: {} }],
     ['a failed first read', { answers: [new Error('the read failed')] }],
   ];
@@ -1228,6 +1275,32 @@ test('the pane writes no class only the v1 sheet defines', async () => {
     assert.ok(written.has(need), `the DOM sweep never saw ${need}, so its delivery shape is `
       + 'outside the states this test boots');
   }
+
+  /* The states above are the one axis a DOM sweep can be short on, and adding
+     one state per round as somebody finds it is the treadmill the parser was
+     already on. So the parser comes back -- not as the oracle, but pointed the
+     other way: every plain `className: '...'` literal in the pane is a class
+     some branch writes, and one the sweep never saw means that branch was
+     never booted.
+
+     Its reach is exactly this and no more: it catches an unreached branch only
+     when that branch writes a class NO reached branch writes. Measured, not
+     assumed -- dropping the failed-read state fails here naming `btn-primary`,
+     while dropping the bounded-empty state does not, because every class that
+     branch writes (`tiny muted`, `card-body`) is written elsewhere too. So it
+     narrows the state axis rather than closing it; what closes it for any
+     given band is a test that asserts that band's own words, the way :433
+     does for this one. */
+  const source = read('assets/pane-jobs-live-v2.js');
+  const inSource = new Set();
+  for (const m of source.matchAll(/className:\s*'([^']*)'/g)) {
+    for (const name of m[1].trim().split(/\s+/)) if (name) inSource.add(name);
+  }
+  assert.ok(inSource.size >= 20, `only ${inSource.size} literal classes found in the pane source`);
+  const unreached = [...inSource].filter((name) => !written.has(name)).sort();
+  assert.deepStrictEqual(unreached, [],
+    'the pane writes these classes in a branch no state below boots, so the sweep '
+    + 'is not covering them: ' + unreached.join(', '));
 
   const unpainted = [...written.keys()]
     .filter((name) => !new RegExp('\\.' + name + '(?![\\w-])').test(sheets))
