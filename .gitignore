@@ -27,3 +27,9 @@ desktop.ini
 
 # Mutation-battery source snapshots (mutate-*.mjs restores from these)
 .mutbak/
+
+# Chrome profile written by scripts/ops-scroll-containment.test.mjs when
+# RUNNER_TEMP is unset, which is every laptop; Actions always sets it, so on the
+# runner this lands outside the repository. Same terms as the two entries above:
+# removed once Chrome has exited, ignored for the run interrupted before that.
+.ops-scroll-containment-*/
