@@ -561,6 +561,37 @@ const sampleRects = (rects) => `(() => {
 
 /* Every computed style this file compares, in one place, so the two sides of a
    comparison can never be read with different property lists. */
+/* Every sideways scroller the pane has drawn, and the three facts that decide
+   whether a keyboard can use it. Read on .tbl-wrap itself, the element that
+   clips: on an ancestor of a clipping box the two widths agree and the
+   overflow is invisible, which is the second of the two blind spots
+   CLAUDE.md records for this comparison. The first -- both values being
+   integers -- is not dodgeable here and is declared under NOT COVERED.
+
+   accessibleName is read the way a reader resolves it, aria-label first, so a
+   role that names nothing cannot pass as a named region.
+
+   fresh is read off the ABSENCE of the marker the pick arm writes, so it is
+   true everywhere until that pass runs and means "drawn after it" only once it
+   has. The one arm that reads it reads it after the pass, and asserts it found
+   some. */
+const SCROLLERS_LIST = `[...document.querySelectorAll('#lookupResult .tbl-wrap')].map((wrap) => {
+    const caption = wrap.querySelector('caption');
+    return {
+      caption: caption ? caption.textContent.trim() : null,
+      clientWidth: wrap.clientWidth,
+      scrollWidth: wrap.scrollWidth,
+      overflows: wrap.scrollWidth > wrap.clientWidth,
+      hasTabindex: wrap.hasAttribute('tabindex'),
+      tabIndex: wrap.tabIndex,
+      role: wrap.getAttribute('role'),
+      accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
+      fresh: !wrap.hasAttribute('data-gen'),
+    };
+  })`;
+
+const SCROLLERS = `JSON.stringify(${SCROLLERS_LIST})`;
+
 const STYLE = (selector) => `(() => {
   const el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
@@ -652,6 +683,71 @@ try {
     return JSON.parse(raw);
   };
 
+  /* The consequence, driven rather than inferred.
+     `tabindex="0"` is a statement about the tab sequence; this is the thing a
+     keyboard user actually wants, which is for the columns past the edge to
+     come into view. The scroll is driven with real key events through CDP: a
+     synthetic KeyboardEvent would not scroll anything, because the browser
+     scrolls on the default action of a TRUSTED key press and dispatchEvent
+     produces an untrusted one. Same reason CSS :hover needs
+     Input.dispatchMouseEvent.
+
+     activeElement landing on the wrap is NOT evidence that the pane did
+     anything. Chrome has focused scroll containers natively since 127, so a
+     bare .tbl-wrap with no tabindex focuses, scrolls on ArrowRight and matches
+     :focus-visible on this harness browser -- the whole outcome is supplied by
+     the browser. The arms below therefore read the attribute as well, and the
+     confound is named under NOT COVERED. */
+  const driveScroller = async () => {
+    const found = await evaluate(`(() => {
+      for (const wrap of document.querySelectorAll('#lookupResult .tbl-wrap')) {
+        if (wrap.scrollWidth > wrap.clientWidth) {
+          wrap.id = 'kbdScroller';
+          wrap.scrollLeft = 0;
+          wrap.focus();
+          return JSON.stringify({
+            caption: (wrap.querySelector('caption') || {}).textContent || null,
+            focused: document.activeElement === wrap,
+            tabIndex: wrap.tabIndex,
+            hasTabindex: wrap.hasAttribute('tabindex'),
+            role: wrap.getAttribute('role'),
+            before: wrap.scrollLeft,
+            room: wrap.scrollWidth - wrap.clientWidth,
+          });
+        }
+      }
+      return null;
+    })()`);
+    if (!found) return { present: false };
+
+    for (let i = 0; i < 8; i += 1) {
+      for (const type of ['rawKeyDown', 'keyUp']) {
+        await cdp.send('Input.dispatchKeyEvent',
+          { type, key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39,
+            nativeVirtualKeyCode: 39 });
+      }
+    }
+    await new Promise((r) => setTimeout(r, 400));
+
+    const after = await evaluate(`(() => {
+      const wrap = document.getElementById('kbdScroller');
+      const cs = getComputedStyle(wrap);
+      const rect = wrap.getBoundingClientRect();
+      return JSON.stringify({ after: wrap.scrollLeft,
+        stillFocused: document.activeElement === wrap,
+        /* Read after real key events, not after the .focus() above: whether a
+           box is drawing a focus ring at all is a decision the browser makes
+           from how focus arrived. */
+        focusVisible: wrap.matches(':focus-visible'),
+        outlineStyle: cs.outlineStyle,
+        outlineWidth: Number.parseFloat(cs.outlineWidth),
+        outlineOffset: Number.parseFloat(cs.outlineOffset),
+        right: rect.right,
+        viewportWidth: document.documentElement.clientWidth });
+    })()`);
+    return { present: true, ...JSON.parse(found), ...JSON.parse(after) };
+  };
+
   let initScript = null;
   for (const theme of THEMES) {
     if (initScript) {
@@ -675,6 +771,16 @@ try {
       { width: 1280, height: 1600, deviceScaleFactor: 1, mobile: false });
 
     cdp.reset();
+
+    /* The second pass renders nothing without this, and says so quietly.
+       After the first navigation the target stops being frontmost, so its
+       document is visibilityState "hidden" -- and a hidden document produces
+       no animation frames. Layout and getComputedStyle still answer, which is
+       why everything measured here kept working, but anything delivered on a
+       frame stops: requestAnimationFrame, ResizeObserver, IntersectionObserver
+       and the window `resize` event. Measured: 24 rAF ticks in the first pass
+       against 0 in the second, over the same 400ms, both at innerWidth 375. */
+    await cdp.send('Page.bringToFront');
     await cdp.send('Page.navigate', { url: origin + PAGE });
     await cdp.once('Page.loadEventFired');
     await new Promise((r) => setTimeout(r, 800));
@@ -688,6 +794,10 @@ try {
 
     const styles = {};
     for (const [key, selector] of Object.entries(PAIRS)) styles[key] = await styleOf(selector);
+
+    /* The wide arm of the scroller question. At 1280 these four tables fit
+       their cards, so this is where a tab stop that should not exist shows up. */
+    const scrollersWide = JSON.parse(await evaluate(SCROLLERS));
 
     /* Text-run geometry is read from the DOM before the glyphs go, because
        afterwards there is nothing left to measure the extent of. */
@@ -771,6 +881,14 @@ try {
     await cdp.send('Emulation.setDeviceMetricsOverride',
       { width: 375, height: 1600, deviceScaleFactor: 1, mobile: false });
     await new Promise((r) => setTimeout(r, 400));
+
+    /* Collected AFTER the viewport change and after the pane's 140ms settle,
+       with nothing repainted in between: at this point the only thing that can
+       have moved these attributes is the pane's ResizeObserver, since no
+       paint, click or navigation happened between the width change and this
+       read. That is what binds the observer rather than merely the writes. */
+    const scrollersNarrow = JSON.parse(await evaluate(SCROLLERS));
+    const keyboard = await driveScroller();
     const narrow = JSON.parse(await evaluate(`(() => {
       const th = document.querySelector('tr.is-selected th.match-name');
       const wrap = th.closest('.tbl-wrap');
@@ -787,7 +905,311 @@ try {
       });
     })()`));
 
+    /* Binds the MutationObserver, which nothing above can reach. Picking the
+       second match replaces the account column with a detail the stub serves
+       identically, so no box that is already observed changes size and the
+       ResizeObserver has nothing to report -- but three wrap elements are new
+       and unobserved. Only a watcher of the tree itself can see them.
+       The wraps standing before the pick are marked, so "new" is read off the
+       DOM rather than assumed. */
+    const repick = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (const w of document.querySelectorAll('#lookupResult .tbl-wrap')) {
+        w.setAttribute('data-gen', 'before');
+      }
+      const rows = [...document.querySelectorAll('.match-row')];
+      const other = rows.find((r) => !r.classList.contains('is-selected'));
+      if (!other) return JSON.stringify({ error: 'only one match row was drawn' });
+      other.querySelector('.match-row-btn').click();
+      for (let i = 0; i < 60; i++) {
+        await sleep(50);
+        if (other.classList.contains('is-selected')) break;
+      }
+      await sleep(700);
+      if (!other.classList.contains('is-selected')) {
+        return JSON.stringify({ error: 'the second pick never selected' });
+      }
+      return JSON.stringify({ wraps: ${SCROLLERS_LIST} });
+    })()`));
+    if (repick.error) throw new Error(`[${theme}] ${repick.error}`);
+
+    /* Isolates the MutationObserver, which the arm above cannot: every natural
+       render also moves layout, so the ResizeObserver covers those paths too
+       and removing the watcher of the tree breaks nothing visible. This one
+       adds a wrap that changes the size of no box already observed -- taken
+       out of flow, sized from a constructed sheet, since users.html sends
+       style-src 'self' with no 'unsafe-inline' and a style= attribute would be
+       refused. A synthetic node, stated as such: the claim it binds is that
+       the pane notices a scroll box appearing in its result region, not that
+       this is how one appears. */
+    const injected = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync('#injectedWrap { position: absolute; left: -9999px; top: 0;' +
+        ' width: 120px; overflow-x: auto; }' +
+        '#injectedWrap table { width: 900px; table-layout: fixed; }');
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tbl-wrap';
+      wrap.id = 'injectedWrap';
+      wrap.setAttribute('data-gen', 'injected');
+      const table = document.createElement('table');
+      const caption = document.createElement('caption');
+      caption.className = 'sr';
+      caption.textContent = 'An injected table, not a rendered one';
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.textContent = 'x';
+      row.appendChild(cell);
+      table.appendChild(caption);
+      table.appendChild(row);
+      wrap.appendChild(table);
+
+      const before = { clientWidth: 0, scrollWidth: 0 };
+      document.getElementById('lookupResult').appendChild(wrap);
+      before.clientWidth = wrap.clientWidth;
+      before.scrollWidth = wrap.scrollWidth;
+      /* Read before anything could have run: the pane has no call site on this
+         path, so an attribute here would mean the probe dressed it itself. */
+      const atBirth = wrap.getAttribute('tabindex');
+      await sleep(600);
+      const out = {
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        overflows: wrap.scrollWidth > wrap.clientWidth,
+        atBirth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+        role: wrap.getAttribute('role'),
+        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
+      };
+      wrap.remove();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+      return JSON.stringify(out);
+    })()`));
+
+    /* How long a clipping table stays unreachable after a repaint. The pane
+       has no synchronous call site -- it had one and it was measured doing
+       nothing, because a table is appended before its rows are -- so this is
+       the whole chain end to end: paint, MutationObserver, settle, measure,
+       attribute. Polled ten times faster than the settle so the arrival is
+       located rather than assumed, and it leaves the pane back in the picked
+       state the arm after it reads. */
+    const immediate = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const id = document.getElementById('lookupIdentifier');
+      id.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      let seen = null;
+      for (let i = 0; i < 400; i++) {
+        const wrap = document.querySelector('#lookupResult .tbl-wrap');
+        if (wrap && wrap.scrollWidth > wrap.clientWidth) {
+          seen = { pollsWaited: i, timeline: [],
+            clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+            tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+            role: wrap.getAttribute('role') };
+          for (let j = 0; j < 80; j++) {
+            seen.timeline.push([j * 10, wrap.hasAttribute('tabindex'),
+              wrap.tabIndex, wrap.getAttribute('role')]);
+            if (wrap.hasAttribute('tabindex')) break;
+            await sleep(10);
+          }
+          break;
+        }
+        await sleep(10);
+      }
+      const btn = document.querySelector('.match-row-btn');
+      if (btn) btn.click();
+      await sleep(900);
+      return JSON.stringify(seen || { missing: true });
+    })()`));
+
+    /* Isolates the observation of the TABLE, which every rendered arm leaves
+       redundant: on a rendered path the tree moves too, so the tree watcher
+       covers it.
+
+       Measured, not reasoned: the first version of this arm grew a cell in the
+       real Devices table and the pane still marked it with the table's
+       observation deleted. The reason is worth keeping. A box that starts
+       clipping grows a horizontal scrollbar, and in this browser that
+       scrollbar takes 17.25px of the WRAP's own height (85.75 -> 103), so the
+       wrap's own observation sees every fits-to-clips transition a real table
+       can make. Isolation by geometry has to hold in both dimensions, and the
+       check that missed it read clientWidth only.
+
+       So: overflow-x: scroll, which reserves the gutter up front and leaves
+       the wrap's box still while the table inside it grows. The growth is a
+       write to an existing Text node's .data, a characterData record, and the
+       pane's MutationObserver takes childList and subtree only. Synthetic and
+       stated as such; out of flow and sized from a constructed sheet because
+       users.html sends style-src 'self' with no 'unsafe-inline'.
+
+       The isolation is then asserted rather than inferred: the arm runs its
+       own ResizeObserver over the same two elements and reports which of them
+       actually fired. */
+    const grown = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync('#growWrap { position: absolute; left: -9999px; top: 0;' +
+        ' width: 300px; overflow-x: scroll; }' +
+        '#growWrap table { table-layout: auto; white-space: nowrap; }');
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tbl-wrap';
+      wrap.id = 'growWrap';
+      const table = document.createElement('table');
+      const caption = document.createElement('caption');
+      caption.className = 'sr';
+      caption.textContent = 'A table that grew inside a still box';
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.textContent = 'x';
+      row.appendChild(cell);
+      table.appendChild(caption);
+      table.appendChild(row);
+      wrap.appendChild(table);
+      document.getElementById('lookupResult').appendChild(wrap);
+      await sleep(600);
+
+      const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width * 100) / 100, h: Math.round(r.height * 100) / 100 };
+      };
+      const before = {
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+        wrap: rect(wrap), table: rect(table),
+      };
+
+      const fired = { wrap: 0, table: 0 };
+      const spy = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          if (e.target === wrap) fired.wrap++;
+          else if (e.target === table) fired.table++;
+        }
+      });
+      spy.observe(wrap);
+      spy.observe(table);
+      await sleep(200);
+      fired.wrap = 0;
+      fired.table = 0;
+
+      const text = [...cell.childNodes].find((n) => n.nodeType === 3);
+      /* Non-breaking spaces so the cell cannot answer by wrapping. */
+      text.data = 'W\u00a0'.repeat(120);
+      await sleep(600);
+      spy.disconnect();
+
+      const out = {
+        before, fired,
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        wrap: rect(wrap), table: rect(table),
+        overflows: wrap.scrollWidth > wrap.clientWidth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+        role: wrap.getAttribute('role'),
+        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
+      };
+      out.boxMoved = out.wrap.w !== before.wrap.w || out.wrap.h !== before.wrap.h;
+      wrap.remove();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+      return JSON.stringify(out);
+    })()`));
+
+    /* The other half of the same isolation. watchScroller observes the wrap
+       AND the table inside it, and on every rendered path both boxes move at
+       once -- a viewport change resizes the card and re-lays the table -- so
+       either observation alone covers the other and neither is bound by a
+       rendered arm. The arm above moves the table under a still wrap; this one
+       moves the wrap under a still table, which only the wrap's own
+       observation can see.
+
+       Synthetic, and stated as such, because no real width does this: a card
+       narrow enough to clip also re-lays the table inside it. Out of flow and
+       sized from a constructed sheet for the same reason the injected arm is
+       -- users.html sends style-src 'self' with no 'unsafe-inline'. It is
+       appended wide and left to be seen (the tree watcher's job), then
+       narrowed with no tree change at all, which is the ResizeObserver's. */
+    const squeezed = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sheet = new CSSStyleSheet();
+      const at = (w) => '#squeezeWrap { position: absolute; left: -9999px; top: 0;' +
+        ' width: ' + w + 'px; overflow-x: auto; }' +
+        '#squeezeWrap table { width: 900px; table-layout: fixed; }';
+      sheet.replaceSync(at(1200));
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tbl-wrap';
+      wrap.id = 'squeezeWrap';
+      const table = document.createElement('table');
+      const caption = document.createElement('caption');
+      caption.className = 'sr';
+      caption.textContent = 'A table whose box was squeezed, not a rendered one';
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.textContent = 'x';
+      row.appendChild(cell);
+      table.appendChild(caption);
+      table.appendChild(row);
+      wrap.appendChild(table);
+      document.getElementById('lookupResult').appendChild(wrap);
+
+      await sleep(600);
+      const wide = {
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        tableWidth: table.getBoundingClientRect().width,
+        tableHeight: table.getBoundingClientRect().height,
+        overflows: wrap.scrollWidth > wrap.clientWidth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+      };
+      /* Same instrument as the arm above: which observation could have seen
+         this, measured rather than argued. */
+      const fired = { wrap: 0, table: 0 };
+      const spy = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          if (e.target === wrap) fired.wrap++;
+          else if (e.target === table) fired.table++;
+        }
+      });
+      spy.observe(wrap);
+      spy.observe(table);
+      await sleep(200);
+      fired.wrap = 0;
+      fired.table = 0;
+      /* No node added, removed or re-parented: the tree watcher cannot see
+         this, and the table's own box is fixed at 900px so its observation has
+         nothing to report either. */
+      sheet.replaceSync(at(120));
+      await sleep(600);
+      spy.disconnect();
+      const out = {
+        wide, fired,
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        tableWidth: table.getBoundingClientRect().width,
+        tableMoved: table.getBoundingClientRect().width !== wide.tableWidth
+          || table.getBoundingClientRect().height !== wide.tableHeight,
+        overflows: wrap.scrollWidth > wrap.clientWidth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+        role: wrap.getAttribute('role'),
+        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
+      };
+      wrap.remove();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+      return JSON.stringify(out);
+    })()`));
+
+    /* Back to the width the affordance is not supposed to exist at. Nothing
+       else in this run goes from clipping to fitting, and an invariant
+       asserted only in the direction that adds the attribute is half an
+       invariant: the arm that takes it off again has to be driven too. */
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width: 1280, height: 1600, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 400));
+    const scrollersRewide = JSON.parse(await evaluate(SCROLLERS));
+
     census[theme] = { styles, textContrast, narrow,
+      scrollers: { wide: scrollersWide, narrow: scrollersNarrow, keyboard,
+        repick: repick.wraps, injected, immediate, grown, squeezed,
+        rewide: scrollersRewide },
       graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
@@ -1069,5 +1491,299 @@ for (const theme of THEMES) {
         `${s.where} reads ${s.ratio}:1 — ink ${s.ink} on the painted stack ` +
         `rgb(${s.backdrop.map(Math.round).join(', ')}) sampled over ${s.pixels} text pixels`);
     }
+  });
+}
+
+/* ------------------------------------------- a scroll box a keyboard can use
+
+   Stadiora/Aria#10822. `overflow-x: auto` makes the columns past the card's
+   edge reachable with a pointer and with nothing else: a div is not focusable
+   by default, and a box that cannot be focused cannot be scrolled from a
+   keyboard. WCAG 2.1 SC 2.1.1.
+
+   The pane sets the three attributes only while the box actually scrolls, so
+   both arms are asserted: present where it clips, ABSENT where it does not.
+   The second arm is the one that keeps the fix from becoming a row of dead tab
+   stops at desktop width, and it is assertable here only because the same run
+   measures the same four boxes at two widths.
+
+   NOT COVERED, deliberately:
+     - the wrap's POSITION in the tab sequence. That it is reachable is bound
+       below; that it is reached in a sensible order is not.
+     - overflow under half a pixel. clientWidth and scrollWidth are integers,
+       so a hairline clip is invisible to the pane's own condition and to this
+       check alike. The pane errs towards the tab stop for that reason.
+     - the pane painted while hidden. A display:none box measures 0/0 and reads
+       as not scrolling. The pane's ResizeObserver does fire when such a box is
+       shown and gains a size, so the mechanism covers it; nothing here binds
+       that, because the shell draws this pane only when it is the active one.
+     - every other pane. ops/assets/pane-run-history-v2.js has the same defect
+       and is held by another agent; #10822 stays open against it.
+     - either observation of watchScroller ALONE, on a rendered path. The pane
+       observes each wrap and the table inside it, and every real path moves
+       both boxes at once, so on a rendered arm either one covers the other and
+       neither is bound. The two arms that isolate them are therefore both
+       synthetic and say so. The load-bearing reason is worth keeping: a box
+       that starts clipping grows a horizontal scrollbar, and in this browser
+       that takes 17.25px of the WRAP's own height, so even "the table grew
+       inside a card that did not move" is visible to the wrap's observation
+       unless the gutter is reserved up front.
+     - the pre-fix state, as an OUTCOME, on this browser. Chrome has focused
+       scroll containers natively since 127, so on the harness browser a wrap
+       with no tabindex still focuses, still scrolls on ArrowRight and still
+       draws a ring. The two arms that drive a keyboard are outcome checks
+       inside that confound: they assert the attribute first, so they fall
+       with the fix, but what they DEMONSTRATE is that the box works here, not
+       that it would work without the fix elsewhere. The browsers where the
+       #10822 defect is live -- Firefox, Safari, Chrome before 127 -- are not
+       driven by anything in this repository. */
+
+for (const theme of THEMES) {
+  test(`[${theme}] at 375px every clipping table is a named region a keyboard can reach`, () => {
+    const wraps = census[theme].scrollers.narrow;
+    assert.ok(wraps.length >= 3,
+      `only ${wraps.length} scroll wrappers were drawn, so the pane did not reach ` +
+      'the populated state this arm reads');
+
+    const clipping = wraps.filter((w) => w.overflows);
+    assert.ok(clipping.length >= 1,
+      'no table clipped at 375px, so this assertion could not have failed from ' +
+      'what it names — the widths measured were ' +
+      wraps.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
+
+    for (const w of clipping) {
+      assert.equal(w.tabIndex, 0,
+        `the wrap holding "${w.caption}" clips ${w.scrollWidth - w.clientWidth}px and ` +
+        `reports tabIndex ${w.tabIndex}, so a keyboard cannot reach what it hides`);
+      assert.equal(w.role, 'region',
+        `the wrap holding "${w.caption}" is a tab stop with role ${JSON.stringify(w.role)}`);
+      assert.ok(w.accessibleName.length > 0,
+        `the wrap holding "${w.caption}" is a region with no accessible name, so a ` +
+        'reader landing on it is told "region" and nothing else');
+      assert.equal(w.accessibleName, w.caption,
+        `the region is named ${JSON.stringify(w.accessibleName)} while the table it ` +
+        `holds is captioned ${JSON.stringify(w.caption)}`);
+    }
+  });
+
+  test(`[${theme}] a table that fits is not a tab stop`, () => {
+    const seen = [];
+    for (const where of ['wide', 'narrow']) {
+      for (const w of census[theme].scrollers[where]) {
+        if (w.overflows) continue;
+        seen.push(`${where}:${w.caption}`);
+        assert.equal(w.hasTabindex, false,
+          `at ${where} width the wrap holding "${w.caption}" fits ` +
+          `(${w.clientWidth}/${w.scrollWidth}) and is still a tab stop, so a keyboard ` +
+          'user stops on a region that cannot move');
+        assert.equal(w.role, null,
+          `at ${where} width the wrap holding "${w.caption}" fits and still announces ` +
+          `role ${JSON.stringify(w.role)}`);
+      }
+    }
+    assert.ok(seen.length >= 1,
+      'every wrap clipped at both widths, so this arm asserted nothing; the ' +
+      'conditional half of the fix is unbound in this run');
+  });
+
+  test(`[${theme}] arrow keys actually scroll the box they focus`, () => {
+    const k = census[theme].scrollers.keyboard;
+    assert.equal(k.present, true, 'no clipping wrap was found to drive at 375px');
+    /* First, because everything after it is available to an unfixed pane on
+       this browser and on no other. */
+    assert.equal(k.tabIndex, 0,
+      `the wrap holding "${k.caption}" was driven with a keyboard at tabIndex ` +
+      `${k.tabIndex}: Chrome focuses scroll containers natively since 127, so the ` +
+      'scrolling below happens with or without this fix here, and does not happen ' +
+      'at all in Firefox, in Safari, or in Chrome before 127');
+    assert.equal(k.focused, true,
+      `.focus() on the wrap holding "${k.caption}" did not move activeElement to it`);
+    assert.equal(k.before, 0, `the box started at scrollLeft ${k.before}`);
+    assert.ok(k.after > 0,
+      `eight ArrowRight presses on the focused wrap holding "${k.caption}" left ` +
+      `scrollLeft at ${k.after} with ${k.room}px of room, so the columns past the ` +
+      'edge stayed out of reach');
+    assert.equal(k.stillFocused, true,
+      'focus left the wrap during the presses, so what scrolled may not be it');
+  });
+
+  /* The affordance has to arrive on boxes that were not there when the pane
+     last painted, and leave when the window stops clipping them. Neither is
+     reachable from the two arms above: the first reads one render, the second
+     reads one width. */
+  test(`[${theme}] a table drawn after the first paint is reachable too`, () => {
+    const wraps = census[theme].scrollers.repick;
+    const fresh = wraps.filter((w) => w.fresh);
+    assert.ok(fresh.length >= 2,
+      `picking the second account replaced ${fresh.length} of the ${wraps.length} ` +
+      'wraps, so this arm cannot see a box the pane had never measured');
+
+    const clipping = fresh.filter((w) => w.overflows);
+    assert.ok(clipping.length >= 1,
+      'none of the replaced tables clipped at 375px, so this assertion could not ' +
+      'have failed from what it names — ' +
+      fresh.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
+
+    for (const w of clipping) {
+      assert.equal(w.tabIndex, 0,
+        `the wrap holding "${w.caption}" was drawn by the second pick, clips ` +
+        `${w.scrollWidth - w.clientWidth}px and reports tabIndex ${w.tabIndex}: ` +
+        'a box added without a size change anywhere is seen by nothing but a ' +
+        'watcher of the tree');
+      assert.equal(w.role, 'region',
+        `the newly drawn wrap holding "${w.caption}" is a tab stop with role ` +
+        `${JSON.stringify(w.role)}`);
+      assert.ok(w.accessibleName.length > 0,
+        `the newly drawn wrap holding "${w.caption}" is an unnamed region`);
+    }
+  });
+
+  test(`[${theme}] widening the window takes the tab stops back off`, () => {
+    const wraps = census[theme].scrollers.rewide;
+    assert.ok(wraps.length >= 3,
+      `only ${wraps.length} wraps were on the page after the width went back to 1280`);
+
+    const fitting = wraps.filter((w) => !w.overflows);
+    assert.ok(fitting.length >= 3,
+      'the tables still clipped at 1280px, so this arm never reached the state it ' +
+      'names — ' + wraps.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
+
+    for (const w of fitting) {
+      assert.equal(w.hasTabindex, false,
+        `the wrap holding "${w.caption}" fits again (${w.clientWidth}/${w.scrollWidth}) ` +
+        `and kept tabIndex ${w.tabIndex} from when it clipped: the stop is now dead`);
+      assert.equal(w.role, null,
+        `the wrap holding "${w.caption}" fits again and still announces ` +
+        `role ${JSON.stringify(w.role)}`);
+      assert.equal(w.accessibleName, '',
+        `the wrap holding "${w.caption}" fits again and still carries the name ` +
+        `${JSON.stringify(w.accessibleName)}`);
+    }
+  });
+
+  /* Binds the MutationObserver on its own. Every rendered path also moves
+     layout, so the ResizeObserver covers them and removing the tree watcher
+     breaks nothing visible; an injected box, taken out of flow, changes the
+     size of nothing already observed and can be seen by nothing else. */
+  test(`[${theme}] a scroll box injected into the result region is picked up`, () => {
+    const w = census[theme].scrollers.injected;
+    assert.equal(w.overflows, true,
+      `the injected wrap measured ${w.clientWidth}/${w.scrollWidth} and did not clip, ` +
+      'so this arm could not have failed from what it names');
+    assert.equal(w.atBirth, null,
+      'the injected wrap already carried a tabindex the instant it was appended, ' +
+      'so the probe dressed it rather than the pane');
+    assert.equal(w.tabIndex, 0,
+      `a wrap appended to #lookupResult that clips ${w.scrollWidth - w.clientWidth}px ` +
+      `still reports tabIndex ${w.tabIndex} 600ms later: nothing is watching the tree`);
+    assert.equal(w.role, 'region', `the injected wrap announces role ${JSON.stringify(w.role)}`);
+    assert.equal(w.accessibleName, 'An injected table, not a rendered one',
+      `the injected wrap is named ${JSON.stringify(w.accessibleName)}, which is not its caption`);
+  });
+
+  /* Binds the observation of the TABLE, which nothing else in this file
+     reaches. The gutter is reserved up front so the wrap's box cannot move,
+     the growth is a characterData write the tree watcher does not take, and
+     the arm carries its own ResizeObserver over both elements so "only the
+     table could have seen this" is a measurement rather than an argument. */
+  test(`[${theme}] a table that outgrows a box that did not move becomes reachable`, () => {
+    const g = census[theme].scrollers.grown;
+    assert.equal(g.before.hasTabindex, false,
+      `the grow wrap measured ${g.before.clientWidth}/${g.before.scrollWidth} and was ` +
+      'already a tab stop before anything grew, so this arm started in the state it ' +
+      'is supposed to produce');
+    assert.equal(g.overflows, true,
+      `growing the cell did not make the box clip (${g.clientWidth}/${g.scrollWidth})`);
+    assert.equal(g.boxMoved, false,
+      `the wrap's own box went ${JSON.stringify(g.before.wrap)} -> ${JSON.stringify(g.wrap)}, ` +
+      "so its own observation could have reported this and the table's is not isolated");
+    assert.equal(g.fired.wrap, 0,
+      `a ResizeObserver on the wrap fired ${g.fired.wrap} time(s) for this growth, so ` +
+      'the pane\'s observation of the wrap covers it and this arm binds nothing');
+    assert.ok(g.fired.table > 0,
+      'a ResizeObserver on the table did not fire at all, so nothing here was ' +
+      'observable and the arm cannot fail from what it names');
+    assert.equal(g.tabIndex, 0,
+      `the table grew to clip ${g.scrollWidth - g.clientWidth}px inside a box that did ` +
+      `not move and the wrap still reports tabIndex ${g.tabIndex}: nothing is ` +
+      'observing the table itself');
+    assert.equal(g.role, 'region', `it announces role ${JSON.stringify(g.role)}`);
+    assert.equal(g.accessibleName, 'A table that grew inside a still box',
+      `it is named ${JSON.stringify(g.accessibleName)}, which is not its caption`);
+  });
+
+  /* The mirror image, binding the observation of the WRAP: its box narrows
+     under a table whose own box does not move, with no tree change at all.
+     Synthetic, and could not be otherwise -- a real card that narrows also
+     re-lays the table inside it, which is why these two observations cover for
+     each other on every rendered path. Same instrument as the arm above. */
+  test(`[${theme}] a box that shrinks under a table that did not becomes reachable`, () => {
+    const q = census[theme].scrollers.squeezed;
+    assert.equal(q.wide.hasTabindex, false,
+      `the squeeze wrap was a tab stop at ${q.wide.clientWidth}px wide ` +
+      `(${q.wide.clientWidth}/${q.wide.scrollWidth}), before anything was squeezed`);
+    assert.equal(q.overflows, true,
+      `narrowing the wrap to ${q.clientWidth}px did not make it clip ` +
+      `(${q.clientWidth}/${q.scrollWidth})`);
+    assert.equal(q.tableMoved, false,
+      `the table's own box moved (${q.wide.tableWidth} -> ${q.tableWidth} wide), so the ` +
+      "table's observation could have reported this and the wrap's is not isolated");
+    assert.equal(q.fired.table, 0,
+      `a ResizeObserver on the table fired ${q.fired.table} time(s) for this squeeze, ` +
+      'so the pane\'s observation of the table covers it and this arm binds nothing');
+    assert.ok(q.fired.wrap > 0,
+      'a ResizeObserver on the wrap did not fire at all, so nothing here was ' +
+      'observable and the arm cannot fail from what it names');
+    assert.equal(q.tabIndex, 0,
+      `the wrap narrowed under a still table until it clipped ` +
+      `${q.scrollWidth - q.clientWidth}px and still reports tabIndex ${q.tabIndex}: ` +
+      'nothing is observing the box itself');
+    assert.equal(q.role, 'region', `it announces role ${JSON.stringify(q.role)}`);
+    assert.equal(q.accessibleName, 'A table whose box was squeezed, not a rendered one',
+      `it is named ${JSON.stringify(q.accessibleName)}, which is not its caption`);
+  });
+
+  /* The whole chain, timed: paint, MutationObserver, settle, measure, write.
+     A ceiling rather than an instant, because the settle is deliberate. */
+  test(`[${theme}] a repainted table becomes reachable within one settle`, () => {
+    const im = census[theme].scrollers.immediate;
+    assert.ok(!im.missing,
+      're-running the lookup drew no clipping table, so the arrival of the ' +
+      'affordance was never timed');
+    const arrived = im.timeline.find((t) => t[1]);
+    assert.ok(arrived,
+      `the repainted wrap (${im.clientWidth}/${im.scrollWidth}) was still not a tab ` +
+      `stop ${im.timeline.length * 10}ms after it appeared`);
+    assert.ok(arrived[0] <= 400,
+      `the repainted wrap became reachable ${arrived[0]}ms after it appeared, which is ` +
+      'longer than the 140ms settle it should be waiting on');
+    assert.equal(arrived[2], 0, `it arrived with tabIndex ${arrived[2]}`);
+    assert.equal(arrived[3], 'region', `it arrived with role ${JSON.stringify(arrived[3])}`);
+  });
+
+  /* A box that has just become focusable has to show that it is focused:
+     WCAG 2.4.7, and the fix above is what puts focus there in the first place.
+     The ring is aria.css:180's global one, measured rather than assumed.
+
+     NOT its offset. aria.css draws every ring at outline-offset 2px, and four
+     v2 pane sheets pull theirs inside with a `:focus-visible` rule of their
+     own; this sheet has no such rule, so the ring sits 2px outside the box.
+     Measured on this pane the box is flush with its card body and nothing
+     clips the ring, so it is visible on all four sides -- a refinement, not a
+     defect. Adding the rule is a paired edit with ops/README.md's derived
+     `claims id=table-focus-rings` block, which another agent holds. */
+  test(`[${theme}] the newly focusable scroll box draws a focus ring`, () => {
+    const k = census[theme].scrollers.keyboard;
+    assert.equal(k.tabIndex, 0,
+      `the box drawing this ring reports tabIndex ${k.tabIndex}: on this browser a ` +
+      'scroll container takes focus natively, so a ring here is not evidence the ' +
+      'pane put the focus within reach');
+    assert.equal(k.focusVisible, true,
+      `the wrap holding "${k.caption}" did not match :focus-visible after eight real ` +
+      'key presses, so a keyboard user has no mark of where they are');
+    assert.notEqual(k.outlineStyle, 'none',
+      'the focused scroll box draws no outline at all');
+    assert.ok(k.outlineWidth > 0,
+      `the focused scroll box draws a ${k.outlineWidth}px outline`);
   });
 }

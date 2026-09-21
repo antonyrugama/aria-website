@@ -39,3 +39,10 @@ desktop.ini
 # runner this lands outside the repository. Same terms as the two entries above:
 # removed once Chrome has exited, ignored for the run interrupted before that.
 .ops-scroll-containment-*/
+
+# Chrome profile written by scripts/ops-users-rendered.test.mjs, on the same
+# terms as the entries above: removed once Chrome has exited, ignored for the
+# run interrupted before that. A battery run killed on a timeout left one of
+# these untracked in the root, which is one `git add -A` away from being
+# committed by whoever is working in the tree next.
+.ops-users-rendered-*/
