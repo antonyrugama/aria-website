@@ -711,7 +711,7 @@ const BLIND_SPOT_HEADING =
    and fails here, instead of dropping out of a list nobody counts.
 
    Bullets are reassembled across lines before the heading is read. A bullet
-   whose bold opener wraps — check-ops-narrow-overflow.mjs has two — is a
+   whose bold opener wraps — check-ops-narrow-overflow.mjs has one — is a
    heading this file silently dropped while the line-at-a-time version of this
    derivation was being written, which is the failure it exists to catch, one
    level up.
@@ -743,18 +743,45 @@ const BLIND_SPOT_HEADING =
    README's own summary of a section is prose and is not judged; what is judged
    is that the headings are all present, in order, and that neither count has
    moved. */
-/* The heading phrases the regex above actually recognises, read out of its own
-   source so the README cannot claim a wider net than the regex casts. A section
-   headed any other way is invisible to the bullet read AND to the whole-file
-   count below, which is the one direction that fails quietly. */
-function recognisedHeadings() {
-  const alt = /\(\?:([^()]*)\)\\b/.exec(BLIND_SPOT_HEADING.source);
-  assert.ok(alt, 'BLIND_SPOT_HEADING no longer ends in a (?:a|b|c) alternation');
-  return alt[1].split('|').map((phrase) => phrase.trim());
-}
+/* Exactly which heading lines the matcher above SEES, measured by asking it.
+
+   The first spelling of this parsed BLIND_SPOT_HEADING.source for its phrase
+   alternation and published that as "the net's real width". It was not. The
+   matcher has two dimensions, phrase AND comment marker, and the parse read one
+   substring of one of them: reverting the `/*` half of the marker group left
+   the published list identical, and a phrase added as a second top-level branch
+   rather than inside the group was matched by the regex and missing from the
+   list. Both are false greens and both were found by mutation, not by reading.
+
+   So nothing is parsed. Each spelling below is a concrete line handed to the
+   real predicate, and the census reports SEEN or INVISIBLE. Every spelling gets
+   a line either way: the INVISIBLE ones are the net's actual edge, published
+   rather than described, and a matcher that starts or stops seeing any of them
+   flips its line. The probes are the dimensions crossed -- three recognised
+   phrases and two unrecognised ones, against bare, indented, `*`, `/*` and `//`
+   markers, plus a mid-line mention that must stay INVISIBLE or the anchor has
+   come loose.
+
+   What this still does not bind: a spelling nobody thought to add to the table.
+   That is a smaller hole than a parse that reads one substring, and it is the
+   same hole every explicit test table has. */
+const HEADING_PROBES = [
+  'WHAT THIS DOES NOT COVER, in the words of what was measured:',
+  '   WHAT IT DOES NOT measure:',
+  '   NOT COVERED, on purpose',
+  '   not covered, in lower case',
+  ' * NOT COVERED, after a continuation marker',
+  '/* NOT COVERED, sharing the comment opener',
+  '/** NOT COVERED, sharing a doc-comment opener',
+  '// NOT COVERED, after a line comment',
+  '   WHAT THIS SWEEP CANNOT SEE:',
+  '   KNOWN GAPS:',
+  '   see NOT COVERED above for the two panes',
+];
 
 DERIVED['guard-blind-spots'] = () => [
-  `(headings recognised: ${recognisedHeadings().join(' | ')})`,
+  ...HEADING_PROBES.map((probe) =>
+    `(heading probe: ${JSON.stringify(probe)} = ${BLIND_SPOT_HEADING.test(probe) ? 'SEEN' : 'INVISIBLE'})`),
   ...BROWSER_GUARDS.flatMap((script) => {
   const headings = read(path.join('scripts', script))
     .split('\n').filter((l) => BLIND_SPOT_HEADING.test(l)).length;
