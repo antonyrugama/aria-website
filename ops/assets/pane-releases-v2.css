@@ -357,8 +357,67 @@
 }
 @media (max-width: 980px) {
   .pipe-row { grid-template-columns: minmax(0, 1fr); }
-  .pipe-track { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 14px; }
-  .pipe-step:nth-child(2)::before { display: none; }
+}
+
+/* The track turns vertical rather than wrapping.
+
+   It used to become a 2x2 grid here, with the connector after step 2 switched
+   off. That removed the rail dangling off the end of row one and left
+   something worse: two rows of two, both starting at the same left edge, each
+   with its own rail. One progression read as two, and "Released" read as the
+   start of a fresh one. For a release pipeline that is not a cramped layout,
+   it is a false statement — the single thing this pane exists to get right.
+   Stadiora/Aria#10826.
+
+   Wrapping is what made it false, so nothing here wraps. Four across survives
+   down to this breakpoint and the measurement is why 560 is the number: the
+   widest string in the track is .pipe-date's "20% of devices, 6 days
+   unchanged" at 113.8px, which needs a 125.8px column once .pipe-step's 12px
+   of padding-right is counted, so the track has to hold 503px, so the page has
+   to be about 535 wide. Under that the date is what breaks, not the stage
+   name — the widest of those is "Rolling out" at 59.8px and it still fits a
+   quarter of a 375px page.
+
+   Below it the four stages stack and the rail rotates to run down the column,
+   node to node, unbroken from the first stage to the last. A single vertical
+   rail cannot read as two progressions: there is only one line on the screen.
+   The node leaves the flow so the label and the date get the full width
+   beside it, which is the other half of the fix — at 375 neither string has
+   to wrap or truncate any more. */
+@media (max-width: 560px) {
+  .pipe-track { grid-template-columns: minmax(0, 1fr); }
+  /* min-height is what keeps the rail a rail. A stage carrying no date is
+     only its label tall, which left the run between two such nodes about 6px
+     — a dot rather than a connector, and four dots down a column read as a
+     dashed line, which is the spelling this sheet gives a stage that has not
+     been reached. The floor puts at least 18px of rail under every node. */
+  .pipe-step { padding-right: 0; padding-left: 32px; padding-bottom: 13px; min-height: 40px; }
+  .pipe-step:last-child { padding-bottom: 0; min-height: 22px; }
+  .pipe-node { position: absolute; left: 0; top: 0; }
+
+  /* Vertical now, so every property of the horizontal rail that would still
+     apply has to be unset by name: `right` and `height` are what the rules
+     above set, and leaving either in place draws the old bar across the node.
+     It starts at 22px, the node's own bottom edge, and ends at the padding
+     edge, which is exactly where the next step's node begins — no gap at
+     either end, because a gap under every node is the dotted reading again.
+     The horizontal rail needed one; it ran behind the nodes, and the node
+     fill is a 16% tint rather than an opaque disc, so a solid bar showed
+     through the glyph. Nothing runs behind a node here. */
+  .pipe-step::before {
+    left: 10px; right: auto;
+    top: 22px; bottom: 0;
+    width: 2px; height: auto;
+  }
+  .pipe-step.done::before {
+    left: 9.5px; right: auto;
+    top: 22px; bottom: 0;
+    width: 3px; height: auto;
+  }
+  .pipe-step.todo::before {
+    background: repeating-linear-gradient(180deg, var(--line-2) 0 4px, transparent 4px 8px);
+  }
+  .pipe-label { margin-top: 0; }
 }
 
 /* On a phone the widest segment holds about eight characters, so the chip

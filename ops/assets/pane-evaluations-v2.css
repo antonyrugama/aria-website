@@ -190,13 +190,12 @@ select.field-input { appearance: none; padding-right: 26px; }
    class outright, so no other .form-alert in the repository reaches this.
 
    shell-pane-v2.css:259 makes the opposite choice for that modal alert, and
-   its reasoning applies here word for word: this slot is `role="status"`, and
-   pane-evaluations.js reveals it and fills it in the same task, which is the
-   unreliable half of how a live region announces. Keeping `display: none`
-   re-commits to that. It is not a regression — before this sheet painted the
-   box, the user-agent `[hidden]` rule already did exactly this — and changing
-   it means changing the pane's JS, not this rule. Stated so the two sheets do
-   not look like they disagree by accident. */
+   this sheet now agrees with it: pane-evaluations.js no longer hides the
+   approval slot at all, so `#approval-result` never reaches this rule. It
+   collapses on `:empty` below instead, which keeps the live region in the
+   accessibility tree between answers (Stadiora/Aria#10809). The rule stays
+   because .form-alert is a shared class and a `hidden` one must still
+   disappear; it is simply not how the approval answer is emptied. */
 .form-alert[hidden] { display: none; }
 
 /* `is-ok` says the call came back, not that the news is good: the sentence it
@@ -216,6 +215,32 @@ select.field-input { appearance: none; padding-right: 26px; }
   background: color-mix(in srgb, var(--emerald) 10%, var(--surface-2));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--emerald) 26%, transparent);
 }
+
+/* The approval answer slot, present and still empty, has no extent.
+
+   This rule is what lets assets/pane-evaluations.js keep the region in the
+   document permanently. `role="status"` is announced by diffing a live region
+   between serialisations of the accessibility tree, so a region that only
+   appears at the moment it already holds its text is a region CREATION rather
+   than a change, and may be announced to nobody (Stadiora/Aria#10809). The
+   pane therefore never hides the slot — it empties it — and this rule pays
+   for that by taking the box's decoration off while it has nothing to say.
+   Without it the form would carry a permanent empty railed box.
+
+   `display` is deliberately untouched, and so is `visibility`: either would
+   take the region back out of the accessibility tree and put the defect
+   straight back while leaving the DOM looking correct. A zero `height` is
+   NOT in that list — a 0px-tall box is still rendered and still in the tree,
+   measured `ignored: false, role: status` at height 0 — but dropping padding,
+   shadow and border is enough to reach 0 here without asking for it.
+
+   Addressed by id rather than as `.form-alert:empty` for two reasons. The
+   class form also reaches the shell's own dialog alert, which is a shared
+   surface a pane sheet has no business restyling, and assets/shell-pane-v2.css
+   already collapses that one at :275 by the same argument. And 1,0,0 beats
+   `.form-alert.is-ok`, so the rail this has to switch off goes off wherever
+   the rule sits in the file, rather than only while it sits below. */
+#approval-result:empty { padding: 0; box-shadow: none; border-left-width: 0; }
 
 .q-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 
@@ -440,6 +465,60 @@ select.field-input { appearance: none; padding-right: 26px; }
 .u-list-end { display: flex; align-items: center; gap: 8px; }
 
 /* -------------------------------------------------------------- narrow */
+
+/* The folds. assets/pane-evaluations.js has the reasoning for why this pane
+   folds at all and why 900 is the width; this is only what it looks like.
+
+   .band-body exists because aria.css:365 makes .band a column flex container
+   with a 13px gap, so the bands' children were flex items spaced by their
+   parent. Moving them inside a wrapper would have collapsed every one of
+   those gaps to nothing at every width, desktop included. The wrapper
+   restores the container it interposed, exactly: same display, same
+   direction, same gap.
+
+   And it restores `display` under [hidden] too. `[hidden] { display: none }`
+   is a user-agent rule, so the author `display: flex` above beats it and the
+   attribute would have gone on being set and unset while every band stayed
+   open. Painting a box is how you stop `hidden` working. */
+.band-body { display: flex; flex-direction: column; gap: 13px; }
+.band-body[hidden] { display: none; }
+
+/* Above the fold width there is no control and nothing folded: the button is
+   out of the layout, out of the tab order and out of the accessibility tree,
+   and pane-evaluations.js shows every body. */
+.band-fold { display: none; }
+
+@media (max-width: 900px) {
+  /* Out of flow, so it cannot wrap onto a line of its own — .band-head is a
+     wrapping flex row (aria.css:366) and at 375 the title, the note and the
+     stamp already fill more than one line between them. Pinned to the top
+     right it is in the same place on every band, and the padding keeps the
+     title from running under it. */
+  .band > .band-head { position: relative; padding-right: 42px; }
+  .band-fold {
+    position: absolute; top: -4px; right: 0;
+    display: grid; place-items: center;
+    width: 36px; height: 36px;
+    padding: 0;
+    border: 0; border-radius: var(--r-sm, 8px);
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .band-fold:hover { background: var(--surface-2); color: var(--ink); }
+  .band-fold svg { width: 18px; height: 18px; transition: transform 140ms ease; }
+  /* The chevron points down at a band that will open downwards and up at one
+     already open. Rotation rather than two glyphs keeps it one element, so
+     the state cannot be half-applied. */
+  .band-fold[aria-expanded="true"] svg { transform: rotate(180deg); }
+}
+
+/* A chevron that spins is decoration on a state the attribute already
+   carries, and is not essential motion. */
+@media (prefers-reduced-motion: reduce) {
+  .band-fold svg { transition: none; }
+}
+
 @media (max-width: 1280px) {
   .u-score { grid-template-columns: minmax(0, 1fr) 110px 48px 78px; gap: 12px; }
 }
