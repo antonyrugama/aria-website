@@ -152,6 +152,18 @@ function deriveAnchor(before, after, file) {
   while (i < before.length && i < after.length && before[i] === after[i]) i++;
   const line = before.slice(0, i).split('\n').length;
   const head = before.slice(0, i);
+  const lineStart = head.lastIndexOf('\n') + 1;
+  const lineEnd = before.indexOf('\n', i) === -1 ? before.length : before.indexOf('\n', i);
+  const lineText = clip(before.slice(lineStart, lineEnd).trim());
+
+  /* The scope walk below reads CSS. Run over a JS file it produces something
+     worse than nothing: sibling array elements end in commas too, so the
+     selector-list walk-back swallowed six entries and published a row naming
+     `Coaching tone` for a payload that changed `Language quality, Portuguese`.
+     That is the exact defect this derivation exists to prevent, so outside a
+     stylesheet the anchor is the line itself, which is what a reader can
+     check. */
+  if (!file.endsWith('.css')) return { line, selector: null, lineText, file };
   let depth = 0;
   let selector = '(file scope)';
   for (let j = head.length - 1; j >= 0; j--) {
@@ -170,14 +182,16 @@ function deriveAnchor(before, after, file) {
           if (!head.slice(prevStart, prevEnd).trim().endsWith(',')) break;
           start = prevStart;
         }
-        selector = head.slice(start, j).trim().replace(/\s+/g, ' ');
+        selector = clip(head.slice(start, j).trim().replace(/\s+/g, ' '));
         break;
       }
       depth--;
     }
   }
-  return { line, selector, file };
+  return { line, selector, lineText, file };
 }
+
+function clip(t) { return t.length > 120 ? `${t.slice(0, 117)}...` : t; }
 
 /* ---------------------------------------------------------------- running */
 
@@ -329,7 +343,10 @@ lines.push('');
 lines.push('| # | File | Anchor (original gating) | Payload | Expect | Result | Killed by |');
 lines.push('|---|---|---|---|---|---|---|');
 for (const r of rows) {
-  const anchor = r.anchor ? (r.anchor.line ? `\`${r.anchor.file}:${r.anchor.line}\` in \`${r.anchor.selector}\`` : `\`${r.anchor.file}\` ${r.anchor.selector}`) : '—';
+  const anchor = !r.anchor ? '—'
+    : !r.anchor.line ? `\`${r.anchor.file}\` ${r.anchor.selector}`
+    : r.anchor.selector ? `\`${r.anchor.file}:${r.anchor.line}\` in \`${r.anchor.selector}\``
+    : `\`${r.anchor.file}:${r.anchor.line}\`, on \`${r.anchor.lineText}\``;
   const killed = r.r.failed.length ? r.r.failed.map((f) => `\`${f}\``).join('<br>') : '—';
   lines.push(`| ${r.id} | ${r.file ? `\`${r.file}\`` : '—'} | ${anchor} | ${r.why} | ${r.expect} | **${r.scored}** (exit ${r.r.status}, ${r.r.passes ?? '?'} pass / ${r.r.fails ?? '?'} fail) | ${killed} |`);
 }
