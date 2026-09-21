@@ -1110,12 +1110,16 @@ async function openReauth(options) {  const opts = options || {};
    match at rest, and went past in silence.
 
    NOT COVERED: a declaration that reaches the dialog through a selector
-   naming NONE of the classes, ids or attribute names this tree carries — a
-   bare type selector (`input { … }`), a universal, or an attribute this tree
-   does not have. The candidate filter never considers those rules, in EITHER
-   sweep -- this one and the pane-sheet outranking sweep share one filter, so
-   they agree on what is out of scope rather than one refusing what the other
-   ignores. It reads ids and attribute names as well as classes, and collects
+   naming NONE of the classes, ids, attribute names or TYPE names this tree
+   carries — a universal selector, or an attribute this tree does not have.
+   A bare type selector used to sit here too; it does not any more, because
+   aria.css:165 ships `button, input, select, textarea { font: inherit; }`
+   straight at the field, and dropping it meant `input { font-size: 11px
+   !important; }` rendered at 11px with the suite green (round eight). The
+   candidate filter never considers what is left, in EITHER sweep -- this one
+   and the pane-sheet outranking sweep share one filter, so they agree on
+   what is out of scope rather than one refusing what the other ignores. It
+   reads ids, attribute names and type names as well as classes, and collects
    them from the dialog's ancestors as well as from the dialog, because
    `#reauthPassword` and `[type="password"]` are on the field and
    `[data-theme]` is on <html>; a classes-only filter dropped all three.
@@ -1388,6 +1392,7 @@ function cssRules(src, sheet) {
 
 function declarations(rule) {
   const map = new Map();
+  let di = 0;
   let depth = 0;
   let start = 0;
   const parts = [];
@@ -1421,7 +1426,13 @@ function declarations(rule) {
        they tie on specificity AND order and the later declaration wins. Round
        seven: `{ font-size: 16px; font: inherit; }` tied, so the shorthand pass
        could not see the shorthand win and answered the stale 16px. */
-    map.set(part.slice(0, at).trim(), { value, di: map.size });
+    /* A RUNNING counter, not `map.size`: a repeated declaration overwrites in
+       place and the map does not grow, so `map.size` collapsed the repeat's
+       index onto the next distinct property. `{ font-size: 16px; font-size:
+       16px; font: inherit; }` tied the shorthand with the longhand it resets
+       and the refusal below never fired. Round eight. */
+    di += 1;
+    map.set(part.slice(0, at).trim(), { value, di });
   }
   return map;
 }
