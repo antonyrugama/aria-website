@@ -46,3 +46,9 @@ desktop.ini
 # these untracked in the root, which is one `git add -A` away from being
 # committed by whoever is working in the tree next.
 .ops-users-rendered-*/
+
+# Scratch directory written by scripts/ops-painter-exit.test.mjs: the stub
+# browser it spawns, that stub's pid file, and the TMPDIR it points the
+# launch under test at. Same terms as the entries above: removed when the case
+# finishes, ignored for the run interrupted before that.
+.ops-painter-exit-*/
