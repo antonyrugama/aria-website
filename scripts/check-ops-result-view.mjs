@@ -1784,8 +1784,32 @@ const probeFor = (markers) => `(() => {
         walk(n);
       }
     };
+    /* content-visibility:hidden ABOVE the carrier, which the walk cannot see
+       from inside and a Range cannot see at all: a skipped subtree keeps
+       reporting the rects it had when it was visible, so every text node in
+       it measures as placed. Round 10's DCONTCV payload is exactly that —
+       display:contents on the carrier, content-visibility:hidden on its row —
+       and it went green under the first version of this walk, caught by this
+       file's own battery rather than by a reviewer. The property does not
+       inherit, so it is looked for by name up the chain; visibility does
+       inherit, so the computed value read per element already carries it.
+       A skipped content-visibility:auto ancestor is asked through
+       checkVisibility(), of the carrier and only when the carrier has a box,
+       since that call reports false for a display:contents element. */
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      if (getComputedStyle(n).contentVisibility === 'hidden') {
+        drawnCache.set(el, '');
+        return '';
+      }
+    }
+    const ownBox = el.getBoundingClientRect();
+    if ((ownBox.width > 0 || ownBox.height > 0) && typeof el.checkVisibility === 'function'
+      && !el.checkVisibility({ contentVisibilityAuto: true })) {
+      drawnCache.set(el, '');
+      return '';
+    }
     const own = getComputedStyle(el);
-    if (own.display !== 'none' && own.contentVisibility !== 'hidden') walk(el);
+    if (own.display !== 'none') walk(el);
     const text = flat(out);
     drawnCache.set(el, text);
     return text;
