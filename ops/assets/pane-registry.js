@@ -107,8 +107,8 @@
       file: 'run-history.html', icon: 'history', label: 'What happened', group: 'Right now',
       railId: 'history',
       question: 'Why did this fail, and is it happening to other people?',
-      /* The window is real: the pane applies it to the problems that came
-         back, and every figure is labelled with it. The app and environment
+      /* The window is real: the route counts and lists over it, and every
+         figure on the pane is labelled with it. The app and environment
          controls were not, for the same two reasons as Happening now above.
          Custom is gone from the window list for the reason it is absent from
          the two panes below: this bar carries a range name and nothing else,
@@ -116,8 +116,14 @@
          could reach was a refusal card. A value whose one answer is a refusal
          is an option in name only. */
       wave: 'W2', scope: false, range: ['24h', '7d', '30d'], rangeDefault: '7d', env: false,
-      filterNote: 'The alerting record is kept per request type and covers production only, ' +
-        'so there is no app or environment filter'
+      /* Reworded when the pane stopped drawing the alerting record and started
+         drawing the runs. The old note described a filter set that is still
+         absent for a different reason: the run record carries no client app
+         and no environment, so there is nothing an app control could narrow.
+         Request type and outcome are on the pane itself, built from what the
+         window actually holds. Stadiora/Aria#5563. */
+      filterNote: 'The run record carries no app or environment, so request type and ' +
+        'outcome are the narrowings — both are on the pane'
     },
     alerts: {
       file: 'alerts.html', icon: 'alerts', label: 'Problems', group: 'Right now',

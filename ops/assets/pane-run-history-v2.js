@@ -1,128 +1,133 @@
 /* What happened: why did this fail, and is it happening to other people?
 
-   WHAT THIS PANE CAN ACTUALLY ANSWER TODAY, AND WHAT IT CANNOT
+   WHAT CHANGED, AND WHY THE OLD DOCBLOCK IS GONE
 
-   There is no per-run record behind this page. Nothing serves one: app-backend
-   mounts no route that lists runs, their durations, their stages or their
-   memory, so every figure of that kind is absent rather than zero. What does
-   exist is the alerting record — the problems the watchers raised and the
-   rules that raised them — and that is a real, if narrower, answer to "what
-   happened": it is every failure anybody was watching for.
+   This pane used to say, at the top of this file, that there was no per-run
+   record behind it and nothing served one. That was true and it is no longer:
+   Stadiora/Aria#5561 landed job_lifecycle_events, an append-only log of every
+   transition a generation job makes, and #5563 put GET /api/ops/runs over it.
+   The alerting record this pane used to draw is still real and still worth
+   reading, but it lives on the Problems pane, which owns it. This page now
+   draws the runs themselves.
 
-   So this pane draws the alerting record and NAMES the rest as missing, in a
-   band of its own, rather than drawing an empty chart where a figure would go.
-   An operator who cannot tell "nothing failed" from "nothing was recorded" has
-   been told nothing, and the more confident of the two readings is the wrong
-   one.
+   WHAT IT READS
 
-   THE SIX GUARANTEES THIS PANE MAKES TO THE ATHLETE, and where each is on
-   screen. They are the same six the Look up a user pane makes, because a
-   guarantee that means one thing on one pane and something else on the next is
-   not a guarantee. Each is a sentence somebody can read as well as a property
-   of the code, and scripts/ops-run-history-v2.test.mjs asserts the sentence
-   and the mechanism separately: a sentence that outlives the thing it
-   describes is the worse of the two failures.
+     GET /api/ops/runs ?range&type&outcome&limit
+       -> { data: { window, selection, coverage, summary, facets,
+                    failures[], runs[], truncated } }
 
-     1. coded references by default
-        -> coded(), which masks address-shaped text before it reaches the DOM,
-           whatever the API sent, on every payload string this pane draws
-     2. what was asked, what Aria answered, and personal details are hidden for
-        every role, the owner included, until a reveal is recorded
-        -> disclosure(), which refuses run content at every role, plus the
-           three locked rows in the privacy band
-     3. a reveal is owner only and needs a written reason
-        -> no reveal control exists here at any role. The band says where one
-           is recorded and links to it
-     4. a reveal is recorded by field name, never by content
-        -> the locked rows carry field NAMES and no value node at all
-     5. the athlete can see that it happened and who did it
-        -> the band's note, and the link to the pane that holds the record
-     6. records outlive the reveal and cannot be erased by one
-        -> the band foot: kept for the life of the account
+     GET /api/ops/runs/:jobId ?range
+       -> { data: { window, run, stages[], stagesTruncated, shared } }
 
-   Guarantees 3 and 5 are mechanisms on the Look up a user pane rather than
-   here, and the wording says so rather than implying this page performs them.
-   A control that cannot succeed is worse than no control, so this pane draws
-   none: PR #58 settled that. PR #32 settled that reveal 'never' dominates
-   masked false; this pane has no branch that prints a value at all, so that
-   contest cannot arise here, and nothing below weakens it where it does.
+   The second read only happens when an operator opens a run, and its failure
+   degrades this pane rather than emptying it: the window above it is still
+   true.
 
-   WHAT THIS PANE READS
+   THREE EMPTIES, AND WHY THEY MUST NOT LOOK ALIKE
 
-     GET /api/ops/alerts/problems ?status=all&limit=100
-       -> { data: { problems[], summary } }
+   coverage.state is the whole reason this pane can be trusted, and it has
+   three values because there are three different things an empty screen can
+   mean:
 
-       problems[]  the shape assets/alerts-model.js is written against:
-                   { reference, ruleKey, ruleTitle, ruleThreshold, severity,
-                     category, categoryLabel, status, title, summary,
-                     scopeKey, scopeLabel, observedValue, thresholdValue,
-                     firstBreachedAt, firedAt, lastObservedAt,
-                     conditionClearedAt, acknowledgedAt, closedAt, closeReason }
+     never_recorded  the table holds nothing at all. The writer may never have
+                     deployed. This is NOT "no runs failed" and the pane says
+                     so in its own words, with no figures under it.
+     partial         recording started inside the window being read. The
+                     figures are real but they do not cover the whole window,
+                     and the pane says from when.
+     ready           the record reaches back past the start of the window. An
+                     empty window here is a genuinely quiet one.
 
-       The route takes no window. It orders worst first and then oldest and
-       stops at a page, so a full page is not "the most recent hundred" — it is
-       the hundred worst. Every count taken from a full page is therefore a
-       floor, and the window this pane applies on top of it can be missing
-       entries that fall inside it. Both facts are printed rather than assumed
-       away.
+   A pane that printed "0 failed" over the first of those would be telling an
+   operator the system is healthy using data it never received. PR #98 fought
+   this on the Overview pane and PR #106 found the same shape in a source scan;
+   this is the same rule, applied to a different read.
 
-     GET /api/ops/alerts/rules
-       -> { data: { rules[], channels[] } }
+   WHAT IS ABSENT RATHER THAN ZERO
 
-       Read only to answer "was anything watching". A window with no failures
-       in it is good news only if something was in a position to notice one,
-       and this read is the difference between the two. Its failure degrades
-       the pane rather than emptying it.
+   Every figure that can be unmeasured is drawn as words when it is. A median
+   nobody could measure prints "Not measured", never 0ms, and every median
+   carries the count it was taken over, because a p50 over 3 of 4,000 runs is
+   not the same claim as a p50 over 4,000. Runs with no recorded duration keep
+   an em dash. The API sends null for all of these and this pane never coalesces
+   one to a number.
 
-   THE FILTER BAR
+   THE REFRESH MECHANISM, AND WHAT STOPS IT WHEN THE OPERATOR LEAVES
 
-   The registry gives this pane a window control and nothing else. The window
-   is real: it is applied here, to the problems that came back, and every
-   figure on the page is labelled with it.
+   Nothing is started, so nothing has to be stopped.
 
-   The app and environment controls used to be declared too, and neither could
-   act on the read:
+   This pane reads once per selection: on load, when the window changes, when
+   the request type or outcome changes, and when somebody presses Read again.
+   There is no timer, no interval and no visibility listener. That is a
+   deliberate choice rather than an omission, and it is the right one for this
+   page specifically: this is the past tense. A run that finished is finished,
+   and re-reading a 7-day window every thirty seconds spends a database read to
+   redraw the same rows. Happening now (#5562) is the pane that must move on
+   its own, because the thing it draws moves on its own.
 
-     app scope     the record is kept per request type, not per app, so no
-                   selection narrowed it, and the pane printed a note saying so
-     environment   there is no staging alerting record, so a staging selection
-                   was refused rather than answered
+   It also settles a class of bug this dashboard has already had: a pane that
+   starts an interval and does not stop it keeps reading after the operator has
+   gone (#5543). The strongest version of "what stops it" is that there was
+   never anything running. The read is stamped instead, so the operator can see
+   how old the figures are, and Read again is one press away.
 
-   Both are gone from the registry rather than explained underneath, and so is
-   the custom window, which had no start and no end to be given and could only
-   ever reach a refusal card. A pane that answers a selection it cannot act on
-   has the operator's own choice sitting above figures that ignore it; a pane
-   that draws a control it can only refuse has said the narrowing is within
-   reach. Not drawing either is the answer to both. */
+   WHAT THIS PANE STILL CANNOT ANSWER, AND WHY
+
+   Named on screen in a band of its own rather than drawn as an empty figure,
+   because an operator who does not know a figure is missing assumes it was
+   fine. All four are facts about the storage:
+
+     what a run cost      job_lifecycle_events records no price. The approved
+                          mock shows a per-run dollar figure; there is nothing
+                          behind it, and an invented one is worse than a gap.
+     who it was for       deliberate, and the strongest of the four. See below.
+     which app asked      neither job_lifecycle_events nor generation_jobs
+                          carries a client app or an environment, so a facet
+                          by app would be a control narrowing nothing.
+     refused              the mock shows Refused as a fourth outcome. Storage
+                          has three terminal states and a safety refusal is not
+                          one of them; a refused request completes.
+
+   NO ACCOUNT IDENTITY IS PUBLISHED AT ALL
+
+   Not masked here, not coded here: never sent. The route names user_id only
+   inside COUNT(DISTINCT ...), so the only thing that crosses the wire about
+   people is how many of them a fault reached.
+
+   That is a stronger guarantee than the one this pane used to make, and the
+   reason is worth writing down: job_lifecycle_events has no consent column.
+   Client telemetry is gated at ingest; this table is not, so there is no flag
+   a faceted search could be filtered on. A pane that published identities and
+   filtered them would be relying on a filter that cannot be checked against
+   anything. Publishing none cannot silently stop being true.
+
+   coded() survives anyway, over every payload string this pane draws. Not
+   because the payload is expected to carry an address, but because "the API
+   does not send one" is a fact about today's route and this is a floor rather
+   than a trust. */
 
 (function (global) {
   'use strict';
 
   var S = global.OpsPaneShell;
-  var model = global.OpsAlertsModel;
   var session = global.OpsSession;
   var h = S.h;
   var icon = S.icon;
   var fmt = S.fmt;
 
-  var PROBLEMS_ENDPOINT = '/api/ops/alerts/problems';
-  var RULES_ENDPOINT = '/api/ops/alerts/rules';
+  var RUNS_ENDPOINT = '/api/ops/runs';
+  var PAGE = 50;
 
-  var HOUR_MS = 3600000;
-  var DAY_MS = 24 * HOUR_MS;
+  var WINDOW_LABEL = {
+    '24h': 'the last 24 hours',
+    '7d': 'the last 7 days',
+    '30d': 'the last 30 days'
+  };
 
-  /* The registry's window values, in milliseconds. Every value the registry
-     offers has an entry here, and the guard in
-     scripts/ops-registry-filters.test.mjs turns red on one that does not:
-     a window this table cannot answer is a control that refuses rather than
-     narrows, which is why 'custom' is no longer offered. */
-  var WINDOW_MS = { '24h': DAY_MS, '7d': 7 * DAY_MS, '30d': 30 * DAY_MS };
-  var WINDOW_LABEL = { '24h': 'the last 24 hours', '7d': 'the last 7 days', '30d': 'the last 30 days' };
-
-  /* The pane that holds the account record, and the one that holds the live
-     queue. Both are doorways: this pane owns neither question. */
+  /* The panes that own the questions this one does not. Both are doorways. */
   var USERS_FILE = 'users.html';
   var JOBS_FILE = 'jobs-live.html';
+  var ALERTS_FILE = 'alerts.html';
 
   /* ------------------------------------------------------------- privacy */
 
@@ -132,9 +137,9 @@
      read them, and they have to be the same names the record would use.
 
      Each carries a key and a label and nothing else. No masked flag, no reveal
-     flag, no value: the floor below is what makes them hidden, so an API that
-     later sends one of these keys with a value attached cannot unmask it by
-     saying it is not personal. */
+     flag, no value: disclosure() below is what makes them hidden, so an API
+     that later sends one of these keys with a value attached cannot unmask it
+     by saying it is not personal. */
   var RUN_CONTENT = [
     { key: 'request', label: 'What was asked' },
     { key: 'response', label: 'What Aria answered' },
@@ -172,11 +177,10 @@
   }
 
   /* Anything that looks like a contact detail, replaced before it reaches the
-     DOM. This pane prints service facts — a rule title, a request type, a
-     summary the alerting wrote — and none of them is a person. That is a
-     property of today's payload rather than a promise the payload makes, so
-     the pane enforces it instead of trusting it: a coded reference like
-     ath_2277 passes through, an address does not.
+     DOM. This pane prints service facts — a request type, a failure label, a
+     model name — and none of them is a person. That is a property of today's
+     payload rather than a promise the payload makes, so the pane enforces it
+     instead of trusting it.
 
      The replacement names the kind of thing it hid rather than deleting it
      silently, because an operator reading a sentence with a hole in it needs
@@ -192,12 +196,11 @@
 
   /* A figure is a number only when it is one. Everything else renders words.
 
-     'ready' is the only availability that prints a numeral. A figure nobody
-     recorded prints what it is instead, because a zero and an absence look
-     identical once they are both set in the same type, and the confident
-     reading is the wrong one. */
+     A figure nobody recorded prints what it is instead, because a zero and an
+     absence look identical once they are both set in the same type, and the
+     confident reading is the wrong one. */
   function figureValue(figure) {
-    if (figure.availability !== 'ready') return { text: figure.words, words: true };
+    if (figure.words) return { text: figure.words, words: true };
     return { text: figure.text, words: false };
   }
 
@@ -221,211 +224,389 @@
     return box;
   }
 
-  /* ------------------------------------------------------------ grouping */
+  /* --------------------------------------------------------- durations */
 
-  /* One row per reason a thing failed, which is the rule that caught it and
-     the request type it caught it in. Two nutrition-plan failures four days
-     apart are the same reason and one row; the same rule firing on chat is a
-     different row, because the question this pane answers is "is it happening
-     to other people", and the answer is the group. */
-  function groupFailures(problems) {
-    var index = {};
-    var groups = [];
-
-    problems.forEach(function (problem) {
-      var key = problem.ruleKey + '\u0000' + (problem.scopeKey || '');
-      var group = index[key];
-      if (!group) {
-        group = {
-          key: key,
-          ruleKey: problem.ruleKey,
-          title: coded(problem.ruleTitle || problem.ruleKey || 'Unnamed rule'),
-          where: coded(problem.scopeLabel || 'Every request type'),
-          categoryLabel: coded(problem.categoryLabel || problem.category || ''),
-          threshold: coded(problem.ruleThreshold || ''),
-          severity: problem.severity,
-          times: 0,
-          active: 0,
-          firstSeen: null,
-          lastSeen: null,
-          reference: problem.reference
-        };
-        index[key] = group;
-        groups.push(group);
-      }
-
-      group.times += 1;
-      if (problem.status === 'open' || problem.status === 'acknowledged') group.active += 1;
-      if (model.severityRank(problem.severity) < model.severityRank(group.severity)) {
-        group.severity = problem.severity;
-      }
-
-      var began = model.oldest([problem.firstBreachedAt, problem.firedAt]);
-      var ended = model.latest([problem.lastObservedAt, problem.firedAt, problem.closedAt]);
-      if (began !== Infinity && (group.firstSeen === null || began < group.firstSeen)) {
-        group.firstSeen = began;
-      }
-      if (ended !== -Infinity && (group.lastSeen === null || ended > group.lastSeen)) {
-        group.lastSeen = ended;
-      }
-    });
-
-    /* Worst first, then the one that happened most. A list sorted by arrival
-       buries the reason that has been costing people all week under the one
-       that fired this morning. */
-    groups.sort(function (a, b) {
-      var bySeverity = model.severityRank(a.severity) - model.severityRank(b.severity);
-      if (bySeverity) return bySeverity;
-      if (b.times !== a.times) return b.times - a.times;
-      return (b.lastSeen || 0) - (a.lastSeen || 0);
-    });
-
-    return groups;
+  /* Milliseconds, as a person reads them. Null is not zero and never becomes
+     a numeral: it is the em dash the rest of the dashboard uses for absence. */
+  function ms(value) {
+    if (typeof value !== 'number' || !isFinite(value) || value < 0) return null;
+    if (value < 1000) return Math.round(value) + 'ms';
+    if (value < 10000) return (Math.round(value / 100) / 10) + 's';
+    if (value < 60000) return Math.round(value / 1000) + 's';
+    var minutes = Math.floor(value / 60000);
+    var seconds = Math.round((value % 60000) / 1000);
+    if (seconds === 60) { minutes += 1; seconds = 0; }
+    return minutes + 'm' + (seconds ? ' ' + seconds + 's' : '');
   }
 
-  /* Whether a problem was alive at any point inside the window. A problem that
-     fired last week and is still open belongs in today's window: it is still
-     happening. Comparing only the moment it fired would drop exactly the
-     failures somebody is still living with. */
-  function inWindow(problem, startMs) {
-    if (startMs === null) return true;
-    var ended = model.latest([problem.lastObservedAt, problem.closedAt, problem.firedAt,
-      problem.firstBreachedAt]);
-    return ended === -Infinity ? false : ended >= startMs;
+  /* fmt.utcStamp returns null for anything it cannot parse, and a null read
+     straight into a sentence prints the word "null" in place of a time. Every
+     timestamp this pane draws goes through here. */
+  function at(iso) {
+    return fmt.utcStamp(iso) || fmt.none;
   }
 
-  /* ------------------------------------------------------------- the pane */
+  function msOrNone(value) {
+    var text = ms(value);
+    return text === null ? fmt.none : text;
+  }
+
+  /* A median and the count it was taken over, as one sentence.
+
+     The count is never dropped, even when it equals the run count: "half of
+     4,000 runs" and "half of the 3 runs that recorded a duration" are
+     different claims, and a bare p50 cannot tell them apart. */
+  function measuredNote(measured, total) {
+    if (!measured) return 'nothing recorded a figure to measure';
+    if (measured === total) return 'measured on all ' + fmt.int(total) + ' of them';
+    return 'measured on ' + fmt.int(measured) + ' of ' + fmt.int(total);
+  }
+
+  /* ------------------------------------------------------------ the pane */
 
   S.definePane('history', function (content) {
     var region = S.region(content);
     var loadToken = 0;
     var current = S.filters();
 
+    /* Pane-local narrowing. The shell's filter bar carries the window; request
+       type and outcome are read from the facet list the API sends back, so the
+       controls can only ever offer values the window actually holds. A control
+       built from a fixed list would offer a request type nobody has run. */
+    var narrowing = { type: 'all', outcome: 'all' };
+
+    var SKELETON = [
+      { type: 'tiles', count: 4 },
+      { type: 'rows', count: 6 },
+      { type: 'block', height: 190 }
+    ];
+
+    /* The run an operator has opened, if any, and what came back for it.
+       Cleared whenever the window or the narrowing changes, because a run
+       drawn beside a different window's figures invites the comparison the
+       detail is there to make and answers it wrongly. */
+    var detail = null;
+
+    /* When the figures on screen were read. Printed rather than implied: with
+       no timer running, how old they are is the operator's to judge. */
+    var readAt = null;
+
+    /* The last window payload, kept so opening and closing a run can redraw
+       without re-reading the window it sits in. */
+    var lastWindow = null;
+
+    /* The shell fires ops:filters with the starting selection once it is in
+       the document, so the first read is that event rather than a call from
+       here: reading in both places would double every request on boot and
+       leave the two answers racing to land. */
+    var booted = false;
+
     global.addEventListener('ops:filters', function (event) {
       var next = event.detail;
-      var changed = next.range !== current.range;
+      var changed = !booted || next.range !== current.range;
       current = next;
-      if (changed) load();
+      if (!changed) return;
+      booted = true;
+      detail = null;
+      load();
     });
 
     function load() {
       var token = ++loadToken;
       var selection = current;
 
-      region.loading([
-        { type: 'tiles', count: 4 },
-        { type: 'rows', count: 6 },
-        { type: 'block', height: 190 }
-      ]);
+      region.loading(SKELETON);
 
-      Promise.all([
-        problems(),
-        session.call(RULES_ENDPOINT).then(function (payload) {
-          return { data: payload.data };
-        }, function (err) {
-          return { error: err };
-        })
-      ]).then(function (results) {
+      window_(selection).then(function (result) {
         if (token !== loadToken) return;
-        render(results[0], results[1], selection);
-      }).catch(function (err) {
+        readAt = new Date().toISOString();
+        render(result, selection);
+        announceRead(result, selection);
+      }, function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
+        S.setBadge('history', null);
       });
     }
 
-    /* The record read. Through the shell's loader so the same-origin fixture
-       hook covers the states a live API will not produce on demand: a window
-       nothing was raised in, a read that came back full, a system with nothing
-       watching it.
-
-       status 'all' because this pane is the past tense: a problem somebody
-       closed on Tuesday is exactly what "what happened" means. */
-    function problems() {
+    /* The window read. Through the shell's loader so the same-origin fixture
+       hook covers the states a live API will not produce on demand, which here
+       is most of the interesting ones: a pipeline that was never connected, a
+       record that starts mid-window, a window with nothing in it. */
+    function window_(selection) {
       return S.read({
         paneId: 'history',
-        endpoint: PROBLEMS_ENDPOINT,
-        query: { status: 'all', limit: model.PAGE }
+        endpoint: RUNS_ENDPOINT,
+        query: {
+          range: selection.range || '7d',
+          type: narrowing.type,
+          outcome: narrowing.outcome,
+          limit: PAGE
+        }
       }).then(function (result) { return result.data; });
     }
 
-    function render(record, rules, selection) {
-      var all = (record && record.problems) || [];
-      var capped = model.capped(all);
-      var startMs = selection.range && WINDOW_MS[selection.range]
-        ? Date.now() - WINDOW_MS[selection.range]
-        : null;
-      var inside = all.filter(function (problem) { return inWindow(problem, startMs); });
-      var groups = groupFailures(inside);
-      var armed = rules.error ? null : model.armedState(rules.data || {});
+    /* One run. Carried as a value rather than a rejection, the same shape the
+       Overview pane uses, so a failed detail read draws one failed card inside
+       a pane whose other figures are still true. */
+    function openRun(jobId, selection) {
+      detail = { jobId: jobId, loading: true, data: null, error: null };
+      render(lastWindow, selection);
+      S.announce('Opening one run.');
 
-      if (!inside.length) {
-        region.empty(nothingRaised(armed, selection, all.length));
+      var token = loadToken;
+      session.call(RUNS_ENDPOINT + '/' + encodeURIComponent(jobId), {
+        query: { range: selection.range || '7d' }
+      }).then(function (payload) {
+        if (token !== loadToken || !detail || detail.jobId !== jobId) return;
+        detail = { jobId: jobId, loading: false, data: payload.data, error: null };
+        render(lastWindow, selection);
+      }, function (err) {
+        if (token !== loadToken || !detail || detail.jobId !== jobId) return;
+        detail = { jobId: jobId, loading: false, data: null, error: err };
+        render(lastWindow, selection);
+      });
+    }
+
+    function render(data, selection) {
+      lastWindow = data;
+      var coverage = (data && data.coverage) || { state: 'never_recorded' };
+      var summary = (data && data.summary) || null;
+      var runs = (data && data.runs) || [];
+      var failures = (data && data.failures) || [];
+
+      badge(coverage, summary);
+
+      /* Nothing recorded at all is its own state and it is not an empty
+         window. There are no figures to put under it, and putting zeroes there
+         would be the pane asserting the system is quiet using a table it has
+         never been written to. */
+      if (coverage.state === 'never_recorded') {
+        region.empty(neverRecorded(data));
+        return;
+      }
+
+      /* A readable window with nothing in it. Separate from the above and
+         worded so the two cannot be confused: this one has a record behind it,
+         and the record says nothing finished. */
+      if (!runs.length && summary && !summary.runs && !summary.unfinished) {
+        region.empty(nothingFinished(data, coverage, selection));
         return;
       }
 
       var wrap = h('div', { className: 'stack' });
-      selectionNotes(capped).forEach(function (note) { wrap.appendChild(note); });
-      wrap.appendChild(summaryBand(inside, groups, armed, selection, capped));
-      wrap.appendChild(failureBand(groups, capped));
+      wrap.appendChild(controls(data, selection));
+      partialNote(coverage, wrap);
+      if (data.truncated) {
+        wrap.appendChild(noteLine('warn',
+          'The newest ' + fmt.int(data.selection.limit) + ' runs are listed, so the list below ' +
+          'is the most recent part of this window rather than all of it. The figures above it ' +
+          'are counted over the whole window.'));
+      }
+      wrap.appendChild(summaryBand(data, selection));
+      if (failures.length) wrap.appendChild(failureBand(data));
+      wrap.appendChild(runsBand(data, selection));
+      if (detail) wrap.appendChild(detailBand(selection));
       wrap.appendChild(privacyBand());
       wrap.appendChild(missingBand());
 
-      if (rules.error) region.degraded(wrap);
+      /* Degraded is the pane on screen with one of its reads unusable. A
+         failed detail read is exactly that: the window is true and one card
+         inside it is not. */
+      if (detail && detail.error) region.degraded(wrap);
       else region.show(wrap);
+    }
+
+    /* What landed, for a screen that is listened to rather than looked at. The
+       coverage state is said first because it changes what every figure after
+       it means, and the never-recorded case has no figures to announce. */
+    function announceRead(data, selection) {
+      var words = WINDOW_LABEL[selection.range] || 'the window you picked';
+      if (!data || !data.coverage || data.coverage.state === 'never_recorded') {
+        S.announce('No run has ever been recorded. Nothing was counted for ' + words + '.');
+        return;
+      }
+      var summary = data.summary;
+      S.announce(
+        (data.coverage.state === 'partial' ? 'Partly covered: ' : '') +
+        fmt.plural(summary.runs, 'run', 'runs') + ' finished in ' + words + ', ' +
+        fmt.int(summary.failed) + ' failed.');
+    }
+
+    /* The count beside the rail item. A real read or nothing.
+
+       Cleared rather than zeroed on an unread or never-recorded pipeline, for
+       the reason PR #98 settled on Overview: a badge reading 0 over data the
+       pane never received is the pane stating as fact the one thing it does
+       not know. */
+    function badge(coverage, summary) {
+      if (!summary || coverage.state === 'never_recorded' || !summary.failed) {
+        S.setBadge('history', null);
+        return;
+      }
+      S.setBadge('history', {
+        label: fmt.int(summary.failed),
+        tone: 'hot',
+        description: summary.failed === 1
+          ? 'one run failed in this window'
+          : fmt.int(summary.failed) + ' runs failed in this window'
+      });
+    }
+
+    /* ------------------------------------------------------ the controls */
+
+    function controls(data, selection) {
+      var box = S.card();
+      var body = h('div', { className: 'card-body rh-controls' });
+
+      body.appendChild(picker('Request type', 'rh-type', narrowing.type,
+        [{ value: 'all', label: 'Every request type' }].concat(
+          (data.facets.types || []).map(function (type) {
+            return {
+              value: type.value,
+              label: coded(type.label) + ' \u00b7 ' + fmt.int(type.runs)
+            };
+          })
+        ),
+        function (value) {
+          narrowing.type = value;
+          detail = null;
+          load();
+        }));
+
+      body.appendChild(picker('Outcome', 'rh-outcome', narrowing.outcome,
+        [{ value: 'all', label: 'Every outcome' }].concat(
+          (data.facets.outcomes || []).map(function (outcome) {
+            return {
+              value: outcome.value,
+              label: coded(outcome.label) + ' \u00b7 ' + fmt.int(outcome.runs)
+            };
+          })
+        ),
+        function (value) {
+          narrowing.outcome = value;
+          detail = null;
+          load();
+        }));
+
+      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Read again' });
+      again.addEventListener('click', function () { load(); });
+
+      var tail = h('div', { className: 'rh-controls-end' });
+      tail.appendChild(h('span', {
+        className: 'tiny muted',
+        text: readAt ? 'Read at ' + at(readAt) : ''
+      }));
+      tail.appendChild(again);
+      body.appendChild(tail);
+
+      box.appendChild(body);
+      return box;
+    }
+
+    /* A labelled select. The label is a real <label> bound by id rather than a
+       styled span, because a control whose name is only visual has no name at
+       all to anything reading the page out. */
+    function picker(label, id, value, options, onChange) {
+      var group = h('div', { className: 'rh-picker' });
+      group.appendChild(h('label', { className: 'field-label', for: id, text: label }));
+
+      var wrap = h('div', { className: 'sel' });
+      var select = h('select', { id: id });
+      var seen = false;
+      options.forEach(function (option) {
+        var node = h('option', { value: option.value, text: option.label });
+        if (option.value === value) { node.setAttribute('selected', 'selected'); seen = true; }
+        select.appendChild(node);
+      });
+      /* The narrowing an operator applied can outlive the window that held the
+         value: pick a request type, then narrow to 24 hours, and the facet
+         list no longer offers it. Naming it rather than silently resetting is
+         the difference between a control that lost its value and a pane that
+         quietly answered a different question. */
+      if (!seen && value !== 'all') {
+        var missing = h('option', {
+          value: value,
+          text: coded(value) + ' \u00b7 nothing in this window'
+        });
+        missing.setAttribute('selected', 'selected');
+        select.appendChild(missing);
+      }
+      select.addEventListener('change', function () { onChange(select.value); });
+      wrap.appendChild(select);
+      wrap.appendChild(icon('chev'));
+      group.appendChild(wrap);
+      return group;
     }
 
     /* ------------------------------------------------------ the empties */
 
-    /* The window came back readable and empty. Which of the two empties it is
-       depends entirely on whether anything was watching, so that is what the
-       state says. */
-    function nothingRaised(armed, selection, held) {
+    /* Nothing has ever been recorded. Not an empty window: an unread one. */
+    function neverRecorded(data) {
       var box = S.card();
-      var windowWords = WINDOW_LABEL[selection.range] || 'this window';
-
-      if (armed && armed.trustworthy) {
-        var lastRun = fmt.utcStamp(armed.lastEvaluatedAt);
-        box.appendChild(S.stateBlock('check', 'Nothing was raised in ' + windowWords, [
-          armed.checking + ' of ' + armed.total + ' rules were checking, and none of them ' +
-            'reached a verdict worth raising' + (lastRun ? ', last at ' + lastRun : '') + '.',
-          held
-            ? 'The record does hold older entries. Widen the window to read them.'
-            : 'The record holds nothing at all, which is a system nothing has gone wrong on yet.'
-        ]));
-      } else if (armed) {
-        box.appendChild(S.stateBlock('warn', 'Nothing was raised, and nothing was watching', [
-          'None of the ' + armed.total + ' rules reached a verdict the last time they ran, so ' +
-            'an empty window here is not the same as a quiet one.',
-          'This is a silence to go and fix rather than one to take comfort from.'
-        ]));
-      } else {
-        box.appendChild(S.stateBlock('warn', 'Nothing was raised in ' + windowWords, [
-          'The rules could not be read, so whether anything was watching is unknown. An ' +
-            'empty window cannot be read as a quiet one until that answers.',
-          'Everything else on this page came back.'
-        ]));
-      }
-
+      box.appendChild(S.stateBlock('plug', 'No run has ever been recorded here', [
+        'The run history table holds nothing at all — not nothing for this window, nothing ' +
+          'ever. Either the lifecycle recorder has not been deployed yet, or it has never ' +
+          'managed to write.',
+        'This is not a quiet system. Nothing below it is a zero, because there is no ' +
+          'nothing below it: no figure on this page can be computed from a table with no ' +
+          'rows in it, so none is drawn.'
+      ]));
       var row = h('div', { className: 'row mt-sm' });
       row.appendChild(S.link(S.paneHref('jobs') || JOBS_FILE, 'What is running now'));
+      row.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'What the watchers caught', 'btn btn-sm sp'));
       box.appendChild(row);
+      if (data && data.window) box.appendChild(windowFoot(data.window));
       return box;
     }
 
-    /* ------------------------------------------- what the record leaves out */
+    /* A readable record with nothing in this window. A genuine zero, and the
+       wording says which of the two zeroes it is. */
+    function nothingFinished(data, coverage, selection) {
+      var box = S.card();
+      var words = WINDOW_LABEL[selection.range] || 'this window';
+      var narrowed = narrowing.type !== 'all' || narrowing.outcome !== 'all';
 
-    function selectionNotes(capped) {
-      var notes = [];
+      box.appendChild(S.stateBlock('check', 'No run finished in ' + words, [
+        narrowed
+          ? 'Nothing matched the request type and outcome you picked. The record itself is ' +
+            'readable and reaches back ' + (coverage.coversWindow ? 'past the start of this window' :
+              'to ' + at(coverage.recordingSince)) + '.'
+          : 'The record is readable and reaches back ' +
+            (coverage.coversWindow ? 'past the start of this window'
+              : 'to ' + at(coverage.recordingSince)) +
+            ', so this is a quiet window rather than a missing one.',
+        coverage.lastRecordedAt
+          ? 'The most recent transition anywhere in the record was ' +
+            at(coverage.lastRecordedAt) + '.'
+          : 'Nothing has been recorded anywhere in the record.'
+      ]));
 
-      if (capped) {
-        notes.push(noteLine('warn',
-          'The record came back full, worst first. Older or less severe entries inside ' +
-          'this window can be missing from it, so every count below is a floor rather ' +
-          'than a total.'));
+      var row = h('div', { className: 'row mt-sm' });
+      if (narrowed) {
+        var clear = h('button', { className: 'btn btn-sm', type: 'button', text: 'Clear the narrowing' });
+        clear.addEventListener('click', function () {
+          narrowing = { type: 'all', outcome: 'all' };
+          detail = null;
+          load();
+        });
+        row.appendChild(clear);
       }
+      row.appendChild(S.link(S.paneHref('jobs') || JOBS_FILE, 'What is running now', 'btn btn-sm sp'));
+      box.appendChild(row);
+      box.appendChild(windowFoot(data.window));
+      return box;
+    }
 
-      return notes;
+    /* The record starts inside the window being read. Said above the figures
+       rather than under them, because it changes what every one of them
+       means. */
+    function partialNote(coverage, wrap) {
+      if (coverage.state !== 'partial') return;
+      wrap.appendChild(noteLine('warn',
+        'Recording started at ' + at(coverage.recordingSince) + ', which is inside ' +
+        'this window. Every figure below covers from then, not from the start of the window, ' +
+        'so nothing here can be read as a total for the window you picked.'));
     }
 
     function noteLine(iconName, text) {
@@ -435,91 +616,94 @@
       return note;
     }
 
+    /* Every figure carries the window it covers. Half-open, and said so: the
+       end is the moment the read was taken and is not itself included. */
+    function windowFoot(window) {
+      var foot = h('div', { className: 'card-foot' });
+      foot.appendChild(icon('clock'));
+      foot.appendChild(h('span', {
+        text: 'Counted over ' + at(window.startAt) + ' up to but not including ' +
+          at(window.endExclusiveAt) + '.'
+      }));
+      return foot;
+    }
+
     /* ---------------------------------------------------- what happened */
 
-    function summaryBand(inside, groups, armed, selection, capped) {
+    function summaryBand(data, selection) {
+      var summary = data.summary;
       var section = S.band('What the record shows',
         WINDOW_LABEL[selection.range] || 'the window you picked');
 
-      var active = model.active(inside).length;
       var grid = h('div', { className: 'grid g4' });
 
       grid.appendChild(figureCard({
-        label: 'Failures raised',
-        availability: 'ready',
-        text: model.atLeast(fmt.int(inside.length), capped),
-        note: 'caught by a rule that was watching'
+        label: 'Runs finished',
+        text: fmt.int(summary.runs),
+        note: summary.unfinished
+          ? fmt.int(summary.unfinished) + ' more moved and never finished'
+          : 'every run that moved also finished'
       }));
 
       grid.appendChild(figureCard({
-        label: 'Still not fixed',
-        availability: 'ready',
-        text: model.atLeast(fmt.int(active), capped),
-        note: active ? 'open or somebody is on it' : 'every one of them closed'
+        label: 'Worked',
+        text: fmt.int(summary.completed),
+        note: summary.runs
+          ? fmt.percent(Math.round((summary.completed / summary.runs) * 10000)) +
+            ' of the runs that finished'
+          : 'nothing finished to divide by'
       }));
 
       grid.appendChild(figureCard({
-        label: 'Distinct reasons',
-        availability: 'ready',
-        text: model.atLeast(fmt.int(groups.length), capped),
-        note: 'a rule and the request type it caught'
+        label: 'Failed',
+        text: fmt.int(summary.failed),
+        note: summary.failureReasons
+          ? fmt.plural(summary.failureReasons, 'distinct reason', 'distinct reasons')
+          : 'no failure in this window'
       }));
 
-      /* The two figures the mock asks for that nothing serves. They stay on
-         the page as words rather than being quietly dropped, because an
-         operator who does not know a figure is missing assumes it was fine. */
       grid.appendChild(figureCard({
-        label: 'Runs in this window',
-        availability: 'unrecorded',
-        words: 'Not recorded',
-        note: 'no route serves a run count yet'
+        label: 'Cancelled',
+        text: fmt.int(summary.canceled),
+        note: 'somebody or something stopped these'
       }));
 
       section.appendChild(grid);
-      section.appendChild(watchingCard(armed));
+
+      var pair = h('div', { className: 'grid g2' });
+      pair.appendChild(figureCard({
+        label: 'Half of them took under',
+        text: ms(summary.duration.p50Ms),
+        words: summary.duration.p50Ms === null ? 'Not measured' : null,
+        note: measuredNote(summary.duration.measured, summary.duration.total)
+      }));
+      pair.appendChild(figureCard({
+        label: 'Half of them waited under',
+        text: ms(summary.queued.p50Ms),
+        words: summary.queued.p50Ms === null ? 'Not measured' : null,
+        note: measuredNote(summary.queued.measured, summary.queued.total)
+      }));
+      section.appendChild(pair);
+
+      var box = S.card();
+      box.appendChild(windowFoot(data.window));
+      section.appendChild(box);
       return section;
-    }
-
-    /* Whether the figures above were counted by anything. A failure count is
-       only as good as the rules that produced it, and a count of nought from
-       nothing watching reads exactly like a count of nought from a quiet
-       night. */
-    function watchingCard(armed) {
-      if (!armed) {
-        return noteLine('warn',
-          'The rules could not be read, so how much of this window was actually watched ' +
-          'is unknown. The failures below are the ones that were caught, not necessarily ' +
-          'the ones that happened.');
-      }
-
-      if (!armed.trustworthy) {
-        return noteLine('warn',
-          'None of the ' + armed.total + ' rules reached a verdict the last time they ran, so ' +
-          'this window was not being watched. What is below is what was caught before that.');
-      }
-
-      var lastRun = fmt.utcStamp(armed.lastEvaluatedAt);
-      return noteLine('info',
-        armed.checking + ' of ' + armed.total + ' rules were checking' +
-        (lastRun ? ', last at ' + lastRun : '') +
-        (armed.insufficientData
-          ? '. ' + armed.insufficientData + ' had too little data to judge.'
-          : '.'));
     }
 
     /* ------------------------------------------------- why things failed */
 
-    function failureBand(groups, capped) {
-      var section = S.band('Why things failed', 'Worst first, then how often');
+    function failureBand(data) {
+      var section = S.band('Why things failed', 'Most runs first, then most recent');
       var box = S.card();
       var wrap = h('div', { className: 'tbl-wrap' });
       var table = h('table', { className: 'tbl' });
 
       var head = h('thead');
       var headRow = h('tr');
-      ['Reason', 'Where', 'Times', 'First seen', 'Last seen', 'Still open', ''].forEach(function (label, at) {
+      ['Reason', 'Where', 'Runs', 'First seen', 'Last seen', 'Worth retrying'].forEach(function (label, at) {
         headRow.appendChild(h('th', {
-          className: at === 2 || at === 5 ? 'r' : '',
+          className: at === 2 ? 'r' : '',
           text: label,
           scope: 'col'
         }));
@@ -528,7 +712,7 @@
       table.appendChild(head);
 
       var body = h('tbody');
-      groups.forEach(function (group) { body.appendChild(failureRow(group)); });
+      data.failures.forEach(function (group) { body.appendChild(failureRow(group)); });
       table.appendChild(body);
 
       wrap.appendChild(table);
@@ -536,11 +720,10 @@
 
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(h('span', {
-        text: capped
-          ? 'A full page came back, so these are at least this many.'
-          : 'Everything the record held for this window is here.'
+        text: 'Grouped by the label the worker recorded. Every failed run in this window is ' +
+          'in exactly one of these rows.'
       }));
-      foot.appendChild(S.link(S.paneHref('alerts') || 'alerts.html', 'Open Problems', 'btn btn-sm sp'));
+      foot.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'What the watchers caught', 'btn btn-sm sp'));
       box.appendChild(foot);
 
       section.appendChild(box);
@@ -551,41 +734,343 @@
       var row = h('tr');
 
       var reason = h('td');
-      reason.appendChild(h('div', { className: 't-main', text: group.title }));
-      if (group.threshold) {
-        reason.appendChild(h('div', { className: 't-sub', text: group.threshold }));
+      /* A failure with no label is drawn as the absence it is. The worker's
+         label is a bounded token and the write path drops anything that is not
+         one, so "no label" is a real and reachable state rather than a
+         defensive branch. */
+      reason.appendChild(h('div', {
+        className: 't-main' + (group.failureCode ? '' : ' words'),
+        text: group.failureCode ? coded(group.failureCode) : 'No reason recorded'
+      }));
+      if (!group.failureCode) {
+        reason.appendChild(h('div', {
+          className: 't-sub',
+          text: 'the run failed and the worker recorded no label for it'
+        }));
       }
       row.appendChild(reason);
 
       var where = h('td');
-      where.appendChild(h('div', { className: 't-main', text: group.where }));
-      if (group.categoryLabel) {
-        where.appendChild(h('div', { className: 't-sub', text: group.categoryLabel }));
+      var first = group.byType[0];
+      where.appendChild(h('div', {
+        className: 't-main',
+        text: first ? coded(first.type.label) : fmt.none
+      }));
+      if (group.byType.length > 1) {
+        where.appendChild(h('div', {
+          className: 't-sub',
+          text: 'and ' + fmt.plural(group.byType.length - 1, 'other request type', 'other request types')
+        }));
       }
       row.appendChild(where);
 
-      row.appendChild(h('td', { className: 'r num', text: fmt.int(group.times) }));
-      row.appendChild(h('td', { text: fmt.utcStamp(model.iso(group.firstSeen)) || fmt.none }));
-      row.appendChild(h('td', { text: fmt.utcStamp(model.iso(group.lastSeen)) || fmt.none }));
+      row.appendChild(h('td', { className: 'r num', text: fmt.int(group.runs) }));
+      row.appendChild(h('td', { text: at(group.firstSeenAt) }));
+      row.appendChild(h('td', { text: at(group.lastSeenAt) }));
 
-      var still = h('td', { className: 'r' });
-      /* The tone is never the whole message: the pill carries the words as
-         well, so a screen that is read rather than looked at says the same
+      /* Three answers, not two. Null is "the worker did not say", or "it said
+         both", and neither is a no. The pill carries the words as well as the
+         tone, so a screen that is read rather than looked at says the same
          thing. */
-      still.appendChild(h('span', {
-        className: 'pill ' + (group.active ? 'down' : 'up'),
-        text: group.active ? fmt.int(group.active) + ' still open' : 'all closed'
+      var retry = h('td');
+      retry.appendChild(h('span', {
+        className: 'pill ' + (group.retryable === true ? 'up' : (group.retryable === false ? 'down' : 'ghost')),
+        text: group.retryable === true ? 'Yes'
+          : (group.retryable === false ? 'No' : 'Not recorded')
       }));
-      row.appendChild(still);
+      row.appendChild(retry);
+
+      return row;
+    }
+
+    /* ---------------------------------------------------------- the runs */
+
+    function runsBand(data, selection) {
+      var section = S.band('The runs', 'Newest first');
+      var box = S.card();
+      var wrap = h('div', { className: 'tbl-wrap' });
+      var table = h('table', { className: 'tbl' });
+
+      var head = h('thead');
+      var headRow = h('tr');
+      ['Finished', 'Request type', 'Outcome', 'Took', 'Waited', 'Model', ''].forEach(function (label, at) {
+        headRow.appendChild(h('th', {
+          className: (at === 3 || at === 4) ? 'r' : '',
+          text: label,
+          scope: 'col'
+        }));
+      });
+      head.appendChild(headRow);
+      table.appendChild(head);
+
+      var body = h('tbody');
+      data.runs.forEach(function (run) { body.appendChild(runRow(run, selection)); });
+      table.appendChild(body);
+
+      wrap.appendChild(table);
+      box.appendChild(wrap);
+
+      var foot = h('div', { className: 'card-foot' });
+      foot.appendChild(h('span', {
+        text: data.truncated
+          ? 'The newest ' + fmt.int(data.selection.limit) + ' of ' + fmt.int(data.summary.runs) +
+            ' runs that finished in this window.'
+          : 'Every run that finished in this window.'
+      }));
+      box.appendChild(foot);
+
+      section.appendChild(box);
+      return section;
+    }
+
+    var OUTCOME_TONE = { completed: 'up', failed: 'down', canceled: 'ghost' };
+
+    function runRow(run, selection) {
+      var row = h('tr');
+
+      row.appendChild(h('td', { text: at(run.finishedAt) }));
+
+      var type = h('td');
+      type.appendChild(h('div', { className: 't-main', text: coded(run.type.label) }));
+      /* A request type this build has no label for still draws, and says so
+         rather than printing the raw token as though it were a name. */
+      if (!run.type.labelled) {
+        type.appendChild(h('div', { className: 't-sub', text: 'a request type this page has no name for' }));
+      }
+      row.appendChild(type);
+
+      var outcome = h('td');
+      outcome.appendChild(h('span', {
+        className: 'pill ' + (OUTCOME_TONE[run.outcome] || 'ghost'),
+        text: coded(run.outcomeLabel)
+      }));
+      if (run.failureCode) {
+        outcome.appendChild(h('div', { className: 't-sub', text: coded(run.failureCode) }));
+      }
+      row.appendChild(outcome);
+
+      row.appendChild(h('td', { className: 'r num', text: msOrNone(run.durationMs) }));
+      row.appendChild(h('td', { className: 'r num', text: msOrNone(run.queuedMs) }));
+      row.appendChild(h('td', { text: run.modelUsed ? coded(run.modelUsed) : fmt.none }));
 
       var end = h('td', { className: 'r' });
-      end.appendChild(h('span', {
-        className: 'pill ' + (model.SEVERITY_TONE[group.severity] === 'crit' ? 'down' : 'warn'),
-        text: model.SEVERITY_LABEL[group.severity] || 'Unrated'
-      }));
+      var open = h('button', {
+        className: 'btn btn-sm',
+        type: 'button',
+        text: 'Open'
+      });
+      /* Two dozen buttons reading "Open" are one list entry repeated two dozen
+         times to anything that enumerates controls by name. The visible word
+         stays first so voice control still works on what is on screen, and the
+         run's own time follows it.
+
+         fmt.utcStamp rather than at() here on purpose: at() substitutes the em
+         dash the tables use for an absence, and "finished at —" is a name
+         rather than a description, so this one branch wants the words. */
+      open.setAttribute('aria-label', 'Open the run that finished at ' +
+        (fmt.utcStamp(run.finishedAt) || 'an unrecorded time'));
+      open.addEventListener('click', function () { openRun(run.jobId, selection); });
+      end.appendChild(open);
       row.appendChild(end);
 
       return row;
+    }
+
+    /* -------------------------------------------------------- one run */
+
+    function detailBand(selection) {
+      var section = S.band('One run', 'What it did, and whether it is only this one');
+
+      if (detail.loading) {
+        var waiting = S.card();
+        var waitBody = h('div', { className: 'card-body' });
+        waitBody.appendChild(h('div', { className: 'skel skel-row' }));
+        waitBody.appendChild(h('div', { className: 'skel skel-row' }));
+        waiting.appendChild(waitBody);
+        section.appendChild(waiting);
+        return section;
+      }
+
+      if (detail.error) {
+        var failedBox = S.card();
+        var block = S.stateBlock('warn', 'This run could not be read', [
+          S.failureMessage(detail.error),
+          'Nothing here is a zero. This one run is unread; the window above it came back.'
+        ], 3);
+        var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+        again.setAttribute('aria-label', 'Try reading this run again');
+        again.addEventListener('click', function () { openRun(detail.jobId, selection); });
+        block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+        failedBox.appendChild(block);
+        section.appendChild(failedBox);
+        return section;
+      }
+
+      var data = detail.data;
+      var box = S.card();
+      box.appendChild(S.cardHead(
+        coded(data.run.type.label) + ' \u00b7 ' + (data.run.outcomeLabel || 'still going'),
+        data.run.finishedAt
+          ? 'Started ' + at(data.run.startedAt) + ', finished ' + at(data.run.finishedAt)
+          : 'Started ' + at(data.run.startedAt) + ', and has not finished',
+        [closeButton()]
+      ));
+
+      var body = h('div', { className: 'card-body col' });
+      body.appendChild(runFacts(data.run));
+      body.appendChild(stageList(data));
+      box.appendChild(body);
+      section.appendChild(box);
+
+      section.appendChild(sharedCard(data));
+      return section;
+    }
+
+    function closeButton() {
+      var close = h('button', { className: 'btn btn-sm', type: 'button', text: 'Close' });
+      close.setAttribute('aria-label', 'Close this run');
+      close.addEventListener('click', function () {
+        detail = null;
+        render(lastWindow, current);
+        S.announce('Closed the run.');
+      });
+      return close;
+    }
+
+    function runFacts(run) {
+      var list = h('div', { className: 'rh-facts' });
+      [
+        { label: 'Took', value: msOrNone(run.durationMs) },
+        { label: 'Waited to start', value: msOrNone(run.queuedMs) },
+        { label: 'Picked up by a worker', value: fmt.plural(run.attempts, 'time', 'times') },
+        { label: 'Model', value: run.modelUsed ? coded(run.modelUsed) : fmt.none },
+        {
+          label: 'Reason',
+          value: run.failureCode ? coded(run.failureCode)
+            : (run.outcome === 'failed' ? 'No reason recorded' : fmt.none)
+        },
+        {
+          label: 'Worth retrying',
+          value: run.retryable === true ? 'Yes'
+            : (run.retryable === false ? 'No' : fmt.none)
+        }
+      ].forEach(function (fact) {
+        var item = h('div', { className: 'rh-fact' });
+        item.appendChild(h('span', { className: 'field-label', text: fact.label }));
+        item.appendChild(h('span', { className: 'rh-fact-val', text: fact.value }));
+        list.appendChild(item);
+      });
+      return list;
+    }
+
+    /* Every transition the recorder won, in the order it wrote them. This is
+       the one place on the dashboard where a retry is visible as a retry: a
+       job that went queued, running, queued, running, failed was picked up
+       twice, and the list says so rather than the summary implying it. */
+    function stageList(data) {
+      var wrap = h('div', { className: 'rh-stages' });
+      wrap.appendChild(h('h4', { className: 'card-title', text: 'What it did, step by step' }));
+
+      var list = h('ol', { className: 'rh-stage-list' });
+      data.stages.forEach(function (stage) {
+        var item = h('li', { className: 'rh-stage' });
+        item.appendChild(h('span', {
+          className: 'pill ' + (OUTCOME_TONE[stage.status] || 'ghost'),
+          text: coded(stage.label)
+        }));
+        item.appendChild(h('span', { className: 'rh-stage-at', text: at(stage.occurredAt) }));
+
+        var extra = [];
+        if (typeof stage.queuedMs === 'number') extra.push('waited ' + ms(stage.queuedMs));
+        if (typeof stage.durationMs === 'number') extra.push('took ' + ms(stage.durationMs));
+        if (stage.failureCode) extra.push(coded(stage.failureCode));
+        if (stage.modelUsed) extra.push(coded(stage.modelUsed));
+        if (extra.length) {
+          item.appendChild(h('span', { className: 'rh-stage-note', text: extra.join(' \u00b7 ') }));
+        }
+        list.appendChild(item);
+      });
+      wrap.appendChild(list);
+
+      if (data.stagesTruncated) {
+        wrap.appendChild(noteLine('warn',
+          'This run has more transitions than this page reads. The earliest are shown, so the ' +
+          'list ends before the run does.'));
+      }
+      return wrap;
+    }
+
+    /* "Is this happening to other people?", which is the question this pane is
+       named for. Counts only: how many runs hit the same label, and how many
+       accounts those runs belonged to. No account is named, and none is sent. */
+    function sharedCard(data) {
+      var box = S.card();
+
+      if (!data.shared) {
+        box.appendChild(S.cardHead('Is it happening to other people?', 'Nothing to compare'));
+        var body = h('div', { className: 'card-body' });
+        body.appendChild(h('p', {
+          className: 'state-desc',
+          text: data.run.outcome === null
+            ? 'This run has not finished, so there is no fault to compare against anything yet.'
+            : 'This run did not fail, so there is no fault to compare against anything. A count ' +
+              'of nought other people here would be a figure about nothing.'
+        }));
+        box.appendChild(body);
+        return box;
+      }
+
+      var shared = data.shared;
+      box.appendChild(S.cardHead(
+        shared.isolated ? 'This is the only run that hit it' : 'It is happening to other people',
+        shared.failureCode
+          ? 'Everything in this window that failed with ' + coded(shared.failureCode)
+          : 'Everything in this window that failed with no label recorded'
+      ));
+
+      var body = h('div', { className: 'card-body col' });
+      var grid = h('div', { className: 'grid g2' });
+      grid.appendChild(figureCard({
+        label: 'Runs that hit it',
+        text: fmt.int(shared.runs),
+        note: shared.firstSeenAt
+          ? 'first at ' + at(shared.firstSeenAt) + ', last at ' + at(shared.lastSeenAt)
+          : 'no times recorded'
+      }));
+      grid.appendChild(figureCard({
+        label: 'Accounts affected',
+        text: fmt.int(shared.accounts),
+        note: shared.runsWithoutAccount
+          ? fmt.plural(shared.runsWithoutAccount, 'run', 'runs') + ' had no account left to count'
+          : 'counted once each across every request type'
+      }));
+      body.appendChild(grid);
+
+      if (shared.byType.length > 1) {
+        var split = h('ul', { className: 'list-tick' });
+        shared.byType.forEach(function (row) {
+          var item = h('li');
+          item.appendChild(icon('empty'));
+          item.appendChild(h('span', {
+            text: coded(row.type.label) + ': ' + fmt.plural(row.runs, 'run', 'runs') + ', ' +
+              fmt.plural(row.accounts, 'account', 'accounts')
+          }));
+          split.appendChild(item);
+        });
+        body.appendChild(split);
+      }
+
+      box.appendChild(body);
+
+      var foot = h('div', { className: 'card-foot' });
+      foot.appendChild(icon('lock'));
+      foot.appendChild(h('span', {
+        text: 'Counts only. Which accounts these are is not sent to this page, at any role. ' +
+          'The per-type split is counted per type, so the same person hitting this on two ' +
+          'request types is one account in the figure above and one in each line here.'
+      }));
+      box.appendChild(foot);
+      return box;
     }
 
     /* -------------------------------------------------------- privacy */
@@ -605,9 +1090,9 @@
 
       var promises = h('ul', { className: 'list-tick' });
       [
-        'Nothing here names a person. What this page prints is a rule, a request type ' +
-          'and a count, and anything arriving that looks like a contact detail is masked ' +
-          'before it is drawn.',
+        'Nothing here names a person. The run history route sends no account identity at ' +
+          'all — not a masked one, not a coded one — so there is nothing on this page to ' +
+          'unmask. What it prints is a request type, a failure label, a model and a count.',
         'What was asked, what Aria answered and the athlete details a run read are ' +
           'hidden for every role, the owner included, until a reveal is recorded.',
         'A reveal is an owner action and needs a written reason. There is no reveal ' +
@@ -682,20 +1167,30 @@
 
       [
         {
-          title: 'The runs themselves',
-          desc: 'No route lists runs, so there is no per-run table, no stage timeline ' +
-            'and no retry history. What is above is every failure a rule caught, which ' +
-            'is a narrower thing.'
+          title: 'What a run cost',
+          desc: 'The run record carries no price. The approved design shows a dollar figure ' +
+            'per run; nothing behind this page can produce one, and a made-up figure in a ' +
+            'cost column is worse than an empty one. Spend answers this per model and per ' +
+            'day instead.'
         },
         {
-          title: 'How long a run took',
-          desc: 'Durations and memory are not served anywhere, so a median run time ' +
-            'would be a number with nothing behind it.'
+          title: 'Who the run was for',
+          desc: 'Deliberate, and not a gap waiting to be filled. The run record has no ' +
+            'consent flag, so there is nothing a search could be filtered by; the route ' +
+            'therefore sends no account identity at all rather than one it cannot gate. ' +
+            'How many accounts a fault reached is above; which ones is not here, at any role.'
         },
         {
-          title: 'What a single run did',
-          desc: 'Opening one run needs a record of one run. Until that exists, a ' +
-            'failure is readable as a group and not as an individual.'
+          title: 'Which app asked',
+          desc: 'Neither the run record nor the job table carries a client app or an ' +
+            'environment, so a filter by app would be a control that narrowed nothing. ' +
+            'Request type is the closest real answer and it is offered above.'
+        },
+        {
+          title: 'Whether a run was refused on safety grounds',
+          desc: 'A run ends worked, failed or cancelled. A request Aria declined to answer ' +
+            'completed, because the refusal was the answer, so "refused" is not a state this ' +
+            'record can separate out.'
         }
       ].forEach(function (item) {
         var line = h('div', { className: 'omit-item' });
@@ -712,6 +1207,9 @@
       return section;
     }
 
-    load();
+    /* The skeleton goes up now rather than inside the listener, because the
+       listener is added before the event arrives and the pane would otherwise
+       be a blank rectangle until the answer lands. */
+    region.loading(SKELETON);
   });
 }(window));

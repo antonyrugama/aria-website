@@ -299,7 +299,7 @@ code behaves. The block below is read out of the `<link>` and `<script>` tags in
 something, or a file that is deleted, is a red test rather than a stale sentence.
 
 ```claims id=assets-by-page
-alerts-model.js = alerts.html, index.html, jobs-live.html, run-history.html
+alerts-model.js = alerts.html, index.html, jobs-live.html
 api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
 aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
@@ -573,16 +573,24 @@ and sorted below everything still going. A count of running
 or queued jobs is not drawn at all: a tile reading zero and a tile with no pipeline behind it
 look identical, and that is the one thing an operations screen must never be.
 
-**What happened** draws the one record that does exist. There is still no per-run history — no
-route lists runs, their stages or their durations — so the pane answers from the alerting
-record, which is every failure anybody was watching for, and names the rest as missing in a band
-of its own. It applies the operator's window to the problems that came back, groups the failures
-by rule and request type so a reason shows how often it happened rather than once per row, and
-states how much of the window was actually being watched, because an empty window is good news
-only if something was in a position to notice. Its figures are floors when a page comes back
-full, for the reason in the paragraph below. What was asked and what Aria answered are not on
-the page at any role, the owner included: the privacy band names the three fields, says where a
-reveal is recorded, and offers no control here.
+**What happened** draws the runs themselves. It used to answer from the alerting record because
+no route listed runs; `GET /api/ops/runs` now does, over the append-only transition log
+Stadiora/Aria#5561 landed, so the pane reads that and the alerting record stays on Problems,
+which owns it. It counts what finished in the operator's window, groups every failure by the
+label the worker recorded so a reason shows how often it happened rather than once per row,
+lists the newest runs, and opens any one of them to the transitions it actually made — which is
+the one place on this dashboard where a retry is visible as a retry — beside a count of how many
+other runs and how many other accounts hit the same fault.
+
+Three empties are drawn differently on purpose, because they mean different things: a table that
+holds nothing at all says the pipeline may never have been connected and draws no figures under
+it; a record that starts inside the window says from when, above figures that are real but
+partial; and a window a readable record says was quiet is a genuine zero. A count of finished
+runs is never zero-filled, and a median nobody could measure prints "Not measured" rather than a
+numeral, always beside the number of runs it was taken over. What was asked and what Aria
+answered are not on the page at any role, the owner included, and no account identity is sent to
+it at all: the privacy band names the three fields, says where a reveal is recorded, and offers
+no control here.
 
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
@@ -731,11 +739,19 @@ Two more came off later, for the same reason and after a spell of doing the othe
 Happening now and What happened each declared an app control and an environment control, and
 each then explained, in prose underneath the bar the registry had made the shell draw, that the
 app control narrowed nothing and that Staging would be refused rather than answered. What
-happened also offered a custom window whose one outcome was a refusal card. The alerting record
-is kept per request type rather than per app, there is no staging alerting record, and no bar on
+happened also offered a custom window whose one outcome was a refusal card. Neither record is
+kept per app — the alerting record is kept per request type, and the run record carries no
+client app or environment column at all — there is no staging alerting record, and no bar on
 this dashboard can supply a start and an end. All of it is now declared `false` — or, for the
 custom window, simply not listed — and one `filterNote` on each pane says why, which is what
 Overview has done since it was built.
+
+What happened keeps its window, and since `GET /api/ops/runs` takes one, the window is now
+*sent* rather than applied to what came back. That moves the pane from the answer-side half of
+the guard below to the read-side half, where the value the operator picked is read out of the
+request the pane made. It is the stronger of the two claims: a pane that narrows what it draws
+can still have read everything, and a window that never leaves the page cannot make the figures
+under it true.
 
 That rule now has a guard rather than a reader.
 `scripts/ops-registry-filters.test.mjs` boots every pane on the v2 bootstrap that declares a
@@ -970,7 +986,7 @@ pane-jobs-live-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
 pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
 pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
-pane-run-history-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
+pane-run-history-v2.js = /api/ops/runs
 pane-spend.js = /api/ops/costs, /api/ops/summary
 pane-users.js = /api/ops/users/, /api/ops/users/lookup
 ```
@@ -1596,25 +1612,35 @@ worst-first, the privacy band that locks content rather than offering to unlock 
 where nothing behind the page can answer what the mock draws. As with the sections above, this
 is not a complete diff: it names the departures that carry a decision.
 
-1. **Every figure about a *run* is absent, and named.** The mock draws runs, their durations, a
-   slowest-5% figure, a per-run view and a stage breakdown. No route lists runs at all, so there
-   is nothing to render them from. The pane names each missing thing in a band rather than
-   drawing an empty chart, because an empty chart and a quiet month look the same.
-2. **The record drawn is the alerting record.** The mock's "what happened" is every run; this
-   pane's is every failure something was watching for. The difference is printed on the page, in
-   the band and in the watching line, rather than left for the reader to infer.
-3. **No trend chart.** A chart needs a series, and the problems route answers one page ordered
-   worst-first — a shape that cannot be turned into a line over time without inventing the
-   missing part of it.
-4. **The app control, the environment control and the custom window are not drawn at all.** The
-   alerting record is kept per request type rather than per app; there is no staging alerting
-   record; and nothing on this page can supply a start and an end for a custom window. Each of
-   the three was offered for a while and then explained away underneath itself, which is the
-   same defect as a disabled button by the reasoning under Happening now rule 5 — a control that
-   cannot succeed says the thing is within reach. The registry now declares only the window this
-   pane really applies, and a single `filterNote` says why the other two are absent.
+1. **No per-run cost.** The mock prints a dollar figure against every run. The transition log
+   records no price — there is no cost at the lifecycle boundary to record — so the column is
+   named in the "cannot answer yet" band instead of being drawn with an invented number in it.
+   Cloud costs answers spend per model and per day, which is the real version of the question.
+2. **No "Who for" column, and no account identity at all.** The mock shows a coded athlete
+   against each run. The route names `user_id` only inside `COUNT(DISTINCT ...)`, so what
+   crosses the wire about people is how many of them a fault reached and nothing else. This is
+   deliberate rather than pending: `job_lifecycle_events` carries no consent flag, so a faceted
+   search over identities would be filtered by nothing, and a filter that cannot be checked is
+   one that can silently stop being true. Publishing none cannot.
+3. **No "Refused" outcome.** The mock shows four — worked, failed, refused, cancelled. Storage
+   has three terminal states, and a request Aria declined to answer *completed*: the refusal was
+   the answer. The fourth is named in the band rather than synthesised from a guess.
+4. **No app or environment control, and no custom window.** Neither the transition log nor the
+   job table carries a client app or an environment, so an app control would narrow nothing; and
+   no bar on this dashboard can supply a start and an end for a custom window. Offering either
+   would be the disabled-button defect from Happening now rule 5 — a control that cannot succeed
+   says the thing is within reach. The registry declares only the window this pane really
+   applies, and one `filterNote` says why. The two narrowings that *are* real, request type and
+   outcome, are on the pane itself and built from the facet counts the window came back with, so
+   a control can never offer a value the window does not hold.
    `scripts/ops-registry-filters.test.mjs` holds the registry to it, keyed off the call each
    pane recorded rather than off anything a file says about itself.
+5. **No trend chart.** The mock draws one. A chart needs a series and this read answers one
+   window, so a line over time would have to invent the missing part of it.
+6. **No timer.** The mock implies a live page. This one is the past tense: it reads once per
+   selection, stamps when it read, and offers "Read again". Nothing is started, so nothing has
+   to be stopped when the operator leaves — which is the strongest available answer to the
+   polling-leak class of defect, and the opposite of the choice Happening now correctly makes.
 
 `assets/pane-run-history-v2.css` carries this pane's own shapes.
 
@@ -2514,7 +2540,7 @@ lines short — which is why none of them are typed any more.
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 136
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 142
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014

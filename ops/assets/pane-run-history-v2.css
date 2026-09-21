@@ -34,9 +34,10 @@
    scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
 .tbl-wrap { overflow-x: auto; }
 
-/* The failure table's first column carries the rule name and the threshold it
-   crossed, which is the one cell that has to stay readable at every width. */
-.tbl td:first-child { min-width: 200px; }
+/* Both tables put the thing being named in the first column — a failure
+   reason, or the time a run finished — and that is the one cell that has to
+   stay readable at every width. */
+.tbl td:first-child { min-width: 180px; }
 
 /* --------------------------------------------------------------- privacy
 
@@ -98,3 +99,66 @@
 .omit-item svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--ink-3); }
 .omit-title { font-size: 12.5px; font-weight: 560; }
 .omit-desc { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+
+/* -------------------------------------------------------------- controls
+
+   Request type, outcome, and the read stamp beside the button that takes a new
+   one. Wraps rather than scrolls: three controls on one line at 375px would be
+   three unreadable controls, and there is no width at which a select whose
+   options cannot be read is better than a second row. */
+.rh-controls {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+}
+.rh-picker { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.rh-picker .sel { max-width: 100%; }
+/* A facet label carries a count, so the longest option in the list decides the
+   control's width and at 375px that is wider than the screen. The select
+   clips its own text rather than pushing the card wide; the full label is
+   still there when it is opened. */
+.rh-picker select { max-width: 100%; text-overflow: ellipsis; }
+.rh-controls-end {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------- one run
+
+   The facts about a single run, as label-and-value pairs. A definition list
+   would be the stricter markup and is not reachable here: shell-pane-v2's h()
+   builds one element per call with no grouping, so a <dl> would need <div>
+   wrappers that no CSS in this repo styles. Pairs it is, each one a labelled
+   line that reads in order. */
+.rh-facts {
+  display: grid; gap: 4px 18px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.rh-fact {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.rh-fact-val { font-size: 12.5px; font-weight: 520; color: var(--ink); text-align: right; }
+
+/* ---------------------------------------------------------- the stages
+
+   Every transition the recorder won, in order. An <ol> because the order is
+   the content: this is the one place on the dashboard where a retry is visible
+   as a retry, and a list that could be read in any order would lose that. */
+.rh-stages { display: flex; flex-direction: column; gap: 8px; }
+.rh-stage-list { display: flex; flex-direction: column; gap: 7px; margin: 0; padding: 0; }
+.rh-stage {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;
+  list-style: none;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.rh-stage:first-child { border-top: 0; }
+.rh-stage-at { font-size: 12px; color: var(--ink-2); }
+.rh-stage-note { font-size: 11.5px; color: var(--ink-3); }
+
+@media (max-width: 560px) {
+  /* The stamp sits under the controls rather than being pushed off the end of
+     a row that has already wrapped. */
+  .rh-controls-end { margin-left: 0; width: 100%; }
+  .rh-picker { flex: 1 1 100%; }
+}
