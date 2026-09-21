@@ -19,8 +19,12 @@ name: Ops v2 contrast
 # A ring is judged against the surfaces BESIDE it, and `outline-offset` decides
 # which those are -- positive puts the ring outside the control, on whatever
 # the control sits on, negative puts it on the control itself. So each control
-# is photographed unfocused and focused and the ring is read off the pixels
-# that moved, rather than modelled from geometry. Real Tab presses drive it:
+# is photographed THREE times -- unfocused, focused, and focused again with
+# the ring alone switched off -- rather than modelled from geometry. The ring
+# is what the third differs from the second in; the surface it lands on is
+# read from the third, so a control whose focus style also repaints its own
+# surround (a glow standing down as the ring goes up) is measured rather than
+# guessed at against stale pixels. Real Tab presses drive it:
 # `:focus-visible` is a modality heuristic, and scripted focus alone matches it
 # on nothing, which would make every ring on the page look absent.
 #
