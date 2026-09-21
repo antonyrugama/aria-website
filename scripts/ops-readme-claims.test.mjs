@@ -1,9 +1,11 @@
 /* ops/README.md's load-bearing claims, re-derived from the code and compared.
 
-   WHY THIS EXISTS. Seven issues were filed against ops/README.md in one day,
+   WHY THIS EXISTS. Eight issues were filed against ops/README.md in one day,
    all of them the same defect: a sentence describing the code more broadly,
    or more narrowly, than the code behaves. Stadiora/Aria#10457, #10474,
-   #10510, #10639, #10641, #10655 and #10663. A prose rule costs one issue per
+   #10510, #10639, #10641, #10655, #10663 and #10677. Neither the count nor
+   the list is derived - the tracker is another repository - so both are in
+   NOT COVERED below. A prose rule costs one issue per
    drift forever; a derived claim costs nothing, so the numbers and lists this
    README is read FOR are written in fenced `claims` blocks and compared here
    against the tree, the pages, the registry, the stylesheets, the guards and
@@ -53,6 +55,12 @@
 
    NOT COVERED, stated so nobody reads a green run as more than it is:
 
+   - Any count of GitHub ISSUES, including the eight in the paragraph above
+     and the same sentence in ops/README.md. The tracker is Stadiora/Aria and
+     this repository cannot read it, so that number is typed and will rot like
+     any typed number. Round 11 caught it already rotted - it said seven, and
+     omitted #10677, the issue this PR's own table opens with. Corrected, not
+     bound; a derived version would need a network call from a unit test.
    - The WORDS in a checks-table row. That table is held to the browser
      guards only by its row SET: every `check-ops-*.mjs` in `scripts/` has to
      be the subject of exactly one row, which is that row's first cell. What
@@ -182,8 +190,8 @@
      true and checked: a check that does not RUN is a failing run, whether it
      was deleted or renamed, so removing a defence means removing its expected
      name from report() too - and that edit is in the diff, by name.
-   - A defence SWAPPED rather than retired. Three of the four FLOORS count blocks
-     pinned, blocks derived and families held. Each is a floor, so each sees a
+   - A defence SWAPPED rather than retired. The FLOORS that count blocks
+     pinned, blocks derived and families held are `at least` floors. Each is a floor, so each sees a
      NET shrink and nothing else: delete one derivation and add a trivial one
      in the same commit and the count is unchanged, which is a real hole and
      not a theoretical one — it is exactly the shape the ratchet bullet in
@@ -264,9 +272,13 @@
    - Which pages can DRAW a class is read from the class tokens written in the
      page and in the scripts that page loads: `class=` and `class:`,
      `className`, `classList.add|remove|toggle` and `setAttribute('class', …)`,
-     each with a literal, each guarded against being the tail of a longer
-     name the same way the page attributes are, so `data-class` is not
-     `class` and `x-className` is not `className`. The error runs BOTH ways
+     each with a literal, but NOT all guarded the same way. `class=` and
+     `className` refuse a preceding word character or hyphen, so `data-class`
+     is not `class` and `x-className` is not `className`; `classList` and
+     `setAttribute` use a plain \b, which a hyphen satisfies, so
+     `data-classList` IS read as `classList`. Round 11 demonstrated that with
+     a control; it is left because it can only OVER-report, the direction
+     already declared untrustworthy here. The error runs BOTH ways
      and NEITHER value is the strong one. A name in a comment counts as a draw site, so a named page can
      be an over-report; a class assembled at run time (`'badge-' + tone`) or
      written through a helper this list does not name is invisible, so a
@@ -317,6 +329,32 @@ const PAGES = list('ops').filter((f) => f.endsWith('.html'));
 const ASSETS = list('ops/assets').filter((f) => f.endsWith('.js') || f.endsWith('.css'));
 const SCRIPTS = list('scripts').filter((f) => f.endsWith('.mjs'));
 const WORKFLOWS = list('.github/workflows').filter((f) => f.endsWith('.yml'));
+
+/* ONE answer to "is this string a file this repository has", and one answer to
+   how a written path resolves to it. The file sweep and the line-citation
+   refusal had a copy each, and the copies DISAGREED: round 11 demonstrated
+   `assets/pane-registry.js:103` — a spelling this README uses five times —
+   walking straight through the citation refusal, while the sweep sixty lines
+   above resolved the same path happily. Two implementations of one concept is
+   how that happens, so there is one now. */
+const repoFiles = () => new Set([
+  ...PAGES.map((f) => `ops/${f}`),
+  ...list('ops/assets').map((a) => `ops/assets/${a}`),
+  ...list('scripts').map((f) => `scripts/${f}`),
+  ...WORKFLOWS.map((w) => `.github/workflows/${w}`),
+]);
+const leafIndex = (files) => {
+  const byLeaf = new Map();
+  for (const file of files) byLeaf.set(path.basename(file), file);
+  return byLeaf;
+};
+/* A path carrying a directory is held to that directory, or `ops/assets/x.css`
+   and `made/up/x.css` both read as right because the leaf matches. A bare
+   `x.css` is the one spelling resolved by leaf, which is how most of this file
+   names an asset. `/ops/` and `ops/` are the same place. */
+const resolveRepoPath = (file, byLeaf) => (file.includes('/')
+  ? [file, `ops/${file.replace(/^\/?ops\//, '')}`]
+  : [file, byLeaf.get(file)].filter(Boolean));
 
 /* ------------------------------------------------------------ the blocks */
 
@@ -1644,7 +1682,7 @@ const report = (expected) => {
    only by being deleted in both places. */
 const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
 
-/* The floors. Three integers, and they are integers ON PURPOSE: every other
+/* The floors. Integers, and they are integers ON PURPOSE: every other
    defence in this file is a SET, and a set of subjects is itself a hand-written
    list that can be deleted alongside the thing it pins. Round 6 walked that
    regress up one level — REQUIRED_ROWS pins the blocks, and nothing pinned
@@ -1653,11 +1691,14 @@ const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
    with another list moves the hole again; a count ends it, because a count has
    nothing inside it to delete.
 
-   These are FLOORS, not equalities: growing any of the three is free, which is
-   the whole point of a ratchet. Shrinking one is red until somebody edits the
+   Most are FLOORS rather than equalities: growing one is free, which is the
+   whole point of a ratchet. Shrinking one is red until somebody edits the
    number here AND the row it prints into `claims id=pinned-blocks`. That is the
    property being bought — not that a retirement is impossible, but that it
-   cannot be quiet. */
+   cannot be quiet. Some are equalities instead, because for those a quiet
+   GROWTH is a weakening too; which are which is written in the rows the block
+   prints, not in this comment, because round 11 found this comment counting
+   three when there were five. */
 const FLOORS = {
   pinnedBlocks: 17, derivedBlocks: 25, statusFamilies: 4,
   collisionWidest: 8, exemptCitations: 1,
@@ -1872,19 +1913,12 @@ check(TABLE_TEST, () => {
    dead in the deleted-assets block — which is what makes a deletion elsewhere
    in the repository red here rather than silently stale. */
 check(SWEEP_TEST, () => {
-  const inTree = new Set([
-    ...PAGES.map((p) => `ops/${p}`),
-    ...list('ops/assets').map((a) => `ops/assets/${a}`),
-    ...list('scripts').map((s) => `scripts/${s}`),
-    ...WORKFLOWS.map((w) => `.github/workflows/${w}`)
-  ]);
-  const byBasename = new Map();
-  for (const file of inTree) byBasename.set(path.basename(file), file);
+  const inTree = repoFiles();
+  const byBasename = leafIndex(inTree);
 
   const deleted = new Set((BLOCKS.get('deleted-assets')?.lines || [])
     .map((l) => l.trim().split('=')[0].trim()));
-  const deletedByBasename = new Map();
-  for (const file of deleted) deletedByBasename.set(path.basename(file), file);
+  const deletedByBasename = leafIndex(deleted);
 
   const EXTENSIONS = new Set([...inTree, ...deleted]
     .map((f) => path.extname(f).toLowerCase()).filter(Boolean));
@@ -1918,11 +1952,8 @@ check(SWEEP_TEST, () => {
          which is how most of this file names an asset. A path declared DEAD is
          resolved the same way, so `scripts/operate.css` is wrong even though
          `operate.css` is a file this repository deleted. */
-      const resolve = (byLeaf) => (file.includes('/')
-        ? [file, `ops/${file.replace(/^\/?ops\//, '')}`]
-        : [file, byLeaf.get(file)].filter(Boolean));
-      if (resolve(deletedByBasename).some((c) => deleted.has(c))) continue;
-      if (resolve(byBasename).some((c) => inTree.has(c))) continue;
+      if (resolveRepoPath(file, deletedByBasename).some((c) => deleted.has(c))) continue;
+      if (resolveRepoPath(file, byBasename).some((c) => inTree.has(c))) continue;
       missing.push(`${README_PATH}:${i + 1}: names ${file}, which is neither in the tree nor in the deleted-assets block`);
     }
   });
@@ -1949,13 +1980,8 @@ check(SWEEP_TEST, () => {
    citation written in words ("line 583 of ..."), or one outside a backtick
    span. Both are in NOT COVERED at the head of this file. */
 check(CITATION_CHECK, () => {
-  const here = new Set([
-    ...PAGES.map((f) => `ops/${f}`),
-    ...list('ops/assets').map((a) => `ops/assets/${a}`),
-    ...list('scripts').map((f) => `scripts/${f}`),
-    ...WORKFLOWS.map((w) => `.github/workflows/${w}`),
-  ]);
-  const byBasename = new Set([...here].map((f) => path.basename(f)));
+  const here = repoFiles();
+  const byBasename = leafIndex(here);
   /* Only a file THIS repository has. A citation into the Aria monorepo —
      `opsUsageView.ts:932` — names a line nothing here can resolve, so it is
      out of reach of this check rather than quietly counted as clean; that is
@@ -1979,7 +2005,7 @@ check(CITATION_CHECK, () => {
          check-ops-shell-v2.mjs:583` and on a span carrying two citations,
          under a claim that read `anywhere in this file's prose`. */
       const hits = [...span[1].matchAll(cited)]
-        .filter((h) => here.has(h[1]) || (!h[1].includes('/') && byBasename.has(h[1])));
+        .filter((h) => resolveRepoPath(h[1], byBasename).some((c) => here.has(c)));
       if (hits.length) {
         continuing = true;
         for (const hit of hits) found.push({ at: i + 1, text: hit[0] });

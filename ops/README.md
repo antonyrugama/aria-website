@@ -292,7 +292,7 @@ ops/
 ```
 
 The tree above says what each file is **for**. What each file is **loaded by** is not written
-here in prose, because prose is what went wrong: seven issues were filed against this README in
+here in prose, because prose is what went wrong: eight issues were filed against this README in
 one day, every one of them a sentence describing the code more broadly or more narrowly than the
 code behaves. The block below is read out of the `<link>` and `<script>` tags in `ops/*.html` by
 `scripts/ops-readme-claims.test.mjs` and compared line for line, so a page that stops loading
@@ -2378,7 +2378,7 @@ for one substring of one of its two dimensions is a description of a net, not a
 measurement of one, and over-firing was disclosed before under-firing — the
 wrong way round in a file whose defect class is the quiet direction.
 
-Within those three phrases the count is syntactic and deliberately dumb —
+Within the phrases the census below reports as SEEN, the count is syntactic and deliberately dumb —
 a line inside `check-ops-narrow-overflow.mjs` refers back to its own section and
 counts as a second one — because a dumb tripwire that fires is worth more here than a
 clever one that reads English.
@@ -2528,9 +2528,13 @@ pane-registry.js:103-110 = exempt, the record of a citation that had already dri
 
 ### What holds this README to the code
 
-Seven issues were filed against this file in one day (`Stadiora/Aria#10457`, `#10474`, `#10510`,
-`#10639`, `#10641`, `#10655`, `#10663`), all of them the same defect: a sentence describing the
-code more broadly, or more narrowly, than the code behaves. A README that describes a guard more
+Eight issues were filed against this file in one day (`Stadiora/Aria#10457`, `#10474`, `#10510`,
+`#10639`, `#10641`, `#10655`, `#10663`, `#10677`), all of them the same defect: a sentence
+describing the code more broadly, or more narrowly, than the code behaves. That number and that
+list are **not derived** — the issues live in another repository's tracker, so nothing here can
+count them; they are in the NOT COVERED list at the head of the guard for exactly that reason,
+and round 11 found this sentence saying seven and omitting the issue this PR's own table opens
+with. A README that describes a guard more
 broadly than it behaves is worse than no README, because the next reader stops looking.
 
 So the numbers and lists this file is read **for** are not typed here. They are in fenced blocks
@@ -2568,9 +2572,13 @@ ran **green at 28/28**, which put back a constant the round before had just prot
 pin list with another pin list only moves the hole; a count has nothing inside it to delete, so
 that is where the regress stops. A floor does not make a retirement impossible — it makes it
 **loud**: going green after one needs the integer lowered in the guard *and* the row it prints
-here changed, and both of those are visible in a diff. Growing any of the `at least` floors is
-free; the one `exactly` floor is an equality because a sample that quietly **grew** would leave
-the sentence describing it just as wrong as a sample that shrank. A floor
+here changed, and both of those are visible in a diff. Growing an `at least` floor is free; an
+`exactly` floor refuses growth as well, and the two have **different reasons**: a sample that
+quietly grew would leave the sentence describing it as wrong as a sample that shrank, while an
+allowlist of things a guard refuses to judge is a weakening whichever way it moves. Which floors
+are which is in the rows below, not in this sentence — round 11 found this sentence counting one
+`exactly` floor four lines after the paragraph that says how many there are is the rows' business
+and not a paragraph's. A floor
 counts **pins that name a real block** — a key naming nothing used to be inert and still counted,
 which is round 7's `E1` — and it sees a **net** shrink only, so a derivation deleted and a trivial
 one added in the same commit passes it. That hole is stated in the guard's NOT COVERED list in
@@ -2622,8 +2630,10 @@ guard got a row the day it landed instead of the day somebody noticed; and a thi
 **source line number** anywhere in this file's prose, because five of the false claims found on
 the PR that built this were a `file:line` citation that was true when written and drifted after,
 one of them re-typed by the round that removed it. Prose may name a file; the line belongs in
-`source-anchors`, where it is derived, or nowhere. And the ratchet holds the
-floors described above. None of them judges the **words** in a row — only that the row is there.
+`source-anchors`, where it is derived, or nowhere. The ratchet that holds the floors is **not**
+one of those rows — it has no `and a check,` line and is bound a different way, by being named in
+`report()`'s expected list, so deleting it reports itself. None of these judges the **words** in a
+row — only that the row is there.
 
 ```claims id=claims-blocks
 claims id=assets-by-page
@@ -2697,8 +2707,13 @@ that command, so a name in a comment or inside an `echo` is not read as running 
 off by an `if:`, or a job nothing triggers, is beyond this file. The
 fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
 are the class tokens written in a page and the scripts it loads — `class=` in either quote,
-`class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal and each
-held to the same name guard as the page attributes above, so `data-class` is not `class` — and that error runs
+`class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal — but
+**not** all held to the same name guard as the page attributes above. `class=` and `className`
+refuse a preceding letter, digit, hyphen or underscore, so `data-class` is not `class`;
+`classList` and `setAttribute` use a plain word boundary, which a hyphen satisfies, so
+`data-classList` IS read as `classList`. Round 11 demonstrated that, and it is left rather than
+tightened because the error it causes is an OVER-report, the direction this table already
+declares untrustworthy — and that error runs
 **both ways**, so neither value is the safe one to trust: a name in a comment counts as a draw, and
 a class assembled at run time or spelled through some other helper is invisible, so a `(no page)`
 can be an under-report exactly as a named page can be an over-report. `painted where drawn` asks
