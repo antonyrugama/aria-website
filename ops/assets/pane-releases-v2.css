@@ -285,10 +285,19 @@
    that minimum is wider than a phone. The table scrolls inside this box
    rather than taking the document sideways with it.
 
+   Positioned, because `overflow-x` clips only a descendant whose containing
+   block is this box. An absolutely positioned one resolves its containing
+   block to the nearest positioned ancestor, so while this box was static the
+   nearest was the page: a visually-hidden span inside a table wider than the
+   phone would sit at its static position in page coordinates, escape this
+   clip and take the document sideways while the table around it scrolled
+   correctly. ops.css carried this on .table-wrap and the v2 sheets dropped it.
+   Stadiora/Aria#10706.
+
    outline-offset is pulled inside the box because aria.css's global
    :focus-visible sits 2px outside it, and 2px outside a full-width child of a
    card is 2px into the card's own edge. */
-.tbl-scroll { overflow-x: auto; }
+.tbl-scroll { overflow-x: auto; position: relative; }
 .tbl-scroll:focus-visible { outline-offset: -2px; border-radius: 0; }
 
 /* aria.css styles .tbl th as a column header: uppercase, 9.5px, tracked out.

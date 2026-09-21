@@ -18,8 +18,10 @@
    child inside one. Rendering them says otherwise. Two panes draw a
    `<caption class="sr">` inside the scroller with no interaction at all --
    Problems (`div.scrollx`) and Releases (`div.tbl-scroll`) -- and the
-   People pane draws four more behind a search. Their containing block is the
+   People pane draws four more behind a search. Their containing block was the
    card outside the wrapper, in both themes and at both widths swept here.
+   Releases' has since been repaired in its own sheet and left KNOWN_ESCAPES;
+   Problems' is still frozen there.
 
    Nothing paints in the wrong place today, because `.sr` in assets/aria.css is
    a one-pixel box clipped to `rect(0 0 0 0)`: it has no visible extent to
@@ -63,13 +65,13 @@
    6. Every box that scrolls is positioned, except the wrappers frozen in
       KNOWN_STATIC_SCROLLERS -- and every frozen wrapper is still static.
       Claims 1 to 3 bind the CONSEQUENCE of the gap, which means they say
-      nothing about the three swept wrappers that hold nothing absolutely
-      positioned today: repairing one of those would be invisible, and an
-      eighth static scroller would cost nothing to add. This is the gap
-      itself, which is what the issue asked for. It is an unusual assertion
-      in that it is failing-by-design against five entries that this change
-      cannot repair, so the entries carry the sheet that repairs them and the
-      list empties as those sheets are fixed.
+      nothing about a swept wrapper that holds nothing absolutely positioned
+      today: repairing one of those would be invisible, and an eighth static
+      scroller would cost nothing to add. This is the gap itself, which is
+      what the issue asked for. It is an unusual assertion in that it is
+      failing-by-design against every entry still on the list, so each entry
+      carries the sheet that repairs it and the list empties as those sheets
+      are fixed.
 
    7. Every reading is in the state it is labelled with. The sweep asks for a
       preview state and then measures; nothing used to check that the ask
@@ -122,8 +124,11 @@
      needs to stabilise -- is real but I could not stage it, because the
      announcement is not something a test can delay. Treat that count as an
      instrument reporting zero, not as a proven condition.
-   - The repair itself. Adding `position: relative` to the seven static
-     wrappers is a change to pane sheets this file does not own. */
+   - The repair itself, in the sheets still listed. Adding `position:
+     relative` to a static wrapper is a change to a pane sheet; this file
+     names the sheet that owns each one and asserts only that the gap is
+     still there. Evaluations' `.tbl-wrap` and Releases' `.tbl-scroll` were
+     repaired under Stadiora/Aria#10706 and left both lists. */
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -175,28 +180,23 @@ const EPSILON = 0.5;
    Every entry here is asserted to STILL reproduce, so the list cannot outlive
    the violations it was written for.
 
-   Each entry names the sheet that would repair it. None of those sheets is
-   editable from this change; they are held by other work in flight. */
+   Each entry names the sheet that would repair it, and leaves this list when
+   that sheet is fixed: Releases' `.tbl-scroll` was repaired under
+   Stadiora/Aria#10706 and its entry went with it. */
 const KNOWN_ESCAPES = [
   {
     pane: 'alerts',
     box: 'div.scrollx',
     descendant: 'caption#alertsRulesCaption.sr',
     repairIn: 'ops/assets/pane-alerts-v2.css .scrollx'
-  },
-  {
-    pane: 'releases',
-    box: 'div.tbl-scroll',
-    descendant: 'caption#releasesHealthCaption.sr',
-    repairIn: 'ops/assets/pane-releases-v2.css .tbl-scroll'
   }
 ];
 
 /* The gap itself, as distinct from its consequence. KNOWN_ESCAPES above
-   freezes the two sites where a static wrapper demonstrably fails to contain
-   something; this freezes the static wrappers themselves, including the three
+   freezes the sites where a static wrapper demonstrably fails to contain
+   something; this freezes the static wrappers themselves, including those
    that hold nothing absolutely positioned today and so produce no escape to
-   detect. Without it, repairing those three would be invisible to this file
+   detect. Without it, repairing one of those would be invisible to this file
    and adding an eighth static scroller would be free.
 
    Stadiora/Aria#10706 asks for exactly this -- "a guard can require every
@@ -209,9 +209,7 @@ const KNOWN_ESCAPES = [
    the list one at a time as the sheets that own them are fixed. */
 const KNOWN_STATIC_SCROLLERS = [
   { pane: 'alerts', box: 'div.scrollx', repairIn: 'ops/assets/pane-alerts-v2.css .scrollx' },
-  { pane: 'evals', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-evaluations-v2.css .tbl-wrap' },
   { pane: 'history', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-run-history-v2.css .tbl-wrap' },
-  { pane: 'releases', box: 'div.tbl-scroll', repairIn: 'ops/assets/pane-releases-v2.css .tbl-scroll' },
   { pane: 'settings', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-settings-v2.css .tbl-wrap' }
 ];
 
