@@ -27,23 +27,29 @@
    have and the reason none of these assertions greps the README for a
    sentence.
 
-   FIVE BLOCKS CANNOT DERIVE WHICH ROWS THEY CARRY, and it is worth being
-   exact about what that does and does not mean. `source-anchors` reads which
-   file and which quoted comment to go looking for and `deleted-assets` reads
-   which absent path to look for, both out of the README; `v1-status-classes`,
-   `spend-colour-gate` and `spend-write-gate` read their subjects from
-   V1_STATUS_FAMILIES and V1_STATUS_SINGLETONS, COLOUR_PROBES and
-   WRITE_PROBES in this file. All five
-   then derive every value — the line
-   number, the uniqueness of an anchor, the absence of a file, who loads and
-   reads it, what the spend guard's own matchers answer. Editing a value in
-   any of them is red. What that shape cannot catch on its own is a subject
-   DELETED, which shrinks the expectation with it, so all five are pinned row
-   by row in `REQUIRED_ROWS` at the foot of this file. A count would not do:
-   pin the size and a block that grows by one absorbs the deletion of a
-   different row silently. Which blocks are pinned, and how many rows each
-   pins, is the `pinned-blocks` block - derived from REQUIRED_ROWS, because
-   this sentence used to say "five" and PR #111 then added two more.
+   SOME BLOCKS CANNOT DERIVE WHICH ROWS THEY CARRY, and it is worth being
+   exact about what that does and does not mean. Two read their subjects out
+   of the README — `source-anchors` reads which file and which quoted comment
+   to go looking for, `deleted-assets` reads which absent path to look for —
+   and the rest read theirs from hand-written arrays in this file. Every one
+   of them then derives every value: the line number, the uniqueness of an
+   anchor, the absence of a file, who loads and reads it, what the spend
+   guard's own matchers answer, what the blind-spot matcher says to a
+   spelling. Editing a value in any of them is red. What that shape cannot
+   catch on its own is a subject DELETED, which shrinks the expectation with
+   it, so each is pinned row by row in `REQUIRED_ROWS` at the foot of this
+   file. A count would not do: pin the size and a block that grows by one
+   absorbs the deletion of a different row silently.
+
+   HOW MANY blocks that is, and how many rows each pins, is the
+   `pinned-blocks` block, derived from REQUIRED_ROWS — because this paragraph
+   used to enumerate them, said "five", and was still saying five four review
+   rounds after PR #111 made it seven. The last three rows of that block are
+   FLOORS, integers in the FLOORS const at the foot of this file, and they
+   exist because pinning the pins with another list only moves the hole: round
+   6 showed a pin could be retired together with its line in `pinned-blocks`
+   and run green, which put back a constant round 5 had just protected. A
+   count is where that regress stops.
 
    NOT COVERED, stated so nobody reads a green run as more than it is:
 
@@ -142,6 +148,17 @@
      claim no block carries, is not judged. The remedy used in the rewrite is
      to make the prose point AT a block rather than repeat it, but nothing
      enforces that.
+   - A defence SWAPPED rather than retired. The three FLOORS count blocks
+     pinned, blocks derived and families held. Each is a floor, so each sees a
+     NET shrink and nothing else: delete one derivation and add a trivial one
+     in the same commit and the count is unchanged, which is a real hole and
+     not a theoretical one — it is exactly the shape the ratchet bullet in
+     CLAUDE.md warns about, a key too coarse to see a substitution. Keying per
+     block would close it and would be another hand-written list, which is the
+     regress the floors exist to end. The trade is deliberate: a floor cannot
+     be defeated by deleting it alongside something else, and that was the
+     live defect. A swap is visible in the diff as an addition nobody asked
+     for; a quiet deletion was not visible at all.
    - A guard CONSTANT this file does not name. `guard-constants` resolves the
      declarations listed in GUARD_CONSTANTS and no others, and only where the
      value is a top-level `const NAME = ...;` whose right-hand side evaluates
@@ -1580,14 +1597,14 @@ test(SWEEP_TEST, () => {
   JUDGED['file-paths'] = judged;
 });
 
-/* Five blocks cannot derive WHICH rows they carry, only what each row says.
+/* Some blocks cannot derive WHICH rows they carry, only what each row says.
    Two read their subjects from the README — `source-anchors` (which comment
    to go and find) and `deleted-assets` (which absent path to look for) — and
-   three read them from a hand-written array up in this file:
-   `v1-status-classes` from V1_STATUS_FAMILIES and V1_STATUS_SINGLETONS,
-   `spend-colour-gate` from COLOUR_PROBES and `spend-write-gate` from
-   WRITE_PROBES. In all five, deleting a subject deletes the expectation with
-   it and runs green.
+   the rest read them from a hand-written array up in this file. Which blocks,
+   and how many rows each, is `claims id=pinned-blocks`, derived from the keys
+   below; no count is typed here, because the count typed here was wrong for
+   four review rounds. In all of them, deleting a subject deletes the
+   expectation with it and runs green.
 
    So the pin is the SET, keyed per row, not the count. A count absorbs every
    deletion some addition has already paid for: grow a block by one, drop a

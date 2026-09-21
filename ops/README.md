@@ -2537,6 +2537,15 @@ expectation along with the claim, so each is pinned **row by row** in the guard 
 count, because a count is absorbed the moment the block grows — and a row can only go by deleting
 it there too.
 
+The pin list is itself hand-written, so the same question applies one level up, and the answer
+there is different: **three floors**, plain integers, in the last three rows of the block below.
+Round 6 of this PR's review showed that retiring a pin together with its line in `pinned-blocks`
+ran **green at 28/28**, which put back a constant the round before had just protected. Pinning a
+pin list with another pin list only moves the hole; a count has nothing inside it to delete, so
+that is where the regress stops. A floor does not make a retirement impossible — it makes it
+**loud**: going green after one needs the integer lowered in the guard *and* the row it prints
+here changed, and both of those are visible in a diff. Growing any of the three is free.
+
 **How many blocks that is, and how many rows each pins, is derived** rather than counted here,
 and the reason is this paragraph's own history: it said "five" correctly, and then PR #111 added
 two more blocks of exactly this shape and left it saying five for four review rounds. For those
@@ -2589,13 +2598,16 @@ And which of them are pinned, with how many rows each pin holds:
 
 ```claims id=pinned-blocks
 claims id=deleted-assets pins 2 rows by name
-claims id=guard-blind-spots pins 14 rows by name
+claims id=guard-blind-spots pins 15 rows by name
 claims id=guard-constants pins 9 rows by name
 claims id=source-anchors pins 6 rows by name
 claims id=spend-colour-gate pins 21 rows by name
 claims id=spend-write-gate pins 3 rows by name
 claims id=v1-status-classes pins 7 rows by name
 claims id=v1-status-classes pins the families badge, tag, callout, verdict
+floor: blocks pinned in REQUIRED_ROWS = at least 7
+floor: blocks derived in this file = at least 24
+floor: families pinned in REQUIRED_FAMILIES = at least 4
 ```
 
 **NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
