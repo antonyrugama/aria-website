@@ -66,8 +66,9 @@ const BATTERY = [
   },
   {
     id: 'CONTROL-2', file: CSS, expect: 'GREEN',
-    why: 'Gives `.meter.vio` the same hue as `.meter.bad`, collapsing two severities in the colour channel entirely. Must stay GREEN: after this fix the tones are told apart by notch count, so a hue collision is no longer a severity collision. This is the claim of #10825, run as an experiment.',
-    apply: (s) => replaceOnce(s, '.meter.vio  { --c: var(--violet); }', '.meter.vio  { --c: var(--rose); }')
+    why: 'Gives `.meter.vio` the same GLOW hue as `.meter.bad`. Must stay GREEN: `--c` drives the decorative `box-shadow` and nothing that carries meaning, so colliding it is not a severity collision. This row used to collide the whole colour channel, which was the same thing until Stadiora/Aria#10848 split the fill onto `--c-ink`; the anchor it matched no longer exists, and the row ERRORED rather than passing when the split landed -- a control failing loudly at the one moment its premise changed, which is what a control is for. The stronger half of its old statement now lives in T10, where every light tone is flattened to one grey and the three notch claims stay green.',
+    apply: (s) => replaceOnce(s, '.meter.vio  { --c: var(--violet);  --c-ink: var(--violet-ink); }',
+      '.meter.vio  { --c: var(--rose);  --c-ink: var(--violet-ink); }')
   },
   {
     id: 'T1', file: CSS, expect: 'KILL',
@@ -87,9 +88,9 @@ const BATTERY = [
   },
   {
     id: 'T3', file: CSS, expect: 'KILL',
-    why: 'Restores the first groove colour, `color-mix(var(--c) 30%, var(--bg))`. It is plainly visible and it measured 2.67:1 against a light-theme `bad` fill -- under SC 1.4.11, and invisible to any assertion that reads the stylesheet rather than the screen.',
+    why: 'Tints the groove with the fill\'s own ink grade until it nearly disappears into it. RE-AIMED: this row used to restore the historical groove colour, `color-mix(var(--c) 30%, var(--bg))`, which measured 2.67:1 against a light-theme `bad` fill -- and that payload now SURVIVES, measuring 4.21:1, because the groove reads `--c` while the fill reads the darker `--c-ink` after Stadiora/Aria#10848 and the two separated. The old payload is kept as T18 and published green on purpose. At 58% the grooves stay above the 1.8:1 detect threshold and land at 2.47:1 to 2.62:1, under SC 1.4.11. The row also reds the two count claims, because 28 of 36 grooves fall under the detector at that mix; the claim it exists for is the contrast one, which names its own numbers in the failure.',
     apply: (s) => replaceOnce(s, '  border: 0 solid var(--bg);',
-      '  border: 0 solid color-mix(in srgb, var(--c, var(--cyan)) 30%, var(--bg));')
+      '  border: 0 solid color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 58%, var(--bg));')
   },
   {
     id: 'T4', file: CSS, expect: 'KILL',
@@ -174,6 +175,12 @@ const BATTERY = [
       '[data-theme="light"] .meter i { background-image: linear-gradient(90deg, ' +
       'color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 30%, white), ' +
       'color-mix(in srgb, var(--c-ink, var(--cyan-ink)) 30%, white)); }\n.meter i {\n  position: absolute;')
+  },
+  {
+    id: 'T18', file: CSS, expect: 'GREEN',
+    why: 'T3 as it was written for Stadiora/Aria#10825: the historical groove colour, `color-mix(var(--c) 30%, var(--bg))`, which measured 2.67:1 against a light-theme `bad` fill and was a real SC 1.4.11 failure at the time. Published as a GREEN on purpose rather than deleted, because the reason it stopped killing is a finding: #10848 moved the fill to `--c-ink` and left the groove on `--c`, so groove and fill separated and the same payload now measures 4.21:1 worst across 36 grooves. A fix for the value channel incidentally repaired a defect in the severity channel. Without this row that would read as a row quietly dropped when it became inconvenient.',
+    apply: (s) => replaceOnce(s, '  border: 0 solid var(--bg);',
+      '  border: 0 solid color-mix(in srgb, var(--c, var(--cyan)) 30%, var(--bg));')
   }
 ];
 
