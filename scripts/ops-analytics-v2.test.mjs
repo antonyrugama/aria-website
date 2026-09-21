@@ -3030,11 +3030,12 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
   /* Outside the finally on purpose: this is a claim about the SUCCESS path, and
      inside a finally it would mask whatever the body threw.
 
-     scripts/ops-painter-exit.test.mjs binds the three failing ways out of the
-     launch. This is the fourth way -- the one that works -- and until now the
-     only thing holding it was "the suite terminates". Which is not an argument
-     that caught anything: every run of this suite ended, and green, for as long
-     as the profile was being left behind.
+     scripts/ops-painter-exit.test.mjs binds failing ways out of the launch,
+     and names the ones it does not. This is the way that works, and until now
+     the only thing holding it was "the suite terminates". Which is not an
+     argument that caught anything: this file has ended, and green, while
+     leaving its profile behind. No quantifier -- the run that found
+     Stadiora/Aria#10800 neither ended nor passed.
 
      What termination does and does not reach is deliberately left unsaid here.
      Two attempts at that sentence were both wrong -- one counted the handles

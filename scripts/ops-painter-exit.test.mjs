@@ -13,8 +13,9 @@
    THE SUBJECT
    -----------
    openPainter() in scripts/ops-analytics-v2.test.mjs, driven through its own
-   entry point by a real `node --test` child process, at each of the two points
-   it can fail before it returns:
+   entry point by a real `node --test` child process, at the points below. They
+   are the ones this file drives, not a survey of every way the launch can
+   fail -- NOT COVERED names two more:
 
      A  no browser to launch      -- throws while evaluating the argument to
                                      spawn(), after the profile directory is
@@ -65,8 +66,10 @@
      it, and asserts that the browser had been reaped at the instant the
      removal ran. That assertion exists because the argument this bullet used
      to make -- "the whole suite already is the proof, since it terminates" --
-     did not catch a real leak: every run of this suite ended, and green, for
-     as long as the profile was being left behind (Stadiora/Aria#10854).
+     did not catch a real leak: ops-analytics-v2.test.mjs has ended, and green,
+     while leaving its profile behind (Stadiora/Aria#10854). No quantifier --
+     the run that found Stadiora/Aria#10800 neither ended nor passed, and this
+     file's own header says so 60 lines up.
 
      That is the whole basis, and it is deliberately not generalised. Two
      attempts to say WHY termination misses things have been wrong. The first
@@ -81,9 +84,10 @@
      the directory is absent either way.
    - The CDP socket's release. The reviewer deleted `opened.push(() => socket.close())`
      outright and the suite stayed green, 53/53, so nothing here or in the
-     analytics file binds it. Left unbound rather than quietly fixed: it is a
-     third release on a fourth path, outside both issues this change closes,
-     and the honest record is that it is open.
+     analytics file binds it. Left unbound rather than quietly fixed: it is
+     outside both issues this change closes, and widening scope inside a review
+     loop is how the loop stops converging. The honest record is that it is
+     open, which is what this bullet is.
    - The profile directory on case A's path, which is created before the throw
      and released by the same unwind as the rest -- mkdtempSync runs before the
      throw, with nothing between them that waits --
