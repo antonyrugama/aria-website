@@ -3086,6 +3086,19 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
      Two attempts at that sentence were both wrong -- one counted the handles
      and said one, the next said a leaked handle cannot survive a run that
      ended -- and the observation above needs neither. */
+  /* Printed on every run, not only on failure. P8, P9 and P10 of this PR's
+     mutation battery -- the group SIGKILL, the confirm loop, and signalling the
+     group rather than the pid -- are all GREEN on macOS, where the kernel reaps
+     the whole tree with the parent and none of the three can be load-bearing.
+     The behaviour they exist for is Linux-only, so CI is the only oracle, and a
+     mechanism nobody can see working is one nobody can tell has stopped. These
+     two numbers make every CI run a reading: removalAttempts above 1, or
+     profileReturned true, is the confirm loop doing work. */
+  console.log('  painter teardown: reaped before removal ' +
+    JSON.stringify(painter.teardown.browserExitedBeforeRemoval) +
+    ', removal passes ' + painter.teardown.removalAttempts +
+    ', profile came back ' + JSON.stringify(painter.teardown.profileReturned));
+
   assert.equal(existsSync(painter.profile), false,
     'the painter left its browser profile at ' + painter.profile + ' after a clean run. ' +
     'kill() is a signal, not a join: if the removal does not wait for the browser to exit, ' +
