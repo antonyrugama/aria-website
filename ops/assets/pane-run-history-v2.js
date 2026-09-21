@@ -380,7 +380,7 @@
       var runs = (data && data.runs) || [];
       var failures = (data && data.failures) || [];
 
-      badge(coverage, summary);
+      badge(coverage, summary, data);
 
       /* Nothing recorded at all is its own state and it is not an empty
          window. There are no figures to put under it, and putting zeroes there
@@ -517,18 +517,46 @@
        the reason PR #98 settled on Overview: a badge reading 0 over data the
        pane never received is the pane stating as fact the one thing it does
        not know. */
-    function badge(coverage, summary) {
+    /* The rail carries this pane's one figure, so it carries what the figure
+       covers. The read is narrowed by whatever the operator picked, so the
+       count is too; a `3` that becomes a `1` because the operator narrowed to
+       one request type is a different number about a different set, and the
+       rail is the one place on screen with no controls next to it to say so.
+
+       Nothing failed under a narrowing clears the badge rather than showing a
+       zero, because "no failures among nutrition plans" is not "no failures".
+       Absence is the conservative answer and it is not a zero-fill. */
+    function badge(coverage, summary, data) {
       if (!summary || coverage.state === 'never_recorded' || !summary.failed) {
         S.setBadge('history', null);
         return;
       }
+      var facets = (data && data.facets) || {};
+      var parts = [];
+      if (narrowing.type !== 'all') parts.push(facetLabel(facets.types, narrowing.type));
+      if (narrowing.outcome !== 'all') parts.push(facetLabel(facets.outcomes, narrowing.outcome));
+      var covers = parts.length
+        ? ' in this window, among ' + parts.join(' and ') + ' only'
+        : ' in this window';
       S.setBadge('history', {
         label: fmt.int(summary.failed),
         tone: 'hot',
-        description: summary.failed === 1
-          ? 'one run failed in this window'
-          : fmt.int(summary.failed) + ' runs failed in this window'
+        description: (summary.failed === 1
+          ? 'one run failed'
+          : fmt.int(summary.failed) + ' runs failed') + covers
       });
+    }
+
+    /* The label the route sent for a narrowing, or the raw token said as a
+       raw token. A narrowing the new window no longer holds is not in the
+       facets at all, and naming it anyway is what keeps the badge honest
+       about what it counted. */
+    function facetLabel(list, value) {
+      var all = list || [];
+      for (var i = 0; i < all.length; i += 1) {
+        if (all[i].value === value) return all[i].labelled === false ? value : all[i].label;
+      }
+      return value;
     }
 
     /* ------------------------------------------------------ the controls */

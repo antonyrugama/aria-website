@@ -1186,6 +1186,53 @@ test('the rail badge counts failures, and clears rather than zeroing when nothin
     'one thing the pane does not know');
 });
 
+test('a readable window with nothing failing clears the badge rather than printing a zero',
+  async () => {
+    /* The other half of the same rule, and the half the never-recorded case
+       cannot reach: here the record IS readable and the window IS a genuine
+       zero. A 0 beside the pane name still reads, at a glance down the rail,
+       as a figure that was measured -- which is the one thing a cleared badge
+       and a zeroed one disagree about. */
+    const quiet = await boot({
+      runs: windowAnswer((base) => {
+        base.summary.failed = 0;
+        base.summary.completed = base.summary.runs;
+        base.failures = [];
+        base.runs = base.runs.map((r) => ({ ...r, outcome: 'completed', failureCode: null }));
+      }),
+    });
+    const item = quiet.doc.getElementById('rail').querySelectorAll('.nav-item')
+      .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+    assert.equal(item.querySelectorAll('.nav-badge').length, 0,
+      'a readable window with no failures put "' + allText(item) + '" on the rail, so a ' +
+      'measured zero and an unread pane look the same from the rail');
+  });
+
+test('the rail badge says what it counted, once the operator narrows the window', async () => {
+  /* The rail is the one place on screen with no controls beside it. A 3 that
+     becomes a 1 because the operator narrowed to one request type is a
+     different number over a different set, and nothing next to it says so. */
+  const dom = await boot({});
+  const railItem = () => dom.doc.getElementById('rail').querySelectorAll('.nav-item')
+    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+  const said = () => {
+    const sr = railItem().querySelectorAll('.nav-badge-sr')[0];
+    return sr ? allText(sr) : null;
+  };
+
+  assert.match(said() || '', /3 runs failed in this window$/,
+    'unnarrowed, the badge said "' + said() + '"');
+
+  const select = selectsIn(dom)[0];
+  select.value = 'nutrition_plan';
+  select.dispatch('change');
+  await settle();
+
+  assert.match(said() || '', /among Nutrition plan only$/,
+    'after narrowing to one request type the badge said "' + said() + '", which publishes a ' +
+    'count without the set it covers: the rail reads as every failure in the window');
+});
+
 /* ============================ the whole read =========================== */
 
 test('a failed window read degrades the pane and says the figures are unread', async () => {
