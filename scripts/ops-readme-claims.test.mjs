@@ -46,8 +46,10 @@
    HOW MANY blocks that is, and how many rows each pins, is the
    `pinned-blocks` block, derived from REQUIRED_ROWS — because this paragraph
    used to enumerate them, said "five", and was still saying five four review
-   rounds after PR #111 made it seven. The last three rows of that block are
-   FLOORS, integers in the FLOORS const at the foot of this file, and they
+   rounds after PR #111 made it seven. The block's trailing rows are the
+   FLOORS, integers in the FLOORS const at the foot of this file — how many
+   is the block's own business, because round 12 found this sentence and four
+   others still counting four after a fifth landed — and they
    exist because pinning the pins with another list only moves the hole: round
    6 showed a pin could be retired together with its line in `pinned-blocks`
    and run green, which put back a constant round 5 had just protected. A
@@ -146,7 +148,10 @@
      back to `absolute` by a DIFFERENT rule, is invisible to it: this reads
      one rule at a time and models no cascade between rules.
    - A file path spelled without a directory AND with an extension no file in
-     `ops/`, `ops/assets/`, `scripts/` or `.github/workflows/` uses. The sweep
+     this repository uses. The universe is the whole tree minus `.git` and
+     `node_modules`: round 12 demonstrated a bare `nonexistent.md` green when
+     it was four globs, because `.md` was not an extension any file in them
+     had. The sweep
      reads a bare `name.ext` as a path only when the tree already has that
      extension, because `payload.data` and `availability.state` are spelled
      the same way. A span carrying a directory is swept whatever its
@@ -165,20 +170,27 @@
      assertion and nothing outranks it.
    - A source line number written in WORDS, outside a code span, or into the
      Aria monorepo. The line-citation refusal reads `file.ext:NN` inside a
-     backtick span and only for a file this repository has, so `line 583 of
+     backtick span and only for a file this repository has — the whole tree,
+     since round 12; when that was four globs it was blind to a citation into
+     this very README, the likeliest one anybody would type — so `line 583 of
      check-ops-shell-v2.mjs` and `opsUsageView.ts:932` both walk through it.
      The first two are a narrowing this accepts rather than a net to widen -
      an English parser here would be guard code nothing has reviewed - and the
      third is unresolvable in principle: the file is in another repository.
-   - The floor assertions themselves. FLOORS is four integers and a count has
-     nothing inside it to delete, but the three `assert.ok(... >= FLOORS....)`
-     lines and the one `assert.strictEqual` beside the collision sample are
-     ordinary code: edit one to `true ||` and the defect it guards goes unseen.
-     Battery A1/A2 are green on exactly that and stay green on purpose. Nothing in one file can outrank its own last assertion; what
-     changed at module scope is that disabling one is now an edit a diff shows
-     rather than a one-word flag that leaves the source spelling intact. If the
-     CONSTANT is deleted rather than the assert, the run is red - `pinned-blocks`
-     prints all three floors, so the derivation throws.
+   - The floor assertions themselves. A count has nothing inside it to delete,
+     but EVERY assertion that names FLOORS is ordinary code: edit one to
+     `true ||` and the defect it guards goes unseen. This bullet names a SHAPE
+     and not a list, because the list was wrong twice - it enumerated the
+     ratchet's own lines and missed the equality guarding the exemption
+     allowlist, which round 12 then demonstrated green while a second live
+     citation walked through the refusal. `grep -n FLOORS` is the inventory;
+     nothing here counts them, because the count is what drifted. Battery
+     A1/A2 and M1 are green on exactly that and stay green on purpose. Nothing
+     in one file can outrank its own last assertion; what changed at module
+     scope is that disabling one is now an edit a diff shows rather than a
+     one-word flag that leaves the source spelling intact. If the CONSTANT is
+     deleted rather than the assert, the run is red - `pinned-blocks` prints a
+     row per floor, so the derivation throws.
    - The report() call at the foot of this file, and check() itself. They are
      the last assertions here and nothing outranks them: delete report() and
      nothing is reported; make check() swallow. That is not a gap a guard can
@@ -215,7 +227,9 @@
      control, but that array lives inside a template literal evaluated in the
      browser, so the five stays prose and stays unproven.
    - A blind spot a guard does not put in a bullet HEADING of its LEADING
-     docblock, under one of THREE recognised heading phrases.
+     docblock, under a recognised heading phrase - the census at the head of
+     the block reports which phrases those are, so that no sentence counts
+     them.
      `guard-blind-spots` reads the leading bold run of each bullet under a
      NOT COVERED heading that OPENS its line - matching the phrase anywhere in
      a line anchors on check-ops-contrast.mjs pointing at the README's list
@@ -336,13 +350,27 @@ const WORKFLOWS = list('.github/workflows').filter((f) => f.endsWith('.yml'));
    `assets/pane-registry.js:103` — a spelling this README uses five times —
    walking straight through the citation refusal, while the sweep sixty lines
    above resolved the same path happily. Two implementations of one concept is
-   how that happens, so there is one now. */
-const repoFiles = () => new Set([
-  ...PAGES.map((f) => `ops/${f}`),
-  ...list('ops/assets').map((a) => `ops/assets/${a}`),
-  ...list('scripts').map((f) => `scripts/${f}`),
-  ...WORKFLOWS.map((w) => `.github/workflows/${w}`),
-]);
+   how that happens, so there is one now.
+
+   It WALKS, and that is round 12's finding: this used to be four globs, so
+   `ops/README.md` — this guard's own subject, and the likeliest path anybody
+   would cite — was not a file this repository has, and a citation into it
+   walked through the refusal. A glob list is a claim about the tree that the
+   tree does not have to honour. Every reader of the question calls this;
+   `grep -n 'repoFiles()' scripts/ops-readme-claims.test.mjs` is the inventory,
+   and no sentence here counts them. */
+const WALK_SKIP = new Set(['.git', 'node_modules']);
+const walkFiles = (rel, acc) => {
+  for (const entry of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
+    if (WALK_SKIP.has(entry.name)) continue;
+    const next = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) walkFiles(next, acc);
+    else acc.add(next);
+  }
+  return acc;
+};
+let REPO_FILES = null;
+const repoFiles = () => (REPO_FILES || (REPO_FILES = walkFiles('', new Set())));
 const leafIndex = (files) => {
   const byLeaf = new Map();
   for (const file of files) byLeaf.set(path.basename(file), file);
@@ -643,7 +671,7 @@ DERIVED['panes'] = () => {
   const panes = registryPanes();
   return Object.keys(panes).map((key) => {
     const file = panes[key].file;
-    assert.ok(fs.existsSync(path.join(ROOT, 'ops', file)),
+    assert.ok(repoFiles().has(`ops/${file}`),
       `pane-registry.js declares pane "${key}" as ops/${file}, which is not a file here`);
     const loaded = loadedAssets(file);
     const shell = loaded.includes('shell-pane-v2.js') ? 'shell-pane-v2.js'
@@ -1206,7 +1234,7 @@ DERIVED['source-anchors'] = () => {
     const m = /^(\S+) "(.+)" = line \d+$/.exec(line);
     assert.ok(m, `source-anchors: "${line}" is not <path> "<anchor>" = line <n>`);
     const [, file, needle] = m;
-    assert.ok(fs.existsSync(path.join(ROOT, file)), `source-anchors: ${file} is not a file here`);
+    assert.ok(repoFiles().has(file), `source-anchors: ${file} is not a file here`);
     const hits = read(file).split('\n')
       .map((text, i) => (text.includes(needle) ? i + 1 : 0))
       .filter(Boolean);
@@ -1443,11 +1471,14 @@ const BLOCK_SET_TEST = 'every claims block is derived here, and every derivation
 const CITATION_CHECK = 'ops/README.md prose spells no source line number';
 
 DERIVED['claims-blocks'] = () => {
-  /* Two row sets are judged by a test rather than by a block — the file
-     sweep and the checks table — so their rows are read out of this file's
-     own source: delete either registration and its row goes with it, which a
-     typed sentence would not do. The probe anchors on a NEWLINE because the
-     spelling `test(SWEEP_TEST,` also occurs inside this very expression, so
+  /* Some row sets are judged by a check rather than by a block, so their
+     rows are read out of this file's own source: delete a registration and
+     its row goes with it, which a typed sentence would not do. How many there
+     are is the probe list below and the rows it returns - round 12 found this
+     comment still saying "two" after this PR added a third, which is the same
+     defect in the same paragraph that explains why the rows are derived. The
+     probe anchors on a NEWLINE because the spelling `check(SWEEP_TEST,` also
+     occurs inside this very expression, so
      the unanchored `includes` round 6 found here matched its own source and
      would have held the row up with both tests deleted. Both registrations
      sit at column 0; a re-indent of either is a false red, which is the
@@ -1471,7 +1502,7 @@ DERIVED['claims-blocks'] = () => {
    pinned, or loses a pin, moves its line here. REQUIRED_ROWS is declared at the
    foot of this file and read when the test runs, not now.
 
-   The last three rows are the FLOORS, and they are what stops the regress
+   The trailing rows are the FLOORS, one row each, and they are what stops the regress
    round 6 found: this block's own row set comes from REQUIRED_ROWS, which is
    hand-written, so deleting a pin together with its line here was green, one
    level up from the defect round 5 fixed. A floor is one integer, not another
@@ -1583,7 +1614,7 @@ DERIVED['deleted-assets'] = () => {
       const file = line.split('=')[0].trim();
       assert.ok(/^[A-Za-z0-9._/-]+\/[A-Za-z0-9._-]+$/.test(file),
         `deleted-assets: "${line}" does not start with a repository path`);
-      assert.ok(!fs.existsSync(path.join(ROOT, file)),
+      assert.ok(!repoFiles().has(file),
         `${README_PATH} says ${file} is deleted, and it is in the tree`);
       const base = path.basename(file);
       const pages = PAGES.filter((page) => loadedAssets(page).includes(base));

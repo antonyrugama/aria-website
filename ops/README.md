@@ -2347,7 +2347,10 @@ blind spots outside theirs: `check-ops-shell-v2.mjs` says what its icon
 sweep does not measure — an ink too close to what is behind it, and all of
 geometry but `stroke-width` — and `check-ops-contrast.mjs` carries a long
 `NOT COVERED, on purpose` section. Both are in `source-anchors` above, which is
-where every line number in this file now lives: the one that used to sit in this
+where every line number that points at CODE now lives — the one exception is the
+citation that is itself the record of a drift, published row by row in
+`exempt-citations` below and counted by the run, which reports it as
+`prose line citations` — the number that used to sit in this
 sentence was wrong by 343 lines, and the round that removed it re-typed the other
 one here, three lines up, in the same sentence that said it had not. Neither is carried below, and until the round
 that found this both read `(no blind-spot section)`, which is the same sentence
@@ -2626,8 +2629,10 @@ is what makes a file deleted elsewhere red here rather than quietly stale — a 
 directory counts whatever its extension, and a bare `name.ext` counts when the tree uses that
 extension, which is what keeps `payload.data` out of it; and the checks table
 above must carry a row for every `check-ops-*.mjs` in `scripts/`, which is how the sixth browser
-guard got a row the day it landed instead of the day somebody noticed; and a third refuses a
-**source line number** anywhere in this file's prose, because five of the false claims found on
+guard got a row the day it landed instead of the day somebody noticed; and another refuses a
+**source line number** written as `file.ext:NN` inside a code span, for any file this repository
+has — in words, outside a span, or into the Aria monorepo is NOT COVERED and said so there,
+because five of the false claims found on
 the PR that built this were a `file:line` citation that was true when written and drifted after,
 one of them re-typed by the round that removed it. Prose may name a file; the line belongs in
 `source-anchors`, where it is derived, or nowhere. The ratchet that holds the floors is **not**
@@ -2713,7 +2718,10 @@ refuse a preceding letter, digit, hyphen or underscore, so `data-class` is not `
 `classList` and `setAttribute` use a plain word boundary, which a hyphen satisfies, so
 `data-classList` IS read as `classList`. Round 11 demonstrated that, and it is left rather than
 tightened because the error it causes is an OVER-report, the direction this table already
-declares untrustworthy — and that error runs
+declares untrustworthy. `class:` is in neither group: it requires a line start, `{`, `,` or
+whitespace in front, which is STRICTER than both, so `(class: 'a')` is missed — an
+UNDER-report, and the one spelling here whose error runs the other way. Round 12 found it
+outside both halves of this sentence; no ops asset spells it that way today — and that error runs
 **both ways**, so neither value is the safe one to trust: a name in a comment counts as a draw, and
 a class assembled at run time or spelled through some other helper is invisible, so a `(no page)`
 can be an under-report exactly as a named page can be an over-report. `painted where drawn` asks
@@ -2760,9 +2768,11 @@ carries no numbers here until somebody names one of its constants. The five hit-
 the worked example — they live in an array inside a template literal evaluated in the browser,
 so they stay prose and stay unproven. A guard's **blind spots** are the leading bold run of each
 bullet under a NOT COVERED heading that opens its own line, reassembled across wrapped lines, so
-**a second blind spot named in a second bold span of the same bullet is not a line here** — three
-bullets in `check-ops-narrow-overflow.mjs` carry a second span and in one of them it is a second
-blind spot, Aria quality before any operation is submitted. What is bound instead is the exact
+**a second blind spot named in a second bold span of the same bullet is not a line here** —
+`check-ops-narrow-overflow.mjs` carries such spans, and in one of them the second span is a second
+blind spot, Aria quality before any operation is submitted. How many bullets carry one is not
+written here: the block binds the SUM, so a span moved from one bullet to another would leave a
+per-bullet count false and the bound number unchanged. What is bound instead is the exact
 **count of the spans beyond the first, summed** per guard, so the second span cannot arrive or
 leave unseen even though it is not named; a bolded word in a bullet's body moves that count too,
 and so does a third span on a bullet that already carried two — the per-bullet tally this started
