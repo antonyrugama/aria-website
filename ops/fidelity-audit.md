@@ -35,15 +35,29 @@ be read:
    the audit harness and never in the repo. **A section that rendered under that
    fixture is proof it exists. A section that did not render is not proof it is
    gone** — it may only mean the fixture did not carry the field. Every absence
-   claimed below was therefore confirmed a second way, by searching the built
-   pane source for the approved label.
+   claimed below was therefore confirmed a second way, against the built pane
+   source.
+
+   That second check was originally a plain text search for the approved label,
+   and **independent review showed a plain text search is unsound in one
+   direction.** `"The runs"` matches `pane-run-history-v2.js:685`, but that line
+   is `title: 'The runs themselves'` *inside* the band `What this pane cannot
+   answer yet` — the pane naming the thing it cannot draw. A substring cannot
+   tell "this band exists" from "this band is listed as one that does not". The
+   first version of this document published that false presence.
+
+   The determinations below are therefore taken from **the rendered band calls
+   themselves** — the first argument of every `S.band(...)` in each pane file —
+   compared against the titles named inside the cannot-answer lists, which are a
+   separate and opposite set.
 2. **Look up a user could not be rendered at all.** The pane reads
    `/api/ops/users/lookup` and `/api/ops/users/<id>`, neither of which the stub
    serves, and it draws nothing until a search is submitted. Inventing a fixture
    here would have meant reporting the audit's own shape as the product's, so
-   the pane is reported as **not comparable under the shipped fixture**. Three of
-   its four approved bands were confirmed present in `pane-users.js` by source
-   search.
+   the pane is reported as **not comparable under the shipped fixture**. All
+   four of its approved bands exist as `band(...)` calls in `pane-users.js`, with
+   one renamed: "Subscription, support and consent" ships as **"Subscription and
+   devices"**.
 3. **Comparisons are of structure, not of figures.** The mock's numbers are
    invented and the panes' numbers are real; no figure is compared to a figure.
 
@@ -54,13 +68,13 @@ be read:
 | Type scale | **No drift.** Identical on both sides, both themes. |
 | Colour roles | **Changed, and the change is corrective.** The mock's own light-theme secondary ink fails WCAG AA. |
 | Pane questions | **Nine of ten verbatim.** One changed. |
-| Section hierarchy | **Substantial divergence on 8 of 10 panes**, most of it acknowledged on screen by the pane itself. |
+| Section hierarchy | **Divergence on 8 of 10 panes**; four of the eight acknowledge it on screen, three have no machinery to. |
 | Preview states | **Coherent**, with one pane that ignores the control for a defensible reason. |
 | Type identity | **Inert.** Both sheets ask for Geist; the built dashboard has never rendered in it. |
 
 The headline is that most of what left the built dashboard left because **no
-route serves it**, and in most cases the pane says so in a band of its own rather
-than inventing a figure. That is a materially different situation from design
+route serves it**, and on four of the eight diverging panes the pane says so in a
+band of its own rather than inventing a figure. That is a materially different situation from design
 drift, and it points at backend work rather than at the stylesheets.
 
 ## Findings
@@ -75,19 +89,31 @@ Coach note summaries — with requests, worked-first-time, slowest 5%, cost, and
 through-the-day sparkline for each. Five rows, six columns, and the only place in
 the approved design where cost and reliability appear per request type.
 
-The string "What Aria has been doing" does not appear anywhere in the built pane
-source. Two further cards, **"Budget"** and **"Where the money goes"**, are also
-absent.
+`pane-overview.js` renders exactly two bands — `S.band('What needs a person')`
+and `S.band('How things are going')` — and the string "What Aria has been doing"
+appears nowhere in it. Two further approved cards on the same pane are also
+absent: **"Budget"** and **"Where the money goes"**. (Cloud costs has its own
+band named "Where the money goes"; what is gone is Overview's copy of it.)
 
-What makes this the notable one is the contrast with its neighbours. The built
-Overview carries a band called **"Not drawn here, and why"**, which names
-exactly one omission — *"No budget bar: nothing here records a cloud budget"*.
-The budget is accounted for. The request-type table is not mentioned anywhere,
-so a reader who approved the mock and opens the pane today has no way to learn
-where it went.
+What makes this the notable one is the contrast with its own neighbours. The
+built Overview is one of five pane files carrying acknowledgement machinery: it
+has a card headed **"Not drawn here, and why"**. In the audit's fixture that
+card named one omission, the budget bar. The request-type table is not named
+there, and nothing else on the pane mentions it.
 
-This is the only approved element in the audit that disappeared without the
-product saying so.
+Two qualifications, both of which narrow the claim:
+
+- That card is **driven by gaps the API response declares**, not by a fixed list
+  the pane holds. So "it named one omission" is a fact about the fixture, and a
+  different response could name others. What is durable is that the mechanism
+  exists on this pane, and that no code path adds the request-type table to it.
+- Three other approved elements are also absent without acknowledgement — see
+  finding 4 and #10807 — but they are on panes (`pane-analytics.js`,
+  `pane-spend.js`, `pane-releases.js`) that carry **no** acknowledgement
+  machinery at all.
+
+So the precise claim is: **Overview is the only silent loss on a pane that
+already had the means to say so and did not use it.**
 
 **Filed as [Stadiora/Aria#10804](https://github.com/Stadiora/Aria/issues/10804).**
 
@@ -126,8 +152,9 @@ Both stylesheets declare the same stack:
 ```
 
 The mocks load Geist and Geist Mono from Google Fonts, so the approved design
-was reviewed in Geist. The built dashboard has **no `@font-face` rule, no font
-link, and no `.woff2` anywhere in the repository**, and its CSP sets
+was reviewed in Geist. The built dashboard ships **no `@font-face` rule, no font
+link, and no font file** — `grep -rl "@font-face" ops/` and
+`find . -name "*.woff*"` both return nothing at `54a8c42` — and its CSP sets
 `font-src 'self'`. Every named family therefore falls through to the system
 default.
 
@@ -148,21 +175,21 @@ resolves silently it has never produced an error.
 
 **Filed as [Stadiora/Aria#10806](https://github.com/Stadiora/Aria/issues/10806).**
 
-### 4. Six panes diverge structurally, and five of them say so on screen
+### 4. Eight panes diverge structurally, and four of them say so on screen
 
 Section spines, dark theme at 1280, live state:
 
 | pane | approved | built | verdict |
 |---|---|---|---|
 | Overview | Today at a glance / What is happening / What Aria has been doing | What needs a person / How things are going | renamed + **one silent loss** (finding 1) |
-| Happening now | Right now / The three lanes / Every open job | Right now / Flowing, and failing / **What this pane cannot answer yet** | acknowledged |
-| What happened | Why things failed / The runs / Run `run_9f31c2` | What the record shows / Why things failed / What was asked, and what Aria answered / **What this pane cannot answer yet** | acknowledged; "The runs" is present in source, behind a selection |
+| Happening now | Right now / The three lanes / Every open job | Right now / Waiting, and whether it is clearing / Flowing, and failing / Open elsewhere / **What this pane cannot answer yet** | acknowledged (two of the five bands need data the audit fixture did not supply) |
+| What happened | Why things failed / The runs / Run `run_9f31c2` | What the record shows / Why things failed / What was asked, and what Aria answered / **What this pane cannot answer yet** | acknowledged; "The runs" is **absent**, and named in the cannot-answer band as *"No route lists runs"* |
 | Problems | Open problems / What is being watched | + Closed, and how the watching is doing | **addition** |
-| People and usage | Who is using Aria / Is that growing / Do people come back / Where people are, and what they do | Who is using Aria / Is that growing | "Do people come back" present in source; "Where people are" absent |
+| People and usage | Who is using Aria / Is that growing / Do people come back / Where people are, and what they do | Who is using Aria / Is that growing / Do people come back / **What people do** | the approved band held two cards; **"What people do" ships as its own band**, the "Where people are" region table is absent and unacknowledged |
 | Cloud costs | Where the money goes / The same bill, two other ways / Top services, and anything unusual | What this period cost / Where the money goes / Day by day, and what Azure calls it | reorganised; "Anything unusual" absent |
 | Aria quality | How good are the answers / What regressed / Can 1.2.0 ship | + three tool bands above them | **addition** (finding 2) |
 | App releases | Where each app is / Who is on which version / Is the newest one healthy / What is in 1.1.2 | first three only | "What is in 1.1.2" absent |
-| Look up a user | One account / Recent activity / Subscription, support and consent / Danger zone | *not comparable* | three of four present in source |
+| Look up a user | One account / Recent activity / Subscription, support and consent / Danger zone | *not comparable* | all four present as band calls; one **renamed** to "Subscription and devices" |
 | Settings | Administrators / Active sessions / **Audit log** / What we keep / Integrations | …/ **Access record** / … | one rename, order intact |
 
 The pattern worth naming: **Happening now** is missing the most against its mock
@@ -187,13 +214,34 @@ either **"WORKS NOW"** or **"INVENTED FIGURES"** under a banner reading *"The
 scoring harness is not built yet."*
 
 So the honest summary of the structural divergence is: **the approved design
-asked for more than the API can currently answer, and the panes chose to say so
+asked for more than the API can currently answer, and most panes chose to say so
 rather than to invent it.** The gap is a backend gap wearing a design gap's
-clothes. The exception is finding 1.
+clothes.
+
+Which panes have the machinery is the dividing line. Searching for any of the
+four acknowledgement idioms returns five pane files:
+
+```
+$ for s in "What this pane cannot answer yet" "Not drawn here, and why" \
+           "No API yet" "Invented figures"; do grep -rlF "$s" ops/assets/*.js; done
+ops/assets/pane-jobs-live-v2.js
+ops/assets/pane-run-history-v2.js
+ops/assets/pane-overview.js
+ops/assets/settings.js
+ops/assets/pane-evaluations.js
+```
+
+`pane-analytics.js`, `pane-spend.js` and `pane-releases.js` carry none of it. Of
+the eight diverging panes, **four say so on screen** — Overview, Happening now,
+What happened, Aria quality. Settings has the machinery but does not diverge.
+The remaining three have neither.
 
 **Filed as [Stadiora/Aria#10807](https://github.com/Stadiora/Aria/issues/10807)**
-— the two absences with no route and no acknowledgement ("Where people are, and
-what they do"; "What is in 1.1.2").
+— the absences with no route and no acknowledgement, on the three panes with no
+machinery: the **"Where people are"** region table (People and usage, *not* the
+whole approved band — its other card, "What people do", ships as a band of its
+own), **"Anything unusual"** (Cloud costs), and **"What is in 1.1.2"** (App
+releases).
 
 ### 5. The preview states are coherent
 
@@ -214,14 +262,23 @@ The brief asked for this explicitly, and it is not a short list.
 **1. The mock's light theme fails WCAG AA; the built dashboard passes.** The
 secondary ink used for every supporting line and label:
 
-| | colour | on white |
-|---|---|---|
-| approved mock | `rgb(124, 140, 161)` | **3.43:1** — fails AA for body text |
-| built today | `rgb(85, 99, 122)` | **6.08:1** |
+The light theme has four surfaces this ink can sit on, so the ratio is a range,
+not a number. Measured against each:
 
-The rose accent moved the same way, `rgb(225,29,72)` at 4.70:1 to
-`rgb(159,18,57)` at 8.02:1. Restoring the mock's palette would reintroduce a
-measured accessibility defect across all ten panes.
+| surface | token | mock `rgb(124,140,161)` | built `rgb(85,99,122)` |
+|---|---|---|---|
+| `#FFFFFF` | `--surface` | 3.43:1 | 6.08:1 |
+| `#F7FAFD` | `--surface-2` | 3.27:1 | 5.81:1 |
+| `#F4F7FB` | `--bg` | 3.19:1 | 5.66:1 |
+| `#EDF2F8` | `--surface-3` | 3.05:1 | 5.40:1 |
+
+**The mock's secondary ink fails AA on every surface in its own light theme**,
+and white is the most favourable of the four — quoting only the white figure
+would have flattered it. The built ink passes on all four.
+
+The rose accent moved the same way, `rgb(225,29,72)` to `rgb(159,18,57)`: 4.70:1
+to 8.02:1 on white, and 4.17:1 to 7.12:1 on `--surface-3`. Restoring the mock's
+palette would reintroduce a measured accessibility defect across all ten panes.
 
 **2. The mock collapses at 375px; the built pane does not.** This is the clearest
 single image in the audit. In the approved Overview at 375, the status banner's
@@ -253,6 +310,31 @@ and the second is the one you want in front of somebody during an incident.
 - **Spacing rhythm** was not measured directly. Type scale and section order
   were, and both agree; a margin-level comparison against invented content would
   not have been meaningful.
-- **Absence claims for People and usage and Cloud costs** rest on source search
-  rather than on rendering, because the shipped fixture cannot populate those
-  panes (limit 1).
+- **Absence claims for People and usage and Cloud costs** rest on the pane
+  source rather than on rendering, because the shipped fixture cannot populate
+  those panes (limit 1). They are taken from the `S.band(...)` calls, not from a
+  text search — see the note under limit 1 for why that distinction is the whole
+  of it.
+- **Two of Happening now's five bands** ("Waiting, and whether it is clearing",
+  "Open elsewhere") never rendered under the audit's fixture, so their content
+  was not compared. They exist; they are not evidence either way.
+
+## Corrections made after independent review
+
+The first published version of this document carried five claims that did not
+survive review, all of one class — a determination not connected to what the
+search actually found. They are listed here rather than quietly edited, because
+the method failure is more useful than the conclusions:
+
+1. **"The runs" reported present.** It is absent; the only match was the pane
+   naming it as unservable. This is what forced the switch from text search to
+   reading the band calls.
+2. **"Where people are, and what they do" reported wholly absent.** Half of it,
+   "What people do", ships as its own band. #10807 was rescoped; as first filed
+   it would have sent somebody to rebuild shipping code.
+3. **"The only approved element that disappeared without the product saying
+   so"** — three others did, on panes with no acknowledgement machinery.
+4. **"Six panes diverge, five say so on screen"** — eight and four, and the six
+   contradicted this document's own summary table.
+5. **The whole Aria quality change credited to PR #36.** It took three PRs
+   (#36, #40, #50), and the question shipping today came from #40.
