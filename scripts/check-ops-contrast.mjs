@@ -1993,6 +1993,40 @@ async function measureFocusIndicators(where) {
         return JSON.stringify({ tested, foreign, unsampled, on });
       })()`);
 
+      /* THE STATIC-PAGE PRECONDITION, asked of the page rather than inferred
+         from pixels. The three-photograph method compares captures of a
+         state it believes is not changing. An element animating on an
+         infinite loop inside the clip breaks that, and it breaks it
+         INTERMITTENTLY -- whether two captures land on different frames is
+         luck, so a pixel test for it is a coin toss that reports a
+         limitation two runs in three and a clean measurement the third.
+         document.getAnimations() answers it deterministically: the animation
+         is running whether or not this pair of captures caught it.
+         Diagnostic here, and only diagnostic -- what it costs in refusals is
+         measured before it is allowed to refuse anything. */
+      const motion = await evaluate(`(() => {
+        const clip = { l: ${box.x}, t: ${box.y}, r: ${box.x + box.width}, b: ${box.y + box.height} };
+        const seen = {};
+        let n = 0;
+        for (const a of document.getAnimations()) {
+          if (a.playState !== 'running') continue;
+          const t = a.effect && a.effect.target;
+          if (!t || !t.getBoundingClientRect) continue;
+          const tim = a.effect.getComputedTiming ? a.effect.getComputedTiming() : {};
+          const forever = tim.iterations === Infinity || tim.iterations === null;
+          const r = t.getBoundingClientRect();
+          const el = { l: r.left + scrollX, t: r.top + scrollY, r: r.right + scrollX, b: r.bottom + scrollY };
+          if (el.r <= clip.l || el.l >= clip.r || el.b <= clip.t || el.t >= clip.b) continue;
+          n++;
+          const k = (a.animationName || (a.effect.getKeyframes ? 'keyframes' : 'anim')) +
+            (forever ? ' (infinite)' : ' (finite)');
+          seen[k] = (seen[k] || 0) + 1;
+        }
+        return JSON.stringify({ n, names: Object.keys(seen).sort().join(', ') });
+      })()`);
+      row.motionN = motion.n;
+      row.motionNames = motion.names;
+
       await evaluate(`(() => {
         for (const n of document.querySelectorAll('[data-ring-node]')) n.removeAttribute('data-ring-node');
         const el = document.querySelector('[data-focus-site="${c.i}"]');
@@ -3644,6 +3678,7 @@ try {
     let focusDrifted = 0;
     let focusNoisy = 0, focusNoiseMax = 0, focusUnsampled = 0;
     const focusNoiseRows = [];
+    const focusMotionRows = [];
     const focusWorst = new Map();
     const focusBelow = [];
     const focusRefused = [];
@@ -3779,6 +3814,7 @@ try {
             focusNoisy++; focusNoiseMax = Math.max(focusNoiseMax, r.noisePx);
             focusNoiseRows.push({ ...r, theme, state });
           }
+          if (r.motionN > 0) focusMotionRows.push({ ...r, theme, state });
           /* Ownership is answered for the whole ring band or not at all, and
              the count of rows where it could not be is printed rather than
              left to be inferred from a refusal that quietly did not fire.
@@ -4096,6 +4132,21 @@ try {
       }
       console.log(`    ${focusUnsampled} of them could not have their ring band fully ` +
         'hit-tested, so the all-foreign refusal was not offered a partial sample to agree with');
+      /* DIAGNOSTIC, not yet a refusal. How many judged rows had something
+         animating inside the clip while they were photographed, asked of
+         document.getAnimations() rather than guessed from pixel counts. */
+      const motionNames = {};
+      for (const r of focusMotionRows) {
+        for (const k of String(r.motionNames || '').split(', ').filter(Boolean)) {
+          motionNames[k] = (motionNames[k] || 0) + 1;
+        }
+      }
+      console.log(`    ${focusMotionRows.length} of them were photographed with something still ` +
+        `animating inside the clip: ${Object.keys(motionNames).sort().map((k) => `${k} x${motionNames[k]}`).join(', ') || 'nothing'}`);
+      for (const r of focusMotionRows.slice(0, 5)) {
+        console.log(`      ${r.theme}/${r.state}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}` +
+          `  "${r.text}"  noise ${r.noisePx}px  animations ${r.motionN} (${r.motionNames})`);
+      }
     }
   }
 } finally {
