@@ -20,6 +20,7 @@ colour. This is traversal.
 | Focus traps | **0** |
 | Walks whose Shift+Tab exactly retraces Tab | 20/20, **272 stops retraced** over 284 Shift+Tab presses |
 | Walks that made no Shift+Tab press at all (scored neither way) | **0** |
+| Walks where the retrace's forward leg landed where the first walk said it would | 20/20 |
 | Stops that jump backwards in reading order | **0** |
 | Walks where the skip link is the first stop | 20/20 |
 | Walks where it lands on `main#content` | 20/20 |
@@ -34,11 +35,11 @@ colour. This is traversal.
 
 ### F1. A sideways-scrolling table is never declared keyboard-focusable
 
-`div.stack > div.stack > section.band > div.card > div.tbl-wrap` on **history/375px** clips **374px** of content horizontally and carries no `tabindex`, no `role` and no accessible name.
+`div.stack > div.stack > section.band > div.card > div.tbl-wrap` on **history/375px** clips **374px** of content horizontally and has no `tabindex` attribute. It carries no `role` and neither `aria-label` nor `aria-labelledby`.
 
-The walk **did** reach it (stop 4 of 8), but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox do not, and neither does any Chrome older than that. It announces as a bare `div`.
+The walk **did** reach it (stop 5 of 8), but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox do not, and neither does any Chrome older than that. It announces as a bare `div`.
 
-Every other pane with a scrolling table declares it — the walk found 5 scroll containers carrying an explicit `tabindex`, with `role="region"` and a label, which is the pattern Stadiora/Aria#10822 established. This one was missed.
+The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found 5 scroll containers the page declares focusable, 5 of them carrying both `role="region"` and an `aria-label`. This one was missed.
 
 Seen on: history/375px.
 
@@ -50,7 +51,7 @@ Filed as Stadiora/Aria#10868. Not fixed here: this audit reports, it does not re
 
 `hidden` is a UA `display: none` rule and the weakest one in the cascade. Any author `display` on the same element silently defeats it.
 
-3 of the 3 controls inside are `disabled`, so a keyboard operator can see 3 labelled fields they can neither reach nor operate, with no visible indication of why.
+All 3 controls inside are `disabled`, so a keyboard operator can see 3 form controls they can neither reach nor operate, with no visible indication of why.
 
 Seen on: evals/desktop.
 
@@ -93,6 +94,10 @@ it has controls is a coincidence, not a trap.
 
 ## NOT COVERED
 
+- **Two different same-path siblings, each a finding at only one width, would merge into one
+  group.** Findings are grouped by pane, CSS path and ordinal-within-walk so that one element
+  seen at both widths is one finding. A same-viewport collision refuses; this cross-viewport
+  shape does not, and no element in this sweep is in it.
 - **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is
   answered only for the two mechanical proxies a browser can be asked about — duplicate `id`
   attributes and `aria-label` attributes that drop their visible text. An element announced

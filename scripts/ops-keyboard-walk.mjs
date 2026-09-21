@@ -412,6 +412,12 @@ const PAGE_HELPERS = `
       return canX || canY;
     }).map((el) => ({ ...describe(el),
       overflowX: el.scrollWidth - el.clientWidth, overflowY: el.scrollHeight - el.clientHeight,
+      ariaLabel: el.getAttribute('aria-label'), ariaLabelledby: el.getAttribute('aria-labelledby'),
+      /* THE BROWSER ALREADY RESOLVED THIS. el.tabIndex is the parsed
+         value; the attribute is a string that may not be a number at all.
+         Both are recorded, and everything downstream reads the resolved
+         one -- see the filter below. (No backticks in this comment: the
+         whole block is a template literal.) */
       focusable: el.tabIndex >= 0, tabIndexProp: el.tabIndex })),
     /* An element whose aria-label disagrees with its own visible text: the
        operator hears one thing and sees another. */
@@ -441,8 +447,14 @@ const PAGE_HELPERS = `
        narrowed to the attribute and the unmeasured population is COUNTED
        here, from the rendered DOM, so NOT COVERED can say how big it is
        instead of calling it "some". */
+    /* THE WIDE SELECTOR, BECAUSE THIS IS A DISCLOSURE OF WHAT IS NOT
+       MEASURED. CONTROLS is the narrow native-element list; INTERACTIVE
+       also takes role=button, role=link, role=tab and friends. A count of
+       an unmeasured population that is itself narrower than the sentence
+       describing it understates the hole -- the one direction a disclosure
+       must never err in. */
     labelledbyControls: () => Array.from(document.querySelectorAll('[aria-labelledby]'))
-      .filter((el) => visible(el) && el.matches(CONTROLS))
+      .filter((el) => visible(el) && el.matches(INTERACTIVE))
       .map((el) => ({ ...describe(el),
         alsoAriaLabel: el.hasAttribute('aria-label') })),
     mismatchedLabels: () => Array.from(document.querySelectorAll('[aria-label]'))
@@ -510,6 +522,20 @@ const TRAP_PRESSES = COMPOSITE_MAX * 2;
    difference. Both legs step through this now, so a mismatch means the ORDER
    disagreed rather than the press accounting. Returns the elements landed
    on, and the presses it took to land on them. */
+/* WHY A SCROLLER IS NOT IN THE TAB ORDER, READ OFF THE RESOLVED VALUE AND
+   THE RAW ATTRIBUTE TOGETHER. There are three distinct answers and the
+   document prints the one that applies rather than the one that is usually
+   right: no attribute at all, a valid negative index, or a string that is
+   not an integer and which the browser therefore resolved to -1. The third
+   is the spelling that used to fall out of both tallies. */
+function whyUndeclared(s) {
+  if (s.tabindex === null) return 'no `tabindex` attribute';
+  const n = Number(s.tabindex);
+  if (Number.isInteger(n)) return `\`tabindex="${s.tabindex}"\`, which is out of the tab order`;
+  return `\`tabindex="${s.tabindex}"\`, which is not a valid integer, so the browser resolves it ` +
+    `to ${s.tabIndexProp}`;
+}
+
 async function stepStops(n, press) {
   const landed = [];
   let presses = 0;
@@ -761,6 +787,14 @@ for (const p of PANES) {
       reverseStops: reverse.length,
       forwardLegPresses: fwdLeg.presses,
       forwardLegLanded: fwdLeg.landed[fwdLeg.landed.length - 1],
+      /* THE SECOND TRAVERSAL HAS TO AGREE WITH THE FIRST BEFORE THE RETRACE
+         MEANS ANYTHING. The retrace re-walks forward from a reset page and
+         then comes back; if that second forward leg landed somewhere other
+         than where the first walk said the last core stop was, the reverse
+         comparison is being made against a stale expectation and a match is
+         luck. This was recorded and never read. */
+      forwardLegAgrees: core.length > 0 &&
+        fwdLeg.landed[fwdLeg.landed.length - 1] === core[core.length - 1].key,
       reverseGot: reverse, reverseExpected,
       trapped: stops.some((s) => s.trappedAfter !== undefined),
       composites: stops.filter((s) => s.pressesConsumed > 1)
@@ -788,9 +822,18 @@ for (const p of PANES) {
          tab order, so a negative index is undeclared for this purpose and
          says so in its own row. */
       scrollers,
-      undeclaredScrollers: scrollers.filter((s) => s.tabindex === null || Number(s.tabindex) < 0)
-        .map((s) => ({ ...s, reachedByWalk: reached.has(s.key),
-          why: s.tabindex === null ? 'no tabindex attribute' : `tabindex="${s.tabindex}" is out of the tab order` })),
+      /* `Number(attr)` IS COERCION, NOT RESOLUTION, AND IT GETS TWO SPELLINGS
+         WRONG. `Number('')` is 0, so `tabindex=""` read as DECLARED and
+         inflated the declared tally the F1 body leans on. `Number('O')` is
+         NaN, which is neither `< 0` nor `>= 0`, so that element left BOTH
+         tallies and the audit printed 0 with nothing named -- while Chrome
+         resolved both spellings to `el.tabIndex === -1` and dropped the
+         settings walk from 13 stops to 11. The browser had already done the
+         resolution correctly and this file was re-deriving it from the
+         string. The two filters are now exact complements of one recorded
+         resolved value, and `scrollerTally` below refuses if they are not. */
+      undeclaredScrollers: scrollers.filter((s) => !s.focusable)
+        .map((s) => ({ ...s, reachedByWalk: reached.has(s.key), why: whyUndeclared(s) })),
       mismatched, labelledby, dupIds, disabledVisible, hiddenPainted, loaded,
       skip: { declared: skipDecl, first, firstIsSkip, afterSkip, target: skipTarget },
       rerender
@@ -972,6 +1015,7 @@ const totals = {
   wrapped: R.filter((w) => w.endedBy === 'wrapped').length,
   leftDocument: R.filter((w) => w.endedBy === 'left-document').length,
   hitLimit: R.filter((w) => w.endedBy === 'limit').length,
+  forwardLegAgrees: R.filter((w) => w.forwardLegAgrees).length,
   reversePresses: sum(R, (w) => w.reversePresses),
   reverseStops: sum(R, (w) => w.reverseStops),
   backwards: sum(R, (w) => w.backwards.length),
@@ -987,7 +1031,12 @@ const totals = {
   nameFromHeading: distinct(R, (w) => w.labelledby),
   nameSuperseded: distinct(R, (w) => w.labelledby.filter((x) => x.alsoAriaLabel)),
   dupIds: sum(R, (w) => w.dupIds.length),
-  declaredScrollers: distinct(R, (w) => w.scrollers.filter((x) => x.tabindex !== null && Number(x.tabindex) >= 0)),
+  /* THE RESOLVED VALUE, NOT THE STRING -- and the exact complement of
+     `undeclaredScrollers`, so no scroller can fall out of both tallies the
+     way `tabindex="O"` did. `scrollerTally` below refuses if one ever does. */
+  declaredScrollers: distinct(R, (w) => w.scrollers.filter((x) => x.focusable)),
+  declaredNamedRegions: distinct(R, (w) => w.scrollers.filter((x) => x.focusable &&
+    x.role === 'region' && (x.ariaLabel || x.ariaLabelledby))),
   dialogs: D.length,
   dialogsClean: D.filter((x) => x.focusEntered && x.heldForward && x.heldBackward &&
     x.wrapCorrect && x.closedByEscape && x.focusRestored).length
@@ -1013,16 +1062,33 @@ for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers)) {
     title: 'A sideways-scrolling table is never declared keyboard-focusable',
     body: [
       `\`${x.path}\` on **${w.pane}/${w.viewport}** clips **${x.overflowX}px** of content ` +
-      `horizontally and carries no \`tabindex\`, no \`role\` and no accessible name.`,
+      `horizontally and has ${x.why}` +
+      `. It carries ${x.role ? `\`role="${x.role}"\`` : 'no `role`'} and ` +
+      `${x.ariaLabel ? `\`aria-label="${x.ariaLabel}"\`` : (x.ariaLabelledby
+        ? `\`aria-labelledby="${x.ariaLabelledby}"\`` : 'neither `aria-label` nor `aria-labelledby`')}.`,
       '',
-      `The walk **did** reach it (stop ${w.stopList.findIndex((s) => s.key === x.key)} of ${w.stops}), ` +
-      'but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox ' +
-      'do not, and neither does any Chrome older than that. It announces as a bare `div`.',
+      /* THE CONSEQUENCE IS A BRANCH ON THE RECORD, NOT A SENTENCE BESIDE IT.
+         This used to assert "The walk **did** reach it (stop N of M)"
+         unconditionally, and under a payload that put the container out of
+         the tab order it printed the not-found sentinel as its own evidence:
+         "the walk did reach it (stop -1 of 10)". The reached case and the
+         unreached case are opposite findings -- one is a Chrome-version
+         footnote, the other is unreachable in every browser including this
+         one -- and the unreached case is the worse of the two, so a default
+         that prints the milder one is the unsafe direction. */
+      x.reachedByWalk
+        ? `The walk **did** reach it (stop ${w.stopList.findIndex((s) => s.key === x.key) + 1} of ` +
+          `${w.stops}), but only because Chrome 127+ makes a scroll container focusable on its own. ` +
+          'Safari and Firefox do not, and neither does any Chrome older than that. It announces as ' +
+          `a bare \`${x.tag}\`.`
+        : 'The walk **never reached it**: it is out of the tab order in the browser that ran this ' +
+          'sweep, which is the browser most willing to volunteer focus to a scroll container. Its ' +
+          'clipped content is unreachable from the keyboard here, in Safari and in Firefox alike.',
       '',
-      'Every other pane with a scrolling table declares it — the walk found ' +
-      `${totals.declaredScrollers} scroll containers ` +
-      `carrying an explicit \`tabindex\`, with \`role="region"\` and a label, which is the pattern ` +
-      'Stadiora/Aria#10822 established. This one was missed.'
+      'The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found ' +
+      `${totals.declaredScrollers} scroll container${totals.declaredScrollers === 1 ? '' : 's'} ` +
+      `the page declares focusable, ${totals.declaredNamedRegions} of them carrying both ` +
+      '`role="region"` and an `aria-label`. This one was missed.'
     ].join('\n') });
 }
 
@@ -1038,10 +1104,26 @@ for (const { w, x, key } of list(R, (w) => w.hiddenPainted)) {
       '',
       '`hidden` is a UA `display: none` rule and the weakest one in the cascade. Any author `display` ' +
       'on the same element silently defeats it.',
+      /* THE COUNT WAS DERIVED AND THE CLAUSE NEXT TO IT WAS NOT, WHICH IS THE
+         WHOLE BUG IN ONE SENTENCE. Under `control.disabled = false` the
+         document printed "0 of the 3 controls inside are `disabled`, so a
+         keyboard operator can see 3 labelled fields they can neither reach
+         nor operate" -- over three enabled, painted, reachable controls, on
+         a run whose own record said `unreachable: 0`. That is the unsafe
+         direction: it reports a live operable-hidden-control defect as the
+         benign one. All three arms are now branches on the same counts the
+         sentence quotes. */
       x.controls
-        ? `\n${x.controlsDisabled} of the ${x.controls} controls inside are \`disabled\`, so a ` +
-          `keyboard operator can see ${x.controls} labelled fields they can neither reach nor ` +
-          'operate, with no visible indication of why.'
+        ? (x.controlsDisabled === x.controls
+          ? `\nAll ${x.controls} controls inside are \`disabled\`, so a keyboard operator can see ` +
+            `${x.controls} form controls they can neither reach nor operate, with no visible ` +
+            'indication of why.'
+          : (x.controlsDisabled === 0
+            ? `\nNone of the ${x.controls} controls inside is \`disabled\`: they are fully operable ` +
+              'form controls inside an element the code believes is not there.'
+            : `\n${x.controlsDisabled} of the ${x.controls} controls inside are \`disabled\`; the ` +
+              `other ${x.controls - x.controlsDisabled} are fully operable inside an element the ` +
+              'code believes is not there.'))
         : (x.selfDisabled
           ? `\nThe ${x.tag} is \`disabled\`, so it is inert as well as invisible to the code that hid it.`
           : `\nThe ${x.tag} is **not** disabled: it is a fully operable control the code has decided ` +
@@ -1084,6 +1166,19 @@ for (const { w, x, key } of list(R, (w) => w.mismatched)) {
     title: 'Accessible name does not contain the visible label (WCAG 2.5.3)',
     body: `\`${x.path}\` reads "${x.text}" and is named "${x.ariaLabel}".` });
 }
+/* A HEADLINE WITH NO LIST UNDER IT IS A COUNT NOBODY CAN ACT ON. Duplicate
+   ids were summed into the headline and had no finding kind at all, so a
+   real collision would have printed a number above silence -- and the
+   headline was an OCCURRENCE count over twenty walks while every other row
+   under it counts distinct elements. `keyed()` needs a `path`, which a
+   dup-id row does not have, so the id itself is the path. */
+for (const { w, x, key } of list(R, (w) => w.dupIds.map((d) => ({ ...d, path: `#${d.id}` })))) {
+  findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
+    kind: 'dup-id',
+    title: 'The same `id` appears more than once in the document',
+    body: `\`#${x.id}\` appears ${x.n} times on **${w.pane}/${w.viewport}**. ` +
+      'A label, an `aria-labelledby` or a `href="#…"` pointing at it resolves to the first one only.' });
+}
 
 /* RECONCILED ONLY ON A FULL SWEEP, because a scoped run has not walked the
    pane most findings live on and "the finding did not reproduce" would then
@@ -1106,6 +1201,21 @@ if (fullSweep) {
      unreachable, backwards, the retrace) is taken over less page than the
      headline claims. The limit is 3x the candidate count, so reaching it
      means something is cycling; report nothing rather than report short. */
+  /* A TRAP IS REPORTED AS A TRAP. `walk()` breaks out on `consumed >
+     TRAP_PRESSES`, so a trapped walk ALSO ends at the press limit -- and
+     the truncation refusal below fired first, sending whoever read it
+     looking for a cycle. The detector's positive result never reached a
+     reader, and "Focus traps 0" could only ever print 0 on a full sweep
+     because a sweep with one never got that far. Ordering is the whole fix:
+     the more specific cause refuses first, naming the stop it stuck on. */
+  const trapped = R.filter((w) => w.trapped);
+  if (trapped.length) {
+    throw new Error(`${trapped.length} walk(s) hit a focus trap ` +
+      `(${trapped.map((w) => `${w.pane}/${w.viewport} after stop ` +
+        `${w.stopList.findIndex((s) => s.trappedAfter !== undefined) + 1}`).join(', ')}): ` +
+      'focus stopped moving before the walk completed, so the stop list is a prefix ' +
+      'AND a keyboard operator is stuck on this pane');
+  }
   const truncated = R.filter((w) => w.endedBy === 'limit');
   if (truncated.length) {
     throw new Error(`${truncated.length} walk(s) ended at the press limit ` +
@@ -1122,6 +1232,21 @@ if (fullSweep) {
     if (!findings.some((f) => f.kind === k)) {
       throw new Error(`FILED names ${k} (${FILED[k]}) but this full sweep produced no finding of that kind`);
     }
+  }
+}
+
+/* EVERY SCROLLER IS IN EXACTLY ONE TALLY. The two filters are complements of
+   one recorded boolean, so this cannot fail by arithmetic -- it fails if
+   somebody re-derives either side from the attribute string again, which is
+   precisely how `tabindex="O"` came to be in neither tally and print a clean
+   0, while Chrome had it out of the tab order. This one runs on every run,
+   scoped or not: it is an invariant of the instrument, not of the sweep. */
+for (const w of R) {
+  const d = w.scrollers.filter((x) => x.focusable).length;
+  const u = w.undeclaredScrollers.length;
+  if (d + u !== w.scrollers.length) {
+    throw new Error(`scroller tally on ${w.pane}/${w.viewport}: ${d} declared + ${u} undeclared ` +
+      `is not ${w.scrollers.length} scrollers -- a scroller is in both tallies or in neither`);
   }
 }
 /* ONE POPULATION. The headline counts and the findings list used to be read
@@ -1169,17 +1294,19 @@ P('| | |', '|---|---|');
 P(`| Panes walked | ${totals.panes}, at ${totals.viewports} — **${totals.walks} walks** |`);
 P(`| Tab stops recorded | ${totals.stops} |`);
 P(`| Interactive controls found | ${totals.candidates} |`);
-P(`| Controls never reached by Tab | **${totals.unreachable}** |`);
+P(`| Controls never reached by Tab | **${countKind('unreachable')}** |`);
 P(`| Focus traps | **${totals.traps}** |`);
 P(`| Walks whose Shift+Tab exactly retraces Tab | ${totals.reverseOk}/${totals.walks}, ` +
   `**${totals.reverseStops} stops retraced** over ${totals.reversePresses} Shift+Tab presses |`);
 P(`| Walks that made no Shift+Tab press at all (scored neither way) | **${totals.reverseVacuous}** |`);
-P(`| Stops that jump backwards in reading order | **${totals.backwards}** |`);
+P('| Walks where the retrace\'s forward leg landed where the first walk said it would | ' +
+  `${totals.forwardLegAgrees}/${totals.walks} |`);
+P(`| Stops that jump backwards in reading order | **${countKind('backwards')}** |`);
 P(`| Walks where the skip link is the first stop | ${totals.skipFirst}/${totals.walks} |`);
 P(`| Walks where it lands on \`main#content\` | ${totals.skipLands}/${totals.walks} |`);
 P(`| Walks where focus survives the theme re-render | ${totals.rerenderKept}/${totals.walks} |`);
-P(`| \`aria-label\` attributes missing their visible text (WCAG 2.5.3) | ${totals.labels} |`);
-P(`| Duplicate \`id\` attributes | ${totals.dupIds} |`);
+P(`| \`aria-label\` attributes missing their visible text (WCAG 2.5.3) | ${countKind('label-in-name')} |`);
+P(`| Duplicate \`id\` attributes | ${countKind('dup-id')} |`);
 P(`| Modal dialogs probed | ${totals.dialogs}, ${totals.dialogsClean} clean on all six properties |`);
 P(`| **Scroll containers never declared focusable** | **${countKind('undeclared-scroller')}** |`);
 P(`| **Elements marked \`hidden\` that the stylesheet still paints** | **${countKind('hidden-painted')}** |`);
@@ -1211,7 +1338,7 @@ P(`- **No focus traps.** ${totals.walks} walks, ${totals.stops} stops, ` +
   'Tab presses leave `document.activeElement` unchanged — twice the widest composite input ' +
   `Chrome ships, which is the ${COMPOSITE_MAX}-field \`datetime-local\`.`);
 P(`- **Nothing unreachable.** ${totals.candidates} enabled, visible, interactive controls; ` +
-  `${totals.unreachable} were not reached by Tab.`);
+  `${countKind('unreachable')} were not reached by Tab.`);
 /* TWO NUMBERS THE RUN COMPUTED AND THE DOCUMENT USED TO SWALLOW. Both bear
    on how much the walk is worth: a stop on a non-interactive element is
    either a real defect or a gap in this tool's idea of "interactive", and a
@@ -1224,7 +1351,7 @@ P(`- **${totals.unexpected} stops landed on something this tool does not call in
   'limit). The terminal stop is timing-dependent in Chrome; the first two endings are both ' +
   'complete walks and neither is a defect. The third is a truncated one, and a full sweep ' +
   'refuses rather than reporting over it.');
-P(`- **Tab order is reading order** on all ${totals.walks} walks: ${totals.backwards} stops ` +
+P(`- **Tab order is reading order** on all ${totals.walks} walks: ${countKind('backwards')} stops ` +
   'out of DOM order, where a stop is out of order if its element precedes the previous ' +
   'stop\'s element in document order.');
 P(`- **Shift+Tab is the exact inverse of Tab** on ${totals.reverseOk} of ${totals.walks} walks, over` +
@@ -1236,8 +1363,8 @@ P(`- **The skip link works.** It is the first stop on ${totals.skipFirst}/${tota
   `Enter lands focus on \`main#content\` on ${totals.skipLands}/${totals.walks}.`);
 P(`- **Focus survives a re-render** on ${totals.rerenderKept}/${totals.walks} walks: the theme toggle ` +
   'rebuilds the pane and focus stays on the button that did it.');
-P(`- **No duplicate ids** (${totals.dupIds}), and **no \`aria-label\` that drops its visible text** ` +
-  `(${totals.labels}). That is the attribute, not the computed accessible name — see NOT COVERED.`);
+P(`- **No duplicate ids** (${countKind('dup-id')}), and **no \`aria-label\` that drops its visible text** ` +
+  `(${countKind('label-in-name')}). That is the attribute, not the computed accessible name — see NOT COVERED.`);
 P('');
 
 P('### The modal dialog', '');
@@ -1255,6 +1382,20 @@ P('Each was opened **by Tab and Enter**, never by `element.focus()`: a dialog op
   'it has controls is a coincidence, not a trap.', '');
 
 P('## NOT COVERED', '');
+/* NARROWING, NOT ANALYSIS. A finding group is keyed by pane and CSS path and
+   an ordinal within the walk, deliberately without the viewport, so one
+   element seen at both widths prints as one finding saying "Seen on: both".
+   The cost is that two DIFFERENT same-path siblings, each a finding at only
+   one of the two widths, would share an ordinal and merge. `sameWalkCollision`
+   catches the same-viewport case and refuses; the cross-viewport case is not
+   detectable without an identity that survives two separate page loads, which
+   the stamped id does not. Today's pages do not reach it. Saying so is
+   cheaper and more honest than an identity scheme built for a case that has
+   never occurred. */
+P('- **Two different same-path siblings, each a finding at only one width, would merge into one',
+  '  group.** Findings are grouped by pane, CSS path and ordinal-within-walk so that one element',
+  '  seen at both widths is one finding. A same-viewport collision refuses; this cross-viewport',
+  '  shape does not, and no element in this sweep is in it.');
 P('- **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is',
   '  answered only for the two mechanical proxies a browser can be asked about — duplicate `id`',
   '  attributes and `aria-label` attributes that drop their visible text. An element announced',

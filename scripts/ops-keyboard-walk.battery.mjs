@@ -97,20 +97,45 @@ const docNum = (j, re) => {
   return m ? Number(m[1]) : 'VACUOUS';
 };
 const S = {
-  docDeclaredScrollers: (j) => docNum(j, /the walk found\s+(\d+) scroll containers/),
+  docDeclaredScrollers: (j) => docNum(j, /the walk found\s+(\d+) scroll container/),
   docUndeclaredHeadline: (j) => docNum(j, /\*\*Scroll containers never declared focusable\*\* \| \*\*(\d+)\*\*/),
   docHiddenHeadline: (j) => docNum(j, /still paints\*\* \| \*\*(\d+)\*\*/),
   docFindings: (j) => (j.__doc ? (j.__doc.match(/^### F\d+\./gm) || []).length : 'VACUOUS'),
   docRetraceOk: (j) => docNum(j, /exactly retraces Tab \| (\d+)\//),
   docRetraceStops: (j) => docNum(j, /exactly retraces Tab \| \d+\/\d+, \*\*(\d+) stops retraced/),
-  historyScrollers: (j) => j.walks.filter((w) => w.pane === 'history')
-    .reduce((a, w) => a + w.undeclaredScrollers.length, 0),
-  evalsHidden: (j) => j.walks.filter((w) => w.pane === 'evals')
-    .reduce((a, w) => a + w.hiddenPainted.length, 0),
-  settingsHidden: (j) => j.walks.filter((w) => w.pane === 'settings')
-    .reduce((a, w) => a + w.hiddenPainted.length, 0),
-  settingsLabels: (j) => j.walks.filter((w) => w.pane === 'settings')
-    .reduce((a, w) => a + w.mismatched.length, 0),
+  /* THESE FOUR WERE THE RULE'S OWN EXCEPTION. They were bare
+     `.filter().reduce()` and returned 0 over an empty record -- the exact
+     shape the paragraph above forbids, indistinguishable from a healthy
+     zero, under five published `survive` rows (T1, T2, T3, M6a, M6b). A
+     rule stated in a comment and implemented in one helper is enforced only
+     where the helper is called. */
+  historyScrollers: (j) => over(j, 'history', (r) => r.reduce((a, w) => a + w.undeclaredScrollers.length, 0)),
+  evalsHidden: (j) => over(j, 'evals', (r) => r.reduce((a, w) => a + w.hiddenPainted.length, 0)),
+  settingsHidden: (j) => over(j, 'settings', (r) => r.reduce((a, w) => a + w.hiddenPainted.length, 0)),
+  settingsLabels: (j) => over(j, 'settings', (r) => r.reduce((a, w) => a + w.mismatched.length, 0)),
+  /* THE DOCUMENT AGAINST THE RECORD THAT PRODUCED IT. These three are not
+     doc signals and not record signals: each asks whether the published
+     SENTENCE contradicts the row it was generated from. That is the defect
+     round two found -- a derived count with an asserted clause beside it --
+     and it is invisible to either side alone, because the record was right
+     the whole time and the document was internally consistent prose. A
+     signal that can only be computed from both is the only thing that sees
+     it. VACUOUS when the document has no such finding to check. */
+  docReachSentinel: (j) => (j.__doc === null ? 'VACUOUS' : /stop -1 of/.test(j.__doc)),
+  docAttrContradiction: (j) => {
+    if (j.__doc === null) return 'VACUOUS';
+    const rows = j.walks.flatMap((w) => w.undeclaredScrollers);
+    if (!rows.length) return 'VACUOUS';
+    const claimsNone = /carries no `tabindex`, no `role` and no accessible name/.test(j.__doc);
+    return claimsNone && rows.some((r) => r.tabindex !== null || r.role !== null);
+  },
+  docDisabledContradiction: (j) => {
+    if (j.__doc === null) return 'VACUOUS';
+    const rows = j.walks.flatMap((w) => w.hiddenPainted).filter((x) => x.controls > 0);
+    if (!rows.length) return 'VACUOUS';
+    const claimsInert = /neither reach nor operate/.test(j.__doc);
+    return claimsInert && rows.some((r) => r.controlsDisabled < r.controls);
+  },
   settingsUnreachable: (j) => over(j, 'settings', (r) => r.reduce((a, w) => a + w.unreachable.length, 0)),
   evalsUnreachable: (j) => over(j, 'evals', (r) => r.reduce((a, w) => a + w.unreachable.length, 0)),
   jobsReverse: (j) => over(j, 'jobs', (r) => r.every((w) => w.reverseMatches === true)),
@@ -344,6 +369,57 @@ const EXPERIMENTS = [
     anchor: "for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers)) {",
     payload: "for (const { w, x, key } of list(d, (w) => w.undeclaredScrollers)) {",
     what: 'The same payload on a SCOPED run must NOT refuse: on a scoped run "the finding did not reproduce" means "you did not look". Proves the refusal is gated on a full sweep and not on the payload.' },
+
+  { id: 'M23', kind: 'mutation', expect: 'kill', scope: 'settings', vp: '375px',
+    signal: 'settingsUndeclared', file: 'ops/assets/settings.js',
+    anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label",
+    payload: "      className: 'tbl-wrap', tabindex: 'O', role: 'region', 'aria-label': label",
+    what: 'Round two, second blocking finding. A tabindex that is not a number at all. Number("O") is NaN, which is neither < 0 nor >= 0, so the element left BOTH tallies and the audit printed a clean 0 with nothing named -- while Chrome resolved it to el.tabIndex === -1 and the settings walk dropped from 13 stops to 11. Delta is ZERO bytes: the digit and the letter are the same length, so nothing about the size of the edit could have hinted at it.' },
+
+  { id: 'M24', kind: 'mutation', expect: 'kill', scope: 'settings', vp: '375px',
+    signal: 'settingsUndeclared', file: 'ops/assets/settings.js',
+    anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label",
+    payload: "      className: 'tbl-wrap', tabindex: '', role: 'region', 'aria-label': label",
+    what: 'The other half of the same finding, and the worse half. Number("") is 0, so an empty tabindex read as DECLARED -- it did not merely hide the container, it INFLATED the declared tally that the F1 body cites as evidence that every other pane gets this right. h() in shell-pane-v2.js calls setAttribute unconditionally, so an empty string does land as an attribute.' },
+
+  { id: 'M25', kind: 'mutation', expect: 'kill', scope: 'history,settings', vp: '375px',
+    signal: 'docAttrContradiction',
+    edits: [
+      { file: 'ops/assets/settings.js', anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label", payload: "      className: 'tbl-wrap', tabindex: '-1', role: 'region', 'aria-label': label" },
+      { file: TOOL, anchor: "      `horizontally and has ${x.why}` +\n      `. It carries ${x.role ? `\\`role=\"${x.role}\"\\`` : 'no `role`'} and ` +\n      `${x.ariaLabel ? `\\`aria-label=\"${x.ariaLabel}\"\\`` : (x.ariaLabelledby\n        ? `\\`aria-labelledby=\"${x.ariaLabelledby}\"\\`` : 'neither `aria-label` nor `aria-labelledby`')}.`,", payload: "      `horizontally and carries no \\`tabindex\\`, no \\`role\\` and no accessible name.`," }
+    ],
+    what: 'Round two, first blocking finding, attribute half. The finding body used to ASSERT "carries no tabindex, no role and no accessible name" beside a derived count. Edit one puts tabindex="-1" role="region" aria-label="Administrator accounts" on three containers; edit two reverts the clause to the asserted prose. The signal is neither a document signal nor a record signal: it asks whether the published SENTENCE contradicts the row it was generated from, which is the only way to see a defect where the record was right all along.' },
+
+  { id: 'M25b', kind: 'isolation-control', expect: 'survive', scope: 'history,settings', vp: '375px',
+    signal: 'docAttrContradiction', file: 'ops/assets/settings.js',
+    anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label", payload: "      className: 'tbl-wrap', tabindex: '-1', role: 'region', 'aria-label': label",
+    what: 'M25 edit ONE, alone. An isolation control: it proves the injected page defect does not by itself produce the false sentence, so the reverted clause in M25 is the only variable. A tolerance control asks whether an edit at the same address moves the signal; this asks whether the OTHER edit of a pair does. Scoring one against the other rule gives a broken instrument that looks like a working one.' },
+
+  { id: 'M26', kind: 'mutation', expect: 'kill', scope: 'history,settings', vp: '375px',
+    signal: 'docReachSentinel',
+    edits: [
+      { file: 'ops/assets/settings.js', anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label", payload: "      className: 'tbl-wrap', tabindex: '-1', role: 'region', 'aria-label': label" },
+      { file: TOOL, anchor: "      x.reachedByWalk\n        ? `The walk **did** reach it (stop ${w.stopList.findIndex((s) => s.key === x.key) + 1} of ` +\n          `${w.stops}), but only because Chrome 127+ makes a scroll container focusable on its own. ` +\n          'Safari and Firefox do not, and neither does any Chrome older than that. It announces as ' +\n          `a bare \\`${x.tag}\\`.`\n        : 'The walk **never reached it**: it is out of the tab order in the browser that ran this ' +\n          'sweep, which is the browser most willing to volunteer focus to a scroll container. Its ' +\n          'clipped content is unreachable from the keyboard here, in Safari and in Firefox alike.',", payload: "      `The walk **did** reach it (stop ${w.stopList.findIndex((s) => s.key === x.key)} of ${w.stops}), ` +\n      'but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox ' +\n      'do not, and neither does any Chrome older than that. It announces as a bare `div`.'," }
+    ],
+    what: 'Round two, first blocking finding, reachability half -- and the sharpest form of it. The body asserted "The walk **did** reach it (stop N of M)" unconditionally, so on a container the walk did NOT reach it printed findIndex\'s not-found value as its own evidence: "the walk did reach it (stop -1 of 10)". The sentinel IS the signal. The unreached case is the worse finding of the two -- unreachable in every browser rather than a Chrome-version footnote -- so a default that prints the milder one is the unsafe direction.' },
+
+  { id: 'M26b', kind: 'isolation-control', expect: 'survive', scope: 'history,settings', vp: '375px',
+    signal: 'docReachSentinel', file: 'ops/assets/settings.js',
+    anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label", payload: "      className: 'tbl-wrap', tabindex: '-1', role: 'region', 'aria-label': label",
+    what: 'M26 edit ONE, alone: three containers out of the tab order and the fixed generator. No sentinel appears, because the unreached branch says so in words. The variable in M26 is the reverted clause and nothing else.' },
+
+  { id: 'M27', kind: 'mutation', expect: 'kill', scope: 'evals', vp: 'desktop',
+    signal: 'docDisabledContradiction',
+    edits: [
+      { file: 'ops/assets/pane-evaluations.js', anchor: "      control.disabled = !production;", payload: "      control.disabled = false;" },
+      { file: TOOL, anchor: "      x.controls\n        ? (x.controlsDisabled === x.controls\n          ? `\\nAll ${x.controls} controls inside are \\`disabled\\`, so a keyboard operator can see ` +\n            `${x.controls} form controls they can neither reach nor operate, with no visible ` +\n            'indication of why.'\n          : (x.controlsDisabled === 0\n            ? `\\nNone of the ${x.controls} controls inside is \\`disabled\\`: they are fully operable ` +\n              'form controls inside an element the code believes is not there.'\n            : `\\n${x.controlsDisabled} of the ${x.controls} controls inside are \\`disabled\\`; the ` +\n              `other ${x.controls - x.controlsDisabled} are fully operable inside an element the ` +\n              'code believes is not there.'))", payload: "      x.controls\n        ? `\\n${x.controlsDisabled} of the ${x.controls} controls inside are \\`disabled\\`, so a ` +\n          `keyboard operator can see ${x.controls} labelled fields they can neither reach nor ` +\n          'operate, with no visible indication of why.'" }
+    ],
+    what: 'Round two, first blocking finding, consequence half. The COUNT was derived and the clause next to it was not, so with the fieldset\'s controls enabled the document printed "0 of the 3 controls inside are disabled, so a keyboard operator can see 3 labelled fields they can neither reach nor operate" over three enabled, painted, reachable controls -- on a run whose own record said unreachable: 0. It reports a live operable-hidden-control defect as the benign one. The anchor is the deletion site inside updateSourceFields(), original gating untouched.' },
+
+  { id: 'M27b', kind: 'isolation-control', expect: 'survive', scope: 'evals', vp: 'desktop',
+    signal: 'docDisabledContradiction', file: 'ops/assets/pane-evaluations.js',
+    anchor: "      control.disabled = !production;", payload: "      control.disabled = false;",
+    what: 'M27 edit ONE, alone. The three controls are enabled and the fixed generator says so -- "None of the 3 controls inside is disabled: they are fully operable form controls inside an element the code believes is not there" -- so the contradiction signal stays false. The generator revert in M27 is the only variable.' },
 
   { id: 'C1', kind: 'identity-control', expect: 'survive', file: TOOL, anchor: null, payload: null,
     scope: 'settings,history,evals', signal: 'settingsSkipFirst',
