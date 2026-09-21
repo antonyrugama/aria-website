@@ -62,10 +62,35 @@
  *   failure, never a silent skip.
  * - Non-table hover surfaces (.nav-item, .btn, .seg button, .card.lift). This
  *   issue is about table rows; those are unswept here.
- * - Selection washes other than the users pane's. The sweep judges the wash
- *   the subject list names; a pane that grows one and is not added here is
- *   unswept, which is why SELECTION_SUBJECTS below is asserted against the
- *   sheets rather than trusted.
+ * - Selection washes the probe below cannot reach. SELECTION_SUBJECTS is no
+ *   longer trusted, nor recognised by selector text: every rule in every
+ *   sheet on an aria.css page is adopted ALONE into a shadow root holding a
+ *   probe table, and a sheet is collected when the rule actually MOVES a
+ *   `th`/`td` computed background and does not move an identically-dressed
+ *   non-cell. That decides by paint, so a wash is seen however it is spelled
+ *   -- proven on every run by SCAN_SELF_TEST, whose `want/` fixtures include
+ *   child-class, descendant, attribute-with-value, bare attribute, `:is()`,
+ *   `:where()`, universal child, cell class, `:hover`-only, `@media`-nested
+ *   and `:not()`-guarded spellings, and whose `skip/` fixtures include a
+ *   row-level wash, a chip, a paintless rule and a transparent one.
+ *   What the probe still cannot reach, and so does not collect:
+ *     - a wash gated on a position the probe does not occupy
+ *       (`td:nth-child(3)`, `tr:nth-of-type(2n)`) -- the probe is one row,
+ *       `th` first, `td` second, a non-cell third;
+ *     - a wash gated on an ancestor outside the probe chain
+ *       (`body.x .tbl td`), which is `div > table.tbl > tbody > tr`;
+ *     - `:not()` with nested parens, e.g. `:not(:is(.a, .b))`, which the
+ *       token stripper leaves in place;
+ *     - a background painted on `::before`/`::after` rather than on the cell,
+ *       which is not the cell's own computed background.
+ *   Each of those is an UNDER-collection, so it fails silently. The reverse
+ *   -- the dynamic-pseudo retry and the `:not()` strip -- can only make more
+ *   selectors match, and over-collection surfaces as a loud diff here.
+ * - Sheets on pages that do not load aria.css. `ops.css` washes cells
+ *   (`table.data th`, `.cohort td.na`) but only login and setup load it and
+ *   neither loads aria.css, so there is no row tint to compound with. The
+ *   universe is resolved from the pages, not from a name list, so a page that
+ *   starts loading both is picked up rather than sailing past an exception.
  * - Contrast only. No hover-specific focus, motion or pointer-target check.
  */
 import test, { after } from 'node:test';
@@ -1181,29 +1206,324 @@ test('the compound state carries real ink sites, in both themes', async () => {
   }
 });
 
-/* The subject list is a literal, so it can go stale the moment another pane
-   grows a cell wash. This reads the sheets for the shape -- a rule whose
-   selector reaches a `> th`/`> td` under a `.tbl tbody tr` state class and
-   sets a background -- and insists every sheet carrying one is a subject
-   swept above. A new pane's wash fails here instead of going unmeasured. */
-test('every sheet that washes a table CELL is a subject this sweep drives', async () => {
-  const sheets = fs.readdirSync(path.join(ROOT, 'ops/assets'))
-    .filter((f) => f.endsWith('.css')).map((f) => 'ops/assets/' + f);
-  const found = [];
-  for (const rel of sheets) {
-    const css = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    for (const m of css.matchAll(/([^{}]*\{[^{}]*\})/g)) {
-      const [sel, body] = m[1].split('{');
-      if (!/\.tbl\s+tbody\s+tr[.:][^,{]*>\s*(th|td)/.test(sel)) continue;
-      if (!/(^|[;\s])background(-color)?\s*:/.test(body)) continue;
-      found.push(rel);
-      break;
+/* ------------------------------------------- the cell-wash subject scan */
+
+/* Decides, for a stylesheet, whether any rule in it washes a table CELL --
+   by adopting each rule ALONE into a shadow root holding a probe table and
+   reading what the cell computes before and after. The browser's own engine
+   answers the selector and resolves the value, so no spelling of the rule can
+   walk past this: `>` or descendant, class or attribute, `:is()` / `:where()`
+   grouping, shorthand or longhand, `var()` or `color-mix()` indirection.
+
+   Three things this had to get right, each of which silently returned "no
+   sheet washes a cell" for a repository that plainly has one:
+
+     - Chrome's nested-CSS support gives CSSStyleRule its OWN `.cssRules`, so
+       a walk that tests `.cssRules` before `.selectorText` recurses into an
+       empty list and never yields the rule.
+     - A declaration containing `var()` is a pending-substitution value, so
+       `rule.style.getPropertyValue('background-color')` returns the EMPTY
+       STRING for `background: color-mix(in srgb, var(--cyan) 10%, transparent)`.
+       Reading declarations is not value resolution. This reads the rendered
+       computed value instead, which is why it needs a real element.
+     - A shadow root, so the page's own copy of the sheet under test is not
+       already painting the probe -- with the tokens still inheriting across
+       the boundary, which is what makes `var(--cyan)` resolve at all.
+
+   Two configurations, because a state can live on the row or on the cell:
+
+     A `ancestor-state` -- tokens on the host/table/tbody/row, cells left
+       bare. Catches `tr.is-selected > td`, `tr[aria-selected] td`, `:is(...)
+       > th`, `tr.is-selected > *`.
+     B `cell-state` -- tokens on the cells too, counted ONLY if an
+       identically-dressed NON-cell does not also move. Without that
+       differential every chip rule (`.kv .locked`) collects its sheet.
+
+   Selectors carrying a dynamic pseudo-class the probe cannot enter are
+   retried with those stripped. That can only make MORE selectors match, so
+   its failure direction is over-collection -- which this contract surfaces as
+   a loud diff a human resolves, not as silence. */
+const CELL_WASH_SCAN = String.raw`((SHEETS) => {
+  const DYNAMIC = /:(hover|focus-visible|focus-within|focus|active|target|visited)\b/g;
+
+  const hostEl = document.createElement('div');
+  document.body.appendChild(hostEl);
+  const root = hostEl.attachShadow({ mode: 'open' });
+
+  function tokens(sel) {
+    /* :not(...) contents are stripped before tokens are read. Dressing the
+       probe with a class the selector requires to be ABSENT defeats the rule
+       and loses a real wash -- tr:not(.plain) > td { background } would go
+       uncollected. Stripping can only make more selectors match. */
+    const bare = sel.replace(/:not\([^()]*\)/g, '');
+    return {
+      classes: [...bare.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((m) => m[1]),
+      attrs: [...bare.matchAll(/\[\s*([\w-]+)\s*(?:[~|^$*]?=\s*("[^"]*"|'[^']*'|[^\]\s]+))?\s*\]/g)]
+        .map((m) => [m[1], m[2] ? m[2].replace(/^["']|["']$/g, '') : ''])
+    };
+  }
+
+  /* Every candidate carries the SAME child structure, cells and controls
+     alike. A control that differs structurally from the cell is not a
+     control: with empty spans standing in for a populated <td>,
+     .field-error:not(:empty) matched the cell and could not match its
+     own control, and the differential collected a form-error rule as a table
+     cell wash. */
+  function nested(tag) {
+    const el = document.createElement(tag);
+    const mid = document.createElement('span');
+    mid.appendChild(document.createElement('span'));
+    el.appendChild(mid);
+    return { el, mid };
+  }
+
+  /* class is MERGED into the element's list, never assigned over it.
+     setAttribute('class', ...) replaced the whole attribute, which wiped the
+     tbl marker off the probe table, so every [class~="..."] spelling of a
+     wash silently failed to match and was under-collected -- demonstrated on
+     the real users sheet, green, measuring nothing.
+
+     classFirst orders the merge. [class^="x"] needs x at the FRONT of the
+     attribute and [class$="x"] needs it at the BACK, and one element cannot
+     be both, so a rule naming the class attribute is probed in both orders.
+     Only such rules pay for it. */
+  function build(onCell, t, classFirst) {
+    root.replaceChildren();
+    const outer = document.createElement('div');
+    const table = document.createElement('table');
+    const tbody = document.createElement('tbody');
+    const tr = document.createElement('tr');
+    const thP = nested('th');
+    const tdP = nested('td');
+    const sibP = nested('span');
+    tr.append(thP.el, tdP.el, sibP.el);
+    tbody.appendChild(tr); table.appendChild(tbody); outer.appendChild(table);
+    root.appendChild(outer);
+    const fromAttr = [];
+    for (const [n, v] of t.attrs) if (n === 'class') fromAttr.push(...v.split(/\s+/).filter(Boolean));
+    const dress = (el, own) => {
+      const mine = own ? [own, ...t.classes] : [...t.classes];
+      const list = classFirst ? [...fromAttr, ...mine] : [...mine, ...fromAttr];
+      el.setAttribute('class', [...new Set(list)].join(' '));
+      for (const [n, v] of t.attrs) if (n !== 'class') el.setAttribute(n, v);
+    };
+    dress(outer); dress(table, 'tbl'); dress(tbody); dress(tr);
+    if (onCell) [thP.el, tdP.el, sibP.el, tdP.mid].forEach((el) => dress(el));
+    return { th: thP.el, td: tdP.el, sib: sibP.el, inner: tdP.mid };
+  }
+
+  /* 'rgba(0, 0, 0, 0)' and 'color(srgb 0 0 0 / 0)' are the same colour and
+     compare unequal as strings, which reports a paint where there is none.
+     Chromium serialises color-mix() in the second form. */
+  function canon(v) {
+    const n = (v.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number);
+    if (/^color\(/.test(v)) {
+      const a = /\//.test(v) ? n.pop() : 1;
+      return [...n.slice(-3).map((x) => x * 255), a];
+    }
+    if (/^rgba?\(/.test(v)) return [...n.slice(0, 3), n.length > 3 ? n[3] : 1];
+    return null;
+  }
+  function sameColor(a, b) {
+    const x = canon(a); const y = canon(b);
+    if (!x || !y) return a === b;
+    if (x[3] === 0 && y[3] === 0) return true;
+    return x.every((v, i) => Math.abs(v - y[i]) < 0.5);
+  }
+  function bg(el) {
+    const s = getComputedStyle(el);
+    return { c: s.backgroundColor, i: s.backgroundImage };
+  }
+  function moved(a, b) { return !sameColor(a.c, b.c) || a.i !== b.i; }
+
+  function* styleRules(list) {
+    for (const r of list) {
+      if (r.selectorText !== undefined) yield r;
+      if (r.cssRules && r.cssRules.length) yield* styleRules(r.cssRules);
     }
   }
-  assert.deepEqual([...new Set(found)].sort(), [...SELECTION_SUBJECTS].sort(),
+
+  function washes(cssText, sel) {
+    let one;
+    try { one = new CSSStyleSheet(); one.replaceSync(cssText); } catch (e) { return null; }
+    if (!one.cssRules.length) return null;
+    const t = tokens(sel);
+    const orders = t.attrs.some(([n]) => n === 'class') ? [false, true] : [false];
+    for (const classFirst of orders) for (const onCell of [false, true]) {
+      const p = build(onCell, t, classFirst);
+      const before = [bg(p.th), bg(p.td), bg(p.sib), bg(p.inner)];
+      root.adoptedStyleSheets = [one];
+      const after = [bg(p.th), bg(p.td), bg(p.sib), bg(p.inner)];
+      root.adoptedStyleSheets = [];
+      const thMoved = moved(before[0], after[0]);
+      const tdMoved = moved(before[1], after[1]);
+      const nonCell = moved(before[2], after[2]) || moved(before[3], after[3]);
+      if ((thMoved || tdMoved) && (!onCell || !nonCell)) {
+        return {
+          how: onCell ? 'cell-state' : 'ancestor-state',
+          where: [thMoved && 'th', tdMoved && 'td'].filter(Boolean).join('+'),
+          value: (thMoved ? after[0] : after[1]).c
+        };
+      }
+    }
+    return null;
+  }
+
+  const out = {};
+  const errors = {};
+  let scanned = 0;
+  for (const [rel, text] of Object.entries(SHEETS)) {
+    const sheet = new CSSStyleSheet();
+    try { sheet.replaceSync(text); } catch (e) { errors[rel] = String(e); continue; }
+    const hits = [];
+    for (const rule of styleRules(sheet.cssRules)) {
+      const sel = rule.selectorText;
+      if (!sel) continue;
+      scanned++;
+      let hit = washes(rule.cssText, sel);
+      if (!hit) {
+        const bare = sel.replace(DYNAMIC, '');
+        if (bare !== sel && bare.trim()) {
+          hit = washes(rule.cssText.replace(sel, bare), bare);
+          if (hit) hit.via = 'dynamic-stripped';
+        }
+      }
+      if (hit) hits.push({ sel: sel.slice(0, 120), ...hit });
+    }
+    if (hits.length) out[rel] = hits;
+  }
+  hostEl.remove();
+
+  /* Reported so a caller can prove the tokens resolved. A scan run where
+     var(--cyan) is unresolvable computes every wash to transparent and finds
+     NOTHING, which is a silent pass. Asserted on the Node side. */
+  return JSON.stringify({
+    found: out, errors, scanned,
+    cyan: getComputedStyle(document.documentElement).getPropertyValue('--cyan').trim()
+  });
+})(__SHEETS__)`;
+
+async function scanForCellWash(sheets) {
+  return await evalJson(CELL_WASH_SCAN.replace('__SHEETS__', JSON.stringify(sheets)));
+}
+
+/* The spellings the previous regex could not see, plus the shapes that must
+   NOT collect a sheet. Run through the same scanner on every run, so this
+   file carries its own proof of sensitivity instead of asserting it once in a
+   pull request and then drifting. */
+const SCAN_SELF_TEST = {
+  'want/child-class.css': '.tbl tbody tr.is-selected > td { background: color-mix(in srgb, var(--cyan) 10%, transparent); }',
+  'want/descendant.css': '.tbl tbody tr.is-selected td { background: var(--cyan); }',
+  'want/attribute.css': '.tbl tbody tr[aria-selected="true"] > td { background: var(--cyan); }',
+  'want/attribute-bare.css': '.tbl tbody tr[data-picked] td { background-color: var(--cyan); }',
+  'want/is-group.css': '.tbl tbody :is(tr.is-selected, tr.is-pinned) > th { background: var(--cyan); }',
+  'want/where-group.css': '.tbl :where(tr.is-flagged) td { background-image: linear-gradient(var(--cyan), var(--cyan)); }',
+  'want/universal-child.css': '.tbl tbody tr.is-selected > * { background: var(--cyan); }',
+  'want/cell-class.css': 'td.is-tinted { background: var(--cyan); }',
+  'want/hover-only.css': '.tbl tbody tr.is-selected:hover > td { background: var(--cyan); }',
+  'want/nested.css': '@media (min-width: 100px) { .tbl tbody tr.is-selected > td { background: var(--cyan); } }',
+  /* `:not(...)` in both directions. A wash the selector guards with an
+     absence must still be collected (want/not-guard), and a rule that is NOT
+     a cell wash must not be collected just because its own `:not()` is
+     unsatisfiable on a bare control (skip/not-empty -- the real
+     `.field-error:not(:empty)` in pane-evaluations-v2.css, which this probe
+     collected in error until the controls were made non-empty too). */
+  /* The `class` attribute in all four of its matching forms. These are the
+     spellings the probe lost when dress() overwrote `class` instead of
+     merging into it: the `tbl` marker went with the assignment, so the
+     selector could not match and the wash was silently uncollected. */
+  'want/class-word.css': '.tbl tbody tr[class~="is-selected"] > td { background: var(--cyan); }',
+  'want/class-sub.css': '.tbl tbody tr[class*="is-select"] > td { background: var(--cyan); }',
+  'want/class-prefix.css': '.tbl tbody tr[class^="is-selected"] > td { background: var(--cyan); }',
+  'want/class-suffix.css': '.tbl tbody tr[class$="selected"] > td { background: var(--cyan); }',
+  /* A wash gated on a dynamic pseudo the probe cannot enter is retried with
+     the pseudo stripped. `focus` listed before `focus-visible` in that
+     alternation matched the prefix and `\b` held against the hyphen, so
+     `:focus-visible` was rewritten to `-visible` -- a garbage selector that
+     matches nothing, which is an under-collection that fails silently. */
+  'want/focus-within.css': '.tbl tbody tr:focus-within > td { background: var(--cyan); }',
+  'want/not-guard.css': '.tbl tbody tr:not(.plain) > td { background: var(--cyan); }',
+  'skip/not-empty.css': '.field-error:not(:empty) { background: var(--cyan); }',
+  'skip/row-level.css': '.tbl tbody tr.is-selected { background: var(--cyan); }',
+  'skip/chip.css': '.kv .locked { background: var(--cyan); }',
+  'skip/no-paint.css': '.tbl tbody tr.is-selected > td { color: var(--cyan); box-shadow: inset 3px 0 0 var(--cyan); }',
+  'skip/transparent.css': '.tbl tbody tr.is-selected > td { background: transparent; }'
+};
+
+/* The universe the contract is about. A cell wash is only the hazard this
+   file sweeps where it lands on the SAME page as `aria.css`'s row hover tint
+   -- that is the compound surface. `ops.css` washes cells too (`table.data
+   th`, `.cohort td.na`) and is irrelevant here, because the only pages that
+   load it, login and setup, do not load `aria.css` at all. Resolved from the
+   pages rather than excluded by name, so a page that starts loading both is
+   picked up instead of sailing past a hard-coded exception. */
+function v2Sheets() {
+  const pages = fs.readdirSync(path.join(ROOT, 'ops')).filter((f) => f.endsWith('.html'));
+  const universe = new Set();
+  let sawAria = false;
+  for (const page of pages) {
+    const html = fs.readFileSync(path.join(ROOT, 'ops', page), 'utf8');
+    const hrefs = [...html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi)]
+      .map((m) => /href=["']([^"']+)["']/i.exec(m[0]))
+      .filter(Boolean)
+      .map((m) => path.posix.normalize(path.posix.join('ops', m[1])));
+    if (!hrefs.includes('ops/assets/aria.css')) continue;
+    sawAria = true;
+    for (const h of hrefs) universe.add(h);
+  }
+  assert.ok(sawAria, 'no ops page links aria.css -- the scan universe resolved empty');
+  return [...universe].sort();
+}
+
+/* The subject list is a literal, so it can go stale the moment another pane
+   grows a cell wash. This resolves the question by MATCHING and PAINTING
+   rather than by recognising a string, and insists every sheet carrying a
+   cell wash is a subject swept above. A new pane's wash fails here instead of
+   going unmeasured. Stadiora/Aria#10764. */
+test('the cell-wash scan collects every spelling in its fixture map, and only a wash', async () => {
+  await sweep();
+  await setTheme('dark', true);
+  await load(base + SUBJECT_USERS);
+
+  const res = await scanForCellWash(SCAN_SELF_TEST);
+  assert.deepEqual(res.errors, {}, `the scanner could not parse its own fixtures: ${JSON.stringify(res.errors)}`);
+  assert.ok(res.cyan, 'the page resolved --cyan to nothing, so every wash computes transparent and the scan is blind');
+
+  const want = Object.keys(SCAN_SELF_TEST).filter((k) => k.startsWith('want/')).sort();
+  const got = Object.keys(res.found).sort();
+  process.stderr.write(
+    `scan self-test: ${res.scanned} rule(s), ${want.length} spelling(s) that must be seen, ` +
+    `${Object.keys(SCAN_SELF_TEST).length - want.length} that must not, ${got.length} collected\n`);
+  assert.deepEqual(got, want,
+    'the scanner does not bind the spellings it claims to. Missing: ' +
+    JSON.stringify(want.filter((w) => !got.includes(w))) + '; collected in error: ' +
+    JSON.stringify(got.filter((g) => !want.includes(g))) +
+    '. Detail: ' + JSON.stringify(res.found));
+});
+
+test('every sheet that washes a table CELL on an aria.css page is a subject this sweep drives', async () => {
+  await sweep();
+  await setTheme('dark', true);
+  await load(base + SUBJECT_USERS);
+
+  const universe = v2Sheets();
+  assert.ok(universe.includes('ops/assets/aria.css'),
+    `the universe resolved without aria.css: ${JSON.stringify(universe)}`);
+
+  const sheets = Object.fromEntries(universe.map((rel) => [rel, fs.readFileSync(path.join(ROOT, rel), 'utf8')]));
+  const res = await scanForCellWash(sheets);
+  assert.deepEqual(res.errors, {}, `a stylesheet would not parse: ${JSON.stringify(res.errors)}`);
+  assert.ok(res.cyan, 'the page resolved --cyan to nothing, so every wash computes transparent and the scan is blind');
+  process.stderr.write(
+    `cell-wash scan: ${universe.length} sheet(s) on aria.css pages, ${res.scanned} rule(s) matched+painted, ` +
+    `${Object.keys(res.found).length} washing a cell: ${JSON.stringify(Object.keys(res.found))}\n`);
+
+  assert.deepEqual(Object.keys(res.found).sort(), [...SELECTION_SUBJECTS].sort(),
     'a stylesheet puts a background on a table CELL in a state the shared hover rule cannot ' +
     'reach, and it is not in SELECTION_SUBJECTS. Such a wash paints OVER the row tint this ' +
-    'file sweeps, so it is a backdrop nothing measures until a subject drives it');
+    'file sweeps, so it is a backdrop nothing measures until a subject drives it. Found: ' +
+    JSON.stringify(res.found, null, 1));
+
   for (const rel of SELECTION_SUBJECTS) {
     const pane = path.basename(rel).replace(/^pane-|-v2\.css$/g, '');
     assert.ok(SUBJECTS.some((s) => s.selection && s.url.includes(pane)),
