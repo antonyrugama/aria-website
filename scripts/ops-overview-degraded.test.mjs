@@ -448,7 +448,9 @@ test('a read that never landed does not earn the sentence "there is nothing here
      about how much data exists has changed — only how much of it was read.
      An unread half is not an empty half, and "nothing is behind this pane"
      is a claim about the world, not about the request. */
-  for (const [which, only] of [['problems', 'problems'], ['rules', 'rules']]) {
+  for (const [which, only] of [
+    ['problems', 'problems'], ['rules', 'rules'], ['summary', 'summary'],
+  ]) {
     const text = allText(shownPanel(await boot({ ...nothing, [only]: boom(which) })));
     assert.doesNotMatch(text, /Nothing is behind this pane yet/,
       `the ${which} read failed and the pane told the operator there is nothing behind it — `
@@ -538,6 +540,111 @@ test('the whole-pane failure offers a retry that works', async () => {
     + 'transient failure cannot get it back without a reload');
   assert.doesNotMatch(allText(shownPanel(dom)), /This pane could not be read/,
     'every read recovered and the pane is still showing its failure state');
+});
+
+test('two reads down is still not the whole pane down', async () => {
+  /* `openFailed && rulesFailed && failed` has three terms and the file bound
+     one of them: taking a read away and watching the pane survive only ever
+     exercised the term for THAT read. Each case below leaves a different one
+     of the three answering, and what it answers has to still be on screen —
+     which is #5498 itself, restated for every pair rather than for singles. */
+  const cases = [
+    {
+      name: 'the summary',
+      down: { problems: boom('problems'), rules: boom('rules') },
+      survives: /1,102|1102/,
+      lost: 'the figures landed and the pane threw them away',
+    },
+    {
+      name: 'the problems',
+      down: { rules: boom('rules'), summary: boom('summary') },
+      survives: /Checkout latency/,
+      lost: 'a live critical problem landed and the pane threw it away',
+    },
+    {
+      name: 'the rules',
+      down: { problems: boom('problems'), summary: boom('summary') },
+      survives: /rules checking|Everything is working|Nothing is open/,
+      lost: 'the rules landed and the pane threw them away',
+    },
+  ];
+
+  for (const c of cases) {
+    const dom = await boot(c.down);
+    const text = allText(shownPanel(dom));
+    assert.doesNotMatch(text, /This pane could not be read/,
+      `two of three reads failed and ${c.name} answered, and the pane replaced everything `
+      + `with its whole-pane failure: ${c.lost}. That is the defect #5498 was filed for, `
+      + 'one read short of the case the other tests cover');
+    assert.match(text, c.survives,
+      `the pane stayed up but ${c.name} is not on screen, so the read that landed reached `
+      + 'the operator no better than if it had failed');
+  }
+
+  /* The other side: all three down IS the whole pane down, so the assertions
+     above are not passing because the branch is unreachable. */
+  const allDown = await boot({
+    problems: boom('problems'), rules: boom('rules'), summary: boom('summary'),
+  });
+  assert.match(allText(shownPanel(allDown)), /This pane could not be read/,
+    'every read failed and the pane did not say the whole pane is unreadable');
+});
+
+test('an unreadable rules list does not make an open problem disappear', async () => {
+  /* The ribbon\'s unread-rules reading is gated `rulesFailed && !active.length`
+     and the file bound the branch it REACHES, never the gate that keeps it
+     out. Without `!active.length` the reading wins over the open-problems
+     one, and the ribbon reads "Nothing is open" directly beside a chip saying
+     a critical problem is open — the pane contradicting itself in one line,
+     about the thing it exists to show. */
+  const dom = await boot({ rules: boom('rules') });
+  const text = allText(shownPanel(dom));
+
+  assert.match(text, /Checkout latency|1 critical|critical/i,
+    'the fixture\'s open problem is not on screen at all, so the contradiction below could '
+    + 'not appear either and this test would pass for the wrong reason');
+  assert.doesNotMatch(text, /Nothing is open/,
+    'the rules read failed and the ribbon announced that nothing is open, next to an open '
+    + 'critical problem it is drawing itself');
+
+  /* And the reading IS correct when the queue really is empty, so the
+     assertion above is about the gate rather than about the sentence. */
+  const quiet = await boot({ rules: boom('rules'), problems: { problems: [] } });
+  assert.match(allText(shownPanel(quiet)), /Nothing is open/,
+    'with the queue genuinely empty and the rules unread, the ribbon stopped saying so');
+});
+
+test('one thing behind the pane is enough to stop it saying there is nothing', async () => {
+  /* The empty guard has six terms. Three say the reads landed and are bound
+     above; three say there is genuinely nothing behind them, and the conjunct
+     sweep found all three deletable with the suite green. Each case here
+     leaves exactly ONE of the three things present and everything else empty,
+     so each term is the only thing standing between the pane and a sentence
+     that is false. */
+  const empty = {
+    summary: null,
+    problems: { problems: [] },
+    rules: { rules: [], summary: { armed: 0, total: 0 }, channels: [] },
+  };
+
+  const cases = [
+    { term: '!figures', only: { summary: summaryFixture() }, shows: /1,102|1102/,
+      lie: 'the figures came back and the pane said there is nothing behind it' },
+    { term: '!problems.length', only: { problems: problemsFixture() },
+      shows: /Checkout latency/,
+      lie: 'a critical problem is open and the pane said there is nothing behind it' },
+    { term: '!armed.total', only: { rules: rulesFixture() }, shows: /rules checking/,
+      lie: 'a rule exists and the pane said there is nothing behind it' },
+  ];
+
+  for (const c of cases) {
+    const text = allText(shownPanel(await boot({ ...empty, ...c.only })));
+    assert.doesNotMatch(text, /Nothing is behind this pane yet/,
+      `${c.lie} — the \`${c.term}\` term of the empty guard is the only thing preventing it`);
+    assert.match(text, c.shows,
+      `the pane did not draw the one thing this case puts behind it, so the absence `
+      + 'assertion above passed for the wrong reason');
+  }
 });
 
 /* ------------------------------------------- what the pane may not claim */
