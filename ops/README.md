@@ -2509,6 +2509,7 @@ ops/assets/pane-releases.js "The chip carries the share and nothing else" = line
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
+ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 592
 ```
 
 ### What holds this README to the code
@@ -2534,8 +2535,10 @@ subjects are written in the guard rather than read out of the tree: `source-anch
 `deleted-assets` name theirs directly, and the rest take theirs from hand-written arrays — no
 sheet says which of its classes carry status, no tree lists the files it has lost, and no guard
 declares which of its constants are load-bearing. **Which blocks those are is the
-`pinned-blocks` block below, not a list here**; the list that used to be here named seven and
-there were twelve, and the five it missed were five live holes of exactly the kind the pins
+`pinned-blocks` block below, not a list here**; the list that used to be here named seven when
+there were twelve, and review round 8 then found five more blocks outside the pins entirely — so
+the count in that sentence was short twice, in the same direction, and the five it missed each
+time were live holes of exactly the kind the pins
 exist to close. They still derive every
 **value**. What that shape cannot catch by itself is a **subject deleted**, which shrinks the
 expectation along with the claim, so each is pinned **row by row** in the guard — by name, not by
@@ -2631,6 +2634,7 @@ and a check, every browser guard in the tree has a row in the checks table
 And which of them are pinned, with how many rows each pin holds:
 
 ```claims id=pinned-blocks
+claims id=claims-blocks pins 2 rows by name
 claims id=csp-pages pins 5 rows by name
 claims id=csp-policy pins 9 rows by name
 claims id=dark-text-3 pins 7 rows by name
@@ -2638,13 +2642,17 @@ claims id=data-page-scoping pins 2 rows by name
 claims id=deleted-assets pins 2 rows by name
 claims id=guard-blind-spots pins 15 rows by name
 claims id=guard-constants pins 9 rows by name
+claims id=pinned-blocks pins 4 rows by name
 claims id=shell-v2-pins pins 6 rows by name
 claims id=source-anchors pins 8 rows by name
 claims id=spend-colour-gate pins 21 rows by name
 claims id=spend-write-gate pins 3 rows by name
+claims id=sr-span-classes pins 2 rows by name
 claims id=v1-status-classes pins 7 rows by name
-claims id=v1-status-classes pins the families badge, tag, callout, verdict
-floor: blocks pinned in REQUIRED_ROWS = at least 12
+claims id=v1-v2-collision pins 1 rows by name
+claims id=write-capable-assets pins 2 rows by name
+claims id=v1-status-classes pins the families = badge, tag, callout, verdict
+floor: blocks pinned in REQUIRED_ROWS = at least 17
 floor: blocks derived in this file = at least 24
 floor: families pinned in REQUIRED_FAMILIES = at least 4
 ```
@@ -2710,8 +2718,9 @@ blind spot, Aria quality before any operation is submitted. What is bound instea
 leave unseen even though it is not named; a bolded word in a bullet's body moves that count too,
 and so does a third span on a bullet that already carried two — the per-bullet tally this started
 as did not, which round 1 of PR #111 demonstrated. Bullets come from the **leading docblock**
-only: `check-ops-shell-v2.mjs:583` and `check-ops-contrast.mjs:2239` state blind spots outside
-theirs and are **not** carried here, only counted — and counted only because the matcher can see
+only: `check-ops-shell-v2.mjs` and `check-ops-contrast.mjs` state blind spots outside theirs
+and are **not** carried here, only counted — their line numbers are in `source-anchors` above,
+not spelled here, because the one that used to sit in this sentence was wrong by 343 lines — and counted only because the matcher can see
 their headings. Which headings it can see is **measured, not described**: the block opens with a
 row per probed heading line, handed to the real matcher and reported `SEEN` or `INVISIBLE`, under
 a derived count of them. A section
@@ -2823,8 +2832,9 @@ the run and a wrong number does not:
   `backdrop-filter`, not a general property of the screenshot: `text-shadow` is painted on the
   real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four on a
   glyph today, so the refusals cost no coverage — but "the shell has one `filter`" was itself
-  an overclaim. The only CSS `filter` a shell page loads is `aria.css:592`'s
-  `.btn-primary:hover`, which the sweep never enters; `ops.css:278`/`:281`/`:477` carry three
+  an overclaim. The only CSS `filter` a shell page loads is `aria.css`'s
+  `.btn-primary:hover` — line number in `source-anchors`, not here — which the sweep never
+  enters; `ops.css:278`/`:281`/`:477` carry three
   more that no v2 page loads; and `aria.js:463`, `:544` and `:623` each set a `filter`
   **presentation attribute** on an SVG chart stroke, which is shipped, rendered, and simply not
   a text node the sweep samples.

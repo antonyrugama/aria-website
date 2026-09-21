@@ -1697,6 +1697,7 @@ const REQUIRED_ROWS = {
        was wrong by 343 lines when round 7 checked it - a number nothing
        regenerated, in the file whose subject is numbers nothing regenerates. */
     'scripts/check-ops-contrast.mjs "NOT COVERED, on purpose \u2014 this is the list of exclusions decided, not an"',
+    'ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);"',
     'scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too"',
     'ops/assets/pane-analytics.js "`features.coverageNote` carries two facts"',
     'ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs"',
