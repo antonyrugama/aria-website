@@ -854,9 +854,13 @@ for (const page of PAGES) {
    So these sentences state only what was observed and where the number to
    compare it against lives — and where the comparison is between two counts,
    BOTH are printed, derived from the fixture rather than typed, so the reader
-   is not asked to take either on faith. The reader does the deducing; this
-   file has been wrong at it three times. Enumerated rather than generated: a
-   hint that guesses is worse than none. */
+   is not asked to take either on faith. Round 4 added the other half of the
+   same discipline: what is counted here is ATTRIBUTES, so no sentence may
+   conclude anything about CONTROLS. Removing both ARIA writes from
+   applySelection leaves two rows and two pick controls on the page, measured
+   and clickable, and an empty census. The reader does the deducing; this file
+   has been wrong at it three times. Enumerated rather than generated: a hint
+   that guesses is worse than none. */
 const FLOOR_HINTS = {
   spend: 'The pair comes from the Group-the-bill-by switch, which viewCard draws only ' +
     'when two or more of the groupings in VIEW_ORDER (ops/assets/pane-spend.js:302) ' +
@@ -867,12 +871,13 @@ const FLOOR_HINTS = {
     'and aria-pressed on its control. Measured at this head, a one-row result view judges ' +
     'aria-current and not aria-pressed — the marked <tr> finds an unmarked peer among the ' +
     'detail card\'s rows (ops/assets/pane-users.js:1095, :1156, :1239) while the marked ' +
-    'control finds none outside the match table. applySelection writes aria-pressed once ' +
-    'per rendered match row that carries a pick control (:551, from :652), so the ' +
-    'aria-pressed entries above, added up whatever their value, are how many match rows on ' +
-    `the page carried one. The LOOKUP fixture in this file sent ${LOOKUP.matches.length}. ` +
-    'Equal means the page carried a control for every row the fixture sent; fewer means it ' +
-    'did not.'
+    'control finds none outside the match table. applySelection writes aria-pressed on the ' +
+    'pick control of every rendered match row that has one (:551, from :652), so the ' +
+    'aria-pressed entries above, added up whatever their value, are how many pick controls ' +
+    `carried the ATTRIBUTE — not how many were drawn. The LOOKUP fixture in this file sent ` +
+    `${LOOKUP.matches.length} rows. Equal means one attribute-bearing pick control per row ` +
+    'sent; fewer means the page carried fewer of them than that, which a row that never ' +
+    'rendered and a control the pane stopped writing the attribute on both produce.'
 };
 
 /* Fixture pre-flight.
@@ -1632,8 +1637,19 @@ try {
       /* ---------------------------------- judgement 2: state pair paint */
 
       const pairCount = seen.pairs.filter((p) => p.judged).length;
-      pairsByPane[page.key] = Math.min(pairsByPane[page.key] ?? Infinity, pairCount);
-      censusByPane[page.key] = seen.stateCensus || {};
+      /* The census must come from the pass that supplied the minimum, not from
+         whichever theme ran last. They can differ: a pane that writes its
+         states in one theme and not the other gives a floor of 0 from the
+         silent theme and a census full of positive states from the loud one,
+         and joining the two says the states were drawn and unjudgeable when
+         they were judged, in the other theme. Reproduced at
+         ops/assets/pane-users.js:547,551 by keying the written value on
+         data-theme. The theme is carried too, so the message can say which
+         pass it is describing. */
+      if (pairCount < (pairsByPane[page.key] ?? Infinity)) {
+        pairsByPane[page.key] = pairCount;
+        censusByPane[page.key] = { census: seen.stateCensus || {}, theme };
+      }
       pairsJudged += pairCount;
 
       for (const pair of seen.pairs) {
@@ -1684,28 +1700,40 @@ for (const page of PAGES) {
   if (had === undefined) continue;
   if (had < due) {
     /* A bare count of 0 states the symptom and withholds everything needed to
-       act on it. Three cases, not two: the pane drew none of the states and
-       none of the attributes; it drew the attributes but none was judgeable;
-       or it drew SOME and is short of its floor. None of the three is
-       attributed to a cause — the third arrives from a narrowed fixture and
-       from a pane regression alike — so each states what was on the page and
-       the hint below says which number to compare it against. */
-    const census = censusByPane[page.key] || {};
+       act on it. Three cases, not two: the pane declared no state attribute at
+       all; it declared them but none was judgeable; or it judged SOME and is
+       short of its floor.
+
+       Every sentence below is about ATTRIBUTES, because attributes are what
+       was counted. An absent aria-pressed does not establish an absent
+       control: removing both ARIA writes from applySelection
+       (ops/assets/pane-users.js:547,551) leaves two match rows and two pick
+       controls on the page, measured at 81.4 x 28.25 px, and an empty census.
+       None of the three cases is attributed to a cause either — the third
+       arrives from a narrowed fixture and from a pane regression alike — so
+       each states what was on the page and the hint below says which number to
+       compare it against. */
+    const record = censusByPane[page.key] || { census: {}, theme: null };
+    const census = record.census || {};
     const declared = Object.keys(census).sort();
     const inventory = declared.map((k) => `${k} ×${census[k]}`).join(', ');
+    /* The count is a per-theme minimum, so the inventory has to come from the
+       theme that produced it or it describes a different page. */
+    const inTheme = record.theme ? ` in the ${record.theme} theme` : '';
     let saw;
     if (had > 0) {
       saw = `It judged ${had} here, so the pane is drawing fewer of them than it was ` +
-        `rather than none — its result view declared ${inventory}. Look for the one state ` +
-        'that stopped being drawn, or stopped having an unmarked peer to compare against; ' +
-        'either the pane stopped writing it or the fixture stopped producing the shape it ' +
-        'needs, and the counts above are what tell those apart.';
+        `rather than none — its result view declared ${inventory}${inTheme}. Look for the ` +
+        'one state that stopped being drawn, or stopped having an unmarked peer to compare ' +
+        'against; either the pane stopped writing it or the fixture stopped producing the ' +
+        'shape it needs, and the counts above are what tell those apart.';
     } else if (declared.length) {
-      saw = `Its result view did declare ${inventory}, so the control is on the page but ` +
-        'no positive state on it had an unmarked peer.';
+      saw = `Its result view did declare ${inventory}${inTheme}, so the attributes are on ` +
+        'the page and no positive one among them had an unmarked peer to compare against.';
     } else {
-      saw = 'Its result view declared no state attribute of any kind, so the control this ' +
-        'check was judging is not being drawn at all rather than being drawn unmarked.';
+      saw = `Its result view declared no state attribute of any kind${inTheme}. That is ` +
+        'the attribute missing, not the control: an element can be drawn, sized and ' +
+        'clickable with nothing for this check to judge.';
     }
     /* Printed in every case, because no hint names a cause any more. Gating it
        on had === 0 suppressed the users hint in exactly the case it was
