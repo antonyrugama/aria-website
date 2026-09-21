@@ -48,10 +48,25 @@
 
    - The WORDS in a checks-table row. That table is held to the browser
      guards only by its row SET: every `check-ops-*.mjs` in `scripts/` has to
-     be named by some row. What the row then says that guard sees is prose,
-     and a row describing a guard it no longer describes is invisible here.
-     The table is also found by its exact header line, so reformatting that
-     header is a failure rather than a silent skip.
+     be the subject of exactly one row, which is that row's first cell. What
+     the row then says that guard sees is prose, and a row describing a guard
+     it no longer describes is invisible here. The table is also found by its
+     exact header line, so reformatting that header is a failure rather than
+     a silent skip.
+   - Whether a workflow that INVOKES a guard ever runs it. `browser-guards`
+     reads the `run:` steps and asks for the command at the start of the
+     script or of a shell segment, so a guard named in a comment, a step name
+     or an `echo` is not read as run. It cannot see a step turned off by an
+     `if:`, a job with no trigger that reaches it, `continue-on-error`, or a
+     path filter that excludes the change in front of it.
+   - Where the ink actually lands. `dark-text-3` is arithmetic over the
+     tokens in one `:root`: it measures the surfaces it names and accounts
+     for every other opaque token beside them, so a token added under any
+     name is red until it is placed in one list or the other. It cannot judge
+     a translucent token - `--topbar-bg` and `--scrim` are `rgba()` and
+     composite over whatever is behind them - and it does not know which
+     surface a given run of text sits on. `check-ops-contrast.mjs` measures
+     the rendered pair in a browser and is the oracle for both.
    - A file path spelled without a directory AND with an extension no file in
      `ops/`, `ops/assets/`, `scripts/` or `.github/workflows/` uses. The sweep
      reads a bare `name.ext` as a path only when the tree already has that
@@ -65,12 +80,20 @@
      enforces that.
    - `<link>` and `<script>` tags only, spelled statically with a literal
      `assets/…` URL. An asset injected at runtime is invisible to the loader
-     map, as is one loaded by a page outside `ops/`. Every attribute read out
-     of a page — `href`, `src`, `http-equiv`, `style` — goes through one
-     matcher that allows whitespace around the `=` and reads the value quoted
-     either way or unquoted, so a legal respelling is not a hole in one check
-     and not in another. An attribute whose NAME is assembled at runtime is
+     map, as is one loaded by a page outside `ops/`. A tag inside an HTML
+     comment or inside a `<template>` is cut before anything is counted,
+     because neither is loaded or drawn. Every attribute read out of a page —
+     `href`, `src`, `http-equiv`, `content`, `style` — goes through one pair
+     of matchers: the name must not be the tail of a longer one, so
+     `data-src` is not `src` and `x:http-equiv` is not `http-equiv`; the `=`
+     may be spaced; a quoted value may hold anything including spaces, and an
+     unquoted one may not. An attribute whose NAME is assembled at runtime is
      still invisible, and so is markup a script writes into the page.
+   - What a policy MEANS. `csp-policy` reads the directives out of the meta
+     tag and requires every page to carry the same ones, so the README cannot
+     show a strict policy the pages no longer have. Whether those directives
+     are the right ones, and whether a browser would accept the tag at all,
+     is not decided here.
    - The test-fixture map sees this repo's `read('assets/NAME')` idiom. A test
      that opens an asset another way reads as "nothing loads it".
    - Which pages can DRAW a class is read from the class tokens written in the
@@ -143,6 +166,24 @@ const WORKFLOWS = list('.github/workflows').filter((f) => f.endsWith('.yml'));
    is described in prose here and never demonstrated. A fence inside a
    blockquote or a list item is a real block to CommonMark and cannot be
    judged here either, so it is refused by name rather than skipped. */
+/* Where a fence may legally start. Column 0 always; otherwise the nearest
+   preceding non-blank line that is less indented has to be a list-item
+   marker whose content column is exactly this indent, which is the one
+   place CommonMark measures indentation from something other than the
+   margin. Deliberately strict: it refuses rather than guesses. */
+function legalFenceIndent(lines, i, indent) {
+  if (indent === 0) return true;
+  for (let k = i - 1; k >= 0; k -= 1) {
+    const line = lines[k];
+    if (!line.trim()) continue;
+    const lead = line.length - line.trimStart().length;
+    if (lead >= indent) continue;
+    const item = /^(\s*)([-*+]|\d+[.)])(\s+)/.exec(line);
+    return Boolean(item) && item[1].length + item[2].length + item[3].length === indent;
+  }
+  return false;
+}
+
 function claimBlocks(md) {
   const lines = md.split('\n');
   const blocks = new Map();
@@ -158,6 +199,18 @@ function claimBlocks(md) {
       'item). This reader is line-based and cannot judge one; move it to the top level.');
     const fence = /^(\s*)(`{3,}|~{3,})\s*claims\b(.*)$/.exec(lines[i]);
     if (!fence) continue;
+    /* Four spaces of indentation is an INDENTED CODE BLOCK to CommonMark, not
+       a fence, and GitHub renders it as literal backticks. The exception is a
+       fence inside a list item, where indentation is measured from the item's
+       content column - which is why the legal indents are column 0 and
+       exactly the content column of an enclosing list item. Anything else is
+       refused by name: a block this reader judges and the renderer does not
+       show as a claims fence is the same lie in the other direction. */
+    assert.ok(legalFenceIndent(lines, i, fence[1].length),
+      `${README_PATH}:${i + 1}: a claims fence indented ${fence[1].length} spaces. CommonMark ` +
+      'reads four or more spaces as an indented code block, so this would be judged here and ' +
+      'rendered as literal backticks. Put it at column 0, or at the content column of the list ' +
+      'item it belongs to.');
     const open = /^\s+id=([a-z0-9-]+)\s*$/.exec(fence[3]);
     assert.ok(
       open,
@@ -192,8 +245,20 @@ const BLOCKS = claimBlocks(README);
    `href="assets/ops.css"` does. Round 6 taught the loader map both shapes and
    left the three matchers beside it tight, which round 7 then found as a
    green run; there is now one place to teach. */
+const NAME = String.raw`(?<![-\w:.])`;
+
+/* This attribute holds THIS value. The quoted branches take the value as
+   given; the unquoted branch is the same value followed by whitespace or the
+   end of the tag. */
 const attr = (name, value) =>
-  String.raw`(?<![-\w])${name}\s*=\s*(?:"${value}"|'${value}'|(?:${value})(?=[\s/>]))`;
+  String.raw`${NAME}${name}\s*=\s*(?:"${value}"|'${value}'|(?:${value})(?=[\s/>]))`;
+
+/* This attribute is PRESENT, whatever it holds. A quoted value may contain
+   spaces - `style="color: red"` is the ordinary spelling and reusing the
+   unquoted value pattern read it as absent - and only an unquoted one may
+   not. */
+const attrPresent = (name) =>
+  String.raw`${NAME}${name}\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>\`]+)`;
 
 const ASSET_REF = new RegExp(`(?:<link\\b[^>]*${attr('href', String.raw`assets\/([A-Za-z0-9._-]+)`)}|<script\\b[^>]*${attr('src', String.raw`assets\/([A-Za-z0-9._-]+)`)})`, 'g');
 
@@ -203,7 +268,9 @@ const ASSET_REF = new RegExp(`(?:<link\\b[^>]*${attr('href', String.raw`assets\/
    markup in this file goes through here, so a commented-out tag is invisible
    to all of them and not just to the loader map. */
 function markup(page) {
-  return read(path.join('ops', page)).replace(/<!--[\s\S]*?-->/g, '');
+  return read(path.join('ops', page))
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<template\b[^>]*>[\s\S]*?<\/template>/gi, '');
 }
 
 /* Whitespace around the `=` is legal HTML and is read wherever an attribute
@@ -322,13 +389,44 @@ DERIVED['panes'] = () => {
   });
 };
 
+/* The shell each workflow actually runs: every `run:` value, including the
+   block-scalar form, which is where all of these live. A guard named
+   anywhere else in the YAML - in a comment, in an `echo`, in a step name -
+   is not run by it. */
+function runSteps(workflow) {
+  const lines = read(path.join('.github/workflows', workflow)).split('\n');
+  const bodies = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const start = /^(\s*)-?\s*run:\s*(.*)$/.exec(lines[i]);
+    if (!start) continue;
+    const [, indent, first] = start;
+    if (!/^[|>]/.test(first.trim())) { bodies.push(first); continue; }
+    const body = [];
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (lines[j].trim() && lines[j].length - lines[j].trimStart().length <= indent.length) break;
+      body.push(lines[j].trim());
+    }
+    bodies.push(body.join('\n'));
+  }
+  return bodies;
+}
+
+/* Invocation, not mention. `run: echo "node scripts/check-ops-shell-v2.mjs"`
+   disables a guard while leaving its name in the file, and substring
+   presence called that running it. The command has to stand at the start of
+   the script or of a shell segment. */
+function invokes(workflow, command) {
+  const at = new RegExp(String.raw`(?:^|[;&|(]\s*|\n\s*)${command.replace(/[/.]/g, '\\$&')}(?=$|[\s;&|)])`, 'm');
+  return runSteps(workflow).some((body) => at.test(body));
+}
+
 /* Every browser guard: the workflow that runs it, and what it renders. */
 DERIVED['browser-guards'] = () => SCRIPTS
   .filter((s) => /^check-ops-.*\.mjs$/.test(s))
   .map((script) => {
     const src = read(path.join('scripts', script));
     const command = `node scripts/${script}`;
-    const workflows = WORKFLOWS.filter((w) => read(path.join('.github/workflows', w)).includes(command));
+    const workflows = WORKFLOWS.filter((w) => invokes(w, command));
     const urls = [...new Set([...src.matchAll(/['"`](\/ops\/[A-Za-z0-9._-]+\.html)['"`]/g)].map((m) => m[1]))].sort();
     const everyPage = PAGES.length > 0 && PAGES.every((p) => urls.includes(`/ops/${p}`));
     const where = [];
@@ -532,13 +630,29 @@ DERIVED['v1-status-classes'] = () => v1StatusClasses().map((cls) => {
    containing block is the box, so a static box does not clip an absolutely
    positioned child - which is the premise departure 15 is written about. The
    box is found by its own `overflow-x`, never by class name. */
+/* A box scrolls sideways under any computed `overflow-x` of `auto`,
+   `scroll` or `overlay`, however the sheet spells it: the longhand, or the
+   shorthand, whose FIRST value is the x axis. Reading only the literal
+   `overflow-x: auto` missed `overflow-x: scroll`, which is the same box to a
+   browser. */
+function scrollsSideways(body) {
+  const scrolls = /^(auto|scroll|overlay)$/;
+  for (const decl of declarations(body)) {
+    const long = /^overflow-x\s*:\s*([a-z]+)$/.exec(decl);
+    if (long && scrolls.test(long[1])) return true;
+    const short = /^overflow\s*:\s*([a-z]+)(?:\s+[a-z]+)?$/.exec(decl);
+    if (short && scrolls.test(short[1])) return true;
+  }
+  return false;
+}
+
 DERIVED['scroll-wrapper-position'] = () => {
   const out = [];
   for (const sheet of ASSETS.filter((a) => a.endsWith('.css'))) {
     const rules = cssRules(read(path.join('ops/assets', sheet)));
     const boxes = new Map();
     for (const rule of rules) {
-      if (!/overflow-x\s*:\s*auto/.test(rule.body)) continue;
+      if (!scrollsSideways(rule.body)) continue;
       rule.selectors.forEach((sel) => boxes.set(sel, true));
     }
     for (const box of [...boxes.keys()].sort()) {
@@ -664,11 +778,18 @@ DERIVED['dark-text-3'] = () => {
   const worst = surfaces
     .map(([name, hex]) => ({ name, hex, r: ratio(ink, hex) }))
     .sort((a, b) => a.r - b.r)[0];
+  /* Naming the surfaces is half a claim on its own: a surface added under
+     some other name would be measured against nothing and nobody would see a
+     shorter list. So every OTHER opaque token in the same block is named too,
+     and a token that appears in neither line is a red run until somebody
+     decides which of the two it is. */
+  const others = [...tokens.keys()].filter((name) => !surfaces.some(([s]) => s === name)).sort();
   return [
     `--text-3 in ops.css's dark :root = ${ink}`,
-    `background tokens it is measured against = ${surfaces.length}`,
+    `surfaces it is measured against = ${surfaces.map(([name]) => name).sort().join(', ')}`,
     `worst pairing = ${worst.name} ${worst.hex} at ${worst.r.toFixed(2)}:1`,
     `clears 4.5:1 on every one of them = ${surfaces.every((s) => ratio(ink, s[1]) >= 4.5)}`,
+    `every other opaque token in that block = ${others.join(', ')}`,
   ];
 };
 
@@ -692,6 +813,47 @@ DERIVED['claims-blocks'] = () => {
   ];
 };
 
+/* The policy a page actually declares, read out of the meta tag rather than
+   assumed from its presence. A tag whose http-equiv this matcher does not
+   read is not a policy: `x:http-equiv` is a different attribute to a browser
+   and was accepted here until round 8 proved it. */
+function policyOf(page) {
+  const equiv = new RegExp(attr('http-equiv', 'Content-Security-Policy'), 'i');
+  const content = new RegExp(`${NAME}content\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i');
+  for (const tag of markup(page).match(/<meta\b[^>]*>/gi) || []) {
+    if (!equiv.test(tag)) continue;
+    const held = content.exec(tag);
+    return held ? (held[1] ?? held[2]).replace(/\s+/g, ' ').trim() : '';
+  }
+  return null;
+}
+
+/* The directives themselves, not merely that a tag is there. The README used
+   to print the policy in an unchecked fence, so `style-src 'self'` could grow
+   `'unsafe-inline'` on every page and the file would still show the strict
+   one. Every page has to carry the SAME policy, which is the claim the
+   sentence above the block makes. */
+DERIVED['csp-policy'] = () => {
+  const policies = new Map();
+  for (const page of PAGES) {
+    const policy = policyOf(page);
+    if (policy === null) continue;
+    if (!policies.has(policy)) policies.set(policy, []);
+    policies.get(policy).push(page);
+  }
+  assert.strictEqual(policies.size, 1,
+    `ops/ declares ${policies.size} different policies, not one: ` +
+    [...policies.entries()].map(([policy, pages]) => `${pages.join(', ')} -> ${policy}`).join(' | '));
+  const [policy, pages] = [...policies.entries()][0];
+  return [
+    ...policy.split(';').map((d) => d.trim()).filter(Boolean).map((d) => {
+      const [name, ...rest] = d.split(/\s+/);
+      return `${name} = ${rest.join(' ')}`;
+    }),
+    `pages carrying this exact policy = ${pages.length}`,
+  ];
+};
+
 /* What the content security policy costs, counted rather than remembered:
    how many pages would need a hash if the theme were inlined, and whether the
    two things the policy forbids are actually absent from the markup. A page
@@ -700,11 +862,11 @@ DERIVED['claims-blocks'] = () => {
    tighter regex read as absent, and excluding one it only keeps in a
    comment, which the browser does not run either. */
 DERIVED['csp-pages'] = () => {
-  const declares = new RegExp(attr('http-equiv', 'Content-Security-Policy'), 'i');
-  const styleAttr = new RegExp(attr('style', String.raw`[^\s"'=<>\`]+`), 'i');
-  const csp = PAGES.filter((page) => declares.test(markup(page)));
+  const styleAttr = new RegExp(attrPresent('style'), 'i');
+  const noSrc = new RegExp(`<script(?![^>]*${attrPresent('src')})[^>]*>`, 'i');
+  const csp = PAGES.filter((page) => policyOf(page) !== null);
   const themed = PAGES.filter((page) => loadedAssets(page).includes('theme.js'));
-  const inlineScript = PAGES.filter((page) => /<script(?![^>]*\bsrc\s*=)[^>]*>/i.test(markup(page)));
+  const inlineScript = PAGES.filter((page) => noSrc.test(markup(page)));
   const inlineStyle = PAGES.filter((page) => styleAttr.test(markup(page)));
   return [
     `pages in ops/ = ${PAGES.length}`,
@@ -771,9 +933,18 @@ test(TABLE_TEST, () => {
   assert.ok(rows.length > 2, 'ops/README.md: the checks table has no rows');
   const guards = SCRIPTS.filter((f) => /^check-ops-.*\.mjs$/.test(f));
   assert.ok(guards.length > 0, 'scripts/ holds no check-ops-*.mjs at all, so this test is judging nothing');
-  const missing = guards.filter((g) => !rows.some((r) => r.includes(g)));
-  assert.deepStrictEqual(missing, [],
-    'ops/README.md: these browser guards run in this repository and the checks table does not name them');
+  /* The guard has to be the SUBJECT of a row, which is its first cell, and of
+     exactly one. Asking whether the name appears anywhere in any row let a
+     row be deleted and its filename appended to the prose of another, which
+     leaves the table with no row for that guard and this test green. */
+  const subjects = rows.slice(2).map((row) => row.split('|')[1] || '');
+  const wrong = guards
+    .map((g) => [g, subjects.filter((cell) => cell.includes(g)).length])
+    .filter(([, n]) => n !== 1)
+    .map(([g, n]) => `${g} is the subject of ${n} rows`);
+  assert.deepStrictEqual(wrong, [],
+    'ops/README.md: every browser guard in this repository needs exactly one row of its own in ' +
+    'the checks table, named in that row\'s first cell');
   JUDGED['checks table'] = rows.length - 2;
 });
 

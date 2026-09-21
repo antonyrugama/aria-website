@@ -141,12 +141,21 @@ dashboard that ends without warning fifteen minutes later.
 
 ## Content-Security-Policy
 
-GitHub Pages cannot send response headers, so the policy is a `<meta>` tag on every page:
+GitHub Pages cannot send response headers, so the policy is a `<meta>` tag on every page, and
+every page carries the same one. The directives are read out of the tag rather than printed from
+memory, because a policy that quietly grows an `'unsafe-inline'` and a README that still shows
+the strict one is the worst version of this file:
 
-```
-default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;
-font-src 'self'; connect-src 'self' https://api.runwitharia.com;
-base-uri 'none'; form-action 'none'
+```claims id=csp-policy
+default-src = 'none'
+script-src = 'self'
+style-src = 'self'
+img-src = 'self' data:
+font-src = 'self'
+connect-src = 'self' https://api.runwitharia.com
+base-uri = 'none'
+form-action = 'none'
+pages carrying this exact policy = 13
 ```
 
 What follows from wanting it this strict:
@@ -1162,15 +1171,24 @@ those panes now.
    `--surface-3`, its worst rendered pairing at the time, and 3.93:1 on a card. It
    needs 4.5:1, because it carries metadata, table headers, filter labels and placeholder text,
    all of which are text. What the new value clears is not typed here — it is measured from the
-   shipped token against every background token declared beside it. The figure that used to sit
+   shipped token against the **surfaces** of that same block, named below rather than counted, so
+   a surface renamed or added is a red run and not a number that still reads 5. Every other
+   opaque token in the block is named on the last line for the same reason: a new one belongs to
+   one list or the other, and until somebody says which, this is red. The figure that used to sit
    in this sentence disagreed with the comment on the token itself by 0.05:
 
    ```claims id=dark-text-3
    --text-3 in ops.css's dark :root = #8593A2
-   background tokens it is measured against = 5
+   surfaces it is measured against = --bg, --surface-1, --surface-2, --surface-3, --surface-hover
    worst pairing = --surface-hover #1E2833 at 4.76:1
    clears 4.5:1 on every one of them = true
+   every other opaque token in that block = --ai, --border, --border-strong, --brand, --brand-bright, --control-border, --control-border-hover, --crit, --cta-end, --info, --ok, --s1, --s2, --s3, --s4, --s5, --s6, --text, --text-2, --text-3, --text-inverse, --warn
    ```
+
+   What it does **not** answer is where the ink lands: `--topbar-bg` and `--scrim` are `rgba()`
+   and composite over whatever is behind them, so no arithmetic over this block can judge the
+   pairing a translucent bar produces. `check-ops-contrast.mjs` measures the rendered pair in a
+   browser, and that is the oracle for it.
 5. **A new `--cta-end` token** ends the primary-button gradient. White on the light theme's
    `#0092AE` measured 3.67:1; `#007A93` holds 4.99:1. Splitting it from `--brand` darkens the
    button without darkening every tint derived from the brand. Dark mode is unchanged, because
@@ -2303,6 +2321,7 @@ claims id=assets-only-in-tests
 claims id=browser-guards
 claims id=claims-blocks
 claims id=csp-pages
+claims id=csp-policy
 claims id=dark-text-3
 claims id=deleted-assets
 claims id=panes
@@ -2322,10 +2341,13 @@ and a test, every browser guard in the tree has a row in the checks table
 restating a block in English, or claiming something no block carries, is nobody's red. Only
 statically spelled `assets/…` tags are seen, so a runtime-injected asset is invisible; a tag
 inside an HTML comment is cut before the count, because a page that only remembers a stylesheet
-does not load it. Every attribute this file reads out of a page goes through one matcher that
-allows whitespace around the `=` and takes the value quoted either way or unquoted, so a legal
-respelling is not a hole in one check and a red in another; markup a script writes into the page
-at runtime is not read at all. The
+does not load it, and neither is a tag inside a `<template>`, which the browser keeps inert.
+Every attribute this file reads out of a page goes through one pair of matchers: a name is never
+the tail of a longer one, so `data-src` is not `src`; the `=` may be spaced; a quoted value may
+hold spaces and an unquoted one may not. Markup a script writes into the page at runtime is not
+read at all. A workflow **runs** a guard when one of its `run:` steps starts a shell segment with
+that command, so a name in a comment or inside an `echo` is not read as running it; a step turned
+off by an `if:`, or a job nothing triggers, is beyond this file. The
 fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
 are the class tokens written in a page and the scripts it loads — `class=` in either quote,
 `class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal — and that error runs
