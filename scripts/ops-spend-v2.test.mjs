@@ -2628,7 +2628,15 @@ const MARKUP_WRITE = /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*wri
    (HTML lowercases attribute names, so it writes a real style attribute), and
    `document.createRange().createContextualFragment(...)`. This module writes
    none of the three, and widening an analyzer to reach them adds guard code
-   nothing has reviewed; they are recorded here rather than matched. */
+   nothing has reviewed; they are recorded here rather than matched. All three
+   write a style ATTRIBUTE, which the page's own `style-src 'self'` refuses,
+   so a browser is the backstop behind this record. CSSOM has no such
+   backstop, which is why the spellings of THAT are pinned by the rendered
+   result below rather than recorded here. One further Typed OM spelling,
+   `cell.attributeStyleMap.set(...)`, is red today only because this harness
+   has no Typed OM and the pane throws: a crash, not a catch. If the harness
+   ever grows the API, the write lands in the same style object the test below
+   reads. */
 const STYLE_ATTR_WRITE = /setAttribute\(\s*['"]style['"]|[{,]\s*['"]?style['"]?\s*:/;
 
 test('the pane module writes no markup and no style attribute', () => {
@@ -2687,6 +2695,100 @@ test('the pane module writes no markup and no style attribute', () => {
 
   assert.ok(!/\bstyle\s*=/.test(PAGE_HTML), 'and none is written into the page either');
 });
+
+/* ------------------------------ the inline styles the RENDERED pane carries
+
+   The clause above reads the source for the literal text `.style`, so it sees
+   the spelling this module uses and no other. Measured rather than assumed: a
+   fourth CSSOM write added inside the date loop's own `if (placed)` gate is
+   green there -- 72 pass, 0 fail -- when it is spelled `cell['style']`, when
+   the key is built at runtime (`var K = 'sty' + 'le'; cell[K]`), or through a
+   bound `setProperty`, and all three put the worst date 83.80% of the plot
+   from its day at 1440px. Widening that regex would close the spellings
+   somebody thought of, which is the failure shape it already is.
+
+   So the property axis is pinned a second time, by the RESULT rather than by
+   the spelling. Every route into an element's inline style -- dotted,
+   bracketed, computed, bound, `cssText`, `Object.assign`, `attributeStyleMap`
+   if the harness ever grows one -- ends at the same style object, and this
+   reads that object on every element the pane rendered. A fourth property
+   arrives here whatever it was typed as, and it does not need to be
+   enumerated first.
+
+   What this does NOT cover: a write that never reaches the fake DOM -- a
+   style attribute (the clause above, and `style-src 'self'` behind it), and a
+   property set from a branch this fixture does not take. It is one fixture,
+   rendered once. The skeleton the shell draws while the answer is in flight
+   is inside the pane's region and is not this module's: its bar heights
+   (`shell-pane-v2.js:687`) are pinned below rather than skipped. */
+test('the rendered pane carries three inline lengths and no fourth, however it is spelled',
+  async () => {
+    const data = payload({ range: '3m' });
+    const dom = await boot({ costs: data });
+
+    /* This harness's style object is a plain object: `setProperty` writes the
+       property as an own key beside its own two methods, so the own keys that
+       are not those methods are exactly what something has written. */
+    const METHODS = ['setProperty', 'removeProperty'];
+    const propsOn = (node) => Object.keys(node.style || {})
+      .filter((name) => METHODS.indexOf(name) === -1);
+    const content = dom.doc.getElementById('content');
+    const entries = (root) => [root].concat(findAll(root, () => true))
+      .flatMap((node) => propsOn(node).map((name) => ({ node, name })));
+
+    /* One region of the pane is not written by this module: the skeleton the
+       shell draws while the answer is in flight sets a height on each bar
+       (`shell-pane-v2.js:687`). It is pinned here rather than skipped, so a
+       length this module wrote into that box is still a failure. */
+    const loading = panel(dom, 'loading');
+    const inLoading = new Set([loading].concat(findAll(loading, () => true)));
+    entries(loading).forEach((one) => {
+      assert.equal(one.name, 'height', 'the shell\'s skeleton sets a bar height and nothing else');
+      assert.ok(hasClass(one.node, 'skel'), 'on a skeleton bar');
+    });
+
+    const written = entries(content).filter((one) => !inLoading.has(one.node));
+
+    const names = [...new Set(written.map((one) => one.name))].sort();
+    assert.deepEqual(names, ['left', 'top', 'width'],
+      'the three lengths this module computes are a bar\'s width, a gridline label\'s top '
+      + 'and a date\'s left. A fourth inline property is a length this file has not reasoned '
+      + 'about, and the stylesheet allowlist above cannot see it: found ' + names.join(', '));
+
+    written.forEach((one) => {
+      assert.equal(propsOn(one.node).length, 1,
+        'an element carries one computed length, not a declaration block: '
+        + String(one.node.tagName) + '.' + String(one.node.className || '') + ' carries '
+        + propsOn(one.node).join(', '));
+    });
+
+    /* Which element each length is allowed to land on, so a `left` written on
+       a bar or a `width` written on a date is a failure even though the name
+       is one of the three. */
+    const holders = (name) => written.filter((one) => one.name === name).map((one) => one.node);
+    holders('width').forEach((node) => {
+      assert.equal(String(node.tagName).toLowerCase(), 'i', 'a width is a bar\'s fill');
+      assert.ok(hasClass(node.parentNode, 'sp-bar'), 'inside the share meter');
+    });
+    holders('top').forEach((node) => {
+      assert.ok(hasClass(node, 'sp-tick'), 'a top is a gridline\'s number');
+    });
+    holders('left').forEach((node) => {
+      assert.equal(String(node.tagName).toLowerCase(), 'span', 'a left is a date');
+      assert.ok(hasClass(node.parentNode, 'sp-xaxis'), 'in the date strip');
+    });
+
+    /* The counts come from the fixture and from the scale's stated design,
+       not from the tree they are checked against. Without them this test
+       passes on a pane that rendered nothing at all. */
+    assert.equal(holders('left').length, data.daily.labels.filter(Boolean).length,
+      'one position per date the route sent');
+    assert.equal(holders('top').length, 5,
+      'one number per gridline: four ticks and the baseline');
+    assert.equal(holders('width').length,
+      data.views.category.rows.filter((row) => row.shareBasisPoints !== undefined).length,
+      'one bar per row of the grouping on screen that has a share');
+  });
 
 /* ------------------------------------------- colour values in the sheet
 
