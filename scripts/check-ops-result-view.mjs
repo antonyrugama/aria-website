@@ -123,13 +123,24 @@
      by its own content-visibility, which is named as a property because it
      keeps the element rendered while skipping the text inside it. A carrier
      with none — display:contents — is judged by the boxes its text
-     produces AND by whether the region's innerText still contains the marker,
-     because a Range inside a content-visibility:hidden subtree keeps
-     reporting the rects it had when it was visible. The asymmetry is real: a
+     produces, by its computed visibility and by content-visibility:hidden
+     anywhere up its chain (both read off that element, because a Range inside
+     a skipped subtree keeps reporting the rects it had when it was visible),
+     and then by whether the region's innerText still contains the marker.
+     That last one is the region's text and not the carrier's: it can only
+     reject, since nothing reaches it that the per-element questions have not
+     already passed. The asymmetry is real: a
      refactor that splits a marker into two flex items, so the page renders
      "2." and "9.1" with the row's gap between them, is a failure on a boxless
      carrier and a pass on a boxed one. Both answers are about the marker
      string, not about whether a reader can see a version number.
+   - **Any painted occurrence answers for all of them.** A marker that a pane
+     renders twice passes when either occurrence is painted and reachable, so
+     a result view that loses the copy a reader is meant to read while an
+     incidental second copy survives still counts as reached. Each occurrence
+     is judged on its own — round 12 found the version where one occurrence's
+     geometry was combined with another's text — but the question asked over
+     them is "any", not "the one the pane means".
    - **A sibling combinator's reach.** A clause like `.a ~ .b` paints an
      element that is neither the class's carrier nor inside it, so for those
      clauses the question falls back to "does this match anything on the page".
@@ -1862,7 +1873,8 @@ try {
         failures.push(`${where}: the pane drew ` +
           `${seen.hiddenMarkers.map((m) => JSON.stringify(m)).join(' and ')} into #content ` +
           'and nothing carrying it — neither a box of its own nor the boxes its text ' +
-          'produces — is both inside the area this page can be scrolled over and reported ' +
+          'produces, every occurrence of it judged on its own — is both inside the area ' +
+          'this page can be scrolled over and reported ' +
           'as rendered by the browser. Zero-area, display:none, visibility:hidden or ' +
           'collapse, content-visibility:hidden on the carrier or a skipped ' +
           'content-visibility:auto subtree, a position outside the document, and a carrier ' +
