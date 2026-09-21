@@ -1773,6 +1773,7 @@ async function measureFocusIndicators(where) {
     const row = { ...c, where };
     let measured = null;
     let refusal = null;
+    let nNoiseAt = null;
 
     for (const pad of FOCUS_PADS) {
       const geom = await evaluate(`(() => {
@@ -2124,6 +2125,7 @@ async function measureFocusIndicators(where) {
         if (before0.data[q] !== before.data[q] || before0.data[q + 1] !== before.data[q + 1] ||
             before0.data[q + 2] !== before.data[q + 2]) { noise[p] = 1; nNoise++; }
       }
+      nNoiseAt = { nNoise, clipPx: W * H };
       const changed = new Uint8Array(W * H);
       let nChanged = 0;
       for (let p = 0; p < W * H; p++) {
@@ -2181,6 +2183,7 @@ async function measureFocusIndicators(where) {
 
     const { nChanged, changed, after, bareShot, before, W, H, focused, noise, nNoise } = measured;
     row.noisePx = nNoise;
+    row.clipPx = nNoiseAt ? nNoiseAt.clipPx : 0;
     row.focusVisible = focused.focusVisible;
     row.pad = measured.pad === Infinity ? 'whole document' : `${measured.pad}px`;
     row.changedPx = nChanged;
@@ -3640,6 +3643,7 @@ try {
        shrunken sample and saying nothing about it. */
     let focusDrifted = 0;
     let focusNoisy = 0, focusNoiseMax = 0, focusUnsampled = 0;
+    const focusNoiseRows = [];
     const focusWorst = new Map();
     const focusBelow = [];
     const focusRefused = [];
@@ -3771,7 +3775,10 @@ try {
           if (r.refused) { focusRefused.push({ ...r, theme, state }); continue; }
           focusChecked++;
           if (r.driftPx > 0) focusDrifted++;
-          if (r.noisePx > 0) { focusNoisy++; focusNoiseMax = Math.max(focusNoiseMax, r.noisePx); }
+          if (r.noisePx > 0) {
+            focusNoisy++; focusNoiseMax = Math.max(focusNoiseMax, r.noisePx);
+            focusNoiseRows.push({ ...r, theme, state });
+          }
           /* Ownership is answered for the whole ring band or not at all, and
              the count of rows where it could not be is printed rather than
              left to be inferred from a refusal that quietly did not fire.
@@ -4074,6 +4081,19 @@ try {
         `between two identical captures (worst row: ${focusNoiseMax} pixel(s)), excluded by ` +
         'identity rather than by a tolerance, so an indicator smaller than the noise is still ' +
         'seen');
+      /* Name the noisiest rows, because the summary max above is a number
+         with nowhere to go. A run on ubuntu-latest reported a worst row of
+         32817 pixels where the run before it reported 6, and the line as it
+         stood could say which renderer but not which control, which clip, or
+         what fraction of it -- so it could not tell a glyph edge from a
+         region in motion. That distinction is the whole safety argument for
+         a mask, so it is printed. */
+      for (const r of focusNoiseRows.sort((a, b) => b.noisePx - a.noisePx).slice(0, 5)) {
+        const frac = r.clipPx ? (100 * r.noisePx / r.clipPx) : 0;
+        console.log(`      ${String(r.noisePx).padStart(7)} px  ${frac.toFixed(3).padStart(7)}% of a ` +
+          `${r.clipPx}px clip  ${r.theme}/${r.state}  ${r.tag}${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''}` +
+          `  "${r.text}"`);
+      }
       console.log(`    ${focusUnsampled} of them could not have their ring band fully ` +
         'hit-tested, so the all-foreign refusal was not offered a partial sample to agree with');
     }
