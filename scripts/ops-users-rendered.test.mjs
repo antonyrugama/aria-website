@@ -924,6 +924,95 @@ try {
     })()`));
     if (repick.error) throw new Error(`[${theme}] ${repick.error}`);
 
+    /* Isolates the MutationObserver, which the arm above cannot: every natural
+       render also moves layout, so the ResizeObserver covers those paths too
+       and removing the watcher of the tree breaks nothing visible. This one
+       adds a wrap that changes the size of no box already observed -- taken
+       out of flow, sized from a constructed sheet, since users.html sends
+       style-src 'self' with no 'unsafe-inline' and a style= attribute would be
+       refused. A synthetic node, stated as such: the claim it binds is that
+       the pane notices a scroll box appearing in its result region, not that
+       this is how one appears. */
+    const injected = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync('#injectedWrap { position: absolute; left: -9999px; top: 0;' +
+        ' width: 120px; overflow-x: auto; }' +
+        '#injectedWrap table { width: 900px; table-layout: fixed; }');
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tbl-wrap';
+      wrap.id = 'injectedWrap';
+      wrap.setAttribute('data-gen', 'injected');
+      const table = document.createElement('table');
+      const caption = document.createElement('caption');
+      caption.className = 'sr';
+      caption.textContent = 'An injected table, not a rendered one';
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.textContent = 'x';
+      row.appendChild(cell);
+      table.appendChild(caption);
+      table.appendChild(row);
+      wrap.appendChild(table);
+
+      const before = { clientWidth: 0, scrollWidth: 0 };
+      document.getElementById('lookupResult').appendChild(wrap);
+      before.clientWidth = wrap.clientWidth;
+      before.scrollWidth = wrap.scrollWidth;
+      /* Read before anything could have run: the pane has no call site on this
+         path, so an attribute here would mean the probe dressed it itself. */
+      const atBirth = wrap.getAttribute('tabindex');
+      await sleep(600);
+      const out = {
+        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+        overflows: wrap.scrollWidth > wrap.clientWidth,
+        atBirth,
+        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+        role: wrap.getAttribute('role'),
+        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
+      };
+      wrap.remove();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+      return JSON.stringify(out);
+    })()`));
+
+    /* How long a clipping table stays unreachable after a repaint. The pane
+       has no synchronous call site -- it had one and it was measured doing
+       nothing, because a table is appended before its rows are -- so this is
+       the whole chain end to end: paint, MutationObserver, settle, measure,
+       attribute. Polled ten times faster than the settle so the arrival is
+       located rather than assumed, and it leaves the pane back in the picked
+       state the arm after it reads. */
+    const immediate = JSON.parse(await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const id = document.getElementById('lookupIdentifier');
+      id.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      let seen = null;
+      for (let i = 0; i < 400; i++) {
+        const wrap = document.querySelector('#lookupResult .tbl-wrap');
+        if (wrap && wrap.scrollWidth > wrap.clientWidth) {
+          seen = { pollsWaited: i, timeline: [],
+            clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
+            tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
+            role: wrap.getAttribute('role') };
+          for (let j = 0; j < 80; j++) {
+            seen.timeline.push([j * 10, wrap.hasAttribute('tabindex'),
+              wrap.tabIndex, wrap.getAttribute('role')]);
+            if (wrap.hasAttribute('tabindex')) break;
+            await sleep(10);
+          }
+          break;
+        }
+        await sleep(10);
+      }
+      const btn = document.querySelector('.match-row-btn');
+      if (btn) btn.click();
+      await sleep(900);
+      return JSON.stringify(seen || { missing: true });
+    })()`));
+
     /* Back to the width the affordance is not supposed to exist at. Nothing
        else in this run goes from clipping to fitting, and an invariant
        asserted only in the direction that adds the attribute is half an
@@ -935,7 +1024,7 @@ try {
 
     census[theme] = { styles, textContrast, narrow,
       scrollers: { wide: scrollersWide, narrow: scrollersNarrow, keyboard,
-        repick: repick.wraps, rewide: scrollersRewide },
+        repick: repick.wraps, injected, immediate, rewide: scrollersRewide },
       graphics: { ring, mask, unpressed, ringVsUnpressed } };
   }
 } catch (err) {
@@ -1361,6 +1450,44 @@ for (const theme of THEMES) {
         `the wrap holding "${w.caption}" fits again and still carries the name ` +
         `${JSON.stringify(w.accessibleName)}`);
     }
+  });
+
+  /* Binds the MutationObserver on its own. Every rendered path also moves
+     layout, so the ResizeObserver covers them and removing the tree watcher
+     breaks nothing visible; an injected box, taken out of flow, changes the
+     size of nothing already observed and can be seen by nothing else. */
+  test(`[${theme}] a scroll box injected into the result region is picked up`, () => {
+    const w = census[theme].scrollers.injected;
+    assert.equal(w.overflows, true,
+      `the injected wrap measured ${w.clientWidth}/${w.scrollWidth} and did not clip, ` +
+      'so this arm could not have failed from what it names');
+    assert.equal(w.atBirth, null,
+      'the injected wrap already carried a tabindex the instant it was appended, ' +
+      'so the probe dressed it rather than the pane');
+    assert.equal(w.tabIndex, 0,
+      `a wrap appended to #lookupResult that clips ${w.scrollWidth - w.clientWidth}px ` +
+      `still reports tabIndex ${w.tabIndex} 600ms later: nothing is watching the tree`);
+    assert.equal(w.role, 'region', `the injected wrap announces role ${JSON.stringify(w.role)}`);
+    assert.equal(w.accessibleName, 'An injected table, not a rendered one',
+      `the injected wrap is named ${JSON.stringify(w.accessibleName)}, which is not its caption`);
+  });
+
+  /* The whole chain, timed: paint, MutationObserver, settle, measure, write.
+     A ceiling rather than an instant, because the settle is deliberate. */
+  test(`[${theme}] a repainted table becomes reachable within one settle`, () => {
+    const im = census[theme].scrollers.immediate;
+    assert.ok(!im.missing,
+      're-running the lookup drew no clipping table, so the arrival of the ' +
+      'affordance was never timed');
+    const arrived = im.timeline.find((t) => t[1]);
+    assert.ok(arrived,
+      `the repainted wrap (${im.clientWidth}/${im.scrollWidth}) was still not a tab ` +
+      `stop ${im.timeline.length * 10}ms after it appeared`);
+    assert.ok(arrived[0] <= 400,
+      `the repainted wrap became reachable ${arrived[0]}ms after it appeared, which is ` +
+      'longer than the 140ms settle it should be waiting on');
+    assert.equal(arrived[2], 0, `it arrived with tabIndex ${arrived[2]}`);
+    assert.equal(arrived[3], 'region', `it arrived with role ${JSON.stringify(arrived[3])}`);
   });
 
   /* aria.css:180 draws every focus ring at outline-offset 2px, which on a box

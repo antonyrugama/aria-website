@@ -1388,8 +1388,15 @@
 
      Settled at aria.js:714's interval: an affordance that appears and
      vanishes through a window drag is worse than one that arrives a beat
-     late. paintResult calls syncScrollers directly as well, so the common
-     case is synchronous and the observers only cover what it cannot see. */
+     late.
+
+     paintResult deliberately does NOT call this directly. It used to, and the
+     call never fired: a table is appended before its rows are, so at the
+     instant of the paint the box does not clip yet and the answer is a
+     correct no. Measured on the matches table at 375px -- 343/570 at the
+     first sighting, tabindex absent, present 150ms later off the settle. A
+     call that cannot decide the thing it is called for is not a fast path,
+     it is a second place to be wrong. */
   var syncSettle;
   var boxWatch = null;
 
@@ -1460,7 +1467,6 @@
     if (!resultRegion) return;
     clear(resultRegion);
     if (node) resultRegion.appendChild(node);
-    syncScrollers(resultRegion);
   }
 
   function runLookup() {
