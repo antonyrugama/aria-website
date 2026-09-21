@@ -65,17 +65,28 @@
      it, and asserts that the browser had been reaped at the instant the
      removal ran. That assertion exists because the argument this bullet used
      to make -- "the whole suite already is the proof, since it terminates" --
-     does not reach a directory. A leaked handle keeps the event loop open and
-     a run that ends has released it; a leaked DIRECTORY holds no handle, so a
-     run that ends says nothing about it either way. It really was being leaked
-     (Stadiora/Aria#10854). Which handles those are is deliberately not counted
-     here: the first version of this sentence counted them, said one, and was
-     wrong -- a spawned child holds the loop open as surely as a listening
-     server does. The reaped-at-removal half is there because the
-     disk half cannot see that bug on its own: the leak is a recreation, so at
-     the moment close() returns the directory is absent either way.
-   - The profile directory on case A's path. It is created and leaked there --
-     mkdtempSync runs before the throw, with nothing between them that waits --
+     did not catch a real leak: every run of this suite ended, and green, for
+     as long as the profile was being left behind (Stadiora/Aria#10854).
+
+     That is the whole basis, and it is deliberately not generalised. Two
+     attempts to say WHY termination misses things have been wrong. The first
+     counted the handles and said one; a spawned child holds the loop open as
+     surely as a listening server. The second said a leaked handle cannot
+     survive a run that ended; an unref()'d one can, and the reviewer got the
+     suite to pass with socket.close() deleted outright. A third theory here
+     would be worth less than the observation, which needs none.
+
+     The reaped-at-removal half is there because the disk half cannot see that
+     bug on its own: the leak is a recreation, so at the moment close() returns
+     the directory is absent either way.
+   - The CDP socket's release. The reviewer deleted `opened.push(() => socket.close())`
+     outright and the suite stayed green, 53/53, so nothing here or in the
+     analytics file binds it. Left unbound rather than quietly fixed: it is a
+     third release on a fourth path, outside both issues this change closes,
+     and the honest record is that it is open.
+   - The profile directory on case A's path, which is created before the throw
+     and released by the same unwind as the rest -- mkdtempSync runs before the
+     throw, with nothing between them that waits --
      but the window is narrow enough that a poll from another process catches
      it only sometimes. Cases B and C make their cleanup assertion non-vacuous by
      watching the directory APPEAR first; an appear-check that succeeds only
@@ -117,8 +128,8 @@ const SLOW_WATCHDOG_MS = 90_000;
    the cost of the case as it stands, and the port wait it must not have
    entered, which is longer than this. Dropping `&& !gone` from that loop's
    condition puts case B on the far side of this, which is what it catches.
-   Deliberately NOT stated as a multiple of a measurement -- a measurement goes
-   stale, and this machine's load moves the low end by a factor of two. */
+   Deliberately NOT stated as a multiple of a measurement: a measurement goes
+   stale, and load moves the low end. */
 const FAIL_FAST_MS = 10_000;
 
 /* Run the paint sweep, and only the paint sweep, in a child that cannot find a
@@ -248,7 +259,7 @@ test('a run whose browser dies on startup fails, ends, and leaves no profile beh
     /* The fail-fast, which is behaviour and not cleanup. A browser that has
        already exited will never publish a port, so the wait is cut short --
        and if it is not, this case still ends, still fails, still cleans up,
-       and takes a hundred times longer doing it. */
+       and sits out the whole port wait doing it. */
     assert.ok(run.ms < FAIL_FAST_MS,
       'the child took ' + run.ms + 'ms to report a browser that died on startup. That is the ' +
       'port wait running to its end for an answer that was already decided: the loop is no ' +

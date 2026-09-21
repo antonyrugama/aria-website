@@ -3032,12 +3032,14 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
 
      scripts/ops-painter-exit.test.mjs binds the three failing ways out of the
      launch. This is the fourth way -- the one that works -- and until now the
-     only thing holding it was "the suite terminates". That argument reaches a
-     leaked HANDLE, which keeps the event loop open and so cannot survive a run
-     that ended. It does not reach a leaked DIRECTORY, which holds no handle at
-     all, and the directory was really being leaked. How many of the four
-     releases the argument does reach is deliberately not counted: the first
-     version of this comment counted them, said one, and was wrong. */
+     only thing holding it was "the suite terminates". Which is not an argument
+     that caught anything: every run of this suite ended, and green, for as long
+     as the profile was being left behind.
+
+     What termination does and does not reach is deliberately left unsaid here.
+     Two attempts at that sentence were both wrong -- one counted the handles
+     and said one, the next said a leaked handle cannot survive a run that
+     ended -- and the observation above needs neither. */
   assert.equal(existsSync(painter.profile), false,
     'the painter left its browser profile at ' + painter.profile + ' after a clean run. ' +
     'kill() is a signal, not a join: if the removal does not wait for the browser to exit, ' +
@@ -3058,9 +3060,10 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
   assert.equal(painter.teardown.browserExitedBeforeRemoval, true,
     'the profile was removed while the browser still had a null exitCode and a null ' +
     'signalCode, so Chrome had not been reaped and may still have been writing into ' +
-    'the directory. Either the release stopped waiting for the exit it asked for -- ' +
-    'kill() is a signal, not a join -- or the wait was entered and EXIT_WAIT_MS ran out ' +
-    'before Chrome went away, which is a different bug with the same symptom. Observed: ' +
+    'the directory. Anything that puts the removal before the browser is reaped does ' +
+    'this: a release that stops waiting for the exit it asked for, an EXIT_WAIT_MS that ' +
+    'runs out first, a drain that releases in the other order. They are different bugs ' +
+    'with one symptom, and this assertion does not tell them apart. Observed: ' +
     JSON.stringify(painter.teardown.browserExitedBeforeRemoval) +
     ' (null means the removal never ran at all).');
 });
