@@ -37,11 +37,14 @@
    existed nothing served it, so every pane fell through to the system font
    and had never rendered in the approved typeface (Stadiora/Aria#10806).
 
-   Variable, not static, and that is forced rather than preferred: this sheet
-   asks for fourteen weights (400 440 450 460 480 500 520 540 560 580 600 620
-   640 700) and seven of them have no static instance. Against static faces
-   the browser would snap each to the nearest cut and quietly flatten the
-   design's weight ramp. One axis covers all fourteen exactly.
+   Variable, not static, and that is forced rather than preferred: the sheets
+   these faces serve ask for fourteen weights -- 400 440 450 460 480 500 520
+   540 560 580 600 620 640 700 -- and Geist ships static cuts only in hundreds,
+   so ten of the fourteen fall between instances. Against static faces the
+   browser snaps each of those ten to its nearest cut and quietly flattens the
+   design's weight ramp. One axis renders all fourteen exactly, and
+   scripts/ops-webfont.test.mjs measures the fourteen advance widths to prove
+   the axis interpolates rather than snapping.
 
    font-display: swap. The alternative that avoids reflow, `optional`, gives
    the file ~100ms and otherwise keeps the fallback for the whole load without
