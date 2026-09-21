@@ -501,14 +501,20 @@ function buckets(samples) {
   const by = new Map();
   for (const { rgb, at } of samples) {
     const k = bucket(rgb);
-    const e = by.get(k) || { n: 0, r: 0, g: 0, b: 0, at: [] };
+    const e = by.get(k) || { n: 0, r: 0, g: 0, b: 0, xs: [Infinity, -Infinity], ys: [Infinity, -Infinity] };
     e.n++; e.r += rgb[0]; e.g += rgb[1]; e.b += rgb[2];
-    if (at && e.at.length < 400) e.at.push(at);
+    /* Extents are tracked as they arrive rather than from a retained sample
+       of positions: a capped sample reports a narrower span than the bucket
+       actually covers, which is a published figure that understates itself. */
+    if (at) {
+      e.xs = [Math.min(e.xs[0], at[0]), Math.max(e.xs[1], at[0])];
+      e.ys = [Math.min(e.ys[0], at[1]), Math.max(e.ys[1], at[1])];
+    }
     by.set(k, e);
   }
   return [...by.values()]
     .filter((e) => e.n >= 3)
-    .map((e) => ({ n: e.n, rgb: [e.r / e.n, e.g / e.n, e.b / e.n], at: e.at }));
+    .map((e) => ({ n: e.n, rgb: [e.r / e.n, e.g / e.n, e.b / e.n], xs: e.xs, ys: e.ys }));
 }
 
 /* Drive the pane to the state, then read it. Returns everything a failure
@@ -694,8 +700,7 @@ async function measure(theme) {
     worst: surfaces[0],
     surfaces: surfaces.slice(0, 6).map((s) => ({
       face: s.face, rgb: hex(s.rgb), n: s.n, ratio: Number(s.ratio.toFixed(3)),
-      xs: [Math.min(...s.at.map((a) => a[0])), Math.max(...s.at.map((a) => a[0]))],
-      ys: [Math.min(...s.at.map((a) => a[1])), Math.max(...s.at.map((a) => a[1]))]
+      xs: s.xs, ys: s.ys
     }))
   };
 }
