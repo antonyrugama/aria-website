@@ -54,10 +54,11 @@
        <body>, or wrap it in <noscript>, and the page ships NO policy Chrome
        enforces -- while every assertion below passed, because each is still
        a Content-Security-Policy the file spells once.
-       The shapes that are decidable from the page's BYTES are fixed, or --
-       where deciding one would mean writing a tokeniser state machine to
-       guess with -- REFUSED, which reds; disclosure is the last resort and
-       not the first. The ones fixed are: <meta-x> (M26-A2),
+       The spellings review has FOUND are fixed, or -- where deciding one
+       would mean writing a tokeniser state machine to guess with --
+       REFUSED, which reds. That is a list of what was found, not a rule
+       about what exists; the paragraph below says why the difference
+       matters. The ones fixed are: <meta-x> (M26-A2),
        data-http-equiv= (M27-A2), <meta&#160; (M27-A5), a tag that spells
        http-equiv twice, where the parser keeps the FIRST and a regex took
        the last (M28-A1), the attribute name sitting inside another
@@ -83,13 +84,24 @@
        What is left, and all that is: whether the browser ENFORCES the policy
        this reads. A header can deliver another one, and nothing here can see
        a header. That is the line no reader of a FILE gets past.
-       The rule that sorts them: if the page's bytes say the tag is not a
-       meta, the attribute is not http-equiv, or the parser would not have
-       the pragma in head, this reader is wrong to read it and is made to
-       red -- or, where saying which of those is true would take a state
-       machine this file does not carry, it refuses the page and reds that
-       way; if the bytes are a pragma in head and only the SERVER knows what
-       else was sent, no reader of this file can tell, and it goes above.
+       AND SO IS THIS, which is the sentence that replaces a rule five
+       consecutive reviews falsified: the walk below is a PARTIAL
+       tokeniser, not the tokeniser. Wherever it disagrees with a browser
+       about which bytes are markup it can read a pragma -- or a sheet
+       list -- this page does not carry, silently, in the GREEN direction.
+       The spellings listed above are the ones review has found; each was
+       fixed, or refused, and each has a mutation beside it in the pull
+       request. Nothing here claims the next one does not exist. Rounds 26,
+       27, 28, 29 and 30 each found one AFTER the round before it had
+       written that the class was closed, and the rule that used to stand
+       here -- every divergence decidable from the page's bytes is made to
+       red -- was what they falsified, one spelling at a time. It is
+       DELETED rather than qualified: it is a claim about every HTML
+       spelling, and a reader hand-written in a test file cannot make one.
+       No count of the fixed spellings is written here either, for the
+       reason the sheet-reader bullet below gives: a count that is not
+       written cannot go stale. What each fixed spelling buys is itself,
+       and nothing wider.
        What IS bound, and all that is: IF this reader finds a pragma the
        parser would build in this page's head, THEN the source list that
        governs a <style> element
@@ -446,13 +458,19 @@ const appropriateEndOf = (html, name, from) => {
    page's policy while Chrome saw one inert attribute on a <div> and shipped
    no policy at all (the twenty-eighth review of #75, finding 2). A comment,
    a doctype, and the text inside a <script> or a <noscript> are the same
-   shape one level down. Each is DECIDED here for the spellings named below
-   and REFUSED where it is not: the refusal list this returns is asserted
-   empty by every test that reads the walk, and WHICH tests those are is
-   derived from this file's source by the census at the bottom rather than
-   counted in this sentence -- the sentence said "both" when there were
-   three (the thirtieth review of #75, finding 2). So a page wearing a shape
-   this walk does not model reds rather than being guessed at.
+   shape one level down. Each is decided here for the spellings named
+   below. It is NOT true that a page wearing a shape this walk does not
+   model reds rather than being guessed at -- that sentence stood here and
+   was falsified in three consecutive reviews (M29R-1, M29R-3, M29R-5,
+   M30R-1), each time by a shape the round before had not thought of, so it
+   is deleted rather than re-qualified. What is true is narrower and is all
+   that is claimed: ONE shape is refused by name (a double-escaped
+   <script>, below), the refusal list this returns is asserted empty by
+   every test that reads the walk, and WHICH tests those are is derived
+   from this file's source by the census at the bottom rather than counted
+   in this sentence -- the sentence said "both" when there were three (the
+   thirtieth review of #75, finding 2). Everything else this walk gets
+   wrong, it gets wrong silently.
 
    What the walk does, in the tokeniser's order: `<` followed by an ASCII
    letter starts a tag and nothing else does; `<!--` runs to wherever
@@ -597,9 +615,12 @@ const META_TAGS = PAGE_TAGS.filter((n) => n.name === 'meta');
    of appropriateEndOf() above: `</scriptx a="` ended a <script> here and
    nowhere else, and the tag the walk built out of it swallowed a <link>
    that loaded a fourth stylesheet and painted every card rgb(255, 0, 0)
-   (the thirtieth review of #75, M30R-1). The one shape left where a gap
-   could still be script -- a double-escaped <script> -- is refused by the
-   walk rather than measured here. */
+   (the thirtieth review of #75, M30R-1). Whether any gap can still hold
+   script is NOT claimed settled: a sentence here said the double-escaped
+   <script> was the one shape left, and the round after it found another
+   (M30R-1 is that other one). The double-escaped <script> is refused by
+   the walk rather than measured here; what else a gap could hold is the
+   partial-tokeniser disclosure at the top of this file, not a closed set. */
 const NODE_GAPS = PAGE_NODES.map((n, k) => RAW_HTML.slice(k ? PAGE_NODES[k - 1].end : 0, n.at));
 /* The names that keep the parser in <head>. <template> is deliberately NOT
    among them: a <meta> inside a template is inert, this walk cannot tell
@@ -3299,20 +3320,28 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
   const siblings = [];
   for (const name of readdirSync(new URL('.', import.meta.url))) {
     if (!/^ops-.*\.test\.mjs$/.test(name) || name === 'ops-alerts-v2.test.mjs') continue;
-    const before = foreign.size;
     for (const m of readFileSync(new URL(name, import.meta.url), 'utf8')
       .matchAll(/^test\('([^']+)'/gm)) foreign.add(m[1]);
     siblings.push(name);
-    assert.ok(foreign.size > before, name + ' contributed no test title, so the title '
-      + 'pattern no longer matches how that suite registers its tests and every title in '
-      + 'it would pass through this check unnoticed');
   }
   /* No number is asserted here on purpose: how many siblings exist depends on
      what else is on the branch, and CI reads the PR's MERGE commit, so this
      file sees suites that do not exist in the author's tree (measured: 363
-     titles locally, 459 in the Linux log for the same commit). What IS held
-     is that every sibling found yields at least one title -- a floor of zero
-     is the failure that would make the scan below silently vacuous. */
+     titles locally, 459 in the Linux log for the same commit).
+
+     NOT COVERED, and deleted rather than repaired: a per-sibling floor
+     stood here asserting that every sibling yields at least one title,
+     to catch the pattern above going stale. It was wrong on its own
+     terms. ops-readme-claims.test.mjs runs every check at module scope
+     and registers no test() at all, which is legitimate, so the floor
+     reddened this file the moment that suite landed on main -- a guard
+     failing on a sibling it has no business having an opinion about. The
+     floor is gone and no probe replaced it, because a probe for "does
+     this file register tests" is one more pattern over source text that
+     the next spelling walks past. What survives is the blind spot stated
+     plainly: a sibling that spells its registration in a way the pattern
+     above does not match contributes no titles, and an unmarked quotation
+     of one of ITS titles is not caught here. */
   assert.ok(siblings.length > 0, 'no sibling ops-* suite was found at all, so the foreign '
     + 'check below compares against an empty set and can never fire');
   /* Asked per known title rather than by scanning this file for quoted runs.
