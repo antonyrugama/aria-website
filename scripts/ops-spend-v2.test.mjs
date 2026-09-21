@@ -1187,6 +1187,21 @@ test('the day chart carries an x axis of the dates the route labelled', async ()
 
   assert.equal(row.getAttribute('aria-hidden'), 'true',
     'and it is hidden from the reader, because the chart\'s own name already carries the dates');
+
+  /* And BELOW the drawing, not above it. Every date stays over its own day
+     either way -- the horizontal story is untouched -- so nothing else in
+     this file notices: `body.insertBefore(axis, plot.node)` at the same site
+     is green everywhere but here. An x axis printed above the chart it labels
+     is a different drawing, and this is the only assertion that says which
+     side of it the dates are on. */
+  const box = row.parentNode;
+  const order = (node) => box.childNodes.indexOf(node);
+  const drawing = findAll(box, (n) => n.getAttribute && n.getAttribute('role') === 'img')[0];
+  assert.ok(drawing, 'the drawing is in the same box as the dates');
+  const holder = box.childNodes.filter((n) => n === drawing
+    || findAll(n, (x) => x === drawing).length === 1)[0];
+  assert.ok(order(row) > order(holder),
+    'the dates are printed under the drawing they label, not over it');
 });
 
 /* --------------------------------------------- the dates under the drawing
@@ -2715,79 +2730,117 @@ test('the pane module writes no markup and no style attribute', () => {
    arrives here whatever it was typed as, and it does not need to be
    enumerated first.
 
+   The sweep starts at the document element rather than at the pane's region,
+   because a write does not have to land on a node the pane built to matter:
+   `document.documentElement['style'].setProperty('overflow-x', 'hidden')`
+   inside the date loop's own gate was green while this read `#content`.
+
    What this does NOT cover: a write that never reaches the fake DOM -- a
-   style attribute (the clause above, and `style-src 'self'` behind it), and a
-   property set from a branch this fixture does not take. It is one fixture,
-   rendered once. The skeleton the shell draws while the answer is in flight
-   is inside the pane's region and is not this module's: its bar heights
+   style attribute (the clause above, and `style-src 'self'` behind it) -- and
+   a property set from a branch neither fixture below takes. Two renders,
+   chosen for their branches: a closed three-month window, which places every
+   date, and an open month whose labels name no day in it, which takes the
+   unpositioned fallback and draws the forecast block that a closed period has
+   none of. The skeleton the shell draws while the answer is in flight is
+   inside the swept region and is not this module's: its bar heights
    (`shell-pane-v2.js:687`) are pinned below rather than skipped. */
 test('the rendered pane carries three inline lengths and no fourth, however it is spelled',
   async () => {
-    const data = payload({ range: '3m' });
-    const dom = await boot({ costs: data });
+    /* Two renders, for their branches. The first places every date. The
+       second is an open month -- so the forecast block is drawn, which a
+       closed period has none of -- whose labels name no day in the window, so
+       `labelDays()` returns null and the strip takes the unpositioned
+       fallback. A bracketed write in either of those two branches was green
+       while this test rendered only the first. */
+    const placed = payload({ range: '3m' });
+    const loose = payload();
+    loose.daily.labels = loose.daily.labels.map((one, i) => '2026-01-' + String(i + 1));
+    assert.ok(loose.forecast, 'the open month forecasts, or the second branch is not taken');
 
-    /* This harness's style object is a plain object: `setProperty` writes the
-       property as an own key beside its own two methods, so the own keys that
-       are not those methods are exactly what something has written. */
-    const METHODS = ['setProperty', 'removeProperty'];
-    const propsOn = (node) => Object.keys(node.style || {})
-      .filter((name) => METHODS.indexOf(name) === -1);
-    const content = dom.doc.getElementById('content');
-    const entries = (root) => [root].concat(findAll(root, () => true))
-      .flatMap((node) => propsOn(node).map((name) => ({ node, name })));
+    for (const data of [placed, loose]) {
+      const dom = await boot({ costs: data });
+      const isLoose = data === loose;
 
-    /* One region of the pane is not written by this module: the skeleton the
-       shell draws while the answer is in flight sets a height on each bar
-       (`shell-pane-v2.js:687`). It is pinned here rather than skipped, so a
-       length this module wrote into that box is still a failure. */
-    const loading = panel(dom, 'loading');
-    const inLoading = new Set([loading].concat(findAll(loading, () => true)));
-    entries(loading).forEach((one) => {
-      assert.equal(one.name, 'height', 'the shell\'s skeleton sets a bar height and nothing else');
-      assert.ok(hasClass(one.node, 'skel'), 'on a skeleton bar');
-    });
+      /* This harness's style object is a plain object: `setProperty` writes
+         the property as an own key beside its own two methods, so the own
+         keys that are not those methods are exactly what something has
+         written. */
+      const METHODS = ['setProperty', 'removeProperty'];
+      const propsOn = (node) => Object.keys(node.style || {})
+        .filter((name) => METHODS.indexOf(name) === -1);
+      const entries = (root) => [root].concat(findAll(root, () => true))
+        .flatMap((node) => propsOn(node).map((name) => ({ node, name })));
 
-    const written = entries(content).filter((one) => !inLoading.has(one.node));
+      /* One region of the swept tree is not written by this module: the
+         skeleton the shell draws while the answer is in flight sets a height
+         on each bar (`shell-pane-v2.js:687`). It is pinned here rather than
+         skipped, so a length this module wrote into that box is still a
+         failure. */
+      const loading = panel(dom, 'loading');
+      const inLoading = new Set([loading].concat(findAll(loading, () => true)));
+      entries(loading).forEach((one) => {
+        assert.equal(one.name, 'height',
+          'the shell\'s skeleton sets a bar height and nothing else');
+        assert.ok(hasClass(one.node, 'skel'), 'on a skeleton bar');
+      });
 
-    const names = [...new Set(written.map((one) => one.name))].sort();
-    assert.deepEqual(names, ['left', 'top', 'width'],
-      'the three lengths this module computes are a bar\'s width, a gridline label\'s top '
-      + 'and a date\'s left. A fourth inline property is a length this file has not reasoned '
-      + 'about, and the stylesheet allowlist above cannot see it: found ' + names.join(', '));
+      const written = entries(dom.doc.documentElement).filter((one) => !inLoading.has(one.node));
 
-    written.forEach((one) => {
-      assert.equal(propsOn(one.node).length, 1,
-        'an element carries one computed length, not a declaration block: '
-        + String(one.node.tagName) + '.' + String(one.node.className || '') + ' carries '
-        + propsOn(one.node).join(', '));
-    });
+      /* The fallback strip claims no position, so `left` is absent from it by
+         design -- the one difference between the two renders. */
+      const ALLOWED = isLoose ? ['top', 'width'] : ['left', 'top', 'width'];
+      const names = [...new Set(written.map((one) => one.name))].sort();
+      assert.deepEqual(names, ALLOWED,
+        'the three lengths this module computes are a bar\'s width, a gridline label\'s top '
+        + 'and a date\'s left. A fourth inline property is a length this file has not reasoned '
+        + 'about, and the stylesheet allowlist above cannot see it: found ' + names.join(', ')
+        + (isLoose ? ' on the fallback render' : ''));
 
-    /* Which element each length is allowed to land on, so a `left` written on
-       a bar or a `width` written on a date is a failure even though the name
-       is one of the three. */
-    const holders = (name) => written.filter((one) => one.name === name).map((one) => one.node);
-    holders('width').forEach((node) => {
-      assert.equal(String(node.tagName).toLowerCase(), 'i', 'a width is a bar\'s fill');
-      assert.ok(hasClass(node.parentNode, 'sp-bar'), 'inside the share meter');
-    });
-    holders('top').forEach((node) => {
-      assert.ok(hasClass(node, 'sp-tick'), 'a top is a gridline\'s number');
-    });
-    holders('left').forEach((node) => {
-      assert.equal(String(node.tagName).toLowerCase(), 'span', 'a left is a date');
-      assert.ok(hasClass(node.parentNode, 'sp-xaxis'), 'in the date strip');
-    });
+      written.forEach((one) => {
+        assert.equal(propsOn(one.node).length, 1,
+          'an element carries one computed length, not a declaration block: '
+          + String(one.node.tagName) + '.' + String(one.node.className || '') + ' carries '
+          + propsOn(one.node).join(', '));
+      });
 
-    /* The counts come from the fixture and from the scale's stated design,
-       not from the tree they are checked against. Without them this test
-       passes on a pane that rendered nothing at all. */
-    assert.equal(holders('left').length, data.daily.labels.filter(Boolean).length,
-      'one position per date the route sent');
-    assert.equal(holders('top').length, 5,
-      'one number per gridline: four ticks and the baseline');
-    assert.equal(holders('width').length,
-      data.views.category.rows.filter((row) => row.shareBasisPoints !== undefined).length,
-      'one bar per row of the grouping on screen that has a share');
+      /* Which element each length is allowed to land on, so a `left` written
+         on a bar or a `width` written on a date is a failure even though the
+         name is one of the three. */
+      const holders = (name) => written.filter((one) => one.name === name).map((one) => one.node);
+      holders('width').forEach((node) => {
+        assert.equal(String(node.tagName).toLowerCase(), 'i', 'a width is a bar\'s fill');
+        assert.ok(hasClass(node.parentNode, 'sp-bar'), 'inside the share meter');
+      });
+      holders('top').forEach((node) => {
+        assert.ok(hasClass(node, 'sp-tick'), 'a top is a gridline\'s number');
+      });
+      holders('left').forEach((node) => {
+        assert.equal(String(node.tagName).toLowerCase(), 'span', 'a left is a date');
+        assert.ok(hasClass(node.parentNode, 'sp-xaxis'), 'in the date strip');
+      });
+
+      /* The counts come from the fixture and from the scale's stated design,
+         not from the tree they are checked against. Without them this test
+         passes on a pane that rendered nothing at all. */
+      assert.equal(holders('left').length,
+        isLoose ? 0 : data.daily.labels.filter(Boolean).length,
+        'one position per date the route sent, and none at all on the fallback');
+      assert.equal(holders('top').length, 5,
+        'one number per gridline: four ticks and the baseline');
+      assert.equal(holders('width').length,
+        data.views.category.rows.filter((row) => row.shareBasisPoints !== undefined).length,
+        'one bar per row of the grouping on screen that has a share');
+
+      /* The second render is only worth making if it really took the other
+         two branches, so the branches are asserted rather than assumed. */
+      if (isLoose) {
+        const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
+        assert.ok(strip && /\bsp-xaxis-loose\b/.test(strip.getAttribute('class') || ''),
+          'the second render takes the unpositioned fallback');
+        assert.equal(byClass(livePanel(dom), 'sp-fore').length, 1,
+          'and draws the forecast block a closed period has none of');
+      }
+    }
   });
 
 /* ------------------------------------------- colour values in the sheet
