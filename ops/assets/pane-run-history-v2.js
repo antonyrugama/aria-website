@@ -307,13 +307,26 @@
       current = next;
       if (!changed) return;
       booted = true;
-      detail = null;
       load();
     });
 
     function load() {
       var token = ++loadToken;
       var selection = current;
+      /* Every window read discards any open run, here rather than at each
+         call site. Four of the six triggers nulled it themselves and two did
+         not -- `Read again`, and `load` handed straight to the shell as its
+         retry callback -- so a window read racing an in-flight detail read
+         left `detail` at `{ loading: true }` for good: `openRun`'s callbacks
+         correctly discard a landing they no longer own, and nothing then
+         cleared the flag. The pane drew a `One run` band of two skeleton rows
+         that never resolved, with no Close and nothing keyed in it, on every
+         later redraw -- and `settleFocus()`'s in-flight exemption below read
+         that stale flag, so unlanded requests stopped being dropped too.
+         Measured in real Chrome at both viewports; the only way out was a
+         trigger that happened to null it. One place, so there is no seventh
+         trigger to forget. */
+      detail = null;
       /* Captured here, before anything is drawn, because after `region.failed()`
          the box is hidden and Chrome has already blurred to <body> -- the
          information cannot be reconstructed from the other side of the read.
@@ -475,7 +488,7 @@
             : 'the whole window.')));
       }
       wrap.appendChild(summaryBand(data, selection));
-      if (failures.length) wrap.appendChild(failureBand(data));
+      if (failures.length) wrap.appendChild(failureBand(data, selection));
       wrap.appendChild(runsBand(data, selection));
       if (detail) wrap.appendChild(detailBand(selection));
       wrap.appendChild(privacyBand());
@@ -597,6 +610,18 @@
        something this pane can describe and is treated as full coverage. */
     function partlyCovered(coverage) {
       return !!(coverage && coverage.state === 'partial' && coverage.recordingSince);
+    }
+
+    /* What every window-scoped sentence on this screen has to name. Round 3
+       blocked on the announcement saying "in the last 7 days" over a record
+       three hours old, round 4 on the truncation note, and round 5 found the
+       drawn twin of the round-3 sentence plus three more still saying it --
+       so the span is one function now rather than a phrase each site spells
+       for itself. */
+    function coveredWords(coverage, selection, whenCovered) {
+      return partlyCovered(coverage)
+        ? 'what the record covers, which starts at ' + at(coverage.recordingSince)
+        : (whenCovered || WINDOW_LABEL[selection.range] || 'the window you picked');
     }
 
     function settleFocus() {
@@ -751,7 +776,6 @@
         ),
         function (value) {
           narrowing.type = value;
-          detail = null;
           load();
         }));
 
@@ -766,7 +790,6 @@
         ),
         function (value) {
           narrowing.outcome = value;
-          detail = null;
           load();
         }));
 
@@ -813,7 +836,8 @@
       if (!seen && value !== 'all') {
         var missing = h('option', {
           value: value,
-          text: coded(value) + ' \u00b7 nothing in this window'
+          text: coded(value) + ' \u00b7 nothing in ' +
+            coveredWords(lastWindow && lastWindow.coverage, current, 'this window')
         });
         missing.setAttribute('selected', 'selected');
         select.appendChild(missing);
@@ -913,7 +937,6 @@
              the same `rh-state` fallback every other state relies on. */
           moveFocus('rh-type', 'rh-state');
           narrowing = { type: 'all', outcome: 'all' };
-          detail = null;
           load();
         });
         row.appendChild(clear);
@@ -928,7 +951,7 @@
        rather than under them, because it changes what every one of them
        means. */
     function partialNote(coverage, wrap) {
-      if (coverage.state !== 'partial') return;
+      if (!partlyCovered(coverage)) return;
       wrap.appendChild(noteLine('warn',
         'Recording started at ' + at(coverage.recordingSince) + ', which is inside ' +
         'this window. Every figure below covers from then, not from the start of the window, ' +
@@ -968,7 +991,7 @@
     function summaryBand(data, selection) {
       var summary = data.summary;
       var section = S.band('What the record shows',
-        WINDOW_LABEL[selection.range] || 'the window you picked');
+        coveredWords(data.coverage, selection));
 
       var grid = h('div', { className: 'grid g4' });
 
@@ -994,7 +1017,7 @@
         text: fmt.int(summary.failed),
         note: summary.failureReasons
           ? fmt.plural(summary.failureReasons, 'distinct reason', 'distinct reasons')
-          : 'no failure in this window'
+          : 'no failure in ' + coveredWords(data.coverage, selection)
       }));
 
       grid.appendChild(figureCard({
@@ -1031,7 +1054,7 @@
 
     /* ------------------------------------------------- why things failed */
 
-    function failureBand(data) {
+    function failureBand(data, selection) {
       var section = S.band('Why things failed', 'Most runs first, then most recent');
       var box = S.card();
       var wrap = h('div', { className: 'tbl-wrap' });
@@ -1058,8 +1081,8 @@
 
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(h('span', {
-        text: 'Grouped by the label the worker recorded. Every failed run in this window is ' +
-          'in exactly one of these rows.'
+        text: 'Grouped by the label the worker recorded. Every failed run in ' +
+          coveredWords(data.coverage, selection) + ' is in exactly one of these rows.'
       }));
       foot.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'What the watchers caught', 'btn btn-sm sp'));
       box.appendChild(foot);
@@ -1152,8 +1175,8 @@
       foot.appendChild(h('span', {
         text: data.truncated
           ? 'The newest ' + fmt.int(data.selection.limit) + ' of ' + fmt.int(data.summary.runs) +
-            ' runs that finished in this window.'
-          : 'Every run that finished in this window.'
+            ' runs that finished in ' + coveredWords(data.coverage, selection) + '.'
+          : 'Every run that finished in ' + coveredWords(data.coverage, selection) + '.'
       }));
       box.appendChild(foot);
 
@@ -1252,7 +1275,13 @@
           moveFocus('rh-detail-close', 'rh-detail-retry');
           openRun(detail.jobId, selection);
         });
-        block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+        /* A Close beside it, because `Try again` failing a second time is the
+           likeliest next event and without this the band has no exit at all:
+           a real-Chrome probe of the race found the failed band offering one
+           control that reloads it and none that dismisses it. The retry above
+           already asks focus for `rh-detail-close`, which until now named a
+           control that did not exist in this branch. */
+        block.appendChild(h('div', { className: 'row mt-sm' }, [again, closeButton('rh-detail-close-failed')]));
         failedBox.appendChild(block);
         section.appendChild(failedBox);
         return section;
@@ -1274,14 +1303,19 @@
       box.appendChild(body);
       section.appendChild(box);
 
-      section.appendChild(sharedCard(data));
+      section.appendChild(sharedCard(data, selection));
       return section;
     }
 
-    function closeButton() {
+    /* `key` exists so the failure band's Close is NOT the control the retry
+       asks for by name. Pressing `Try again` and failing again should leave
+       the operator on `Try again`, not on a Close that throws the run away;
+       giving the two bands different keys keeps `rh-detail-close` meaning
+       "the read worked" and lets the fallback do its job. */
+    function closeButton(key) {
       var close = h('button', { className: 'btn btn-sm', type: 'button', text: 'Close' });
       close.setAttribute('aria-label', 'Close this run');
-      close.setAttribute('data-rh-focus', 'rh-detail-close');
+      close.setAttribute('data-rh-focus', key || 'rh-detail-close');
       var back = detail ? 'rh-open-' + detail.jobId : null;
       close.addEventListener('click', function () {
         /* Back to the row the run was opened from, which is where the
@@ -1362,7 +1396,7 @@
     /* "Is this happening to other people?", which is the question this pane is
        named for. Counts only: how many runs hit the same label, and how many
        accounts those runs belonged to. No account is named, and none is sent. */
-    function sharedCard(data) {
+    function sharedCard(data, selection) {
       var box = S.card();
 
       if (!data.shared) {
@@ -1380,9 +1414,14 @@
       }
 
       var shared = data.shared;
+      /* The detail route sends no coverage of its own, so this borrows the
+         window read's -- the read this count was taken alongside. Without it
+         the card says "in this window" over a span the window read has
+         already told the operator it cannot speak for. */
+      var span = coveredWords(lastWindow && lastWindow.coverage, selection, 'this window');
       var label = shared.failureCode
-        ? 'Everything in this window that failed with ' + coded(shared.failureCode)
-        : 'Everything in this window that failed with no label recorded';
+        ? 'Everything in ' + span + ' that failed with ' + coded(shared.failureCode)
+        : 'Everything in ' + span + ' that failed with no label recorded';
 
       /* The count can come back with nothing in it, and nothing is not nought.
          `Runs that hit it: 0` would read as "nobody else", which is the one

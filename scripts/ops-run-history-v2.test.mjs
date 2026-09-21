@@ -286,6 +286,10 @@ async function boot(options) {
          that path, unreachable by every focus test in this file. */
       let answer = answers[endpoint];
       if (typeof answer === 'function') answer = answer((o && o.query) || {});
+      /* A thenable answer IS the call: it is handed back unwrapped so a test
+         can hold a read open and release it later, which is the only way to
+         put two reads in flight at once. */
+      if (answer && typeof answer.then === 'function') return answer;
       if (answer instanceof Error) return Promise.reject(answer);
       if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
       return Promise.resolve({ data: answer });
@@ -923,6 +927,220 @@ test('a failed window read lands the operator on its retry', async () => {
     + 'of the document');
 });
 
+/* Round 5 found the drawn twin of the sentence round 3 blocked on still on
+   screen, plus three more: the figures band head over the four tiles, the
+   Failed tile's "no failure in this window" over a genuine zero, the failure
+   band foot and the runs band foot. All seven window-scoped claims now come
+   from one `coveredWords()`. */
+const partialPopulated = () => windowAnswer((base) => {
+  base.coverage = {
+    state: 'partial',
+    recordingSince: at(3 * HOUR),
+    lastRecordedAt: at(MINUTE),
+    coversWindow: false,
+  };
+});
+
+const stampOf = (iso) => {
+  const d = new Date(iso);
+  return d.getUTCDate() + ' ' + MONTH_NAMES[d.getUTCMonth()];
+};
+
+test('no figure on a partly covered screen is scoped to the window that was picked', async () => {
+  const answer = partialPopulated();
+  const dom = await boot({ runs: answer });
+  const text = liveText(dom);
+  const stamp = stampOf(answer.coverage.recordingSince);
+
+  assert.match(text, /Recording started at/,
+    'the partial note did not draw, so this screen is not the one under test');
+  assert.match(text, /What the record shows/,
+    'the figures band did not draw, so there are no figures to scope');
+
+  /* The picked window is seven days; every sentence naming it over a record
+     three hours old is a claim the pane cannot support. */
+  assert.ok(!/the last 7 days/.test(text),
+    'a partly covered screen still names the picked window: "'
+    + (/[^.]*the last 7 days[^.]*\./.exec(text) || ['?'])[0].trim() + '"');
+  assert.ok(!/in this window/.test(text),
+    'a partly covered screen still says "in this window": "'
+    + (/[^.]*in this window[^.]*\./.exec(text) || ['?'])[0].trim() + '"');
+  const named = text.split('what the record covers, which starts at ' + stamp).length - 1;
+  assert.ok(named >= 3,
+    'only ' + named + ' surfaces on this screen name the covered span, so some figures are '
+    + 'published without the window they cover');
+});
+
+test('a partly covered window with no failures does not publish a clean seven days', async () => {
+  const answer = windowAnswer((base) => {
+    base.coverage = {
+      state: 'partial', recordingSince: at(3 * HOUR), lastRecordedAt: at(MINUTE),
+      coversWindow: false,
+    };
+    base.summary.failed = 0;
+    base.summary.failureReasons = 0;
+    base.failures = [];
+  });
+  const dom = await boot({ runs: answer });
+  const tile = tileText(dom, /Failed/);
+
+  assert.match(tile, /\b0\b/, 'the Failed tile did not draw a zero, so this is not the case '
+    + 'the finding names');
+  assert.ok(!/no failure in this window/.test(tile),
+    'the Failed tile reads "' + tile.replace(/\s+/g, ' ').trim() + '", which is a confident '
+    + 'zero over seven days for a figure covering three hours');
+  assert.match(tile, new RegExp('what the record covers, which starts at '
+    + stampOf(answer.coverage.recordingSince)),
+    'the Failed tile published a zero without naming what it covers');
+});
+
+/* A prose rule costs one issue per violation forever. Three review rounds
+   found this same class at four different sites, so it is a guard. */
+const WINDOW_SCOPED = /WINDOW_LABEL\[|'[^']*\bthis window\b[^']*'|"[^"]*\bthis window\b[^"]*"/;
+
+/* Block and line comments removed before scanning, because a comment ABOUT
+   this class reads identically to a violation of it -- the first version of
+   this guard reported two of its own explanatory comments and one of the
+   pane's, which is the shape where a guard that is broken and a guard that
+   found something look the same from outside. */
+const codeLines = (() => {
+  const out = [];
+  let inBlock = false;
+  PANE_SRC.split('\n').forEach((line) => {
+    let kept = '';
+    for (let i = 0; i < line.length; i += 1) {
+      if (inBlock) {
+        if (line[i] === '*' && line[i + 1] === '/') { inBlock = false; i += 1; }
+        continue;
+      }
+      if (line[i] === '/' && line[i + 1] === '*') { inBlock = true; i += 1; continue; }
+      if (line[i] === '/' && line[i + 1] === '/') break;
+      kept += line[i];
+    }
+    /* A `coveredWords(...)` argument is not a violation, it IS the one place:
+       the third argument is that function's covered-case wording. Exempting
+       the function rather than listing its call sites means a seventh caller
+       is exempt the day it is written, and a sentence that does NOT go
+       through it is still named. */
+    out.push(kept.replace(/coveredWords\([^;]*/g, 'coveredWords('));
+  });
+  return out;
+})();
+
+/* The two lines that legitimately name the picked window and are NOT a figure
+   being scoped. Frozen per site rather than per function, so sanctioning one
+   sentence cannot sanction the next one somebody adds beside it. */
+const NOT_A_FIGURE = [
+  {
+    why: 'the truncation note scopes the LIST, not the figures; the figures clause beside it '
+      + 'goes through coveredWords',
+    find: "'is the most recent part of this window rather than all of it. The figures above it ' +",
+  },
+  {
+    why: 'the rail badge’s covered branch; its partial branch is the ternary directly above '
+      + 'and is bound by its own test',
+    find: ": ' in this window';",
+  },
+  {
+    why: 'the never-recorded sentence is the one place the phrase is CONTRASTED with a figure '
+      + 'rather than scoping one -- it says the table holds nothing at all, not nothing here',
+    find: "'The run history table holds nothing at all — not nothing for this window, nothing ' +",
+  },
+  {
+    why: 'the partial-coverage note is what ANNOUNCES the shortfall every other sentence then '
+      + 'defers to; it names the window in order to say the figures do not cover it',
+    find: "'this window. Every figure below covers from then, not from the start of the window, ' +",
+  },
+];
+
+test('every window-scoped sentence in the pane comes from one place', () => {
+  /* Each exception must still reproduce, or the freeze list rots in the
+     direction nobody notices: a stale entry silently widens the guard. */
+  NOT_A_FIGURE.forEach((e) => {
+    assert.equal(codeLines.filter((l) => l.trim() === e.find.trim()).length, 1,
+      'the exception "' + e.find.trim() + '" no longer appears exactly once in the pane, so '
+      + 'this guard is sanctioning a site that has moved or gone');
+  });
+
+  const sanctionedOwners = ['coveredWords', 'announceRead', 'nothingFinished'];
+  const offenders = [];
+  codeLines.forEach((line, i) => {
+    if (!WINDOW_SCOPED.test(line)) return;
+    if (NOT_A_FIGURE.some((e) => e.find.trim() === line.trim())) return;
+    let owner = '?';
+    for (let j = i; j >= 0; j -= 1) {
+      const m = /^\s*function ([A-Za-z0-9_]+)\(/.exec(codeLines[j]);
+      if (m) { owner = m[1]; break; }
+    }
+    if (sanctionedOwners.indexOf(owner) === -1) {
+      offenders.push(owner + '() line ' + (i + 1) + ': ' + line.trim());
+    }
+  });
+
+  assert.deepEqual(offenders, [],
+    'these lines name the picked window outside the one function that decides what a figure '
+    + 'covers, so a partly covered record will be published under a span it cannot speak '
+    + 'for:\n  ' + offenders.join('\n  '));
+});
+
+/* Round 5, second blocking finding: two of the six `load()` triggers did not
+   discard an open run, so a window read racing an in-flight detail read left
+   `detail` at `{ loading: true }` for good -- a "One run" band of skeleton
+   rows with no Close and nothing keyed, on every later redraw. */
+test('reading the window again while a run is open does not strand it as a skeleton', async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const dom = await boot({
+    detail: held,
+    detailFor: '11111111-1111-4111-8111-111111111111',
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[0].dispatch('click');
+  await settle();
+  assert.match(liveText(dom), /One run/,
+    'the detail band did not draw, so no run is open and this test proves nothing');
+
+  const again = buttonsIn(livePanel(dom), /^Read again$/)[0];
+  again.focus();
+  again.dispatch('click');
+  await settle();
+  release({ data: detailAnswer() });
+  await settle();
+
+  assert.ok(!/One run/.test(liveText(dom)),
+    'a window read racing an open run left the "One run" band on screen; it has no Close and '
+    + 'nothing keyed in it, so the operator cannot get out of it');
+  assert.equal(buttonsIn(livePanel(dom), /^Close$/).length, 0,
+    'the stranded detail band is still drawing controls');
+});
+
+test('a failed window read does not strand an open run either', async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let broken = false;
+  const dom = await boot({
+    runs: () => (broken ? new Error('upstream refused') : windowAnswer()),
+    detail: held,
+    detailFor: '11111111-1111-4111-8111-111111111111',
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[0].dispatch('click');
+  await settle();
+  assert.match(liveText(dom), /One run/, 'no run is open, so this test proves nothing');
+
+  broken = true;
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click');
+  await settle();
+  release({ data: detailAnswer() });
+  await settle();
+  broken = false;
+  buttonsIn(livePanel(dom), /^Try again$/)[0].dispatch('click');
+  await settle();
+
+  assert.ok(!/could not be read/.test(liveText(dom)),
+    'the recovery read failed, so this test is not looking at a recovered pane');
+  assert.ok(!/One run/.test(liveText(dom)),
+    'the run opened before the failure is still on screen as a skeleton after recovery');
+});
+
 /* Round 4 of review measured the fix above working on the FIRST failure only.
    `settleFocus()` clears the request when it lands, so by the time the
    operator presses the retry the pane just handed them there is no request
@@ -1259,6 +1477,43 @@ test('an empty window over a partial record publishes the span it covers, not th
     assert.ok(counted[1].indexOf(windowOpens) === -1,
       'the footer published the picked window the record cannot speak for');
   });
+
+test('a run that could not be read can still be dismissed', async () => {
+  /* Without a Close the only control on a failed detail band is the one that
+     reloads it, so a run whose read keeps failing is a band the operator
+     cannot get rid of -- and the retry beside it asks focus for exactly this
+     control by name. Measured in real Chrome before it was added. */
+  const dom = await boot({});
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click');
+  await settle();
+  const band = sectionWithHeading(dom, /One run/);
+  assert.ok(band, 'no One run band at all, so this test is not measuring the failure state');
+  const text = allText(band);
+  assert.match(text, /could not be read/, 'the band is not in its failure state');
+  const labels = findAll(band, (n) => n.tagName === 'BUTTON').map((b) => allText(b).trim());
+  assert.ok(labels.indexOf('Close') !== -1,
+    'a failed run band offers no way out; its controls were ' + JSON.stringify(labels));
+});
+
+test('a partial state with no instant is not announced as partial at all', async () => {
+  /* Every partial sentence names where the record starts. A partial state
+     carrying no instant cannot, so the note that ANNOUNCES the shortfall must
+     not fire either -- it would publish "Recording started at undefined" and
+     then tell the operator to distrust figures that are in fact whole. */
+  const answer = windowAnswer((base) => {
+    base.coverage = { state: 'partial', recordingSince: null, coversWindow: false };
+  });
+  const dom = await boot({ runs: answer });
+  /* `shownText`, not the region root: a negative assertion read off a panel
+     the pane never drew into passes for free, which is how the first version
+     of this test stayed green under its own mutation. */
+  const txt = shownText(dom);
+  assert.ok(/./.test(txt), 'the fixture drew nothing, so the assertions below are vacuous');
+  assert.ok(!/Recording started at/.test(txt),
+    'announced a record start it has no instant for');
+  assert.ok(!/undefined|null|Invalid Date/.test(txt),
+    'leaked an absent instant into the page');
+});
 
 test('a populated partial window publishes the span it covers too', async () => {
   const dom = await boot({
