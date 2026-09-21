@@ -121,7 +121,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = 'ops/assets/pane-registry.js';
-const WIDTHS = [375, 360];
+const WIDTHS = [375, 360, 320];
 const HEIGHT = 812;
 const THEMES = ['dark', 'light'];
 
