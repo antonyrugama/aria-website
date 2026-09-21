@@ -33,10 +33,18 @@
 
      - Every accessible name is RESOLVED, never compared as an attribute
        string. `aria-labelledby` is split on whitespace, each id is looked up,
-       exactly one element must carry it, and the assertion is on the
-       concatenated TEXT. A dangling reference is a name of nothing, and
-       comparing the attribute would pass on two buttons pointing at ids that
-       do not exist.
+       and the assertion is on the concatenated TEXT. A dangling reference is a
+       name of nothing, and comparing the attribute would pass on two buttons
+       pointing at ids that do not exist.
+
+       There are TWO resolvers and they differ on purpose. `accessibleName()`
+       requires exactly one element per id, so an ambiguous reference is an
+       error rather than an answer. `browserName()` takes the first element in
+       document order and says nothing about a second, because that is what
+       `getElementById` does, and the one test about two panels being in the
+       document at once needs the browser's answer rather than a complaint --
+       the defect there is a name that says the WRONG thing, not a name that
+       cannot be computed.
 
    NOT COVERED here, deliberately:
 
@@ -44,12 +52,6 @@
        the user agent's accessible-name computation, not this repo's; what is
        testable is that the references resolve and that the resolved text
        differs per section.
-
-     - The record-detail retry's OWN name. It already carries an `sr` span
-       naming the reference it re-reads, so it was never one of the
-       undifferentiated names, and it is bound by
-       `scripts/ops-alerts-v2.test.mjs`. It appears here only as the second
-       control in the one two-retry state the pane can really draw.
 
      - The shell's whole-pane retry, which `region.failed()` draws when BOTH
        reads fail. It is the only control on that panel, it is not
@@ -529,6 +531,18 @@ test('a section retry and a record retry do not read as one control twice', asyn
     `a control list reads ${JSON.stringify(names)}, which is the same name twice`);
   assert.equal(names.filter((n) => n.indexOf('The rules could not be read') !== -1).length, 1,
     'neither name says the rules are the thing that could not be read');
+
+  /* And the other one names ITS object: the record it re-reads. Asserting
+     only that the two differ would pass on a bare "Try again" beside a named
+     section retry -- two different strings, one of which still says nothing.
+     That control's `sr` span predates this change and nothing else in the
+     repo binds it; round 2 of the review proved that by deleting the span and
+     watching the whole suite stay green. */
+  const record = names.filter((n) => n.indexOf('The rules could not be read') === -1);
+  assert.equal(record.length, 1, 'the record retry is not one control');
+  assert.equal(record[0], 'Try again reading AO-118',
+    `the record retry is called ${JSON.stringify(record[0])}, which does not say which `
+    + 'record it re-reads');
 });
 
 test('the visible word stays the first token of the composed name', async () => {
