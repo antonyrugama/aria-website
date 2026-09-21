@@ -283,9 +283,21 @@
      the page is refused rather than read. Feeding the handler body to the
      script scan would catch the first and not the second, and would pool it
      with every other script in the repository, refusing that attribute
-     everywhere; refusing this page only is the narrower answer. The ops
-     pages carry no handler attribute today, so this costs nothing until one
-     appears, and then it fails loudly instead of quietly.
+     everywhere; refusing this page only is the narrower answer. The match
+     is anchored on the characters that can come immediately before an
+     attribute name — whitespace, a quote, a backtick or a slash — rather
+     than on whitespace alone, because a browser re-enters "before attribute
+     name" on the first character after a quoted value, so
+     data-page="login"onload=… is a handler; and it is NOT anchored on a
+     preceding tag name, because a `>` inside an earlier quoted value
+     truncates any [^>]* that tries, on tags quoted-gt-in-tag does not read.
+     That makes it coarse in the other direction: it also fires on page text
+     and attribute values that merely contain " once = " or " online = ",
+     and on an attribute named only=. Refusing a page that has no handler
+     costs a loud CI failure and never a deleted rule, while the precise
+     answer needs a quote-aware walk of every tag in the page — new analysis
+     of exactly the kind this file exists to distrust. The ops pages trip
+     neither direction today.
    wrong-dead-not-covered: 6
    - aliased-body-write: A write that does not go through a member access on
      a textual document.body or document.documentElement is invisible unless
@@ -894,9 +906,20 @@ export const MARKUP_REFUSALS = [
       + 'is refused rather than read. Feeding the handler body to the script scan would '
       + 'catch the first and not the second, and would pool it with every other script '
       + 'in the repository, refusing that attribute everywhere; refusing this page only '
-      + 'is the narrower answer. The ops pages carry no handler attribute today, so this '
-      + 'costs nothing until one appears, and then it fails loudly instead of quietly.',
-    detect: (html) => /<[a-z][^>]*\son[a-z]+\s*=/i.test(html),
+      + 'is the narrower answer. The match is anchored on the characters that can come '
+      + 'immediately before an attribute name — whitespace, a quote, a backtick or a '
+      + 'slash — rather than on whitespace alone, because a browser re-enters '
+      + '"before attribute name" on the first character after a quoted value, so '
+      + 'data-page="login"onload=… is a handler; and it is NOT anchored on a preceding '
+      + 'tag name, because a `>` inside an earlier quoted value truncates any [^>]* that '
+      + 'tries, on tags quoted-gt-in-tag does not read. That makes it coarse in the other '
+      + 'direction: it also fires on page text and attribute values that merely contain '
+      + '" once = " or " online = ", and on an attribute named only=. Refusing a page '
+      + 'that has no handler costs a loud CI failure and never a deleted rule, while the '
+      + 'precise answer needs a quote-aware walk of every tag in the page — new analysis '
+      + 'of exactly the kind this file exists to distrust. The ops pages trip neither '
+      + 'direction today.',
+    detect: (html) => /[\s"'`/]on[a-z]+\s*=/i.test(html),
   },
 ];
 export function markupRefusals(html) {
@@ -2064,10 +2087,29 @@ const REFUSAL_DEMOS = {
     `<!doctype html><html><head>${LINK}</head>`
     + '<body data-page="login" onload="document.body.setAttribute(\'data-page\',\'users\')">'
     + 'x</body></html>',
+    /* the same with NO whitespace before the handler. A browser re-enters
+       "before attribute name" on the first character after a quoted value, so
+       this is a real handler — and an anchor of `\son` walks straight past it */
+    `<!doctype html><html><head>${LINK}</head>`
+    + '<body data-page="login"onload="document.body.setAttribute(\'data-page\',\'users\')">'
+    + 'x</body></html>',
+    /* a self-closing slash is the other character that can precede a name */
+    `<!doctype html><html><head>${LINK}</head>`
+    + '<body data-page="login"/onload="document.body.setAttribute(\'data-page\',\'users\')">'
+    + 'x</body></html>',
+    /* a literal `>` in an EARLIER quoted value, on a tag quoted-gt-in-tag does
+       not read. Any [^>]* that tries to anchor on the tag name stops here, one
+       attribute short of the handler */
+    `<!doctype html><html><head>${LINK}</head><body data-page="login">`
+    + '<img src="none.gif" alt=">" onerror="document.body.setAttribute(\'data-page\',\'users\')">'
+    + 'x</body></html>',
     /* the handler makes a preload into a stylesheet, so rel as written is not
        the rel the browser ends with and the sheet is not an orphan at all */
     '<!doctype html><html><head><link rel="preload" as="style" href="assets/x.css"'
     + ' onload="this.rel=\'stylesheet\'"></head><body data-page="login">x</body></html>',
+    /* and the same with no whitespace, which is the orphan half of the hole */
+    '<!doctype html><html><head><link rel="preload" as="style" href="assets/x.css"'
+    + 'onload="this.rel=\'stylesheet\'"></head><body data-page="login">x</body></html>',
     /* any tag, not just the two above, and the name is folded like HTML folds it */
     `<!doctype html><html><head>${LINK}</head>`
     + '<body data-page="login"><div ONCLICK="go()">x</div></body></html>',
