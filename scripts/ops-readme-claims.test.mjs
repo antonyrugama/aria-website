@@ -654,6 +654,7 @@ function constant(script, name) {
    inside a template literal evaluated in the browser, so they stay prose. */
 const GUARD_CONSTANTS = [
   ['check-ops-contrast.mjs', 'STATES'],
+  ['check-ops-dialog-hit.mjs', 'PAINT_PIXEL_DELTA'],
   ['check-ops-dialog-hit.mjs', 'PAINT_COVERAGE_LIMIT'],
   ['check-ops-narrow-overflow.mjs', 'WIDTHS'],
   ['check-ops-result-view.mjs', 'WIDTH'],
@@ -708,35 +709,53 @@ const BLIND_SPOT_HEADING =
    real gap and not a theoretical one: check-ops-narrow-overflow.mjs's "Look up
    a user" bullet also covers Aria quality, and only the first of the two is a
    line here. Rather than parse the English that distinguishes a second heading
-   from ordinary body emphasis, every guard ends with a COUNT of its bullets
-   carrying more than one bold span. The count is exact and the heading it
-   belongs to is not named: it is a tripwire that refuses to hide a second span,
-   not an index of blind spots. A body that bolds a word moves it too, on
-   purpose — a departures record that fails loudly beats one that narrows
-   quietly. A blind spot written as prose inside a bullet is still not a line.
-   The README's own summary of a section is prose and is not judged; what is
-   judged is that the headings are all present, in order, and that the number of
-   bullets hiding a second span behind the first has not moved. */
+   from ordinary body emphasis, every guard ends with a COUNT of the bold spans
+   beyond the first, SUMMED over its bullets. Summed rather than per-bullet:
+   counting bullets-with-more-than-one is a boolean, and a third span added to a
+   bullet that already had two would not move it. The count is exact and the
+   headings it belongs to are not named: it is a tripwire that refuses to hide a
+   second span, not an index of blind spots. A body that bolds a word moves it
+   too, on purpose.
+
+   Bullets are read out of the LEADING docblock only. A guard that states its
+   blind spots somewhere else in the file states them where this cannot see, so
+   every guard also ends with a count of the lines anywhere in it that OPEN like
+   a blind-spot heading. That count is syntactic and deliberately dumb: a line
+   referring back to a section counts the same as the section. It exists so that
+   a section arriving outside the leading docblock flips a line instead of
+   arriving in silence, which is how two of them were sitting unread when this
+   was written.
+
+   A blind spot written as prose inside a bullet is still not a line. The
+   README's own summary of a section is prose and is not judged; what is judged
+   is that the headings are all present, in order, and that neither count has
+   moved. */
 DERIVED['guard-blind-spots'] = () => BROWSER_GUARDS.flatMap((script) => {
-  const tail = (n) => `${script} = (bullets with a second bold span: ${n})`;
+  const headings = read(path.join('scripts', script))
+    .split('\n').filter((l) => BLIND_SPOT_HEADING.test(l)).length;
+  const tail = (n) => [
+    `${script} = (bold spans beyond the first, summed: ${n})`,
+    `${script} = (lines that open like a blind-spot heading: ${headings})`,
+  ];
   const doc = docblock(script);
-  if (doc === null) return [`${script} = (no leading docblock)`, tail(0)];
+  if (doc === null) return [`${script} = (no leading docblock)`, ...tail(0)];
   const lines = doc.split('\n');
   const at = lines.findIndex((l) => BLIND_SPOT_HEADING.test(l));
-  if (at === -1) return [`${script} = (no blind-spot section)`, tail(0)];
+  if (at === -1) return [`${script} = (no blind-spot section in the leading docblock)`, ...tail(0)];
   const opens = /^\s*(?:\*\s*)?-\s+/;
   const bullets = [];
   for (const line of lines.slice(at + 1)) {
     if (opens.test(line)) bullets.push([line.replace(opens, '')]);
     else if (bullets.length) bullets[bullets.length - 1].push(line.trim());
   }
-  if (bullets.length === 0) return [`${script} = (section present, written as prose)`, tail(0)];
+  if (bullets.length === 0) return [`${script} = (section present, written as prose)`, ...tail(0)];
   const texts = bullets.map((parts) => parts.join(' ').replace(/\s+/g, ' ').trim());
   const heads = texts.map((text) => {
     const bold = /^\*\*(.+?)\*\*/.exec(text);
     return `${script} = ${bold ? bold[1].trim() : '(bullet with no bold opener)'}`;
   });
-  return [...heads, tail(texts.filter((t) => (t.match(/\*\*(.+?)\*\*/g) || []).length > 1).length)];
+  const extra = texts.reduce((n, t) => n + Math.max(0, (t.match(/\*\*(.+?)\*\*/g) || []).length - 1), 0);
+  return [...heads, ...tail(extra)];
 });
 
 /* The focus ring on every sideways-scrolling box a v2 pane sheet declares.
