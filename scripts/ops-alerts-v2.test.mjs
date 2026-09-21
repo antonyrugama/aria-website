@@ -2599,6 +2599,10 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
   const notCovered = /NOT COVERED, deliberately[\s\S]*?\*\//.exec(THIS_FILE);
   assert.ok(notCovered, 'the NOT COVERED block is gone, and with it every claim about '
     + 'what this file does not check');
+  /* Block-level, and only that: the block names the list twice, so deleting
+     one mention is green and deleting both is red (M12-B4/B4c). The claim
+     bound here is "the NOT COVERED block points at the list", not which
+     sentence in it does the pointing. */
   assert.ok(notCovered[0].includes(FRAMES_LIST_NAME),
     'the NOT COVERED block stopped naming ' + FRAMES_LIST_NAME + ', so the unprefixed '
     + 'readers are enumerated in code and unmentioned in the prose that claims to name them');
