@@ -2379,7 +2379,9 @@ clever one that reads English.
 ```claims id=guard-blind-spots
 (heading probe: "WHAT THIS DOES NOT COVER, in the words of what was measured:" = SEEN)
 (heading probe: "   WHAT IT DOES NOT measure:" = SEEN)
+(heading probe: "   WHAT IT DOES NOT check, in so many words:" = SEEN)
 (heading probe: "   NOT COVERED, on purpose" = SEEN)
+(heading probe: "   NOT COVERED at all:" = SEEN)
 (heading probe: "   not covered, in lower case" = SEEN)
 (heading probe: " * NOT COVERED, after a continuation marker" = SEEN)
 (heading probe: "/* NOT COVERED, sharing the comment opener" = SEEN)
@@ -2387,6 +2389,7 @@ clever one that reads English.
 (heading probe: "// NOT COVERED, after a line comment" = INVISIBLE)
 (heading probe: "   WHAT THIS SWEEP CANNOT SEE:" = INVISIBLE)
 (heading probe: "   KNOWN GAPS:" = INVISIBLE)
+(heading probe: "/* KNOWN GAPS, behind a comment opener" = INVISIBLE)
 (heading probe: "   see NOT COVERED above for the two panes" = INVISIBLE)
 check-ops-contrast.mjs = (no blind-spot section in the leading docblock)
 check-ops-contrast.mjs = (bold spans beyond the first, summed: 0)
@@ -2612,9 +2615,12 @@ Contrast ratios are
 pixels, not arithmetic over the tree: `check-ops-contrast.mjs` is that oracle. And the
 `deleted-assets` list is checked for absence only — the pull request each line names is not
 verifiable from a shallow checkout. A guard's **constant** is read only where `GUARD_CONSTANTS`
-names one, and only as a top-level `const NAME = <literal>;`: a value built from another binding
-or from a call throws rather than being guessed at, and a guard added next week carries no
-numbers here until somebody names one of its constants. The five hit-test spots per control are
+names one, and only as a top-level `const NAME = …;`: the declaration's right-hand side is
+evaluated in a bare `vm` context with no globals, so a value built from **another binding**
+throws rather than being guessed at. A value built from a **pure call on a built-in** —
+`Math.round(1280.4)` — does not throw; it evaluates, and the resolved number is what is bound.
+That is the honest edge: the rule is "no free variables", not "no calls". A guard added next week
+carries no numbers here until somebody names one of its constants. The five hit-test spots per control are
 the worked example — they live in an array inside a template literal evaluated in the browser,
 so they stay prose and stay unproven. A guard's **blind spots** are the leading bold run of each
 bullet under a NOT COVERED heading that opens its own line, reassembled across wrapped lines, so
@@ -2628,16 +2634,32 @@ as did not, which round 1 of PR #111 demonstrated. Bullets come from the **leadi
 only: `check-ops-shell-v2.mjs:583` and `check-ops-contrast.mjs:2239` state blind spots outside
 theirs and are **not** carried here, only counted — and counted only because the matcher can see
 their headings. Which headings it can see is **measured, not described**: the block opens with
-eleven concrete lines handed to the real matcher and reported `SEEN` or `INVISIBLE`. A section
+fourteen concrete lines handed to the real matcher and reported `SEEN` or `INVISIBLE`. A section
 headed `KNOWN GAPS:`, or headed a recognised phrase but written after `//`, is read by nothing
 and counted by nothing — those rows are in the block as holes. Round 3 of PR #111 demonstrated
 that the parse this replaced could publish a list the matcher did not agree with, in both
-directions, while staying green. A blind spot written into a bullet's body with no bold at all is not a
+directions, while staying green. Fourteen rows **sample** the two dimensions rather than crossing
+them, and round 4 walked through two cells the eleven had left empty: a phrase taught only behind
+`/*`, and `WHAT IT DOES NOT` narrowed to `WHAT IT DOES NOT MEASURE`, which every spelling then
+probed happened to still match. Both were green; both are now rows.
+
+**Three things the census still does not bind**, and it is worth stating them as flatly as the
+rows themselves. First, **a (phrase, marker) cell no row occupies** — fourteen rows cannot cover
+every pairing, and a matcher change confined to an empty cell moves nothing. Second, **a phrase
+narrowed so that it still matches every probed spelling of itself**; each phrase needs two rows
+differing in what follows it, and where only one exists the narrowing walks through. Third, **a
+spelling nobody thought to add at all.** Each is the ordinary limit of an explicit test table,
+which is a smaller and much louder hole than the parse it replaced — but none of the three is
+covered, and the fix for the first two, when someone demonstrates one, is a **row**, not a wider
+analysis.
+
+A blind spot written into a bullet's body with no bold at all is not a
 line and is not counted, and a bullet with no bold opener is reported as one rather than
 skipped. A section written as prose says so on its guard's line; it is not read.
 
-The guard's own docblock carries that NOT COVERED list too, beside the code it is about; the
-list of blocks is the `claims-blocks` block above, derived from the guard's own derivations.
+The guard's own docblock carries that NOT COVERED list too, beside the code it is about —
+including these three — and the list of blocks is the `claims-blocks` block above, derived from
+the guard's own derivations.
 
 ### Measuring contrast where the colour lands
 
