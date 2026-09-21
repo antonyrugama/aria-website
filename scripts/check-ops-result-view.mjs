@@ -925,7 +925,12 @@ const PREFLIGHT = [
           'switch. Re-derive it from whatever replaced it rather than deleting this check.';
       }
       const order = [...decl[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
-      if (!order.length) {
+      /* An EMPTY array is not an unreadable shape. Routing [] to the message
+         below told the reader "do not assume the pane lost its switch" in the
+         one case where the pane has certainly lost it: with no groupings,
+         viewCard draws no switch for any fixture. Only a non-empty body this
+         cannot parse is a shape problem. */
+      if (!order.length && decl[1].trim() !== '') {
         return `${rel} declares VIEW_ORDER but this check could not read any grouping names ` +
           `out of ${JSON.stringify(decl[1].trim())} — it reads quoted string literals, and ` +
           'that is not what this is. Teach it the new shape; do not assume the pane lost ' +
@@ -1722,11 +1727,15 @@ for (const page of PAGES) {
     const inTheme = record.theme ? ` in the ${record.theme} theme` : '';
     let saw;
     if (had > 0) {
-      saw = `It judged ${had} here, so the pane is drawing fewer of them than it was ` +
-        `rather than none — its result view declared ${inventory}${inTheme}. Look for the ` +
-        'one state that stopped being drawn, or stopped having an unmarked peer to compare ' +
-        'against; either the pane stopped writing it or the fixture stopped producing the ' +
-        'shape it needs, and the counts above are what tell those apart.';
+      /* "Drawing fewer of them than it was" is not measured — nothing here
+         knows what the pane was drawing before. Raising EXPECTED_PAIRS.spend
+         with the pane untouched printed it over a byte-identical result view.
+         So it states the two numbers and stops. */
+      saw = `It judged ${had} here, fewer than ${due} rather than none — its result view ` +
+        `declared ${inventory}${inTheme}. Look for the one state that stopped being drawn, ` +
+        'or stopped having an unmarked peer to compare against; either the pane stopped ' +
+        'writing it or the fixture stopped producing the shape it needs, and the counts ' +
+        'above are what tell those apart.';
     } else if (declared.length) {
       /* One sentence covering both shapes this case takes — every value
          negative, and positives nobody could pair. The earlier wording, "no
@@ -1738,9 +1747,19 @@ for (const page of PAGES) {
       saw = `Its result view did declare ${inventory}${inTheme}, so the attributes are ` +
         'being written and none of them produced a pair this check could judge.';
     } else {
-      saw = `Its result view declared no state attribute of any kind${inTheme}. That is ` +
-        'the attribute missing, not the control: an element can be drawn, sized and ' +
-        'clickable with nothing for this check to judge.';
+      /* Two payloads, neither asserted. The first wording of this sentence
+         read an absent attribute as an absent control, which is false when
+         applySelection stops writing its two channels and leaves both pick
+         controls drawn and clickable. Its replacement, "that is the attribute
+         missing, not the control", is the same error with the sign flipped,
+         and is false when the control genuinely goes: returning null from
+         viewSwitch (ops/assets/pane-spend.js:367) takes the Group-the-bill-by
+         switch off the page and empties the census the same way. An empty
+         census distinguishes neither, so this sentence names both. */
+      saw = `Its result view declared no state attribute of any kind${inTheme}. What this ` +
+        'counts is attributes, so that is the whole of what it says: a control that ' +
+        'stopped being drawn, and a control still drawn with its attribute dropped, both ' +
+        'empty the census.';
     }
     /* Printed in every case, because no hint names a cause any more. Gating it
        on had === 0 suppressed the users hint in exactly the case it was
