@@ -1834,7 +1834,11 @@ const probeFor = (markers) => `(() => {
      laid out on a single line has one rect, and one rect answers for all of
      its characters. Per-character measurement happens only inside a node that
      actually wrapped, and the answer is cached per text node, so the page's
-     text is measured once however many carriers are asked about it. */
+     text is measured once however many carriers are asked about it. Keying
+     on the node alone is safe because the predicate is a function of the
+     node's PARENT — walk() derives reaches from the element it is iterating,
+     never from the carrier the walk started at — so one node is never asked
+     two different questions, however many carriers walk over it. */
   const charCache = new Map();
   const charReach = (n, reaches) => {
     if (charCache.has(n)) return charCache.get(n);
