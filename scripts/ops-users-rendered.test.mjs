@@ -931,7 +931,15 @@ try {
           .filter((el) => getComputedStyle(el).position === 'absolute');
         const before = abs.map((el) => el.getBoundingClientRect().left);
         const was = wrap.scrollLeft;
-        wrap.scrollLeft = was + 24;
+        /* Whichever direction has room. An earlier probe in this run leaves the
+           match table parked at its maximum, and a box that cannot go further
+           right reports scrolledBy 0 -- which drops it out of the arm below
+           without saying so. The step is capped at the room available for the
+           same reason: a box with eight pixels of overflow cannot move
+           twenty-four in either direction. The comparison is signed. */
+        const room = wrap.scrollWidth - wrap.clientWidth;
+        const step = Math.min(24, room);
+        wrap.scrollLeft = was + step <= room ? was + step : was - step;
         const scrolledBy = wrap.scrollLeft - was;
         const after = abs.map((el) => el.getBoundingClientRect().left);
         wrap.scrollLeft = was;
@@ -942,7 +950,7 @@ try {
           scrolledBy,
           descendants: abs.map((el, i) => ({
             what: el.tagName.toLowerCase() +
-              (el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : ''),
+              (el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : ''),
             position: getComputedStyle(el).position,
             shift: Math.round((after[i] - before[i]) * 100) / 100,
           })),
@@ -1826,7 +1834,7 @@ for (const theme of THEMES) {
     const boxes = census[theme].scrollers.containment;
 
     /* A sweep that judged nothing is indistinguishable from a clean board. */
-    const scrolled = boxes.filter((b) => b.scrolledBy > 0);
+    const scrolled = boxes.filter((b) => b.scrolledBy !== 0);
     assert.ok(scrolled.length > 0,
       `no result-table wrapper actually scrolled at 375px, so every descendant below ` +
       `reports a shift of zero -- which is what a CONTAINED one looks like. Boxes seen: ` +
