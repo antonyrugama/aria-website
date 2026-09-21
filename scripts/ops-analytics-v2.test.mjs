@@ -2527,14 +2527,21 @@ function serialise(node) {
    that test runs. A missing browser fails THAT test and leaves the other
    ~180 alone. It fails rather than skips — a fake DOM has no cascade, so a
    skip here would be a guard reporting a pass it never earned. */
+/* OPS_PAINT_BROWSERS replaces the search list rather than adding to it, so a
+   caller can say "look only here". The no-browser failure below is otherwise
+   unreachable on every machine that can run this test at all — the list ends
+   with two /Applications paths, so CHROME_PATH=/nonexistent quietly finds a
+   different browser and the failure path is never taken. #10800 was filed with
+   that as its acceptance criterion and it does not reproduce. */
 function chromePath() {
-  const candidates = [
+  const named = process.env.OPS_PAINT_BROWSERS;
+  const candidates = (named === undefined ? [
     process.env.CHROME_PATH, process.env.CHROME_BIN,
     '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium', '/usr/bin/chromium-browser',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  ].filter(Boolean);
+  ] : named.split(':')).filter(Boolean);
   for (const candidate of candidates) if (existsSync(candidate)) return candidate;
   throw new Error('no Chrome or Chromium found, and this check cannot fall back to the ' +
     'fake DOM: the fake DOM has no cascade and the cascade is what is being read. ' +
@@ -2677,8 +2684,34 @@ const PAINT_PROGRAM = String.raw`(() => {
 })()`;
 
 /* One browser, one page load, reused across the seven states. Torn down by
-   the test that opened it. */
+   the test that opened it.
+
+   Every handle is registered for release AS it is taken, and a throw anywhere
+   below releases what was already taken before it rethrows. The alternative —
+   handing the caller a close() that only exists on the success path — means a
+   failure leaves a listening server behind, and a listening server keeps the
+   process alive: the test reports its failure and then the runner never exits
+   (#10800). The filed defect was the missing-browser path; the port-timeout
+   path below leaks more than that one does, a live browser and its profile
+   directory as well as the server, so the release is written once for every
+   way out rather than at each throw. */
 async function openPainter() {
+  const opened = [];
+  const unwind = () => {
+    while (opened.length) {
+      const release = opened.pop();
+      try { release(); } catch (e) { /* releasing is best-effort by definition */ }
+    }
+  };
+  try {
+    return await launchPainter(opened, unwind);
+  } catch (e) {
+    unwind();
+    throw e;
+  }
+}
+
+async function launchPainter(opened, unwind) {
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
     if (url.pathname.startsWith('/api/')) {
@@ -2696,24 +2729,37 @@ async function openPainter() {
     res.end(readFileSync(abs));
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  opened.push(() => server.close());
   const origin = 'http://127.0.0.1:' + server.address().port;
 
   const profile = mkdtempSync(join(tmpdir(), 'ops-analytics-paint-'));
+  opened.push(() => rmSync(profile, { recursive: true, force: true }));
   const browser = spawn(chromePath(), [
     '--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile,
     '--no-first-run', '--no-default-browser-check', '--no-sandbox', '--disable-gpu',
     '--disable-extensions', '--hide-scrollbars', '--force-device-scale-factor=1',
     'about:blank',
   ], { stdio: 'ignore' });
+  opened.push(() => browser.kill());
 
+  /* A browser that has already exited will never publish a port, so waiting
+     the full 30s for one only delays a failure that is already decided — and
+     says "never published" when "died on startup" is the fact. */
+  let gone = false;
+  browser.on('exit', () => { gone = true; });
   let port = null;
-  for (let i = 0; i < 300 && port === null; i += 1) {
+  for (let i = 0; i < 300 && port === null && !gone; i += 1) {
     await new Promise((r) => setTimeout(r, 100));
     try { port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch (e) { /* not yet */ }
   }
-  if (!port) throw new Error('Chrome never published a DevTools port');
+  if (!port) {
+    throw new Error(gone
+      ? 'the browser exited before it published a DevTools port'
+      : 'Chrome never published a DevTools port');
+  }
   const targets = await (await fetch('http://127.0.0.1:' + port + '/json/list')).json();
   const socket = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
+  opened.push(() => socket.close());
   await new Promise((resolve, reject) => {
     socket.addEventListener('open', resolve);
     socket.addEventListener('error', reject);
@@ -2763,13 +2809,9 @@ async function openPainter() {
     await new Promise((r) => setTimeout(r, 100));
   }
 
-  const close = () => {
-    try { socket.close(); } catch (e) { /* gone */ }
-    try { browser.kill(); } catch (e) { /* gone */ }
-    try { server.close(); } catch (e) { /* gone */ }
-    try { rmSync(profile, { recursive: true, force: true }); } catch (e) { /* best effort */ }
-  };
-  return { evaluate, close };
+  /* Same release path the throwing case takes, so the success case cannot
+     drift away from it and leave a handle the failure case would have let go. */
+  return { evaluate, close: unwind };
 }
 
 /* ------------------------------------------------------------- the test -- */
@@ -3004,8 +3046,13 @@ const COMPUTED_SITES = new Map([
 ]);
 
 const NEVER_REACHED = new Map([
+  /* aria.css is cited by selector, not by line: it is the shared sheet, edited
+     by everyone, and the line this said (505) had already drifted six lines
+     into a .kpi-val rule. A pointer into a file this pane does not own rots on
+     someone else's commit. The two below name files this pane does own. */
   ['kpi-foot', 'pane-analytics.js:716 draws a KPI footnote only for a tile that ' +
-    'carries one, and no tile in any of the seven answers does. aria.css:505 defines it.'],
+    'carries one, and no tile in any of the seven answers does. The .kpi-foot ' +
+    'rule in aria.css defines it.'],
   ['ln-pt', 'pane-analytics.js:399 marks a single isolated reading -- one day with ' +
     'figures between two days without -- and no fixture here produces one. ' +
     'pane-analytics-v2.css:48 defines it.'],
