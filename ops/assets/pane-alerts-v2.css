@@ -51,7 +51,10 @@
    function is refused on every property (RV22-A2 corrected the earlier
    version of this sentence, which named only drop-shadow(); the URL form
    cannot be spelt in this comment, because a guard below reds the sheet for
-   growing one). Every one of those is a case that gets RUN
+   growing one — it is spelt in the probe table instead, which no such guard
+   scans, and it has been run there since RV27-2 found this paragraph
+   claiming it was run while only drop-shadow() was). Every one of those is a
+   case that gets RUN
    rather than asserted ("the reader refuses what READER_PROBES says it
    refuses, and walks past what it says it misses") — and `filter` is off the
    list because running it is what showed the sheet had it wrong.

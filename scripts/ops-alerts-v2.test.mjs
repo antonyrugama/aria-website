@@ -49,9 +49,15 @@
        policy Chrome enforces, while every assertion below still passes,
        because each of those is still a Content-Security-Policy the file
        spells once. Those three are the disclosure; the shapes that are
-       decidable from the TEXT are fixed instead of disclosed, and three
-       have been: <meta-x> (M26-A2), data-http-equiv= (M27-A2) and
-       <meta&#160; (M27-A5), the last two found in the twenty-sixth review.
+       decidable from the TEXT are fixed instead of disclosed, and the ones
+       that have been are: <meta-x> (M26-A2), data-http-equiv= (M27-A2),
+       <meta&#160; (M27-A5), a tag that spells http-equiv twice, where the
+       parser keeps the FIRST and a regex took the last (M28-A1), and the
+       attribute name sitting inside another attribute's quoted VALUE
+       (M28-A2). The last two came from the twenty-seventh review and are
+       what replaced the byte-matching reader with metaTagsOf(), a cut-down
+       tokeniser that walks the tag the way the parser does; the two before
+       them came from the twenty-sixth.
        The rule that sorts them: if the bytes say the tag is not a meta or
        the attribute is not http-equiv, this reader is wrong to read it and
        is made to red; if the bytes are a policy and only the PARSER knows
@@ -327,6 +333,66 @@ const attrOf = (tag, name) => {
    RED about a rule that is really there. */
 const relTokens = (tag) => (attrOf(tag, 'rel') || '').toLowerCase()
   .split(new RegExp(SP + '+')).filter(Boolean);
+/* Every <meta> tag in a page, as the attribute MAP the tokeniser would build
+   for it rather than as the bytes it is written in. The walk is the HTML
+   tokeniser's, cut down to what a well-formed tag needs: skip HTML space and
+   `/`, stop at an unquoted `>`, read a name up to space, `/`, `>` or `=`,
+   then an optional `=` and a double-quoted, single-quoted or unquoted value.
+   First spelling of a name wins, which is what the parser does with a
+   duplicate attribute, and a `>` inside a quoted value does NOT end the tag,
+   which is what `[^>]*>` got wrong. Names are lowercased; values are not.
+   What this deliberately does not do: character references are already
+   decoded upstream in DECODED_HTML. A tag that never closes -- EOF inside
+   the tag, which an unterminated quote also produces -- is DROPPED rather
+   than half-read, because that is what the parser does with it, and reading
+   one would be this reader finding a policy in a tag the browser threw away.
+   An attribute whose name starts with `=` (`<meta =http-equiv=...>`, a name
+   the parser keeps as `=http-equiv`) is dropped here instead, which cannot
+   invent a pragma: it can only lose one, and losing one reds. */
+const HTML_SP_SET = new Set([' ', '\t', '\n', '\f', '\r']);
+function metaTagsOf(html) {
+  const out = [];
+  const tag = new RegExp('<meta(?=[' + HTML_SP + '/>])', 'gi');
+  for (const m of html.matchAll(tag)) {
+    const attrs = new Map();
+    let i = m.index + m[0].length;
+    let closed = false;
+    while (i < html.length) {
+      while (i < html.length && (HTML_SP_SET.has(html[i]) || html[i] === '/')) i += 1;
+      if (i >= html.length) break;
+      if (html[i] === '>') { closed = true; break; }
+      let name = '';
+      while (i < html.length && !HTML_SP_SET.has(html[i])
+        && html[i] !== '/' && html[i] !== '>' && html[i] !== '=') {
+        name += html[i];
+        i += 1;
+      }
+      while (i < html.length && HTML_SP_SET.has(html[i])) i += 1;
+      let value = '';
+      if (html[i] === '=') {
+        i += 1;
+        while (i < html.length && HTML_SP_SET.has(html[i])) i += 1;
+        if (html[i] === '"' || html[i] === "'") {
+          const quote = html[i];
+          i += 1;
+          while (i < html.length && html[i] !== quote) {
+            value += html[i];
+            i += 1;
+          }
+          i += 1;
+        } else {
+          while (i < html.length && !HTML_SP_SET.has(html[i]) && html[i] !== '>') {
+            value += html[i];
+            i += 1;
+          }
+        }
+      }
+      if (name && !attrs.has(name.toLowerCase())) attrs.set(name.toLowerCase(), value);
+    }
+    if (closed) out.push(attrs);
+  }
+  return out;
+}
 const PAGE_SHEETS = LINK_TAGS
   .filter((t) => relTokens(t).includes('stylesheet'))
   .map((t) => attrOf(t, 'href'));
@@ -392,6 +458,7 @@ const PROSE_FRAMES_OVER_THE_SHEET = [
   'the number of words the sheet says the condition pill wraps to',
   'the width the sheet states in the sentence about six columns',
   'the sheet saying a colour keyword is looked for on every custom property',
+  'the sheet naming both filter syntaxes as cases that get run',
 ];
 const FRAME_SPELLING = /PANE_CSS\.replace\(\/\\s\+\/g, ' '\)/g;
 /* sheetCount() collapses the whitespace ITSELF, so a frame routed through it
@@ -3064,44 +3131,60 @@ test('the page loads one design system and one theme decision', () => {
      first is what this reads too. `style-src-attr` is NOT in this chain: it
      governs style ATTRIBUTES, not <style> elements, and the attribute route
      is not what the bullet claims to have closed. */
-  /* The policy is lifted out of DECODED_HTML with attrOf, not out of the raw
-     text with a hand-rolled scan. Both halves of that sentence are scar
-     tissue: `&#115;tyle-src-elem` decodes to a directive name the browser
-     obeys and a raw scan never sees (RV20 in the <link> half, RV24-1 here),
-     and `data-content="..."` satisfies a scan for content= that carries no
-     attribute-name boundary, so the decoy is what gets read (RV21 there,
-     RV24-1 here). The <link> half of this page has gone through both since
-     round 21; the <meta> half went through the decode in round 25 and got
-     the boundary for content= in the same round -- but http-equiv itself
-     was still a bare substring until round 27, so `data-http-equiv=` read
-     as the page's policy while the page carried none (RV26-1). Both
-     attribute names have the boundary now, and both use HTML's space
+  /* The policy is lifted out of DECODED_HTML, not out of the raw text, and
+     out of a TOKENISED attribute list, not a hand-rolled scan. Both halves
+     of that sentence are scar tissue: `&#115;tyle-src-elem` decodes to a
+     directive name the browser obeys and a raw scan never sees (RV20 in the
+     <link> half, RV24-1 here), and `data-content="..."` satisfies a scan for
+     content= that carries no attribute-name boundary, so the decoy is what
+     gets read (RV21 there, RV24-1 here). The <link> half of this page has
+     gone through both since round 21 and still reads attributes with attrOf,
+     a boundary-carrying matcher. The <meta> half went through the decode in
+     round 25, got boundaries on content= in the same round and on http-equiv
+     in round 27 (`data-http-equiv=` had read as the page's policy while the
+     page carried none, RV26-1), and then lost the boundaries altogether in
+     round 28 when they were replaced by the tokeniser below -- a boundary
+     answers "is this byte a separator", which is a strictly weaker question
+     than "is this position an attribute name". Both readers use HTML's space
      characters rather than `\s` (see HTML_SP): the tag-name lookahead let
      `<meta&#160;http-equiv=...` through, a tag whose NAME is the whole of
      `meta&#160;http-equiv="content-security-policy"` to the parser, because
      character references are not decoded inside a tag name.
 
-     A third spelling is refused rather than read: a page that spells
+     One shape is refused rather than read: a page that spells
      Content-Security-Policy more than once -- a commented-out old policy is
-     the way that happens -- is refused outright, because .exec takes the
-     first match wherever it sits and which one the PARSER takes is not this
+     the way that happens -- is refused outright, because a policy inside a
+     comment is not text-decidable and which one the PARSER takes is not this
      reader's decision. Same shape as the duplicate-attribute refusal on
      <link> tags below. Two policies genuinely delivered would intersect, so
      refusing is loud rather than wrong. */
   assert.equal((DECODED_HTML.match(/Content-Security-Policy/gi) || []).length, 1,
     'the page spells Content-Security-Policy more than once -- an old policy in a comment, a '
-    + 'second meta, or a report-only twin -- and this reader takes the first spelling it '
-    + 'finds, which is not necessarily the one the parser takes');
-  const cspMeta = new RegExp('<meta(?=[' + HTML_SP + '/>])[^>]*(?<=[' + HTML_SP + '/"\'])'
-    + 'http-equiv' + SP + '*=' + SP + '*"Content-Security-Policy"[^>]*>', 'i')
-    .exec(DECODED_HTML);
-  assert.equal(cspMeta
-    ? (cspMeta[0].match(new RegExp('(?<=[' + HTML_SP + '/"\'])content' + SP + '*=', 'gi')) || [])
-      .length
-    : 1, 1,
-    'the CSP meta tag spells content= more than once and this reader is not the thing that '
-    + 'should be deciding which one the parser takes');
-  const csp = cspMeta ? attrOf(cspMeta[0], 'content') : null;
+    + 'second meta, or a report-only twin -- and this reader cannot tell which one the parser '
+    + 'takes');
+  /* The tag is TOKENISED into attributes rather than matched byte by byte,
+     because a boundary is a boundary on ONE character and an attribute is a
+     position in a grammar. Two payloads walked through the boundary version
+     and left the page with no policy while this block stayed green
+     (RV27-1): `http-equiv="refresh" http-equiv="Content-Security-Policy"`,
+     where the parser drops the duplicate and keeps the FIRST, and
+     `data-old=' http-equiv="Content-Security-Policy"'`, where the name sits
+     inside another attribute's VALUE and the space the lookbehind saw is a
+     space inside a quoted string. metaTagsOf walks the tag the way the
+     tokeniser does -- skip space and `/`, read a name, read an optional
+     `=` and a quoted, single-quoted or unquoted value, first spelling of a
+     name wins, end at the first UNQUOTED `>` -- so both are resolved the way
+     the browser resolves them, and neither is read as a policy. It also
+     reads two spellings the byte version could not: a single-quoted and an
+     unquoted http-equiv are policies to the parser, and are policies here
+     now (M28-A6, M28-A7) rather than fail-closed reds. */
+  const cspMetas = metaTagsOf(DECODED_HTML)
+    .filter((attrs) => (attrs.get('http-equiv') || '').toLowerCase()
+      === 'content-security-policy');
+  assert.ok(cspMetas.length <= 1,
+    'more than one <meta> tag in this page resolves to a Content-Security-Policy pragma, and '
+    + 'which one the parser honours is not this reader\'s decision');
+  const csp = cspMetas.length ? (cspMetas[0].get('content') ?? null) : null;
   const directives = new Map();
   for (const d of (csp || '').split(';')) {
     const parts = d.trim().split(/\s+/).filter(Boolean);
@@ -3376,8 +3459,8 @@ test('for a non-owner the scrolling box holds nothing else that can take focus',
    same statement as cases the reader is actually run against, so a blind spot
    that closes or opens fails the suite instead of going stale in a comment.
 
-   Still NOT COVERED, and not probeable: strings and url(), which the reader
-   does not parse. A url( is refused outright, in any case. A quoted STRING is
+   Still NOT COVERED: strings, which the reader does not parse. A quoted
+   STRING is
    refused only when it carries a brace or a semicolon -- what declarations()
    splits on -- so a colour word inside one reaches the reader as an ordinary
    value and is then judged, or walked past, by the paint stem in its
@@ -3526,17 +3609,22 @@ const READER_PROBES = [
   { css: '.probe { list-style: square inside magenta; }', refused: false, stemless: 'list-style',
     why: 'BLIND SPOT: list-style, named by the sheet, carries no paint stem' },
   { css: '.probe { filter: drop-shadow(0 0 1px magenta); }', refused: true,
-    why: 'NOT a blind spot, though paints("filter") is false: BOTH syntaxes that carry a '
-      + 'colour to filter -- drop-shadow(), and a URL reference to an SVG filter that paints '
-      + 'one -- are unclassified functions, and those are refused everywhere. The sheet named '
-      + 'filter alongside the four real ones until this row was run. RV22-A2 corrected the '
-      + 'sheet\'s copy of this sentence and RV23-A1 caught that this second copy of it, the '
-      + 'row\'s own reason, had been left behind' },
+    why: 'NOT a blind spot, though paints("filter") is false: this syntax is an unclassified '
+      + 'function, and those are refused everywhere. The OTHER syntax that carries a colour to '
+      + 'filter -- a URL reference to an SVG filter that paints one -- is run by its own row '
+      + 'below, added in RV27-2, which found this row asserting both in prose while running '
+      + 'one. The sheet named filter alongside the four real ones until this row was run. '
+      + 'RV22-A2 corrected the sheet\'s copy of this sentence and RV23-A1 caught that this '
+      + 'second copy of it, the row\'s own reason, had been left behind' },
   { css: '.probe { column-rule: 1px solid color-mix(in srgb, black 50%, white); }', refused: false,
     why: 'BLIND SPOT: the same, inside a classified colour function -- the exact payload of '
       + 'Stadiora/Aria#10632 finding 1' },
   { css: '.probe { column-rule-color: magenta; }', refused: true,
     why: 'the -color longhand of a stemless shorthand IS caught: the stem is in its name' },
+  { css: '.probe { filter: url(#f); }', refused: true,
+    why: 'the URL form of a filter: an unclassified function is refused on every property, and '
+      + 'this is the syntax the sheet names beside drop-shadow() (RV27-2 -- the sheet claimed '
+      + 'both were RUN while only drop-shadow() was)' },
   { css: '.probe { color: var(--cyan); }', refused: false, why: 'a token is what it is for' },
   { css: '.probe { white-space: nowrap; }', refused: false,
     why: 'the reader splits declarations rather than grepping: "white-space" is not white' },
@@ -3557,7 +3645,7 @@ test('the reader refuses what READER_PROBES says it refuses, and walks past what
       refused: got.filter((g) => g.refused).length,
       blindSpots: READER_PROBES.filter((p) => /^BLIND SPOT/.test(p.why)).length,
     };
-    assert.deepEqual(counts, { probes: 15, refused: 8, blindSpots: 5 });
+    assert.deepEqual(counts, { probes: 16, refused: 9, blindSpots: 5 });
     assert.deepEqual(
       READER_PROBES.filter((p) => /^BLIND SPOT/.test(p.why) && p.refused).map((p) => p.css), [],
       'a row is written down as a blind spot while the reader catches it, so the disclosure '
@@ -3610,6 +3698,40 @@ test('the reader refuses what READER_PROBES says it refuses, and walks past what
     assert.equal(paints('--anything-at-all'), true,
       'the sheet says a colour keyword is looked for on every custom property and the reader '
       +       'no longer looks on one');
+
+    /* And the `filter` clause, the third sentence in this paragraph that was
+       true of one member and claimed for two. It names both syntaxes that
+       carry a colour to filter and says every one of them is a case that
+       gets RUN -- while READER_PROBES ran drop-shadow() and nothing ran the
+       URL form (RV27-2). Two-sided the same way: the sheet must name the
+       pair in this frame, and READER_PROBES must hold a filter row for each
+       member of it, each one typed refused (what the reader really answers
+       for those rows is bound by the probe test itself, not here).
+
+       The URL half is matched as PROSE and mapped to `url()` in code,
+       because the sheet cannot spell `url(` -- a guard below reds it for
+       growing one. That literal is the one thing here not read out of the
+       sheet; rewording the clause it stands for unmatches the frame and reds
+       rather than passing. Shapes this misses: a filter row written as
+       anything but `.probe { filter: <fn>( ... `, and a third syntax the
+       sheet might name in some other sentence. */
+    const FILTER_CLAUSE = new RegExp('both syntaxes that bring a colour to it — '
+      + '([a-z-]+\\(\\)), and a URL reference to an SVG filter that paints one — '
+      + 'are unclassified functions');
+    const bothSyntaxes = PANE_CSS.replace(/\s+/g, ' ').match(FILTER_CLAUSE);
+    assert.ok(bothSyntaxes, 'the sheet no longer names the two filter syntaxes in the frame '
+      + 'this test reads, so nothing is checking that both of them are run');
+    const filterRows = READER_PROBES
+      .filter((probe) => /filter: [a-z-]+\(/.test(probe.css))
+      .map((probe) => ({ fn: /filter: ([a-z-]+)\(/.exec(probe.css)[1] + '()',
+        refused: probe.refused }));
+    assert.deepEqual(filterRows.map((row) => row.fn).sort(),
+      [bothSyntaxes[1], 'url()'].sort(),
+      'the sheet names a filter syntax READER_PROBES never runs, or this file runs one the '
+      + 'sheet does not name -- the sentence says every one of them gets RUN');
+    assert.deepEqual(filterRows.map((row) => row.refused), filterRows.map(() => true),
+      'the sheet says both filter syntaxes are refused as unclassified functions and a probe '
+      + 'row says one of them is not');
   });
 
 /* Every atom this sheet paints with that is NOT a token aria.css declares,
