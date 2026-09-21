@@ -1,6 +1,7 @@
 name: Ops v2 contrast
 
-# Measures WCAG AA at every rendered text site on ops/shell-v2.html, in both
+# Measures WCAG AA at every rendered text site on ops/shell-v2.html, and WCAG
+# SC 1.4.11's 3:1 at every focus indicator a keyboard can reach there, in both
 # themes and all four preview states.
 #
 # Why this is a browser check and not a stylesheet scan: the defect it exists
@@ -14,9 +15,21 @@ name: Ops v2 contrast
 # topmost paint at each run of text. That is the surface behind the glyphs
 # only while nothing paints over them -- see NOT COVERED in ops/README.md.
 #
+# The focus sweep is a separate comparison rather than a fifth preview state.
+# A ring is judged against the surfaces BESIDE it, and `outline-offset` decides
+# which those are -- positive puts the ring outside the control, on whatever
+# the control sits on, negative puts it on the control itself. So each control
+# is photographed unfocused and focused and the ring is read off the pixels
+# that moved, rather than modelled from geometry. Real Tab presses drive it:
+# `:focus-visible` is a modality heuristic, and scripted focus alone matches it
+# on nothing, which would make every ring on the page look absent.
+#
 # The tool proves itself before it judges anything (`--self-test`) and exits
 # non-zero if that fails, so a run that cannot trust its own numbers reports
-# nothing rather than passing. Sites it cannot judge are failures too.
+# nothing rather than passing. Sites it cannot judge are failures too, text
+# and focus alike, and both sweeps assert a floor on how many sites they
+# reached -- a guard silently judging zero is the worst false green available
+# here, and it prints identically to a clean run without one.
 #
 # Note: this repo has no self-hosted runners registered, so it uses
 # ubuntu-latest. The self-hosted runner requirement applies to Stadiora/Aria.
@@ -58,5 +71,9 @@ jobs:
       - name: Confirm the runner has a browser
         run: |
           google-chrome --version || chromium --version
-      - name: Measure every text site against WCAG AA
-        run: node scripts/check-ops-contrast.mjs
+      # --verbose prints the per-pass counts. They are the thing to read in
+      # this log: 203-206 text sites and 26 focus indicators in each of the
+      # eight passes. A pass reporting zero has measured nothing and would
+      # otherwise look exactly like a pass that found no defects.
+      - name: Measure every text site against WCAG AA and every focus ring against 1.4.11
+        run: node scripts/check-ops-contrast.mjs --verbose
