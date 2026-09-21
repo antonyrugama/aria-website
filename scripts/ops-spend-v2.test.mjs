@@ -1328,6 +1328,62 @@ test('each date is drawn over the day it names, not over its own place in the li
     assert.ok(last.got < 95, 'a date at the right-hand end is the defect in #10507');
   });
 
+/* The other way this formatter can be wrong, and the only one that does not
+   announce itself. A date the pane cannot recognise at all falls into the
+   unpositioned strip, loudly. A date it recognises as the WRONG DAY keeps
+   every position and is quietly one day out -- which is #10507 again, in
+   miniature and permanently.
+
+   That is what dropping `timeZone: 'UTC'` from `dayNamer()` does. The route
+   spells its dates in UTC; a reader west of UTC spells the same instant as
+   the day before, so every label matches one index late. It is invisible to
+   a suite that runs where the two spellings agree, and CI runs on
+   `ubuntu-latest`, which is UTC. Measured in Chrome at UTC-4 with the option
+   removed: the strip does NOT fall back, and every date stands one day off
+   its day -- 0.908% of the plot on a 109-day window, 2.336% on 43 days,
+   16.7% on a week, because the error is 1/(span-1) and grows as the window
+   shortens.
+
+   So this test moves the reader instead of trusting the runner: it renders
+   the pane where the two spellings disagree. Node re-reads `process.env.TZ`
+   for each new formatter, so the zone below applies to the pane's own
+   `Intl.DateTimeFormat` and to nothing in the fixture, which pins UTC
+   exactly as the route does. */
+test('a date is matched to its day in UTC, wherever the reader is', async () => {
+  const was = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  try {
+    assert.equal(new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' })
+      .format(Date.UTC(2026, 8, 6, 0, 0, 0)), 'Sep 5',
+    'the zone really did change: a UTC midnight is the day before here, which is the '
+      + 'disagreement this test needs to exist');
+
+    const data = payload({ range: '3m' });
+    const sent = data.daily.labels.filter(Boolean);
+    const span = Math.max(...data.daily.series.map((one) => one.values.length));
+    const stride = Math.max(1, Math.ceil(data.period.billedDays / MAX_DAILY_LABELS));
+
+    const dom = await boot({ costs: data });
+    const placed = placedAt(dom);
+    assert.equal(placed.length, sent.length, 'every date the route sent is still drawn');
+
+    placed.forEach((cell, i) => {
+      const dayIndex = i * stride;
+      const wanted = (plotX(dayIndex, span) / PLOT.width) * 100;
+      assert.ok(cell.left !== null,
+        'date ' + cell.text + ' carries a position west of UTC too');
+      assert.ok(Math.abs(cell.left - wanted) < 0.002,
+        'date ' + cell.text + ' names day ' + dayIndex + ' and belongs at '
+        + wanted.toFixed(3) + '% of the drawing, but is at ' + cell.left + '%. A reader '
+        + 'west of UTC spells the route\'s own dates a day early, so a formatter without '
+        + '`timeZone: \'UTC\'` matches every date to the day after the one it names');
+    });
+  } finally {
+    if (was === undefined) delete process.env.TZ;
+    else process.env.TZ = was;
+  }
+});
+
 test('dates the route spaced unevenly are placed unevenly, one per day named', async () => {
   /* A shape the route does not send today: its stride is uniform, so the
      dates it sends are a constant number of days apart. This fixture names
@@ -1509,6 +1565,63 @@ const NAMES_THE_STRIP = new RegExp('(^|[^-\\w])\\.(?:'
   + ')(?![-\\w])');
 
 const oneLine = (selector) => selector.trim().replace(/\s+/g, ' ');
+
+/* Both closed worlds below read this stylesheet as TEXT: the selector map
+   matches the literal characters of a selector, and the declaration allowlist
+   reads a rule's body as a flat list of `property: value`. Two ordinary CSS
+   spellings make that reading wrong rather than incomplete, and both ship a
+   visibly broken strip green:
+
+     nesting     `.sp-xaxis { & span { position: static } }` is one rule whose
+                 body is not declarations. The property name comes out as
+                 `& span { position`, fails the name pattern, and is dropped --
+                 and a property that disappears from that map is a property
+                 every check below reads as agreeing. Measured: 69.86% of the
+                 plot with every pair of dates touching (0.00px apart), 68/0
+                 green -- the same displacement to the digit as the flat
+                 spelling of the same declaration, which is RED.
+     escapes     `.sp\-xaxis` and `.sp-\78 axis` are the same class to a
+                 browser as `.sp-xaxis` and are different strings to a regex.
+                 Measured: 39.07% at 320px and 7.90% at 1440px, 68/0 green --
+                 again the same figures as the unescaped spelling, which is RED.
+
+   Neither is closed by reading harder -- reading harder is what has been
+   broken four times. They are closed by refusing the two shapes outright,
+   which costs nothing because this sheet uses neither: a nested block or an
+   escaped selector is a shape this file cannot read, so it fails until
+   somebody teaches it to, and the failure says so. */
+test('this stylesheet is in a shape the two closed worlds can actually read', () => {
+  const NESTED = (rule) => /\{/.test(rule.body);
+  const ESCAPED = (selector) => /\\/.test(selector);
+
+  /* Positive controls: the refusals must see the real payloads, in the real
+     shape they arrive in, or they are two more assertions that pass on
+     nothing. */
+  assert.ok(NESTED({ body: ' & span { position: static; } ' }), 'a nested block with `&`');
+  assert.ok(NESTED({ body: ' span { position: static; } ' }), 'a nested block without `&`');
+  assert.ok(!NESTED({ body: ' position: relative; flex: 1; ' }), 'and a flat body is not one');
+  assert.ok(ESCAPED('.sp\\-xaxis'), 'a backslash escape');
+  assert.ok(ESCAPED('.sp-\\78 axis'), 'a hex escape');
+  assert.ok(!ESCAPED('.sp-xaxis span'), 'and an ordinary selector is neither');
+
+  RULES.forEach((rule) => {
+    assert.ok(!NESTED(rule),
+      '`' + rule.selectors.join(', ') + '` in ' + (rule.media || 'the base sheet')
+      + ' has a nested block in its body. Every check in this file reads a rule body as a '
+      + 'flat list of declarations, so a nested one is not read as anything at all: '
+      + '`.sp-xaxis { & span { position: static } }` put every date 69.86% of the plot '
+      + 'from its day with every pair touching, and was 68 pass / 0 fail. Flatten it, or '
+      + 'teach `declarations()` about braces first and prove it with a mutation');
+    rule.selectors.forEach((selector) => {
+      assert.ok(!ESCAPED(selector),
+        '`' + selector.trim() + '` in ' + (rule.media || 'the base sheet') + ' spells a '
+        + 'class with a CSS escape. The selector map matches literal text, so an escaped '
+        + 'name is a different string and the same element: `.sp\\-xaxis { position: '
+        + 'static }` moved every date 39.07% of the plot at 320px, and was 68 pass / 0 '
+        + 'fail. Spell it plainly');
+    });
+  });
+});
 
 test('every rule that names the date strip is one that has been measured', () => {
   const named = [];
