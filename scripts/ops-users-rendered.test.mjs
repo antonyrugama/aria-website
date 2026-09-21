@@ -685,13 +685,18 @@ try {
   /* The consequence, driven rather than inferred.
      `tabindex="0"` is a statement about the tab sequence; this is the thing a
      keyboard user actually wants, which is for the columns past the edge to
-     come into view. Focus is taken with .focus(), which a div without a
-     tabindex ignores outright -- so activeElement landing on the wrap is
-     itself evidence -- and the scroll is driven with real key events through
-     CDP. A synthetic KeyboardEvent would not scroll anything: the browser
-     scrolls on the default action of a trusted key press, and dispatchEvent
+     come into view. The scroll is driven with real key events through CDP: a
+     synthetic KeyboardEvent would not scroll anything, because the browser
+     scrolls on the default action of a TRUSTED key press and dispatchEvent
      produces an untrusted one. Same reason CSS :hover needs
-     Input.dispatchMouseEvent. */
+     Input.dispatchMouseEvent.
+
+     activeElement landing on the wrap is NOT evidence that the pane did
+     anything. Chrome has focused scroll containers natively since 127, so a
+     bare .tbl-wrap with no tabindex focuses, scrolls on ArrowRight and matches
+     :focus-visible on this harness browser -- the whole outcome is supplied by
+     the browser. The arms below therefore read the attribute as well, and the
+     confound is named under NOT COVERED. */
   const driveScroller = async () => {
     const found = await evaluate(`(() => {
       for (const wrap of document.querySelectorAll('#lookupResult .tbl-wrap')) {
@@ -702,6 +707,9 @@ try {
           return JSON.stringify({
             caption: (wrap.querySelector('caption') || {}).textContent || null,
             focused: document.activeElement === wrap,
+            tabIndex: wrap.tabIndex,
+            hasTabindex: wrap.hasAttribute('tabindex'),
+            role: wrap.getAttribute('role'),
             before: wrap.scrollLeft,
             room: wrap.scrollWidth - wrap.clientWidth,
           });
@@ -1333,7 +1341,16 @@ for (const theme of THEMES) {
        shown and gains a size, so the mechanism covers it; nothing here binds
        that, because the shell draws this pane only when it is the active one.
      - every other pane. ops/assets/pane-run-history-v2.js has the same defect
-       and is held by another agent; #10822 stays open against it. */
+       and is held by another agent; #10822 stays open against it.
+     - the pre-fix state, as an OUTCOME, on this browser. Chrome has focused
+       scroll containers natively since 127, so on the harness browser a wrap
+       with no tabindex still focuses, still scrolls on ArrowRight and still
+       draws a ring. The two arms that drive a keyboard are outcome checks
+       inside that confound: they assert the attribute first, so they fall
+       with the fix, but what they DEMONSTRATE is that the box works here, not
+       that it would work without the fix elsewhere. The browsers where the
+       #10822 defect is live -- Firefox, Safari, Chrome before 127 -- are not
+       driven by anything in this repository. */
 
 for (const theme of THEMES) {
   test(`[${theme}] at 375px every clipping table is a named region a keyboard can reach`, () => {
@@ -1386,9 +1403,15 @@ for (const theme of THEMES) {
   test(`[${theme}] arrow keys actually scroll the box they focus`, () => {
     const k = census[theme].scrollers.keyboard;
     assert.equal(k.present, true, 'no clipping wrap was found to drive at 375px');
+    /* First, because everything after it is available to an unfixed pane on
+       this browser and on no other. */
+    assert.equal(k.tabIndex, 0,
+      `the wrap holding "${k.caption}" was driven with a keyboard at tabIndex ` +
+      `${k.tabIndex}: Chrome focuses scroll containers natively since 127, so the ` +
+      'scrolling below happens with or without this fix here, and does not happen ' +
+      'at all in Firefox, in Safari, or in Chrome before 127');
     assert.equal(k.focused, true,
-      `.focus() on the wrap holding "${k.caption}" did not move activeElement to it, ` +
-      'which is what a div without a tabindex does');
+      `.focus() on the wrap holding "${k.caption}" did not move activeElement to it`);
     assert.equal(k.before, 0, `the box started at scrollLeft ${k.before}`);
     assert.ok(k.after > 0,
       `eight ArrowRight presses on the focused wrap holding "${k.caption}" left ` +
@@ -1503,6 +1526,10 @@ for (const theme of THEMES) {
      `claims id=table-focus-rings` block, which another agent holds. */
   test(`[${theme}] the newly focusable scroll box draws a focus ring`, () => {
     const k = census[theme].scrollers.keyboard;
+    assert.equal(k.tabIndex, 0,
+      `the box drawing this ring reports tabIndex ${k.tabIndex}: on this browser a ` +
+      'scroll container takes focus natively, so a ring here is not evidence the ' +
+      'pane put the focus within reach');
     assert.equal(k.focusVisible, true,
       `the wrap holding "${k.caption}" did not match :focus-visible after eight real ` +
       'key presses, so a keyboard user has no mark of where they are');
