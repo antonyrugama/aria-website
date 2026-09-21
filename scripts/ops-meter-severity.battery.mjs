@@ -72,7 +72,7 @@ const BATTERY = [
     id: 'T1', file: CSS, expect: 'KILL',
     why: 'Deletes every notch rule, restoring the state of the file before this PR: the four tones differ in `--c` and nothing else. This is the defect Stadiora/Aria#10825 records, put back verbatim.',
     apply: (s) => {
-      const from = s.indexOf('.meter i { overflow: hidden; }');
+      const from = s.indexOf('/* Stadiora/Aria#10825: severity was carried by');
       const to = s.indexOf('.meter.vio  i::before  { right: 12px; border-right-width: 2px; }');
       if (from === -1 || to === -1) throw new Error('notch rule block not found');
       const end = s.indexOf('\n', to) + 1;
@@ -114,7 +114,7 @@ const BATTERY = [
   },
   {
     id: 'T8', file: CSS, expect: 'KILL',
-    why: 'Moves the first groove 6px PAST the fills trailing edge, onto bare track, where it reads as a mark the bar has not reached. Binds the claim that replaced the redundant `overflow: hidden` -- and could not have been killed while that declaration was there, which is why the declaration went and the measurement stayed.',
+    why: 'Moves the first groove 6px PAST the fills trailing edge for all three toned meters -- warn, bad and vio share this declaration block -- so every tone loses a notch and vio reads as bad. Written to bind a claim about marks on bare track; that claim was withdrawn when this payload measured 1.27:1 there, under the 1.8:1 the scan can resolve. The payload stayed because the geometry fault it injects is caught anyway, by count rather than by position.',
     apply: (s) => replaceOnce(s, '.meter.vio  i::after   { right: 4px; border-right-width: 2px; }',
       '.meter.vio  i::after   { right: -6px; border-right-width: 2px; }')
   }
@@ -147,7 +147,17 @@ function deriveAnchor(before, after, file) {
     if (c === '}') depth++;
     else if (c === '{') {
       if (depth === 0) {
-        const start = head.lastIndexOf('\n', j - 1) + 1;
+        /* A selector LIST spans several lines, each but the last ending in a
+           comma, and a payload landing in the block touches every one of them.
+           Walking back over those lines is the difference between an anchor
+           that names the rule that changed and one that names a third of it. */
+        let start = head.lastIndexOf('\n', j - 1) + 1;
+        while (start > 0) {
+          const prevEnd = start - 1;
+          const prevStart = head.lastIndexOf('\n', prevEnd - 1) + 1;
+          if (!head.slice(prevStart, prevEnd).trim().endsWith(',')) break;
+          start = prevStart;
+        }
         selector = head.slice(start, j).trim().replace(/\s+/g, ' ');
         break;
       }

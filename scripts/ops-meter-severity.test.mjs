@@ -62,6 +62,17 @@
  * - Whether three notches remain countable to a reader at arm's length. The
  *   claims here are that they are painted, counted and contrast; legibility
  *   at a distance is a judgement no oracle makes.
+ * - A groove displaced onto UNFILLED track. This was claimed and then
+ *   withdrawn, because it was measured and the instrument cannot see it:
+ *   pushing the first groove 6px past the fill's trailing edge moves the
+ *   bare-track region by 1.21-1.27:1 in 18 of 96 readings, against this
+ *   scan's 1.8:1 detect threshold and an ungrooved track that already varies
+ *   by up to 1.15:1 under the fill's own glow. The signal is real and too
+ *   weak to separate from the track. `METER_SUMMARY=1` prints that
+ *   sensitivity so the withdrawal stays checkable. The GEOMETRY regression
+ *   that produces a stray groove is bound -- that exact payload is battery
+ *   row T8, killed by three notch-count claims -- so what is not covered is
+ *   the stray mark itself, not the fault that makes one.
  */
 
 import test, { after } from 'node:test';
@@ -533,7 +544,8 @@ function scanRuns(px, floor) {
     grooves.push({ start: i + EDGE_TRIM, end: j + EDGE_TRIM, width: j - i + 1, contrast: ratio });
     i = j;
   }
-  return { grooves, fillLevel, samples: px.length };
+  const peak = lums.length ? Math.max(...lums.map((L) => ratioL(L, fillLevel))) : 1;
+  return { grooves, fillLevel, peak, samples: px.length };
 }
 
 /* The bar's VALUE: filled part against unfilled part. Separate subject from
@@ -578,7 +590,7 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
       pane, state, theme, tone, tones: m.tones, synthetic: m.synthetic,
       trackWidth: m.trackWidth, fillWidth: m.fillWidth, visibleFill: m.visibleFill,
       ...analyseFill(img, Math.round(m.visibleFill)),
-      stray: analyseStray(img, Math.round(m.visibleFill), Math.round(m.trackWidth)).grooves,
+      strayScan: analyseStray(img, Math.round(m.visibleFill), Math.round(m.trackWidth)),
       value: analyseValue(img, Math.round(m.visibleFill), Math.round(m.trackWidth))
     });
   }
@@ -714,6 +726,11 @@ test('the bar reports its value, filled against unfilled, in both themes', () =>
     const gs = [...readings, ...synthetic].flatMap((r) => r.grooves.map((g) => g.contrast));
     console.log(`notch contrast: worst ${Math.min(...gs).toFixed(2)}:1, ` +
       `best ${Math.max(...gs).toFixed(2)}:1, n=${gs.length}`);
+    const sp = [...readings, ...synthetic].filter((r) => r.strayScan && r.strayScan.peak)
+      .map((r) => r.strayScan.peak);
+    console.log(`bare-track scan: widest deviation from track level ` +
+      `${Math.max(...sp).toFixed(2)}:1 against a ${GROOVE_DETECT}:1 detect ` +
+      `threshold, n=${sp.length}`);
     const fv = forced.filter((r) => r.value && r.value.emptyWidth >= 4).map((r) => r.value.contrast);
     console.log(`forced-colors value contrast: worst ${Math.min(...fv).toFixed(2)}:1, n=${fv.length}`);
   }
@@ -727,22 +744,6 @@ test('the bar reports its value, filled against unfilled, in both themes', () =>
    its background-color was already `rgba(0,0,0,0)`. Those were its entire
    appearance, so the bar painted NOTHING -- it lost the value, not just the
    band. This is the claim that binds that. */
-/* Replaces a declaration with a measurement. `.meter i` carried an
-   `overflow: hidden` justified as keeping a groove off bare track; the
-   mutation that removed it changed nothing this instrument can see, because
-   the TRACK already clips. Rather than keep a declaration whose stated reason
-   was wrong, the property it claimed is asserted here. */
-test('no notch paints on bare track, where it would read as value the bar has not reached', () => {
-  const judged = [...readings, ...synthetic].filter((r) => r.value && r.value.emptyWidth >= 10);
-  assert.ok(judged.length >= VALUE_FLOOR,
-    `only ${judged.length} meters had enough unfilled track to scan for strays, ` +
-    `below the declared floor of ${VALUE_FLOOR}`);
-  const strays = judged.filter((r) => r.stray.length > 0);
-  assert.deepEqual(strays.map((r) =>
-    `${r.theme}/${r.pane}/${r.state} .meter${r.tone ? '.' + r.tone : ''} painted ` +
-    `${r.stray.length} mark(s) on unfilled track`), [],
-  'a mark beyond the fill overstates the value the meter was given');
-});
 
 test('under forced-colors the bar still paints its value', () => {
   const judged = forced.filter((r) => r.value && r.value.emptyWidth >= 4);

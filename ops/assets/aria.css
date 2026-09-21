@@ -791,10 +791,9 @@ svg { display: block; }
    not here. What remains is an UNDER-count on a fill too short to hold its
    notches: the conservative direction, but a misreport still, so the guard
    holds a floor requiring every severity-bearing fill to be wide enough for
-   its own notches AND a claim that no groove ever paints on bare track.
-   Measured across 9 panes x 4 states x 2 themes, the narrowest severity fill
-   today is 124.3px against the 14px three grooves occupy, 18px once the
-   measurement's own edge trim is counted. */
+   its own notches. Measured across 9 panes x 4 states x 2 themes, the
+   narrowest severity fill today is 124.3px against the 14px three grooves
+   occupy, 18px once the measurement's own edge trim is counted. */
 .meter i::before,
 .meter i::after {
   content: '';
