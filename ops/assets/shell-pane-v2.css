@@ -318,13 +318,22 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
    `white-space: nowrap`. A max-width cannot clamp a line that will not wrap:
    the box is limited and the text runs straight out of it, which is how a
    63-character note pushed a 375px page to 393px on CI while fitting on a
-   narrower-metric font locally. */
+   narrower-metric font locally.
+
+   Wrapping is only half of it. The pill's 2.5px block padding and 20px radius
+   are sized for one line; a wrapped note keeps them and the text runs up
+   against the border top and bottom, which it already does at 375px today.
+   The note stands where a control would have been, so it takes that control's
+   geometry -- `.sel select` is `6px 11px` at `--r-sm` -- rather than a
+   lozenge's. */
 .filter-note {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 450;
   white-space: normal;
   max-width: 62ch;
+  padding: 6px 11px;
+  border-radius: var(--r-sm);
 }
 
 /* ------------------------------------------------ the pane's own controls */
