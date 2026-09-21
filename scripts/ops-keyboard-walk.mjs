@@ -520,6 +520,16 @@ for (const p of PANES) {
     const scrollers = await evalJson('JSON.stringify(window.__kbd.scrollers())');
     const mismatched = await evalJson('JSON.stringify(window.__kbd.mismatchedLabels())');
     const dupIds = await evalJson('JSON.stringify(window.__kbd.duplicateIds())');
+    /* WHICH FILES THIS PAGE ACTUALLY LOADED. A mutation battery can prove a
+       payload landed in a file by byte comparison and still be measuring
+       nothing, because the file is not one the page under test loads. Five
+       payloads went into ops/assets/operate.js before this line existed;
+       every one applied cleanly, and settings.html has never loaded it --
+       ops/assets/settings.js carries its own confirmAction. A byte
+       comparison answers "did the edit land", not "is the edited code
+       running", and those are different questions. */
+    const loaded = await evalJson(`JSON.stringify(performance.getEntriesByType('resource')
+      .map((e) => e.name.replace(location.origin, '')).filter((n) => /\\.(js|css)$/.test(n)))`);
     const disabledVisible = await evalJson('JSON.stringify(window.__kbd.disabledButVisible())');
     const hiddenPainted = await evalJson('JSON.stringify(window.__kbd.hiddenButPainted())');
 
@@ -572,7 +582,18 @@ for (const p of PANES) {
        so the reverse walk starts outside the document, the first Shift+Tab
        is consumed getting back in, and every subsequent key is off by one.
        That is the whole of the remaining REV-MISMATCH: seven walks, all at
-       375px, all reported as "got [DOCUMENT, ...expected shifted]". */
+       375px, all reported as "got [DOCUMENT, ...expected shifted]".
+
+       BOTH branches are load-bearing and WHICH ONE FIRES IS TIMING-DEPENDENT.
+       The same pane at the same viewport ended `wrapped` in four measured runs
+       and `left-document` in two, so neither shape can be assumed. When the
+       walk ends by wrapping, the off-by-one happens to CANCEL -- the extra Tab
+       lands on stop 0 and the first Shift+Tab wraps back to the last control
+       -- so dropping this filter is invisible in `reverseMatches` on a wrapping
+       walk and visible on a leaving one. The deterministic observable of the
+       exclusion is the press count (`reverseGot.length`), which read 3 in six
+       unmutated runs across both shapes and 4 with the filter removed. Battery
+       rows M9 (press count, kills) and M9b (reverseMatches, survives). */
     const core = stops.filter((s, i) => !(i === stops.length - 1 &&
       (s.key === 'DOCUMENT' || (stops.length > 2 && s.key === stops[0].key))));
     const fwd = Math.min(core.length, 12);
@@ -669,7 +690,7 @@ for (const p of PANES) {
       scrollers,
       undeclaredScrollers: scrollers.filter((s) => s.tabindex === null)
         .map((s) => ({ ...s, reachedByWalk: reached.has(s.key) })),
-      mismatched, dupIds, disabledVisible, hiddenPainted,
+      mismatched, dupIds, disabledVisible, hiddenPainted, loaded,
       skip: { declared: skipDecl, first, firstIsSkip, afterSkip, target: skipTarget },
       rerender
     });
