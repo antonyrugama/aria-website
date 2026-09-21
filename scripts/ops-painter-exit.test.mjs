@@ -17,9 +17,9 @@
    it can fail before it returns:
 
      A  no browser to launch      -- throws while evaluating the argument to
-                                     spawn(). The profile directory is made two
-                                     statements earlier, so the server AND the
-                                     directory are open at the throw.
+                                     spawn(), after the profile directory is
+                                     made, so the server AND the directory are
+                                     open at the throw.
      B  browser dies on startup   -- throws after the profile directory is made
                                      and the process is spawned: the server, a
                                      child process, and a directory on disk.
@@ -53,9 +53,9 @@
 
    Case B asserts a sixth: that it ended QUICKLY. The port wait is cut short
    when the browser is already known to have exited. Without that cut the case
-   still passes, sub-second becomes the full port wait, and no assertion in
-   this file notices -- the fail-fast is behaviour, so it needs an assertion of
-   its own.
+   still passes, its cost becomes the full port wait, and no assertion in this
+   file notices -- the fail-fast is behaviour, so it needs an assertion of its
+   own.
 
    NOT COVERED
    -----------
@@ -65,16 +65,19 @@
      it, and asserts that the browser had been reaped at the instant the
      removal ran. That assertion exists because the argument this bullet used
      to make -- "the whole suite already is the proof, since it terminates" --
-     is true of exactly one of the four releases. A listening server is the
-     only one that holds the event loop open, so a leaked directory is
-     invisible to a termination argument, and it really was being leaked
-     (Stadiora/Aria#10854). The reaped-at-removal half is there because the
+     does not reach a directory. A leaked handle keeps the event loop open and
+     a run that ends has released it; a leaked DIRECTORY holds no handle, so a
+     run that ends says nothing about it either way. It really was being leaked
+     (Stadiora/Aria#10854). Which handles those are is deliberately not counted
+     here: the first version of this sentence counted them, said one, and was
+     wrong -- a spawned child holds the loop open as surely as a listening
+     server does. The reaped-at-removal half is there because the
      disk half cannot see that bug on its own: the leak is a recreation, so at
      the moment close() returns the directory is absent either way.
    - The profile directory on case A's path. It is created and leaked there --
-     mkdtempSync runs two statements before the throw -- but the window between
-     the two is narrow enough that a poll from another process catches it only
-     sometimes. Cases B and C make their cleanup assertion non-vacuous by
+     mkdtempSync runs before the throw, with nothing between them that waits --
+     but the window is narrow enough that a poll from another process catches
+     it only sometimes. Cases B and C make their cleanup assertion non-vacuous by
      watching the directory APPEAR first; an appear-check that succeeds only
      sometimes is a flake, and without one "it is absent afterwards" is the
      vacuous shape this file's own header warns about. So case A asserts
@@ -111,8 +114,8 @@ const WATCHDOG_MS = 60_000;
 const SLOW_WATCHDOG_MS = 90_000;
 
 /* What "fast" means for case B, set between the two things it has to separate:
-   the sub-second cost of the case as it stands, and the port wait it must not
-   have entered, which is longer than this. Dropping `&& !gone` from that loop's
+   the cost of the case as it stands, and the port wait it must not have
+   entered, which is longer than this. Dropping `&& !gone` from that loop's
    condition puts case B on the far side of this, which is what it catches.
    Deliberately NOT stated as a multiple of a measurement -- a measurement goes
    stale, and this machine's load moves the low end by a factor of two. */
@@ -150,8 +153,8 @@ function runPaintSweep(env, watchDir, options = {}) {
        reads identically whether the profile was removed or was never put there
        -- and it would never be put there if mkdtemp stopped consulting TMPDIR.
        On cases B and C the directory lives across at least one turn of the
-       port-wait loop, which is orders of magnitude longer than this poll's
-       interval, so it is seen many times over. */
+       port-wait loop, whose interval is the longer of the two, so it is seen
+       more than once. */
     let profileSeen = false;
     /* The same two-sidedness for the stub browser: its pid is read off the file
        it writes, and it is confirmed RUNNING at least once while the child is

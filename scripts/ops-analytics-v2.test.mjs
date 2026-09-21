@@ -2786,9 +2786,9 @@ async function launchPainter(opened, unwind) {
     });
   });
 
-  /* A browser that has already exited will never publish a port, so waiting
-     the full 30s for one only delays a failure that is already decided — and
-     says "never published" when "died on startup" is the fact. */
+  /* A browser that has already exited will never publish a port, so sitting
+     out the whole wait below only delays a failure that is already decided —
+     and says "never published" when "died on startup" is the fact. */
   let gone = false;
   browser.on('exit', () => { gone = true; });
   let port = null;
@@ -3032,10 +3032,12 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
 
      scripts/ops-painter-exit.test.mjs binds the three failing ways out of the
      launch. This is the fourth way -- the one that works -- and until now the
-     only thing holding it was "the suite terminates", which is true of exactly
-     one of the four releases: the server, because a listening server is the
-     only one that keeps the event loop open. A leaked directory is invisible to
-     a termination argument, and it was really being leaked. */
+     only thing holding it was "the suite terminates". That argument reaches a
+     leaked HANDLE, which keeps the event loop open and so cannot survive a run
+     that ended. It does not reach a leaked DIRECTORY, which holds no handle at
+     all, and the directory was really being leaked. How many of the four
+     releases the argument does reach is deliberately not counted: the first
+     version of this comment counted them, said one, and was wrong. */
   assert.equal(existsSync(painter.profile), false,
     'the painter left its browser profile at ' + painter.profile + ' after a clean run. ' +
     'kill() is a signal, not a join: if the removal does not wait for the browser to exit, ' +
@@ -3056,7 +3058,9 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
   assert.equal(painter.teardown.browserExitedBeforeRemoval, true,
     'the profile was removed while the browser still had a null exitCode and a null ' +
     'signalCode, so Chrome had not been reaped and may still have been writing into ' +
-    'the directory. kill() is a signal, not a join. Observed: ' +
+    'the directory. Either the release stopped waiting for the exit it asked for -- ' +
+    'kill() is a signal, not a join -- or the wait was entered and EXIT_WAIT_MS ran out ' +
+    'before Chrome went away, which is a different bug with the same symptom. Observed: ' +
     JSON.stringify(painter.teardown.browserExitedBeforeRemoval) +
     ' (null means the removal never ran at all).');
 });
