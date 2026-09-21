@@ -1557,12 +1557,23 @@ const probeFor = (markers) => `(() => {
      of it does, which also covers a marker split across two siblings — their
      parent is then the innermost carrier.
 
-     Three predicates now, and each one of them was added because the pair
+     Innermost is not the only occurrence, which round 12 demonstrated by
+     appending a hidden copy of the version number inside the span that
+     renders it: the span stopped being a carrier because a child now held
+     the marker too, the hidden copy was measured in its place, and a pane
+     whose result was untouched on the screenshot failed. So an element is
+     ALSO a carrier when one of its own direct text nodes holds the marker.
+     A single text node, not the concatenation of them, because concatenating
+     across an intervening element would invent an adjacency the page does not
+     render — and because the split-across-siblings case above must keep
+     resolving to the parent rather than to neither.
+
+     Four predicates now, and each one of them was added because the set
      before it passed something nobody could see: a box rules out display:none
      and a collapsed subtree, checkVisibility() rules out visibility:hidden and
-     a content-visibility:auto subtree that is currently skipped, and
-     reachability rules out a box parked off the page. content-visibility:hidden
-     is asked for by name, because it keeps the element rendered and skips only
+     a content-visibility:auto subtree that is currently skipped, reachability
+     rules out a box parked off the page, and content-visibility:hidden is
+     asked for by name, because it keeps the element rendered and skips only
      its contents, so checkVisibility() reports true about a carrier painting
      nothing. opacity is NOT asked about, because a pane mid-transition would
      read as hidden and this gate decides whether the run happens at all. */
@@ -1574,7 +1585,15 @@ const probeFor = (markers) => `(() => {
       for (const kid of el.children) {
         if (clean(kid).indexOf(m) !== -1) { deeper = true; break; }
       }
-      if (!deeper) out.push(el);
+      let ownText = false;
+      for (const n of el.childNodes) {
+        if (n.nodeType === 3
+          && String(n.nodeValue).replace(/\\s+/g, ' ').trim().indexOf(m) !== -1) {
+          ownText = true;
+          break;
+        }
+      }
+      if (!deeper || ownText) out.push(el);
     }
     return out;
   };
@@ -1607,17 +1626,38 @@ const probeFor = (markers) => `(() => {
      consulted only when the element produces no box at all: a box with one
      zero dimension stays a failure, which is what keeps transform:scale(0)
      red. */
-  /* innerText is the region's RENDERED text; textContent is all of it. The
-     difference is the second half of the boxless case: a Range inside a
-     content-visibility:hidden subtree still reports rects — measured, the same
-     [1198, 894, 40, 16] as when it was visible — and checkVisibility() on the
-     nearest boxed ancestor answers about that ancestor, which is not the thing
-     being skipped. innerText drops the whole skipped subtree, and drops
-     visibility:hidden and display:none with it. Lower-cased and
-     whitespace-collapsed so a text-transform is not a false red. */
+  /* innerText is the region's RENDERED text; textContent is all of it. It is
+     the region's, though, not this carrier's, and round 12 showed what that
+     buys: hide one occurrence of a marker with visibility:hidden and move a
+     second occurrence off the document, and the boxless path took reachable
+     geometry from the first and rendered text from the second. Neither one
+     was both, and the pane counted as judged with both figures missing from
+     the screenshot.
+
+     So the two suppressors that leave a Range reporting rects it can no
+     longer paint are now read off THIS element, as properties, before the
+     region's text is consulted at all: visibility, which inherits, so the
+     carrier's own computed value carries its ancestors'; and
+     content-visibility:hidden, which does not inherit and is looked for up
+     the chain, because a skipped subtree keeps reporting the rects it had
+     when it was visible — measured, the same [1198, 894, 40, 16].
+
+     What is left for the region's innerText is a marker the page renders
+     nowhere as one run, which is a text arrangement rather than a suppressor.
+     It can only reject: nothing reaches it that the per-element questions
+     above have not already passed. Lower-cased and whitespace-collapsed so a
+     text-transform is not a false red. */
   const renderedText = content
     ? String(content.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase()
     : '';
+  const suppressed = (el) => {
+    const own = getComputedStyle(el);
+    if (own.visibility === 'hidden' || own.visibility === 'collapse') return true;
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      if (getComputedStyle(n).contentVisibility === 'hidden') return true;
+    }
+    return false;
+  };
   const shows = (el, marker) => {
     const own = el.getBoundingClientRect();
     if (own.width > 0 || own.height > 0) {
@@ -1638,6 +1678,7 @@ const probeFor = (markers) => `(() => {
     const range = document.createRange();
     range.selectNodeContents(el);
     if (![].slice.call(range.getClientRects()).some(inReach)) return false;
+    if (suppressed(el)) return false;
     return renderedText.indexOf(String(marker).replace(/\\s+/g, ' ').trim().toLowerCase()) !== -1;
   };
   const markers = ${JSON.stringify(markers)};
