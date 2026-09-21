@@ -492,8 +492,20 @@ function rowOf(img, from, to) {
    most extreme pixel -- the groove proper, not the ramp into it -- and the
    fill immediately beside it, taking whichever side reads LOWER. */
 function analyseFill(img, visibleFill) {
-  const px = rowOf(img, EDGE_TRIM, visibleFill - EDGE_TRIM);
-  if (px.length < 12) return { grooves: [], fillLevel: null, samples: px.length };
+  return scanRuns(rowOf(img, EDGE_TRIM, visibleFill - EDGE_TRIM), 12);
+}
+
+/* The same detector pointed at the UNFILLED part of the track. A groove there
+   is a mark the bar has not reached, which reads as a higher value than the
+   meter was given. Nothing should be found: every groove is positioned left
+   of the fill's trailing edge and the track clips what overhangs. This is the
+   claim that replaced a redundant `overflow: hidden` on the fill. */
+function analyseStray(img, visibleFill, trackWidth) {
+  return scanRuns(rowOf(img, visibleFill + EDGE_TRIM, trackWidth - EDGE_TRIM), 10);
+}
+
+function scanRuns(px, floor) {
+  if (px.length < floor) return { grooves: [], fillLevel: null, samples: px.length };
   const lums = px.map(relativeLuminance);
   const fillLevel = median(lums);
   const flagged = lums.map((L) => ratioL(L, fillLevel) >= GROOVE_DETECT);
@@ -566,6 +578,7 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
       pane, state, theme, tone, tones: m.tones, synthetic: m.synthetic,
       trackWidth: m.trackWidth, fillWidth: m.fillWidth, visibleFill: m.visibleFill,
       ...analyseFill(img, Math.round(m.visibleFill)),
+      stray: analyseStray(img, Math.round(m.visibleFill), Math.round(m.trackWidth)).grooves,
       value: analyseValue(img, Math.round(m.visibleFill), Math.round(m.trackWidth))
     });
   }
@@ -714,6 +727,23 @@ test('the bar reports its value, filled against unfilled, in both themes', () =>
    its background-color was already `rgba(0,0,0,0)`. Those were its entire
    appearance, so the bar painted NOTHING -- it lost the value, not just the
    band. This is the claim that binds that. */
+/* Replaces a declaration with a measurement. `.meter i` carried an
+   `overflow: hidden` justified as keeping a groove off bare track; the
+   mutation that removed it changed nothing this instrument can see, because
+   the TRACK already clips. Rather than keep a declaration whose stated reason
+   was wrong, the property it claimed is asserted here. */
+test('no notch paints on bare track, where it would read as value the bar has not reached', () => {
+  const judged = [...readings, ...synthetic].filter((r) => r.value && r.value.emptyWidth >= 10);
+  assert.ok(judged.length >= VALUE_FLOOR,
+    `only ${judged.length} meters had enough unfilled track to scan for strays, ` +
+    `below the declared floor of ${VALUE_FLOOR}`);
+  const strays = judged.filter((r) => r.stray.length > 0);
+  assert.deepEqual(strays.map((r) =>
+    `${r.theme}/${r.pane}/${r.state} .meter${r.tone ? '.' + r.tone : ''} painted ` +
+    `${r.stray.length} mark(s) on unfilled track`), [],
+  'a mark beyond the fill overstates the value the meter was given');
+});
+
 test('under forced-colors the bar still paints its value', () => {
   const judged = forced.filter((r) => r.value && r.value.emptyWidth >= 4);
   assert.ok(judged.length > 0, 'no forced-colors meter had unfilled track to judge against');

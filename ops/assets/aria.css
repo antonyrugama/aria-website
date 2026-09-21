@@ -783,15 +783,18 @@ svg { display: block; }
    after looking at it: at the edge a groove is not a groove, it just makes the
    bar 2px shorter, so `warn` was indistinguishable from `ok`.
 
-   `overflow` keeps a groove from painting past a short fill onto bare track,
-   where it would read as a mark the bar had not reached. That trades an
-   over-count for an under-count, which is the conservative direction here --
-   but an under-count still misreports, so `ops-meter-severity.test.mjs` holds
-   a floor requiring every severity-bearing fill to be wide enough for its own
-   notches. Measured across 9 panes x 4 states x 2 themes, the narrowest one
+   A groove is only ever positioned LEFT of the fill's trailing edge, and the
+   fill's leading edge is the track's, so a groove too far left to fit falls
+   off a track that is itself `overflow: hidden`. That clip is already there.
+   A second one on the fill was written first and then measured redundant --
+   the mutation removing it changed no pixel this guard can see -- so it is
+   not here. What remains is an UNDER-count on a fill too short to hold its
+   notches: the conservative direction, but a misreport still, so the guard
+   holds a floor requiring every severity-bearing fill to be wide enough for
+   its own notches AND a claim that no groove ever paints on bare track.
+   Measured across 9 panes x 4 states x 2 themes, the narrowest severity fill
    today is 124.3px against the 14px three grooves occupy, 18px once the
    measurement's own edge trim is counted. */
-.meter i { overflow: hidden; }
 .meter i::before,
 .meter i::after {
   content: '';
