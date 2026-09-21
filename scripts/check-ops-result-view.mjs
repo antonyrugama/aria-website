@@ -108,6 +108,16 @@
      is a rule doing something — but only a class with at least one site that
      has a box is ever reported, so a class living exclusively on zero-area
      elements is invisible to this check in both directions.
+   - **A result the scroll box still reaches.** The gate that decides whether a
+     pane reached a result view asks whether the marker's carrier has a box
+     inside documentElement's scroll box. Content moved left of the document,
+     translated away, or fixed past the viewport all fail it. Content moved far
+     to the RIGHT does not: a box at left:99999px extends scrollWidth, the
+     reachable area grows to contain it, and the run stays green — measured,
+     not reasoned. Reachability rather than the viewport is deliberate, since
+     this sweep never scrolls and every pane is taller than the window; the
+     cost is that a result parked somewhere no reader would go, but could
+     scroll to, reads as on the page.
    - **A sibling combinator's reach.** A clause like `.a ~ .b` paints an
      element that is neither the class's carrier nor inside it, so for those
      clauses the question falls back to "does this match anything on the page".
