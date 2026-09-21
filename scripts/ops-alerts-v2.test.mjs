@@ -99,9 +99,13 @@
        held differently and the difference is the point. For --acc, the six
        rules that paint it are LISTED, so a rule spelled any other way is
        red for being on no list -- `.p-item { --acc }`, green through three
-       reviews as RV17-1e, reds now, and so do the escape spellings. For
-       the ink, `color` is painted by 77 rules across the three sheets and
-       no list is possible, so it is the reader that refuses: a selector
+       reviews as RV17-1e, reds now. The list is keyed on the SELECTOR and
+       collected by the property name, so an escape in the PROPERTY --
+       `--ac\63`, which repainted every rail with 75 green in the twentieth
+       review -- walks past the list itself; it reds in the refusal test
+       instead, which fails any sheet holding a backslash at all. For the
+       ink, `color` is painted by 77 rules across the three sheets and no
+       list is possible, so it is the reader that refuses: a selector
        mentioning the class it cannot take apart, or holding a backslash or
        `[class`, is a failure. What stays invisible is an ink rule that
        mentions the class nowhere in its text -- by element, by another
@@ -219,13 +223,37 @@ const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
    `rel=stylesheet` spellings in the file, and the quote PARITY of each tag,
    which is odd exactly when the scan cut one in half.
 
-   What it still cannot see, in the browser's sense of "loads": an inline
-   <style> block and anything a script injects -- both closed by the page's
-   CSP having no 'unsafe-inline', which is asserted, not assumed. A sheet
-   pulled in by @import is invisible to this and its rules really do paint
-   (measured, RV19-2a); it is not read here, it is REFUSED below, because
-   the reader that would have to follow it is a second stylesheet loader. */
-const LINK_TAGS = [...read('alerts.html').matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
+   Both of those read BYTES where the parser reads a decoded attribute, and
+   `rel="&#115;tylesheet"` is `rel="stylesheet"` to the browser and to
+   neither of them: a fourth sheet loaded that way repainted every card with
+   75 tests green (found in the twentieth review of #75). So the references
+   this reader can resolve it RESOLVES -- numeric, decimal and hex, decoded
+   once below, and both readings run over the decoded text -- and the ones
+   it cannot it REFUSES: `no character reference in the page survives the
+   decoder` fails on any `&` the decode leaves behind, which is every named
+   reference and every numeric one missing its `;`. That refusal is blunt in
+   the loud direction: an `&amp;` in this page's PROSE would red it too, and
+   the page has none today.
+
+   What it still cannot see, in the browser's sense of "loads": anything a
+   script injects. That USED to say the CSP closed it, and the CSP does not.
+   Measured in real Chrome under this page's byte-exact policy, with the
+   injecting script served from 'self' (the twentieth review of #75, RV20-4):
+   an appended <style> is blocked and reports a violation, but an appended
+   <link rel=stylesheet> PAINTS, and a constructed sheet pushed onto
+   adoptedStyleSheets PAINTS. The `no unsafe-inline` assertion at the CSP
+   test is real and closes the <style> route only; the other two routes are
+   open, unread here, and on the NOT COVERED list at the top of this file.
+   A sheet pulled in by @import is invisible to this and its rules really do
+   paint (measured, RV19-2a); it is not read here, it is REFUSED below --
+   the ASCII spelling by the `@import` scan, and `@\69 mport`, which is the
+   same at-keyword to a browser and holds none of its letters in a row (also
+   RV20-2), by the backslash refusal that covers every escape in every sheet
+   at once. */
+const RAW_HTML = read('alerts.html');
+const DECODED_HTML = RAW_HTML.replace(/&#(x[0-9a-f]+|\d+);/gi, (_m, n) => String.fromCodePoint(
+  n[0].toLowerCase() === 'x' ? parseInt(n.slice(1), 16) : parseInt(n, 10)));
+const LINK_TAGS = [...DECODED_HTML.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
 const attrOf = (tag, name) => {
   const m = new RegExp('\\b' + name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\'|([^\\s"\'>]+))', 'i')
     .exec(tag);
@@ -1077,7 +1105,7 @@ const FOCUSABLE_PROBES = [
     attrs: { contenteditable: 'false' }, answer: false,
     note: 'FOUND IN REVIEW: true. the false state is not editability, and it is a stop in '
       + 'no arrangement -- measured in a used map' },
-  { name: '<area contenteditable tabindex="-1">', tag: 'area',
+  { name: '<area contenteditable="true" tabindex="-1">', tag: 'area',
     attrs: { contenteditable: 'true', tabindex: '-1' }, answer: false,
     note: 'FOUND IN REVIEW: true. measured: no stop in a used map, and the negative '
       + 'tabindex answers it above this branch' },
@@ -3816,6 +3844,41 @@ test('every status tone here paints the -ink of a tint aria.css also declares', 
    What is read off the card is its CLASSES; what each class declares is read
    out of the sheets the page loads, and the cascade between them is not
    modelled (NOT COVERED, at the top of this file). */
+/* Every reader in this file compares BYTES; the browser compares tokens it
+   has already decoded. Four reviews running found a spelling that is the
+   same thing to a parser and a different string here -- `:is(.acc-bad)`,
+   then `<link href= rel=>`, then a `>` inside a quoted value, then
+   `--ac\63`, `@\69 mport` and `rel="&#115;tylesheet"` in one round (RV20-1,
+   RV20-2, RV20-3). Closing them one spelling at a time is what those four
+   rounds did, and each fix was beaten on the axis next door.
+
+   So this refuses the whole class instead of following it. A CSS escape can
+   appear in ANY ident -- a property name, an at-keyword, a function, a
+   class -- so no sheet the page loads may hold a backslash anywhere, and a
+   character reference can appear in any attribute value, so no `&` may
+   survive the numeric decode above. Neither is an understanding of what the
+   escape MEANT; both are this file saying it cannot read one.
+
+   The price is stated plainly because it is real: a legitimate
+   `content: "\201C"` in aria.css, or an `&amp;` in this page's prose, reds
+   this test until a person decides what the readers here should do about
+   it. That is the loud direction. The quiet direction is what the last four
+   reviews kept finding. */
+test('no sheet the page loads spells an ident with an escape, and no character reference '
+  + 'in the page survives the decoder', () => {
+  assert.deepEqual(PAGE_SHEETS.filter((href) => read(href).includes('\\')), [],
+    'a sheet the page loads holds a CSS escape, and every reader in this file compares the '
+    + 'bytes of a property name, a selector and an at-keyword against a literal: `--ac\\63` '
+    + 'is `--acc` to the browser, `@\\69 mport` is `@import`, and neither holds its letters '
+    + 'in a row. This file cannot decode one, so it refuses to read the sheet that has it');
+  assert.equal(DECODED_HTML.includes('&'), false,
+    'the page holds a character reference this reader cannot resolve -- a named one, or a '
+    + 'numeric one missing its `;` -- and the HTML parser resolves references the byte scans '
+    + 'below do not: `rel="&#115;tylesheet"` loads a fourth sheet that none of them counts');
+  assert.equal(DECODED_HTML.length <= RAW_HTML.length, true,
+    'the numeric decode grew the page, so it is not the decode it claims to be');
+});
+
 test('the ink on a severity is the -ink of the accent that severity draws', async () => {
   const dom = await boot({
     open: { problems: [
@@ -3825,7 +3888,7 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     ] },
   });
   const classesOf = (n) => (((n.getAttribute && n.getAttribute('class')) || '').split(/\s+/));
-  const spelt = (read('alerts.html').match(/rel\s*=\s*["']?\s*stylesheet/gi) || []).length;
+  const spelt = (DECODED_HTML.match(/rel\s*=\s*["']?\s*stylesheet/gi) || []).length;
   assert.equal(PAGE_SHEETS.length, spelt,
     'the page spells rel=stylesheet ' + spelt + ' times and this reads ' + PAGE_SHEETS.length
     + ' sheets, so a sheet the browser loads is one this cannot see -- counted off the raw '
