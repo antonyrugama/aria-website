@@ -193,8 +193,19 @@ const FOCUS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>focu
      both are repainted by focusing. Nothing beside the ring is unchanged, so
      an adjacency taken over unchanged pixels has an empty sample. The colour
      under the halo is the card's own #FFFFFF, which is what makes the right
-     answer a published one. */
-  .hhalo { background: #FFFFFF; box-shadow: 0 0 0 20px #B0B0B0; }
+     answer a published one.
+
+     The halo is painted EXACTLY the ring's own #767676, and that is
+     load-bearing rather than tidy. It separates the two candidate
+     definitions of "which pixels are the ring". Defining the ring as what
+     FOCUSING changed, and ring-coloured, loses this ring entirely: where it
+     lands, the halo was already #767676, so those pixels did not change and
+     the pixels that did change went to white. Defining it as what the RING
+     PAINTS — the second photograph against the third — finds it, because
+     with the outline switched off that band is white. Both definitions agree
+     on every other fixture here and on every control on the shell, so
+     without this colour the old definition survives its own replacement. */
+  .hhalo { background: #FFFFFF; box-shadow: 0 0 0 20px #767676; }
   .hhalo:focus-visible { box-shadow: none; outline: 4px solid #767676; outline-offset: 6px; }
   /* .hstub defeats the ring suppression on purpose: same !important, higher
      specificity. A page is allowed to do this, and when it does, the third
@@ -3373,6 +3384,30 @@ try {
           if (r.refused) { focusRefused.push({ ...r, theme, state }); continue; }
           focusChecked++;
           if (r.driftPx > 0) focusDrifted++;
+          /* An accounting invariant, not a measurement: the drifted pixels
+             are a SUBSET of the ones the adjacency sampled, counted in the
+             same pass over the same gate, so the count can never exceed it.
+             It is asserted because that subset relation is the whole content
+             of "measured against pixels focusing repainted" — count a pixel
+             the adjacency threw away and the census becomes a number about a
+             different set than the sentence printing it claims. Stated
+             independently of how either is computed, so it does not move
+             with a mutation to either. Proven on the SHELL, not by a fixture:
+             every fixture ring here is an axis-aligned rectangle on integer
+             pixel boundaries and has no antialiased edge at all (measured: 0
+             blend pixels across all 10 fixture rows), so no fixture can tell
+             a drift count that respects the blend gate from one that does
+             not. button.btn.btn-primary can, because its corners are
+             rounded: 145 of the pixels beside its ring are ring/surface
+             blends and every one of them drifted. */
+          if (r.driftPx > r.adjacentPx) {
+            failures.push(`${SHELL} (${theme}/${state}): ${r.tag}` +
+              `${r.cls ? '.' + r.cls.split(/\s+/).join('.') : ''} "${r.text}" reports ` +
+              `${r.driftPx} drifted pixel(s) out of an adjacency of ${r.adjacentPx}. Drift is ` +
+              'counted over the pixels the adjacency kept, so it cannot exceed it; a count ' +
+              'that does is being taken over some other set of pixels than the one the ' +
+              'census sentence names.');
+          }
           if (!focusThinnest || r.adjacentPx < focusThinnest.adjacentPx) {
             focusThinnest = { ...r, theme, state };
           }
