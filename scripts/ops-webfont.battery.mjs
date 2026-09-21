@@ -96,7 +96,7 @@ const BATTERY = [
   },
   {
     id: 'T6', file: CSS, expect: 'KILL',
-    why: 'Declares the sans face as covering ASCII only. The file still loads and every ASCII site still paints Geist; the twelve non-ASCII characters ops/ renders fall back per CHARACTER, which is what an incomplete subset looks like from the browser\'s side. Self-contained: no fixture, so a reviewer can reproduce it from a clean checkout.',
+    why: 'Declares the sans face as covering ASCII only. The file still loads and every ASCII site still paints Geist; the non-ASCII characters ops/ actually renders fall back per CHARACTER, which is what an incomplete subset looks like from the browser\'s side. That is ONE character -- U+00B7 MIDDLE DOT -- not the twelve a source scan finds: rendering all 10 panes x 2 themes x 4 states showed the other eleven live in comments and unreached branches. Hence the 116-site, one-glyph-each signature below, against T1/T2/T5\'s thousands. Self-contained: no fixture, so a reviewer can reproduce it from a clean checkout.',
     apply: (s) => replaceOnce(s,
       "  src: url('fonts/Geist-Variable.woff2') format('woff2');\n  font-weight: 100 900;",
       "  src: url('fonts/Geist-Variable.woff2') format('woff2');\n  unicode-range: U+0020-007E;\n  font-weight: 100 900;")
