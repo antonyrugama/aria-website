@@ -1308,7 +1308,7 @@ those panes now.
     those two pages. That block was deleted from the end of `ops.css` in `aria-website#74` when
     App releases and Look up a user moved to the v2 layer and stopped loading this stylesheet;
     the arithmetic it was computed from is kept in the historical record below.
-15. **A sideways-scrolling wrapper needs to be positioned, and most of the v2 ones are not.**
+15. **A sideways-scrolling wrapper needs to be positioned, and some of the v2 ones are not.**
     `overflow-x` clips only a descendant whose containing block is the wrapper, and an absolutely
     positioned one resolves that to the nearest **positioned** ancestor. Left static, an
     `.sr-only` span inside a table wider than a phone resolves past the wrapper, escapes its
@@ -1328,15 +1328,16 @@ those panes now.
     pane-jobs-live-v2.css .u-scroll = position: relative
     pane-releases-v2.css .tbl-scroll = position: relative
     pane-run-history-v2.css .tbl-wrap = position: static (the sheet sets none)
-    pane-settings-v2.css .tbl-wrap = position: static (the sheet sets none)
+    pane-settings-v2.css .tbl-wrap = position: relative
     pane-spend-v2.css .sp-scroll = position: static (the sheet sets none)
-    pane-users-v2.css .tbl-wrap = position: static (the sheet sets none)
+    pane-users-v2.css .tbl-wrap = position: relative
     ```
 
     `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
-    `login.html` and `setup.html` load and neither of them draws a table. Evaluations' `.tbl-wrap`
-    and Releases' `.tbl-scroll` were repaired under Stadiora/Aria#10706 and join `.u-scroll` in
-    carrying it; the escape route above is open on every wrapper still marked static. The block
+    `login.html` and `setup.html` load and neither of them draws a table. Evaluations'
+    `.tbl-wrap`, Releases' `.tbl-scroll`, Settings' `.tbl-wrap` and People's `.tbl-wrap` were
+    repaired under Stadiora/Aria#10706 and join `.u-scroll` in carrying it; the escape route
+    above is open on every wrapper still marked static. The block
     is derived from the sheets on every run, so read the count off it rather than off this
     sentence.
 
@@ -1350,8 +1351,8 @@ those panes now.
 
     `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-users.js`
     and `pane-releases.js` do the same inside `div.tbl-wrap` and `div.tbl-scroll`. Of those three
-    wrappers, Releases' is now positioned and the other two are still static in the block above,
-    so for those two the containing block of the caption is not the wrapper. Nothing is broken on screen anyway, for a reason this item had never stated: a
+    wrappers, Releases' and People's are now positioned and Alerts' `.scrollx` is still static in
+    the block above, so for that one the containing block of the caption is not the wrapper. Nothing is broken on screen anyway, for a reason this item had never stated: a
     1px-wide clipped caption's static position is the table's left edge, so resolving past the
     wrapper adds no scroll width to the right of anything. That is a claim about layout, not
     about text, and it is **not derived here** — `scripts/check-ops-narrow-overflow.mjs` is the

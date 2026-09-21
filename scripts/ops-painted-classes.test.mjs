@@ -940,14 +940,30 @@ test('the approval field grid holds two columns to the same width as the evidenc
      rule; collapsing it at 880px is the media block, and each of the two can
      be deleted without moving the other, so both are read. */
   await show(EVALS_880);
+  /* Opened first, because under 900px every band on this pane now arrives
+     folded (Stadiora/Aria#10827) and a grid inside `display: none` reports
+     its specified track list rather than the tracks it was given. Pressed
+     rather than unhidden, so what is measured is the state an operator can
+     actually reach. The media block is still the only thing collapsing the
+     grid: deleting it leaves these two at 2 with the bands open. */
+  await evaluate(`(() => {
+    const folds = [...document.querySelectorAll('.band-fold')];
+    folds.forEach((b) => { if (b.getAttribute('aria-expanded') !== 'true') b.click(); });
+    return folds.length;
+  })()`);
   const narrow = await evaluate(`(() => {
     const columns = (sel) => getComputedStyle(document.querySelector(sel))
       .gridTemplateColumns.split(' ').length;
+    const shown = (sel) => document.querySelector(sel).getBoundingClientRect().width > 0;
     return { grid: columns('.evidence-form-grid'), q: columns('.q-grid'),
+      laidOut: shown('.evidence-form-grid') && shown('.q-grid'),
       viewport: document.documentElement.clientWidth };
   })()`);
 
   assert.strictEqual(narrow.viewport, 880, 'this arm only says anything under 900px');
+  assert.strictEqual(narrow.laidOut, true,
+    'both grids must be on screen when they are read, or the track list below ' +
+    'is the one the sheet asked for rather than the one the grid was given');
   assert.strictEqual(narrow.grid, 1,
     'under 900px the approval field grid should be a single column, and is ' +
     narrow.grid + ' — the media block is not what is collapsing it');

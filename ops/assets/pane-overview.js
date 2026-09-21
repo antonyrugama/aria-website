@@ -144,7 +144,12 @@
          problems or rules request rejected the whole thing and replaced the
          entire pane with "This pane could not be read", including the
          sections whose own reads had landed (Stadiora/Aria#5498). */
-      Promise.all([
+      /* Returned, not fired and forgotten. A control that re-renders the pane
+         has to be able to act AFTER the new nodes exist -- the one that
+         pressed it is gone by then -- and a promise is the only deterministic
+         way to know when that is. Sleeping for a plausible interval is how a
+         focus test passes on one machine and fails on the runner. */
+      return Promise.all([
         settled(session.call('/api/ops/alerts/problems',
           { query: { status: 'open', limit: model.PAGE } })),
         settled(session.call('/api/ops/alerts/rules')),
@@ -154,14 +159,23 @@
           return { error: err };
         })
       ]).then(function (results) {
-        if (token !== loadToken) return;
+        /* Whether THIS read is the one on screen, handed back so a retry can
+           ask. Two presses in quick succession start two reads, loadToken
+           suppresses the older render, and without this the older promise
+           still fulfils and still lands: the operator is dragged back to a
+           heading by a request that drew nothing, after they have moved on.
+           Reported rather than inferred, because the reason the render was
+           skipped is not visible from outside. */
+        if (token !== loadToken) return false;
         render({ open: results[0], rules: results[1], summary: results[2] });
+        return true;
       }).catch(function (err) {
         /* Not a failed read any more — the three above cannot reject. This is
            the backstop for render() itself throwing, which is the one failure
            that really does leave nothing on screen. */
-        if (token !== loadToken) return;
-        region.failed(err, load);
+        if (token !== loadToken) return false;
+        region.failed(err, retryAction(ATTENTION_BAND));
+        return true;
       });
     }
 
@@ -209,9 +223,16 @@
       badgeProblems(problems, capped, openFailed);
 
       /* Every read unreadable is the whole pane unreadable. Anything less
-         renders what did come back. */
+         renders what did come back.
+
+         The shell draws this card and its retry, and takes the action as an
+         argument -- so the landing has to be handed in here. Bare load was
+         Stadiora/Aria#10784's third site: pressing it re-read the pane and
+         dropped focus on <body>. The band id is the target because a retry
+         that works draws bands, and landOn falls through to this card's own
+         heading when it does not. */
       if (openFailed && rulesFailed && failed) {
-        region.failed(data.open.error, load);
+        region.failed(data.open.error, retryAction(ATTENTION_BAND));
         return;
       }
 
@@ -229,14 +250,32 @@
       wrap.appendChild(ribbon(problems, armed, capped, openFailed, rulesFailed));
 
       var attention = S.band('What needs a person');
+      attention.setAttribute('id', ATTENTION_BAND);
+      /* Where the rules failure gets to say so. The queue card draws it when
+         the queue card exists AND has no rows, because there it is also the
+         reason the list is short. Every other state has no room for it inside
+         the card, so it becomes a card of its own -- exactly one of the two
+         renders on any screen that got this far, never both, because the same
+         words twice is the density this dashboard was redrawn to remove. The
+         qualifier is load-bearing: every read down returns above without
+         drawing a band, and then the headline is not on screen at all,
+         because the shell's own card has already said the whole pane is
+         unread. */
+      var rulesHosted = !openFailed && !problems.length;
       if (openFailed) {
         failedSection(attention, 'The problems could not be read', data.open.error);
       } else {
-        attention.appendChild(queueCard(problems, armed, capped, rulesFailed));
+        attention.appendChild(queueCard(problems, armed, capped, data.rules.error));
+      }
+      if (rulesFailed && !rulesHosted) {
+        var rulesBox = S.card();
+        rulesBox.appendChild(rulesUnreadBlock(data.rules.error, 3, ATTENTION_BAND));
+        attention.appendChild(rulesBox);
       }
       wrap.appendChild(attention);
 
       var going = S.band('How things are going');
+      going.setAttribute('id', FIGURES_BAND);
       figuresSection(going, data.summary, openFailed);
       wrap.appendChild(going);
 
@@ -261,10 +300,148 @@
       ], 3);
       var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
       nameRetry(block, again);
-      again.addEventListener('click', function () { load(); });
+      retryHandler(again, band.getAttribute('id'));
       block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
       box.appendChild(block);
       band.appendChild(box);
+    }
+
+    /* The two bands, by a name that survives the re-render. The nodes do not:
+       every retry here replaces the whole panel, so a control that wants to
+       put the operator back where they were has to name a PLACE, not hold a
+       node. */
+    var ATTENTION_BAND = 'ov-band-attention';
+    var FIGURES_BAND = 'ov-band-figures';
+
+    /* What a retry does, all of it: re-read, then put the operator somewhere
+       they can perceive. The second half is Stadiora/Aria#10784 and it is the
+       reason load() returns its promise.
+
+       Available as a value and not only as a listener, because the shell draws
+       the whole-pane failure card's retry itself and takes the action as an
+       argument: region.failed(err, retry). Handing it bare load was the third
+       site Stadiora/Aria#10784 names, and it stranded focus on <body> exactly
+       like the other two. */
+    function retryAction(bandId, want) {
+      return function () {
+        return load().then(function (landed) {
+          if (landed) landOn(bandId, want);
+        });
+      };
+    }
+
+    function retryHandler(button, bandId) {
+      button.addEventListener('click', function () {
+        retryAction(bandId, String(button.getAttribute('data-retry') || ''))();
+      });
+    }
+
+    /* The panel the operator can actually see.
+
+       #content holds the loading, empty and live panels at the same time, and
+       aria.js shows one of them by putting data-shown on it. Every box is
+       cleared when it is filled -- but only the box being filled, so a render
+       that switches panels leaves the previous one populated and hidden. A
+       band only ever reaches the live box, so the stale node a retry can find
+       is the one this pane itself drew a render ago, sitting in a live box
+       that is no longer shown. There is no second node with that id to choose
+       between: document.getElementById would return that one, being the only
+       one, put focus on a heading nobody can see, and read the previous
+       render's failure back as if it were this one's. Every lookup below
+       starts from the shown panel for that reason. */
+    function shownPanel() {
+      return first(content, '[data-shown]');
+    }
+
+    function first(root, selector) {
+      var found = root.querySelectorAll(selector);
+      return found.length ? found[0] : null;
+    }
+
+    /* Where the operator is put when the read comes back, and why it is a
+       heading rather than the button they pressed.
+
+       Pressing Try again re-renders the whole panel, which destroys that
+       button. Focus falls back to <body>: everything the operator can perceive
+       goes quiet, and the next Tab starts again from the top of the document.
+       Restoring focus to the rebuilt button is the obvious repair and it is
+       the wrong one, because a retry that SUCCEEDS deletes its own control --
+       the section it was in has nothing left to press. The band's heading is
+       the node that exists either way, it names the section, and reading on
+       from it reaches whatever replaced the content.
+
+       A render that draws no bands at all -- the empty state, or the shell's
+       own whole-pane failure card -- lands on that panel's first state
+       heading instead. That is the result rather than a place, which is the
+       better target when the place is gone.
+
+       Nothing happens if neither is there, and one state reaches that: a
+       second load started before this one's landing ran, so the loading
+       skeleton is what is shown. Leaving focus alone is right there -- the
+       newer read has its own landing coming. */
+    function landOn(bandId, want) {
+      var panel = shownPanel();
+      if (!panel) return;
+      var band = first(panel, '[id="' + bandId + '"]');
+      var head = band ? first(band, '.band-title') : first(panel, '.state-title');
+      if (!head) return;
+      /* tabindex -1 so a heading can hold focus without joining the tab order:
+         the operator is put there, and Tab carries on into the section rather
+         than back to it. */
+      head.setAttribute('tabindex', '-1');
+      head.focus();
+      announceOutcome(head, band, want);
+    }
+
+    /* What happened to the read, said out loud, because moving focus to a
+       heading announces the heading and not the outcome.
+
+       Whether a section is still unreadable is read off the rendered band
+       rather than off the read, so the sentence describes what is now on the
+       screen. Every retry this pane draws carries data-retry holding the
+       headline of the failure it would re-read, written by nameRetry out of
+       the same heading it composes the button's name from -- so the spoken
+       outcome and the button's own name cannot drift apart.
+
+       One band can hold two failures, and then the answer has to be about the
+       read the operator actually asked for: retrying the rules read and being
+       told the problems read is down is a true sentence about the wrong
+       thing. So the retried headline wins when it is still on screen. When it
+       is gone, what is left in the band is the news -- one read came back and
+       another did not, and the one that did not is what the operator needs.
+       Only a band with nothing stuck in it is read back as read again. */
+    function announceOutcome(head, band, want) {
+      var title = String(head.textContent || '');
+      if (!band) { S.announce(title + '.'); return; }
+      var stuck = band.querySelectorAll('[data-retry]');
+      if (!stuck.length) { S.announce(title + ' was read again.'); return; }
+      var say = String(stuck[0].getAttribute('data-retry') || '');
+      for (var i = 0; i < stuck.length; i++) {
+        if (String(stuck[i].getAttribute('data-retry') || '') === want) { say = want; break; }
+      }
+      S.announce(title + ': ' + say + '.');
+    }
+
+    /* The rules read's own failure, in the shape the other two reads already
+       get: what went wrong, that it is unread rather than zero, and a control
+       that asks again.
+
+       It was the one read with no retry (Stadiora/Aria#10771). Its failure
+       was surfaced honestly -- the ribbon says `rules unread` and the queue
+       card says whether the checks are running could not be read -- and then
+       the operator was stranded, with nothing to press and no error to read.
+       Reloading the whole pane was the only way to ask again, which also
+       re-runs the two reads that already worked. */
+    function rulesUnreadBlock(err, level, bandId) {
+      var block = S.stateBlock('warn', 'Whether the checks are running could not be read', [
+        S.failureMessage(err),
+        'Nothing here is a zero. This part is unread, not empty.'
+      ], level);
+      var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+      nameRetry(block, again);
+      retryHandler(again, bandId);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      return block;
     }
 
     /* Two reads can fail at once, and then two buttons reading "Try again" are
@@ -283,10 +460,18 @@
       for (var i = 0; i < kids.length; i++) {
         if (/^h[1-6]$/i.test(String(kids[i].tagName || ''))) {
           retryN += 1;
-          /* setAttribute, not .id — the DOM harness these are tested through
+          /* setAttribute, not .id. The DOM harness these are tested through
              has no id accessor, so a property write leaves getAttribute('id')
-             null and every reference dangles inside the tests while working in
-             a browser. That is a false green by construction. */
+             null: every reference would dangle in the tests while working in
+             a browser. That is a false RED, not a false green -- measured on
+             this head, three tests fail, one in
+             ops-overview-degraded.test.mjs and two in
+             ops-overview-retry-focus.test.mjs -- but it is the kind of false
+             red that gets "fixed" by loosening the assertion, and then the
+             loosened assertion is the false green. (Stadiora/Aria#10824: this
+             comment used to say "false green by construction", which is
+             backwards, and the clone of this function in pane-alerts.js was
+             corrected first.) */
           var headingId = kids[i].getAttribute('id');
           if (!headingId) {
             headingId = 'ov-failed-' + retryN;
@@ -295,6 +480,11 @@
           var buttonId = 'ov-retry-' + retryN;
           again.setAttribute('id', buttonId);
           again.setAttribute('aria-labelledby', buttonId + ' ' + headingId);
+          /* The same heading again, as a value this time, for the spoken
+             outcome after a retry lands. Written here rather than at the three
+             call sites so the sentence an operator hears and the name their
+             screen reader speaks are the same string by construction. */
+          again.setAttribute('data-retry', String(kids[i].textContent || ''));
           return;
         }
       }
@@ -574,8 +764,9 @@
 
     /* -------------------------------------------------------------- queue */
 
-    function queueCard(problems, armed, capped, rulesFailed) {
+    function queueCard(problems, armed, capped, rulesError) {
       var card = S.card();
+      var rulesFailed = !!rulesError;
       var needing = model.needingAction(problems);
       var taken = model.takenOn(problems);
 
@@ -610,7 +801,7 @@
            the second, because an unread rules list reaches armedState as the
            empty one. */
         body.appendChild(rulesFailed
-          ? S.stateBlock('warn', 'Whether the checks are running could not be read', [], 4)
+          ? rulesUnreadBlock(rulesError, 4, ATTENTION_BAND)
           : (armed.trustworthy
               ? quietBlock(armed)
               : S.stateBlock('warn', 'The checks are not running', [], 4)));
@@ -1498,7 +1689,7 @@
         var block = S.stateBlock('warn', 'These figures could not be read', lines, 3);
         var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
         nameRetry(block, again);
-        again.addEventListener('click', function () { load(); });
+        retryHandler(again, band.getAttribute('id'));
         block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
         box.appendChild(block);
         band.appendChild(box);

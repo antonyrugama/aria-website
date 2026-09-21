@@ -52,6 +52,11 @@
                    { installCount, activeCount }           no source yet
      sources[]     stored. { key, label, description, status, lastSuccessAt,
                      lastAttemptAt, failureReason, pollSeconds, mode }
+     omissions[]   stored. { key, title, detail } — a figure this pane has a
+                     place for that no source answers, with the route's reason.
+                     Conditional, not constant: an entry is present only while
+                     its gap is real, so the pane naming one is never a fixed
+                     caption. `ios_rollout_share` is the only key today.
      production    stored, derived from each platform's production track.
                    { versionName, builds[{ platform, versionCode }] }
      adoption      derivable, not yet assembled by any route.
@@ -200,6 +205,19 @@
 
   function num(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
 
+  /* A string the answer actually carries, or null. The same shape as num()
+     above and for the same reason: '' and undefined are both "the route did
+     not say", and a renderer that prints them prints an empty line. */
+  /* Trimmed, because the answer decides whether a name is present and a name
+     made only of spaces is not one. The omission note is the only caller and
+     it both TESTS this for presence and PRINTS it, so an untrimmed blank
+     passes the test and draws a bullet that reads ". <detail>". */
+  function str(v) {
+    if (typeof v !== 'string') return null;
+    var t = v.trim();
+    return t === '' ? null : t;
+  }
+
   function pct(basisPoints, decimals) {
     var bp = num(basisPoints);
     if (bp === null) return null;
@@ -315,18 +333,52 @@
 
   /* ------------------------------------------------- the rollout reading
 
-     Everything the pane says about one platform's production rollout, derived
+     The normalised states that mean "this store has a rollout running on this
+     track". A share missing alongside one of these is an unreadable share; a
+     share missing anywhere else is no staged rollout at all.
+
+     Read from the track's own reported state rather than from the platform,
+     because this is a property of what the store said and not of which store
+     said it. Only App Store Connect does it today. A Play rollout that stopped
+     reporting `userFraction` tomorrow would be the same fact and reads the
+     same way here without another edit. */
+  var UNREADABLE_SHARE_STATES = { rolling_out: true, halted: true };
+
+  function unreadableShare(track) {
+    return !!(track && UNREADABLE_SHARE_STATES[track.state] === true);
+  }
+
+  /* Everything the pane says about one platform's production rollout, derived
      once so the pipeline stage, the end pill, the hero line and the share
      sentence cannot disagree with each other.
 
-       kind    'none'    the store reports no staged rollout on this track,
-                         which is not the same fact as 0%
-               'full'    the whole field is being served this build
-               'staged'  the store is holding it at a share of the field
-               'stalled' staged, and that share has not moved in STALL_DAYS */
+       kind    'none'       the store reports no staged rollout on this track,
+                            which is not the same fact as 0%
+               'unreadable' the store says a rollout IS under way here and
+                            reports no share for it
+               'full'       the whole field is being served this build
+               'staged'     the store is holding it at a share of the field
+               'stalled'    staged, and that share has not moved in STALL_DAYS
+
+     'none' and 'unreadable' are both an absent number and they are opposite
+     facts, which is why they are two kinds and not one. "No staged rollout"
+     means nothing is capping the field. "A rollout is running and the store
+     will not say how far" means something IS capping it by an amount nobody
+     can read — and every sentence below that treats an absent share as "no
+     ceiling" is false under the second one.
+
+     That is not hypothetical. App Store Connect's appStoreVersionPhasedRelease
+     reports `phasedReleaseState` and `currentDayNumber` and no percentage, so
+     ACTIVE and PAUSED — which arrive here as `rolling_out` and `halted` —
+     have no share to report. Until monorepo #10816 the route filled the gap
+     from Apple's published day ramp and published the guess in the same field
+     and the same units as Google Play's measured `userFraction`. The guess is
+     gone; this kind is what is left in its place. COMPLETE, and a live version
+     with no phased release at all, resolve to 100% upstream and are readings,
+     so they arrive as a real 10000 and never reach this branch. */
   function rolloutReading(track) {
     var bp = num(track && track.rolloutBasisPoints);
-    if (bp === null) return { kind: 'none', bp: null, sinceDays: null };
+    if (bp === null) return { kind: unreadableShare(track) ? 'unreadable' : 'none', bp: null, sinceDays: null };
     var sinceDays = daysSince(track && track.rolloutObservedSince);
     if (bp >= FULL_ROLLOUT_BP) return { kind: 'full', bp: bp, sinceDays: sinceDays };
     return {
@@ -357,7 +409,14 @@
        still holding the build back at a share of it does not qualify however
        the store labels the track. Android sitting at 20% is the case this
        pane exists to show, and a headline reading "live on both stores" over
-       it is the flattening the remodel is meant to prevent. */
+       it is the flattening the remodel is meant to prevent.
+
+       'unreadable' is deliberately absent from this list and 'none' is in it,
+       though both are an absent share: 'none' is a store reporting no rollout,
+       which leaves the build on the whole field, and 'unreadable' is a store
+       reporting one it will not measure, which does not. Until they were
+       separated this headline said "1.1.2 is live on the App Store and the
+       Play Store" over an iOS phased release still on its way out. */
     var out = rows.filter(function (row) {
       return hasBuild(row.track) && row.state.stage >= ROLLED_OUT &&
         (row.rollout.kind === 'full' || row.rollout.kind === 'none');
@@ -531,7 +590,12 @@
     var track = row.track;
     if (i === 2) return (track && fmt.utcDay(track.releasedAt)) || null;
     if (i === ROLLED_OUT) {
-      if (row.rollout.kind === 'none') return 'share not reported';
+      /* 'none' used to read "share not reported", which is the UNREADABLE
+         sentence worn by the kind that means the opposite. Splitting the kind
+         without splitting the words would leave the distinction invisible on
+         the screen, which is the whole thing this change is about. */
+      if (row.rollout.kind === 'none') return 'No staged rollout';
+      if (row.rollout.kind === 'unreadable') return 'Not reported by ' + storeName(row.platform);
       if (row.rollout.kind === 'full') return '100% of devices';
       return pct(row.rollout.bp) + ' of devices' + (row.rollout.sinceDays === null
         ? ''
@@ -559,7 +623,17 @@
     if (row.state.tone === 'bad') return pill('bad', row.state.glyph, row.state.verdict);
     if (row.rollout.kind === 'stalled') return pill('warn', 'warn', 'Staged, not moving');
     if (row.rollout.kind === 'staged') return pill('info', 'clock', 'Staged by the store');
-    if (row.state.stage >= ROLLED_OUT) return pill('ok', 'check', 'Rolled out');
+
+    /* "Rolled out" is a claim that the rollout FINISHED, and an unreadable
+       share cannot support it. A phased release the store is still running is
+       exactly the case where the stage has been reached and the rollout has
+       not, so this falls through to the state's own verdict — "Rolling out" —
+       rather than putting a green tick on an unfinished release. Before this,
+       an ACTIVE phased release drew "Rolling out" in the hero chip and
+       "Rolled out" on the same row's end pill. */
+    if (row.state.stage >= ROLLED_OUT && row.rollout.kind !== 'unreadable') {
+      return pill('ok', 'check', 'Rolled out');
+    }
     return pill(row.state.tone, row.state.glyph, row.state.verdict);
   }
 
@@ -791,14 +865,30 @@
   function shareReading(data, rows) {
     if (!latestBucket(data)) return null;
 
+    /* A ceiling that exists and cannot be measured. It has to be read before
+       the 100% branch below, because that branch's sentence is "no store is
+       capping the rollout" — a claim about EVERY store, and false the moment
+       one of them is running a phased release it will not measure. */
+    var unread = rows.filter(function (row) {
+      return row.rollout.kind === 'unreadable';
+    });
+    var unreadClause = unread.length
+      ? words(unread.map(function (row) { return platformName(row.platform); })) +
+        ': a phased release the store does not measure, so part of this share ' +
+        'sits under a ceiling that cannot be read.'
+      : null;
+
     var capped = rows.filter(function (row) {
       return row.rollout.kind === 'staged' || row.rollout.kind === 'stalled';
     });
     if (capped.length) {
-      return words(capped.map(function (row) {
+      var measured = words(capped.map(function (row) {
         return platformName(row.platform) + ' at ' + pct(row.rollout.bp);
       })) + ': a ceiling the store set, so that part of the share is not take-up.';
+      return unreadClause ? measured + ' ' + unreadClause : measured;
     }
+
+    if (unreadClause) return unreadClause;
 
     var full = rows.filter(function (row) { return row.rollout.kind === 'full'; });
     if (full.length) {
@@ -929,7 +1019,14 @@
   }
 
   function rolloutWords(rollout, track) {
-    if (rollout.kind === 'none') return 'Not reported on this track';
+    /* Under the "Staged rollout" label in the store block, one row below the
+       state pill, so one word answers it and a sentence would fight the pill.
+       'unreadable' said "Under way, share not reported", which reads as a
+       contradiction directly beneath a "Release stopped" pill — PAUSED is
+       unreadable too and is not under way. Both kinds now answer the label
+       without restating the state. */
+    if (rollout.kind === 'unreadable') return 'Not reported';
+    if (rollout.kind === 'none') return 'None';
     if (rollout.kind === 'full') {
       var since = fmt.utcDay(track && track.rolloutObservedSince);
       return '100%' + (since ? ', since ' + since : '');
@@ -937,6 +1034,50 @@
     return pct(rollout.bp) + (rollout.sinceDays === null
       ? ''
       : rollout.sinceDays === 0 ? ', moved today' : ', unchanged for ' + days(rollout.sinceDays));
+  }
+
+  /* What the stores do not report, in the route's own words.
+
+     Rendered FROM `data.omissions` rather than from a list in this file, so a
+     figure that gains a source stops being named here by itself rather than
+     when somebody remembers to edit the client. The route only emits an entry
+     while the gap is real: `ios_rollout_share` appears exactly while an iOS
+     track has a share App Store Connect will not state, and disappears the
+     moment one is reported.
+
+     It takes this pane's own `.callout`, not the `.omit` card the Overview,
+     Happening now and What happened panes use for the same array. Those three
+     each declare `.omit` in their own stylesheet and ops/releases.html loads
+     none of them — it loads aria.css, shell-pane-v2.css and
+     pane-releases-v2.css and nothing else. Markup copied across would have
+     written class names no sheet on this page can paint, which is the defect
+     in Stadiora/Aria#10456 and the six that guard found after it. The shape
+     had to be one this page already paints.
+
+     `is-note` rather than the bare callout for the same reason in the other
+     direction: the bare callout is amber, and amber on an operations
+     dashboard means look at this. A store that has no such field is not a
+     fault and must not draw like one. */
+  function omissionsBlock(data) {
+    var entries = ((data && data.omissions) || []).filter(function (entry) {
+      return entry && (str(entry.title) || str(entry.key));
+    });
+    if (!entries.length) return null;
+
+    var box = h('div', { className: 'callout is-note mt' });
+    box.appendChild(icon('info'));
+    var body = h('div', { className: 'omit-list' });
+    entries.forEach(function (entry) {
+      body.appendChild(h('div', {}, [
+        h('b', { text: (str(entry.title) || entry.key) + '. ' }),
+        h('span', {
+          text: str(entry.detail) ||
+            'The operations API named this as unavailable and gave no reason.'
+        })
+      ]));
+    });
+    box.appendChild(body);
+    return box;
   }
 
   function platformOfSource(data, source) {
@@ -1272,6 +1413,11 @@
       if (also) pipeBody.appendChild(also);
       var unknown = unknownTracksBlock(data, platforms);
       if (unknown) pipeBody.appendChild(unknown);
+      /* Under the pipeline, because the figure it is about is the pipeline's
+         fourth stage: the sentence and the "Not reported by the App Store" it
+         explains are on one screen and read in one glance. */
+      var omitted = omissionsBlock(data);
+      if (omitted) pipeBody.appendChild(omitted);
 
       pipeCard.appendChild(pipeBody);
       where.appendChild(pipeCard);

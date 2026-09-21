@@ -213,8 +213,7 @@ const KNOWN_ESCAPES = [
    the list one at a time as the sheets that own them are fixed. */
 const KNOWN_STATIC_SCROLLERS = [
   { pane: 'alerts', box: 'div.scrollx', repairIn: 'ops/assets/pane-alerts-v2.css .scrollx' },
-  { pane: 'history', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-run-history-v2.css .tbl-wrap' },
-  { pane: 'settings', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-settings-v2.css .tbl-wrap' }
+  { pane: 'history', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-run-history-v2.css .tbl-wrap' }
 ];
 
 /* A form control that scrolls its own value is not a layout wrapper and has no
@@ -391,12 +390,21 @@ function connect(url) {
      a superset of the measured GEOMETRY -- the probe reads `scrollWidth -
      clientWidth` and `getBoundingClientRect()`, and a resize that moves neither
      the element count nor the positioned count would move a reading without
-     moving the fingerprint. That does not bite on this tree, for two reasons I
-     checked rather than assumed: `ops/` declares no `@font-face` and loads no
-     web font, so there is no metric swap to race; and the probe's before/after
-     rects are read inside a single synchronous `Runtime.evaluate`, where the
-     animation clock cannot advance, so the transitions on `.meter-fill` and the
-     transform transitions cannot pollute `movedBy`.
+     moving the fingerprint. Two such movers exist and neither bites, for
+     reasons checked rather than assumed. The probe's before/after rects are
+     read inside a single synchronous `Runtime.evaluate`, where the animation
+     clock cannot advance, so the transitions on `.meter-fill` and the
+     transform transitions cannot pollute `movedBy`. And the web font --
+     assets/aria.css has declared `@font-face` for Geist since
+     Stadiora/Aria#10806 -- swaps metrics under `font-display: swap`, which
+     moves every line box without moving a single count. Measured, that swap
+     lands well before this sweep could see it: the face is discovered while
+     the head is parsed and finished at 70ms, against `ops:ready` at 76ms with
+     an instant API and 874ms with a 400ms-per-read one, reporting
+     `document.fonts.status === 'loaded'` at the instant `ops:ready` fired in
+     both. Ordering, though, is an observation about one host on one day, and
+     the condition costs one string compare, so it is asserted below instead of
+     relied upon.
 
    A budget still exists, but it is an upper bound that FAILS rather than a
    sleep that proceeds. That is the whole difference. The old shape could only
@@ -415,6 +423,7 @@ const FINGERPRINT = `(() => {
   if (window.__sweepStale) return '?the document being left is still installed';
   if (document.readyState !== 'complete') return '?document.readyState=' + document.readyState;
   if (!window.__sweepReady) return '?ops:ready has not fired on ' + location.pathname;
+  if (document.fonts.status !== 'loaded') return '?web fonts are still ' + document.fonts.status;
   let abs = 0;
   let scrolls = 0;
   const all = document.querySelectorAll('*');
