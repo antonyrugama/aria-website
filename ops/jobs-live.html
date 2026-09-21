@@ -56,11 +56,17 @@
 <script src="assets/session.js"></script>
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
-<!-- Happening now reads GET /api/ops/jobs directly and needs no shared model:
-     every figure on the page comes out of that one response, so there is
-     nothing here for a second pane to disagree with. It no longer loads
+<!-- Happening now reads one route directly and needs no shared model: every
+     figure on the page comes out of that single response, so there is nothing
+     here for a second pane to disagree with. It no longer loads
      assets/alerts-model.js, which it used only while it was standing in for a
-     queue it could not see. -->
+     queue it could not see.
+
+     The path itself is deliberately not written in this file. Only script
+     files are parsed by scripts/check-ops-route-calls.mjs, so an API path
+     mentioned in markup is a path that guard can see but cannot check, and it
+     refuses to report a pass rather than passing blind. The path lives in
+     assets/pane-jobs-live-v2.js, where it is checked. -->
 <script src="assets/pane-jobs-live-v2.js"></script>
 </body>
 </html>

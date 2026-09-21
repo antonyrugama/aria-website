@@ -137,9 +137,10 @@
   var REFRESH_MS = 15000;
 
   /* Failure backoff: double from the cadence to the cap, then stop. Five
-     consecutive failures is about three minutes of a route being down, which
-     is long enough that the next read is not going to be the one that works
-     and a person should be told rather than kept waiting. */
+     consecutive failures spans 15s + 30s + 60s + 120s + 120s, so the chain
+     stops about five and three quarter minutes after the first one failed.
+     That is long enough that the next read is not going to be the one that
+     works, and a person should be told rather than kept waiting. */
   var BACKOFF_CAP_MS = 120000;
   var GIVE_UP_AFTER = 5;
 
@@ -147,17 +148,6 @@
   var LANE_NOTE = {
     gpu: 'Work that needs a graphics card. Video analysis runs here.',
     background: 'Everything else Aria generates for an athlete.'
-  };
-
-  /* The route's own words for why a capacity figure is absent. Rendered from
-     this map rather than printed raw, because `no_worker_registry` in the
-     middle of a sentence is a stack trace wearing prose. An unrecognised code
-     still gets a sentence: a new reason from the route must not turn into a
-     blank where a reason used to be. */
-  var CAPACITY_REASON = {
-    no_worker_registry: 'Nothing registers a worker, so the platform does not know how many ' +
-      'there are or how many slots each has.',
-    unknown: 'The route gave a reason this page does not have wording for yet.'
   };
 
   var STATE_LABEL = { queued: 'Waiting', running: 'Running', canceling: 'Stopping' };
@@ -339,7 +329,7 @@
     function refreshCard(err) {
       var box = S.card();
       var body = h('div', { className: 'card-body' });
-      var row = h('div', { className: 'row-wrap' });
+      var row = h('div', { className: 'row row-wrap gap-sm' });
 
       var status;
       if (stopped) {
@@ -415,13 +405,37 @@
       var open = fmt.isNum(queue.open) ? queue.open : null;
 
       var wrap = h('div', { className: 'stack' });
-      wrap.appendChild(hero(queue, data.recording || {}, open));
+      /* Banded rather than given a card head of its own. cardHead is an h3 and
+         the pane's name in the top bar is the h1, so a lone card here jumps
+         h1 -> h3; bandHead is the h2 every other section on this page sits
+         under. Same heading, one level up, no skip. */
+      var now = S.band('Right now', 'Counted from the queue itself, not over a window');
+      now.appendChild(hero(queue, data.recording || {}, open));
+      wrap.appendChild(now);
 
+      /* Drawn whenever there is a finding OR whenever the read that looked was
+         a partial one. An empty stuck/abandoned list over a truncated queue is
+         a much narrower claim than an empty list over the whole of it, and
+         hiding the band in that case publishes the narrow claim as the broad
+         one -- silence that reads as "nothing is wrong". The route sets
+         `attention.completeness` for exactly this (opsJobsView.ts:171-177);
+         a pane that reads it only on the branch where something was found has
+         not read it. */
       var flagged = list(attention.stuck).length + list(attention.abandoned).length;
-      if (flagged > 0) wrap.appendChild(attentionBand(attention, jobs, baseline));
+      if (flagged > 0 || attention.completeness === 'working_set_only') {
+        wrap.appendChild(attentionBand(attention, jobs, baseline));
+      }
 
       wrap.appendChild(laneBand(list(queue.lanes)));
-      if (jobs.length) wrap.appendChild(jobsBand(jobs, workingSet));
+      if (jobs.length) {
+        wrap.appendChild(jobsBand(jobs, workingSet));
+      } else if (workingSet.truncated === true) {
+        /* Nothing came back and the route still calls the read bounded. That
+           is a contradiction worth showing rather than swallowing: dropping
+           the band entirely would publish "no work in flight" over a read that
+           says it did not reach the end of the queue. */
+        wrap.appendChild(emptyWorkingSetBand(workingSet));
+      }
       wrap.appendChild(throughputBand(data.throughput, data.recording || {}));
       wrap.appendChild(missingBand(data.capacity || {}));
 
@@ -436,8 +450,6 @@
 
     function hero(queue, recording, open) {
       var box = S.card();
-      var head = S.cardHead('Right now', null);
-      box.appendChild(head);
 
       var body = h('div', { className: 'card-body' });
 
@@ -523,6 +535,11 @@
       }
 
       var found = h('div', { className: 'omit' });
+      if (!abandoned.length && !stuck.length) {
+        found.appendChild(finding('check', 'Nothing flagged in what was read',
+          'No run in this read had been given up on or was past the usual duration for its ' +
+          'kind. The scope of that statement is below it.'));
+      }
       if (abandoned.length) {
         found.appendChild(finding('warn',
           fmt.plural(abandoned.length, 'run') + ' given up on',
@@ -557,11 +574,15 @@
       /* The scope of the list, stated on the list. An empty or short list read
          over a truncated queue is a narrower claim than it looks. */
       var foot = h('div', { className: 'card-foot' });
+      var read = list(jobs).length;
       foot.appendChild(h('span', {
-        text: partial
-          ? 'Read over the first ' + fmt.int(list(jobs).length) + ' jobs only, not the whole ' +
-            'queue. There may be more past that.'
-          : 'Read over the whole queue.'
+        text: !partial
+          ? 'Read over the whole queue.'
+          : read === 0
+            ? 'This read reached no jobs at all, so the line above covers nothing. It is not a ' +
+              'statement that nothing is wrong.'
+            : 'Read over the first ' + fmt.int(read) + ' jobs only, not the whole queue. ' +
+              'There may be more past that.'
       }));
       box.appendChild(foot);
 
@@ -573,6 +594,21 @@
 
     function laneBand(lanes) {
       var section = S.band('Lanes', 'Work is routed by what it needs, not by who asked');
+
+      /* The route publishes every lane the platform routes to, holding work or
+         not, so an empty array is the route failing to answer rather than a
+         platform with no lanes. Said out loud; a band head over nothing reads
+         as a section that loaded and found nothing to show. */
+      if (!lanes.length) {
+        var none = S.card();
+        none.appendChild(h('div', { className: 'card-body' }, [
+          h('p', { className: 'small', text: 'No lane was reported. This read did not say how ' +
+            'work is distributed, which is not the same as work not being distributed.' })
+        ]));
+        section.appendChild(none);
+        return section;
+      }
+
       var grid = h('div', { className: 'grid g2' });
 
       lanes.forEach(function (lane) {
@@ -606,18 +642,24 @@
         }
         body.appendChild(h('p', { className: 'small mt-sm', text: waitText }));
 
-        /* Each entry is { jobType, jobs }, not a bare name. Mapping the label
-           function straight over the array reads the object as a string and
-           prints a row of dashes that looks like absence rather than like a
-           bug, which is exactly the failure this pane exists to avoid. */
-        var types = list(lane.jobTypes);
+        /* `jobTypes` is a sorted array of NAMES -- opsJobsView.ts builds it as
+           `[...new Set(laneCounts.map(row => row.jobType))].sort()`. It carries
+           no counts, so this line says what is in the lane and not how much of
+           each; the counts are in the table below.
+
+           Anything that is not a string is dropped rather than labelled,
+           because `jobTypeLabel` of an object returns a dash and a row of
+           dashes reads as absence rather than as a bug -- the exact failure
+           this pane exists to avoid. If the route ever changes this shape the
+           line goes empty and says so, which is visible, rather than printing
+           dashes, which is not. */
+        var types = list(lane.jobTypes).filter(function (name) {
+          return typeof name === 'string' && name;
+        });
         body.appendChild(h('p', {
           className: 'tiny muted',
           text: types.length
-            ? 'In this lane now: ' + types.map(function (entry) {
-              return jobTypeLabel(entry && entry.jobType) +
-                (fmt.isNum(entry && entry.jobs) ? ' (' + fmt.int(entry.jobs) + ')' : '');
-            }).join(', ') + '.'
+            ? 'In this lane now: ' + types.map(jobTypeLabel).join(', ') + '.'
             : 'Nothing of any kind in this lane right now.'
         }));
 
@@ -626,6 +668,23 @@
       });
 
       section.appendChild(grid);
+      return section;
+    }
+
+    /* A working set that returned nothing while reporting itself bounded. */
+    function emptyWorkingSetBand(workingSet) {
+      var section = S.band('The work itself', 'Nothing came back');
+      var box = S.card();
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(h('p', {
+        className: 'small',
+        text: 'This read returned no jobs and still reports itself as bounded at ' +
+          (fmt.isNum(workingSet.limit) ? fmt.int(workingSet.limit) : fmt.none) +
+          ', so it cannot be read as an empty queue. The counts above came from a ' +
+          'separate unbounded read and are the figure to trust.'
+      }));
+      box.appendChild(body);
+      section.appendChild(box);
       return section;
     }
 
@@ -787,9 +846,14 @@
 
       var entries = [
         ['How busy the workers are',
-          capacity && typeof capacity.reason === 'string' && capacity.reason
-            ? (CAPACITY_REASON[capacity.reason] || CAPACITY_REASON.unknown) +
-              ' So a count in flight has no total to be drawn against.'
+          /* Already a sentence when it arrives -- opsJobsView.ts:393 writes
+             "Nothing records how many workers exist or how many jobs each may
+             hold, so in-flight work has no denominator to be drawn against."
+             Printed as sent. Mapping it through a lookup keyed on codes the
+             route does not emit is how every live read ends up on the
+             fallback branch while a deleted field reads correctly. */
+          (capacity && typeof capacity.reason === 'string' && capacity.reason)
+            ? capacity.reason
             : 'Nothing records how many workers exist, so in-flight work has no denominator.'],
         ['Which attempt this is',
           'A retry after a failure creates a new job rather than incrementing a counter, so ' +
