@@ -60,6 +60,17 @@
       KNOWN_ESCAPES would silently stop reproducing, and claim 3 would read
       that as repair.
 
+   6. Every box that scrolls is positioned, except the wrappers frozen in
+      KNOWN_STATIC_SCROLLERS -- and every frozen wrapper is still static.
+      Claims 1 to 3 bind the CONSEQUENCE of the gap, which means they say
+      nothing about the three swept wrappers that hold nothing absolutely
+      positioned today: repairing one of those would be invisible, and an
+      eighth static scroller would cost nothing to add. This is the gap
+      itself, which is what the issue asked for. It is an unusual assertion
+      in that it is failing-by-design against five entries that this change
+      cannot repair, so the entries carry the sheet that repairs them and the
+      list empties as those sheets are fixed.
+
    NOT COVERED, explicitly:
 
    - Wrappers the shared API stub never renders. Of the eight sideways
@@ -153,6 +164,35 @@ const KNOWN_ESCAPES = [
   }
 ];
 
+/* The gap itself, as distinct from its consequence. KNOWN_ESCAPES above
+   freezes the two sites where a static wrapper demonstrably fails to contain
+   something; this freezes the static wrappers themselves, including the three
+   that hold nothing absolutely positioned today and so produce no escape to
+   detect. Without it, repairing those three would be invisible to this file
+   and adding an eighth static scroller would be free.
+
+   Stadiora/Aria#10706 asks for exactly this -- "a guard can require every
+   sideways scroller to be positioned without naming any class" -- so the box
+   is found by its own computed overflow and matched on the selector it
+   rendered with, not on a list of class names kept in step by hand.
+
+   Every entry is asserted to STILL be static, so an entry outliving its own
+   repair fails this file and asks to be deleted. That is how the seven leave
+   the list one at a time as the sheets that own them are fixed. */
+const KNOWN_STATIC_SCROLLERS = [
+  { pane: 'alerts', box: 'div.scrollx', repairIn: 'ops/assets/pane-alerts-v2.css .scrollx' },
+  { pane: 'evals', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-evaluations-v2.css .tbl-wrap' },
+  { pane: 'history', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-run-history-v2.css .tbl-wrap' },
+  { pane: 'releases', box: 'div.tbl-scroll', repairIn: 'ops/assets/pane-releases-v2.css .tbl-scroll' },
+  { pane: 'settings', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-settings-v2.css .tbl-wrap' }
+];
+
+/* A form control that scrolls its own value is not a layout wrapper and has no
+   containing-block question to answer, so it is out of scope rather than
+   excused: a <textarea> scrolls by definition and cannot hold a positioned
+   descendant at all. */
+const NOT_A_WRAPPER = /^(textarea|input|select)/;
+
 /* Floors. Each is the count observed on the tree this file was written
    against, less nothing -- they are not a target, they are the line under
    which the sweep has stopped sweeping. They are deliberately below the
@@ -161,6 +201,14 @@ const KNOWN_ESCAPES = [
 const PANE_FLOOR = 10;
 const SCROLLER_FLOOR = 8;
 const ABSOLUTE_DESCENDANT_FLOOR = 2;
+
+/* Claim 6 carries its own floor rather than borrowing SCROLLER_FLOOR, because
+   it judges a different population: distinct wrapper SITES, after the
+   out-of-scope hatch has run. Without it, widening that hatch or excusing
+   every site would leave the claim nothing to judge, and a claim with nothing
+   to judge passes. 15 distinct sites are observed; this sits under that so a
+   pane legitimately dropping a table does not fail it. */
+const WRAPPER_FLOOR = 10;
 
 /* ------------------------------------------------------------------ panes */
 
@@ -468,6 +516,13 @@ before(async () => {
 
   /* The rendered half of the check reports its own reach, because a probe that
      drove nothing and a board with nothing to drive read the same from a log. */
+  const sites = new Set(readings.filter((r) => !NOT_A_WRAPPER.test(r.box))
+    .map((r) => `${r.pane} ${r.box}`));
+  const staticSites = new Set(readings
+    .filter((r) => !NOT_A_WRAPPER.test(r.box) && r.position === 'static')
+    .map((r) => `${r.pane} ${r.box}`));
+  console.log(`#   ${sites.size} distinct scrolling wrapper site(s), ` +
+    `${staticSites.size} of them position: static`);
   const drivenObs = readings.flatMap((r) => r.descendants.filter((d) => d.movedBy !== null));
   const followed = drivenObs.filter((d) => Math.abs(d.movedBy - d.scrolledBy) <= EPSILON).length;
   const stayed = drivenObs.filter((d) => Math.abs(d.movedBy) <= EPSILON).length;
@@ -533,6 +588,43 @@ test('the scroll-follow probe agrees with offsetParent on every descendant it co
   }
   assert.deepEqual(disagreements, [],
     'the DOM reading and the rendered reading disagree about containment');
+});
+
+test('every frozen static scroller is still static, and every other scroller is positioned', () => {
+  const stale = [];
+  const unexpected = new Map();
+  const judged = new Set();
+  for (const r of readings) {
+    if (NOT_A_WRAPPER.test(r.box)) continue;
+    judged.add(`${r.pane} ${r.box}`);
+    const excused = KNOWN_STATIC_SCROLLERS
+      .some((k) => k.pane === r.pane && k.box === r.box);
+    if (r.position === 'static' && !excused) {
+      const key = `${r.pane} ${r.box}`;
+      if (!unexpected.has(key)) {
+        unexpected.set(key, `${r.pane}: ${r.box} scrolls (overflow-x: ${r.overflowX}, ` +
+          `overflow-y: ${r.overflowY}) but is position: static, so it establishes no ` +
+          `containing block and clips no absolutely positioned descendant. Give it ` +
+          `position: relative. [${r.theme} theme, ${r.state} state, ${r.width}px]`);
+      }
+    }
+  }
+  for (const k of KNOWN_STATIC_SCROLLERS) {
+    const seen = readings.filter((r) => r.pane === k.pane && r.box === k.box);
+    if (!seen.length) continue;
+    if (seen.every((r) => r.position !== 'static')) {
+      stale.push(`${k.pane} ${k.box} is no longer static. If ${k.repairIn} was given a ` +
+        `position, delete this entry from KNOWN_STATIC_SCROLLERS; an excuse that outlives ` +
+        `its own repair silently excuses the next regression at the same site.`);
+    }
+  }
+  assert.ok(judged.size >= WRAPPER_FLOOR,
+    `this claim judged ${judged.size} distinct scrolling wrapper(s), under the floor of ` +
+    `${WRAPPER_FLOOR}. Widening the out-of-scope hatch or excusing sites wholesale would ` +
+    `otherwise leave nothing to judge, and a claim with nothing to judge passes.`);
+  assert.deepEqual(stale, [], 'a frozen static scroller was repaired but is still excused');
+  assert.deepEqual([...unexpected.values()], [],
+    `${unexpected.size} sideways-scrolling wrapper(s) are position: static and not frozen`);
 });
 
 test('every frozen escape still reproduces, and is proved by scrolling the box', () => {
