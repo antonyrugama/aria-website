@@ -1206,22 +1206,24 @@ test('the pane writes no class only the v1 sheet defines', async () => {
   const written = new Map();
   for (const [label, opts] of states) {
     const dom = await boot(opts);
-    const before = written.size;
+    let carried = 0;
     for (const node of findAll(dom.content, (n) => n.getAttribute('class'))) {
+      carried += 1;
       for (const name of (node.getAttribute('class') || '').trim().split(/\s+/)) {
         if (name && !written.has(name)) written.set(name, label);
       }
     }
-    assert.ok(written.size > before || before > 0,
-      `${label} drew no classes at all, so it is not contributing to this sweep`);
+    /* Per state, not across them: a sweep whose later boots quietly stopped
+       drawing would otherwise coast on the classes the first one found. */
+    assert.ok(carried > 0, `${label} drew no class-bearing node at all, so it is `
+      + 'contributing nothing to this sweep');
   }
 
-  /* Controls on the sweep itself. A DOM that stopped being built, or a walker
-     that stopped walking, must fail here rather than pass over an empty set.
-     The named classes are one per delivery shape that has previously walked
-     past a version of this guard: a plain literal, a card grade, a lookup-map
-     tone, and S.link's third argument. */
-  assert.ok(written.size >= 35, `only ${written.size} classes seen, so this proves little`);
+  /* One named class per delivery shape that has previously walked past a
+     version of this guard, so that a sweep which stops seeing one of them
+     fails on the shape rather than on a total. A count floor would not: it
+     cannot fail for the shape it was added for, which is how the parser this
+     replaced kept its own coverage looking healthy while it lost a shape. */
   for (const need of ['job-id', 'u-scroll', 'tbl', 'kpi', 'pill', 'up', 'btn', 'btn-sm']) {
     assert.ok(written.has(need), `the DOM sweep never saw ${need}, so its delivery shape is `
       + 'outside the states this test boots');
