@@ -719,6 +719,20 @@ const DRIVE = {
     id.value = 'ath_2277';
     reason.value = 'SUP-4471';
     id.closest('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    /* Wait for the rows rather than sleeping once and hoping. The lookup is a
+       real fetch to the fixture server on loopback, and that race was lost
+       once in ~140 local runs on a loaded machine: no rows at ${STEP_MS}ms, the
+       pane judged with no result in it, a named failure that was not a defect
+       in anything. The happy path is unchanged — the rows are there within a
+       frame and the same settle follows — so this only adds patience when the
+       machine is slow. What it waits FOR is the drive's own precondition, the
+       rows it has to click, and never anything the judgement reads, so a pane
+       that draws rows nobody can see still fails. The cap keeps a step that
+       never lands loud rather than hanging. */
+    const deadline = Date.now() + ${STEP_MS} * 8;
+    while (!document.querySelectorAll('.match-row-btn').length && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
     await new Promise((r) => setTimeout(r, ${STEP_MS}));
     const picks = document.querySelectorAll('.match-row-btn');
     if (!picks.length) return 'the lookup drew no match rows';
