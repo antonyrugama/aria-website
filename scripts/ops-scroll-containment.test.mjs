@@ -62,11 +62,16 @@
 
    NOT COVERED, explicitly:
 
-   - Wrappers the shared API stub never renders. `.u-scroll` (People and
-     usage), `.sp-scroll` (Cloud costs) and People's `.tbl-wrap` need data or
-     an interaction this sweep does not drive, so they are absent from the
-     rendered tree and this file judges them not at all. The floors in claim 4
-     bind the count that IS swept; they cannot bind a box that never existed.
+   - Wrappers the shared API stub never renders. Of the eight sideways
+     scrolling wrappers declared across the v2 sheets, this sweep reaches
+     five: `.scrollx` (Problems), `.tbl-scroll` (Releases) and the `.tbl-wrap`
+     of Evaluations, Run history and Settings. `.sp-scroll` (Cloud costs) and
+     People's `.tbl-wrap` are static too, but need data or an interaction this
+     sweep does not drive, so they are absent from the rendered tree and this
+     file judges them not at all. `.u-scroll` (Usage) is the one of the eight
+     that already carries `position: relative`, and it does not render here
+     either. The floors in claim 4 bind the count that IS swept; they cannot
+     bind a box that never existed.
    - `position: fixed` descendants. A fixed element is positioned against the
      viewport and is not clipped by any ancestor's overflow unless that
      ancestor establishes a containing block through `transform`, `filter` or
@@ -301,6 +306,19 @@ const PROBE = (scrollBy, minScroll) => `(() => {
     const descendants = [];
     for (const d of box.querySelectorAll('*')) {
       const ds = getComputedStyle(d);
+      /* The position filter runs BEFORE offsetParent is read, and the order is
+         load-bearing rather than incidental. offsetParent is not "the nearest
+         positioned ancestor": for a STATIC element the HTML spec also returns
+         the nearest td, th or table, so a static child of any cell in these
+         tables reports its own cell and would look contained no matter where
+         its containing block really is. That extra clause is conditioned on
+         the element itself being static, so once this line has kept only
+         absolutely positioned descendants, offsetParent is the containing
+         block. Measured on an unmutated tree: an absolutely positioned div in
+         an alerts rule cell reports offsetParent div.card.rules-card, while
+         the same div left static reports its td. T4 in the mutation battery
+         is this line's proof -- change the keyword it looks for and every
+         reading disappears. */
       if (ds.position !== 'absolute') continue;
       if (!d.getClientRects().length) continue;
       const op = d.offsetParent;
