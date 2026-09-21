@@ -1,9 +1,11 @@
 /* ops/README.md's load-bearing claims, re-derived from the code and compared.
 
-   WHY THIS EXISTS. Seven issues were filed against ops/README.md in one day,
+   WHY THIS EXISTS. Eight issues were filed against ops/README.md in one day,
    all of them the same defect: a sentence describing the code more broadly,
    or more narrowly, than the code behaves. Stadiora/Aria#10457, #10474,
-   #10510, #10639, #10641, #10655 and #10663. A prose rule costs one issue per
+   #10510, #10639, #10641, #10655, #10663 and #10677. Neither the count nor
+   the list is derived - the tracker is another repository - so both are in
+   NOT COVERED below. A prose rule costs one issue per
    drift forever; a derived claim costs nothing, so the numbers and lists this
    README is read FOR are written in fenced `claims` blocks and compared here
    against the tree, the pages, the registry, the stylesheets, the guards and
@@ -27,25 +29,40 @@
    have and the reason none of these assertions greps the README for a
    sentence.
 
-   FIVE BLOCKS CANNOT DERIVE WHICH ROWS THEY CARRY, and it is worth being
-   exact about what that does and does not mean. `source-anchors` reads which
-   file and which quoted comment to go looking for and `deleted-assets` reads
-   which absent path to look for, both out of the README; `v1-status-classes`,
-   `spend-colour-gate` and `spend-write-gate` read their subjects from
-   V1_STATUS_FAMILIES and V1_STATUS_SINGLETONS, COLOUR_PROBES and
-   WRITE_PROBES in this file. All five
-   then derive every value — the line
-   number, the uniqueness of an anchor, the absence of a file, who loads and
-   reads it, what the spend guard's own matchers answer. Editing a value in
-   any of them is red. What that shape cannot catch on its own is a subject
-   DELETED, which shrinks the expectation with it, so all five are pinned row
-   by row in `REQUIRED_ROWS` at the foot of this file. A count would not do:
-   pin the size and a block that grows by one absorbs the deletion of a
-   different row silently. Every other block derives its row set as well as
-   its values, so shrinking one is already red without a pin.
+   SOME BLOCKS CANNOT DERIVE WHICH ROWS THEY CARRY, and it is worth being
+   exact about what that does and does not mean. Two read their subjects out
+   of the README — `source-anchors` reads which file and which quoted comment
+   to go looking for, `deleted-assets` reads which absent path to look for —
+   and the rest read theirs from hand-written arrays in this file. Every one
+   of them then derives every value: the line number, the uniqueness of an
+   anchor, the absence of a file, who loads and reads it, what the spend
+   guard's own matchers answer, what the blind-spot matcher says to a
+   spelling. Editing a value in any of them is red. What that shape cannot
+   catch on its own is a subject DELETED, which shrinks the expectation with
+   it, so each is pinned row by row in `REQUIRED_ROWS` at the foot of this
+   file. A count would not do: pin the size and a block that grows by one
+   absorbs the deletion of a different row silently.
+
+   HOW MANY blocks that is, and how many rows each pins, is the
+   `pinned-blocks` block, derived from REQUIRED_ROWS — because this paragraph
+   used to enumerate them, said "five", and was still saying five four review
+   rounds after PR #111 made it seven. The block's trailing rows are the
+   FLOORS, integers in the FLOORS const at the foot of this file — how many
+   is the block's own business, because round 12 found this sentence and four
+   others still counting four after a fifth landed — and they
+   exist because pinning the pins with another list only moves the hole: round
+   6 showed a pin could be retired together with its line in `pinned-blocks`
+   and run green, which put back a constant round 5 had just protected. A
+   count is where that regress stops.
 
    NOT COVERED, stated so nobody reads a green run as more than it is:
 
+   - Any count of GitHub ISSUES, including the eight in the paragraph above
+     and the same sentence in ops/README.md. The tracker is Stadiora/Aria and
+     this repository cannot read it, so that number is typed and will rot like
+     any typed number. Round 11 caught it already rotted - it said seven, and
+     omitted #10677, the issue this PR's own table opens with. Corrected, not
+     bound; a derived version would need a network call from a unit test.
    - The WORDS in a checks-table row. That table is held to the browser
      guards only by its row SET: every `check-ops-*.mjs` in `scripts/` has to
      be the subject of exactly one row, which is that row's first cell. What
@@ -131,16 +148,138 @@
      back to `absolute` by a DIFFERENT rule, is invisible to it: this reads
      one rule at a time and models no cascade between rules.
    - A file path spelled without a directory AND with an extension no file in
-     `ops/`, `ops/assets/`, `scripts/` or `.github/workflows/` uses. The sweep
+     this repository uses. The universe is the whole tree minus `.git` and
+     `node_modules`: round 12 demonstrated a bare `nonexistent.md` green when
+     it was four globs, because `.md` was not an extension any file in them
+     had. The sweep
      reads a bare `name.ext` as a path only when the tree already has that
      extension, because `payload.data` and `availability.state` are spelled
      the same way. A span carrying a directory is swept whatever its
-     extension.
-   - Prose. This file judges the fenced blocks and the file paths the README
-     names. A sentence that restates a block's content in English, or makes a
-     claim no block carries, is not judged. The remedy used in the rewrite is
+     extension UNLESS its first segment is one of the Aria monorepo directories
+     the sweep skips by name - `grep -n FOREIGN` is that list, and round 13
+     counted eleven live spans in this README sitting behind it: every
+     `docs/mocks/...` path and the one `app-backend/...` path. The list is
+     typed, because the monorepo is not here to derive it from, and it is wrong
+     in BOTH directions - a monorepo directory missing from it (`coaches-mobile/`,
+     `watch-app/`) produces a FALSE red, and a path under one of the six is
+     never judged at all. Neither face is fixable from this repository, which is
+     why it is disclosed rather than counted.
+   - Prose. This file judges the fenced blocks, the file paths the README names,
+     the row sets held by a check rather than a fence, and - since round 9 - a
+     resolvable `file.ext:NN` citation inside a code span. A sentence that
+     restates a block's content in English, or makes a claim carrying no block,
+     no path and no citation, is not judged. The remedy used in the rewrite is
      to make the prose point AT a block rather than repeat it, but nothing
      enforces that.
+   - Nothing, in the sense this bullet used to claim. It said a `{ todo: true }`
+     test was a hole the COMPLETED handler could not see, and then told the
+     reader nothing load-bearing was a test any more. Twenty-seven of the
+     twenty-eight were, including every block comparison. There are no tests in
+     this file now, so there is no flag to attach and the bullet has nothing
+     left to disclose. What replaced it is two lines down: report() is the last
+     assertion and nothing outranks it.
+   - A source line number written in WORDS, outside a code span, or into the
+     Aria monorepo. The line-citation refusal reads `file.ext:NN` inside a
+     backtick span and only for a file this repository has — the whole tree,
+     since round 12; when that was four globs it was blind to a citation into
+     this very README, the likeliest one anybody would type — so `line 583 of
+     check-ops-shell-v2.mjs` and `opsUsageView.ts:932` both walk through it.
+     The first two are a narrowing this accepts rather than a net to widen -
+     an English parser here would be guard code nothing has reviewed - and the
+     third is unresolvable in principle: the file is in another repository.
+   - The floor assertions themselves. A count has nothing inside it to delete,
+     but EVERY assertion that names FLOORS is ordinary code: edit one to
+     `true ||` and the defect it guards goes unseen. This bullet names a SHAPE
+     and not a list, because the list was wrong twice - it enumerated the
+     ratchet's own lines and missed the equality guarding the exemption
+     allowlist, which round 12 then demonstrated green while a second live
+     citation walked through the refusal. `grep -n FLOORS` is the inventory;
+     nothing here counts them, because the count is what drifted. Battery
+     A1/A2 and M1 are green on exactly that and stay green on purpose. Nothing
+     in one file can outrank its own last assertion; what changed at module
+     scope is that disabling one is now an edit a diff shows rather than a
+     one-word flag that leaves the source spelling intact. If the CONSTANT is
+     deleted rather than the assert, the run is red - `pinned-blocks` prints a
+     row per floor, so the derivation throws.
+   - The report() call at the foot of this file, and check() itself. They are
+     the last assertions here and nothing outranks them: delete report() and
+     nothing is reported; make check() swallow. That is not a gap a guard can
+     close - something has to be last - so it is named instead. Two sentences
+     that used to stand here were falsified in successive rounds, which is why
+     this one is deliberately small: round 7 killed "a pin or a derivation
+     cannot go quietly" by deleting a whole test, and round 8 killed "nothing
+     load-bearing is a test any more" with two `{ todo: true }` flags. What is
+     true and checked: a check that does not RUN is a failing run, whether it
+     was deleted or renamed, so removing a defence means removing its expected
+     name from report() too - and that edit is in the diff, by name.
+   - A defence SWAPPED rather than retired. The FLOORS that count blocks
+     pinned, blocks derived and families held are `at least` floors. Each is a floor, so each sees a
+     NET shrink and nothing else: delete one derivation and add a trivial one
+     in the same commit and the count is unchanged, which is a real hole and
+     not a theoretical one — it is exactly the shape the ratchet bullet in
+     CLAUDE.md warns about, a key too coarse to see a substitution. Keying per
+     block would close it and would be another hand-written list, which is the
+     regress the floors exist to end. The trade is deliberate: a floor cannot
+     be defeated by deleting it alongside something else, and that was the
+     live defect. A swap is visible in the diff as an addition nobody asked
+     for; a quiet deletion was not visible at all.
+   - A guard CONSTANT this file does not name. `guard-constants` resolves the
+     declarations listed in GUARD_CONSTANTS and no others, and only where the
+     value is a top-level `const NAME = ...;` whose right-hand side evaluates
+     in a realm with NO free variables: one built from another binding throws
+     here rather than being guessed at. A pure call on an intrinsic does NOT
+     throw - `Math.round(1280.4)` resolves, and the resolved number is bound.
+     The rule is "no free variables", not "no calls"; round 5 of PR #111 found
+     both spellings of this sentence claiming the stronger thing.
+     A guard added next week carries no numbers until somebody names one of
+     its constants, so this list growing is a manual step. The worked example
+     of what stays out: check-ops-dialog-hit.mjs hit-tests five spots per
+     control, but that array lives inside a template literal evaluated in the
+     browser, so the five stays prose and stays unproven.
+   - A blind spot a guard does not put in a bullet HEADING of its LEADING
+     docblock, under a heading phrase the matcher recognises. WHICH phrases
+     those are is not written here and is enumerated nowhere: the census at the
+     head of the block SAMPLES the matcher - fixed spellings handed to the real
+     predicate, each carrying the verdict it gave - so a phrase nobody thought
+     to probe is recognised in silence. Round 13 demonstrated exactly that with
+     a fourth top-level branch. That gap is the third of the three the README
+     publishes, and this bullet does not close it.
+     `guard-blind-spots` reads the leading bold run of each bullet under a
+     NOT COVERED heading that OPENS its line - matching the phrase anywhere in
+     a line anchors on check-ops-contrast.mjs pointing at the README's list
+     and on check-ops-result-view.mjs referring to its own section thirty
+     lines above where that section starts. Three restrictions are load-bearing
+     and each is a hole:
+       (1) LEADING DOCBLOCK ONLY. docblock() slices the first block comment, so
+           a section anywhere else is not carried. Two exist today, in
+           check-ops-shell-v2.mjs and check-ops-contrast.mjs, and both are
+           counted but not read. Their line numbers are NOT spelled here:
+           `source-anchors` derives both, and the one this sentence used to
+           carry was wrong by 343 lines while three feet of prose claimed the
+           opposite.
+       (2) THE MATCHER HAS TO SEE THE HEADING, and that turns on TWO things:
+           the wording and the comment marker in front of it. A heading it
+           cannot see is invisible to BOTH the bullet read and the whole-file
+           count, so it arrives in silence. This docblock deliberately does not
+           say which headings those are. Round 3 of PR #111 killed two spellings
+           of that sentence: a list typed here drifts, and a list PARSED out of
+           BLIND_SPOT_HEADING read one of its two dimensions and was wrong in
+           both directions while staying green. The edge is MEASURED instead -
+           see HEADING_PROBES below, whose verdicts are the first lines of the
+           block. If you want to know what the matcher sees, read the census
+           rather than a sentence - and read it as a SAMPLE, because a spelling
+           it does not hold is a spelling nobody measured.
+       (3) HEADINGS, NOT BULLETS. A blind spot written into a bullet's body is
+           not a line. Spans beyond the first are counted, summed over the
+           bullets, but never named.
+     Bullets are reassembled across wrapped lines, because the first spelling
+     of this derivation read one line at a time and silently lost the ONE blind
+     spot whose bold opener wraps in check-ops-narrow-overflow.mjs. A bullet
+     with no bold opener is reported as one rather than skipped, and a section
+     written as prose says so on its guard's line instead of contributing
+     nothing. Whether the guard's own account of its blind spots is TRUE is not
+     decided here - only that the README carries the same list, in the same
+     order.
    - `<link>` and `<script>` tags only, spelled statically with a literal
      `assets/…` URL. An asset injected at runtime is invisible to the loader
      map, as is one loaded by a page outside `ops/`. A tag inside an HTML
@@ -162,9 +301,13 @@
    - Which pages can DRAW a class is read from the class tokens written in the
      page and in the scripts that page loads: `class=` and `class:`,
      `className`, `classList.add|remove|toggle` and `setAttribute('class', …)`,
-     each with a literal, each guarded against being the tail of a longer
-     name the same way the page attributes are, so `data-class` is not
-     `class` and `x-className` is not `className`. The error runs BOTH ways
+     each with a literal, but NOT all guarded the same way. `class=` and
+     `className` refuse a preceding word character or hyphen, so `data-class`
+     is not `class` and `x-className` is not `className`; `classList` and
+     `setAttribute` use a plain \b, which a hyphen satisfies, so
+     `data-classList` IS read as `classList`. Round 11 demonstrated that with
+     a control; it is left because it can only OVER-report, the direction
+     already declared untrustworthy here. The error runs BOTH ways
      and NEITHER value is the strong one. A name in a comment counts as a draw site, so a named page can
      be an over-report; a class assembled at run time (`'badge-' + tone`) or
      written through a helper this list does not name is invisible, so a
@@ -200,7 +343,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test from 'node:test';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
@@ -216,6 +358,52 @@ const PAGES = list('ops').filter((f) => f.endsWith('.html'));
 const ASSETS = list('ops/assets').filter((f) => f.endsWith('.js') || f.endsWith('.css'));
 const SCRIPTS = list('scripts').filter((f) => f.endsWith('.mjs'));
 const WORKFLOWS = list('.github/workflows').filter((f) => f.endsWith('.yml'));
+
+/* ONE answer to "is this string a file this repository has", and one answer to
+   how a written path resolves to it. The file sweep and the line-citation
+   refusal had a copy each, and the copies DISAGREED: round 11 demonstrated
+   `assets/pane-registry.js:103` — a spelling this README uses five times —
+   walking straight through the citation refusal, while the sweep sixty lines
+   above resolved the same path happily. Two implementations of one concept is
+   how that happens, so there is one now.
+
+   It WALKS, and that is round 12's finding: this used to be four globs, so
+   `ops/README.md` — this guard's own subject, and the likeliest path anybody
+   would cite — was not a file this repository has, and a citation into it
+   walked through the refusal. A glob list is a claim about the tree that the
+   tree does not have to honour. Every reader of the question calls this;
+   `grep -n 'repoFiles()' scripts/ops-readme-claims.test.mjs` is the inventory,
+   and no sentence here counts them. */
+const WALK_SKIP = new Set(['.git', 'node_modules']);
+const walkFiles = (rel, acc) => {
+  for (const entry of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
+    if (WALK_SKIP.has(entry.name)) continue;
+    const next = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) walkFiles(next, acc);
+    else acc.add(next);
+  }
+  return acc;
+};
+let REPO_FILES = null;
+const repoFiles = () => (REPO_FILES || (REPO_FILES = walkFiles('', new Set())));
+const leafIndex = (files) => {
+  const byLeaf = new Map();
+  for (const file of files) byLeaf.set(path.basename(file), file);
+  return byLeaf;
+};
+/* A path carrying a directory is held to that directory, or `ops/assets/x.css`
+   and `made/up/x.css` both read as right because the leaf matches. A bare
+   `x.css` is the one spelling resolved by leaf, which is how most of this file
+   names an asset. A leading `./` or `/` is dropped first, because `ops/x`,
+   `./ops/x` and `/ops/x` are one place written three ways and round 13
+   demonstrated two of the three walking through the citation refusal while
+   the third was refused. */
+const resolveRepoPath = (file, byLeaf) => {
+  const bare = file.replace(/^\.\//, '').replace(/^\//, '');
+  return file.includes('/')
+    ? [file, bare, `ops/${bare.replace(/^ops\//, '')}`]
+    : [file, byLeaf.get(file)].filter(Boolean);
+};
 
 /* ------------------------------------------------------------ the blocks */
 
@@ -293,7 +481,7 @@ function claimBlocks(md) {
     }
     assert.ok(j < lines.length, `${README_PATH}:${i + 1}: claims block never closes`);
     assert.ok(!blocks.has(id), `${README_PATH}:${i + 1}: id=${id} appears twice`);
-    blocks.set(id, { line: i + 1, lines: body.filter((l) => l.trim() !== '') });
+    blocks.set(id, { line: i + 1, end: j + 1, lines: body.filter((l) => l.trim() !== '') });
     i = j;
   }
   return blocks;
@@ -504,7 +692,7 @@ DERIVED['panes'] = () => {
   const panes = registryPanes();
   return Object.keys(panes).map((key) => {
     const file = panes[key].file;
-    assert.ok(fs.existsSync(path.join(ROOT, 'ops', file)),
+    assert.ok(repoFiles().has(`ops/${file}`),
       `pane-registry.js declares pane "${key}" as ops/${file}, which is not a file here`);
     const loaded = loadedAssets(file);
     const shell = loaded.includes('shell-pane-v2.js') ? 'shell-pane-v2.js'
@@ -545,9 +733,13 @@ function invokes(workflow, command) {
   return runSteps(workflow).some((body) => at.test(body));
 }
 
+/* The browser guards, named once. Every block that describes "the browser
+   guards" is built from this list rather than from its own filter, so a guard
+   added next week reaches all of them at the same moment. */
+const BROWSER_GUARDS = SCRIPTS.filter((s) => /^check-ops-.*\.mjs$/.test(s));
+
 /* Every browser guard: the workflow that runs it, and what it renders. */
-DERIVED['browser-guards'] = () => SCRIPTS
-  .filter((s) => /^check-ops-.*\.mjs$/.test(s))
+DERIVED['browser-guards'] = () => BROWSER_GUARDS
   .map((script) => {
     const src = read(path.join('scripts', script));
     const command = `node scripts/${script}`;
@@ -560,6 +752,240 @@ DERIVED['browser-guards'] = () => SCRIPTS
     else where.push(...urls);
     return `${script} = ${workflows.join(', ') || '(no workflow)'}; ${where.join(' + ') || '(no page named in its source)'}`;
   });
+
+/* The text of a top-level declaration's value, from `=` to the `;` that closes
+   it outside every string, bracket and comment. A guard's array of viewports
+   spans lines and carries comments between its entries, so "everything up to
+   the first semicolon" reads half of one. */
+function literalAfter(src, from, what) {
+  let depth = 0;
+  let quote = null;
+  for (let i = from; i < src.length; i += 1) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === '\\') { i += 1; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '/' && src[i + 1] === '/') {
+      const eol = src.indexOf('\n', i);
+      if (eol === -1) break;
+      i = eol;
+      continue;
+    }
+    if (ch === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      if (end === -1) break;
+      i = end + 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+    else if (ch === ')' || ch === ']' || ch === '}') depth -= 1;
+    else if (ch === ';' && depth === 0) return src.slice(from, i);
+  }
+  return assert.fail(`${what}: the declaration never closes`);
+}
+
+/* The VALUE a guard's own constant holds, resolved by evaluating the
+   declaration rather than by matching its text. `const WIDTHS = [375, 360, 320]`
+   is three numbers here, not the string "375, 360, 320", so a fourth viewport
+   is a fourth entry rather than a longer line that a substring test still
+   passes. The right-hand side is evaluated in a realm holding no free
+   variables, so a declaration built from another binding throws rather than
+   being guessed at. A pure call on an intrinsic resolves instead —
+   `Math.round(1280.4)` binds 1280 — because the realm still has its
+   intrinsics. No free variables, not no calls. */
+function constant(script, name) {
+  const src = read(path.join('scripts', script));
+  const at = new RegExp(String.raw`^const ${name}\s*=\s*`, 'm').exec(src);
+  assert.ok(at, `scripts/${script} declares no top-level const ${name}`);
+  const expr = literalAfter(src, at.index + at[0].length, `scripts/${script} const ${name}`);
+  try {
+    return vm.runInNewContext(`(${expr})`, Object.create(null), { timeout: 1000 });
+  } catch (err) {
+    return assert.fail(
+      `scripts/${script}: const ${name} is not a literal this check can resolve — ${err.message}`
+    );
+  }
+}
+
+/* The numbers the checks table leans on, taken out of the guards that hold
+   them. Every one of these was a typed word in a sentence until a guard moved
+   underneath it: `WIDTHS` gained 320px in aria-website#103 and the sentence
+   describing the sweep went on saying "375px and 360px" through a rebase onto
+   that very commit (Stadiora/Aria#10655's class, found again).
+
+   NOT derived here: a constant this list does not name, and a value that is not
+   a top-level `const` — the five hit-test spots per control live in an array
+   inside a template literal evaluated in the browser, so they stay prose. */
+const GUARD_CONSTANTS = [
+  ['check-ops-contrast.mjs', 'STATES'],
+  ['check-ops-dialog-hit.mjs', 'PAINT_PIXEL_DELTA'],
+  ['check-ops-dialog-hit.mjs', 'PAINT_COVERAGE_LIMIT'],
+  ['check-ops-narrow-overflow.mjs', 'WIDTHS'],
+  ['check-ops-result-view.mjs', 'WIDTH'],
+  ['check-ops-theme-redraw.mjs', 'PAINT_PROPS'],
+];
+
+DERIVED['guard-constants'] = () => GUARD_CONSTANTS.flatMap(([script, name]) => {
+  assert.ok(
+    BROWSER_GUARDS.includes(script),
+    `scripts/${script} is named in GUARD_CONSTANTS but is not a browser guard in this tree`
+  );
+  const value = constant(script, name);
+  if (!Array.isArray(value)) return [`${script} ${name} = ${String(value)}`];
+  return [
+    `${script} ${name} = ${value.join(', ')}`,
+    `${script} ${name} length = ${value.length}`,
+  ];
+});
+
+/* A guard's leading block comment, and nothing after it: three of these files
+   go on discussing their own blind spots hundreds of lines further down, next
+   to the code that has them. */
+function docblock(script) {
+  const src = read(path.join('scripts', script));
+  if (!src.startsWith('/*')) return null;
+  const close = src.indexOf('*/');
+  return close === -1 ? null : src.slice(0, close);
+}
+
+/* A heading, not a mention. check-ops-contrast.mjs's docblock points at THIS
+   file's NOT COVERED list without having a section of its own, and
+   check-ops-result-view.mjs refers to its own section thirty lines above where
+   that section starts. Matching the phrase anywhere in a line anchors on both
+   of those; it has to open the line. */
+const BLIND_SPOT_HEADING =
+  /^\s*(?:\/\*+\s*|\*\s*)?(?:WHAT THIS DOES NOT COVER|WHAT IT DOES NOT|NOT COVERED)\b/i;
+
+/* What each guard says it cannot see, in its own words. Every browser guard
+   gets a line whatever shape its docblock is in — a guard that reformats its
+   bullets into prose flips from a list to `(section present, written as prose)`
+   and fails here, instead of dropping out of a list nobody counts.
+
+   Bullets are reassembled across lines before the heading is read. A bullet
+   whose bold opener wraps — check-ops-narrow-overflow.mjs has one — is a
+   heading this file silently dropped while the line-at-a-time version of this
+   derivation was being written, which is the failure it exists to catch, one
+   level up.
+
+   What this reads is the leading BOLD RUN of each bullet, so a bullet that
+   names two blind spots in two bold spans contributes only its first, and a
+   bullet with no bold opener is reported as one rather than skipped. That is a
+   real gap and not a theoretical one: check-ops-narrow-overflow.mjs's "Look up
+   a user" bullet also covers Aria quality, and only the first of the two is a
+   line here. Rather than parse the English that distinguishes a second heading
+   from ordinary body emphasis, every guard ends with a COUNT of the bold spans
+   beyond the first, SUMMED over its bullets. Summed rather than per-bullet:
+   counting bullets-with-more-than-one is a boolean, and a third span added to a
+   bullet that already had two would not move it. The count is exact and the
+   headings it belongs to are not named: it is a tripwire that refuses to hide a
+   second span, not an index of blind spots. A body that bolds a word moves it
+   too, on purpose.
+
+   Bullets are read out of the LEADING docblock only. A guard that states its
+   blind spots somewhere else in the file states them where this cannot see, so
+   every guard also ends with a count of the lines anywhere in it that OPEN like
+   a blind-spot heading. That count is syntactic and deliberately dumb: a line
+   referring back to a section counts the same as the section. It exists so that
+   a section arriving outside the leading docblock flips a line instead of
+   arriving in silence, which is how two of them were sitting unread when this
+   was written.
+
+   A blind spot written as prose inside a bullet is still not a line. The
+   README's own summary of a section is prose and is not judged; what is judged
+   is that the headings are all present, in order, and that neither count has
+   moved. */
+/* Exactly which heading lines the matcher above SEES, measured by asking it.
+
+   The first spelling of this parsed BLIND_SPOT_HEADING.source for its phrase
+   alternation and published that as "the net's real width". It was not. The
+   matcher has two dimensions, phrase AND comment marker, and the parse read one
+   substring of one of them: reverting the `/*` half of the marker group left
+   the published list identical, and a phrase added as a second top-level branch
+   rather than inside the group was matched by the regex and missing from the
+   list. Both are false greens and both were found by mutation, not by reading.
+
+   So nothing is parsed. Each spelling below is a concrete line handed to the
+   real predicate, and the census reports SEEN or INVISIBLE. Every spelling gets
+   a line either way: the INVISIBLE ones are the net's actual edge, published
+   rather than described, and a matcher that starts or stops seeing any of them
+   flips its line.
+
+   The table is NOT the two dimensions crossed. It is a sample of them, and it
+   is worth being exact about which cells it holds, because the temptation is to
+   describe it as more. Markers appear against ONE recognised phrase and one
+   unrecognised one; the other phrases appear bare or indented only. A mid-line
+   mention is in there because if the `^` anchor came loose that row would flip
+   and nothing else would.
+
+   What this does NOT bind, all three published in the README's NOT COVERED:
+     (a) A (phrase, marker) cell no row occupies. Teaching the matcher a phrase
+         ONLY behind `/*` moved no row until `/* KNOWN GAPS` was added, and that
+         is a demonstration, not a proof that the remaining cells are safe.
+     (b) A phrase NARROWED so that it still matches every probed spelling of
+         itself. Every probe of a phrase has to differ in its continuation or
+         the narrowing walks through: `WHAT IT DOES NOT` was exercised only by
+         spellings continuing "measure" until `WHAT IT DOES NOT check` was
+         added, so narrowing it to `WHAT IT DOES NOT MEASURE` was green.
+     (c) A spelling nobody thought to add at all.
+   (a) and (b) are review round 4 of PR #111, both demonstrated green. The fix
+   for each was one ROW, not more analysis: the census's reach is its table, so
+   the table is where it grows. */
+const HEADING_PROBES = [
+  'WHAT THIS DOES NOT COVER, in the words of what was measured:',
+  '   WHAT IT DOES NOT measure:',
+  '   WHAT IT DOES NOT check, in so many words:',
+  '   NOT COVERED, on purpose',
+  '   NOT COVERED at all:',
+  '   not covered, in lower case',
+  ' * NOT COVERED, after a continuation marker',
+  '/* NOT COVERED, sharing the comment opener',
+  '/** NOT COVERED, sharing a doc-comment opener',
+  '// NOT COVERED, after a line comment',
+  '   WHAT THIS SWEEP CANNOT SEE:',
+  '   KNOWN GAPS:',
+  '/* KNOWN GAPS, behind a comment opener',
+  '   see NOT COVERED above for the two panes',
+];
+
+DERIVED['guard-blind-spots'] = () => [
+  /* The size of the census, so the README never has to spell it. Round 5 of
+     PR #111 found "eleven" still typed in one paragraph after the table had
+     grown to fourteen, the other paragraph having been updated: a number in
+     prose has to be found by hand at every site, and one site was missed. */
+  `(heading probes = ${HEADING_PROBES.length})`,
+  ...HEADING_PROBES.map((probe) =>
+    `(heading probe: ${JSON.stringify(probe)} = ${BLIND_SPOT_HEADING.test(probe) ? 'SEEN' : 'INVISIBLE'})`),
+  ...BROWSER_GUARDS.flatMap((script) => {
+  const headings = read(path.join('scripts', script))
+    .split('\n').filter((l) => BLIND_SPOT_HEADING.test(l)).length;
+  const tail = (n) => [
+    `${script} = (bold spans beyond the first, summed: ${n})`,
+    `${script} = (lines that open like a blind-spot heading: ${headings})`,
+  ];
+  const doc = docblock(script);
+  if (doc === null) return [`${script} = (no leading docblock)`, ...tail(0)];
+  const lines = doc.split('\n');
+  const at = lines.findIndex((l) => BLIND_SPOT_HEADING.test(l));
+  if (at === -1) return [`${script} = (no blind-spot section in the leading docblock)`, ...tail(0)];
+  const opens = /^\s*(?:\*\s*)?-\s+/;
+  const bullets = [];
+  for (const line of lines.slice(at + 1)) {
+    if (opens.test(line)) bullets.push([line.replace(opens, '')]);
+    else if (bullets.length) bullets[bullets.length - 1].push(line.trim());
+  }
+  if (bullets.length === 0) return [`${script} = (section present, written as prose)`, ...tail(0)];
+  const texts = bullets.map((parts) => parts.join(' ').replace(/\s+/g, ' ').trim());
+  const heads = texts.map((text) => {
+    const bold = /^\*\*(.+?)\*\*/.exec(text);
+    return `${script} = ${bold ? bold[1].trim() : '(bullet with no bold opener)'}`;
+  });
+  const extra = texts.reduce((n, t) => n + Math.max(0, (t.match(/\*\*(.+?)\*\*/g) || []).length - 1), 0);
+  return [...heads, ...tail(extra)];
+  }),
+];
 
 /* The focus ring on every sideways-scrolling box a v2 pane sheet declares.
    The box is found by its own `overflow-x: auto`, never by its class name, so
@@ -829,7 +1255,7 @@ DERIVED['source-anchors'] = () => {
     const m = /^(\S+) "(.+)" = line \d+$/.exec(line);
     assert.ok(m, `source-anchors: "${line}" is not <path> "<anchor>" = line <n>`);
     const [, file, needle] = m;
-    assert.ok(fs.existsSync(path.join(ROOT, file)), `source-anchors: ${file} is not a file here`);
+    assert.ok(repoFiles().has(file), `source-anchors: ${file} is not a file here`);
     const hits = read(file).split('\n')
       .map((text, i) => (text.includes(needle) ? i + 1 : 0))
       .filter(Boolean);
@@ -862,10 +1288,20 @@ DERIVED['v1-v2-collision'] = () => {
   const v1 = declaredClasses('ops/assets/ops.css');
   const v2 = declaredClasses('ops/assets/aria.css');
   const shared = [...v1.keys()].filter((c) => v2.has(c));
+  /* How many of the shared names this block prints is a HAND-WRITTEN number
+     in the slice below, and round 9 demonstrated the shrink: narrow the slice
+     to three, delete the five README rows with it, and the block agreed with
+     the code at four rows while the sentence above it still said eight. The
+     subjects are derived, so REQUIRED_ROWS cannot pin them; a cardinality has
+     nothing inside it to name. So it is a FLOOR, like the other four. */
   const widest = shared.slice()
     .sort((a, b) => v1.get(b) - v1.get(a) || a.localeCompare(b))
-    .slice(0, 8)
+    .slice(0, FLOORS.collisionWidest)
     .sort();
+  assert.strictEqual(widest.length, FLOORS.collisionWidest,
+    `v1-v2-collision prints ${widest.length} widest rows and FLOORS.collisionWidest is `
+    + `${FLOORS.collisionWidest}: the sample shrank, or ops.css and aria.css stopped sharing `
+    + 'that many names. Both are facts the README states, so neither may be silent.');
   return [
     `class names declared in both ops.css and aria.css = ${shared.length}`,
     ...widest.map((c) => `.${c} = ${v1.get(c)} selectors in ops.css, ${v2.get(c)} in aria.css`),
@@ -1050,21 +1486,77 @@ DERIVED['dark-text-3'] = () => {
 /* The blocks this file derives, listed out of this file rather than typed into
    the README, because the README's enumeration of them fell three behind. */
 const SWEEP_TEST = 'every repository file ops/README.md names is in the tree or declared deleted';
+const JUDGED_TEST = 'the run reports what it judged';
+const TABLE_TEST = 'every browser guard in the tree has a row in the checks table';
+const BLOCK_SET_TEST = 'every claims block is derived here, and every derivation has a block';
+const CITATION_CHECK = 'ops/README.md prose spells no source line number';
 
 DERIVED['claims-blocks'] = () => {
-  /* Two row sets are judged by a test rather than by a block — the file
-     sweep and the checks table — so their rows are read out of this file's
-     own source: delete either test and its row goes with it, which a typed
-     sentence would not do. */
+  /* Some row sets are judged by a check rather than by a block, so their
+     rows are read out of this file's own source: delete a registration and
+     its row goes with it, which a typed sentence would not do. How many there
+     are is the probe list below and the rows it returns - round 12 found this
+     comment still saying "two" after this PR added a third, which is the same
+     defect in the same paragraph that explains why the rows are derived. The
+     probe anchors on a NEWLINE because the spelling `check(SWEEP_TEST,` also
+     occurs inside this very expression, so
+     the unanchored `includes` round 6 found here matched its own source and
+     would have held the row up with both tests deleted. Both registrations
+     sit at column 0; a re-indent of either is a false red, which is the
+     trade this narrowing accepts. */
   const self = read(path.join('scripts', SELF));
-  const tests = [
-    ...(self.includes('test(SWEEP_TEST,') ? [SWEEP_TEST] : []),
-    ...(self.includes('test(TABLE_TEST,') ? [TABLE_TEST] : []),
+  const checks = [
+    ...(self.includes('\ncheck(SWEEP_TEST,') ? [SWEEP_TEST] : []),
+    ...(self.includes('\ncheck(TABLE_TEST,') ? [TABLE_TEST] : []),
+    ...(self.includes('\ncheck(CITATION_CHECK,') ? [CITATION_CHECK] : []),
   ];
   return [
     ...Object.keys(DERIVED).sort().map((id) => `claims id=${id}`),
-    ...tests.map((name) => `and a test, ${name}`),
+    ...checks.map((name) => `and a check, ${name}`),
   ];
+};
+
+/* WHICH blocks are pinned, and how many rows each pins, read out of
+   REQUIRED_ROWS rather than counted in a sentence. The paragraph in the README
+   said "five blocks" and was true when written; PR #111 then added two more
+   and left it saying five for four review rounds. A block that stops being
+   pinned, or loses a pin, moves its line here. REQUIRED_ROWS is declared at the
+   foot of this file and read when the test runs, not now.
+
+   The trailing rows are the FLOORS, one row each, and they are what stops the regress
+   round 6 found: this block's own row set comes from REQUIRED_ROWS, which is
+   hand-written, so deleting a pin together with its line here was green, one
+   level up from the defect round 5 fixed. A floor is one integer, not another
+   list, so the chain ends. What a floor buys is that a net shrink cannot be
+   quiet: it is red until somebody lowers a number that the README also
+   carries, which is two more edits and both of them visible. What it does NOT
+   buy is in NOT COVERED at the top of this file. */
+DERIVED['pinned-blocks'] = () => [
+  ...Object.keys(REQUIRED_ROWS).sort()
+    .map((id) => `claims id=${id} pins ${REQUIRED_ROWS[id].length} rows by name`),
+  `claims id=v1-status-classes pins the families = ${REQUIRED_FAMILIES.join(', ')}`,
+  `floor: blocks pinned in REQUIRED_ROWS = at least ${FLOORS.pinnedBlocks}`,
+  `floor: blocks derived in this file = at least ${FLOORS.derivedBlocks}`,
+  `floor: families pinned in REQUIRED_FAMILIES = at least ${FLOORS.statusFamilies}`,
+  `floor: widest shared names printed by v1-v2-collision = exactly ${FLOORS.collisionWidest}`,
+  `floor: citations exempt by name = exactly ${FLOORS.exemptCitations}`,
+];
+
+const HISTORICAL_CITATIONS = ['pane-registry.js:103-110'];
+
+/* The exemptions themselves, published rather than counted in a sentence. The
+   README said "One citation is exempt by name" and round 10 grew the array to
+   three, added two live citations to the prose, and the run stayed green with
+   the sentence still saying one. An exemption list that can grow quietly is
+   the guard's own back door, so its SIZE is a floor and an equality: growing
+   it is a weakening, not a widening, and has to be loud. */
+DERIVED['exempt-citations'] = () => {
+  assert.strictEqual(HISTORICAL_CITATIONS.length, FLOORS.exemptCitations,
+    `HISTORICAL_CITATIONS holds ${HISTORICAL_CITATIONS.length} exemptions and `
+    + `FLOORS.exemptCitations is ${FLOORS.exemptCitations}: the list grew or shrank, and the `
+    + 'README publishes it row by row, so neither may be silent.');
+  return HISTORICAL_CITATIONS.slice().sort()
+    .map((c) => `${c} = exempt, the record of a citation that had already drifted`);
 };
 
 /* The policy a page actually declares, read out of the meta tag rather than
@@ -1143,7 +1635,7 @@ DERIVED['deleted-assets'] = () => {
       const file = line.split('=')[0].trim();
       assert.ok(/^[A-Za-z0-9._/-]+\/[A-Za-z0-9._-]+$/.test(file),
         `deleted-assets: "${line}" does not start with a repository path`);
-      assert.ok(!fs.existsSync(path.join(ROOT, file)),
+      assert.ok(!repoFiles().has(file),
         `${README_PATH} says ${file} is deleted, and it is in the tree`);
       const base = path.basename(file);
       const pages = PAGES.filter((page) => loadedAssets(page).includes(base));
@@ -1157,9 +1649,277 @@ DERIVED['deleted-assets'] = () => {
     });
 };
 
-/* ------------------------------------------------------------------ tests */
+/* Not `test()`. That is the finding, and it took eight rounds to reach.
 
-test('every claims block is derived here, and every derivation has a block', () => {
+   A registration is not an execution and the two look identical in the source.
+   `test(NAME, { skip: true }, ...)` never runs the body; `test(NAME, { todo:
+   true }, ...)` DOES run it and then throws away what it found, reports the
+   file as passing, and exits 0 - and node's suppression of a user exit code is
+   narrower than that and worse: a PASSING todo leaves process.exitCode alone,
+   a FAILING one swallows it. The defect you want to hide is what makes the
+   body fail, so it supplies its own suppressor. Round 7 caught the skip half.
+   The battery caught todo inside the fix for it. Round 8 then showed that the
+   fix had only moved the floors and the pins out of reach, and that two words
+   still unbound every one of the twenty-four block comparisons.
+
+   So there are no tests here. Every check is an ordinary module-scope call. A
+   file that registers none is still run by `node --test`, still counted, and
+   an uncaught throw at module scope still exits 1 - all three measured. There
+   is nothing to attach a flag to, because there is no registration.
+
+   check() keeps what test() was actually giving us, which was never the
+   silencing: every check runs even after one fails, so a red run names ALL the
+   disagreeing blocks rather than the first. It also records its own name, and
+   the completeness check below - itself a module-scope call, not an exit
+   handler, because an exit handler cannot fail a node:test run and that was
+   measured too - is red if an expected name neither passed nor failed.
+
+   The residual, stated rather than implied: check() and report() are the last
+   assertions in this file and nothing outranks them. Deleting a check() CALL
+   is caught by completeness; deleting the report() at the foot is not. That is
+   the same boundary the floors have and it is in NOT COVERED in those words. */
+const COMPLETED = new Set();
+const FAILURES = [];
+const check = (name, body) => {
+  try { body(); COMPLETED.add(name); }
+  catch (error) { FAILURES.push([name, error]); }
+};
+
+const report = (expected) => {
+  const ran = new Set([...COMPLETED, ...FAILURES.map(([name]) => name)]);
+  const silent = expected.filter((name) => !ran.has(name));
+  if (silent.length) {
+    FAILURES.push([`${silent.length} check(s) in ${SELF} never ran`, new Error(
+      `${silent.join('\n  ')}\nA check that is deleted or renamed is `
+      + 'indistinguishable from a passing one in a summary line, which is why this is '
+      + 'counted rather than read out of the source.')]);
+  }
+  if (!FAILURES.length) return;
+  for (const [name, error] of FAILURES) console.error(`\nFAILED  ${name}\n${error.message}`);
+  throw new assert.AssertionError({
+    message: `${FAILURES.length} check(s) failed in ${SELF}:\n  `
+      + FAILURES.map(([name]) => name).join('\n  '),
+    actual: FAILURES.length, expected: 0, operator: 'checks failed',
+  });
+};
+
+
+
+/* Some blocks cannot derive WHICH rows they carry, only what each row says.
+   Two read their subjects from the README — `source-anchors` (which comment
+   to go and find) and `deleted-assets` (which absent path to look for) — and
+   the rest read them from a hand-written array up in this file. Which blocks,
+   and how many rows each, is `claims id=pinned-blocks`, derived from the keys
+   below; no count is typed here, because the count typed here was wrong for
+   four review rounds. In all of them, deleting a subject deletes the
+   expectation with it and runs green.
+
+   So the pin is the SET, keyed per row, not the count. A count absorbs every
+   deletion some addition has already paid for: grow a block by one, drop a
+   different row, and a floor of six still sees six. Each row named here must
+   still be judged, by name, so removing one is a deliberate two-line deletion
+   in this file and visible in the diff. Growing a block is free.
+
+   A block derives its row set from the tree, the pages, the registry or the
+   sheets UNLESS its subjects are hand-written in this file, and then it needs
+   a pin. PR #111 added two such blocks and did not pin them for four review
+   rounds: deleting a GUARD_CONSTANTS entry, or a HEADING_PROBES row, together
+   with its README line was GREEN, which silently reinstated two defects
+   earlier rounds of that PR had fixed. Both are pinned below now. If you add
+   a block whose subjects come from an array up there, pin it here. */
+/* The status families, pinned as prefixes rather than as rows. For each one
+   the members are recomputed from ops.css HERE, independently of
+   V1_STATUS_FAMILIES, so narrowing a family prefix in that array shrinks the
+   block while this still demands all seven `.badge*` rows. A family leaves
+   only by being deleted in both places. */
+const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
+
+/* The floors. Integers, and they are integers ON PURPOSE: every other
+   defence in this file is a SET, and a set of subjects is itself a hand-written
+   list that can be deleted alongside the thing it pins. Round 6 walked that
+   regress up one level — REQUIRED_ROWS pins the blocks, and nothing pinned
+   REQUIRED_ROWS, so retiring a pin together with its `pinned-blocks` line ran
+   green and reinstated a defect round 5 had just fixed. Pinning the pin list
+   with another list moves the hole again; a count ends it, because a count has
+   nothing inside it to delete.
+
+   Most are FLOORS rather than equalities: growing one is free, which is the
+   whole point of a ratchet. Shrinking one is red until somebody edits the
+   number here AND the row it prints into `claims id=pinned-blocks`. That is the
+   property being bought — not that a retirement is impossible, but that it
+   cannot be quiet. Some are equalities instead, because for those a quiet
+   GROWTH is a weakening too; which are which is written in the rows the block
+   prints, not in this comment, because round 11 found this comment counting
+   three when there were five. */
+const FLOORS = {
+  pinnedBlocks: 17, derivedBlocks: 25, statusFamilies: 4,
+  collisionWidest: 8, exemptCitations: 1,
+};
+
+const REQUIRED_ROWS = {
+  /* Round 8: five more row sets were written by hand here and outside this
+     list, so a row could be retired together with its README line and the run
+     stayed green - round 5's defect, at five fresh addresses. Each of these
+     rows is the fix for a named defect, which is exactly why silent removal
+     matters: `of those, pane scripts` is why the README stopped saying
+     Settings is the one pane that can change something, `ops assets drawing
+     one` is why item 15 cannot rest on an unchecked "no pane does this", and
+     the collision count is the only whole-sheet row in its block. */
+  'write-capable-assets': ['ops assets naming a write method', 'of those, pane scripts'],
+  'sr-span-classes': ['absolutely positioned screen-reader classes', 'ops assets drawing one'],
+  'v1-v2-collision': ['class names declared in both ops.css and aria.css'],
+  /* The two blocks whose BULK row set is derived - from DERIVED and from
+     REQUIRED_ROWS - and whose TAIL is written by hand right here. The bulk
+     needs no pin; the tail is as free to shrink as any other hand-written
+     row, and round 8 retired one of each while the run stayed green. */
+  'claims-blocks': [
+    `and a check, ${SWEEP_TEST}`, `and a check, ${TABLE_TEST}`,
+    /* Round 10: round 9 added a THIRD tail row here and pinned two, so the
+       new check's own published row was free to go with its registration -
+       round 5's defect at a seventeenth address, in the round-9 fix. */
+    `and a check, ${CITATION_CHECK}`,
+  ],
+  'pinned-blocks': [
+    'claims id=v1-status-classes pins the families',
+    'floor: blocks pinned in REQUIRED_ROWS',
+    'floor: blocks derived in this file',
+    'floor: families pinned in REQUIRED_FAMILIES',
+    'floor: widest shared names printed by v1-v2-collision',
+    'floor: citations exempt by name',
+  ],
+  /* Five more, found in round 7 by the reviewer enumerating every derivation
+     rather than re-reading the list the round before had named. Each takes its
+     subjects from a hand-written array in this file and each was free to
+     shrink: retiring `pages loading assets/theme.js` together with its README
+     line ran GREEN, which is round 5's defect in five places nobody had
+     looked. Generated from the run, not counted by hand - the last time these
+     were hand-written three of seven were wrong. */
+  'csp-pages': [
+    'pages in ops/',
+    'pages declaring the policy in a <meta>',
+    'pages loading assets/theme.js',
+    'pages with an inline <script>',
+    'pages with a style attribute in markup',
+  ],
+  'dark-text-3': [
+    '--text-3 in ops.css\'s dark :root',
+    'surfaces it is measured against',
+    'worst pairing',
+    'clears 4.5:1 on every one of them',
+    'every other opaque token in that block',
+    'tokens in that block this cannot read as a flat colour',
+    'later :root rules redeclaring any of them',
+  ],
+  'data-page-scoping': [
+    'ops.css rules scoped to a data-page attribute',
+    'pages carrying a data-page attribute',
+  ],
+  'csp-policy': [
+    'default-src',
+    'script-src',
+    'style-src',
+    'img-src',
+    'font-src',
+    'connect-src',
+    'base-uri',
+    'form-action',
+    'pages carrying this exact policy',
+  ],
+  'shell-v2-pins': [
+    'palette tokens pinned for dark',
+    'palette tokens pinned for light',
+    'tokens pinned the same in every theme',
+    'tokens pinned in total for dark',
+    'tokens pinned in total for light',
+    'color-scheme pinned per theme',
+  ],
+  'source-anchors': [
+    /* Two guard citations the README used to SPELL. `check-ops-contrast.mjs:2239`
+       was wrong by 343 lines when round 7 checked it - a number nothing
+       regenerated, in the file whose subject is numbers nothing regenerates. */
+    'scripts/check-ops-contrast.mjs "NOT COVERED, on purpose \u2014 this is the list of exclusions decided, not an"',
+    'ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);"',
+    'scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too"',
+    'ops/assets/pane-analytics.js "`features.coverageNote` carries two facts"',
+    'ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs"',
+    'ops/assets/pane-releases.js "The chip carries the share and nothing else"',
+    'ops/assets/pane-releases-v2.css "The chip holds the share and nothing else"',
+    'ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded."',
+    'ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for"',
+  ],
+  'deleted-assets': ['ops/assets/operate.css', 'ops/assets/settings.css'],
+  /* Spelled out rather than mapped from V1_STATUS_FAMILIES, COLOUR_PROBES and
+     WRITE_PROBES: a pin computed from the array it is pinning moves with the
+     deletion and pins nothing. Deleting a subject means deleting it twice, in
+     two places in this file, both in the diff. */
+  /* The seven hand-chosen singletons. The four families are pinned by
+     REQUIRED_FAMILIES below instead, because one representative row per
+     family is not a pin on the family: narrow `badge` to `badge-ok` in
+     V1_STATUS_FAMILIES, drop the six other rows, and a pin on `.badge-ok`
+     is still satisfied. */
+  'v1-status-classes': [
+    '.flagchip', '.build', '.masked', '.reveal-note',
+    '.nav-count', '.btn-danger', '.field-error',
+  ],
+  'spend-colour-gate': [
+    'property --sp-ink', 'property color', 'property background-image',
+    'property border-color', 'property outline-color', 'property fill',
+    'property stroke', 'property box-shadow', 'property filter',
+    'property text-decoration', 'property text-emphasis', 'property mask-image',
+    'property accent-color',
+    'value #2b7fff', 'value #333', 'value rgb(255, 0, 0)', 'value hsl(0 100% 50%)',
+    'value crimson', 'value oklch(0.7 0.2 250)', 'value lab(50% 40 59)',
+    'value color-mix(in srgb, crimson 50%, transparent)',
+  ],
+  'spend-write-gate': [
+    'setAttributeNS(null, \'style\', …)',
+    'a capitalised Style: key on h()',
+    'createContextualFragment()',
+  ],
+  /* Spelled out rather than mapped from GUARD_CONSTANTS: a pin computed from
+     the array it pins moves with the deletion and pins nothing. Deleting a
+     constant means deleting it twice, both in the diff. */
+  'guard-constants': [
+    'check-ops-contrast.mjs STATES',
+    'check-ops-contrast.mjs STATES length',
+    'check-ops-dialog-hit.mjs PAINT_PIXEL_DELTA',
+    'check-ops-dialog-hit.mjs PAINT_COVERAGE_LIMIT',
+    'check-ops-narrow-overflow.mjs WIDTHS',
+    'check-ops-narrow-overflow.mjs WIDTHS length',
+    'check-ops-result-view.mjs WIDTH',
+    'check-ops-theme-redraw.mjs PAINT_PROPS',
+    'check-ops-theme-redraw.mjs PAINT_PROPS length',
+  ],
+  /* The census rows, likewise spelled out rather than mapped from
+     HEADING_PROBES. The subject is everything left of the last ` = `, so each
+     of these pins a probe's PRESENCE and leaves its SEEN/INVISIBLE verdict
+     free to move - which is what you want: the verdict is the measurement. */
+  'guard-blind-spots': [
+    /* The census SIZE, pinned with the probes themselves. Round 6: the probe
+       rows were pinned and the row printing how many there are was not, so
+       the census could shrink to nothing while every surviving row still
+       matched its pin. */
+    '(heading probes',
+    '(heading probe: "WHAT THIS DOES NOT COVER, in the words of what was measured:"',
+    '(heading probe: "   WHAT IT DOES NOT measure:"',
+    '(heading probe: "   WHAT IT DOES NOT check, in so many words:"',
+    '(heading probe: "   NOT COVERED, on purpose"',
+    '(heading probe: "   NOT COVERED at all:"',
+    '(heading probe: "   not covered, in lower case"',
+    '(heading probe: " * NOT COVERED, after a continuation marker"',
+    '(heading probe: "/* NOT COVERED, sharing the comment opener"',
+    '(heading probe: "/** NOT COVERED, sharing a doc-comment opener"',
+    '(heading probe: "// NOT COVERED, after a line comment"',
+    '(heading probe: "   WHAT THIS SWEEP CANNOT SEE:"',
+    '(heading probe: "   KNOWN GAPS:"',
+    '(heading probe: "/* KNOWN GAPS, behind a comment opener"',
+    '(heading probe: "   see NOT COVERED above for the two panes"',
+  ],
+};
+
+/* ----------------------------------------------------------------- checks */
+
+check(BLOCK_SET_TEST, () => {
   assert.deepStrictEqual([...BLOCKS.keys()].sort(), Object.keys(DERIVED).sort(),
     'a claims block was added, renamed or dropped without a derivation to hold it');
 });
@@ -1167,7 +1927,7 @@ test('every claims block is derived here, and every derivation has a block', () 
 const JUDGED = {};
 
 for (const id of Object.keys(DERIVED)) {
-  test(`ops/README.md claims id=${id} still describe the code`, () => {
+  check(`ops/README.md claims id=${id} still describe the code`, () => {
     JUDGED[id] = judge(id, DERIVED[id]());
   });
 }
@@ -1178,8 +1938,7 @@ for (const id of Object.keys(DERIVED)) {
    (check-ops-dialog-hit.mjs, aria-website#95) was red in browser-guards while
    the table beside it silently described five of six. The row's TEXT is not
    judged — see NOT COVERED at the top of this file. */
-const TABLE_TEST = 'every browser guard in the tree has a row in the checks table';
-test(TABLE_TEST, () => {
+check(TABLE_TEST, () => {
   const head = README.indexOf('| Check | What it can see that nothing else can |');
   assert.ok(head > -1, 'ops/README.md: the checks table header is gone or reworded, so no row set can be read');
   const body = README.slice(head).split(/\n(?!\|)/)[0];
@@ -1205,20 +1964,13 @@ test(TABLE_TEST, () => {
 /* The README names files. Every one of them is either in the tree or declared
    dead in the deleted-assets block — which is what makes a deletion elsewhere
    in the repository red here rather than silently stale. */
-test(SWEEP_TEST, () => {
-  const inTree = new Set([
-    ...PAGES.map((p) => `ops/${p}`),
-    ...list('ops/assets').map((a) => `ops/assets/${a}`),
-    ...list('scripts').map((s) => `scripts/${s}`),
-    ...WORKFLOWS.map((w) => `.github/workflows/${w}`)
-  ]);
-  const byBasename = new Map();
-  for (const file of inTree) byBasename.set(path.basename(file), file);
+check(SWEEP_TEST, () => {
+  const inTree = repoFiles();
+  const byBasename = leafIndex(inTree);
 
   const deleted = new Set((BLOCKS.get('deleted-assets')?.lines || [])
     .map((l) => l.trim().split('=')[0].trim()));
-  const deletedByBasename = new Map();
-  for (const file of deleted) deletedByBasename.set(path.basename(file), file);
+  const deletedByBasename = leafIndex(deleted);
 
   const EXTENSIONS = new Set([...inTree, ...deleted]
     .map((f) => path.extname(f).toLowerCase()).filter(Boolean));
@@ -1252,11 +2004,8 @@ test(SWEEP_TEST, () => {
          which is how most of this file names an asset. A path declared DEAD is
          resolved the same way, so `scripts/operate.css` is wrong even though
          `operate.css` is a file this repository deleted. */
-      const resolve = (byLeaf) => (file.includes('/')
-        ? [file, `ops/${file.replace(/^\/?ops\//, '')}`]
-        : [file, byLeaf.get(file)].filter(Boolean));
-      if (resolve(deletedByBasename).some((c) => deleted.has(c))) continue;
-      if (resolve(byBasename).some((c) => inTree.has(c))) continue;
+      if (resolveRepoPath(file, deletedByBasename).some((c) => deleted.has(c))) continue;
+      if (resolveRepoPath(file, byBasename).some((c) => inTree.has(c))) continue;
       missing.push(`${README_PATH}:${i + 1}: names ${file}, which is neither in the tree nor in the deleted-assets block`);
     }
   });
@@ -1265,85 +2014,93 @@ test(SWEEP_TEST, () => {
   JUDGED['file-paths'] = judged;
 });
 
-/* Five blocks cannot derive WHICH rows they carry, only what each row says.
-   Two read their subjects from the README — `source-anchors` (which comment
-   to go and find) and `deleted-assets` (which absent path to look for) — and
-   three read them from a hand-written array up in this file:
-   `v1-status-classes` from V1_STATUS_FAMILIES and V1_STATUS_SINGLETONS,
-   `spend-colour-gate` from COLOUR_PROBES and `spend-write-gate` from
-   WRITE_PROBES. In all five, deleting a subject deletes the expectation with
-   it and runs green.
+/* A line number typed into a sentence is the defect this file keeps finding:
+   five of the false claims on PR #111 were a `file:line` citation that was
+   true when it was written and drifted afterwards, one of them re-typed by
+   the round that removed it for being wrong by 343 lines. `source-anchors`
+   answers that by DERIVING the number from a quoted anchor, but nothing
+   stopped the next sentence from spelling a fresh one, and round 9 found
+   `check-ops-shell-v2.mjs:583` still spelled three lines above the sentence
+   saying both numbers had been moved into the block.
 
-   So the pin is the SET, keyed per row, not the count. A count absorbs every
-   deletion some addition has already paid for: grow a block by one, drop a
-   different row, and a floor of six still sees six. Each row named here must
-   still be judged, by name, so removing one is a deliberate two-line deletion
-   in this file and visible in the diff. Growing a block is free.
-
-   Every other block derives its row set from the tree, the pages, the
-   registry or the sheets, so shrinking one is already red without a pin. */
-/* The status families, pinned as prefixes rather than as rows. For each one
-   the members are recomputed from ops.css HERE, independently of
-   V1_STATUS_FAMILIES, so narrowing a family prefix in that array shrinks the
-   block while this still demands all seven `.badge*` rows. A family leaves
-   only by being deleted in both places. */
-const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
-
-const REQUIRED_ROWS = {
-  'source-anchors': [
-    'ops/assets/pane-analytics.js "`features.coverageNote` carries two facts"',
-    'ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs"',
-    'ops/assets/pane-releases.js "The chip carries the share and nothing else"',
-    'ops/assets/pane-releases-v2.css "The chip holds the share and nothing else"',
-    'ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded."',
-    'ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for"',
-  ],
-  'deleted-assets': ['ops/assets/operate.css', 'ops/assets/settings.css'],
-  /* Spelled out rather than mapped from V1_STATUS_FAMILIES, COLOUR_PROBES and
-     WRITE_PROBES: a pin computed from the array it is pinning moves with the
-     deletion and pins nothing. Deleting a subject means deleting it twice, in
-     two places in this file, both in the diff. */
-  /* The seven hand-chosen singletons. The four families are pinned by
-     REQUIRED_FAMILIES below instead, because one representative row per
-     family is not a pin on the family: narrow `badge` to `badge-ok` in
-     V1_STATUS_FAMILIES, drop the six other rows, and a pin on `.badge-ok`
-     is still satisfied. */
-  'v1-status-classes': [
-    '.flagchip', '.build', '.masked', '.reveal-note',
-    '.nav-count', '.btn-danger', '.field-error',
-  ],
-  'spend-colour-gate': [
-    'property --sp-ink', 'property color', 'property background-image',
-    'property border-color', 'property outline-color', 'property fill',
-    'property stroke', 'property box-shadow', 'property filter',
-    'property text-decoration', 'property text-emphasis', 'property mask-image',
-    'property accent-color',
-    'value #2b7fff', 'value #333', 'value rgb(255, 0, 0)', 'value hsl(0 100% 50%)',
-    'value crimson', 'value oklch(0.7 0.2 250)', 'value lab(50% 40 59)',
-    'value color-mix(in srgb, crimson 50%, transparent)',
-  ],
-  'spend-write-gate': [
-    "setAttributeNS(null, 'style', …)",
-    'a capitalised Style: key on h()',
-    'createContextualFragment()',
-  ],
-};
+   So this is a NARROWING rather than a new analysis, and it is the whole
+   rule: prose may name a FILE and may not name a LINE. The exceptions are
+   citations that are themselves the record of a number that WAS wrong; they
+   live in HISTORICAL_CITATIONS above, are PUBLISHED row by row in the
+   `exempt-citations` block, and their number is a floor, because a list of
+   things this refuses to judge is its own back door. What it does not see: a
+   citation written in words ("line 583 of ..."), or one outside a backtick
+   span. Both are in NOT COVERED at the head of this file. */
+check(CITATION_CHECK, () => {
+  const here = repoFiles();
+  const byBasename = leafIndex(here);
+  /* Only a file THIS repository has. A citation into the Aria monorepo —
+     `opsUsageView.ts:932` — names a line nothing here can resolve, so it is
+     out of reach of this check rather than quietly counted as clean; that is
+     the NOT COVERED entry, not a silent skip. The extension must start with a
+     LETTER, or the contrast ratio `1.08:1` reads as file `1.08` line 1. */
+  const cited = /([A-Za-z0-9._/-]+\.[A-Za-z][A-Za-z0-9]*):\d+(?:[-,]\d+)*/g;
+  const spans = [...BLOCKS.values()];
+  const inside = (n) => spans.some((b) => n >= b.line && n <= b.end);
+  const found = [];
+  /* A bare `:281` is a continuation of the citation before it, which is how
+     four of the twelve round 9 found were written — and one of those four
+     sits on the NEXT line, so the continuation is PARAGRAPH-scoped rather
+     than line-scoped. It is judged when what it continues is judged. */
+  let continuing = false;
+  README.split('\n').forEach((line, i) => {
+    if (inside(i + 1)) return;
+    if (line.trim() === '') continuing = false;
+    for (const span of line.matchAll(/`([^`]+)`/g)) {
+      /* Every citation INSIDE the span, not a span that is nothing but one.
+         Round 10 demonstrated the anchored version green on `see
+         check-ops-shell-v2.mjs:583` and on a span carrying two citations,
+         under a claim that read `anywhere in this file's prose`. */
+      const hits = [...span[1].matchAll(cited)]
+        .filter((h) => resolveRepoPath(h[1], byBasename).some((c) => here.has(c)));
+      if (hits.length) {
+        continuing = true;
+        for (const hit of hits) found.push({ at: i + 1, text: hit[0] });
+        continue;
+      }
+      if (continuing && /^:\d+(?:[-,]\d+)*$/.test(span[1])) found.push({ at: i + 1, text: span[1] });
+    }
+  });
+  JUDGED['prose line citations'] = found.length;
+  assert.deepStrictEqual(
+    found.map((f) => f.text).sort(),
+    HISTORICAL_CITATIONS.slice().sort(),
+    '\n' + found.map((f) => `${README_PATH}:${f.at}: spells ${f.text}`).join('\n')
+    + '\nProse may name a file; the line number belongs in source-anchors, or nowhere.\n',
+  );
+});
 
 /* A claims guard that judged nothing is the worst outcome this file has, and
    a green run says nothing about how much was compared. So the count goes in
    the log, per block, and the run is red if any of it is empty or if a
    README-subject block lost a row. */
-test('the run reports what it judged', () => {
+check(JUDGED_TEST, () => {
   const rows = Object.keys(JUDGED).sort().map((id) => `  ${id}: ${JUDGED[id]}`);
   const total = Object.values(JUDGED).reduce((a, b) => a + b, 0);
   console.log(`ops/README.md claims judged against the code:\n${rows.join('\n')}\n  TOTAL: ${total}`);
-  /* Every block, plus the two tests that judge a row set without a block of
-     their own: the file sweep and the checks table. */
+  /* Every block, plus the three checks that judge a row set without a block
+     of their own: the file sweep, the checks table and the line citations. */
   assert.deepStrictEqual([...Object.keys(JUDGED)].sort(),
-    [...Object.keys(DERIVED), 'file-paths', 'checks table'].sort(),
+    [...Object.keys(DERIVED), 'file-paths', 'checks table', 'prose line citations'].sort(),
     'a block was not judged in this run');
   assert.ok(total > 0, 'nothing was judged');
+});
+
+/* Named and routed through check() so a failure here joins the others rather
+   than aborting the run at the first one, and so completeness sees it. */
+const PINS_CHECK = 'every pinned row subject is still judged';
+check(PINS_CHECK, () => {
   for (const [id, required] of Object.entries(REQUIRED_ROWS)) {
+    /* A key naming no block is inert - its subject set is empty, nothing is
+       missing from it, and it passes while inflating FLOORS.pinnedBlocks.
+       Round 7's E1 added `'zz-nothing': []` and the floor held. */
+    assert.ok(BLOCKS.has(id),
+      `REQUIRED_ROWS pins ${id}, and ${README_PATH} carries no such block, so that pin holds nothing`);
     /* The subject is everything left of the row's last ` = `, matched
        WHOLE. A prefix match would let `.badge-ok` satisfy the pin on
        `.badge`, which is a pin on nothing for every subject that is a
@@ -1373,3 +2130,41 @@ test('the run reports what it judged', () => {
       'has to lose it on purpose');
   }
 });
+
+
+/* The ratchet. Nothing above this can see a pin RETIRED, because every one of
+   them reads the pin list to decide what to check, so an empty list checks
+   nothing and says so in no words at all. Three counts, compared against
+   integers spelled out in FLOORS.
+
+   The failure message names what is missing rather than the arithmetic,
+   because the arithmetic is not the finding: the finding is which defence
+   stopped existing. */
+/* The ratchet. NOT a test, and that placement is the finding. Round 7 showed a test can be
+   silenced in place: `{ skip: true }` never runs the body, and `{ todo: true }`
+   RUNS it and then discards whatever it found - node reports the file as
+   passing and exits 0 whatever an exit handler does with process.exitCode,
+   which was measured, not assumed. A module-scope assertion has no such switch.
+   It cannot be skipped, todo-ed or tolerated, and a throw here exits 1.
+
+   So the checks that hold every other defence in this file live out here. */
+const RATCHET_CHECK = 'no defence in this file was retired without lowering a floor';
+check(RATCHET_CHECK, () => {
+  const pinned = Object.keys(REQUIRED_ROWS).sort();
+  assert.ok(pinned.length >= FLOORS.pinnedBlocks,
+    `REQUIRED_ROWS pins ${pinned.length} blocks and FLOORS.pinnedBlocks is ${FLOORS.pinnedBlocks}: `
+    + `a pin was retired. Pinned now: ${pinned.join(', ')}`);
+  const derived = Object.keys(DERIVED).sort();
+  assert.ok(derived.length >= FLOORS.derivedBlocks,
+    `this file derives ${derived.length} blocks and FLOORS.derivedBlocks is ${FLOORS.derivedBlocks}: `
+    + `a derivation was retired, which retires the README block it held. Derived now: ${derived.join(', ')}`);
+  assert.ok(REQUIRED_FAMILIES.length >= FLOORS.statusFamilies,
+    `REQUIRED_FAMILIES holds ${REQUIRED_FAMILIES.length} families and FLOORS.statusFamilies is `
+    + `${FLOORS.statusFamilies}: a family was retired. Held now: ${REQUIRED_FAMILIES.join(', ')}`);
+});
+
+report([
+  ...Object.keys(DERIVED).map((id) => `ops/README.md claims id=${id} still describe the code`),
+  BLOCK_SET_TEST, TABLE_TEST, SWEEP_TEST, JUDGED_TEST, PINS_CHECK, RATCHET_CHECK,
+  CITATION_CHECK,
+]);
