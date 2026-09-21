@@ -1575,14 +1575,50 @@ const probeFor = (markers) => `(() => {
   const root = document.documentElement;
   const reachW = Math.max(root.clientWidth, root.scrollWidth);
   const reachH = Math.max(root.clientHeight, root.scrollHeight);
-  const onScreen = (el) => {
-    const box = el.getBoundingClientRect();
-    if (box.width <= 0 || box.height <= 0) return false;
-    if (box.right <= 0 || box.bottom <= 0 || box.left >= reachW || box.top >= reachH) {
-      return false;
+  const inReach = (b) => b.width > 0 && b.height > 0
+    && b.right > 0 && b.bottom > 0 && b.left < reachW && b.top < reachH;
+  /* An element's own box is not the only thing that paints its text.
+     display:contents removes the box and keeps the text: measured on this
+     dashboard, a span carrying "2.9.1" under display:contents reports a
+     0x0 rect AND checkVisibility() false while its text is laid out at
+     (1198, 894) 39.97x16 and is legible on the screenshot. Asking that
+     element alone reports a visible result as unreachable, which is a false
+     red on an ordinary layout refactor that flattens a wrapper.
+
+     So a carrier with no box of its own is measured by the boxes its own
+     contents produce — a Range over them is exactly that set — and its
+     renderedness is asked of the nearest ancestor that does own a box, which
+     is what display:none, content-visibility and a hidden ancestor all still
+     answer for. The Range is only consulted when the element produces no box
+     at all: a box with one zero dimension stays a failure, which is what
+     keeps transform:scale(0) red. */
+  const boxesOf = (el) => {
+    const own = el.getBoundingClientRect();
+    if (own.width > 0 || own.height > 0) return [own];
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return [].slice.call(range.getClientRects());
+  };
+  const boxed = (el) => {
+    let node = el;
+    while (node) {
+      const b = node.getBoundingClientRect();
+      if (b.width > 0 || b.height > 0) return node;
+      node = node.parentElement;
     }
-    if (typeof el.checkVisibility === 'function') {
-      return el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true });
+    return null;
+  };
+  const onScreen = (el) => {
+    if (!boxesOf(el).some(inReach)) return false;
+    /* visibility is inherited, so the carrier's own computed value answers for
+       an ancestor that set it as well — and it is asked separately because the
+       ancestor consulted below may be the element that is still painting while
+       this one is not. */
+    const vis = getComputedStyle(el).visibility;
+    if (vis !== 'visible') return false;
+    const judge = boxed(el);
+    if (judge && typeof judge.checkVisibility === 'function') {
+      return judge.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true });
     }
     return true;
   };
@@ -1766,12 +1802,13 @@ try {
       if (seen.hiddenMarkers.length) {
         failures.push(`${where}: the pane drew ` +
           `${seen.hiddenMarkers.map((m) => JSON.stringify(m)).join(' and ')} into #content ` +
-          'and no element carrying it has a box inside the area this page can be scrolled ' +
-          'over that the browser also reports as rendered — zero-area, display:none, ' +
-          'visibility:hidden, content-visibility, or placed outside the document. The ' +
-          'result is in the DOM and not anywhere a reader could look, so nothing below ' +
-          'could judge what it paints and this run will not count the pane as reaching a ' +
-          'result view.');
+          'and nothing carrying it — neither a box of its own nor the boxes its text ' +
+          'produces — is both inside the area this page can be scrolled over and reported ' +
+          'as rendered by the browser. Zero-area, display:none, visibility:hidden or ' +
+          'collapse, content-visibility, and a position outside the document all land here ' +
+          'and this check does not tell them apart; opacity it never asked about. The ' +
+          'result is in the DOM, nothing below could judge what it paints, and this run ' +
+          'will not count the pane as reaching a result view.');
         continue;
       }
       if (seen.sheetsRead === 0 || seen.ruleCount === 0) {
