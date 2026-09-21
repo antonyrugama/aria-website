@@ -213,8 +213,7 @@ const KNOWN_ESCAPES = [
    the list one at a time as the sheets that own them are fixed. */
 const KNOWN_STATIC_SCROLLERS = [
   { pane: 'alerts', box: 'div.scrollx', repairIn: 'ops/assets/pane-alerts-v2.css .scrollx' },
-  { pane: 'history', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-run-history-v2.css .tbl-wrap' },
-  { pane: 'settings', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-settings-v2.css .tbl-wrap' }
+  { pane: 'history', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-run-history-v2.css .tbl-wrap' }
 ];
 
 /* A form control that scrolls its own value is not a layout wrapper and has no
