@@ -50,7 +50,7 @@ Filed as Stadiora/Aria#10868. Not fixed here: this audit reports, it does not re
 
 `hidden` is a UA `display: none` rule and the weakest one in the cascade. Any author `display` on the same element silently defeats it.
 
-The 3 controls inside are `disabled`, so a keyboard operator can see 3 labelled fields they can neither reach nor operate, with no visible indication of why.
+3 of the 3 controls inside are `disabled`, so a keyboard operator can see 3 labelled fields they can neither reach nor operate, with no visible indication of why.
 
 Seen on: evals/desktop.
 
@@ -62,7 +62,7 @@ Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not re
 
 `hidden` is a UA `display: none` rule and the weakest one in the cascade. Any author `display` on the same element silently defeats it.
 
-The button is not disabled: it is a fully operable control the code has decided should not exist.
+The button is **not** disabled: it is a fully operable control the code has decided should not exist.
 
 Seen on: settings/desktop, settings/375px (measured on settings/desktop).
 
@@ -102,6 +102,9 @@ it has controls is a coincidence, not a trap.
   Chrome's AX tree marks the `aria-label` `superseded`. This sweep saw
   **0 interactive controls named by `aria-labelledby`**
   (0 of them also carrying an `aria-label`), and judged none of them.
+  That count is the HAPPY PATH: the ones this dashboard is known to build — the "Try again"
+  buttons the overview and alerts panes name from the heading of the panel that failed —
+  exist only after a panel fails to load, and nothing here induces that state.
   A control whose visible text sits in its `aria-label` and not in the heading it points at is
   a real Label-in-Name failure this document prints as clean. `<label>` and `title` are
   likewise unread.

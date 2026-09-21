@@ -218,13 +218,13 @@ const EXPERIMENTS = [
     what: 'Focus reset reverts to what the first version did: load the page once, then blur() between phases. blur() moves activeElement to body but leaves the sequential-navigation starting point mid-page, so the second phase starts somewhere other than the top and the skip link stops being stop 0. The load is KEPT, because a payload that also removed it would walk a blank page and score VACUOUS rather than wrong.' },
 
   { id: 'M9', kind: 'mutation', expect: 'kill', scope: 'jobs', vp: '375px', signal: 'jobsRevPresses', file: TOOL,
-    anchor: "    const core = stops.filter((s, i) => !(i === stops.length - 1 &&\n      (s.key === 'DOCUMENT' || (stops.length > 2 && s.key === stops[0].key))));\n    const fwd = Math.min(core.length, 12);",
-    payload: "    const core = stops;\n    const fwd = Math.min(core.length, 12);",
-    what: 'The terminal sentinel is counted as a stop again, so the forward walk presses Tab one more time than there are stops and the reverse walk makes one press too many. Scored on the press count, which moved 3 -> 4: on any pane with more than 12 stops the min(n,12) window caps both sides and the off-by-one is invisible, which is why the first attempt at this row scored settings/desktop and survived.' },
+    anchor: "    const core = stops.filter((s, i) => !(i === stops.length - 1 &&\n      (s.key === 'DOCUMENT' || (stops.length > 2 && s.key === stops[0].key))));",
+    payload: "    const core = stops;",
+    what: 'The terminal sentinel is counted as a stop again, so the forward walk presses Tab one more time than there are stops and the reverse walk makes one press too many. Scored on the press count rather than on whether the retrace matched, because whether the off-by-one SURFACES depends on the terminal shape and the terminal shape is timing-dependent -- see M9b. The press count is not: six unmutated observations across both shapes all read the same.' },
 
   { id: 'M9b', kind: 'asymmetry-probe', expect: 'survive', scope: 'jobs', vp: '375px', signal: 'jobsReverse', file: TOOL,
-    anchor: "    const core = stops.filter((s, i) => !(i === stops.length - 1 &&\n      (s.key === 'DOCUMENT' || (stops.length > 2 && s.key === stops[0].key))));\n    const fwd = Math.min(core.length, 12);",
-    payload: "    const core = stops;\n    const fwd = Math.min(core.length, 12);",
+    anchor: "    const core = stops.filter((s, i) => !(i === stops.length - 1 &&\n      (s.key === 'DOCUMENT' || (stops.length > 2 && s.key === stops[0].key))));",
+    payload: "    const core = stops;",
     what: 'The SAME payload as M9, scored on reverseMatches instead of the press count, PUBLISHED BECAUSE IT SURVIVES. When the forward walk ends by wrapping, the extra Tab lands on stop 0 and the first Shift+Tab wraps back to the last control, so the off-by-one is common-mode and cancels; reverseMatches stays true. It only surfaces as a mismatch when focus LEAVES the document. Which of those two shapes a walk ends in is timing-dependent -- the same pane and viewport was measured as wrapped in four runs and left-document in two -- so reverseMatches cannot score this payload deterministically, and a row that scored it would be a coin flip with a decimal point. This is why M9 scores the press count.' },
 
   { id: 'M10', kind: 'mutation', expect: 'kill', scope: 'settings', signal: 'settingsSkipLands',
@@ -324,8 +324,8 @@ const EXPERIMENTS = [
   { id: 'M20b', kind: 'mutation', expect: 'kill', scope: 'evals', vp: 'desktop',
     signal: 'evalsReverse', file: TOOL,
     anchor: "    const fwdLeg = await stepStops(fwd, () => key('Tab'));",
-    payload: "    for (let i = 0; i < fwd; i++) await key('Tab');",
-    what: 'The retrace\'s forward leg reverts to one press per stop. A composite input eats several presses without moving activeElement -- that is what pressesConsumed counts in the forward walk -- so the leg lands short and the comparison goes out of step. It landed THIRTEEN stops short on evals/desktop. Both legs step through stepStops now, so a mismatch means the ORDER disagreed and not the press accounting.' },
+    payload: "    const fwdLanded = [];\n    for (let i = 0; i < fwd; i++) { await key('Tab'); fwdLanded.push((await active()).key); }\n    const fwdLeg = { landed: fwdLanded, presses: fwd };",
+    what: 'The retrace\'s forward leg reverts to one press per stop. A composite input eats several presses without moving activeElement -- that is what pressesConsumed counts in the forward walk -- so the leg lands short and the comparison goes out of step. It landed THIRTEEN stops short on evals/desktop. Both legs step through stepStops now, so a mismatch means the ORDER disagreed and not the press accounting. The payload REBUILDS the binding it replaces: the first attempt deleted `fwdLeg` and the tool died on `fwdLeg.presses` three lines later, which the battery scored INVALID rather than as a kill -- a crash is not evidence that the assertion works, it is evidence that the payload does not compile.' },
 
   { id: 'M21', kind: 'mutation', expect: 'kill', scope: '*', vp: '*', signal: '__exit',
     file: 'ops/assets/shell-pane-v2.js',
@@ -349,6 +349,43 @@ const EXPERIMENTS = [
     scope: 'settings,history,evals', signal: 'settingsSkipFirst',
     what: 'No edit, after every mutation. A moved signal here means the tree was left contaminated.' }
 ];
+
+/* PREFLIGHT. Every anchor, resolved against the tree, before any of them is
+   applied: presence and uniqueness. A battery that discovers on experiment 20
+   that experiment 21's anchor has drifted has burned twenty minutes to learn
+   something a second could have told it, and the drift is routine -- this
+   file's anchors live in the code the battery is testing, so every fix to
+   that code moves some of them. BATTERY_PREFLIGHT=1 runs this and stops. */
+function preflight() {
+  const bad = [];
+  for (const e of EXPERIMENTS) {
+    for (const ed of (e.edits || (e.anchor === null ? [] : [{ file: e.file, anchor: e.anchor, payload: e.payload }]))) {
+      const txt = fs.readFileSync(path.join(WT, ed.file), 'utf8');
+      const at = txt.indexOf(ed.anchor);
+      const n = at === -1 ? 0 : (txt.indexOf(ed.anchor, at + 1) === -1 ? 1 : 2);
+      const where = at === -1 ? '-' : 'L' + (txt.slice(0, at).split('\n').length);
+      process.stderr.write(`${n === 1 ? 'ok  ' : 'BAD '} ${e.id.padEnd(6)} ${where.padEnd(7)} ${ed.file}\n`);
+      if (n !== 1) bad.push(`${e.id} (${n === 0 ? 'absent' : 'not unique'}) in ${ed.file}`);
+    }
+  }
+  if (bad.length) throw new Error(`preflight: ${bad.length} anchor(s) unusable:\n  ${bad.join('\n  ')}`);
+  process.stderr.write(`preflight: every anchor of ${EXPERIMENTS.length} experiments resolves to exactly one site\n`);
+}
+if (process.env.BATTERY_PREFLIGHT) { preflight(); process.exit(0); }
+
+/* BATTERY_ONLY runs a named subset, for checking that ONE repaired payload
+   applies and scores before spending forty minutes on the other thirty-four.
+   It is a development aid and the emitted table says so: a subset run prints
+   a banner naming the filter, so a partial table can never be mistaken for
+   the published one. The published table is always a single unfiltered run --
+   stitching two runs together by hand is how a table stops being its own
+   experiment. */
+const ONLY = (process.env.BATTERY_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean);
+if (ONLY.length) {
+  const keep = new Set(ONLY);
+  for (let i = EXPERIMENTS.length - 1; i >= 0; i--) if (!keep.has(EXPERIMENTS[i].id)) EXPERIMENTS.splice(i, 1);
+  if (!EXPERIMENTS.length) throw new Error(`BATTERY_ONLY matched no experiment: ${ONLY.join(',')}`);
+}
 
 function lineOf(text, anchor) {
   const at = text.indexOf(anchor);
@@ -567,6 +604,7 @@ for (const r of rows) out.push(`- **${r.id}** (Δ${r.delta} bytes) — ${r.what}
 const unexpected = rows.filter((r) => r.verdict !== 'as expected');
 out.push('');
 out.push(`**${rows.length} experiments, ${rows.length - unexpected.length} as expected, ${unexpected.length} not.**`);
+if (ONLY.length) out.push(`\n**SUBSET RUN — \`BATTERY_ONLY=${ONLY.join(',')}\`. Not the published table.**`);
 fs.writeFileSync(path.join(OUTDIR, 'keyboard-battery.md'), out.join('\n') + '\n');
 fs.writeFileSync(path.join(OUTDIR, 'keyboard-battery.json'), JSON.stringify(rows, null, 2));
 process.stderr.write(`\n${rows.length} experiments, ${unexpected.length} unexpected\n`);
