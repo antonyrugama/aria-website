@@ -836,38 +836,44 @@ for (const page of PAGES) {
   }
 }
 
-/* A sentence appended to a missed floor, naming the fixture key that feeds the
-   state so the failure points at its own cause. Enumerated rather than
-   generated: a hint that guesses is worse than none. */
-/* A sentence appended to a missed floor. Each names the mechanism that draws the
-   state and points at the number in the census above that discriminates between
-   its possible causes — NOT at a cause. Which of the fixture and the pane broke
-   is not decidable from the pair count, and round 1 and round 2 of this PR's
-   review each caught a version of this text asserting it anyway, in opposite
-   directions. Enumerated rather than generated: a hint that guesses is worse
-   than none. */
+/* A sentence appended to a missed floor. Each names the mechanism that draws
+   the state and the two NUMBERS a reader can put side by side — never what
+   those numbers mean about a cause.
+
+   Three review rounds of this pull request each caught a version of this text
+   asserting a cause anyway, and the third one is the instructive one: which of
+   the fixture and the pane produced a short count is not decidable from the
+   count. Round 1 blamed the pane where the fixture was intact. Round 2 cleared
+   the fixture where the fixture was the cause. Round 3 read a census of rows
+   the pane DREW as a count of rows the fixture SENT, and proved it by making
+   the pane render one of two rows it had been handed: byte-identical output to
+   the run where the fixture sent one. The suggested repair — "the same number
+   means the fixture narrowed" — is itself false in the other proven direction,
+   where the pane writes aria-pressed on both rows and the count matches the
+   fixture exactly.
+   So these sentences state only what was observed and where the number to
+   compare it against lives — and where the comparison is between two counts,
+   BOTH are printed, derived from the fixture rather than typed, so the reader
+   is not asked to take either on faith. The reader does the deducing; this
+   file has been wrong at it three times. Enumerated rather than generated: a
+   hint that guesses is worse than none. */
 const FLOOR_HINTS = {
   spend: 'The pair comes from the Group-the-bill-by switch, which viewCard draws only ' +
     'when two or more of the groupings in VIEW_ORDER (ops/assets/pane-spend.js:302) ' +
-    'arrive with rows. PREFLIGHT in this file tested the fixture against that rule ' +
-    'before Chrome started and it passed, since a failure there exits before this point ' +
-    '— so the two groupings did arrive, and whatever removed the pair is downstream of ' +
-    'that one rule rather than of the fixture in general.',
+    'arrive with rows. PREFLIGHT in this file tested the COSTS fixture against that one ' +
+    'rule before Chrome started and it passed, since a failure there exits before this ' +
+    'point — so read that rule as already checked and start downstream of it.',
   users: 'The pairs come from picking a row in Look up a user: aria-current on the row ' +
-    'and aria-pressed on its control, each needing a second, unpicked row to compare ' +
-    'against. The lookup draws one aria-pressed per match, so the aria-pressed count in ' +
-    'the census above says how many rows arrived: one means the fixture narrowed and ' +
-    'there is no unmarked row to compare against, two or more means the rows arrived ' +
-    'and the pane stopped marking them.'
+    'and aria-pressed on its control. Measured at this head, a one-row result view judges ' +
+    'aria-current and not aria-pressed — the marked <tr> finds an unmarked peer among the ' +
+    'detail card\'s rows (ops/assets/pane-users.js:1095, :1156, :1239) while the marked ' +
+    'control finds none outside the match table. applySelection writes aria-pressed once ' +
+    'per rendered match row that carries a pick control (:551, from :652), so the ' +
+    'aria-pressed entries above, added up whatever their value, are how many match rows on ' +
+    `the page carried one. The LOOKUP fixture in this file sent ${LOOKUP.matches.length}. ` +
+    'Equal means the page carried a control for every row the fixture sent; fewer means it ' +
+    'did not.'
 };
-
-for (const key of Object.keys(FLOOR_HINTS)) {
-  if (!EXPECTED_PAIRS[key]) {
-    console.error(`\nFLOOR_HINTS explains a missed floor for "${key}" and EXPECTED_PAIRS ` +
-      'does not set one, so the hint can never print. Delete it or set the floor.\n');
-    process.exit(1);
-  }
-}
 
 /* Fixture pre-flight.
  *
@@ -885,7 +891,14 @@ for (const key of Object.keys(FLOOR_HINTS)) {
  *
  * Enumerated, not generic: only panes whose state depends on fixture SHAPE
  * rather than mere presence need an entry, and each says how it derives its
- * rule so a remodel moves the check rather than silently passing it. */
+ * rule so a remodel moves the check rather than silently passing it.
+ *
+ * Its limit, measured: reading a rule out of source text is not evaluating it.
+ * An unbalanced `/*` inside a string literal in the pane makes the comment
+ * strip below run to the next real close and swallow the declaration, and the
+ * run then says the pane no longer declares VIEW_ORDER — false about the file,
+ * red rather than green, and pointing at the right line anyway. No such
+ * literal exists in pane-spend.js today. */
 const PREFLIGHT = [
   {
     pane: 'spend',
@@ -918,7 +931,7 @@ const PREFLIGHT = [
           'groupings viewCard needs before it draws the switch at all, so EXPECTED_PAIRS.spend ' +
           'is asking for a state the pane can no longer draw for any fixture.';
       }
-      const has = (k) => Boolean(COSTS.views[k]?.rows?.length);
+      const has = (k) => Array.isArray(COSTS.views[k]?.rows) && COSTS.views[k].rows.length > 0;
       const supplied = order.filter(has);
       if (supplied.length >= 2) return null;
       const missing = order.filter((k) => !has(k));
@@ -937,6 +950,26 @@ const PREFLIGHT = [
 
 {
   const paneKeys = new Set(PAGES.map((p) => p.key));
+  /* The hints are validated here rather than at their own table because one of
+     them cites PREFLIGHT by name. A hint that claims a pre-flight this file no
+     longer runs would rule out a cause nobody checked — and the run that
+     exposed it, a PREFLIGHT emptied to [], left the hint saying the fixture had
+     been tested when the missing rows were the whole failure. This couples the
+     two tables on the literal name, which is as far as a check can reach into
+     prose: a hint that claimed a pre-flight in other words would still pass. */
+  for (const key of Object.keys(FLOOR_HINTS)) {
+    if (!EXPECTED_PAIRS[key]) {
+      console.error(`\nFLOOR_HINTS explains a missed floor for "${key}" and EXPECTED_PAIRS ` +
+        'does not set one, so the hint can never print. Delete it or set the floor.\n');
+      process.exit(1);
+    }
+    if (FLOOR_HINTS[key].includes('PREFLIGHT') && !PREFLIGHT.some((e) => e.pane === key)) {
+      console.error(`\nFLOOR_HINTS for "${key}" tells the reader PREFLIGHT already tested ` +
+        'the fixture, and PREFLIGHT has no entry for that pane, so the hint rules out a ' +
+        'cause nothing checked. Restore the pre-flight or stop citing it.\n');
+      process.exit(1);
+    }
+  }
   const problems = [];
   for (const entry of PREFLIGHT) {
     if (!paneKeys.has(entry.pane)) {
@@ -1329,7 +1362,16 @@ const probeFor = (markers) => `(() => {
      counted by value. Judgement 2 only keeps the positive ones, so a pane that
      has stopped drawing a control entirely and a pane that draws it with every
      state false both arrive at the floor check as a bare zero. This census is
-     what tells those two apart in the failure message. */
+     what tells those two apart in the failure message.
+
+     Scoped to #content, which is the pane's own output. That scope is load
+     bearing and rests on a mount point rather than on the pane: the shell's
+     App-scope bar carries an aria-pressed on every button
+     (ops/assets/shell-pane-v2.js:413-421) and stays out of these counts only
+     because it is appended to main (:1094) while this walks #content. A
+     remodel that moved the bar inside #content would inflate the users
+     aria-pressed count that FLOOR_HINTS.users tells a reader to compare
+     against LOOKUP. */
   const stateCensus = {};
   for (const el of content.querySelectorAll('*')) {
     for (const attr of STATES) {
@@ -1644,8 +1686,10 @@ for (const page of PAGES) {
     /* A bare count of 0 states the symptom and withholds everything needed to
        act on it. Three cases, not two: the pane drew none of the states and
        none of the attributes; it drew the attributes but none was judgeable;
-       or it drew SOME and is short of its floor. The third is the one that
-       makes the fixture an innocent party, so it gets no fixture hint. */
+       or it drew SOME and is short of its floor. None of the three is
+       attributed to a cause — the third arrives from a narrowed fixture and
+       from a pane regression alike — so each states what was on the page and
+       the hint below says which number to compare it against. */
     const census = censusByPane[page.key] || {};
     const declared = Object.keys(census).sort();
     const inventory = declared.map((k) => `${k} ×${census[k]}`).join(', ');
@@ -1663,9 +1707,9 @@ for (const page of PAGES) {
       saw = 'Its result view declared no state attribute of any kind, so the control this ' +
         'check was judging is not being drawn at all rather than being drawn unmarked.';
     }
-    /* Printed in every case, because every hint now names a mechanism and a
-       discriminator rather than a cause. Gating it on had === 0 suppressed the
-       users hint in exactly the case it was written for. */
+    /* Printed in every case, because no hint names a cause any more. Gating it
+       on had === 0 suppressed the users hint in exactly the case it was
+       written for. */
     const hint = FLOOR_HINTS[page.key] ? ` ${FLOOR_HINTS[page.key]}` : '';
     failures.push(`${page.key}: EXPECTED_PAIRS says its result view declares at least ${due} ` +
       `ARIA state${due === 1 ? '' : 's'} to compare and ${had} were found, so the pane has ` +
