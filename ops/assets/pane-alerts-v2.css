@@ -38,10 +38,12 @@
    AVATAR INK TOKEN: --cyan
 
    The reader behind the first line refuses a hex and an unclassified function
-   on EVERY property. A colour KEYWORD it looks for only where the property's
-   own NAME carries a paint stem (color, background, shadow, outline, border,
-   fill, stroke), so a keyword on column-rule, text-decoration, mask-image or
-   list-style walks past it — inside a color-mix() or not. A -color longhand,
+   on EVERY property. A colour KEYWORD it looks for on every CUSTOM property
+   (any name starting with two dashes, because any of them can carry a paint)
+   and on a property whose own NAME carries a paint stem (color, background,
+   shadow, outline, border, fill, stroke), so a keyword on column-rule,
+   text-decoration, mask-image or list-style walks past it — inside a
+   color-mix() or not. A -color longhand,
    where one exists, is caught: the stem is in its name. `filter` is not on
    that list although its name carries no stem either, because both syntaxes
    that bring a colour to it — drop-shadow(), and a URL reference to an SVG

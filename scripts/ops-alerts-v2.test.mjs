@@ -35,29 +35,36 @@
        under this page's own CSP (RV20-4, re-run in round 21): a sheet a
        permitted script APPENDS as a <link> paints, and a constructed sheet
        pushed onto adoptedStyleSheets paints, and neither is read anywhere
-       in this file. A script setting `el.style.setProperty(...)` paints
-       too -- CSSOM is not governed by style-src at all, and aria.js and
-       shell-pane-v2.js already do it (RV22-A1) -- and is likewise unread.
+       in this file. A script writing inline style through the CSSOM paints
+       too -- CSSOM is not governed by style-src at all, and aria.js
+       (`col.style.height = ...`) and shell-pane-v2.js
+       (`bar.style.setProperty(...)`) already do it (RV22-A1, spelling
+       corrected in round 27) -- and is likewise unread.
        The fourth route, an injected <style> ELEMENT, is NOT claimed to be
-       closed either, and this is the fourth round of narrowing that claim
+       closed either, and this is the fifth round of narrowing that claim
        rather than the first: what is asserted below is the TEXT of the
        policy the page carries, and text is not a document. Measured in real
        Chrome (RV25-1, re-measured in round 26): comment the meta out, move
        it into <body>, or wrap it in <noscript>, and the page ships NO
        policy Chrome enforces, while every assertion below still passes,
        because each of those is still a Content-Security-Policy the file
-       spells once. Three shapes, not four: the fourth, spelling the tag
-       <meta-x>, is caught since round 26 and reds (M26-A2), because the
-       tag name is matched with a boundary now.
-       What IS bound, and all that is: IF the page carries a policy this
-       reader can find, THEN the source list that governs a <style> element
+       spells once. Those three are the disclosure; the shapes that are
+       decidable from the TEXT are fixed instead of disclosed, and three
+       have been: <meta-x> (M26-A2), data-http-equiv= (M27-A2) and
+       <meta&#160; (M27-A5), the last two found in the twenty-sixth review.
+       The rule that sorts them: if the bytes say the tag is not a meta or
+       the attribute is not http-equiv, this reader is wrong to read it and
+       is made to red; if the bytes are a policy and only the PARSER knows
+       it was never applied, no reader of text can tell, and it goes above.
+       What IS bound, and all that is: IF this reader finds a policy in the
+       page's text, THEN the source list that governs a <style> element
        in it -- style-src-elem if the policy declares one, else style-src,
        else default-src -- is exactly 'self'. A hash or a nonce in whichever
        of those the chain RESOLVES to reds (RV22-2, RV23-1); a hash in a
        directive the chain does not resolve to is shadowed, opens nothing,
        and correctly does not red (RV24-A1). Whether the browser ENFORCES
        what was read is the part no assertion in this file can reach, and
-       the four payloads above are named so nobody has to rediscover them.
+       the three payloads above are named so nobody has to rediscover them.
        ops/alerts.html appends no sheet today; nothing in this
        file would notice if it did.
      - Every reader of the sheet. The line below enumerates the PREFIXED
@@ -292,10 +299,21 @@ const LINK_TAGS = [...DECODED_HTML.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0])
    75 tests green with a fourth sheet painting every rail, and the escapes
    and @imports inside that sheet carried past the refusals with it (found
    in the twenty-first review of #75). An attribute name starts after
-   whitespace, a `/`, or the quote that closed the attribute before it. */
+   whitespace, a `/`, or the quote that closed the attribute before it.
+
+   Whitespace here is HTML's, which is NOT JS's `\s`. HTML separates a tag
+   name from an attribute, and an attribute name from its value, on exactly
+   TAB, LF, FF, CR and SPACE; `\s` also matches U+00A0 and the rest of the
+   Unicode space class, and none of those separate anything -- they are
+   ordinary characters INSIDE the attribute name. Using `\s` here read
+   `data<NBSP>content="..."` as the content attribute of a tag whose real
+   attribute is named `data<NBSP>content` (RV26-1, the same shape one level
+   down from the finding that named it). */
+const HTML_SP = ' \\t\\n\\f\\r';
+const SP = '[' + HTML_SP + ']';
 const attrOf = (tag, name) => {
-  const m = new RegExp('(?<=[\\s/"\'])' + name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\'|([^\\s"\'>]+))', 'i')
-    .exec(tag);
+  const m = new RegExp('(?<=[' + HTML_SP + '/"\'])' + name + SP + '*=' + SP
+    + '*("([^"]*)"|\'([^\']*)\'|([^' + HTML_SP + '"\'>]+))', 'i').exec(tag);
   return m ? (m[2] ?? m[3] ?? m[4]) : null;
 };
 /* `rel` is a space-separated TOKEN LIST, not a value: `rel="next stylesheet"`
@@ -307,8 +325,8 @@ const attrOf = (tag, name) => {
    `alternate` stylesheet, or one with `media="print"` or `disabled`, is read
    although the browser does not apply it, which can only produce a false
    RED about a rule that is really there. */
-const relTokens = (tag) => (attrOf(tag, 'rel') || '').toLowerCase().split(/[\s\r\n\t\f]+/)
-  .filter(Boolean);
+const relTokens = (tag) => (attrOf(tag, 'rel') || '').toLowerCase()
+  .split(new RegExp(SP + '+')).filter(Boolean);
 const PAGE_SHEETS = LINK_TAGS
   .filter((t) => relTokens(t).includes('stylesheet'))
   .map((t) => attrOf(t, 'href'));
@@ -373,6 +391,7 @@ const PROSE_FRAMES_OVER_THE_SHEET = [
   'the number of columns the sheet says the rules table draws in 760px',
   'the number of words the sheet says the condition pill wraps to',
   'the width the sheet states in the sentence about six columns',
+  'the sheet saying a colour keyword is looked for on every custom property',
 ];
 const FRAME_SPELLING = /PANE_CSS\.replace\(\/\\s\+\/g, ' '\)/g;
 /* sheetCount() collapses the whitespace ITSELF, so a frame routed through it
@@ -749,8 +768,13 @@ const isDisabled = (node) =>
 
    So '' and '  ' and 'yes' are ignored, but '1.5' is 1 and '12abc' is 12 --
    both real tab stops, which /^[+-]?\d+$/ called invalid. And '2147483648'
-   is ignored while '2147483647' is a stop, so a <button tabindex="-3e9">
-   keeps the stop its tag gives it rather than losing one it never had. */
+   is ignored while '2147483647' is a stop, so a <button
+   tabindex="-3000000000"> keeps the stop its tag gives it rather than
+   losing one it never had. That spelling is bound to the probe row that
+   runs it, below, because the first spelling this sentence used was
+   '-3e9' -- which the same rule two lines up parses as -3, so the button
+   LOSES its stop and the sentence had it backwards, with nothing reading
+   the example (RV26-2). */
 const TAB_INDEX_MIN = -2147483648;
 const TAB_INDEX_MAX = 2147483647;
 const tabIndexOf = (node) => {
@@ -1284,6 +1308,23 @@ test('focusable() answers the tab order the document can decide, and refuses the
     { cases: 96, takesATabStop: 32, doesNot: 50, refused: 14, wereWrongBefore: 7,
       foundInReview: 43 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
+
+  /* The tabindex docblock's own worked example, bound rather than typed: the
+     spelling it names has to be a probe row, and that row has to answer what
+     the sentence says happens. It said <button tabindex="-3e9"> keeps its
+     stop; HTML's rules for parsing integers -- which the same paragraph
+     states correctly two lines earlier -- collect the LEADING digits, so
+     -3e9 is -3, the button LOSES its stop, and the sentence was backwards
+     with nothing reading it (RV26-2). */
+  const example = THIS_FILE.replace(/\s+/g, ' ')
+    .match(/so a <button tabindex="([^"]+)"> keeps the stop its tag gives it/);
+  assert.ok(example, 'the tabindex docblock stopped spelling its worked example in the frame '
+    + 'this test reads, so the example is unread again');
+  const exampleRow = FOCUSABLE_PROBES
+    .find((p) => p.tag === 'button' && p.attrs && p.attrs.tabindex === example[1]);
+  assert.equal(exampleRow ? exampleRow.answer : null, true,
+    'the tabindex docblock names a <button tabindex> spelling that either no probe row runs '
+    + 'or a probe row answers differently: the sentence claims the button KEEPS its stop');
 });
 
 /* ================================ focus ================================ */
@@ -2837,11 +2878,14 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
      one mention is green and deleting both is red (M12-B4/B4c). The claim
      bound here is "the NOT COVERED block points at the list", not which
      sentence in it does the pointing. */
-  assert.ok((notCovered[0].match(/[A-Z][A-Z0-9_]{3,}/g) || []).includes(FRAMES_LIST_NAME),
+  assert.ok((notCovered[0].match(/(?<![\w$])[A-Z][A-Z0-9_]{3,}(?![\w$])/g) || [])
+    .includes(FRAMES_LIST_NAME),
     'the NOT COVERED block stopped naming ' + FRAMES_LIST_NAME + ' as a WHOLE identifier, so '
     + 'the unprefixed readers are enumerated in code and unmentioned in the prose that claims '
     + 'to name them. Substring was not enough: the block naming ' + FRAMES_LIST_NAME + 'S, a '
-    + 'constant that does not exist, passed a containment test (RV25-A1)');
+    + 'constant that does not exist, passed a containment test (RV25-A1) -- and an UPPER_SNAKE '
+    + 'match with no boundary was not enough either, because it stops at a lowercase letter, '
+    + 'so the same name with a trailing lowercase s passed it (RV26-4)');
   assert.deepEqual(
     [...new Set([...PANE_CSS.matchAll(SHEET_POINTER_SHAPE)].map((m) => m[0]))].sort(),
     [...LISTS_THE_SHEET_NAMES].sort(),
@@ -3027,7 +3071,15 @@ test('the page loads one design system and one theme decision', () => {
      and `data-content="..."` satisfies a scan for content= that carries no
      attribute-name boundary, so the decoy is what gets read (RV21 there,
      RV24-1 here). The <link> half of this page has gone through both since
-     round 21; the <meta> half went through neither until now.
+     round 21; the <meta> half went through the decode in round 25 and got
+     the boundary for content= in the same round -- but http-equiv itself
+     was still a bare substring until round 27, so `data-http-equiv=` read
+     as the page's policy while the page carried none (RV26-1). Both
+     attribute names have the boundary now, and both use HTML's space
+     characters rather than `\s` (see HTML_SP): the tag-name lookahead let
+     `<meta&#160;http-equiv=...` through, a tag whose NAME is the whole of
+     `meta&#160;http-equiv="content-security-policy"` to the parser, because
+     character references are not decoded inside a tag name.
 
      A third spelling is refused rather than read: a page that spells
      Content-Security-Policy more than once -- a commented-out old policy is
@@ -3040,9 +3092,13 @@ test('the page loads one design system and one theme decision', () => {
     'the page spells Content-Security-Policy more than once -- an old policy in a comment, a '
     + 'second meta, or a report-only twin -- and this reader takes the first spelling it '
     + 'finds, which is not necessarily the one the parser takes');
-  const cspMeta =
-    /<meta(?=[\s/>])[^>]*http-equiv="Content-Security-Policy"[^>]*>/i.exec(DECODED_HTML);
-  assert.equal(cspMeta ? (cspMeta[0].match(/(?<=[\s/"'])content\s*=/gi) || []).length : 1, 1,
+  const cspMeta = new RegExp('<meta(?=[' + HTML_SP + '/>])[^>]*(?<=[' + HTML_SP + '/"\'])'
+    + 'http-equiv' + SP + '*=' + SP + '*"Content-Security-Policy"[^>]*>', 'i')
+    .exec(DECODED_HTML);
+  assert.equal(cspMeta
+    ? (cspMeta[0].match(new RegExp('(?<=[' + HTML_SP + '/"\'])content' + SP + '*=', 'gi')) || [])
+      .length
+    : 1, 1,
     'the CSP meta tag spells content= more than once and this reader is not the thing that '
     + 'should be deciding which one the parser takes');
   const csp = cspMeta ? attrOf(cspMeta[0], 'content') : null;
@@ -3538,6 +3594,22 @@ test('the reader refuses what READER_PROBES says it refuses, and walks past what
     assert.deepEqual(stems[1].split(', ').sort(), PAINT_STEMS.slice().sort(),
       'the sheet names a paint stem the reader does not use, or the reader uses one the '
       + 'sheet does not name');
+
+    /* And the CUSTOM-property half of it, which is the half the sentence got
+       wrong: until round 27 it said keywords were looked for ONLY where the
+       name carries a stem, while paints() reads every custom property and
+       the probe below asserts `--acc: magenta` is read. The quantifier was
+       bound by nothing -- rewording it stayed green (RV26-3). What replaced
+       it is two-sided: the sheet must say custom properties are read, and
+       the reader must actually read one. Neither side is computed from the
+       other. */
+    const custom = PANE_CSS.replace(/\s+/g, ' ')
+      .match(/looks for on every CUSTOM property \(any name starting with two dashes/);
+    assert.ok(custom, 'the sheet no longer says custom properties are read, so the half of '
+      + 'the reader that reads them is described nowhere');
+    assert.equal(paints('--anything-at-all'), true,
+      'the sheet says a colour keyword is looked for on every custom property and the reader '
+      +       'no longer looks on one');
   });
 
 /* Every atom this sheet paints with that is NOT a token aria.css declares,
