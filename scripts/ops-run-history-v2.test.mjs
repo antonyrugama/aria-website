@@ -1022,14 +1022,17 @@ const codeLines = (() => {
        the function rather than listing its call sites means a seventh caller
        is exempt the day it is written, and a sentence that does NOT go
        through it is still named. */
-    out.push(kept.replace(/coveredWords\([^;]*/g, 'coveredWords('));
+    out.push(kept.replace(/coveredWords\([^()]*\)/g, 'coveredWords()'));
   });
   return out;
 })();
 
-/* The two lines that legitimately name the picked window and are NOT a figure
-   being scoped. Frozen per site rather than per function, so sanctioning one
-   sentence cannot sanction the next one somebody adds beside it. */
+/* Every line that legitimately names the picked window and is NOT a figure
+   being scoped. Frozen per site -- there is deliberately no whole-function
+   sanction, because the two functions that would need one (`announceRead`,
+   `nothingFinished`) are the exact two that produced this defect class in
+   rounds 3 and 4, and a blanket exemption there covers the next sentence
+   somebody adds beside them. */
 const NOT_A_FIGURE = [
   {
     why: 'the truncation note scopes the LIST, not the figures; the figures clause beside it '
@@ -1040,6 +1043,35 @@ const NOT_A_FIGURE = [
     why: 'the rail badge’s covered branch; its partial branch is the ternary directly above '
       + 'and is bound by its own test',
     find: ": ' in this window';",
+  },
+  {
+    why: 'inside coveredWords() itself: this IS the one place, and it is the covered-case '
+      + 'branch that every other site defers to',
+    find: ": (whenCovered || WINDOW_LABEL[selection.range] || 'the window you picked');",
+  },
+  {
+    why: 'announceRead’s span variable; its partly-covered branch is guarded by '
+      + 'partlyCovered() and returns before this is used, bound by its own test',
+    find: "var words = WINDOW_LABEL[selection.range] || 'the window you picked';",
+  },
+  {
+    why: 'nothingFinished’s span variable, used only on the branch where coverage is '
+      + 'whole -- the partial branch names the record start instead',
+    find: "var words = WINDOW_LABEL[selection.range] || 'this window';",
+  },
+  {
+    why: 'the unread-before-the-record sentence: it names the window in order to say the '
+      + 'span BEFORE it is unread, which is the opposite of scoping a figure to it',
+    find: "'this window, so the window before that is unread rather than empty.';",
+  },
+  {
+    why: 'the readable-record sentence states the record reaches PAST the window start, '
+      + 'which is what makes the zero genuine rather than a shortfall',
+    find: "'is readable and reaches back past the start of this window.';",
+  },
+  {
+    why: 'the same sentence in its other arm; both are bound by the genuine-zero tests',
+    find: "first = 'The record is readable and reaches back past the start of this window, so ' +",
   },
   {
     why: 'the never-recorded sentence is the one place the phrase is CONTRASTED with a figure '
@@ -1053,7 +1085,15 @@ const NOT_A_FIGURE = [
   },
 ];
 
-test('every window-scoped sentence in the pane comes from one place', () => {
+/* What this guard actually does, stated so nobody reads more into a green
+   run than it earns: it freezes the known sites that spell `this window` or
+   index `WINDOW_LABEL[` in SINGLE- or DOUBLE-QUOTED source, outside a
+   `coveredWords()` argument list. It does not see template literals, and it
+   does not see a window spelled out longhand (`'the last 7 days'`). It is a
+   freeze on the sites that exist, not a proof that no eighth can be written.
+   The drawn screen tests remain the real binding; this one stops a silent
+   edit to a site they do not render. */
+test('the known window-naming sites in the pane are exactly the frozen ones', () => {
   /* Each exception must still reproduce, or the freeze list rots in the
      direction nobody notices: a stale entry silently widens the guard. */
   NOT_A_FIGURE.forEach((e) => {
@@ -1062,7 +1102,6 @@ test('every window-scoped sentence in the pane comes from one place', () => {
       + 'this guard is sanctioning a site that has moved or gone');
   });
 
-  const sanctionedOwners = ['coveredWords', 'announceRead', 'nothingFinished'];
   const offenders = [];
   codeLines.forEach((line, i) => {
     if (!WINDOW_SCOPED.test(line)) return;
@@ -1072,15 +1111,14 @@ test('every window-scoped sentence in the pane comes from one place', () => {
       const m = /^\s*function ([A-Za-z0-9_]+)\(/.exec(codeLines[j]);
       if (m) { owner = m[1]; break; }
     }
-    if (sanctionedOwners.indexOf(owner) === -1) {
-      offenders.push(owner + '() line ' + (i + 1) + ': ' + line.trim());
-    }
+    offenders.push(owner + '() line ' + (i + 1) + ': ' + line.trim());
   });
 
   assert.deepEqual(offenders, [],
-    'these lines name the picked window outside the one function that decides what a figure '
-    + 'covers, so a partly covered record will be published under a span it cannot speak '
-    + 'for:\n  ' + offenders.join('\n  '));
+    'these lines name the picked window and are not on the freeze list. Either the sentence '
+    + 'should go through coveredWords(), or -- if it legitimately names the window rather than '
+    + 'scoping a figure -- it needs its own NOT_A_FIGURE entry saying why:\n  '
+    + offenders.join('\n  '));
 });
 
 /* Round 5, second blocking finding: two of the six `load()` triggers did not
@@ -1493,6 +1531,67 @@ test('a run that could not be read can still be dismissed', async () => {
   const labels = findAll(band, (n) => n.tagName === 'BUTTON').map((b) => allText(b).trim());
   assert.ok(labels.indexOf('Close') !== -1,
     'a failed run band offers no way out; its controls were ' + JSON.stringify(labels));
+
+  /* Pressing it, not only finding it. A button READING `Close` that does
+     nothing passes every assertion above, which is this repo's "asserts a
+     mechanism exists, not that it is applied" shape -- and it is the shape
+     this test's own name disclaims. */
+  buttonsIn(band, /^Close$/)[0].dispatch('click');
+  await settle();
+  assert.ok(!sectionWithHeading(dom, /One run/),
+    'the failed run band is still on screen after Close was pressed');
+});
+
+test('Close dismisses the run that was read, not only the one that failed', async () => {
+  /* The success band's Close is the pane's whole dismissal path and nothing
+     bound that it dismisses: the one focus test that presses it asserts where
+     focus went, which resolves whether or not the band survives. */
+  const dom = await boot({ detail: detailAnswer() });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click');
+  await settle();
+  const band = sectionWithHeading(dom, /One run/);
+  assert.ok(band, 'no One run band, so this test is not measuring a dismissal');
+  assert.ok(!/could not be read/.test(allText(band)),
+    'the band is in its failure state, so this is not the success band');
+  assert.ok(buttonsIn(band, /^Close$/).length === 1,
+    'the success band has ' + buttonsIn(band, /^Close$/).length + ' Close controls');
+
+  buttonsIn(band, /^Close$/)[0].dispatch('click');
+  await settle();
+  assert.ok(!sectionWithHeading(dom, /One run/),
+    'the run band is still on screen after Close was pressed');
+  assert.match(lastSaid(dom), /Closed the run/,
+    'closing the run said "' + lastSaid(dom) + '", so a screen reader gets no confirmation');
+});
+
+test('a second failed attempt leaves the operator on Try again, not on nothing', async () => {
+  /* The retry asks for `rh-detail-close` and falls back to itself. The first
+     failure is bound elsewhere; this is the SECOND, which goes through the
+     fallback inside the retry handler -- a different call site from the one
+     in `openRun`. Without it focus lands on a node the redraw removed. */
+  const dom = await boot({});
+  const open = buttonsIn(livePanel(dom), /^Open$/)[1];
+  /* Focused before each press, because the pane only redirects focus when the
+     operator was standing in it -- an unfocused click is a programmatic one
+     and correctly moves nothing. A test that skips this measures the guard,
+     not the handover. */
+  open.focus();
+  open.dispatch('click');
+  await settle();
+  const first = sectionWithHeading(dom, /One run/);
+  assert.match(allText(first), /could not be read/, 'the first read did not fail');
+  assert.equal(focusKey(dom), 'rh-detail-retry', 'the first failure did not land on the retry');
+
+  const retry = buttonsIn(first, /^Try again$/)[0];
+  retry.focus();
+  retry.dispatch('click');
+  await settle();
+  const second = sectionWithHeading(dom, /One run/);
+  assert.match(allText(second), /could not be read/,
+    'the second attempt did not fail, so this test is not measuring a second failure');
+  assert.equal(focusKey(dom), 'rh-detail-retry',
+    'after a second failure focus is at ' + JSON.stringify(focusKey(dom))
+    + ', so the operator is standing on a node the redraw removed');
 });
 
 test('a partial state with no instant is not announced as partial at all', async () => {
@@ -1709,6 +1808,35 @@ test('opening a run reads that run, and draws its transitions in order', async (
   assert.match(steps[2], /Failed/);
   assert.match(allText(section), /Picked up by a worker.*2 times/s,
     'a run that was retried did not say it had been picked up twice');
+});
+
+test('the shared-fault card names what the record covers, not the window picked', async () => {
+  /* The card review found saying "Everything in this window" over a record
+     three hours old. The source guard freezes the site, but it cannot see a
+     window spelled longhand, so the binding that matters is this one: the
+     card is DRAWN over a partly covered window and read back. */
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.coverage = {
+        state: 'partial', recordingSince: at(3 * HOUR), lastRecordedAt: at(MINUTE),
+        coversWindow: false,
+      };
+    }),
+    detail: detailAnswer(),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click');
+  await settle();
+
+  const card = sectionWithHeading(dom, /One run/);
+  assert.ok(card, 'no One run band, so the shared-fault card was never drawn');
+  const text = allText(card);
+  assert.match(text, /happening to other people/i,
+    'the shared-fault card is not on screen, so this test is not reading it');
+  assert.ok(!/last 7 days|7 days|this window|the window you picked/.test(text),
+    'the shared-fault card scoped itself to the picked window over a partly covered '
+    + 'record; it said: ' + JSON.stringify(text.slice(0, 200)));
+  assert.match(text, /what the record covers, which starts at/,
+    'the card does not name the span it can actually speak for');
 });
 
 test('a run that failed says how many other runs and accounts hit the same fault', async () => {
