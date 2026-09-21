@@ -1518,25 +1518,33 @@ DERIVED['deleted-assets'] = () => {
    7 demonstrated exactly that.
 
    So execution is recorded here instead of inferred from text. Every test
-   below opens by adding its own name, the expected set is built from the same
+   below CLOSES by adding its own name, the expected set is built from the same
    derivations the tests are built from, and an exit handler - NOT a test,
    because a test cannot police its own non-execution - fails the run for
-   anything that did not report in. Skipping, deleting, renaming or throwing
-   before the first line all land in the same place.
+   anything that did not report in.
+
+   The recorder is the LAST line of each body rather than the first, and that
+   placement is the whole mechanism rather than a detail. Recorded on entry,
+   `test(NAME, { todo: true }, ...)` defeats it: node RUNS a todo body, so the
+   name is recorded, and then tolerates every assertion that fails inside it.
+   That was green here and was found by the battery, not by a reviewer, in the
+   fix for the round that asked for it. Recorded on exit, a body that throws
+   never reaches the line, so skipped, deleted, renamed, todo-ed and simply
+   broken all land in the same place.
 
    The residual, stated rather than implied: this handler can be deleted, and
    then nothing checks. No guard closes that, and the NOT COVERED list says so
    in those words. What it buys is that every OTHER defence in this file now
    has to be removed in the open. */
-const RAN = new Set();
-const ran = (name) => { RAN.add(name); return name; };
+const COMPLETED = new Set();
+const completed = (name) => { COMPLETED.add(name); };
 
 process.on('exit', () => {
   const expected = [
     ...Object.keys(DERIVED).map((id) => `ops/README.md claims id=${id} still describe the code`),
     BLOCK_SET_TEST, TABLE_TEST, SWEEP_TEST, JUDGED_TEST, RATCHET_TEST,
   ];
-  const silent = expected.filter((name) => !RAN.has(name));
+  const silent = expected.filter((name) => !COMPLETED.has(name));
   if (silent.length === 0) return;
   process.exitCode = 1;
   console.error(`\n${silent.length} test(s) in ${SELF} did not run, so what they check `
@@ -1548,17 +1556,17 @@ process.on('exit', () => {
 /* ------------------------------------------------------------------ tests */
 
 test(BLOCK_SET_TEST, () => {
-  ran(BLOCK_SET_TEST);
   assert.deepStrictEqual([...BLOCKS.keys()].sort(), Object.keys(DERIVED).sort(),
     'a claims block was added, renamed or dropped without a derivation to hold it');
+  completed(BLOCK_SET_TEST);
 });
 
 const JUDGED = {};
 
 for (const id of Object.keys(DERIVED)) {
   test(`ops/README.md claims id=${id} still describe the code`, () => {
-    ran(`ops/README.md claims id=${id} still describe the code`);
     JUDGED[id] = judge(id, DERIVED[id]());
+    completed(`ops/README.md claims id=${id} still describe the code`);
   });
 }
 
@@ -1570,7 +1578,6 @@ for (const id of Object.keys(DERIVED)) {
    judged — see NOT COVERED at the top of this file. */
 const TABLE_TEST = 'every browser guard in the tree has a row in the checks table';
 test(TABLE_TEST, () => {
-  ran(TABLE_TEST);
   const head = README.indexOf('| Check | What it can see that nothing else can |');
   assert.ok(head > -1, 'ops/README.md: the checks table header is gone or reworded, so no row set can be read');
   const body = README.slice(head).split(/\n(?!\|)/)[0];
@@ -1591,13 +1598,13 @@ test(TABLE_TEST, () => {
     'ops/README.md: every browser guard in this repository needs exactly one row of its own in ' +
     'the checks table, named in that row\'s first cell');
   JUDGED['checks table'] = rows.length - 2;
+  completed(TABLE_TEST);
 });
 
 /* The README names files. Every one of them is either in the tree or declared
    dead in the deleted-assets block — which is what makes a deletion elsewhere
    in the repository red here rather than silently stale. */
 test(SWEEP_TEST, () => {
-  ran(SWEEP_TEST);
   const inTree = new Set([
     ...PAGES.map((p) => `ops/${p}`),
     ...list('ops/assets').map((a) => `ops/assets/${a}`),
@@ -1655,6 +1662,7 @@ test(SWEEP_TEST, () => {
   assert.ok(judged > 0, 'no file path was judged, so this test proved nothing');
   assert.deepStrictEqual(missing, [], `\n${missing.join('\n')}\n`);
   JUDGED['file-paths'] = judged;
+  completed(SWEEP_TEST);
 });
 
 /* Some blocks cannot derive WHICH rows they carry, only what each row says.
@@ -1711,43 +1719,43 @@ const REQUIRED_ROWS = {
      looked. Generated from the run, not counted by hand - the last time these
      were hand-written three of seven were wrong. */
   'csp-pages': [
-    "pages in ops/",
-    "pages declaring the policy in a <meta>",
-    "pages loading assets/theme.js",
-    "pages with an inline <script>",
-    "pages with a style attribute in markup",
+    'pages in ops/',
+    'pages declaring the policy in a <meta>',
+    'pages loading assets/theme.js',
+    'pages with an inline <script>',
+    'pages with a style attribute in markup',
   ],
   'dark-text-3': [
-    "--text-3 in ops.css's dark :root",
-    "surfaces it is measured against",
-    "worst pairing",
-    "clears 4.5:1 on every one of them",
-    "every other opaque token in that block",
-    "tokens in that block this cannot read as a flat colour",
-    "later :root rules redeclaring any of them",
+    '--text-3 in ops.css\'s dark :root',
+    'surfaces it is measured against',
+    'worst pairing',
+    'clears 4.5:1 on every one of them',
+    'every other opaque token in that block',
+    'tokens in that block this cannot read as a flat colour',
+    'later :root rules redeclaring any of them',
   ],
   'data-page-scoping': [
-    "ops.css rules scoped to a data-page attribute",
-    "pages carrying a data-page attribute",
+    'ops.css rules scoped to a data-page attribute',
+    'pages carrying a data-page attribute',
   ],
   'csp-policy': [
-    "default-src",
-    "script-src",
-    "style-src",
-    "img-src",
-    "font-src",
-    "connect-src",
-    "base-uri",
-    "form-action",
-    "pages carrying this exact policy",
+    'default-src',
+    'script-src',
+    'style-src',
+    'img-src',
+    'font-src',
+    'connect-src',
+    'base-uri',
+    'form-action',
+    'pages carrying this exact policy',
   ],
   'shell-v2-pins': [
-    "palette tokens pinned for dark",
-    "palette tokens pinned for light",
-    "tokens pinned the same in every theme",
-    "tokens pinned in total for dark",
-    "tokens pinned in total for light",
-    "color-scheme pinned per theme",
+    'palette tokens pinned for dark',
+    'palette tokens pinned for light',
+    'tokens pinned the same in every theme',
+    'tokens pinned in total for dark',
+    'tokens pinned in total for light',
+    'color-scheme pinned per theme',
   ],
   'source-anchors': [
     /* Two guard citations the README used to SPELL. `check-ops-contrast.mjs:2239`
@@ -1787,7 +1795,7 @@ const REQUIRED_ROWS = {
     'value color-mix(in srgb, crimson 50%, transparent)',
   ],
   'spend-write-gate': [
-    "setAttributeNS(null, 'style', …)",
+    'setAttributeNS(null, \'style\', …)',
     'a capitalised Style: key on h()',
     'createContextualFragment()',
   ],
@@ -1837,7 +1845,6 @@ const REQUIRED_ROWS = {
    the log, per block, and the run is red if any of it is empty or if a
    README-subject block lost a row. */
 test(JUDGED_TEST, () => {
-  ran(JUDGED_TEST);
   const rows = Object.keys(JUDGED).sort().map((id) => `  ${id}: ${JUDGED[id]}`);
   const total = Object.values(JUDGED).reduce((a, b) => a + b, 0);
   console.log(`ops/README.md claims judged against the code:\n${rows.join('\n')}\n  TOTAL: ${total}`);
@@ -1881,6 +1888,7 @@ test(JUDGED_TEST, () => {
       `${absent.map((n) => `.${n}`).join(', ')} — the family was narrowed, or REQUIRED_FAMILIES ` +
       'has to lose it on purpose');
   }
+  completed(JUDGED_TEST);
 });
 
 /* The ratchet. Nothing above this can see a pin RETIRED, because every one of
@@ -1892,7 +1900,6 @@ test(JUDGED_TEST, () => {
    because the arithmetic is not the finding: the finding is which defence
    stopped existing. */
 test(RATCHET_TEST, () => {
-  ran(RATCHET_TEST);
   const pinned = Object.keys(REQUIRED_ROWS).sort();
   assert.ok(pinned.length >= FLOORS.pinnedBlocks,
     `REQUIRED_ROWS pins ${pinned.length} blocks and FLOORS.pinnedBlocks is ${FLOORS.pinnedBlocks}: `
@@ -1904,4 +1911,5 @@ test(RATCHET_TEST, () => {
   assert.ok(REQUIRED_FAMILIES.length >= FLOORS.statusFamilies,
     `REQUIRED_FAMILIES holds ${REQUIRED_FAMILIES.length} families and FLOORS.statusFamilies is `
     + `${FLOORS.statusFamilies}: a family was retired. Held now: ${REQUIRED_FAMILIES.join(', ')}`);
+  completed(RATCHET_TEST);
 });
