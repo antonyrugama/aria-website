@@ -155,11 +155,18 @@
      this file now, so there is no flag to attach and the bullet has nothing
      left to disclose. What replaced it is two lines down: report() is the last
      assertion and nothing outranks it.
-   - The floor assertions themselves. FLOORS is three integers and a count has
+   - A source line number written in WORDS, outside a code span, or into the
+     Aria monorepo. The line-citation refusal reads `file.ext:NN` inside a
+     backtick span and only for a file this repository has, so `line 583 of
+     check-ops-shell-v2.mjs` and `opsUsageView.ts:932` both walk through it.
+     The first two are a narrowing this accepts rather than a net to widen -
+     an English parser here would be guard code nothing has reviewed - and the
+     third is unresolvable in principle: the file is in another repository.
+   - The floor assertions themselves. FLOORS is four integers and a count has
      nothing inside it to delete, but the three `assert.ok(... >= FLOORS....)`
-     lines are ordinary code: edit one to `true ||` and the defect it guards
-     goes unseen. Battery A1/A2 are green on exactly that and stay green on
-     purpose. Nothing in one file can outrank its own last assertion; what
+     lines and the one `assert.strictEqual` beside the collision sample are
+     ordinary code: edit one to `true ||` and the defect it guards goes unseen.
+     Battery A1/A2 are green on exactly that and stay green on purpose. Nothing in one file can outrank its own last assertion; what
      changed at module scope is that disabling one is now an edit a diff shows
      rather than a one-word flag that leaves the source spelling intact. If the
      CONSTANT is deleted rather than the assert, the run is red - `pinned-blocks`
@@ -175,7 +182,7 @@
      true and checked: a check that does not RUN is a failing run, whether it
      was deleted or renamed, so removing a defence means removing its expected
      name from report() too - and that edit is in the diff, by name.
-   - A defence SWAPPED rather than retired. The three FLOORS count blocks
+   - A defence SWAPPED rather than retired. Three of the four FLOORS count blocks
      pinned, blocks derived and families held. Each is a floor, so each sees a
      NET shrink and nothing else: delete one derivation and add a trivial one
      in the same commit and the count is unchanged, which is a real hole and
@@ -295,7 +302,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test from 'node:test';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
@@ -2049,4 +2055,5 @@ check(RATCHET_CHECK, () => {
 report([
   ...Object.keys(DERIVED).map((id) => `ops/README.md claims id=${id} still describe the code`),
   BLOCK_SET_TEST, TABLE_TEST, SWEEP_TEST, JUDGED_TEST, PINS_CHECK, RATCHET_CHECK,
+  CITATION_CHECK,
 ]);

@@ -374,8 +374,10 @@ ops/assets/settings.css = gone; loaded by no page; named by no script
 monorepo, ported here so the panes can be remodelled one at a time. They sit **beside** `ops.css`
 and `shell.js` rather than replacing them: the two sheets declare a great many of the same class
 names from different token sets, so **a page loads one or the other, never both.** How many, and
-which of them carry the most selectors in `ops.css` — the widest eight, ties broken on the first
-letter, so the list is a sample of that width and not all of it — is counted out of the sheets. A
+which of them carry the most selectors in `ops.css` — the widest few, ties broken on the first
+letter, so the list is a sample of that width and not all of it — is counted out of the sheets.
+**How many** is a floor in `pinned-blocks` below rather than a number in this sentence: the
+sample was free to shrink from eight rows to three, README lines and all, until round 9. A
 list typed here once said `ops.css` declares `.pill` and `.tbl`, and it declares neither, and
 never did.
 
@@ -2069,8 +2071,8 @@ Three lines in that block are worth reading twice:
   under "drawn by nothing built so far", and said in as many words that Settings draws none. The
   4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
   paints it now. No figure in this file describes what does. `check-ops-contrast.mjs` is **not**
-  that oracle either: it fixes its page to `/ops/shell-v2.html` (`scripts/check-ops-contrast.mjs:92`,
-  loaded at `:3277`) and never opens `settings.html`, so the live pairing is unmeasured by
+  that oracle either: `scripts/check-ops-contrast.mjs` fixes its page to `/ops/shell-v2.html`
+  and never opens `settings.html`, so the live pairing is unmeasured by
   anything in the tree. That is a gap, stated as one rather than closed with a pointer at a guard
   that does not look.
 - **Two classes were written with nothing behind them, and are not any more.** `.masked` and
@@ -2341,11 +2343,13 @@ refuses to hide something, and it is what makes the narrower claim in this
 paragraph checkable rather than a promise. A bolded word in a body moves it too.
 
 Bullets are read out of each guard's **leading docblock**, and two guards state
-blind spots outside theirs: `check-ops-shell-v2.mjs:583` says what its icon
+blind spots outside theirs: `check-ops-shell-v2.mjs` says what its icon
 sweep does not measure — an ink too close to what is behind it, and all of
 geometry but `stroke-width` — and `check-ops-contrast.mjs` carries a long
-`NOT COVERED, on purpose` section. Both line numbers are in `source-anchors` above rather than
-spelled here: the one that used to sit in this sentence was wrong by 343 lines. Neither is carried below, and until the round
+`NOT COVERED, on purpose` section. Both are in `source-anchors` above, which is
+where every line number in this file now lives: the one that used to sit in this
+sentence was wrong by 343 lines, and the round that removed it re-typed the other
+one here, three lines up, in the same sentence that said it had not. Neither is carried below, and until the round
 that found this both read `(no blind-spot section)`, which is the same sentence
 a guard with nothing to declare would print. The sentinel now says which
 docblock it looked in, and every guard carries a count of the lines **anywhere**
@@ -2375,8 +2379,8 @@ measurement of one, and over-firing was disclosed before under-firing — the
 wrong way round in a file whose defect class is the quiet direction.
 
 Within those three phrases the count is syntactic and deliberately dumb —
-`check-ops-narrow-overflow.mjs:189` refers back to its own section and counts as
-a second one — because a dumb tripwire that fires is worth more here than a
+a line inside `check-ops-narrow-overflow.mjs` refers back to its own section and
+counts as a second one — because a dumb tripwire that fires is worth more here than a
 clever one that reads English.
 
 ```claims id=guard-blind-spots
@@ -2546,13 +2550,17 @@ count, because a count is absorbed the moment the block grows — and a row can 
 it there too.
 
 The pin list is itself hand-written, so the same question applies one level up, and the answer
-there is different: **three floors**, plain integers, in the last three rows of the block below.
+there is different: **floors**, plain integers, in the `floor:` rows of the block below — how
+many of them there are is those rows' business, not this sentence's, which is the same trade the
+census above makes.
 Round 6 of this PR's review showed that retiring a pin together with its line in `pinned-blocks`
 ran **green at 28/28**, which put back a constant the round before had just protected. Pinning a
 pin list with another pin list only moves the hole; a count has nothing inside it to delete, so
 that is where the regress stops. A floor does not make a retirement impossible — it makes it
 **loud**: going green after one needs the integer lowered in the guard *and* the row it prints
-here changed, and both of those are visible in a diff. Growing any of the three is free. A floor
+here changed, and both of those are visible in a diff. Growing any of the `at least` floors is
+free; the one `exactly` floor is an equality because a sample that quietly **grew** would leave
+the sentence describing it just as wrong as a sample that shrank. A floor
 counts **pins that name a real block** — a key naming nothing used to be inert and still counted,
 which is round 7's `E1` — and it sees a **net** shrink only, so a derivation deleted and a trivial
 one added in the same commit passes it. That hole is stated in the guard's NOT COVERED list in
@@ -2599,7 +2607,11 @@ is what makes a file deleted elsewhere red here rather than quietly stale — a 
 directory counts whatever its extension, and a bare `name.ext` counts when the tree uses that
 extension, which is what keeps `payload.data` out of it; and the checks table
 above must carry a row for every `check-ops-*.mjs` in `scripts/`, which is how the sixth browser
-guard got a row the day it landed instead of the day somebody noticed; and the ratchet holds the
+guard got a row the day it landed instead of the day somebody noticed; and a third refuses a
+**source line number** anywhere in this file's prose, because five of the false claims found on
+the PR that built this were a `file:line` citation that was true when written and drifted after,
+one of them re-typed by the round that removed it. Prose may name a file; the line belongs in
+`source-anchors`, where it is derived, or nowhere. And the ratchet holds the
 floors described above. None of them judges the **words** in a row — only that the row is there.
 
 ```claims id=claims-blocks
@@ -2629,6 +2641,7 @@ claims id=v1-v2-collision
 claims id=write-capable-assets
 and a check, every repository file ops/README.md names is in the tree or declared deleted
 and a check, every browser guard in the tree has a row in the checks table
+and a check, ops/README.md prose spells no source line number
 ```
 
 And which of them are pinned, with how many rows each pin holds:
@@ -2642,7 +2655,7 @@ claims id=data-page-scoping pins 2 rows by name
 claims id=deleted-assets pins 2 rows by name
 claims id=guard-blind-spots pins 15 rows by name
 claims id=guard-constants pins 9 rows by name
-claims id=pinned-blocks pins 4 rows by name
+claims id=pinned-blocks pins 5 rows by name
 claims id=shell-v2-pins pins 6 rows by name
 claims id=source-anchors pins 9 rows by name
 claims id=spend-colour-gate pins 21 rows by name
@@ -2655,6 +2668,7 @@ claims id=v1-status-classes pins the families = badge, tag, callout, verdict
 floor: blocks pinned in REQUIRED_ROWS = at least 17
 floor: blocks derived in this file = at least 24
 floor: families pinned in REQUIRED_FAMILIES = at least 4
+floor: widest shared names printed by v1-v2-collision = exactly 8
 ```
 
 **NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
@@ -2684,7 +2698,12 @@ makes. Whether one element is drawn *inside* another is never decided here; that
 `check-ops-narrow-overflow.mjs` measures. A guard's page
 set is read from `OpsPaneRegistry` and the `/ops/*.html` literals in its source. `OpsUsagePayload`
 is declared in the Aria monorepo, so nothing here can decide whether departure 8's list is a
-complete sweep of it, which is why that departure no longer claims to be one. A declaration is
+complete sweep of it, which is why that departure no longer claims to be one. The line-number
+refusal reads **code spans**, and only for files this repository has: a citation written in
+words, one outside backticks, and one into the monorepo — `opsUsageView.ts:932` is the only
+one — are all outside it, stated here rather than counted as clean. One citation is exempt
+by name, the `pane-registry.js` pointer recorded below as an example of a number that had
+already drifted; it is listed in the guard and nowhere else, and deleting it is red too. A declaration is
 read the way a browser reads one — whitespace around the colon, `!important`, and a property
 declared twice in a rule resolving to the last of them — but CSS is otherwise parsed by text, so
 a value behind `var()`, a `calc()`, an `hsl()` or anything else this cannot resolve to a flat
@@ -2733,8 +2752,9 @@ them, and round 4 walked through two cells they had left empty: a phrase taught 
 probed happened to still match. Both were green; both are now rows.
 
 **Three things the census still does not bind**, and it is worth stating them as flatly as the
-rows themselves. First, **a (phrase, marker) cell no row occupies** — fourteen rows cannot cover
-every pairing, and a matcher change confined to an empty cell moves nothing. Second, **a phrase
+rows themselves. First, **a (phrase, marker) cell no row occupies** — the rows cannot cover
+every pairing — the count is the first row of the block above, not a number here — and a
+matcher change confined to an empty cell moves nothing. Second, **a phrase
 narrowed so that it still matches every probed spelling of itself**; each phrase needs two rows
 differing in what follows it, and where only one exists the narrowing walks through. Third, **a
 spelling nobody thought to add at all.** Each is the ordinary limit of an explicit test table,
@@ -2834,8 +2854,8 @@ the run and a wrong number does not:
   glyph today, so the refusals cost no coverage — but "the shell has one `filter`" was itself
   an overclaim. The only CSS `filter` a shell page loads is `aria.css`'s
   `.btn-primary:hover` — line number in `source-anchors`, not here — which the sweep never
-  enters; `ops.css:278`/`:281`/`:477` carry three
-  more that no v2 page loads; and `aria.js:463`, `:544` and `:623` each set a `filter`
+  enters; `ops.css` carries three
+  more that no v2 page loads; and three sites in `aria.js` each set a `filter`
   **presentation attribute** on an SVG chart stroke, which is shipped, rendered, and simply not
   a text node the sweep samples.
   `::first-line` and `::first-letter` are refused on the same terms — see the pseudo-element
