@@ -52,3 +52,8 @@ desktop.ini
 # launch under test at. Same terms as the entries above: removed when the case
 # finishes, ignored for the run interrupted before that.
 .ops-painter-exit-*/
+
+# Chrome profile written by scripts/ops-meter-severity.test.mjs when RUNNER_TEMP
+# is unset, and the directory its mutation battery writes the generated table and
+# per-row runner logs into. Same terms as the entries above.
+.ops-meter-*/
