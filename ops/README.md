@@ -355,7 +355,7 @@ closed `ops.css`; the scripts still naming it are asserting a v2 page does **not
 is a live assertion about a file that is gone and stays true because it is gone.
 
 ```claims id=deleted-assets
-ops/assets/operate.css = gone; loaded by no page; named in ops-alerts-v2.test.mjs, ops-analytics-v2.test.mjs, ops-dead-css.test.mjs, ops-jobs-live-v2.test.mjs, ops-spend-v2.test.mjs, ops-users-v2.test.mjs
+ops/assets/operate.css = gone; loaded by no page; named in ops-alerts-v2.test.mjs, ops-analytics-v2.test.mjs, ops-dead-css.test.mjs, ops-jobs-live-v2.test.mjs, ops-shell-pane-v2.test.mjs, ops-spend-v2.test.mjs, ops-users-v2.test.mjs
 ops/assets/settings.css = gone; loaded by no page; named by no script
 ```
 
@@ -1941,7 +1941,7 @@ Which of these classes any page can still draw is therefore derived rather than 
 .callout-ai = declared in ops.css; drawn by (no page)
 .callout-crit = declared in ops.css; drawn by (no page)
 .callout-info = declared in ops.css; drawn by (no page)
-.callout-warn = declared in ops.css; drawn by evaluations.html; no sheet declares it on evaluations.html
+.callout-warn = declared in ops.css, pane-evaluations-v2.css; drawn by evaluations.html; painted where drawn
 .verdict-better = declared in ops.css; drawn by (no page)
 .verdict-slightly-worse = declared in ops.css; drawn by (no page)
 .verdict-worse = declared in ops.css; drawn by (no page)
@@ -1961,14 +1961,13 @@ Three lines in that block are worth reading twice:
   under "drawn by nothing built so far", and said in as many words that Settings draws none. The
   4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
   paints it now; the live figure is whatever `check-ops-contrast.mjs` measures on the page.
-- **`.callout-warn` is written with nothing behind it on the page that writes it.**
-  `pane-evaluations.js` spells the warning callout `callout callout-warn`, and
-  `pane-evaluations-v2.css` declares `.callout` and not the variant. That is not a contrast defect
-  — an element with no rule takes the ink around it — but it is a token whose rule was left behind
-  in `ops.css` when the pane moved, and the block above is where that shows up. `.masked` was the
-  same story and no longer is: `aria-website#83` gave `pane-users-v2.css` a `.locked.masked` rule,
-  which is why the block now reads `painted where drawn` for it. Nothing in this section was
-  edited to say so — the block is derived, so the sibling merge moved the line itself.
+- **Two classes were written with nothing behind them, and are not any more.** `.masked` and
+  `.callout-warn` were both tokens whose rule stayed in `ops.css` when their pane moved to v2,
+  so the page that wrote them loaded no sheet declaring them. `aria-website#83` gave
+  `pane-users-v2.css` a `.locked.masked` rule and `aria-website#84` gave `pane-evaluations-v2.css`
+  a `.callout-warn` rule, and both lines now read `painted where drawn`. **Nothing in this
+  section was edited to say so either time** — the block is derived, so each sibling merge moved
+  its own line, and this PR found out both times by running red on a rebase.
 - **`.field-error` is drawn on four pages and painted on all four.** It is the one pairing in
   this record that is still live rather than historical, which is why the 5.321 figure below is
   a measurement of the sign-in and setup pages as they stand and not of a page that is gone.
@@ -2255,7 +2254,7 @@ lines short — which is why none of them are typed any more.
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 136
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 173
-ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 157
+ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
 ```
