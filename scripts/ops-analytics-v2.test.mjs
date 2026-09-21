@@ -2694,19 +2694,28 @@ const PAINT_PROGRAM = String.raw`(() => {
    (#10800). The filed defect was the missing-browser path; the port-timeout
    path below leaks more than that one does, a live browser and its profile
    directory as well as the server, so the release is written once for every
-   way out rather than at each throw. */
+   way out rather than at each throw.
+
+   The browser's release WAITS for the exit it asked for. kill() is a signal,
+   not a join: Chrome keeps writing its profile out while it shuts down, so a
+   removal that runs the instant kill() returns takes the directory out from
+   under a process that is still writing, and the files come back. The drain is
+   newest-first, so the removal registered before the browser is the next thing
+   popped -- which makes that ORDER load-bearing rather than incidental. */
+const EXIT_WAIT_MS = 5_000;
+
 async function openPainter() {
   const opened = [];
-  const unwind = () => {
+  const unwind = async () => {
     while (opened.length) {
       const release = opened.pop();
-      try { release(); } catch (e) { /* releasing is best-effort by definition */ }
+      try { await release(); } catch (e) { /* releasing is best-effort by definition */ }
     }
   };
   try {
     return await launchPainter(opened, unwind);
   } catch (e) {
-    unwind();
+    await unwind();
     throw e;
   }
 }
@@ -2740,7 +2749,17 @@ async function launchPainter(opened, unwind) {
     '--disable-extensions', '--hide-scrollbars', '--force-device-scale-factor=1',
     'about:blank',
   ], { stdio: 'ignore' });
-  opened.push(() => browser.kill());
+  opened.push(async () => {
+    browser.kill();
+    /* Already dead -- the failure cases reach here that way -- so there is no
+       exit left to wait for, and listening for one would wait out the ceiling
+       for an event that has already fired. */
+    if (browser.exitCode !== null || browser.signalCode !== null) return;
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, EXIT_WAIT_MS);
+      browser.once('exit', () => { clearTimeout(timer); resolve(); });
+    });
+  });
 
   /* A browser that has already exited will never publish a port, so waiting
      the full 30s for one only delays a failure that is already decided — and
@@ -2810,8 +2829,10 @@ async function launchPainter(opened, unwind) {
   }
 
   /* Same release path the throwing case takes, so the success case cannot
-     drift away from it and leave a handle the failure case would have let go. */
-  return { evaluate, close: unwind };
+     drift away from it and leave a handle the failure case would have let go.
+     The profile path comes back with it so the caller can check that the
+     release it just awaited actually emptied the disk. */
+  return { evaluate, close: unwind, profile };
 }
 
 /* ------------------------------------------------------------- the test -- */
@@ -2860,6 +2881,11 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
     'the retention grid drew ' + headings.length + ' column headings');
 
   const painter = await openPainter();
+  /* Two-sided, and free: "the profile is gone afterwards" is also true of a
+     profile that was never there. */
+  assert.equal(existsSync(painter.profile), true,
+    'the painter handed back a profile directory that does not exist, so the removal ' +
+    'assertion at the end of this test would hold whatever the release did');
   try {
     const ready = await painter.evaluate(PAINT_PROGRAM);
     assert.equal(ready, 'ready', 'the paint program did not install');
@@ -2964,8 +2990,22 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
       'nothing and are invisible to every other check: ' +
       JSON.stringify([...unpainted.entries()]));
   } finally {
-    painter.close();
+    await painter.close();
   }
+
+  /* Outside the finally on purpose: this is a claim about the SUCCESS path, and
+     inside a finally it would mask whatever the body threw.
+
+     scripts/ops-painter-exit.test.mjs binds the three failing ways out of the
+     launch. This is the fourth way -- the one that works -- and until now the
+     only thing holding it was "the suite terminates", which is true of exactly
+     one of the four releases: the server, because a listening server is the
+     only one that keeps the event loop open. A leaked directory is invisible to
+     a termination argument, and it was really being leaked. */
+  assert.equal(existsSync(painter.profile), false,
+    'the painter left its browser profile at ' + painter.profile + ' after a clean run. ' +
+    'kill() is a signal, not a join: if the removal does not wait for the browser to exit, ' +
+    'it runs while Chrome is still writing its profile out and the files come back.');
 });
 
 /* Every class in a serialised tree, from the class attribute the pane wrote.
