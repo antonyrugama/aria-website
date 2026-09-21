@@ -378,6 +378,36 @@ test('a whole-queue read says so, and does not borrow the bounded wording', asyn
     'a complete read carried the bounded caveat');
 });
 
+test('a read that never said its scope is unread, not whole', async () => {
+  /* The third reading. `completeness` absent is the one case where the two
+     obvious branches agree wrongly: `=== working_set_only` and
+     `!== whole_queue` differ ONLY here, and the first silently promotes an
+     unknown scope to a whole-queue claim. On this dashboard that is the same
+     defect as printing 0 critical over data that never arrived (PR #98). */
+  const dom = await boot({
+    view: viewFixture({
+      attention: { completeness: undefined, stuck: ['job_2'], abandoned: [] },
+    }),
+  });
+  const text = liveText(dom);
+  assert.doesNotMatch(text, /Read over the whole queue/,
+    'a read that published no scope was drawn as a whole-queue read');
+  assert.match(text, /unread rather than whole/,
+    'a read with no scope did not say its scope was unread');
+});
+
+test('a band with no findings is still drawn when the scope is unread', async () => {
+  /* Hiding the band would publish "nothing is wrong" on the strength of a
+     read whose reach is unknown. Silence is a claim here. */
+  const dom = await boot({
+    view: viewFixture({
+      attention: { completeness: undefined, stuck: [], abandoned: [] },
+    }),
+  });
+  assert.match(liveText(dom), /unread rather than whole/,
+    'an empty findings list over an unknown scope was drawn as silence');
+});
+
 test('a bounded read that reached nothing refuses to cover anything', async () => {
   const dom = await boot({
     view: viewFixture({
@@ -643,6 +673,21 @@ test('a rate over a zero denominator is absent rather than infinite', async () =
     'a zero denominator was not reported as nothing to divide');
 });
 
+test('a rate whose two numbers are not numbers is absent, not computed', async () => {
+  /* The route's contract says numerator/denominator are numbers. If it ever
+     sends something else, arithmetic over it yields NaN and a percentage of
+     NaN on an ops page during an incident is worse than a blank. Absence is
+     the only honest reading of a figure that could not be computed. */
+  const dom = await boot({
+    view: viewFixture({ throughput: { successRate: { numerator: null, denominator: '133' } } }),
+  });
+  const text = liveText(dom);
+  assert.doesNotMatch(text, /NaN|Infinity|undefined/,
+    'an uncomputable rate reached the screen as arithmetic wreckage');
+  assert.doesNotMatch(text, /Got through \d/,
+    'a rate was printed from two values that were not both numbers');
+});
+
 test('every throughput figure is published with the window it covers', async () => {
   const dom = await boot({});
   assert.match(liveText(dom), /60 minutes|last hour|hour/i,
@@ -687,13 +732,20 @@ test('an unread window never takes the queue down with it', async () => {
 /* ========================== the admitted gaps ========================== */
 
 test('the capacity gap is printed in the route own words', async () => {
-  const reason = 'Nothing records how many workers exist, so in-flight work has no denominator.';
+  /* Deliberately NOT the sentence this pane falls back to. An earlier draft
+     of this test used the fallback wording as its fixture, so replacing
+     `capacity.reason` with the fallback produced identical output and the
+     test passed over a pane that had stopped reading the route at all. The
+     expectation has to be distinguishable from the thing it is testing. */
+  const reason = 'Worker headroom is not published by any process that runs today.';
   const dom = await boot({ view: viewFixture({ capacity: { slots: null, reason } }) });
   /* opsJobsView.ts:393 publishes a finished sentence, not a machine code. A
      lookup keyed on codes sends every live read to a fallback while a DELETED
      field reads correctly — which is how this survived round 1. */
   assert.match(liveText(dom), new RegExp(reason.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     'the route explanation was not drawn, so the pane is guessing at the wording');
+  assert.doesNotMatch(liveText(dom), /Nothing records how many workers exist, so in-flight/,
+    'the pane drew its own fallback wording over a reason the route did publish');
 });
 
 test('a capacity gap with no wording still names the gap', async () => {
@@ -799,6 +851,7 @@ test('a paused pane does not restart because the tab was hidden and shown', asyn
   const dom = await boot({});
   buttonNamed(dom, 'Pause').dispatch('click', {});
   await settle();
+  const reads = dom.calls.length;
   dom.doc.hidden = true;
   dom.doc.dispatch('visibilitychange', {});
   await settle();
@@ -807,6 +860,35 @@ test('a paused pane does not restart because the tab was hidden and shown', asyn
   await settle();
   assert.equal(dom.clock.armed, 0,
     'a paused pane started refreshing again because the tab was hidden and shown');
+  /* Both directions. The timer alone is not the invariant: returning to the
+     tab reads IMMEDIATELY before it schedules anything, so a handler that
+     forgot `paused` sends a read and then correctly declines to arm a timer —
+     and an assertion that only counted timers would pass over it. */
+  assert.equal(dom.calls.length, reads,
+    'a paused pane read anyway when the tab came back, without arming a timer to show for it');
+});
+
+test('a read that lands while the tab is hidden does not arm the next one', async () => {
+  /* The other half of the hidden-tab rule, and the one a cancel-on-hide test
+     cannot see. Hiding cancels the PENDING timer; this is about the read
+     already in flight when the operator left, whose success handler schedules
+     the next tick after they have gone. */
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const dom = await boot({});
+  const realCall = dom.window.OpsSession.call;
+  dom.window.OpsSession.call = (endpoint, o) => gate.then(() => realCall(endpoint, o));
+
+  buttonNamed(dom, 'Read now').dispatch('click', {});
+  await settle();
+  dom.doc.hidden = true;
+  dom.doc.dispatch('visibilitychange', {});
+  await settle();
+  release();
+  await settle();
+  assert.equal(dom.clock.armed, 0,
+    'a read that landed after the operator left armed the next tick anyway, so the chain '
+    + 'outlived the tab being visible');
 });
 
 test('failures back off, and the pane keeps showing the last reading', async () => {
@@ -826,6 +908,48 @@ test('failures back off, and the pane keeps showing the last reading', async () 
     + 'not wrong');
   assert.match(paneText(dom), /last refresh failed/i,
     'the pane hid the fact that what it shows is no longer current');
+});
+
+test('pausing a pane whose last read failed keeps the staleness caveat', async () => {
+  /* The operator most in need of "this is not a current reading" is the one
+     who pauses a pane that has just started failing. An earlier draft passed
+     the error into the footer, so the pause branch — which has no error to
+     pass — deleted both the failure and the caveat over figures exactly as
+     stale as they were a moment before. */
+  const dom = await boot({ answers: [viewFixture(), new Error('gateway')] });
+  await dom.clock.fire();
+  assert.match(paneText(dom), /not a current one/,
+    'a failed refresh did not caveat the reading it left on screen');
+
+  buttonNamed(dom, 'Pause').dispatch('click', {});
+  await settle();
+  const text = paneText(dom);
+  assert.match(text, /not a current one/,
+    'pausing deleted the caveat saying the figures are stale');
+  assert.match(text, /had already failed/,
+    'pausing deleted the fact that the last read failed');
+});
+
+test('resuming reports the button state before the read lands', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const dom = await boot({});
+  buttonNamed(dom, 'Pause').dispatch('click', {});
+  await settle();
+
+  const realCall = dom.window.OpsSession.call;
+  dom.window.OpsSession.call = (endpoint, o) => gate.then(() => realCall(endpoint, o));
+  buttonNamed(dom, 'Resume').dispatch('click', {});
+  await settle();
+  /* Still in flight. The toggle must already say Pause: a control that keeps
+     reporting the state the pane left, until a network round trip completes,
+     is announcing a promise as a fact. */
+  const pause = buttonNamed(dom, 'Pause');
+  assert.ok(pause, 'the toggle still said Resume while the pane was already resumed');
+  assert.equal(pause.getAttribute('aria-pressed'), 'false',
+    'the toggle still reported itself pressed while the pane was already resumed');
+  release();
+  await settle();
 });
 
 test('the chain gives up, says so, and offers a way back', async () => {

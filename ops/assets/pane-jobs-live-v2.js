@@ -138,7 +138,9 @@
 
   /* Failure backoff: double from the cadence to the cap, then stop. Five
      consecutive failures spans 15s + 30s + 60s + 120s + 120s, so the chain
-     stops about five and three quarter minutes after the first one failed.
+     stops about five and three quarter minutes after the last successful read.
+     The first 15s is the ordinary cadence, so that span is measured from the
+     last success, not from the first failure -- which is 5m30s, one term in.
      That is long enough that the next read is not going to be the one that
      works, and a person should be told rather than kept waiting. */
   var BACKOFF_CAP_MS = 120000;
@@ -206,6 +208,18 @@
     return Math.round((ratio.numerator / ratio.denominator) * 1000) / 10;
   }
 
+  /* Three readings of `attention.completeness`, not two. Absent or
+     unrecognised is NOT `whole_queue`: reading it that way publishes a narrow
+     claim as a broad one on the strength of a field that never arrived, which
+     is the confident-zero shape PR #98 and #106 both found elsewhere on this
+     dashboard. An unread scope draws the band (so a finding is never silently
+     broadened) and says on the card that the scope is unknown. */
+  function scopeOf(attention) {
+    if (attention.completeness === 'whole_queue') return 'whole';
+    if (attention.completeness === 'working_set_only') return 'bounded';
+    return 'unread';
+  }
+
   function stateCount(byState, state) {
     var found = (byState || []).filter(function (entry) { return entry.state === state; })[0];
     return found && fmt.isNum(found.jobs) ? found.jobs : null;
@@ -226,6 +240,11 @@
     var paused = false;
     var stopped = false;
     var lastReadAt = null;
+    /* Held across renders because a pause must not delete it. Passing the
+       error into the footer meant the pause branch, which has no error to
+       pass, silently cleared the staleness caveat over figures exactly as
+       stale as they were a moment before. */
+    var lastError = null;
     var drawnOnce = false;
 
     /* No ops:filters listener. This pane declares no filter in the registry,
@@ -297,6 +316,7 @@
         if (token !== loadToken) return;
         failures = 0;
         stopped = false;
+        lastError = null;
         lastReadAt = new Date();
         drawnOnce = true;
         render(result.data || {});
@@ -305,6 +325,7 @@
         inFlight = false;
         if (token !== loadToken) return;
         failures += 1;
+        lastError = err || new Error('The read failed.');
         if (failures >= GIVE_UP_AFTER) {
           stopped = true;
           cancelTick();
@@ -313,10 +334,10 @@
            blank it. The reading is stale, not wrong, and the footer says how
            stale. Only a first read that fails takes the whole pane. */
         if (!drawnOnce) {
-          region.failed(err, function () { failures = 0; stopped = false; load(true); });
+          region.failed(err, function () { failures = 0; stopped = false; lastError = null; load(true); });
           return;
         }
-        redrawFooter(err);
+        redrawFooter();
         scheduleTick();
       });
     }
@@ -325,13 +346,13 @@
 
     var footerHost = null;
 
-    function redrawFooter(err) {
+    function redrawFooter() {
       if (!footerHost) return;
       while (footerHost.firstChild) footerHost.removeChild(footerHost.firstChild);
-      footerHost.appendChild(refreshCard(err));
+      footerHost.appendChild(refreshCard());
     }
 
-    function refreshCard(err) {
+    function refreshCard() {
       var box = S.card();
       var body = h('div', { className: 'card-body' });
       var row = h('div', { className: 'row row-wrap gap-sm' });
@@ -340,8 +361,10 @@
       if (stopped) {
         status = 'Stopped refreshing after ' + GIVE_UP_AFTER + ' failed reads.';
       } else if (paused) {
-        status = 'Paused. Nothing on this page is changing.';
-      } else if (err) {
+        status = lastError
+          ? 'Paused, and the last refresh before it had already failed.'
+          : 'Paused. Nothing on this page is changing.';
+      } else if (lastError) {
         status = 'The last refresh failed. Retrying, more slowly each time.';
       } else {
         status = 'Refreshing every ' + Math.round(REFRESH_MS / 1000) +
@@ -354,7 +377,7 @@
         className: 'tiny muted',
         text: lastReadAt
           ? 'Last read ' + fmt.clock(lastReadAt.toISOString()) + '.' +
-            (err || stopped ? ' What is above is that reading, not a current one.' : '')
+            (lastError || stopped ? ' What is above is that reading, not a current one.' : '')
           : 'Not read yet.'
       }));
       row.appendChild(words);
@@ -381,8 +404,13 @@
           paused = !paused;
           if (paused) {
             cancelTick();
-            redrawFooter(null);
+            redrawFooter();
           } else {
+            /* Redraw FIRST. `load` resolves over the network, and a toggle that
+               keeps saying Resume with aria-pressed=true until the response
+               lands is reporting a state the pane left the moment it was
+               clicked. */
+            redrawFooter();
             load(false);
           }
         });
@@ -427,7 +455,7 @@
          a pane that reads it only on the branch where something was found has
          not read it. */
       var flagged = list(attention.stuck).length + list(attention.abandoned).length;
-      if (flagged > 0 || attention.completeness === 'working_set_only') {
+      if (flagged > 0 || scopeOf(attention) !== 'whole') {
         wrap.appendChild(attentionBand(attention, jobs, baseline));
       }
 
@@ -445,7 +473,7 @@
       wrap.appendChild(missingBand(data.capacity || {}));
 
       footerHost = h('div');
-      footerHost.appendChild(refreshCard(null));
+      footerHost.appendChild(refreshCard());
       wrap.appendChild(footerHost);
 
       region.show(wrap);
@@ -531,7 +559,7 @@
         : null;
       var stuck = list(attention.stuck);
       var abandoned = list(attention.abandoned);
-      var partial = attention.completeness === 'working_set_only';
+      var scope = scopeOf(attention);
 
       var section = S.band('Not clearing',
         'Runs the platform has either lost or is taking far longer over than usual');
@@ -590,13 +618,16 @@
       var foot = h('div', { className: 'card-foot' });
       var read = list(jobs).length;
       foot.appendChild(h('span', {
-        text: !partial
+        text: scope === 'whole'
           ? 'Read over the whole queue.'
-          : read === 0
-            ? 'This read reached no jobs at all, so the line above covers nothing. It is not a ' +
-              'statement that nothing is wrong.'
-            : 'Read over the first ' + fmt.int(read) + ' jobs only, not the whole queue. ' +
-              'There may be more past that.'
+          : scope === 'unread'
+            ? 'This read did not say how much of the queue it covered, so the scope of the ' +
+              'line above is unread rather than whole.'
+            : read === 0
+              ? 'This read reached no jobs at all, so the line above covers nothing. It is not a ' +
+                'statement that nothing is wrong.'
+              : 'Read over the first ' + fmt.int(read) + ' jobs only, not the whole queue. ' +
+                'There may be more past that.'
       }));
       box.appendChild(foot);
 
