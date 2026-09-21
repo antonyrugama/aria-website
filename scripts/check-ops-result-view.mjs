@@ -1728,8 +1728,15 @@ for (const page of PAGES) {
         'against; either the pane stopped writing it or the fixture stopped producing the ' +
         'shape it needs, and the counts above are what tell those apart.';
     } else if (declared.length) {
-      saw = `Its result view did declare ${inventory}${inTheme}, so the attributes are on ` +
-        'the page and no positive one among them had an unmarked peer to compare against.';
+      /* One sentence covering both shapes this case takes — every value
+         negative, and positives nobody could pair. The earlier wording, "no
+         positive one among them had an unmarked peer", is vacuously true of
+         the first and reads as the second. Narrowed rather than split: the
+         inventory above already shows the reader which shape this is, and a
+         new branch here would be one more piece of unproven analysis written
+         mid-review. */
+      saw = `Its result view did declare ${inventory}${inTheme}, so the attributes are ` +
+        'being written and none of them produced a pair this check could judge.';
     } else {
       saw = `Its result view declared no state attribute of any kind${inTheme}. That is ` +
         'the attribute missing, not the control: an element can be drawn, sized and ' +
