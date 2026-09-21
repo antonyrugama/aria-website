@@ -42,33 +42,43 @@
  *
  * THE SUBJECT
  *
- * `/ops/shell-v2.html`. It is the only page that loads `ops/assets/aria.css`
- * ALONE — every `/ops/*.html` pane also loads a `pane-*-v2.css`, and four of
- * those currently carry their own copy of the `.hero > .hero-chips` line. On a
- * pane the shared rule therefore cannot be observed to do anything; on the
- * shell it is the only thing standing between the hero and the defect. The
- * shell also carries the approved mock's hero markup verbatim (orb, title
- * block, `.hero-chips`), so it is the shape every v2 pane is built from.
+ * Two pages.
+ *
+ * `/ops/shell-v2.html` is the only one that loads `ops/assets/aria.css` ALONE,
+ * so the shared rule is the only thing standing between its hero and the
+ * defect, and it carries the approved mock's hero markup verbatim (orb, title
+ * block, `.hero-chips`) — the shape every v2 pane is built from.
+ *
+ * `/ops/settings.html` is a real pane, added when #10397 criterion 4 removed
+ * the scoped `.hero > .hero-chips` copy from `ops/assets/pane-settings-v2.css`.
+ * Until that removal the shared rule could not be observed doing anything on a
+ * pane: an identical rule one sheet later in the cascade was winning, so the
+ * page would have stayed correct with `aria.css:932` deleted. Removing a rule
+ * and leaving nothing measuring the result is how the first half of this issue
+ * was missed, so the page the removal exposed is now swept. Measured, with the
+ * copy gone and `aria.css:932` deleted: 375px dark gives tracks `279px 0px` —
+ * the title column is not narrowed, it is gone. With the shared rule present:
+ * `46px 233px`. All twelve settings readings were byte-identical before and
+ * after the copy came out.
+ *
+ * It gates on a session and builds its hero from API data, so this file serves
+ * `scripts/ops-api-stub.mjs` and seeds `ops-refresh` the way the other rendered
+ * oracles do.
  *
  * NOT COVERED — deliberately, and measured rather than assumed:
  *
- *  - The ten `/ops/*.html` pane pages. They gate on a session and build their
- *    heroes from API data, so driving them needs the ~400 lines of fixtures
- *    that `check-ops-narrow-overflow.mjs` already carries; that guard drives
- *    all ten on every run. Nothing here would be visible on them anyway:
- *    `pane-alerts-v2.css:42`, `pane-overview-v2.css:24`,
- *    `pane-releases-v2.css:300` and `pane-settings-v2.css:188` each carry an
- *    identical scoped copy of the rule this file binds, so their heroes are
- *    already correct and would stay correct if the shared rule were deleted.
- *    Removing those now-redundant copies is the remaining half of #10397 and
- *    belongs to whoever owns those files.
+ *  - The other nine `/ops/*.html` pane pages. Three of them still carry an
+ *    identical scoped copy of the rule this file binds — `pane-alerts-v2.css`,
+ *    `pane-overview-v2.css` and `pane-releases-v2.css` (twice). While a copy is
+ *    present the shared rule cannot be observed doing anything on that page:
+ *    the pane sheet's identical declaration wins on order, so the hero would
+ *    stay correct with `aria.css:932` deleted and a sweep of it would prove
+ *    nothing about the rule. Those files belong to other agents and removing
+ *    the copies is the rest of #10397 criterion 4; each page becomes worth
+ *    sweeping here on the commit its copy comes out, and not before.
  *  - `.hero > .row:last-child`, the pre-existing sibling rule. No page in this
  *    repository ends a hero with a `.row`, so there is nothing to measure. It
  *    is untouched by this change.
- *  - The magnitude of the collapse on a real pane. This page's single "Sample"
- *    chip is 73.66px wide, so the harm it can demonstrate is 27.66px of stolen
- *    title. The unbounded version needs a pane's chips and is out of reach
- *    here for the reason above.
  *  - `/ops/shell-v2.html` overflows its document at 375px (449px against 375px)
  *    entirely because of `.topbar-end`, the preview-state switcher. That is a
  *    separate defect of this page's own chrome, it is NOT the hero, and this
@@ -91,9 +101,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { stub } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SHELL = '/ops/shell-v2.html';
+
+/* The two subjects, and what each one is for. `shell` needs no session and no
+   API; `pane` gates on both, and its hero does not exist until the read comes
+   back, so a reading taken at load would be of a hero that is not there yet. */
+const PAGES = [
+  { url: '/ops/shell-v2.html', kind: 'shell', name: 'shell' },
+  { url: '/ops/settings.html', kind: 'pane', name: 'settings' }
+];
+const SHELL = PAGES[0].url;
 const THEMES = ['dark', 'light'];
 
 /* The breakpoint is `max-width: 980px` (aria.css:918). 980 and 981 are the two
@@ -120,8 +139,8 @@ const EPS = 0.01;
    iterates shrinks with them: emptying NARROW took the floor from 12 to 4 and
    the suite stayed green while measuring no narrow hero at all. Mutation G1
    demonstrated that, which is the only reason it is not still written that way.
-   Two themes, four narrow widths, two wide ones. */
-const SITE_FLOOR = 12;
+   Two pages, two themes, four narrow widths and two wide ones. */
+const SITE_FLOOR = 24;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -138,6 +157,11 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
+  if (url.pathname.startsWith('/api/')) {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(stub(url.pathname)));
+    return;
+  }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));
   if (!abs.startsWith(ROOT) || !fs.existsSync(abs) || fs.statSync(abs).isDirectory()) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -325,7 +349,13 @@ let initScript = null;
 async function setTheme(theme) {
   if (initScript) await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: initScript });
   const res = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
-    source: `try { localStorage.setItem('ops-theme', ${JSON.stringify(theme)}); } catch (e) {}`
+    source: `try { localStorage.setItem('ops-theme', ${JSON.stringify(theme)}); } catch (e) {}` +
+      /* A pane page gates on a session and reads its hero off the API. Seeded
+         for both subjects rather than only for the pane: the shell ignores
+         both keys, and a branch here would be one more thing that can be
+         wrong in only one of the two configurations. */
+      `try { localStorage.setItem('ops-api-base', ${JSON.stringify(origin)});` +
+      " sessionStorage.setItem('ops-refresh', JSON.stringify({ t: 'stub', s: 'adm_1' })); } catch (e) {}"
   });
   initScript = res.identifier;
   /* Emulated to the OPPOSITE of the stored theme, so a failed storage write
@@ -335,20 +365,30 @@ async function setTheme(theme) {
   });
 }
 
-/* One reading at one (theme, width). The viewport is set before the navigation
-   so the media query is already resolved when the page first lays out, rather
-   than relying on a resize being observed. */
-async function measure(theme, width) {
+/* One reading at one (page, theme, width). The viewport is set before the
+   navigation so the media query is already resolved when the page first lays
+   out, rather than relying on a resize being observed. */
+async function measure(page, theme, width) {
   await setTheme(theme);
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width, height: HEIGHT, deviceScaleFactor: 1, mobile: false
   });
   cdp.reset();
-  await cdp.send('Page.navigate', { url: origin + SHELL });
+  await cdp.send('Page.navigate', { url: origin + page.url });
   await cdp.once('Page.loadEventFired');
+  if (page.kind === 'pane') {
+    /* The shell boots, then the pane draws off the API. `.hero-chips` is the
+       last thing the hero builder appends, so waiting for it is waiting for
+       the whole hero — and a wait that timed out is a refusal, not a reading
+       taken of an empty page. */
+    await waitInPage("document.body.classList.contains('is-ready')",
+      `${page.name} to boot at ${theme}/${width}px`);
+    await waitInPage("document.querySelector('.hero .hero-chips')",
+      `${page.name}'s hero to draw its chips at ${theme}/${width}px`);
+  }
   await new Promise((r) => setTimeout(r, 250));
   const read = await evaluate(READ);
-  const where = `${theme}/${width}px`;
+  const where = `${page.name} ${theme}/${width}px`;
   assert.equal(read.error, undefined, `${where}: ${read.error}`);
   assert.equal(read.theme, theme,
     `${where}: asked for the ${theme} theme and the page painted ${read.theme}`);
@@ -358,7 +398,20 @@ async function measure(theme, width) {
   assert.deepEqual(read.trackKeywords, [],
     `${where}: gridTemplateColumns did not resolve to used pixel sizes — got "${read.tracksRaw}". ` +
     'Every contract in this file reads those numbers, so an unresolved value is a refusal, not a pass.');
-  return Object.assign(read, { where, width, theme });
+  return Object.assign(read, { where, width, theme, page: page.name });
+}
+
+/* `evaluate` parses what the page returns as JSON and throws on anything the
+   page threw, so a readiness poll needs its own path: a probe that reaches
+   through a null while the document is still being replaced is a wait, not a
+   failure. */
+async function waitInPage(expression, what) {
+  const guarded = `JSON.stringify({ ok: (() => { try { return !!(${expression}); } catch (e) { return false; } })() })`;
+  for (let i = 0; i < 300; i++) {
+    if ((await evaluate(guarded)).ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error('timed out waiting for ' + what);
 }
 
 const px = (n) => `${Math.round(n * 100) / 100}px`;
@@ -379,9 +432,14 @@ test('the sweep declares the widths its contracts are about', () => {
     `WIDE must contain ${BREAKPOINT + 1}px, the first width the media query does not cover; it is [${WIDE.join(', ')}]`);
   assert.ok(WIDE.every((w) => w > BREAKPOINT),
     `every WIDE width must be above the breakpoint; got [${WIDE.join(', ')}]`);
-  assert.equal(THEMES.length * (NARROW.length + WIDE.length), SITE_FLOOR,
-    `the declared sweep is ${THEMES.length} x ${NARROW.length + WIDE.length} readings, ` +
+  assert.equal(PAGES.length * THEMES.length * (NARROW.length + WIDE.length), SITE_FLOOR,
+    `the declared sweep is ${PAGES.length} x ${THEMES.length} x ${NARROW.length + WIDE.length} readings, ` +
     `which is not the ${SITE_FLOOR} this file contracts to judge`);
+  /* Both subjects by name. A PAGES list that lost the pane would leave every
+     loop below sweeping the shell twice and reporting the same total. */
+  assert.deepEqual(PAGES.map((p) => p.url).sort(),
+    ['/ops/settings.html', '/ops/shell-v2.html'],
+    `the sweep must drive the shell and the one pane whose scoped copy is gone; it drives [${PAGES.map((p) => p.url).join(', ')}]`);
   /* The tolerance is a rounding allowance, not a budget. Mutation G4 inflated it
      to 1000 and the narrow numeric contract swallowed the real 27.66px defect;
      only the wide co-location check, which uses EPS as a strict margin, caught
@@ -394,7 +452,7 @@ test('the sweep declares the widths its contracts are about', () => {
    sizes, or the page's own hero were not the shape the contracts assume, every
    assertion below would be measuring something else. */
 test('the hero is a grid whose used track sizes can be read', async () => {
-  const wide = await measure('dark', 1280);
+  const wide = await measure(PAGES[0], 'dark', 1280);
   assert.equal(wide.tracks.length, 3,
     `above the breakpoint the hero should keep three tracks, got ${wide.tracks.length} (${wide.tracksRaw})`);
   assert.ok(wide.tracks.every((t) => Number.isFinite(t) && t >= 0),
@@ -410,9 +468,10 @@ test('the hero is a grid whose used track sizes can be read', async () => {
 test('under the breakpoint the orb sizes the first track and the chips take their own row', async () => {
   const failures = [];
   let judged = 0;
-  for (const theme of THEMES) {
-    for (const width of NARROW) {
-      const m = await measure(theme, width);
+  for (const page of PAGES) {
+    for (const theme of THEMES) {
+      for (const width of NARROW) {
+      const m = await measure(page, theme, width);
       judged++;
 
       if (m.tracks.length !== 2) {
@@ -448,10 +507,12 @@ test('under the breakpoint the orb sizes the first track and the chips take thei
         failures.push(
           `${m.where}: .hero-chips starts at y ${px(m.chips.top)}, above the orb's bottom edge ${px(m.orb.bottom)}.`);
       }
+      }
     }
   }
   assert.deepEqual(failures, [], `narrow hero layout:\n  ${failures.join('\n  ')}`);
-  console.log(`  hero narrow: judged ${judged} hero(es) at ${NARROW.join('/')}px across ${THEMES.join(' and ')}`);
+  console.log(`  hero narrow: judged ${judged} hero(es) at ${NARROW.join('/')}px across ` +
+    `${THEMES.join(' and ')} on ${PAGES.map((p) => p.name).join(' and ')}`);
 });
 
 /* CONTRACT 3 — the regression guard for the fix. The rule lives inside
@@ -460,9 +521,10 @@ test('under the breakpoint the orb sizes the first track and the chips take thei
 test('above the breakpoint the hero keeps its three columns and the chips stay in the third', async () => {
   const failures = [];
   let judged = 0;
-  for (const theme of THEMES) {
-    for (const width of WIDE) {
-      const m = await measure(theme, width);
+  for (const page of PAGES) {
+    for (const theme of THEMES) {
+      for (const width of WIDE) {
+      const m = await measure(page, theme, width);
       judged++;
       if (m.tracks.length !== 3) {
         failures.push(`${m.where}: expected three tracks above the breakpoint, got ${m.tracks.length} (${m.tracksRaw})`);
@@ -485,24 +547,33 @@ test('above the breakpoint the hero keeps its three columns and the chips stay i
           `${m.where}: the chips dropped below the orb at a wide viewport — ` +
           `chips top ${px(m.chips.top)} vs orb bottom ${px(m.orb.bottom)}. The narrow rule has escaped its media query.`);
       }
+      }
     }
   }
   assert.deepEqual(failures, [], `wide hero layout:\n  ${failures.join('\n  ')}`);
-  console.log(`  hero wide: judged ${judged} hero(es) at ${WIDE.join('/')}px across ${THEMES.join(' and ')}`);
+  console.log(`  hero wide: judged ${judged} hero(es) at ${WIDE.join('/')}px across ` +
+    `${THEMES.join(' and ')} on ${PAGES.map((p) => p.name).join(' and ')}`);
 });
 
 /* The floor. Every test above loops; a loop that ran zero times asserts
    nothing and passes. This counts the readings that actually happened. */
 test('the sweep measured every hero it declared', async () => {
   let judged = 0;
-  for (const theme of THEMES) {
-    for (const width of [...NARROW, ...WIDE]) {
-      const m = await measure(theme, width);
-      assert.ok(m.tracks.length >= 2, `${m.where}: hero had ${m.tracks.length} track(s)`);
-      judged++;
+  const seen = new Set();
+  for (const page of PAGES) {
+    for (const theme of THEMES) {
+      for (const width of [...NARROW, ...WIDE]) {
+        const m = await measure(page, theme, width);
+        assert.ok(m.tracks.length >= 2, `${m.where}: hero had ${m.tracks.length} track(s)`);
+        seen.add(m.page);
+        judged++;
+      }
     }
   }
+  assert.deepEqual([...seen].sort(), PAGES.map((p) => p.name).sort(),
+    `the sweep judged ${[...seen].join(' and ')} but declared ${PAGES.map((p) => p.name).join(' and ')}`);
   assert.ok(judged >= SITE_FLOOR,
     `only ${judged} of ${SITE_FLOOR} declared hero readings were judged, under the floor of ${SITE_FLOOR}`);
-  console.log(`  hero sweep: judged ${judged} hero(es) across ${THEMES.length} themes x ${NARROW.length + WIDE.length} widths`);
+  console.log(`  hero sweep: judged ${judged} hero(es) across ${PAGES.length} pages x ` +
+    `${THEMES.length} themes x ${NARROW.length + WIDE.length} widths`);
 });
