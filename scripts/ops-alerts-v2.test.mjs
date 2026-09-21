@@ -31,21 +31,29 @@
    NOT COVERED, deliberately and named rather than implied:
 
      - Layout. Nothing here measures anything, in any browser, at any width.
+     - A sheet no <link> tag in the page spells. Measured in real Chrome
+       under this page's own CSP (RV20-4, re-run in round 21): a sheet a
+       permitted script APPENDS as a <link> paints, and a constructed sheet
+       pushed onto adoptedStyleSheets paints, and neither is read anywhere
+       in this file. Only the third route, an injected <style>, is closed,
+       by a CSP with no 'unsafe-inline' -- which is asserted here, not
+       assumed. ops/alerts.html runs no such script today; nothing in this
+       file would notice if it did.
      - Every reader of the sheet. The line below enumerates the PREFIXED
        docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the regex frames
        over its prose; what is not enumerated anywhere is the rest. Most of
        those read the sheet's RULES through declarations(), as CSS rather
        than as prose about CSS, so nothing they say can overclaim. The rest
-       read its raw TEXT, and NO COUNT OF THEM IS WRITTEN HERE. This
-       sentence said "three" while four were read, and then "four" while
-       five were; both times the new reader arrived in the same commit as
-       the word, and the second time the new reader was the one added to
-       close the first half of this very bullet (found in the third and
-       eighteenth reviews of #75). The raw-text readers as of this commit,
-       a snapshot and not a claim about later ones: the docblock heading
-       scan, the two pointer checks, the quoted-run scan, the url() test.
-       Nothing counts them, nothing reads that snapshot, and a list that
-       nothing reads cannot be trusted to stay complete -- which is the
+       read its raw TEXT, and NEITHER A COUNT NOR A LIST OF THEM IS
+       WRITTEN HERE ANY MORE. It said "three" while four were read, then
+       "four" while five were, and then named five while seven were; every
+       time, the missing reader had arrived in the same commit as the
+       words, twice in the commit that was fixing this very sentence
+       (found in the third, eighteenth and twenty-first reviews of #75).
+       Three strikes is enough: an enumeration nothing reads cannot be
+       trusted to stay complete, so there is nothing left here to go
+       stale. What the bullet is for stands without it -- reading the
+       sheet as TEXT is not covered, wherever it happens -- and it is the
        whole reason the two lists below are read rather than written.
      - The sheet's own reading rule, the HOW TO READ THIS COMMENT paragraph
        at the top of it. The devices below IMPLEMENT that rule; nothing
@@ -104,8 +112,8 @@
        `--ac\63`, which repainted every rail with 75 green in the twentieth
        review -- walks past the list itself; it reds in the refusal test
        instead, which fails any sheet holding a backslash at all. For the
-       ink, `color` is painted by 77 rules across the three sheets and no
-       list is possible, so it is the reader that refuses: a selector
+       ink, `color` is painted by dozens of rules across the three sheets
+       and no list is possible, so it is the reader that refuses: a selector
        mentioning the class it cannot take apart, or holding a backslash or
        `[class`, is a failure. What stays invisible is an ink rule that
        mentions the class nowhere in its text -- by element, by another
@@ -243,7 +251,8 @@ const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
    <link rel=stylesheet> PAINTS, and a constructed sheet pushed onto
    adoptedStyleSheets PAINTS. The `no unsafe-inline` assertion at the CSP
    test is real and closes the <style> route only; the other two routes are
-   open, unread here, and on the NOT COVERED list at the top of this file.
+   open, unread here, and named on the NOT COVERED list at the top of this
+   file, in the bullet `A sheet no <link> tag in the page spells`.
    A sheet pulled in by @import is invisible to this and its rules really do
    paint (measured, RV19-2a); it is not read here, it is REFUSED below --
    the ASCII spelling by the `@import` scan, and `@\69 mport`, which is the
@@ -254,8 +263,17 @@ const RAW_HTML = read('alerts.html');
 const DECODED_HTML = RAW_HTML.replace(/&#(x[0-9a-f]+|\d+);/gi, (_m, n) => String.fromCodePoint(
   n[0].toLowerCase() === 'x' ? parseInt(n.slice(1), 16) : parseInt(n, 10)));
 const LINK_TAGS = [...DECODED_HTML.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
+/* `\b` is a WORD boundary, not an attribute-name boundary: `data-href`
+   ends in `href` with a `-` in front of it, and `-` is not a word
+   character, so the first spelling of this returned the DECOY from
+   `<link rel="stylesheet" data-href="assets/empty.css" href="real.css">`
+   and read a sheet the page does not load while missing the one it does --
+   75 tests green with a fourth sheet painting every rail, and the escapes
+   and @imports inside that sheet carried past the refusals with it (found
+   in the twenty-first review of #75). An attribute name starts after
+   whitespace, a `/`, or the quote that closed the attribute before it. */
 const attrOf = (tag, name) => {
-  const m = new RegExp('\\b' + name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\'|([^\\s"\'>]+))', 'i')
+  const m = new RegExp('(?<=[\\s/"\'])' + name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\'|([^\\s"\'>]+))', 'i')
     .exec(tag);
   return m ? (m[2] ?? m[3] ?? m[4]) : null;
 };
@@ -3875,8 +3893,6 @@ test('no sheet the page loads spells an ident with an escape, and no character r
     'the page holds a character reference this reader cannot resolve -- a named one, or a '
     + 'numeric one missing its `;` -- and the HTML parser resolves references the byte scans '
     + 'below do not: `rel="&#115;tylesheet"` loads a fourth sheet that none of them counts');
-  assert.equal(DECODED_HTML.length <= RAW_HTML.length, true,
-    'the numeric decode grew the page, so it is not the decode it claims to be');
 });
 
 test('the ink on a severity is the -ink of the accent that severity draws', async () => {
@@ -3898,6 +3914,15 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     || (t.match(/'/g) || []).length % 2), [],
     'a <link> tag holds an odd number of quotes, so the scan stopped at a > inside a quoted '
     + 'attribute value and cut the tag in half');
+  /* A second hold on the same tags, and a refusal rather than a reading:
+     if `href` or `rel` appears twice in one tag, one of them is a decoy or
+     a duplicate, the parser takes exactly one, and this reader is not the
+     thing that should be deciding which. It reds instead. */
+  assert.deepEqual(LINK_TAGS.filter((t) => (t.match(/href\s*=/gi) || []).length > 1
+    || (t.match(/rel\s*=/gi) || []).length > 1), [],
+    'a <link> tag spells href= or rel= more than once -- as a duplicate, or inside a longer '
+    + 'attribute name like data-href -- and this reader cannot tell which one the parser '
+    + 'takes, so it refuses the tag rather than guessing and reading the wrong sheet');
   assert.ok(PAGE_SHEETS.length >= 3, 'the page loads ' + PAGE_SHEETS.length + ' stylesheets, '
     + 'so this is reading fewer sheets than the browser does');
   assert.deepEqual(PAGE_SHEETS.filter((href) => !href || !existsSync(new URL(href, OPS))), [],
