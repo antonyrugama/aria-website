@@ -17,5 +17,46 @@ desktop.ini
 # repository rather than a temp directory so the path is the same on a laptop
 # and on the runner. The check deletes it after Chrome has exited; ignored for
 # the run interrupted before it gets that far, and for the one where Chrome
-# never exits, which the check reports before it gives up.
+# never exits, which the check reports when it gives up.
 .ops-theme-redraw-*/
+
+# Chrome profile written by scripts/check-ops-dialog-hit.mjs, on the same terms
+# as the entry above: kept in the repository so the path matches on a laptop and
+# on the runner, deleted once Chrome has exited, ignored for the interrupted run.
+.ops-dialog-hit-*/
+
+# Mutation-battery source snapshots (mutate-*.mjs restores from these)
+.mutbak/
+
+# Chrome profile written by scripts/ops-webfont.test.mjs when RUNNER_TEMP is
+# unset, and the output directory its mutation battery writes its generated
+# table and per-row runner logs into. Same terms as the entries around it.
+.ops-webfont-*/
+.probe/
+
+# Chrome profile written by scripts/ops-scroll-containment.test.mjs when
+# RUNNER_TEMP is unset, which is every laptop; Actions always sets it, so on the
+# runner this lands outside the repository. Same terms as the two entries above:
+# removed once Chrome has exited, ignored for the run interrupted before that.
+.ops-scroll-containment-*/
+
+# Chrome profile written by scripts/ops-users-rendered.test.mjs, on the same
+# terms as the entries above: removed once Chrome has exited, ignored for the
+# run interrupted before that. A battery run killed on a timeout left one of
+# these untracked in the root, which is one `git add -A` away from being
+# committed by whoever is working in the tree next.
+.ops-users-rendered-*/
+
+# Scratch directory written by scripts/ops-painter-exit.test.mjs: the stub
+# browser it spawns, that stub's pid file, and the TMPDIR it points the
+# launch under test at. Same terms as the entries above: removed when the case
+# finishes, ignored for the run interrupted before that.
+.ops-painter-exit-*/
+
+# Chrome profile written by scripts/ops-meter-severity.test.mjs when RUNNER_TEMP
+# is unset, which is every laptop; Actions always sets it, so on the runner this
+# lands outside the checkout. Same terms as the entries above: removed once
+# Chrome has exited, ignored for the run interrupted before that. The battery's
+# generated table and per-row logs are not here -- they go to .probe, covered
+# above.
+.ops-meter-*/

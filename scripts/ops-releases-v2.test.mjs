@@ -26,13 +26,23 @@
    carry the reading. Nothing inside it is announced to anybody.
 
    Every test here has a published mutation — the exact file, the exact
-   original line, and the payload that makes that one test fail. 44 tests, 45
-   rows: 43 in PR antonyrugama/aria-website#55, and 2 for the 44th ("a
-   pipeline row states the build number once") in the follow-up that added it,
-   one mutation in each direction because the invariant is a count and a count
-   has two ways to be wrong. Rows exceed tests whenever a test has more than
-   one way to fail; they are not the same number and the breakdown is the
-   check on both.
+   original line, and the payload that makes that one test fail. 49 tests, 53
+   rows: 43 in PR antonyrugama/aria-website#55, 2 for the 44th ("a pipeline
+   row states the build number once") in the follow-up that added it, one
+   mutation in each direction because the invariant is a count and a count has
+   two ways to be wrong, and 8 in the omissions change, which added 5 tests
+   here and moved the wording one existing test reads. Rows exceed tests
+   whenever a test has more than one way to fail; they are not the same number
+   and the breakdown is the check on both.
+
+   The omissions rows were EMITTED BY the battery that ran them rather than
+   written up afterwards, so a row cannot name a line nobody mutated. That
+   harness caught two things a hand-written table would have published: an
+   anchor that named the rule above the one the payload landed in, and a
+   mutation — disabling the share sentence's bare unreadable branch — that
+   left this file green, because every fixture in it kept Android staged and
+   so only ever reached that clause by appending it to a measured ceiling.
+   The 49th test exists because of that row.
 
    That claim is checked by counting `test(` names against row names rather
    than by eye: the first round of #55's review found the claim was 38 of 39,
@@ -418,7 +428,7 @@ test('a store that reports no rollout share says so, and never prints it as zero
   });
   const row = rowText(dom, 'Android');
 
-  assert.match(row, /share not reported/);
+  assert.match(row, /No staged rollout/);
   assert.doesNotMatch(row, /0% of devices/);
   assert.doesNotMatch(row, /Staged/);
 });
@@ -1103,4 +1113,141 @@ test('the comment stripper leaves the code it is meant to leave', () => {
   /* The docblock sentence that made a bare scan meaningless is gone. */
   assert.doesNotMatch(src, /Nothing here uses/);
   assert.ok(src.length > PANE_SRC.length / 2, 'the stripper removed comments, not the module');
+});
+
+/* ============== an absent share is two opposite facts, not one ============ */
+
+/* One store's block under "What the stores say". Whole-pane text is the wrong
+   instrument again: both stores carry the "Staged rollout" label. */
+function storeText(dom, label) {
+  const box = findAll(panel(dom, 'live'),
+    (n) => (n.className || '').split(/\s+/).includes('inset'))
+    .find((n) => findAll(n, (c) => (c.className || '').split(/\s+/)
+      .includes('inset-title')).some((t) => allText(t).trim() === label));
+  assert.ok(box, `no store block labelled ${label}`);
+  return allText(box);
+}
+
+/* These four run in the fake DOM on purpose. The four sentences a browser has
+   to see — the headline, the end pill, the stage figure and the share line
+   over a RUNNING phased release — are bound in scripts/ops-releases-
+   omissions.test.mjs, which lays the page out in Chrome. What is left here is
+   the edge of the predicate, where a browser adds nothing and a matrix of
+   fixtures is cheap: which store states count as unreadable, and what the
+   note does with a malformed entry. */
+
+/* PAUSED arrives as `halted`, and Apple reports no share for it either. The
+   pane reaches it down a different branch from `rolling_out`: halted is stage
+   2, so the rollout stage is never REACHED and carries no figure at all. The
+   fact therefore has to land in the store block and the share sentence, which
+   is why this is asserted rather than assumed to follow from the running
+   case. */
+test('a paused phased release reports no share rather than none', async () => {
+  const data = releasesFixture();
+  const ios = production(data, 'ios');
+  ios.state = 'halted';
+  ios.rolloutBasisPoints = null;
+  const dom = await boot({ releases: data });
+
+  assert.match(storeText(dom, 'App Store Connect'), /Staged rollout\s*Not reported/,
+    'a paused rollout is not saying its share is unreported');
+  assert.doesNotMatch(storeText(dom, 'App Store Connect'), /Under way/,
+    'the store block says "Under way" directly under a stopped-release pill');
+  assert.match(shareCardText(dom), /cannot be read/,
+    'the share sentence does not say a paused ceiling is unreadable');
+
+  /* The other arm: a halted track that DOES carry a share still prints it, so
+     the assertions above are about the absent number and not about the state. */
+  ios.rolloutBasisPoints = 3_000;
+  const withShare = await boot({ releases: data });
+  assert.doesNotMatch(storeText(withShare, 'App Store Connect'), /Not reported/);
+  assert.match(storeText(withShare, 'App Store Connect'), /30%/);
+});
+
+/* The boundary the route draws and the pane must not blur: a live version with
+   no phased release at all, and a COMPLETE one, resolve to a genuine reading
+   of the whole field. Only ACTIVE and PAUSED are unreadable. A predicate that
+   fired on any absent share would relabel a finished release as unmeasured
+   and put a note on the page saying the store would not answer a question
+   nobody asked. */
+test('a live track with no staged rollout is an absence, not an unreadable share', async () => {
+  const data = releasesFixture();
+  const ios = production(data, 'ios');
+  ios.state = 'live';
+  ios.rolloutBasisPoints = null;
+  const dom = await boot({ releases: data });
+
+  const row = rowText(dom, 'iOS');
+  assert.doesNotMatch(row, /Not reported by/,
+    'a live track with no staged rollout is being drawn as an unreadable share');
+  assert.doesNotMatch(liveText(dom), /cannot be read/);
+  assert.match(row, /No staged rollout/,
+    'the row lost the words for an absent rollout, so the assertions above ' +
+    'would pass on a row that says nothing');
+});
+
+/* The note prints what the answer carries. An entry with neither a title nor a
+   key names nothing, so it is dropped rather than drawn as an empty bullet
+   with a full stop in front of it. */
+test('an omission that names nothing is dropped, not drawn blank', async () => {
+  const data = releasesFixture();
+  data.omissions = [{ key: '', title: '   ', detail: 'orphan' }];
+  const dom = await boot({ releases: data });
+  assert.doesNotMatch(liveText(dom), /orphan/,
+    'an omission with no name is being drawn');
+
+  /* The other arm, because "nothing is drawn" also describes a pane that
+     cannot draw omissions at all. */
+  data.omissions = [{ key: 'ios_rollout_share', title: '', detail: 'orphan' }];
+  const named = await boot({ releases: data });
+  assert.match(liveText(named), /ios_rollout_share\. orphan/,
+    'an omission carrying only a key falls back to the key');
+});
+
+/* The route publishes `omissions` conditionally, so every older answer still
+   in flight has no such field. */
+test('an answer with no omissions field draws no note and does not fail', async () => {
+  const data = releasesFixture();
+  delete data.omissions;
+  const dom = await boot({ releases: data });
+
+  assert.equal(shownState(dom), 'live', 'the pane fell out of its live state');
+  const notes = findAll(panel(dom, 'live'),
+    (n) => (n.className || '').split(/\s+/).includes('is-note'));
+  assert.equal(notes.length, 0, 'a note was drawn with nothing to put in it');
+
+  /* The other arm, so "no note" is not simply what this pane always does. */
+  data.omissions = [{ key: 'k', title: 'Held back', detail: 'why' }];
+  const withOne = await boot({ releases: data });
+  assert.equal(findAll(panel(withOne, 'live'),
+    (n) => (n.className || '').split(/\s+/).includes('is-note')).length, 1);
+});
+
+/* The configuration this pane will actually be in most often, and the one the
+   battery found unbound: Android finished, iOS still phasing. Every other
+   fixture here leaves Android staged at 20%, so the share sentence reaches the
+   unreadable clause by being APPENDED to a measured ceiling, and the branch
+   that returns the clause on its own is never taken. With no measured ceiling
+   the next branch is "no store is capping the rollout, so this share is
+   take-up" — the exact false claim, in the case where nothing else on the
+   sentence contradicts it. */
+test('one store phasing and the other finished still says the ceiling is unreadable', async () => {
+  const data = releasesFixture();
+  const ios = production(data, 'ios');
+  ios.state = 'rolling_out';
+  ios.rolloutBasisPoints = null;
+  const android = production(data, 'android');
+  android.state = 'live';
+  android.rolloutBasisPoints = 10_000;
+  const dom = await boot({ releases: data });
+
+  assert.doesNotMatch(shareCardText(dom), /no store is capping/,
+    'the sentence claims no store is capping while Apple is capping by an ' +
+    'amount it will not report');
+  assert.match(shareCardText(dom), /iOS: a phased release the store does not measure/,
+    'the sentence does not name the unreadable ceiling either, so the ' +
+    'assertion above would pass on a sentence that says nothing');
+  assert.doesNotMatch(shareCardText(dom), /a ceiling the store set/,
+    'a measured ceiling is being reported where there is none, which would ' +
+    'mean this fixture never reached the branch under test');
 });

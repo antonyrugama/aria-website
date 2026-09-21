@@ -262,6 +262,32 @@
     return ranges.length ? ranges[ranges.length - 1] : null;
   }
 
+  /* Why the window list has no Custom in it, said in the bar where that option
+     would have been.
+
+     The registry leaves `custom` out of this pane's ranges on purpose: the bar
+     carries a range NAME and no dates, so a custom window reaches the usage
+     route with no start and no end, and that route answers over the widest
+     window retention allows rather than refusing it -- confident figures for a
+     window the operator never chose. Until now that decision was recorded only
+     in a comment in `assets/pane-registry.js`, so an operator looking for the
+     option found an absence and no reason.
+
+     The registry's own `filterNote` is the mechanism for exactly this, and the
+     cost pane next door uses it; this pane states it through the slot the
+     shell gives a pane in the same bar, in the same shape, because that entry
+     is being edited by other work. Read from the range list rather than
+     written flat, so the note leaves the bar on its own the day the bar grows
+     date controls and `custom` comes back. Stadiora/Aria#10449. */
+  var NO_CUSTOM_RANGE = 'This bar has no date controls yet, so a custom window '
+    + 'would be answered over a window nobody chose';
+
+  function noCustomRangeNote() {
+    var ranges = list((S.panes[PANE_ID] || {}).range);
+    if (!ranges.length || ranges.indexOf('custom') !== -1) return null;
+    return h('span', { className: 'pill ghost filter-note', text: NO_CUSTOM_RANGE });
+  }
+
   /* ---------------------------------------------------------------- charts */
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
@@ -649,8 +675,16 @@
   /* --------------------------------------------------------------- tiles */
 
   /* The headline figures, taken from the first app in the answer and labelled
-     with it. A tile is one app's figure with the other apps' readings under it,
-     never a total: somebody who used both apps is one person. */
+     with it. A tile is one app's figure and never a total: somebody who used
+     both apps is one person.
+
+     One figure per tile, and the other apps' readings of it are not repeated
+     here. The split card below is the slot that owns the comparison: it prints
+     every app's copy of every metric, withheld ones with their reason, so a
+     second copy under the tile is the same fact twice on one screen. It used
+     to carry one, which put eight figures on the page sixteen times -- each as
+     a tile, as a line under the tile, and again as a column -- and repetition
+     is what departure 1 deletes a whole tile for. Stadiora/Aria#10475. */
   function tiles(data) {
     var apps = list(data.apps);
     var lead = apps[0];
@@ -659,12 +693,12 @@
 
     var grid = h('div', { className: 'grid g4' });
     list(lead.metrics).slice(0, 4).forEach(function (metric) {
-      grid.appendChild(tile(metric, lead, apps.slice(1), noStored));
+      grid.appendChild(tile(metric, lead, noStored));
     });
     return grid;
   }
 
-  function tile(metric, lead, others, noStored) {
+  function tile(metric, lead, noStored) {
     var card = S.card('kpi');
     var body = h('div', { className: 'card-body' }, [
       h('h3', { className: 'kpi-label', text: metric.label })
@@ -673,11 +707,11 @@
 
     var reason = withheld(metric, noStored);
     if (reason) {
-      /* Words, not a number, and the reason in the place the comparison would
-         have been. The other apps' readings are left out of this tile on
-         purpose: a figure printed under "Not reported" is read as the tile's
-         own. Every app's copy of this figure, withheld or not, is in the split
-         card below. */
+      /* Words, not a number, and the reason under the figure that is not
+         there. This is the one thing a tile says that nothing else on the page
+         says: the split card prints a withheld figure's reason in its own
+         column, but only for the apps it has columns for, and a tile with no
+         reason under it is an absence with nothing to read. */
       body.appendChild(h('div', { className: 'kpi-val is-absent', text: NOT_REPORTED }));
       card.appendChild(h('div', { className: 'kpi-foot' }, [
         h('span', { text: sentence(reason) })
@@ -696,21 +730,6 @@
     }
     body.appendChild(meta);
 
-    var rest = others.map(function (app) {
-      var match = list(app.metrics).filter(function (one) {
-        return one.label === metric.label;
-      })[0];
-      if (!match) return null;
-      return app.label + ' ' + (withheld(match, noStored)
-        ? NOT_REPORTED.toLowerCase()
-        : metricValue(match));
-    }).filter(function (text) { return !!text; });
-
-    if (rest.length) {
-      card.appendChild(h('div', { className: 'kpi-foot' }, [
-        h('span', { text: rest.join(' \u00b7 ') })
-      ]));
-    }
     return card;
   }
 
@@ -890,9 +909,14 @@
        those people is a different number from the one the heading promises. */
     card.appendChild(S.cardHead('Who comes back', cohort.note || cohort.label || null, []));
 
+    /* Neither heading carries a name of its own. They used to say `u-when` and
+       `u-size`, which no stylesheet in the repository ever defined: the whole
+       treatment comes from `.tbl th` (aria.css), `.u-cohort th:first-child`,
+       and `.r` for the right-aligned one, all of which reach these cells
+       positionally. `r` is load-bearing and stays. */
     var headRow = h('tr', {}, [
-      h('th', { scope: 'col', className: 'u-when', text: 'Week joined' }),
-      h('th', { scope: 'col', className: 'r u-size', text: 'People' })
+      h('th', { scope: 'col', text: 'Week joined' }),
+      h('th', { scope: 'col', className: 'r', text: 'People' })
     ]);
     offsets.forEach(function (offset) {
       headRow.appendChild(h('th', {
@@ -1208,6 +1232,12 @@
   S.definePane(PANE_ID, function (content) {
     var region = S.region(content);
     var inFlight = 0;
+
+    /* Once, not per read: the option is missing from the bar whatever the
+       answer says, including while one is still in flight and when none
+       arrives at all. */
+    var absence = noCustomRangeNote();
+    if (absence) S.paneFilters([absence]);
 
     function skeleton() {
       region.loading([

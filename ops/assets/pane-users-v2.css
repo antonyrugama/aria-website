@@ -91,6 +91,62 @@
 }
 .locked svg { width: 12px; height: 12px; flex: none; color: var(--ink-3); }
 
+/* ------------------------------------------------------- the mask itself
+
+   Stadiora/Aria#10643. `masked` is the class ops.css dimmed a redacted value
+   with, ops/users.html deliberately loads no ops.css, and so on this page the
+   class sat in the DOM and painted nothing — Stadiora/Aria#10456's shape, on
+   the values this pane exists to keep back.
+
+   It is not a second .locked. This page draws .locked on two different
+   things: the API's standing mask of an address in the match table, which is
+   simply how that value is shown here and always will be, and the stand-in
+   for a field in the account record that is hidden RIGHT NOW and that the
+   reveal control swaps out. Only the second carries `masked`. So `masked` is
+   the class that says which of the two is in front of you, and what it has to
+   say is "a value belongs here and you are not being shown it".
+
+   Two channels, and neither of them is colour:
+
+     the type  the value's own monospace, tracked out. The mask then stands
+               where the value stands — .reveal-value is the same family, so a
+               recorded reveal reads as one value changing form rather than a
+               chip being swapped for a different kind of thing — and the dots
+               the API masks with line up as a redaction rather than running
+               together as a word.
+     the edge  dashed where .locked's is solid: an outline deliberately not
+               whole. border-style is among the few things a forced-colours
+               mode keeps, and box-shadow is not, so this is the channel that
+               survives the display setting that flattens the hatching.
+
+   The edge is the full --ink-3 token rather than a faded mix of it, and that
+   is measured rather than chosen. .locked's own background is a 135deg
+   repeating-linear-gradient, so the surface the dash sits on is not one
+   colour but two alternating every 5px, and the loud stripe is the one a 3:1
+   claim has to clear. A 70% mix of --ink-3 reads 2.98:1 dark and 2.90:1 light
+   against that stripe — under the floor, while measuring 3.53:1 against the
+   quiet one, which is how a single-pixel sample of a hatched surface reports
+   a number that is not true. The whole token reads 4.57:1 dark and 5.14:1
+   light against the loud stripe and 5.42:1 / 5.97:1 against the card outside.
+   scripts/ops-users-rendered.test.mjs scans the band for its worst pixel, so
+   the hatch cannot hide under an average again.
+
+   The border REPLACES .locked's ring rather than joining it, and the padding
+   gives back the pixel the border takes, so the chip is the size it was and
+   nothing around it moves. Written as .locked.masked rather than .masked so
+   it outranks .locked whatever order the two end up in: a tie broken by
+   source position is a rule that stops applying when somebody sorts the file.
+
+   Nothing here reveals anything. The text in the chip is whatever the API
+   already masked, unchanged; this only draws it as the redaction it is. */
+.locked.masked {
+  padding: 2px 8px;
+  border: 1px dashed var(--ink-3);
+  box-shadow: none;
+  font-family: var(--mono);
+  letter-spacing: .04em;
+}
+
 /* -------------------------------------------------------------- key/value */
 .kv { display: flex; flex-direction: column; }
 .kv > div {
@@ -181,7 +237,15 @@
 
 /* A table narrower than its card scrolls rather than pushing the page wide.
    scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
-.tbl-wrap { overflow-x: auto; }
+/* Positioned, because `overflow-x` clips only a descendant whose containing
+   block is this box. An absolutely positioned one resolves its containing
+   block to the nearest positioned ancestor, so while this box was static the
+   nearest was the page: a `caption.sr` inside a table wider than the phone sat
+   at its static position in page coordinates, escaped this clip and took the
+   document sideways while the table around it scrolled correctly. ops.css
+   carried this on .table-wrap and the v2 sheets dropped it when they were
+   written from the template. Stadiora/Aria#10706. */
+.tbl-wrap { overflow-x: auto; position: relative; }
 
 /* aria.css styles .tbl th as a column header: uppercase, 9.5px, tracked out.
    A row header is a row's NAME, and on this pane one of those names is a
@@ -236,8 +300,135 @@
   box-shadow: inset 3px 0 0 0 var(--cyan);
 }
 
+/* ------------------------------------------- what the wash does to the ink
+
+   Stadiora/Aria#10754. The wash above was chosen for how a picked row should
+   READ and never measured for what it does to the text standing on it,
+   because nothing in this repository could: check-ops-contrast.mjs composes
+   sites on a fixture page and never drives a pane to a selection, and the
+   hover sweep that arrived with #5501 swept a pane with no wash of its own.
+
+   Measured on rendered pixels once an instrument existed, at 1440px in both
+   themes, worst frequent pixel under each ink:
+
+     selected, no pointer        dark  4.662  .muted on #0F262D   -- clears
+     selected, no pointer        light 5.256  .locked on #D4E2E7  -- clears
+     selected AND hovered        dark  3.849  .muted on #17353F   -- BELOW AA
+     selected AND hovered        dark  4.214  .locked on #28434D  -- BELOW AA
+     selected AND hovered        light 4.632  .locked on #C1D7DD  -- clears
+
+   So the wash on its own is fine and the COMPOUND state is not, in the dark
+   theme only, and the cause is that two lifts land on one cell: aria.css
+   tints the ROW with `--ink 4%` on hover, this sheet tints the CELL five
+   points further into the cyan, and the cell is translucent so both arrive.
+   Dropping the hovered wash back to the unhovered 10% does not fix it --
+   recomputed at 4.13, still under -- because the row's own tint is enough on
+   its own. The wash is not the thing that is wrong.
+
+   What is wrong is the RANK. `--ink-3` is the palest ink in the system and it
+   was tuned against the card, which is the darkest thing a row sits on. On a
+   washed cell it is one rank too pale, so on a washed cell it is one rank
+   less pale. Written as a token override rather than a list of classes
+   because a list can miss a carrier and this cannot: .muted, .tbl .t-sub and
+   the lock glyph inside .locked all take it, and each of them is lifted by
+   the same wash for the same reason.
+
+   Applied to the selected row rather than only to its hovered half, although
+   only the hovered half measures unsafe: text that changes colour when a
+   pointer crosses it is a worse artefact than a 0.16 margin, and the
+   unhovered half gains the same step (4.662 -> 6.07). */
+.tbl tbody tr.is-selected > th,
+.tbl tbody tr.is-selected > td {
+  --ink-3: var(--ink-2);
+}
+
+/* The mask chip is lifted TWICE: once by the wash under it and again by its
+   own hatch, which is `--ink 7%` laid over whatever it is standing on. On an
+   unwashed row that lands on the card and the address reads at 5.15; on a
+   washed and hovered cell it lands on the wash and the address reads at 4.21.
+
+   The chip gets its own base back, rather than the address getting a louder
+   ink: the masked value is the quietest thing in the row and should stay
+   that way, and a chip that keeps its own surface under a tinted row is also
+   more obviously a chip. The mix is toward --surface, so it pulls DOWN in the
+   dark theme and UP in the light one -- in both, back toward the page's own
+   ground and away from the row's tint. The hatch and the hairline ring are
+   untouched, so nothing about the redaction signal is softened. */
+.tbl tbody tr.is-selected > th .locked,
+.tbl tbody tr.is-selected > td .locked {
+  background-color: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
 /* The word, on the line the coded reference is on. */
 .match-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ------------------------------------------------------------ the row's name
+
+   Stadiora/Aria#10643. The cell holding the account's identity: the coded
+   reference the operator acts on, and under it the API's mask of the address.
+   It was added by the Stadiora/Aria#10456 change in the same edit as
+   .match-id; .match-id got its rule and this one never did, so the class
+   named the cell and drew nothing.
+
+   Two jobs the `.tbl tbody th` rule above cannot take, because a row header
+   on this pane is also a timestamp in the activity table, a timestamp in the
+   access table and a device name:
+
+     the floor   the identity is two chips, neither of which wraps inside
+                 itself, and a column in an auto-laid-out table squeezes to
+                 whatever the widest of them needs. Measured at 1280px: the
+                 pick control is 81.4px, the "Selected" mark is 81.4px, the
+                 gap between them 8px and the cell's own padding 28px, so 200
+                 is where the mark stops being pushed onto a line of its own —
+                 which is what it did at 375px, leaving the mark stranded
+                 under the reference it marks. Past that the table is wider
+                 than the card and .tbl-wrap scrolls, which is the job it was
+                 given.
+     the rhythm  aria.css sets .t-sub 2px under its main line. That is right
+                 for a caption and tight for a hatched chip carrying a
+                 hairline of its own, which is what the address is here. */
+.match-name { min-width: 200px; }
+.match-name .t-sub { margin-top: 5px; }
+
+/* --------------------------------------------------- the control's own state
+
+   Stadiora/Aria#10648. applySelection sets aria-pressed on the pick control,
+   no sheet this page loads had a rule for it, and the measurement at the
+   filing found the pressed button identical to the unpressed one on every
+   property compared: same colour, same background, same ring, same weight,
+   no pseudo-element of its own. The control told a screen reader it was
+   pressed and told a sighted operator nothing.
+
+   Stadiora/Aria#10456 painted the ROW, and that is a different fact: the row
+   is the account the whole column below describes, the button is the toggle
+   the operator pressed to get there. A reader on the button hears the second
+   one; until this rule, that was the only way to know it.
+
+   Three channels on the control, two of which are not colour:
+
+     the ring    an inset hairline where a ghost button has none. An edge that
+                 is either there or not survives a monochrome screen, and it
+                 is INSIDE the box, where :focus-visible in aria.css puts a
+                 2px outline 2px outside it — so pressed and focused are never
+                 the same shape, and a control that is both shows both.
+     the weight  the coded reference goes from .code's 520 to 620, and from
+                 --ink-2 to --ink.
+     the fill    a cyan tint, one step above the wash the row already carries.
+
+   and beside it, already, the word "Selected" that applySelection writes into
+   the same line. Hover still moves, so the pressed control under the pointer
+   is still answering. */
+.match-row-btn[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--cyan) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--cyan-ink);
+}
+.match-row-btn[aria-pressed="true"]:hover {
+  background: color-mix(in srgb, var(--cyan) 23%, transparent);
+}
+.match-row-btn[aria-pressed="true"] .code {
+  font-weight: 620;
+  color: var(--ink);
+}
 
 /* ------------------------------------------------------------- responsive */
 @media (max-width: 720px) {

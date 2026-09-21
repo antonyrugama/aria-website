@@ -88,6 +88,16 @@
 
   var RANGE_DAYS = { '7d': 7, '30d': 30 };
 
+  /* What the close endpoint keeps of a note, and the same number the textarea
+     stops at, so the field cannot accept text the record will not hold.
+
+     The attribute alone is not the whole fix. `maxlength` stops typing, but a
+     PASTE past the limit is truncated by the browser without a word, so an
+     operator who pastes a paragraph gets a note ending mid-sentence and no
+     sign that anything was dropped (Stadiora/Aria#5498). The line beside the
+     field is silent until the limit is actually reached and then says so. */
+  var NOTE_LIMIT = 500;
+
   /* How far back the closed list looks, and how many of them it shows. The
      window is this pane's own rather than the shell's: the shell's range
      decides which problems are in the QUEUE, and a closed list that emptied
@@ -445,11 +455,63 @@
         'Nothing here is a zero. This part is unread, not empty.'
       ]);
       var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+      nameRetry(block, again);
       again.addEventListener('click', function () { reload(); });
       block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
       box.appendChild(block);
       section.appendChild(box);
       return section;
+    }
+
+    /* A control whose whole name is "Try again" says the action and never its
+       object. A screen reader's control list enumerates by NAME, so an
+       operator pulling one up is told what the button does and not which read
+       it would repeat -- and this pane draws one of these on four different
+       failures.
+
+       #10760 says three are on screen at once. They are not: render() treats
+       both reads failing as the whole pane unreadable and returns through
+       region.failed(), so two of THESE can never share a screen. The pair the
+       pane can really draw is one of these beside the record-detail retry,
+       which carries its own `sr` span. So this is not about disambiguating a
+       pair; it is about one button, on its own, saying nothing.
+
+       #10760 proposed aria-describedby. That is what PR #98 tried first on
+       the Overview pane and then replaced, because a description is announced
+       on focus and every list that enumerates controls -- NVDA's Elements
+       List, JAWS's button list, the VoiceOver rotor -- reads names, so both
+       entries stayed "Try again" there. Composing the NAME out of the button
+       and its own headline is what those lists read, and it keeps the visible
+       word as the first token so voice control still works on what the
+       operator can see. aria-label would have replaced that word.
+
+       Copied from pane-overview.js rather than shared, because the two panes
+       load no common module of their own and the shell is not this pane's to
+       extend. */
+    var retryN = 0;
+    function nameRetry(block, again) {
+      var kids = block.childNodes || [];
+      for (var i = 0; i < kids.length; i++) {
+        if (/^h[1-6]$/i.test(String(kids[i].tagName || ''))) {
+          retryN += 1;
+          /* setAttribute, not .id. The DOM harness these are tested through
+             has no id accessor, so a property write leaves getAttribute('id')
+             null: every reference would dangle in the tests while working in
+             a browser. That is a false RED, not a false green -- five of the
+             ten tests fail -- but it is the kind of false red that gets
+             "fixed" by loosening the assertion, and then the loosened
+             assertion is the false green. */
+          var headingId = kids[i].getAttribute('id');
+          if (!headingId) {
+            headingId = 'pb-failed-' + retryN;
+            kids[i].setAttribute('id', headingId);
+          }
+          var buttonId = 'pb-retry-' + retryN;
+          again.setAttribute('id', buttonId);
+          again.setAttribute('aria-labelledby', buttonId + ' ' + headingId);
+          return;
+        }
+      }
     }
 
     /* The Problems count beside the rail item. A real read or nothing: it is
@@ -721,6 +783,28 @@
       return box;
     }
 
+    /* The severity in words, for a severity the answer chose and this file did
+       not. Three steps, the same three the Overview pane takes since #10393,
+       because an operator moving between the two panes during one incident
+       must meet one word for one state:
+
+         - the label this file keeps for a severity it knows,
+         - the severity itself when that is a word, so an unrecognised one is
+           reported rather than hidden,
+         - "Unknown" when neither is a word. Not a blank: shell-pane-v2.js:97
+           skips textContent entirely for `undefined`, so an absent severity
+           drew a pill with nothing in it and told the operator nothing was
+           missing.
+
+       Both lookups go through textOf(), which is what stops `constructor` and
+       `toString` -- words every plain object in JavaScript answers to -- from
+       reaching the screen as the source of a function. SEVERITY_LABEL is a
+       plain object literal, so SEVERITY_LABEL['constructor'] is Object, and
+       the pill printed it. */
+    function severityWords(severity) {
+      return textOf(SEVERITY_LABEL[severity]) || textOf(severity) || 'Unknown';
+    }
+
     function problemHead(problem, tone) {
       var row = h('div', { className: 'p-head' });
 
@@ -738,7 +822,7 @@
       }));
       strip.appendChild(h('span', {
         className: 'pill ' + (SEVERITY_PILL[tone] || 'info'),
-        text: SEVERITY_LABEL[problem.severity] || problem.severity
+        text: severityWords(problem.severity)
       }));
       if (textOf(problem.reference)) {
         strip.appendChild(h('span', { className: 'pill ghost' }, [
@@ -1166,8 +1250,23 @@
       noteWrap.appendChild(h('label', {
         className: 'p-label', 'for': noteId, text: 'What happened? Kept with the record'
       }));
-      var note = h('textarea', { id: noteId, rows: '2', maxlength: '500' });
+      var limitId = discloseId('close-note-limit', surface);
+      var note = h('textarea', {
+        id: noteId, rows: '2', maxlength: String(NOTE_LIMIT),
+        'aria-describedby': limitId
+      });
       noteWrap.appendChild(note);
+      /* Empty until the limit is reached, so the ordinary case carries no
+         extra words, and a sentence the moment the field starts dropping
+         what is put into it. role="status" rather than "alert": nothing is
+         wrong, and it is not worth interrupting what is being typed. */
+      var limit = h('p', { className: 'tiny muted', id: limitId, role: 'status' });
+      noteWrap.appendChild(limit);
+      note.addEventListener('input', function () {
+        limit.textContent = String(note.value || '').length >= NOTE_LIMIT
+          ? 'At the ' + NOTE_LIMIT + '-character limit. Anything past it is not kept.'
+          : '';
+      });
       box.appendChild(noteWrap);
 
       var confirm = h('button', {

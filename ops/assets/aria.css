@@ -14,9 +14,10 @@
    value in this file. Four deliberate departures, all forced by this being a
    public, build-free, CDN-free GitHub Pages site under a strict CSP:
 
-     1. No Google Fonts link. The font stacks are unchanged, so anyone with
-        Geist or JetBrains Mono installed sees the intended faces and everyone
-        else falls back cleanly. Nothing is fetched from a third party.
+     1. No Google Fonts link. Geist is self-hosted from ops/assets/fonts/
+        instead, so the approved typeface renders without a third-party
+        request and under the existing font-src 'self'. See the @font-face
+        block below.
      2. The design-notes mechanism (.why and [data-notes]) is gone. It is
         review scaffolding for the mocks and does not ship.
      3. Tone utility classes (.st-*, .acc-*, .tone-*) were added. The mocks set
@@ -30,6 +31,47 @@
    class names from different token sets, so a page loads one or the other,
    never both. Panes move across one at a time.
    ========================================================================= */
+
+/* ------------------------------------------------------------------ faces */
+/* Geist, self-hosted. The stack below names it first, and before these rules
+   existed nothing served it, so every pane fell through to the system font
+   and had never rendered in the approved typeface (Stadiora/Aria#10806).
+
+   Variable, not static, and that is forced rather than preferred: the sheets
+   these faces serve ask for fourteen weights -- 400 440 450 460 480 500 520
+   540 560 580 600 620 640 700 -- and Geist ships static cuts only in hundreds,
+   so ten of the fourteen fall between instances. Against static faces the
+   browser snaps each of those ten to its nearest cut and quietly flattens the
+   design's weight ramp. One axis renders all fourteen exactly, and
+   scripts/ops-webfont.test.mjs measures the fourteen advance widths to prove
+   the axis interpolates rather than snapping.
+
+   font-display: swap. The alternative that avoids reflow, `optional`, gives
+   the file ~100ms and otherwise keeps the fallback for the whole load without
+   ever swapping -- which on a cold visit reproduces the defect being fixed
+   here. Text stays visible throughout either way; `swap` guarantees it ends
+   up in Geist.
+
+   format('woff2') rather than the draft format('woff2-variations'): the
+   variable range is declared by font-weight above, and a browser that does
+   not recognise a format string drops the src and falls back silently --
+   which is the failure mode this whole change exists to remove.
+
+   Provenance, licence and the exact subsetting command: ops/assets/fonts/README.md */
+@font-face {
+  font-family: 'Geist';
+  src: url('fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* ----------------------------------------------------------------- tokens */
 :root {
@@ -171,8 +213,14 @@ svg { display: block; }
 
 ::selection { background: color-mix(in srgb, var(--cyan) 30%, transparent); }
 
+/* The ring is judged against what it touches, not against the page: WCAG 2.2
+   SC 1.4.11 wants 3:1 there. In light, --cyan lands at 2.97:1 on the pale
+   surfaces these controls sit in and 2.65:1 on .btn-primary's own glow, so the
+   ring the keyboard depends on all but vanishes on the controls it marks.
+   --cyan-ink is the same hue carried down until it clears; in dark it IS
+   --cyan, so dark is untouched. Stadiora/Aria#10649, #10650. */
 :focus-visible {
-  outline: 2px solid var(--cyan);
+  outline: 2px solid var(--cyan-ink);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -584,6 +632,14 @@ svg { display: block; }
   font-weight: 580;
 }
 .btn-primary:hover { filter: brightness(1.07); box-shadow: 0 0 0 1px var(--cyan), 0 8px 22px -6px color-mix(in srgb, var(--cyan) 70%, transparent); }
+/* This button carries a cyan halo of its own, and the ring was being judged
+   against that halo rather than against the page: 2.65:1 in light, 2.09:1 in
+   dark. Recolouring cannot answer it — the halo sits at mid luminance, so even
+   a pure white ring reaches only 3.79:1 against it in dark. The halo is what
+   swallows the ring, so the halo stands down while the ring is up; the button
+   keeps its fill, and the ring is then read against the card like every other
+   control's. Stadiora/Aria#10650. */
+.btn-primary:focus-visible { box-shadow: none; }
 /* The light theme used to flip this label to white, which put white on a
    saturated cyan fill at 3.1:1. The dark ink the dark theme already uses reads
    at 6.1:1 on the same fill and keeps one treatment for both themes. */
@@ -650,9 +706,17 @@ svg { display: block; }
   box-shadow: inset 0 0 0 1px var(--line);
   transition: box-shadow .15s;
 }
+/* Focus was two translucent cyan shadows over whatever the field sat on, which
+   no contrast oracle can resolve to a colour and therefore cannot check — an
+   indicator nothing can measure is one that rots unnoticed. An opaque outline
+   can be measured. The offset is negative on purpose: the field sits flush
+   inside its card, and a positive offset paints the ring outside the card
+   (measured at 21,234 pixels of ring outside the card in PR #72), where it is
+   judged against a different surface than the one it marks.
+   Stadiora/Aria#10651. */
 .field:focus-within {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 55%, transparent),
-              0 0 0 3px color-mix(in srgb, var(--cyan) 12%, transparent);
+  outline: 2px solid var(--cyan-ink);
+  outline-offset: -2px;
 }
 .field svg { width: 15px; height: 15px; color: var(--ink-3); flex: none; }
 .field input {
@@ -699,6 +763,68 @@ svg { display: block; }
 .meter.warn { --c: var(--amber); }
 .meter.bad  { --c: var(--rose); }
 .meter.vio  { --c: var(--violet); }
+
+/* Stadiora/Aria#10825: severity was carried by `--c` and nothing else, so in
+   greyscale a bar meaning "in trouble" and a bar meaning "fine" were the same
+   bar. Severity is now also a NOTCH COUNT -- ok runs clean, warn carries one
+   notch, bad two, vio three -- so the band survives with the hue removed and
+   colour only reinforces it. Same reasoning as the 3px rail in #71.
+
+   Notches are grooves cut from the fill's trailing end, drawn as borders
+   because a border is geometry: `forced-colors` recolours it rather than
+   discarding it. They are cut in `--bg`, which is opaque in both themes, so a
+   groove reads the same whichever card the meter sits on. A first attempt
+   mixed 30% of `--c` toward the page instead and measured 2.67:1 against a
+   light-theme `bad` fill; `--bg` measures 4.28:1 at its worst.
+
+   Every groove sits STRICTLY INSIDE the fill, at 4px, 8px and 12px from its
+   trailing edge, cut in the page background so the bar reads as notched
+   rather than tinted. A groove flush with that edge was tried first and discarded
+   after looking at it: at the edge a groove is not a groove, it just makes the
+   bar 2px shorter, so `warn` was indistinguishable from `ok`.
+
+   A groove is only ever positioned LEFT of the fill's trailing edge, and the
+   fill's leading edge is the track's, so a groove too far left to fit falls
+   off a track that is itself `overflow: hidden`. That clip is already there.
+   A second one on the fill was written first and then measured redundant --
+   the mutation removing it changed no pixel this guard can see -- so it is
+   not here. What remains is an UNDER-count on a fill too short to hold its
+   notches: the conservative direction, but a misreport still, so the guard
+   holds a floor requiring every severity-bearing fill to be wide enough for
+   its own notches. Measured across 9 panes x 4 states x 2 themes, the
+   narrowest severity fill today is 124.3px against the 14px three grooves
+   occupy, 18px once the measurement's own edge trim is counted. */
+.meter i::before,
+.meter i::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 0;
+  /* The reset above is `*`, which does not match a pseudo-element, so these
+     would otherwise be content-box and every offset below would be 4px out --
+     enough to land `vio`'s third groove exactly on top of its second and
+     render it as `bad`. */
+  box-sizing: border-box;
+  border: 0 solid var(--bg);
+}
+.meter.warn i::after,
+.meter.bad  i::after,
+.meter.vio  i::after   { right: 4px; border-right-width: 2px; }
+.meter.bad  i::after,
+.meter.vio  i::after   { width: 6px; border-left-width: 2px; }
+.meter.vio  i::before  { right: 12px; border-right-width: 2px; }
+
+/* Measured, not assumed: under `forced-colors: active` Chrome drops
+   `background-image` to `none` and `box-shadow` to `none`, and the fill's
+   background-color was already transparent -- so the OLD fill painted nothing
+   at all and the meter lost its value, not merely its severity. The fill is
+   given a system colour here so the bar reads at all, and the notches are
+   flipped to `Canvas` so they stay legible as grooves against it. */
+@media (forced-colors: active) {
+  .meter i { background-color: CanvasText; }
+  .meter i::before,
+  .meter i::after { border-color: Canvas; }
+}
 
 /* Segmented capacity bar: budget consumed vs forecast remaining. */
 .budget {
@@ -900,7 +1026,14 @@ svg { display: block; }
   .g2, .g3 { grid-template-columns: minmax(0, 1fr); }
   .content, .topbar, .filters { padding-left: 16px; padding-right: 16px; }
   .hero { grid-template-columns: auto minmax(0, 1fr); }
+  /* Both shapes a hero can end with, because the first track is `auto` and so
+     sizes to the widest thing left in it. The approved design ends a hero with
+     .hero-chips; auto-placed, the chips land in column 1 beside the 46px orb,
+     the track grows to the chips, and the title column -- minmax(0, 1fr) --
+     gives up whatever they took. Panes carry their own copies of the
+     .hero-chips line today; this is the shared rule they were standing in for. */
   .hero > .row:last-child { grid-column: 1 / -1; }
+  .hero > .hero-chips { grid-column: 1 / -1; }
 }
 @media (max-width: 560px) {
   .g4 { grid-template-columns: minmax(0, 1fr); }

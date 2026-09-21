@@ -456,9 +456,19 @@
 
     /* The access record pages in place, so its rows outlive a redraw of the
        card they sit in and the controls that describe the state of the record
-       stay put while the rows under them change. */
+       stay put while the rows under them change.
+
+       token is the record's own generation, and it is a separate one from
+       loadToken above. loadToken discards a whole-pane read that a newer one
+       has overtaken; this one discards a RECORD page that the window it was
+       asked for no longer exists in. A Load more page already in flight when
+       load() resets the record belongs to the window before the reset, and
+       landing it appends rows from before the reload and advances offset past
+       them, so the next Load more asks for the wrong window and a page is
+       skipped (Stadiora/Aria#10408). */
     var record = {
-      host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: null
+      host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: null,
+      token: 0
     };
 
     /* ---------------------------------------------------------------- reads */
@@ -498,6 +508,17 @@
       record.seen = null;
       record.busy = false;
       record.pending = false;
+      /* Whatever the record had in flight was asked for in the window this
+         line has just thrown away. Clearing busy without this hands that
+         response an unowned record to land in. */
+      record.token += 1;
+      /* `more` describes the window the five lines above have just discarded,
+         and it is the only field left doing so. When the reload's own record
+         read fails, recordBand() takes the error branch and calls
+         syncControls() directly -- acceptPage(), which is the only other place
+         `more` is written, never runs -- so the card came up with a failure
+         body and a live Load more over zero rows (Stadiora/Aria#10689). */
+      record.more = false;
 
       Promise.all([
         readAdmins(),
@@ -1121,11 +1142,23 @@
       }
       record.busy = true;
       record.pending = false;
+      var token = ++record.token;
 
       if (reset) {
         record.offset = 0;
         record.rows = [];
         record.seen = null;
+        /* Same reason as load()'s reset (Stadiora/Aria#10689, #10740): `more`
+           describes the window the three lines above have just discarded. The
+           failure arm below calls syncControls() with no rows, acceptPage() --
+           the only other place `more` is written -- never runs, and the card
+           came up saying it could not read the record while still offering to
+           load more of it. Reachable from Refresh, not only from a revoke.
+
+           Only on a reset. A later page failing with rows still on screen
+           keeps its `more`, because that flag still describes the window the
+           operator is looking at and the retry below is worth offering. */
+        record.more = false;
         /* The skeleton, not the empty state. An empty record and a record that
            has not arrived yet are different answers to the same question, and
            showing the first while waiting for the second is how a pane says
@@ -1141,11 +1174,19 @@
 
       session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: record.offset } }).then(
         function (payload) {
+          /* Before anything else, both arms. A response the record has moved
+             past is not merely un-renderable: clearing busy first would hand
+             the flag a newer read owns to a page nobody is waiting for, and
+             the held-reload machinery below reads that flag to decide whether
+             to run or to wait. Freshness is checked before the state it
+             protects is touched, not after. */
+          if (token !== record.token) return;
           record.busy = false;
           acceptPage(Array.isArray(payload && payload.data) ? payload.data : [], false);
           drain();
         },
         function (err) {
+          if (token !== record.token) return;
           record.busy = false;
           if (record.rows.length) {
             /* Losing a later page is not a reason to throw away the rows

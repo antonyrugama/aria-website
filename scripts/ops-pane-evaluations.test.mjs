@@ -39,6 +39,9 @@ function loadPane(call = () => Promise.reject(new Error('unexpected request')), 
       setAttribute(name, value) {
         this.attributes[name] = String(value);
       },
+      removeAttribute(name) {
+        delete this.attributes[name];
+      },
       appendChild(child) {
         this.children.push(child);
         return child;
@@ -92,9 +95,27 @@ function loadPane(call = () => Promise.reject(new Error('unexpected request')), 
   }
   const window = {
     crypto: webcrypto,
+    /* The pane schedules the approval answer's text one task after it reveals
+       the region it lands in (Stadiora/Aria#10809), so the timer has to be
+       real here or the answer never arrives. Real, not faked: a stub clock
+       would let an assertion pass in an order the browser never runs. */
+    setTimeout,
     btoa(value) {
       return Buffer.from(value, 'binary').toString('base64');
     },
+    /* A width that never matches, so this stub renders the pane the way a
+       desktop does: every band open, no fold state. That is the shape the
+       assertions below were written against and the shape they still mean.
+       The narrow layout and the fold control are bound in real Chrome by
+       scripts/ops-narrow-panes.test.mjs, which can resolve a media query, a
+       computed style and an accessibility tree; none of those exist here,
+       and a fake that answered `matches: true` would be asserting against
+       its own opinion of the breakpoint rather than against the sheet. */
+    matchMedia: () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }),
     OpsPaneShell: {
       h: element,
       icon: () => element('svg'),
@@ -319,7 +340,10 @@ test('a viewer requester can submit approval lookup without mutation controls', 
   assert.equal(calls[0].path, '/api/ops/ciel/operations');
   assert.deepEqual(calls[0].options.body.input, { approvalRequestId });
   assert.equal(calls[0].options.body.operationId, 'ciel.approval.get');
-  assert.match(view.byId('approval-result').textContent, /pending/i);
+  /* Awaited, not read: the answer lands a task after the region is revealed,
+     and this still fails if it never lands. */
+  await waitFor(() => /pending/i.test(view.byId('approval-result').textContent),
+    'the approval lookup answer never reached the region');
 });
 
 test('dataset form reports local request preparation errors and restores the submit button', async () => {
@@ -838,7 +862,8 @@ test('the rendered approval forms submit request, get and decision operations wi
     view.byId('approval-trust-note'),
     node => /cannot provision qualification/i.test(node.textContent),
   ));
-  assert.match(view.byId('approval-result').textContent, /approved/i);
+  await waitFor(() => /approved/i.test(view.byId('approval-result').textContent),
+    'the approval decision answer never reached the region');
 });
 
 test('blank dashboard idempotency input derives a unique key from the request correlation', async () => {
@@ -1275,6 +1300,113 @@ async function bootPane(options = {}) {
   return { ...dom, body, calls, content: dom.doc.getElementById('content') };
 }
 
+function approvalLookupResponse(id, state, revision) {
+  return {
+    resource: {
+      type: 'ciel.approval-request',
+      id,
+      revision,
+      value: { approvalRequestId: id, state, revision },
+    },
+  };
+}
+
+test('v2: approval lookup clears the previous success while its replacement is pending', async () => {
+  let resolveReplacement;
+  let calls = 0;
+  const view = await bootPane({
+    role: 'viewer',
+    call: () => ++calls === 1
+      ? Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2))
+      : new Promise(resolve => { resolveReplacement = resolve; }),
+  });
+  const form = view.doc.getElementById('approval-get-form');
+  const input = view.doc.getElementById('approval-get-id');
+  const result = view.doc.getElementById('approval-result');
+  const submit = form.querySelector('button');
+  assert.equal(view.doc.getElementById('approval-request-form'), null);
+  assert.equal(view.doc.getElementById('approval-decision-form'), null);
+  input.value = 'approval-first';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'first approval lookup did not settle');
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  input.value = 'approval-next';
+  form.dispatch('submit');
+  assert.equal(submit.disabled, true);
+  assert.equal(submit.textContent, 'Loading…');
+  try {
+    assert.equal(result.textContent, '',
+      'the previous approval must not remain current while loading');
+    assert.notEqual(result.hidden, true,
+      'and it must be EMPTIED rather than hidden: hiding the region between '
+      + 'answers takes it out of the accessibility tree, so the replacement '
+      + 'announces as a fresh region rather than a change (Stadiora/Aria#10809)');
+  } finally {
+    resolveReplacement(approvalLookupResponse('approval-next', 'pending', 4));
+  }
+  await waitFor(() => !submit.disabled, 'replacement approval lookup did not settle');
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
+  assert.equal(result.textContent, 'Approval request approval-next is pending at revision 4.');
+});
+
+test('v2: approval lookup keeps old success cleared after denial and shows a later successful lookup', async () => {
+  let calls = 0;
+  const view = await bootPane({
+    role: 'viewer',
+    call: () => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error('Lookup denied.'));
+      return Promise.resolve(calls === 1
+        ? approvalLookupResponse('approval-first', 'approved', 2)
+        : approvalLookupResponse('approval-recovered', 'pending', 5));
+    },
+  });
+  const form = view.doc.getElementById('approval-get-form');
+  const input = view.doc.getElementById('approval-get-id');
+  const result = view.doc.getElementById('approval-result');
+  const submit = form.querySelector('button');
+  const error = form.querySelector('[role="alert"]');
+  input.value = 'approval-first';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'first approval lookup did not settle');
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  input.value = 'approval-denied';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'denied approval lookup did not settle');
+  assert.equal(error.textContent, 'Lookup denied.');
+  assert.equal(result.textContent, '', 'a denial must not retain the earlier approval');
+  assert.notEqual(result.hidden, true,
+    'and the emptied region stays in the accessibility tree (Stadiora/Aria#10809)');
+  assert.equal(submit.textContent, 'Load request');
+
+  input.value = 'approval-recovered';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'recovered approval lookup did not settle');
+  assert.equal(error.textContent, '');
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
+  assert.equal(result.textContent, 'Approval request approval-recovered is pending at revision 5.');
+});
+
 const hasClass = (node, cls) => (node.getAttribute('class') || '').split(/\s+/).includes(cls);
 const isBand = node => node.tagName === 'SECTION' && hasClass(node, 'band');
 const within = (node, ancestor) => {
@@ -1446,10 +1578,35 @@ test('v2: the preview holds no control and the working bands do', async () => {
   const preview = previewOf(dom);
   const CONTROL = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA']);
 
+  /* The fold control is subtracted here and re-asserted below rather than
+     waved through: it is a control, it is in the preview, and it is in the
+     tab order, so the only honest way past this assertion is to say what it
+     is and hold it to the same bar as the scroll region. It does not operate
+     the harness — it shows and hides a section — so it is the same kind of
+     thing the region below is, and it is why the preview can be 42% of this
+     pane's height on a phone without being 42% of the scrolling. */
+  const folds = findAll(preview, node => hasClass(node, 'band-fold'));
   const dead = findAll(preview, node => CONTROL.has(node.tagName))
+    .filter(node => !folds.includes(node))
     .map(node => `${node.tagName.toLowerCase()} "${allText(node)}"`);
   assert.deepEqual(dead, [],
     'a drawing of a pane must not put a control that changes nothing into the tab order');
+
+  const previewBands = findAll(preview, isBand);
+  assert.equal(folds.length, previewBands.length,
+    'every band in the preview folds, or the index it is part of is a half index');
+  for (const fold of folds) {
+    assert.equal(fold.tagName, 'BUTTON');
+    assert.equal(fold.getAttribute('type'), 'button',
+      'a control inside no form still must not be a submit button by default');
+    /* Named, like the scroll region, and named with its own band's heading so
+       a reader who has only the control knows what it opens. */
+    const name = fold.getAttribute('aria-label') || '';
+    assert.ok(previewBands.some(section => bandTitle(section) === name),
+      `fold control named "${name}" does not match any band heading in the preview`);
+    assert.ok(fold.getAttribute('aria-controls'),
+      'a disclosure that does not say what it controls is a shrug');
+  }
 
   /* Everything else the preview puts in the tab order, enumerated rather than
      assumed absent: a table that scrolls sideways has to be reachable from a

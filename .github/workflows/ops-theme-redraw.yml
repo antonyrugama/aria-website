@@ -9,13 +9,19 @@ name: Ops theme redraw
 # Delete that call and every chart keeps the previous theme's palette — bright
 # dark-ramp strokes left on a white surface, which is the WCAG AA failure the
 # light palette exists to prevent (monorepo Stadiora/Aria#10042). Nothing
-# throws, no token is missing, no shape is unpainted, and the other browser
-# guard, scripts/check-ops-shell-v2.mjs, stays green: it reloads instead of
-# toggling. The unit suite is the other half of the coverage —
+# throws, no token is missing, no shape is unpainted, and the repository's two
+# other browser guards both stay green on it: scripts/check-ops-shell-v2.mjs
+# and scripts/check-ops-narrow-overflow.mjs each store a theme and navigate, so
+# neither ever toggles one. The unit suite is the other half of the coverage —
 # scripts/ops-aria-shell.test.mjs goes red on that deletion too, reading back
 # the attributes the renderer wrote against a hand-written DOM. This job is the
 # half that measures the resolved colour on a laid-out page, against the
 # palette aria.css really declares.
+#
+# Since Stadiora/Aria#10462 this sweeps every pane ops/assets/pane-registry.js
+# declares as well as ops/shell-v2.html, so a pane cannot join the app without
+# joining the sweep, and the count it judged is asserted against the count the
+# registry declares.
 #
 # A separate job from "Ops v2 shell" on purpose. That check stores a theme,
 # RELOADS, and measures a fresh page, which is correct in either theme because
@@ -30,12 +36,14 @@ on:
     paths:
       - 'ops/**'
       - 'scripts/check-ops-theme-redraw.mjs'
+      - 'scripts/ops-api-stub.mjs'
       - '.github/workflows/ops-theme-redraw.yml'
   push:
     branches: [main]
     paths:
       - 'ops/**'
       - 'scripts/check-ops-theme-redraw.mjs'
+      - 'scripts/ops-api-stub.mjs'
       - '.github/workflows/ops-theme-redraw.yml'
   workflow_dispatch:
 
@@ -45,7 +53,12 @@ permissions:
 jobs:
   theme-redraw:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Every pane the registry declares plus the design-system page, two
+    # directions each, two loads and four censuses per page — against one page
+    # before Stadiora/Aria#10462. A run is a few minutes; the ceiling is here
+    # so a slow cold start cannot turn the sweep into a red check that measured
+    # nothing, which reads the same as a red check that found something.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       # Node 22 or newer, because the check drives headless Chrome over the
@@ -53,5 +66,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check every chart follows the theme button, both directions
+      - name: Check every page follows the theme button, both directions
         run: node scripts/check-ops-theme-redraw.mjs

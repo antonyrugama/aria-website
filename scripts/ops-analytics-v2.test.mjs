@@ -24,13 +24,20 @@
    and the exact original line whose removal or inversion makes that test fail.
    A test with no such line is a test that pins nothing. */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { stub } from './ops-api-stub.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
+const REPO = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
 
 const REGISTRY_SRC = read('assets/pane-registry.js');
@@ -38,6 +45,12 @@ const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
 const PANE_SRC = read('assets/pane-analytics.js');
 const PAGE_HTML = read('analytics.html');
+
+/* The sheets the page loads, read off the page rather than listed, so a sheet
+   added or dropped moves every check that reads them. */
+const SHEETS = (PAGE_HTML.match(/<link\b[^>]*\brel="stylesheet"[^>]*>/g) || [])
+  .map((tag) => (/\bhref="([^"]+)"/.exec(tag) || [])[1])
+  .filter(Boolean);
 
 const TOKENS = {
   '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
@@ -107,33 +120,39 @@ const MOBILE_TREND = [
 ];
 const WEB_TREND = MOBILE_TREND.map((v) => Math.round(v * 0.29));
 
-/* A whole, healthy answer.
+/* A whole, healthy answer, composed member by member rather than written out.
 
-   Every member below is copied from `OpsUsagePayload` in
+   Every member below is `OpsUsagePayload` in
    `app-backend/server/services/opsUsage/opsUsageView.ts`, and every literal
-   string that the route composes rather than passes through -- the cohort
-   note, the consent detail, the feature hint and note, the coverage note, the
-   shortfall detail, each version's note -- is the route's own text, character
-   for character, from the template that builds it. The enums are the route's
+   string the route composes rather than passes through -- the cohort note, the
+   consent detail, the feature hint and note, the coverage note, the shortfall
+   detail, each version's note -- is the route's own text, character for
+   character, from the template that builds it. The enums are the route's
    enums: `app` is the FILTER (`mobile`), not the source app (`mobile-app`);
    `color` is `s1` or `s2` and there is no `s3`; feature labels come from
    `FEATURE_LABELS`, so it is `Sprint video analysis` and never `Video
    analysis`; a cohort row label is `shortUtcDay(week)`, which is `24 Aug`.
 
-   Two things it deliberately gets right that an eyeballed fixture gets wrong,
-   because both hid a defect for four review rounds:
+   COMPOSED, because a fixture edited by hand per test is how this file has
+   gone wrong five review rounds running. Two rules do the work:
 
-   - `sessionShareBasisPoints` is `basisPoints(entry.sessions, appSessions)`,
-     computed inside ONE app, so each app's rows sum to 10000 and two apps'
-     rows sum to 20000. A fixture whose four rows summed to 8000 made a column
-     of shares look like one denominator.
-   - `cohorts` is one entry PER APP, not one for the selection.
+   - **Counts, never shares.** Every percentage is computed from the two counts
+     it is the ratio of, by the route's own `basisPoints`. A hand-written share
+     drifts from its own counts silently: the under-floor feature row carried
+     1200 where `basisPoints(5, 41)` is 1220, and nothing could see it.
+   - **One scope, applied to the whole answer.** `apps`, `cohorts`,
+     `coverage.versions` and `features.rows` are all built from the SAME scoped
+     app list (`opsUsageView.ts:561`, `:655`, `:683`, `:686`), so they are
+     built here from one list too. Slicing `apps` afterwards -- which is what
+     three `?scope=mobile` fixtures used to do -- leaves an answer with one app
+     column, two signup grids and the other app's version rows, which is a
+     shape no request can produce.
 
-   What this fixture is not is every shape: `usageFixture` is a healthy 30-day
-   `ready` answer with two apps. Absence, staleness, the reporting floor, the
-   90-day grid and the three non-ready states are separate cases below, each
-   one starting here and taking something away or moving one field, because
-   the rules under test are rules about absence. */
+   What this fixture is not is every shape: it is a healthy 30-day `ready`
+   answer. Absence, staleness, the reporting floor, the 90-day grid and the
+   three non-ready states are separate cases below, each one starting here and
+   taking something away or moving one field, because the rules under test are
+   rules about absence. */
 
 const CONSENT_DETAIL =
   'Product analytics is opt in and defaults off, and the gate is at ingest: a client batch from '
@@ -146,8 +165,373 @@ const cohortNote = (app) =>
   + 'that week, and coming back means opening it again. Accounts that have not turned '
   + 'usage analytics on are in no group, because their activity was never recorded.';
 
-function usageFixture(over) {
-  const base = {
+/* The route's own arithmetic: `basisPoints` is `opsUsageView.ts:222-225` and
+   `share` is `formatBasisPoints` at `:556`. Nothing below writes a percentage
+   by hand. */
+const basisPoints = (numerator, denominator) =>
+  (denominator > 0 ? Math.round((numerator / denominator) * 10000) : 0);
+const share = (value) => `${(value / 100).toFixed(1)}%`;
+
+/* What one app reports, in counts. `sessions` and `activePeople` are the two
+   the route turns into four metrics; `featurePeople` is how many of those
+   people opened any feature at all, which is the numerator of `Opened a
+   feature` AND the union of the feature rows below.
+
+   `versions` are `coverage_sessions` rows: how many sessions ran on that app
+   version, and how many of those reported a feature event. The app's own
+   coverage figure is the total of them (`coverageOf`, `opsUsageView.ts:603`),
+   which is what makes the pill on the column and the rows under it one
+   reading rather than two that can disagree -- the old fixture claimed 92.0%
+   coverage on an app whose version rows accounted for 72.0%.
+
+   `groups` are signup weeks: how many accounts the week produced, and how many
+   came back in each later week, `null` where the group has not aged into that
+   week yet. */
+const APP_PARTS = {
+  mobile: {
+    filter: 'mobile',
+    sourceLabel: 'Mobile',
+    subtitle: 'Athlete app',
+    tone: 'mobile',
+    color: 's1',
+    counts: { activePeople: 1061, sessions: 8430, featurePeople: 679 },
+    trend: () => MOBILE_TREND.slice(),
+    versions: [
+      { version: '2.9.1', sessions: 6070, reporting: 6070 },
+      { version: '2.8.4', sessions: 2360, reporting: 1686 },
+    ],
+    features: [
+      { label: 'Aria chat', users: 610 },
+      { label: 'Workout logging', users: 480 },
+      { label: 'Sprint video analysis', users: 5 },
+    ],
+    /* Route-faithful for THIS window, re-derived from `buildCohorts`
+       (`opsUsageView.ts:891-943`) rather than drawn to suit the grid. Over
+       `2026-08-21` to `2026-09-20` exclusive a signup Monday is admissible iff
+       `weekStart >= start && weekStart + 7d <= endExclusive`, so 24 Aug, 31
+       Aug and 7 Sep qualify and 14 Sep does not; `aged` is
+       `floor((endExclusive - weekStart) / 7d) - 1`, so they have 2, 1 and 0
+       whole later weeks inside the window, which is why the last group is
+       `not_aged` across and why `offsets` is two long. */
+    groups: [
+      { label: '24 Aug', size: 214, returned: [152, 112] },
+      { label: '31 Aug', size: 31, returned: [25, null] },
+      { label: '7 Sep', size: 58, returned: [null, null] },
+    ],
+  },
+  coaches: {
+    filter: 'coaches',
+    sourceLabel: 'Coaches Web',
+    subtitle: 'Coach workspace',
+    tone: 'coaches',
+    color: 's2',
+    counts: { activePeople: 308, sessions: 1204, featurePeople: 249 },
+    trend: () => WEB_TREND.slice(),
+    /* An empty version string is the route's own `version not reported` row
+       (`opsUsageView.ts:811`); those sessions still report feature events,
+       which is a different fact from reporting a version. */
+    versions: [{ version: '', sessions: 1204, reporting: 1204 }],
+    features: [
+      { label: 'Athlete roster', users: 210 },
+      { label: 'Training plan', users: 95 },
+    ],
+    groups: [
+      { label: '24 Aug', size: 96, returned: [64, 51] },
+      { label: '31 Aug', size: 72, returned: [41, null] },
+    ],
+  },
+};
+
+/* Coaches Web as a young app: 41 active people, everything else in proportion.
+
+   This is what the reporting floor looks like on a feature row, and it is the
+   only shape that can carry one. The route sends ONE denominator per app
+   (`opsUsageView.ts:689`) -- that app's own active people -- so an under-floor
+   feature row cannot sit on an app with 1,061 of them, which is what the old
+   fixture's `denominator: 41` beside Mobile's 1,061 claimed. Beside a large
+   app this one still arrives `ready`, because availability is decided on
+   PLATFORM active people (`opsUsageView.ts:863`) and that row is counted over
+   the selected apps rather than summed from the columns. Selected ALONE it
+   does not: 41 is under the floor, so a `coaches` scope holding only this app
+   arrives `insufficient`, which is why `usagePayload` resolves the state
+   instead of asserting it. */
+const YOUNG_COACHES = {
+  ...APP_PARTS.coaches,
+  counts: { activePeople: 41, sessions: 96, featurePeople: 5 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.03)),
+  versions: [{ version: '', sessions: 96, reporting: 96 }],
+  features: [{ label: 'Athlete roster', users: 5 }],
+  groups: [
+    { label: '24 Aug', size: 22, returned: [12, 9] },
+    { label: '31 Aug', size: 15, returned: [8, null] },
+  ],
+};
+
+const YOUNG_PARTS = { ...APP_PARTS, coaches: YOUNG_COACHES };
+
+/* Apps sized to a denominator, for the tests about the reporting floor.
+
+   The route puts ONE denominator in an app column -- that column's own active
+   people, `opsUsageView.ts:643-646` -- and `countMetric` cannot carry one at
+   all (`:252`, and the union at `:16` says so in types: only `rateMetric` and
+   `ratioMetric` produce a denominator). So the only way to ask for a
+   denominator of 49 is to send an app with 49 active people. Reaching into a
+   built payload to set `metrics[3].denominator = 49` leaves a column reporting
+   1,061 active people beside a share measured over 49 of them, which is a
+   shape `/api/ops/usage` cannot send: Stadiora/Aria#10667.
+
+   Every count below is chosen, not scaled, so `checkPart` can hold it to the
+   same arithmetic as the full-size parts. `sized` only spreads over the app it
+   is shrinking, so the fields no test here reads -- filter, label, subtitle,
+   tone, colour -- stay the app's own. */
+const sized = (base, part) => ({ ...base, ...part });
+
+/* 49 active people: one under the floor of 50. `Opened a feature` is
+   `basisPoints(31, 49)` = 6327, so the share the pane must NOT print is
+   63.3%. */
+const MOBILE_49 = sized(APP_PARTS.mobile, {
+  counts: { activePeople: 49, sessions: 380, featurePeople: 31 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.046)),
+  versions: [{ version: '2.9.1', sessions: 380, reporting: 380 }],
+  features: [
+    { label: 'Aria chat', users: 28 },
+    { label: 'Workout logging', users: 19 },
+  ],
+  groups: [
+    { label: '24 Aug', size: 20, returned: [14, 10] },
+    { label: '31 Aug', size: 12, returned: [9, null] },
+    { label: '7 Sep', size: 8, returned: [null, null] },
+  ],
+});
+
+/* 50 active people: exactly the floor, which is publishable.
+   `basisPoints(32, 50)` = 6400, so the share the pane MUST print is 64.0%. */
+const MOBILE_50 = sized(APP_PARTS.mobile, {
+  counts: { activePeople: 50, sessions: 390, featurePeople: 32 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.047)),
+  versions: [{ version: '2.9.1', sessions: 390, reporting: 390 }],
+  features: [
+    { label: 'Aria chat', users: 29 },
+    { label: 'Workout logging', users: 20 },
+  ],
+  groups: [
+    { label: '24 Aug', size: 20, returned: [14, 10] },
+    { label: '31 Aug', size: 12, returned: [9, null] },
+    { label: '7 Sep', size: 8, returned: [null, null] },
+  ],
+});
+
+/* 12 active people, for the ratio the route sends as a decimal: `Sessions per
+   person` is `ratioMetric` (`opsUsageView.ts:645`), which is `kind: 'decimal'`
+   carrying both halves, so this part reaches the floor guard through the kind
+   the historical defect walked past -- without the fixture having to say
+   `kind` at all. */
+const MOBILE_12 = sized(APP_PARTS.mobile, {
+  counts: { activePeople: 12, sessions: 96, featurePeople: 8 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.011)),
+  versions: [{ version: '2.9.1', sessions: 96, reporting: 96 }],
+  features: [
+    { label: 'Aria chat', users: 7 },
+    { label: 'Workout logging', users: 5 },
+  ],
+  groups: [
+    { label: '24 Aug', size: 5, returned: [3, 2] },
+    { label: '31 Aug', size: 4, returned: [2, null] },
+    { label: '7 Sep', size: 2, returned: [null, null] },
+  ],
+});
+
+/* 20 active people on the SECOND column, which is the only place a withheld
+   figure of a non-lead app is drawn at all now that the tiles carry no feet.
+   `basisPoints(13, 20)` = 6500, so the share the split must NOT print is
+   65.0% -- a number that exists, unlike the 81.0% this assertion used to look
+   for while the answer said 80.8%. */
+const COACHES_20 = sized(APP_PARTS.coaches, {
+  counts: { activePeople: 20, sessions: 78, featurePeople: 13 },
+  trend: () => MOBILE_TREND.map((v) => Math.round(v * 0.019)),
+  versions: [{ version: '', sessions: 78, reporting: 78 }],
+  features: [
+    { label: 'Athlete roster', users: 11 },
+    { label: 'Training plan', users: 6 },
+  ],
+  groups: [
+    { label: '24 Aug', size: 6, returned: [4, 3] },
+    { label: '31 Aug', size: 5, returned: [3, null] },
+  ],
+});
+
+const withMobile = (part) => ({ ...APP_PARTS, mobile: part });
+const withCoaches = (part) => ({ ...APP_PARTS, coaches: part });
+
+/* Mobile with nothing measured: an app whose sessions produced no
+   `coverage_sessions` rows at all. That is the one way the route sends a null
+   `coverageBasisPoints` (`opsUsageView.ts:640`), and because the same rows are
+   what the version list is built from (`:778`), it takes the version rows with
+   it. */
+const UNMEASURED_PARTS = {
+  ...APP_PARTS,
+  mobile: { ...APP_PARTS.mobile, versions: [] },
+};
+
+/* The arithmetic that has to hold for a payload to be one the route could have
+   built, checked where the fixture is made rather than asserted in one test.
+   A fixture that cannot represent an impossible answer is the repair asked for
+   in Stadiora/Aria#10476; these five throw on the ones that are still
+   expressible in counts.
+
+   The feature bound is the union rule: `featurePeople` counts the people who
+   opened ANY feature, so it is at least the biggest single feature and at most
+   the sum of them all. */
+function checkPart(key, part) {
+  const { activePeople, sessions, featurePeople } = part.counts;
+  const coverageSessions = part.versions.reduce((sum, v) => sum + v.sessions, 0);
+  const groupPeople = part.groups.reduce((sum, g) => sum + g.size, 0);
+  const featureUsers = part.features.map((f) => f.users);
+  const fail = (why) => { throw new Error(`${key}: ${why}`); };
+
+  if (featurePeople > activePeople) fail('more people opened a feature than were active');
+  if (coverageSessions > sessions) fail('more sessions have coverage rows than exist');
+  if (groupPeople > activePeople) fail('more people signed up and returned than were active');
+  if (part.groups.some((g) => g.returned.some((r) => r !== null && r > g.size))) {
+    fail('a signup group had more people come back than joined');
+  }
+  if (featureUsers.length) {
+    const most = Math.max(...featureUsers);
+    const all = featureUsers.reduce((sum, users) => sum + users, 0);
+    if (featurePeople < most || featurePeople > all) {
+      fail(`featurePeople ${featurePeople} is outside the union of its feature rows, `
+        + `${most} to ${all}`);
+    }
+  }
+  if (part.versions.some((v) => v.reporting > v.sessions)) {
+    fail('a version reported feature events on more sessions than it had');
+  }
+  return part;
+}
+
+/* One app column, `opsUsageView.ts:614-649`: four metrics in the route's
+   order, both of the derived ones carrying this app's own active people as
+   their denominator. */
+function appColumn(key, parts) {
+  const part = checkPart(key, parts[key]);
+  const { activePeople, sessions, featurePeople } = part.counts;
+  const coverage = part.versions.reduce(
+    (sum, v) => ({ sessions: sum.sessions + v.sessions, reporting: sum.reporting + v.reporting }),
+    { sessions: 0, reporting: 0 },
+  );
+  return {
+    app: part.filter,
+    label: part.sourceLabel,
+    subtitle: part.subtitle,
+    tone: part.tone,
+    coverageBasisPoints:
+      coverage.sessions > 0 ? basisPoints(coverage.reporting, coverage.sessions) : null,
+    metrics: [
+      { label: 'Active people', kind: 'count', value: activePeople },
+      { label: 'Sessions', kind: 'count', value: sessions },
+      {
+        label: 'Sessions per person', kind: 'decimal', digits: 1,
+        value: activePeople > 0 ? sessions / activePeople : 0,
+        numerator: sessions, denominator: activePeople,
+      },
+      {
+        label: 'Opened a feature', kind: 'rate',
+        value: basisPoints(featurePeople, activePeople),
+        numerator: featurePeople, denominator: activePeople,
+      },
+    ],
+    trend: {
+      label: `Active people per day, ${part.sourceLabel}`,
+      color: part.color,
+      values: part.trend(),
+    },
+  };
+}
+
+/* One signup grid per app, `opsUsageView.ts:934-944`. `offsets` is as wide as
+   the oldest group has aged, and a group that has not reached an offset gets
+   `not_aged` there rather than a zero it did not earn. */
+function appCohort(key, parts) {
+  const part = parts[key];
+  const widest = part.groups.reduce((max, g) => Math.max(max, g.returned.length), 0);
+  const offsets = Array.from({ length: widest }, (_, index) => `W${index + 1}`);
+  return {
+    app: part.filter,
+    label: part.sourceLabel,
+    offsets,
+    rows: part.groups.map((group) => ({
+      label: group.label,
+      size: group.size,
+      cells: offsets.map((_, index) => {
+        const returned = group.returned[index];
+        if (returned === null || returned === undefined) return { state: 'not_aged' };
+        return { basisPoints: basisPoints(returned, group.size), returned };
+      }),
+    })),
+    note: cohortNote(part.sourceLabel),
+  };
+}
+
+/* The version rows for one app, `opsUsageView.ts:794-819`. The share is of
+   THIS app's sessions, which is why one app's rows sum to 10000 and two apps'
+   rows sum to 20000. */
+function appVersions(key, parts) {
+  const part = parts[key];
+  const total = part.versions.reduce((sum, v) => sum + v.sessions, 0);
+  return part.versions.map((entry) => ({
+    label: `${part.sourceLabel} ${entry.version || 'version not reported'}`,
+    coverageBasisPoints: basisPoints(entry.reporting, entry.sessions),
+    sessionShareBasisPoints: basisPoints(entry.sessions, total),
+    note: `Share is of ${part.sourceLabel} sessions.`,
+  }));
+}
+
+/* Feature rows across the selected apps, `opsUsageView.ts:685-701`, in the
+   route's sort: share, then people, then label. */
+function featureRows(keys, parts) {
+  const rows = [];
+  keys.forEach((key) => {
+    const part = parts[key];
+    part.features.forEach((feature) => {
+      rows.push({
+        label: feature.label,
+        app: part.sourceLabel,
+        color: part.color,
+        basisPoints: basisPoints(feature.users, part.counts.activePeople),
+        users: feature.users,
+        denominator: part.counts.activePeople,
+      });
+    });
+  });
+  return rows.sort((a, b) =>
+    b.basisPoints - a.basisPoints || b.users - a.users || a.label.localeCompare(b.label));
+}
+
+const SCOPES = { all: ['mobile', 'coaches'], mobile: ['mobile'], coaches: ['coaches'] };
+
+function usagePayload(scope, parts) {
+  const keys = SCOPES[scope];
+  if (!keys) throw new Error(`no such scope: ${scope}`);
+
+  const apps = keys.map((key) => appColumn(key, parts));
+  const versions = keys.reduce((all, key) => all.concat(appVersions(key, parts)), []);
+  const rows = featureRows(keys, parts);
+
+  /* Named per app and never blended, `opsUsageView.ts:675-681`: the shortfall
+     sentence is about the WORST app in the selection, and there is none to
+     make when every selected app reports on every session. */
+  const worst = apps
+    .filter((app) => app.coverageBasisPoints !== null)
+    .map((app) => ({ label: app.label, coverage: app.coverageBasisPoints }))
+    .sort((a, b) => a.coverage - b.coverage)[0] || null;
+  const shortfall = worst && worst.coverage < 10000
+    ? {
+      detail: `${share(10000 - worst.coverage)} of ${worst.label} sessions in this window ran `
+        + 'on an app version that does not report feature use.',
+    }
+    : null;
+
+  return {
     asOf: '2026-09-20T00:00:00.000Z',
     window: {
       range: '30d',
@@ -159,153 +543,67 @@ function usageFixture(over) {
       daysCovered: 30,
       daysMissingRollups: [],
     },
-    filters: { app: 'all', env: 'production' },
+    filters: { app: scope, env: 'production' },
     reportingFloor: 50,
     consent: { enforcedAt: 'ingest', detail: CONSENT_DETAIL },
-    availability: { state: 'ready', detail: '' },
-    apps: [
-      {
-        app: 'mobile', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
-        coverageBasisPoints: 9200,
-        metrics: [
-          { label: 'Active people', kind: 'count', value: 1061 },
-          { label: 'Sessions', kind: 'count', value: 8430 },
-          {
-            label: 'Sessions per person', kind: 'decimal',
-            digits: 1, value: 7.945334590009425, numerator: 8430, denominator: 1061,
-          },
-          {
-            label: 'Opened a feature', kind: 'rate',
-            value: 6400, numerator: 679, denominator: 1061,
-          },
-        ],
-        trend: {
-          label: 'Active people per day, Mobile', color: 's1',
-          values: MOBILE_TREND.slice(),
-        },
-      },
-      {
-        app: 'coaches', label: 'Coaches Web', tone: 'coaches',
-        subtitle: 'Coach workspace',
-        coverageBasisPoints: 10000,
-        metrics: [
-          { label: 'Active people', kind: 'count', value: 308 },
-          { label: 'Sessions', kind: 'count', value: 1204 },
-          {
-            label: 'Sessions per person', kind: 'decimal',
-            digits: 1, value: 3.909090909090909, numerator: 1204, denominator: 308,
-          },
-          {
-            label: 'Opened a feature', kind: 'rate',
-            value: 8084, numerator: 249, denominator: 308,
-          },
-        ],
-        trend: {
-          label: 'Active people per day, Coaches Web', color: 's2',
-          values: WEB_TREND.slice(),
-        },
-      },
-    ],
-    /* Route-faithful for THIS window, re-derived from `buildCohorts`
-       (`opsUsageView.ts:897-943`) rather than drawn to suit the grid. Over
-       `2026-08-21` to `2026-09-20` exclusive, a signup Monday is admissible
-       iff `weekStart >= start && weekStart + 7d <= endExclusive`, so 24 Aug,
-       31 Aug and 7 Sep qualify and 14 Sep does not; `aged` is
-       `floor((endExclusive - weekStart) / 7d) - 1`, so they have 2, 1 and 0
-       whole later weeks inside the window; `widest` is 2, which is the length
-       of `offsets`; and a group is dropped only when its own size is zero,
-       which is why 7 Sep is present with every cell `not_aged`.
-
-       Round 8 raised this as an advisory: the earlier shape sent four offsets
-       and two rows, which no 30 day window can produce. Nothing was hiding
-       behind it, but a fixture the route cannot send is the thing rounds 4
-       and 5 both blocked on, so it is the route's shape now. `wideFixture`
-       below carries the 90 day shape, 11 offsets and 12 groups. */
-    cohorts: [
-      {
-        app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2'],
-        rows: [
-          {
-            label: '24 Aug', size: 214,
-            cells: [
-              { basisPoints: 7103, returned: 152 }, { basisPoints: 5234, returned: 112 },
-            ],
-          },
-          {
-            label: '31 Aug', size: 31,
-            cells: [
-              { basisPoints: 8065, returned: 25 }, { state: 'not_aged' },
-            ],
-          },
-          {
-            label: '7 Sep', size: 58,
-            cells: [
-              { state: 'not_aged' }, { state: 'not_aged' },
-            ],
-          },
-        ],
-        note: cohortNote('Mobile'),
-      },
-      {
-        app: 'coaches', label: 'Coaches Web', offsets: ['W1', 'W2'],
-        rows: [
-          {
-            label: '24 Aug', size: 96,
-            cells: [
-              { basisPoints: 6667, returned: 64 }, { basisPoints: 5313, returned: 51 },
-            ],
-          },
-          {
-            label: '31 Aug', size: 72,
-            cells: [
-              { basisPoints: 5694, returned: 41 }, { state: 'not_aged' },
-            ],
-          },
-        ],
-        note: cohortNote('Coaches Web'),
-      },
-    ],
-    features: {
-      hint: "Share of each app's own active people",
-      rows: [
-        {
-          label: 'Aria chat', app: 'Mobile', color: 's1',
-          basisPoints: 6400, users: 679, denominator: 1061,
-        },
-        {
-          label: 'Sprint video analysis', app: 'Mobile', color: 's1',
-          basisPoints: 1200, users: 5, denominator: 41,
-        },
-      ],
-      note:
-        'Each feature is measured against the active people of the app it belongs to. A '
-        + 'shared denominator would understate a feature only one app has.',
-      coverageNote:
-        'Feature use is measured only on sessions from app versions that report it. '
-        + 'Mobile coverage in this window is 92.0%.',
-    },
-    coverage: {
-      shortfall: {
-        detail:
-          '8.0% of Mobile sessions in this window ran on an app version that does not '
-          + 'report feature use.',
-      },
-      versions: [
-        {
-          label: 'Mobile 2.9.1', coverageBasisPoints: 10000,
-          sessionShareBasisPoints: 7200, note: 'Share is of Mobile sessions.',
-        },
-        {
-          label: 'Mobile 2.8.4', coverageBasisPoints: 0,
-          sessionShareBasisPoints: 2800, note: 'Share is of Mobile sessions.',
-        },
-        {
-          label: 'Coaches Web version not reported', coverageBasisPoints: 0,
-          sessionShareBasisPoints: 10000, note: 'Share is of Coaches Web sessions.',
-        },
-      ],
-    },
+    availability: resolveAvailability(apps, 30),
+    apps,
+    cohorts: keys.map((key) => appCohort(key, parts)),
+    features: rows.length
+      ? {
+        hint: "Share of each app's own active people",
+        rows,
+        note:
+          'Each feature is measured against the active people of the app it belongs to. A '
+          + 'shared denominator would understate a feature only one app has.',
+        ...(shortfall && worst
+          ? {
+            coverageNote:
+              'Feature use is measured only on sessions from app versions that report it. '
+              + `${worst.label} coverage in this window is ${share(worst.coverage)}.`,
+          }
+          : {}),
+      }
+      : null,
+    coverage: versions.length ? { shortfall, versions } : null,
   };
+}
+
+/* `over` mutates or replaces the composed answer; `options.scope` picks which
+   apps the whole answer is built from, and `options.parts` swaps what those
+   apps report. */
+/* The availability state the route would resolve for the apps this answer
+   selects, rather than a constant.
+
+   `resolveAvailability` (`opsUsageView.ts:851-877`) reads ONE number: the
+   platform active-people row, which `distinctPeople(window, env, sourceApps)`
+   (`opsUsageRepository.ts:301`) counts over the SELECTED apps only. So a
+   one-app scope narrows the platform count to that app, and an answer scoped
+   to a small app cannot arrive `ready` -- the very shape a hard-coded
+   `{ state: 'ready' }` was claiming for `mobile/mobile 49`,
+   `mobile/mobile 12`, `coaches/coaches 20` and, before this PR,
+   `coaches/young`. Raised in the independent review of PR #91.
+
+   Distinct people are not additive in general, but every app in these fixtures
+   is disjoint from the others -- an account belongs to one app -- so the sum
+   is what the platform row would hold. `not_reporting` is out of reach here
+   because every part carries sessions; the constant this replaces could not
+   express it either. */
+function resolveAvailability(apps, days) {
+  const platformActivePeople = apps.reduce((sum, app) => sum + app.metrics[0].value, 0);
+  if (platformActivePeople >= 50) return { state: 'ready', detail: '' };
+  const people = platformActivePeople === 1 ? 'person was' : 'people were';
+  const unit = days === 1 ? 'day' : 'days';
+  return {
+    state: 'insufficient',
+    detail: `${platformActivePeople} ${people} active in the last ${days} ${unit}, which `
+      + 'is under the 50 we report rates from.',
+  };
+}
+
+function usageFixture(over, options) {
+  const opts = options || {};
+  const base = usagePayload(opts.scope || 'all', opts.parts || APP_PARTS);
   if (!over) return base;
   /* An override that mutates and returns nothing would otherwise yield
      undefined, which boot() reads as "no override" and quietly serves the
@@ -400,6 +698,12 @@ async function boot(options) {
 
   vm.createContext(dom.window);
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
+  /* The registry decides what the bar offers, and the pane's sentence about
+     the missing Custom window is derived from that list rather than written
+     flat, so proving the derivation needs a registry that offers one. Applied
+     to the evaluated table, not to its source text, because a patch made by
+     rewriting source is a patch that can silently match nothing. */
+  if (opts.patchRegistry) opts.patchRegistry(dom.window.OpsPaneRegistry);
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-analytics.js' });
@@ -488,6 +792,90 @@ function numerals(text) {
   return (text.match(/\d/g) || []).length;
 }
 
+/* ======================= the fixture is an answer ====================== */
+
+test('every answer this file builds is a shape the route can send', async () => {
+  /* Stadiora/Aria#10476. Two of the payloads this file used to hand the pane
+     were shapes `GET /api/ops/usage` cannot produce: a feature row whose
+     denominator was a DIFFERENT app's population -- the route sends one
+     denominator per app, that app's own active people (`opsUsageView.ts:689`)
+     -- and three `?scope=mobile` answers made by slicing `apps` down to one
+     while leaving both apps' signup grids and version rows in place, when the
+     route builds all four members from the same scoped list (`:561`, `:655`,
+     `:683`, `:686`).
+
+     The repair is that the fixture is composed from a scope rather than
+     edited after the fact, so neither shape is expressible. This holds it:
+     every row of every answer the builder makes belongs to an app the answer
+     has a column for, and every feature denominator is that app's own Active
+     people, read off the column rather than restated here. */
+  const answers = [];
+  ['all', 'mobile', 'coaches'].forEach((scope) => {
+    [
+      ['shipped', APP_PARTS],
+      ['young', YOUNG_PARTS],
+      ['unmeasured', UNMEASURED_PARTS],
+      /* The four floor parts go through this guard too, which is the second
+         half of Stadiora/Aria#10667: composing them is only a repair if the
+         answers they compose are also checked. An `over` callback was never
+         reachable from here -- this walks the builder's output -- so the four
+         denominators it used to poke were outside every assertion below. */
+      ['mobile 49', withMobile(MOBILE_49)],
+      ['mobile 50', withMobile(MOBILE_50)],
+      ['mobile 12', withMobile(MOBILE_12)],
+      ['coaches 20', withCoaches(COACHES_20)],
+    ]
+      .forEach(([name, parts]) => {
+        answers.push([`${scope}/${name}`, usageFixture(null, { scope, parts }), scope]);
+      });
+  });
+  answers.push(['90 day', partial90(), 'all']);
+
+  answers.forEach(([name, answer, scope]) => {
+    const labels = answer.apps.map((app) => app.label);
+    assert.ok(labels.length, name + ' has no app columns at all');
+    assert.equal(answer.filters.app, scope,
+      name + ' says it was asked for ' + answer.filters.app);
+    assert.equal(labels.length, SCOPES[scope].length,
+      name + ' has ' + labels.length + ' columns for a selection of '
+      + SCOPES[scope].length + ': ' + labels);
+
+    (answer.cohorts || []).forEach((grid) => {
+      assert.ok(labels.indexOf(grid.label) !== -1,
+        name + ' carries a signup grid for ' + grid.label + ', which has no column: ' + labels);
+    });
+    ((answer.coverage || {}).versions || []).forEach((version) => {
+      assert.ok(labels.some((label) => version.label.indexOf(label) === 0),
+        name + ' carries a version row for ' + version.label + ', which has no column');
+      assert.ok(labels.some((label) => version.note === `Share is of ${label} sessions.`),
+        name + ' names another app in a version note: ' + version.note);
+    });
+    ((answer.features || {}).rows || []).forEach((row) => {
+      const column = answer.apps.filter((app) => app.label === row.app)[0];
+      assert.ok(column, name + ' carries a ' + row.app + ' feature row with no ' + row.app
+        + ' column');
+      const active = column.metrics.filter((m) => m.label === 'Active people')[0];
+      assert.equal(row.denominator, active.value,
+        name + ': the ' + row.label + ' row is measured against ' + row.denominator
+        + ' people while ' + row.app + ' had ' + active.value);
+      assert.ok(row.users <= row.denominator,
+        name + ': more people used ' + row.label + ' than were active in ' + row.app);
+    });
+
+    /* `resolveAvailability` reads the platform active-people row, and
+       `distinctPeople` counts that over the SELECTED apps only
+       (`opsUsageView.ts:851-877`, `opsUsageRepository.ts:301`). So an answer
+       whose whole selection is under the floor cannot also say `ready`: the
+       route would have said `insufficient` and the pane would have drawn the
+       sentence instead of the figures. */
+    const platform = answer.apps.reduce((sum, app) => sum + app.metrics[0].value, 0);
+    assert.equal(answer.availability.state, platform < answer.reportingFloor
+      ? 'insufficient' : 'ready',
+      name + ' says ' + answer.availability.state + ' over ' + platform
+      + ' active people, floor ' + answer.reportingFloor);
+  });
+});
+
 /* ========================= the read and the filters ===================== */
 
 test('the read carries the whole selection, not part of it', async () => {
@@ -519,28 +907,123 @@ test('changing a filter re-reads with the new selection', async () => {
     'the second read did not carry the new range');
 });
 
+/* The filter bar, and the notes standing in it. `.filters` is the shell's bar;
+   a note is a `.filter-note`, whether the registry put it there or the pane
+   did through the slot the shell gives it. */
+const filterBar = (dom) => dom.doc.querySelector('.filters');
+const filterNotes = (dom) => {
+  const bar = filterBar(dom);
+  return bar ? byClass(bar, 'filter-note').map((n) => allText(n).replace(/\s+/g, ' ').trim()) : [];
+};
+const rangeOptions = (dom) => {
+  const select = dom.doc.getElementById('fRange');
+  return select ? findAll(select, (n) => isTag(n, 'option')).map((n) => n.getAttribute('value'))
+    : [];
+};
+
+test('the window list says why it has no Custom in it', async () => {
+  /* Stadiora/Aria#10449: the registry leaves `custom` out of this pane's
+     ranges on purpose, and the reason was written only in a comment in
+     `assets/pane-registry.js`. On screen the operator found an absence and
+     nothing else. */
+  const dom = await boot({});
+
+  assert.deepEqual(rangeOptions(dom), ['7d', '14d', '30d', '90d'],
+    'the bar offers a different window list than this test is about: '
+    + rangeOptions(dom).join(', '));
+
+  const notes = filterNotes(dom);
+  const about = notes.filter((note) => /custom window/i.test(note));
+  assert.equal(about.length, 1,
+    'the bar states the missing Custom window ' + about.length + ' times: '
+    + JSON.stringify(notes));
+  assert.equal(about[0],
+    'This bar has no date controls yet, so a custom window would be answered over a window '
+    + 'nobody chose',
+    'the sentence in the bar is not the one this pane means to say: ' + about[0]);
+
+  /* Said where the control would have been, not buried in the page: the note
+     is in the filter bar, beside the Range control it is about. */
+  const bar = filterBar(dom);
+  assert.ok(bar, 'there is no filter bar to say it in');
+  assert.ok(byClass(bar, 'filter-note').some((n) => /custom window/i.test(allText(n))),
+    'the sentence is somewhere on the page but not in the bar');
+  assert.doesNotMatch(liveText(dom), /custom window/i,
+    'the reason is repeated in the pane body as well as in the bar');
+});
+
+test('the reason leaves the bar the day the window is offered', async () => {
+  /* The other direction, which is the whole point of deriving the note from
+     the registry rather than writing it flat: a pane that states an absence
+     unconditionally goes on stating it after the absence ends, and the next
+     reader has a bar offering Custom beside a sentence saying it cannot.
+
+     The patch is the registry change this note is waiting for -- `custom` back
+     in the analytics range list -- applied to the evaluated table so it cannot
+     silently match nothing. */
+  const offered = await boot({
+    patchRegistry: (registry) => {
+      registry.PANES.analytics.range = registry.PANES.analytics.range.concat('custom');
+    },
+  });
+
+  assert.ok(rangeOptions(offered).indexOf('custom') !== -1,
+    'the patched registry did not reach the bar, so this proves nothing: '
+    + rangeOptions(offered).join(', '));
+  assert.deepEqual(filterNotes(offered).filter((note) => /custom window/i.test(note)), [],
+    'the bar offers a Custom window and still says it cannot: '
+    + JSON.stringify(filterNotes(offered)));
+
+  /* An absence proves nothing on its own: `no note matching /custom window/`
+     is equally true of a pane that stopped drawing the note at all, or of one
+     whose note this regex never matched. So the unpatched boot goes beside it,
+     through the same two readers, in the same test -- a sentence that leaves
+     the bar has to have been in the bar. Stadiora/Aria#10666.
+
+     Sibling tests do catch a note that never renders, which is why this was
+     hardening rather than a false green; the point of putting it here is that
+     this test now fails for its own reason rather than borrowing theirs. */
+  const withheld = await boot({});
+  assert.ok(rangeOptions(withheld).indexOf('custom') === -1,
+    'the unpatched bar offers a Custom window, so there is no absence to explain: '
+    + rangeOptions(withheld).join(', '));
+  assert.equal(filterNotes(withheld).filter((note) => /custom window/i.test(note)).length, 1,
+    'the note the patched boot expects to lose was never in the bar: '
+    + JSON.stringify(filterNotes(withheld)));
+});
+
+test('the reason is in the bar on every answer, including the ones with no figures', async () => {
+  /* The bar is the shell's, and it is drawn once for the page rather than per
+     answer, so the sentence stands whether the read succeeded or not. An
+     operator who cannot see any figures is the one most likely to be reaching
+     for a different window. */
+  const cases = [
+    ['an empty answer', usageFixture((u) => {
+      u.apps = []; u.cohorts = []; u.features = null; u.coverage = null;
+      u.availability = { state: 'no_data', detail: 'No usage has been recorded yet.' };
+    })],
+    ['a failed read', new Error('boom')],
+  ];
+  for (const [shape, usage] of cases) {
+    const dom = await boot({ usage });
+    assert.equal(filterNotes(dom).filter((note) => /custom window/i.test(note)).length, 1,
+      'the reason is not in the bar on ' + shape + ': ' + JSON.stringify(filterNotes(dom)));
+  }
+});
+
 /* ============================ the reporting floor ====================== */
 
 test('a rate over a group under the floor is withheld, and one over the floor is drawn', async () => {
-  const under = await boot({
-    usage: usageFixture((u) => {
-      u.apps[0].metrics[3].denominator = 49;
-      u.apps[0].metrics[3].value = 6400;
-    }),
-  });
+  const under = await boot({ usage: usageFixture(null, { parts: withMobile(MOBILE_49) }) });
   const withheldTile = tileText(under, /Opened a feature/);
   assert.match(withheldTile, /Not reported/, 'a rate over 49 people was published anyway');
-  assert.match(withheldTile, /floor is 50/, 'the tile withheld a figure without saying why');
-  assert.doesNotMatch(withheldTile, /64\.0%/, 'the withheld figure was printed regardless');
+  assert.match(withheldTile, /49 people in the group, floor is 50/,
+    'the tile withheld a figure without saying over how many people: ' + withheldTile);
+  assert.doesNotMatch(withheldTile, /63\.3%/, 'the withheld figure was printed regardless');
 
   /* The other direction. Without it this test passes just as well against a
      pane that withholds every figure it is given. */
-  const over = await boot({
-    usage: usageFixture((u) => {
-      u.apps[0].metrics[3].denominator = 50;
-      u.apps[0].metrics[3].value = 6400;
-    }),
-  });
+  const over = await boot({ usage: usageFixture(null, { parts: withMobile(MOBILE_50) }) });
   const shown = tileText(over, /Opened a feature/);
   assert.match(shown, /64\.0%/, 'a rate over exactly 50 people was withheld');
   assert.doesNotMatch(shown, /Not reported/, 'a publishable figure was withheld anyway');
@@ -549,29 +1032,58 @@ test('a rate over a group under the floor is withheld, and one over the floor is
 test('a ratio delivered as a decimal still goes through the floor', async () => {
   /* The historical defect: the guard keyed on kind === "rate", and a ratio
      sent as a decimal walked straight past it. The denominator is the signal,
-     not the kind. */
-  const dom = await boot({
-    usage: usageFixture((u) => {
-      u.apps[0].metrics[2].kind = 'decimal';
-      u.apps[0].metrics[2].denominator = 12;
-      u.apps[0].metrics[1].denominator = 12;
-    }),
-  });
-  assert.match(tileText(dom, /Sessions per person/), /Not reported/,
+     not the kind.
+
+     The fixture no longer says `kind` at all. `Sessions per person` is
+     `ratioMetric` (`opsUsageView.ts:645`), which is `kind: 'decimal'` carrying
+     both halves, so the builder sends the defect's own shape without being
+     told to -- and the old `metrics[2].kind = 'decimal'` override turned out
+     to be setting the value it already had.
+
+     NOT COVERED, on purpose: the sibling assertion here used to give
+     `metrics[1]` -- `Sessions`, a count -- a denominator of 12, to show a
+     count with a denominator goes through the floor too. `countMetric`
+     (`opsUsageView.ts:252`) returns `{ label, kind, value }` and the metric
+     union at `:16` admits `numerator`/`denominator` only on the `rate` and
+     `decimal` members, whose two constructors are the only ones. No answer the
+     route can build carries that shape, so the assertion was deleted rather
+     than kept against a payload nothing can send. The pane's rule that the
+     denominator is the signal is still bound, by this test, through the shape
+     the route does send. */
+  const dom = await boot({ usage: usageFixture(null, { parts: withMobile(MOBILE_12) }) });
+  const ratio = tileText(dom, /Sessions per person/);
+  assert.match(ratio, /Not reported/,
     'a ratio labelled decimal was published over a group of 12');
-  assert.match(tileText(dom, /^\s*Sessions\b/m), /Not reported/,
-    'a count that arrived with a denominator was published over a group of 12');
+  assert.match(ratio, /12 people in the group, floor is 50/,
+    'the tile withheld the ratio without saying over how many people: ' + ratio);
+  assert.doesNotMatch(ratio, /8\.0/, 'the withheld ratio was printed regardless');
 });
 
 test('a feature row over too small a group shows no share', async () => {
-  const dom = await boot({});
+  /* The floor on a feature row, on the only answer that can carry one: the
+     route sends one denominator per app (`opsUsageView.ts:689`), that app's
+     own active people, so an under-floor feature row belongs to an app with
+     an under-floor population. Coaches Web here is a young app with 41 active
+     people beside Mobile's 1,061, and the answer is still `ready` because
+     availability is decided on platform active people (`:863`). */
+  const dom = await boot({ usage: usageFixture(null, { parts: YOUNG_PARTS }) });
   const features = card(dom, /Most used features/);
   const text = allText(features);
   assert.match(text, /Aria chat/, 'the feature table lost its rows');
-  assert.match(text, /64\.0%/, 'a share over 1061 people was withheld');
+  assert.match(text, /57\.5%/, 'a share over 1061 people was withheld');
   assert.match(text, /Not reported, 41 people in the group, floor is 50/,
     'a share over 41 people was published: ' + text);
-  assert.doesNotMatch(text, /12\.0%/, 'the withheld share was drawn anyway');
+  assert.doesNotMatch(text, /12\.2%/, 'the withheld share was drawn anyway');
+
+  /* The withheld row is a real row of the answer rather than one nobody sent,
+     and its share is the one the counts make: `basisPoints(5, 41)` is 1220,
+     which is the 12.2% above. */
+  const withheld = usageFixture(null, { parts: YOUNG_PARTS }).features.rows
+    .filter((row) => row.app === 'Coaches Web' && row.denominator === 41);
+  assert.equal(withheld.length, 1,
+    'the fixture no longer carries an under-floor feature row, so this proves nothing');
+  assert.equal(withheld[0].basisPoints, 1220,
+    'the fixture wrote a share its own counts do not make: ' + withheld[0].basisPoints);
 });
 
 test('a signup group under the floor is withheld as a whole row, never cell by cell', async () => {
@@ -680,13 +1192,111 @@ test('a read that fails is degraded, not empty, and can be tried again', async (
 
 /* ========================== the apps are separate ====================== */
 
-test('a headline figure is one app, named, with the other beside it and never added', async () => {
-  const dom = await boot({});
-  const active = tileText(dom, /Active people/);
+/* Nodes carrying a class, by the class rather than by the whole attribute, so
+   a second class on the same element cannot hide one. */
+function byClass(root, name) {
+  return findAll(root, (n) => (n.className || '').split(' ').indexOf(name) !== -1);
+}
 
+/* Does this text run print this figure? Token-wise: `308` must not match
+   inside `1,308`, and `\b` cannot see a boundary after the `%` of `64.0%`, so
+   neither substring nor word-boundary matching will do. The middle dot is a
+   separator because that is what the tile foot joined its readings with. */
+function printsFigure(run, figure) {
+  return run.split(/[\s\u00b7]+/).some((token) => token === figure);
+}
+
+test('a headline tile is one app, named, and never a figure the split card owns', async () => {
+  /* Stadiora/Aria#10475: every tile carried a foot printing the other app's
+     reading of the same metric, which the Side by side card below prints in
+     full -- eight figures on the screen sixteen times, on the pane whose first
+     build the owner rejected as "extremely text-heavy, super hard to parse".
+
+     The count below is of SITES in the two places these figures are drawn, the
+     four tiles and the two columns, and it is derived: one printing per app
+     per metric in the split card, plus one per tile for the app the tiles are
+     of. Nothing here is a source-text assertion -- a test that greps for the
+     deleted lines pins the string rather than the behaviour, and would stay
+     green if the foot came back spelled differently. */
+  const dom = await boot({});
+  const answer = usageFixture();
+  const live = livePanel(dom);
+  const lead = answer.apps[0];
+  const others = answer.apps.slice(1);
+
+  const tiles = byClass(live, 'kpi');
+  const columns = byClass(card(dom, /Side by side/), 'u-vs-side');
+
+  /* The instrument is real before it is trusted: four tiles, one column per
+     app, and the two apps reading differently on every metric -- a count
+     cannot tell two apps apart on a figure they both print. */
+  assert.equal(tiles.length, 4, 'the tiles are gone, so a count over them proves nothing');
+  assert.equal(columns.length, answer.apps.length,
+    'the split card has ' + columns.length + ' columns for ' + answer.apps.length + ' apps');
+
+  const drawn = {};
+  columns.forEach((column) => {
+    const name = byClass(column, 'u-vs-name').map((n) => allText(n).trim())[0];
+    drawn[name] = byClass(column, 'u-vs-val').concat(byClass(column, 'u-vs-v'))
+      .map((n) => allText(n).trim());
+  });
+  answer.apps.forEach((app) => {
+    assert.equal((drawn[app.label] || []).length, app.metrics.length,
+      app.label + ' has ' + (drawn[app.label] || []).length + ' figures in its column, not '
+      + app.metrics.length + ': ' + JSON.stringify(drawn));
+  });
+  answer.apps[0].metrics.forEach((metric, index) => {
+    const reading = answer.apps.map((app) => drawn[app.label][index]);
+    assert.equal(new Set(reading).size, reading.length,
+      'the two apps print the same ' + metric.label + ' (' + reading.join(' / ')
+      + '), so a count cannot tell them apart and this test proves nothing');
+    reading.forEach((value) => assert.match(value, /\d/,
+      metric.label + ' drew no figure at all in the split card: ' + value));
+  });
+
+  /* Every figure the answer sent, counted where it is printed. The lead app's
+     are on a tile and in its own column; every other app's are in its column
+     and nowhere else. */
+  const places = tiles.map((node) => ({ where: 'a tile', node }))
+    .concat(columns.map((node) => ({ where: 'a column', node })));
+  let printings = 0;
+
+  answer.apps.forEach((app, appIndex) => {
+    app.metrics.forEach((metric, index) => {
+      const figure = drawn[app.label][index];
+      const sites = places.filter((place) =>
+        runs(place.node).some((run) => printsFigure(run, figure)));
+      const expected = appIndex === 0 && index < tiles.length ? 2 : 1;
+      assert.equal(sites.length, expected,
+        app.label + ' ' + metric.label + ' (' + figure + ') is printed in '
+        + sites.length + ' of the pane\'s figure slots rather than ' + expected + ': '
+        + sites.map((place) => place.where).join(', '));
+      printings += sites.length;
+    });
+  });
+
+  /* And the same count as a total, so a pair of errors cannot cancel: one slot
+     per app per metric in the split card, plus one tile each for the four the
+     tiles carry. Sixteen was the defect. */
+  assert.equal(printings, answer.apps.length * lead.metrics.length + tiles.length,
+    'the pane prints its ' + (answer.apps.length * lead.metrics.length) + ' figures '
+    + printings + ' times');
+
+  /* The tiles are one app, and they say which. A tile that names a second app
+     is a tile carrying a comparison, whatever figure it puts beside the name. */
+  const active = tileText(dom, /Active people/);
   assert.match(active, /1,061/, 'the headline lost the leading app figure');
   assert.match(active, /Mobile/, 'the headline figure did not say which app it is');
-  assert.match(active, /Coaches Web 308/, 'the other app reading is not beside it');
+  tiles.forEach((node) => {
+    others.forEach((app) => {
+      const named = runs(node).filter((run) => run.indexOf(app.label) !== -1);
+      assert.equal(named.length, 0,
+        'a tile names ' + app.label + ', which is not the app it is of: ' + named.join(' | '));
+    });
+  });
+
+  /* The rule none of the above may be satisfied by breaking: the two apps are
+     never added. */
   assert.doesNotMatch(active, /1,369/, 'the two apps were added together');
   assert.doesNotMatch(liveText(dom), /1,369/, 'something else on the pane added the two apps');
 });
@@ -694,7 +1304,7 @@ test('a headline figure is one app, named, with the other beside it and never ad
 test('one app is a split that cannot exist, not an empty one', async () => {
   const one = await boot({
     search: '?scope=mobile',
-    usage: usageFixture((u) => { u.apps = u.apps.slice(0, 1); }),
+    usage: usageFixture(null, { scope: 'mobile' }),
   });
   const text = liveText(one);
   assert.match(text, /No split to draw/, 'one app was drawn as a comparison anyway');
@@ -714,16 +1324,71 @@ test('one app is a split that cannot exist, not an empty one', async () => {
     'the comparison lost one of its columns');
 });
 
+/* One column of the split, by the app it is of, and the lead slot inside it.
+   Read as a slot rather than as whole-card text because the card prints eight
+   figures and a regex over all of them cannot say which slot a number came
+   out of. `u-vs-val` is the lead metric's; the rest are `u-vs-v`. */
+function splitColumn(dom, label) {
+  return byClass(card(dom, /Side by side/), 'u-vs-side')
+    .filter((n) => byClass(n, 'u-vs-name').some((name) => allText(name).indexOf(label) !== -1))[0];
+}
+
+function leadSlot(column) {
+  const big = byClass(column, 'u-vs-big')[0];
+  if (!big) return null;
+  const only = (cls) => {
+    const found = byClass(big, cls);
+    assert.equal(found.length, 1,
+      'the lead slot has ' + found.length + ' .' + cls + ' elements, not 1');
+    return allText(found[0]).trim();
+  };
+  return { value: only('u-vs-val'), caption: only('u-vs-cap') };
+}
+
 test('every app figure is in the split, withheld ones with their reason', async () => {
-  const dom = await boot({
-    usage: usageFixture((u) => { u.apps[1].metrics[3].denominator = 20; }),
-  });
+  const dom = await boot({ usage: usageFixture(null, { parts: withCoaches(COACHES_20) }) });
   const split = allText(card(dom, /Side by side/));
   assert.match(split, /Opened a feature/, 'the split lost a figure the answer sent');
   assert.match(split, /64\.0%/, 'a rate the answer sent was not printed as a percentage');
   assert.match(split, /Not reported, 20 people in the group, floor is 50/,
     'a withheld figure in the split gave no reason: ' + split);
-  assert.doesNotMatch(split, /81\.0%/, 'the withheld figure was printed in the split anyway');
+  /* 65.0% is `basisPoints(13, 20)`, the share this column would print if the
+     floor let it. This assertion used to look for 81.0% while the answer said
+     80.8%, so it was a check for a string no pane could ever emit. */
+  assert.doesNotMatch(split, /65\.0%/, 'the withheld figure was printed in the split anyway');
+
+  /* The lead slot, which is the half of this card `.u-vs-row` never reaches.
+     Both columns, so the assertion is about the slot rather than about the app
+     that happens to be first.
+
+     NOT COVERED, on purpose: the withheld branch of this slot
+     (`pane-analytics.js:852-858`, `leadReason ? sentence(leadReason) : …`) is
+     unreachable from any answer the route can send, so no fixture here binds
+     it and none should pretend to. The lead metric is `metrics[0]`, which the
+     route always builds as `countMetric('Active people', …)`
+     (`opsUsageView.ts:643`). `withheld()` has exactly two ways to fire: a
+     stored-day gap, which needs the label to be `Sessions` or `Sessions per
+     person` (`pane-analytics.js:210-218`), and the floor, which needs
+     `kind === 'rate'` or a denominator (`:105-107`) -- and a count carries
+     neither. Binding it would take the same impossible payload
+     Stadiora/Aria#10667 exists to remove. Reported on Stadiora/Aria#10666.
+
+     NOT COVERED, second: that the caption is READ from `lead.label` rather
+     than printed as a literal. `metrics[0]` is always
+     `countMetric('Active people', …)` (`opsUsageView.ts:643`), so `lead.label`
+     holds the same string on every answer the route can send, and replacing
+     the expression with `'Active people'` is 48/48 green -- verified in the
+     independent review of PR #91. What the assertion below DOES bind is that
+     the slot carries a caption and that the caption is that text: emptying it,
+     dropping the element, or printing another field all go red. */
+  [['Mobile', '1,061'], ['Coaches Web', '20']].forEach(([label, activePeople]) => {
+    const slot = leadSlot(splitColumn(dom, label));
+    assert.ok(slot, label + ' has no lead slot in the split at all');
+    assert.equal(slot.caption, 'Active people',
+      label + ' captioned its lead figure ' + JSON.stringify(slot.caption));
+    assert.equal(slot.value, activePeople,
+      label + ' printed ' + JSON.stringify(slot.value) + ' as its lead figure');
+  });
 });
 
 /* ================================ the line ============================= */
@@ -1563,10 +2228,7 @@ test('the coverage figure is printed once, on every answer that carries one', as
      platform figures and carry no coverage, and `appColumn` never runs. */
   const one = await boot({
     search: '?scope=mobile',
-    usage: usageFixture((u) => {
-      u.apps = u.apps.slice(0, 1);
-      u.filters.app = 'mobile';
-    }),
+    usage: usageFixture(null, { scope: 'mobile' }),
   });
   const oneLive = livePanel(one);
   assert.equal(runCount(oneLive, /^92\.0% of sessions report$/), 1,
@@ -1576,13 +2238,14 @@ test('the coverage figure is printed once, on every answer that carries one', as
     + 'it on the ground that it is already on screen: ' + runs(oneLive).join(' | '));
 
   /* Null is a reading too, and it is the reading that says there is no
-     shortfall rather than a shortfall of everything. */
+     shortfall rather than a shortfall of everything. An app's coverage is null
+     when it has no `coverage_sessions` rows at all (`opsUsageView.ts:640`),
+     and those same rows are what `buildCoverageVersions` lists (`:778`), so
+     the answer that carries a null coverage is the answer with no version
+     rows for that app -- not the healthy answer with one field blanked. */
   const none = await boot({
     search: '?scope=mobile',
-    usage: usageFixture((u) => {
-      u.apps = u.apps.slice(0, 1);
-      u.apps[0].coverageBasisPoints = null;
-    }),
+    usage: usageFixture(null, { scope: 'mobile', parts: UNMEASURED_PARTS }),
   });
   const noneLive = livePanel(none);
   assert.equal(runCount(noneLive, /^Coverage not reported$/), 1,
@@ -1699,4 +2362,827 @@ test('the page loads the v2 system and not the v1 one', () => {
     'the page no longer names the pane the bootstrap looks for');
   assert.ok(PAGE_HTML.indexOf('Content-Security-Policy') !== -1,
     'the page lost its content security policy');
+});
+
+/* ===================== the classes this pane draws ======================
+ *
+ * Stadiora/Aria#10456 shipped an `is-selected` row on the users pane that no
+ * rule matched: the selection was in the DOM and invisible on screen. This
+ * block exists so that cannot happen here.
+ *
+ * WHAT USED TO BE HERE, AND WHY IT WAS REPLACED
+ *
+ * A class was "painted" if any selector in any loaded sheet mentioned it. The
+ * independent review of PR #81 defeated that twice, with `u-when` put back on
+ * the cohort heading (Stadiora/Aria#10678, item 1):
+ *
+ *   - `.ops-v1 .u-when { color: red }` at the top of `pane-analytics-v2.css`.
+ *     An ancestor no ops page can have. The sweep stayed green.
+ *   - `.u-when { }`. An empty body. The sweep stayed green.
+ *
+ * Both are the same fault: a selector's TEXT was read as evidence of painting.
+ * The subject set is now decided by what the browser does with the rule.
+ *
+ * HOW IT IS DECIDED NOW
+ *
+ * The pane is driven through its seven answer shapes in the fake DOM, exactly
+ * as before, and the tree it draws is serialised — tag, namespace, every
+ * attribute, every text node, in order. Real Chrome then loads
+ * `/ops/analytics.html` over HTTP, and each serialised tree is rebuilt inside
+ * the page's own `#app`, so every element sits under its real ancestors with
+ * the page's real stylesheets and real `:root` tokens.
+ *
+ * Then, for each class the pane drew, on each element that carries it:
+ *
+ *     remove the class -> lay out again -> read computed values
+ *
+ * A class that changes nothing on any element that carries it paints nothing.
+ * That is one measurement and it closes both shapes: `.ops-v1 .u-when` never
+ * matches, because the rebuilt tree has the ancestors the pane actually draws
+ * and none of them is `.ops-v1`; and an empty body has nothing to withdraw.
+ * It also handles the cases a synthetic probe gets wrong — `.pill.ghost` is
+ * `background: transparent`, which moves nothing on a bare probe and moves the
+ * real pill off `.pill`'s own fill.
+ *
+ * WHY THE TREE IS REBUILT RATHER THAN THE PANE DRIVEN IN THE BROWSER
+ *
+ * `scripts/ops-api-stub.mjs` answers `/api/ops/usage` with an empty envelope,
+ * on purpose — `check-ops-result-view.mjs` pins that answer. Six of the seven
+ * states here need payloads that stub does not serve, and the fixtures that
+ * build them are this file's. Rebuilding the drawn tree keeps one set of
+ * fixtures and reaches all seven states; driving the pane in the browser would
+ * need a second set, and two fixture sets drift.
+ *
+ * The rebuild is faithful in the way that matters to the cascade: structure,
+ * order, element type, namespace, every attribute (so `[hidden]`, `[aria-*]`
+ * and `[data-*]` selectors resolve), and text (so `:empty` and
+ * `:first-of-type` resolve). The pane writes no inline styles and a separate
+ * test in this file holds that.
+ *
+ * NOT COVERED — the list is the point, and each line is a thing this check
+ * does NOT decide, so the next reader does not have to find out by being
+ * wrong about it:
+ *
+ *   - Interaction states. The sweep reads the resting element. A class whose
+ *     only rule is under `:hover`, `:focus-visible` or `:active` moves nothing
+ *     at rest and would be reported unpainted. None of the pane's classes is
+ *     in that shape today; if one becomes so, it belongs in
+ *     UNPAINTED_ON_PURPOSE with its state named, not in a widened sweep, and
+ *     `scripts/ops-hover-contrast.test.mjs` is what drives hover here.
+ *   - Viewport-conditional rules. One width is read, at the browser's default
+ *     window. A class painted only inside a `@media (max-width: …)` block
+ *     would read as painting nothing. `scripts/ops-hero-narrow.test.mjs` and
+ *     `scripts/check-ops-narrow-overflow.mjs` are the narrow-width instruments.
+ *   - Whether what a class paints is CORRECT, legible, or contrasting. This
+ *     answers "does any value move", and a class that moved one value the
+ *     wrong way passes. `scripts/check-ops-contrast.mjs` is the AA oracle.
+ *   - Classes no answer shape draws. Two of them, named in NEVER_REACHED
+ *     below with the branch that would draw them; they are checked for a
+ *     DEFINING rule by selector text, which is weaker, and that weakness is
+ *     the reason the list is two long rather than open-ended.
+ *   - Classes the source computes rather than writes. Named in
+ *     COMPUTED_SITES; the tone classes ARE swept, because they are drawn —
+ *     what is unread is the source text, not the paint.
+ *   - Print and forced-colours. `@media print` and
+ *     `(forced-colors: active)` rules are never entered.
+ *   - Panes other than this one. The sweep is over `pane-analytics.js`.
+ *     `scripts/ops-painted-classes.test.mjs` covers releases and evaluations
+ *     the same way.
+ */
+
+/* The properties the loaded sheets declare are read out of the BROWSER's own
+   parsed rules, in PAINT_PROGRAM's props(), rather than out of the text of the
+   sheets. `rule.style` is a CSSStyleDeclaration, so Chrome has already
+   expanded every shorthand into the longhands it derives: `border: 1px solid x`
+   arrives as border-top-color and the rest, where a text scan would have handed
+   back `border` and missed every longhand a class can move on its own. A
+   property no rule declares cannot be moved by a class, so this is the same
+   answer as reading all ~340 computed properties, for a fraction of the work --
+   and it is a narrowing done by value, not by pattern. */
+
+/* Classes the pane writes deliberately without a rule behind them. Empty
+   today, and kept as the place a query hook would be declared with its
+   reason: a class JS finds nodes by is not a defect, and a class nobody can
+   say a purpose for is. */
+const UNPAINTED_ON_PURPOSE = new Map([]);
+
+/* The seven answer shapes. Four of them draw figures — every app, one app,
+   the partial window, and groups under the reporting floor, which draws its
+   groups and withholds their rates. Three do not: not ready, too little data,
+   and a read that failed. `u-when` and `u-size` live on the cohort heading,
+   which only the four drawing states reach. */
+function sweepStates() {
+  return [
+    ['every app', {}],
+    ['one app', { search: '?scope=mobile' }],
+    ['a window the pipeline has only part of', { usage: partial90() }],
+    ['groups under the floor', { usage: usageFixture(null, { parts: YOUNG_PARTS }) }],
+    ['an answer that is not ready', {
+      usage: { availability: { state: 'not_reporting', detail: 'No app has reported since 3 Sep.' } },
+    }],
+    ['too little data', {
+      search: '?range=7d',
+      usage: { availability: { state: 'insufficient', detail: 'Fewer than 50 people in this window.' } },
+    }],
+    ['a read that failed', { usage: new Error('The operations API did not answer.') }],
+  ];
+}
+
+/* The floor separates a pane that drew an answer from a pane that drew
+   nothing, and the check that uses it counts only what the PANE drew, under
+   `#content` -- a count over `#app` would include the rail, the topbar and the
+   gate, which a broken pane leaves behind and which would carry it over any
+   floor on their own.
+
+   Both arms are measured by the test below rather than stated here:
+
+     - above: the thinnest state the pane can draw. Measured at 33 (an answer
+       that is not ready), then 35 (too little data), then 36 (a read that
+       failed). Stadiora/Aria#10678 item 3: the sentence here used to claim the
+       thinnest was 36, giving the floor 11 of headroom. Three states are
+       thinner than that and the real headroom is 8.
+     - below: what an unmounted pane leaves. Measured at 0, because `#content`
+       is the pane's own region and the shell hands it over empty.
+
+   Neither number is typed into an assertion. The test derives both and prints
+   them, so this comment is a record of a run rather than a claim ahead of one. */
+const CONTENT_FLOOR = 25;
+
+function serialise(node) {
+  if (node.nodeType === 3) return { t: String(node.textContent || '') };
+  const attrs = {};
+  for (const name of node.attributeNames) attrs[name] = node.getAttribute(name);
+  return {
+    g: (node.tagName || 'div').toLowerCase(),
+    ns: node.namespaceURI && node.namespaceURI.indexOf('svg') !== -1 ? 'svg' : null,
+    a: attrs,
+    c: (node.childNodes || []).map(serialise),
+  };
+}
+
+/* ------------------------------------------------------- the browser ---- */
+
+/* This file is otherwise pure Node against the fake DOM, and stays that way:
+   Chrome is launched inside the one test that needs a cascade, and only when
+   that test runs. A missing browser fails THAT test and leaves the other
+   ~180 alone. It fails rather than skips — a fake DOM has no cascade, so a
+   skip here would be a guard reporting a pass it never earned. */
+/* OPS_PAINT_BROWSERS replaces the search list rather than adding to it, so a
+   caller can say "look only here". The no-browser failure below is otherwise
+   unreachable on every machine that can run this test at all — the list ends
+   with two /Applications paths, so CHROME_PATH=/nonexistent quietly finds a
+   different browser and the failure path is never taken. #10800 was filed with
+   that as its acceptance criterion and it does not reproduce. */
+function chromePath() {
+  const named = process.env.OPS_PAINT_BROWSERS;
+  const candidates = (named === undefined ? [
+    process.env.CHROME_PATH, process.env.CHROME_BIN,
+    '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium', '/usr/bin/chromium-browser',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ] : named.split(':')).filter(Boolean);
+  for (const candidate of candidates) if (existsSync(candidate)) return candidate;
+  throw new Error('no Chrome or Chromium found, and this check cannot fall back to the ' +
+    'fake DOM: the fake DOM has no cascade and the cascade is what is being read. ' +
+    'Set CHROME_PATH.');
+}
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+/* The page program. Two entry points: rebuild a serialised tree inside the
+   page's own #app, and judge a list of classes against it.
+
+   No backtick appears between here and the end of this template. One inside a
+   String.raw body terminates it, and the error names a line in the middle of
+   the CSS-looking text rather than the quote that did it. */
+const PAINT_PROGRAM = String.raw`(() => {
+  const SVG = 'http://www.w3.org/2000/svg';
+
+  const make = (spec) => {
+    if (spec.t !== undefined) return document.createTextNode(spec.t);
+    const el = spec.ns === 'svg' ? document.createElementNS(SVG, spec.g) : document.createElement(spec.g);
+    for (const name of Object.keys(spec.a)) {
+      try { el.setAttribute(name, spec.a[name]); } catch (e) { /* a name the parser refuses */ }
+    }
+    for (const child of spec.c) el.appendChild(make(child));
+    return el;
+  };
+
+  /* The serialised root IS #app, and the page's own #app is left exactly as
+     the page dresses it -- class="app" and all. An earlier draft stripped
+     everything but the id and put the FIXTURE's attributes on instead, which
+     took 'class="app"' off a grid container (aria.css:187) and laid the whole
+     rebuilt tree out under something the real page never has. The fixture's
+     root carries only an id, and the Node side asserts that, so there is
+     nothing to merge; if that ever stops being true the test says so rather
+     than this silently picking one. */
+  const build = (spec) => {
+    const app = document.getElementById('app');
+    if (!app) return { error: 'the page has no #app to rebuild into' };
+    while (app.firstChild) app.removeChild(app.firstChild);
+    for (const child of spec.c) app.appendChild(make(child));
+    document.body.offsetHeight;
+    /* The root is #app itself, which querySelectorAll does not return, and the
+       count on the Node side includes it. Counting the same thing on both
+       sides is the point: a rebuild that dropped a subtree would otherwise be
+       a guard that found nothing. */
+    return { built: app.querySelectorAll('*').length + 1,
+      appAttrs: app.getAttributeNames().sort().join(' ') };
+  };
+
+  const judge = (props, cap) => {
+    const app = document.getElementById('app');
+    /* #app itself is the SHELL's element, not the pane's -- the page dresses it
+       class="app" and the pane never writes to it. This sweep is about the
+       classes the PANE draws, so the root is the container, not a subject. */
+    const all = [...app.querySelectorAll('*')];
+
+    const snap = (el) => {
+      const scope = [];
+      const parent = el.parentElement || el;
+      (function walk(n) { scope.push(n); for (const k of n.children) walk(k); })(parent);
+      for (let a = el.parentElement; a; a = a.parentElement) scope.push(a);
+      let out = '';
+      for (const n of scope) {
+        for (const pseudo of [null, '::before', '::after']) {
+          const cs = getComputedStyle(n, pseudo);
+          for (let i = 0; i < props.length; i++) out += cs.getPropertyValue(props[i]) + '|';
+        }
+        out += ';';
+      }
+      return out;
+    };
+
+    const carriers = new Map();
+    for (const el of all) {
+      const raw = el.getAttribute('class');
+      if (!raw || !raw.trim()) continue;
+      for (const cls of raw.trim().split(/\s+/)) {
+        if (!carriers.has(cls)) carriers.set(cls, []);
+        carriers.get(cls).push(el);
+      }
+    }
+
+    const painted = [];
+    const unpainted = [];
+    let toggles = 0;
+    for (const [cls, els] of carriers) {
+      let moved = false;
+      let where = '';
+      for (let i = 0; i < els.length && i < cap && !moved; i++) {
+        const el = els[i];
+        const original = el.getAttribute('class');
+        if (!where) {
+          where = el.tagName.toLowerCase() + '.' + original.trim().split(/\s+/).join('.');
+        }
+        const before = snap(el);
+        const kept = original.trim().split(/\s+/).filter((c) => c !== cls).join(' ');
+        if (kept) el.setAttribute('class', kept); else el.removeAttribute('class');
+        document.body.offsetHeight;
+        const after = snap(el);
+        el.setAttribute('class', original);
+        document.body.offsetHeight;
+        toggles += 1;
+        if (before !== after) moved = true;
+      }
+      (moved ? painted : unpainted).push(moved ? cls : { cls: cls, where: where, carriers: els.length });
+    }
+    return { painted: painted, unpainted: unpainted, toggles: toggles,
+      classes: carriers.size, seen: [...carriers.keys()].sort() };
+  };
+
+  /* Every property any loaded rule declares, longhand-expanded by the parser.
+     Media rules and their nesting are walked; a sheet the browser refuses to
+     expose its rules for is reported rather than skipped, because a silently
+     short list would make every class look unpainted. */
+  const props = () => {
+    const names = new Set();
+    const blocked = [];
+    const walk = (rules) => {
+      for (const rule of rules) {
+        if (rule.style) for (const name of rule.style) names.add(name);
+        if (rule.cssRules) walk(rule.cssRules);
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      let rules = null;
+      try { rules = sheet.cssRules; } catch (e) { rules = null; }
+      if (!rules) { blocked.push(sheet.href || '(inline)'); continue; }
+      walk(rules);
+    }
+    return { names: [...names].sort(), blocked: blocked, sheets: document.styleSheets.length };
+  };
+
+  window.__opsPaint = { build: build, judge: judge, props: props };
+  return 'ready';
+})()`;
+
+/* One browser, one page load, reused across the seven states. Torn down by
+   the test that opened it.
+
+   Every handle is registered for release AS it is taken, and a throw anywhere
+   below releases what was already taken before it rethrows. The alternative —
+   handing the caller a close() that only exists on the success path — means a
+   failure leaves a listening server behind, and a listening server keeps the
+   process alive: the test reports its failure and then the runner never exits
+   (#10800). The filed defect was the missing-browser path; the port-timeout
+   path below leaks more than that one does, a live browser and its profile
+   directory as well as the server, so the release is written once for every
+   way out rather than at each throw. */
+async function openPainter() {
+  const opened = [];
+  const unwind = () => {
+    while (opened.length) {
+      const release = opened.pop();
+      try { release(); } catch (e) { /* releasing is best-effort by definition */ }
+    }
+  };
+  try {
+    return await launchPainter(opened, unwind);
+  } catch (e) {
+    unwind();
+    throw e;
+  }
+}
+
+async function launchPainter(opened, unwind) {
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    if (url.pathname.startsWith('/api/')) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(stub(url.pathname)));
+      return;
+    }
+    const abs = join(REPO, decodeURIComponent(url.pathname));
+    if (!abs.startsWith(REPO) || !existsSync(abs) || statSync(abs).isDirectory()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': MIME[extname(abs)] || 'application/octet-stream' });
+    res.end(readFileSync(abs));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  opened.push(() => server.close());
+  const origin = 'http://127.0.0.1:' + server.address().port;
+
+  const profile = mkdtempSync(join(tmpdir(), 'ops-analytics-paint-'));
+  opened.push(() => rmSync(profile, { recursive: true, force: true }));
+  const browser = spawn(chromePath(), [
+    '--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile,
+    '--no-first-run', '--no-default-browser-check', '--no-sandbox', '--disable-gpu',
+    '--disable-extensions', '--hide-scrollbars', '--force-device-scale-factor=1',
+    'about:blank',
+  ], { stdio: 'ignore' });
+  opened.push(() => browser.kill());
+
+  /* A browser that has already exited will never publish a port, so waiting
+     the full 30s for one only delays a failure that is already decided — and
+     says "never published" when "died on startup" is the fact. */
+  let gone = false;
+  browser.on('exit', () => { gone = true; });
+  let port = null;
+  for (let i = 0; i < 300 && port === null && !gone; i += 1) {
+    await new Promise((r) => setTimeout(r, 100));
+    try { port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch (e) { /* not yet */ }
+  }
+  if (!port) {
+    throw new Error(gone
+      ? 'the browser exited before it published a DevTools port'
+      : 'Chrome never published a DevTools port');
+  }
+  const targets = await (await fetch('http://127.0.0.1:' + port + '/json/list')).json();
+  const socket = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
+  opened.push(() => socket.close());
+  await new Promise((resolve, reject) => {
+    socket.addEventListener('open', resolve);
+    socket.addEventListener('error', reject);
+  });
+  let nextId = 1;
+  const pending = new Map();
+  socket.addEventListener('message', (event) => {
+    const message = JSON.parse(event.data);
+    if (!message.id || !pending.has(message.id)) return;
+    const slot = pending.get(message.id);
+    pending.delete(message.id);
+    if (message.error) slot.reject(new Error(JSON.stringify(message.error)));
+    else slot.resolve(message.result);
+  });
+  const send = (method, params) => new Promise((resolve, reject) => {
+    const id = nextId += 1;
+    pending.set(id, { resolve, reject });
+    socket.send(JSON.stringify({ id, method, params: params || {} }));
+  });
+
+  await send('Page.enable');
+  await send('Runtime.enable');
+  const evaluate = async (expression) => {
+    const result = await send('Runtime.evaluate', {
+      expression, returnByValue: true, awaitPromise: true,
+    });
+    if (result.exceptionDetails) {
+      throw new Error('the page threw: ' + (result.exceptionDetails.exception
+        ? result.exceptionDetails.exception.description
+        : result.exceptionDetails.text));
+    }
+    return result.result.value;
+  };
+
+  await send('Emulation.setDeviceMetricsOverride',
+    { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: 'try { localStorage.setItem("ops-theme", "dark");' +
+      ' localStorage.setItem("ops-api-base", ' + JSON.stringify(origin) + ');' +
+      ' sessionStorage.setItem("ops-refresh", JSON.stringify({ t: "stub", s: "adm_1" })); } catch (e) {}',
+  });
+  await send('Page.navigate', { url: origin + '/ops/analytics.html' });
+  for (let i = 0; i < 300; i += 1) {
+    const ready = await evaluate('(() => { try { return !!document.getElementById("app") && ' +
+      'document.body.classList.contains("is-ready"); } catch (e) { return false; } })()');
+    if (ready) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  /* Same release path the throwing case takes, so the success case cannot
+     drift away from it and leave a handle the failure case would have let go. */
+  return { evaluate, close: unwind };
+}
+
+/* ------------------------------------------------------------- the test -- */
+
+test('every class this pane draws is one a loaded sheet moves a value with', async () => {
+  /* The sheets have to be the ones the page loads, or this judges a set
+     nobody sees. Read off the page rather than listed here. */
+  const hrefs = SHEETS;
+  assert.deepEqual(hrefs,
+    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css'],
+    'the page stopped loading the sheets this check reads: ' + JSON.stringify(hrefs));
+
+  /* Seven states, in the fake DOM, exactly as the rest of this file drives the
+     pane. The tree each one draws is serialised for the browser. */
+  const states = sweepStates();
+  const trees = [];
+  const thinnest = [];
+  for (const [name, options] of states) {
+    const dom = await boot(options);
+    const app = dom.doc.getElementById('app');
+    assert.ok(app, 'the page lost #app on ' + name);
+
+    /* The floor counts only what the PANE drew. A pane that never mounted
+       still leaves the rail, the topbar and the gate behind it, so a floor
+       over #app is a floor a broken pane walks under. */
+    const content = dom.doc.getElementById('content');
+    assert.ok(content, 'the pane drew no result region at all on ' + name);
+    const drew = findAll(content, (n) => (n.className || '').trim() !== '');
+    assert.ok(drew.length > CONTENT_FLOOR,
+      'the pane drew only ' + drew.length + ' classed elements on ' + name +
+      ', at or under the floor of ' + CONTENT_FLOOR + ', so this state was judged empty');
+    thinnest.push([name, drew.length]);
+
+    trees.push([name, serialise(app)]);
+  }
+
+  /* The heading row this check exists for has to be inside what it walked, or
+     a populated state that stopped drawing the grid would take the evidence
+     with it. */
+  const populated = await boot({});
+  const grid = findAll(populated.doc.getElementById('app'),
+    (n) => (n.className || '').split(/\s+/).indexOf('u-cohort') !== -1)[0];
+  assert.ok(grid, 'the retention grid is no longer drawn, so its heading was never judged');
+  const headings = findAll(grid, (n) => isTag(n, 'th') && n.getAttribute('scope') === 'col');
+  assert.ok(headings.length >= 3,
+    'the retention grid drew ' + headings.length + ' column headings');
+
+  const painter = await openPainter();
+  try {
+    const ready = await painter.evaluate(PAINT_PROGRAM);
+    assert.equal(ready, 'ready', 'the paint program did not install');
+
+    /* Fail closed on a token-blind page. Every colour in these sheets is
+       color-mix() over a custom property; on a page where --cyan resolves to
+       nothing, every one of those declarations is invalid at computed-value
+       time, every toggle moves nothing, and the check reports the whole pane
+       unpainted for a reason that has nothing to do with the pane. Asserted
+       before a single class is judged. */
+    const cyan = await painter.evaluate(
+      'getComputedStyle(document.documentElement).getPropertyValue("--cyan").trim()');
+    assert.ok(cyan && cyan.length > 0,
+      'the page resolved no --cyan, so its design tokens are not in scope and ' +
+      'every colour these sheets set would read as painting nothing');
+
+    /* The properties to read, from the browser's own parsed rules. A sheet it
+       will not expose is a hole in the narrowing, so it fails rather than
+       shortens the list silently. */
+    const declared = await painter.evaluate('window.__opsPaint.props()');
+    assert.deepEqual(declared.blocked, [],
+      'the browser would not expose the rules of ' + JSON.stringify(declared.blocked) +
+      ', so the properties those sheets declare are not in the read and a class ' +
+      'that only moves one of them would be reported as painting nothing');
+    assert.equal(declared.sheets, SHEETS.length,
+      'the page holds ' + declared.sheets + ' stylesheets and the markup links ' +
+      SHEETS.length + ', so the read is over a different set than the page loads');
+    assert.ok(declared.names.length > 80,
+      'only ' + declared.names.length + ' properties were read out of the loaded ' +
+      'sheets, so the narrowing is dropping most of what a class could move');
+
+    const unpainted = new Map();
+    let judged = 0;
+    let toggles = 0;
+    const perState = [];
+    for (const [name, tree] of trees) {
+      const built = await painter.evaluate(
+        'window.__opsPaint.build(' + JSON.stringify(tree) + ')');
+      assert.equal(built.error, undefined, name + ': ' + built.error);
+
+      /* The rebuild has to have produced the tree the fake DOM drew, or a
+         guard that finds nothing and a guard that is broken look identical
+         from the outside. Counted on both sides. */
+      /* The rebuild puts the pane's tree under the PAGE's #app and does not
+         merge the fixture's own attributes onto it. That is only sound while
+         the fixture dresses its #app with nothing but an id -- a fixture that
+         added a class would need merging, and silently not getting it would
+         lay the tree out under an ancestor the real page does not have. */
+      assert.deepEqual(Object.keys(tree.a).sort(), ['id'],
+        name + ': the fixture now dresses #app with ' + JSON.stringify(tree.a) +
+        '. The rebuild leaves the real page\'s #app alone, so those attributes ' +
+        'are not on the element the tree is judged under');
+      assert.equal(built.appAttrs, 'class id',
+        name + ': the page\'s own #app carries "' + built.appAttrs + '" rather than ' +
+        '"class id", so the rebuilt tree is not sitting under the grid container ' +
+        'aria.css:187 gives the real pane');
+
+      const expected = countElements(tree);
+      assert.equal(built.built, expected,
+        name + ': the browser rebuilt ' + built.built + ' elements from a tree of ' +
+        expected + ', so the page is not holding what the pane drew');
+
+      const verdict = await painter.evaluate(
+        'window.__opsPaint.judge(' + JSON.stringify(declared.names) + ', 8)');
+
+      /* Every class the pane drew has to BE in the rebuilt tree, or the sweep
+         judges a smaller set than it walked and reports nothing about the
+         difference. A class the rebuild dropped is not a class that paints --
+         it is a class nobody looked at, and the two are indistinguishable
+         from the outside. Found by the battery: dropping the serialised
+         root's attributes took `app` off #app and the sweep stayed green. */
+      assert.deepEqual(verdict.seen, classesIn(tree),
+        name + ': the rebuilt tree carries a different set of classes than the pane ' +
+        'drew, so the sweep judged a set the pane does not produce');
+      judged += verdict.classes;
+      toggles += verdict.toggles;
+      perState.push([name, verdict.classes, verdict.painted.length]);
+      for (const miss of verdict.unpainted) {
+        if (UNPAINTED_ON_PURPOSE.has(miss.cls)) continue;
+        if (!unpainted.has(miss.cls)) {
+          unpainted.set(miss.cls, name + ': <' + miss.where + '> and ' +
+            (miss.carriers - 1) + ' other element(s)');
+        }
+      }
+    }
+
+    /* Counted from the run. A loop that ran zero times asserts nothing. */
+    assert.ok(judged > 250,
+      'only ' + judged + ' class placements were judged across seven states');
+    assert.ok(toggles > 250, 'only ' + toggles + ' classes were actually removed and ' +
+      'the page laid out again, so most of this sweep asserted nothing');
+
+    console.log('  analytics paint: ' + trees.length + ' states, ' + judged +
+      ' class placements, ' + toggles + ' toggles, ' + declared.names.length +
+      ' declared properties read');
+    console.log('  analytics floor: thinnest states ' +
+      thinnest.slice().sort((a, b) => a[1] - b[1]).slice(0, 3)
+        .map(([n, c]) => n + ' ' + c).join(', ') + ' against a floor of ' + CONTENT_FLOOR);
+
+    assert.deepEqual([...unpainted.entries()], [],
+      'the pane draws classes that move no value any loaded sheet sets, so they paint ' +
+      'nothing and are invisible to every other check: ' +
+      JSON.stringify([...unpainted.entries()]));
+  } finally {
+    painter.close();
+  }
+});
+
+/* Every class in a serialised tree, from the class attribute the pane wrote.
+   The browser is asked for the same set off the rebuilt tree, and the two must
+   agree or the rebuild lost something. */
+function classesIn(spec) {
+  const out = new Set();
+  /* The root is #app, which the shell owns and the pane never writes to, so it
+     is skipped on both sides -- judge() skips it too. */
+  (function walk(node) {
+    if (node.t !== undefined) return;
+    const raw = node.a && node.a['class'];
+    if (raw && raw.trim()) for (const cls of raw.trim().split(/\s+/)) out.add(cls);
+    for (const child of node.c) walk(child);
+  })({ t: undefined, a: {}, c: spec.c });
+  return [...out].sort();
+}
+
+function countElements(spec) {
+  if (spec.t !== undefined) return 0;
+  return spec.c.reduce((n, child) => n + countElements(child), 0) + 1;
+}
+
+/* The floor's own headroom, stated as a measurement rather than a sentence.
+   Stadiora/Aria#10678 item 3: the comment used to claim the thinnest state was
+   36 classed elements, giving the floor of 25 eleven of headroom. Three states
+   are thinner than 36. */
+test('the reporting floor sits under the thinnest answer this pane can draw', async () => {
+  const counts = [];
+  for (const [name, options] of sweepStates()) {
+    const dom = await boot(options);
+    const content = dom.doc.getElementById('content');
+    counts.push([name, findAll(content, (n) => (n.className || '').trim() !== '').length]);
+  }
+  const [thinnestName, thinnest] = counts.slice().sort((a, b) => a[1] - b[1])[0];
+  assert.ok(thinnest > CONTENT_FLOOR,
+    'the thinnest state, ' + thinnestName + ', draws ' + thinnest + ' classed elements, ' +
+    'at or under the floor of ' + CONTENT_FLOOR + ', so the floor no longer separates ' +
+    'a drawn pane from an unmounted one');
+
+  /* The other arm: the floor has to be above what an unmounted pane leaves
+     behind, or it is a number every state clears including the broken one.
+     Measured by emptying the result region the way a pane that never ran
+     would leave it. */
+  const dom = await boot({});
+  const content = dom.doc.getElementById('content');
+  while (content.childNodes.length) content.removeChild(content.childNodes[0]);
+  const unmounted = findAll(content, (n) => (n.className || '').trim() !== '').length;
+  assert.ok(unmounted < CONTENT_FLOOR,
+    'an unmounted pane leaves ' + unmounted + ' classed elements under #content, at or ' +
+    'above the floor of ' + CONTENT_FLOOR + ', so the floor would pass a pane that ' +
+    'never drew anything');
+
+  console.log('  analytics floor: thinnest drawn state ' + thinnestName + ' at ' + thinnest +
+    ', unmounted at ' + unmounted + ', floor ' + CONTENT_FLOOR +
+    ' — ' + (thinnest - CONTENT_FLOOR) + ' of headroom above, ' +
+    (CONTENT_FLOOR - unmounted) + ' below');
+});
+
+/* Every class the pane's own source can write is either drawn by one of the
+   seven answers above, or named here with the branch that would draw it.
+   Stadiora/Aria#10678 item 2: the sweep judges what seven answer shapes DRAW,
+   which is not every branch the source has, and the difference was stated as
+   zero.
+
+   The scan below is deliberately not a single pattern over the source. This
+   pane writes a class four ways -- a className property, an assignment, an
+   SVG 'class' attribute, and a ternary of two literals -- and a scan that
+   knows one of them reports the others as absent rather than as unread. That
+   is how ln-pt hid from an earlier draft of this very check: it is an SVG
+   attribute, so a className scan never saw it, and a class the sweep had
+   never judged looked accounted for. Instead every SITE is found first, and
+   a site that yields no literal has to be named below or this fails. */
+const COMPUTED_SITES = new Map([
+  ['toneClass(one.color)', 'pane-analytics.js:82 builds "tone-" + a value from ' +
+    'SERIES_TONE, so the class is concatenated rather than written. The tones ARE ' +
+    'drawn by the sweep above, which judges them; they are unreadable here, not unjudged.'],
+]);
+
+const NEVER_REACHED = new Map([
+  /* aria.css is cited by selector, not by line: it is the shared sheet, edited
+     by everyone, and the line this said (505) had already drifted six lines
+     into a .kpi-val rule. A pointer into a file this pane does not own rots on
+     someone else's commit. The two below name files this pane does own. */
+  ['kpi-foot', 'pane-analytics.js:716 draws a KPI footnote only for a tile that ' +
+    'carries one, and no tile in any of the seven answers does. The .kpi-foot ' +
+    'rule in aria.css defines it.'],
+  ['ln-pt', 'pane-analytics.js:399 marks a single isolated reading -- one day with ' +
+    'figures between two days without -- and no fixture here produces one. ' +
+    'pane-analytics-v2.css:48 defines it.'],
+]);
+
+test('the classes this pane can write are the ones the sweep judged, plus a named few', async () => {
+  const drawn = new Set();
+  for (const [, options] of sweepStates()) {
+    const dom = await boot(options);
+    for (const node of findAll(dom.doc.getElementById('app'),
+      (n) => (n.className || '').trim() !== '')) {
+      for (const cls of node.className.trim().split(/\s+/)) drawn.add(cls);
+    }
+  }
+  /* SVG carries its class as an attribute, and the fake DOM keeps it there
+     rather than on className, so the walk above cannot see it. Read both. */
+  for (const [, options] of sweepStates()) {
+    const dom = await boot(options);
+    for (const node of findAll(dom.doc.getElementById('app'),
+      (n) => (n.getAttribute && (n.getAttribute('class') || '').trim() !== ''))) {
+      for (const cls of node.getAttribute('class').trim().split(/\s+/)) drawn.add(cls);
+    }
+  }
+
+  /* Every site in the pane's source that puts a class on an element. Found by
+     position, then read for literals, so a shape this scan cannot read is a
+     failure rather than a silence. */
+  const SITE = /(?:\.className\s*(?:\+?=)|\bclassName\s*:|'class'\s*:)/g;
+  const sites = [];
+  for (const found of PANE_SRC.matchAll(SITE)) {
+    /* The value can run past the end of the line in a ternary, so read to the
+       next line break that is not inside the expression: two lines is enough
+       for every shape in this file and is checked by the unread count below. */
+    const after = PANE_SRC.slice(found.index + found[0].length, found.index + found[0].length + 160);
+    const value = after.split('\n').slice(0, 2).join('\n');
+    const literals = [...value.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+    const line = PANE_SRC.slice(0, found.index).split('\n').length;
+    sites.push({ line, value: value.trim(), literals });
+  }
+  assert.ok(sites.length > 60,
+    'only ' + sites.length + ' class-writing sites were found in pane-analytics.js, ' +
+    'so the site scan is finding a fraction of what is there');
+
+  const literals = new Set();
+  const unread = [];
+  for (const site of sites) {
+    /* A site whose first literal is not the class -- an attribute object where
+       'class' is computed -- yields nothing here and has to be named. */
+    const first = /^\s*'([^']*)'/.exec(site.value);
+    const ternary = /^\s*[^,;\n]*\?\s*'([^']*)'\s*:\s*'([^']*)'/.exec(site.value);
+    if (ternary) {
+      for (const part of [ternary[1], ternary[2]]) {
+        for (const cls of part.trim().split(/\s+/)) if (cls) literals.add(cls);
+      }
+    } else if (first) {
+      for (const cls of first[1].trim().split(/\s+/)) if (cls) literals.add(cls);
+    } else {
+      unread.push(site.value.split('\n')[0].replace(/[,;].*$/, '').replace(/[)\s}]*$/, ')').trim());
+    }
+  }
+
+  assert.deepEqual([...new Set(unread)].sort(), [...COMPUTED_SITES.keys()].sort(),
+    'a class-writing site in pane-analytics.js produces no literal this scan can read ' +
+    'and is not named as computed, so the classes it writes are unaccounted for: ' +
+    JSON.stringify([...new Set(unread)]));
+
+  const missing = [...literals].filter((cls) => !drawn.has(cls)).sort();
+  assert.deepEqual(missing, [...NEVER_REACHED.keys()].sort(),
+    'the set of classes no answer shape reaches has changed. The sweep above judges ' +
+    'what seven answers DRAW, so anything here is a class it never saw: ' +
+    JSON.stringify(missing.map((cls) => [cls, NEVER_REACHED.get(cls) || 'no reason recorded'])));
+
+  /* Both of them are defined by a sheet the page loads, so neither is a second
+     live instance of #10456 hiding behind a branch the fixtures do not reach.
+     A selector-list read is all this needs: it asserts a rule EXISTS for the
+     class, not that the rule paints -- the sweep above is what judges paint,
+     and it cannot reach these two. */
+  const named = new Set();
+  for (const href of SHEETS) {
+    for (const rule of cssRules(read(href))) {
+      for (const selector of rule.selectors) {
+        for (const found of selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) named.add(found[1]);
+      }
+    }
+  }
+  for (const cls of NEVER_REACHED.keys()) {
+    assert.ok(named.has(cls),
+      cls + ' is a class this pane can write, no answer shape here reaches it, and no ' +
+      'sheet the page loads names it either -- which is exactly the shape of #10456');
+  }
+
+  console.log('  analytics literals: ' + drawn.size + ' classes drawn and judged, ' +
+    sites.length + ' class-writing sites in the pane source, ' + literals.size +
+    ' readable classes, ' + (literals.size - missing.length) + ' of ' + literals.size +
+    ' reached by the seven answers, ' + COMPUTED_SITES.size + ' computed site(s) named');
+});
+
+
+test('the retention grid keeps the heading class that paints and none that do not', async () => {
+  const dom = await boot({});
+  const grid = findAll(dom.doc.getElementById('app'),
+    (n) => (n.className || '').split(/\s+/).indexOf('u-cohort') !== -1)[0];
+  const headings = findAll(grid, (n) => isTag(n, 'th') && n.getAttribute('scope') === 'col');
+
+  const [when, size] = headings;
+  assert.equal(allText(when), 'Week joined', 'the first column is no longer the signup week');
+  assert.equal(allText(size), 'People', 'the second column is no longer the size of the group');
+
+  /* The week column is painted entirely by rules keyed on position --
+     `.tbl th` for the type and `.u-cohort th:first-child` for the gutter --
+     so a class on it can only be a name nothing reads. */
+  assert.equal((when.className || '').trim(), '',
+    'the signup-week heading carries a class again: ' + when.className);
+
+  /* The size column is right-aligned, and `r` is what does it: a figure
+     column headed on the left sits away from the numbers under it. */
+  assert.deepEqual((size.className || '').trim().split(/\s+/), ['r'],
+    'the People heading is no longer exactly the class that paints it: ' + size.className);
+  /* Stadiora/Aria#10678 item 5: this was one assert.equal(…, 1, 'no rule
+     right-aligns …'), which fires on 0 and on 2 and says the same thing both
+     times -- so a SECOND right-aligning rule failed the build claiming the
+     opposite of what happened. The two outcomes are different facts and now
+     say so. */
+  const aligns = cssRules(read('assets/aria.css'))
+    .filter((rule) => rule.targets(/\.tbl\s+th\.r\b/))
+    .filter((rule) => /text-align:\s*right/.test(rule.body));
+  assert.ok(aligns.length > 0,
+    'no rule in aria.css right-aligns .tbl th.r, so `r` on the heading paints nothing either');
+  assert.ok(aligns.length < 2,
+    aligns.length + ' rules in aria.css right-align .tbl th.r. The class still paints, ' +
+    'but two rules setting one property is a cascade this check can no longer read as ' +
+    'one fact: ' + JSON.stringify(aligns.map((rule) => rule.selectors.join(', '))));
 });

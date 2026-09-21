@@ -141,19 +141,39 @@ dashboard that ends without warning fifteen minutes later.
 
 ## Content-Security-Policy
 
-GitHub Pages cannot send response headers, so the policy is a `<meta>` tag on every page:
+GitHub Pages cannot send response headers, so the policy is a `<meta>` tag on every page, and
+every page carries the same one. The directives are read out of the tag rather than printed from
+memory, because a policy that quietly grows an `'unsafe-inline'` and a README that still shows
+the strict one is the worst version of this file:
 
-```
-default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;
-font-src 'self'; connect-src 'self' https://api.runwitharia.com;
-base-uri 'none'; form-action 'none'
+```claims id=csp-policy
+default-src = 'none'
+script-src = 'self'
+style-src = 'self'
+img-src = 'self' data:
+font-src = 'self'
+connect-src = 'self' https://api.runwitharia.com
+base-uri = 'none'
+form-action = 'none'
+pages carrying this exact policy = 13
 ```
 
 What follows from wanting it this strict:
 
 - **No inline script.** The theme must be applied before first paint or navigating between panes
   flashes the wrong colours, so `assets/theme.js` is a blocking classic script in `<head>`
-  rather than an inline snippet. No hash to keep in sync across eleven files.
+  rather than an inline snippet, and there is no hash to keep in sync across every page in the
+  dashboard. How many that is, and whether the two things the policy forbids are actually absent
+  from the markup, is counted rather than remembered:
+
+  ```claims id=csp-pages
+  pages in ops/ = 13
+  pages declaring the policy in a <meta> = 13
+  pages loading assets/theme.js = 13
+  pages with an inline <script> = 0
+  pages with a style attribute in markup = 0
+  ```
+
 - **No inline `style` attributes.** Everything that can be a class is a class. The handful of
   lengths and colours that are genuinely data-driven, a bar segment's width, a skeleton block's
   height, a legend swatch, App releases' rollout meter and its adoption bar, are set through
@@ -229,16 +249,19 @@ ops/
     session.js          session policy: tokens, refresh, recovery, re-auth
     pane-registry.js    what every pane is called, asks, filters on and allows —
                         the one table both shells read
-    shell.js            v1 rail, top bar, filter bar, boot gate
+    shell.js            v1 rail, top bar, filter bar, boot gate — no page loads
+                        it; the tests that do are in assets-only-in-tests
     login.js            the sign-in page controller
     setup.js            the first-time setup page controller
-    operate.css         pane styling for the operate panes
-    operate.js          shared pane furniture: charts, drawer, confirm, states
-    alerts-model.js     the problems API in plain words, shared by two panes
+    operate.js          v1 pane furniture: charts, drawer, confirm, states — no
+                        page loads it; likewise
+    alerts-model.js     the problems API in plain words; which pages load it is
+                        assets-by-page, and no count is kept here
     pane-overview.js    Overview
     pane-alerts.js      Problems
-    pane-data.js        shared plumbing for the understand panes and for
-                        Overview's figures: source, formatting, states, charts
+    pane-data.js        v1 plumbing for the understand panes and for Overview's
+                        figures: source, formatting, states, charts — no page
+                        loads it; likewise
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
     pane-evaluations.js dataset validation, private quarantine import and approval handoffs
@@ -265,20 +288,125 @@ ops/
     pane-jobs-live-v2.css    Happening now's own shapes
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
+    pane-spend-v2.css     Cloud costs' own shapes
+```
+
+The tree above says what each file is **for**. What each file is **loaded by** is not written
+here in prose, because prose is what went wrong: eight issues were filed against this README in
+one day, every one of them a sentence describing the code more broadly or more narrowly than the
+code behaves. The block below is read out of the `<link>` and `<script>` tags in `ops/*.html` by
+`scripts/ops-readme-claims.test.mjs` and compared line for line, so a page that stops loading
+something, or a file that is deleted, is a red test rather than a stale sentence.
+
+```claims id=assets-by-page
+alerts-model.js = alerts.html, index.html, jobs-live.html, run-history.html
+api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
+aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+icons.js = login.html, setup.html
+login.js = login.html
+operate.js = (no page)
+ops.css = login.html, setup.html
+pane-alerts-v2.css = alerts.html
+pane-alerts.js = alerts.html
+pane-analytics-v2.css = analytics.html
+pane-analytics.js = analytics.html
+pane-data.js = (no page)
+pane-evaluations-v2.css = evaluations.html
+pane-evaluations.js = evaluations.html
+pane-jobs-live-v2.css = jobs-live.html
+pane-jobs-live-v2.js = jobs-live.html
+pane-overview-v2.css = index.html
+pane-overview.js = index.html
+pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+pane-releases-v2.css = releases.html
+pane-releases.js = releases.html
+pane-run-history-v2.css = run-history.html
+pane-run-history-v2.js = run-history.html
+pane-settings-v2.css = settings.html
+pane-spend-v2.css = spend.html
+pane-spend.js = spend.html
+pane-users-v2.css = users.html
+pane-users.js = users.html
+session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, spend.html, users.html
+settings.js = settings.html
+setup.js = setup.html
+shell-pane-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+shell-v2.js = shell-v2.html
+shell.js = (no page)
+theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+```
+
+A file no page loads is not automatically dead: some are kept alive by the tests, which load
+them from disk on purpose. The block below is the list of those, with the test files that read
+each one, derived the same way.
+
+```claims id=assets-only-in-tests
+operate.js = ops-alerts-v2.test.mjs, ops-shell-pane-v2.test.mjs
+pane-data.js = ops-overview-v2.test.mjs, ops-shell-pane-v2.test.mjs
+shell.js = ops-alerts-v2.test.mjs, ops-shell-pane-v2.test.mjs
+```
+
+Those three are the answer to "what dies when the last pane moves across": **not yet**, and not
+because of the pages. Test files execute `shell.js` and `operate.js` on purpose — the reason is
+recorded in `ops/assets/shell-pane-v2.js` — and read `pane-data.js`, so deleting any of them
+takes those tests with it. Which tests, and how many, is the block above rather than this
+sentence. `ops.css` and `icons.js` are not page-less at all:
+`login.html` and `setup.html` still load both, and those two pages have no v2 remodel.
+
+And the files this README still talks about which are no longer in the tree. The guard checks
+each one is **absent**, so a file that comes back leaves the prose around it red rather than
+quietly wrong again, and it re-derives who still mentions the name. All 257 lines of
+`operate.css` went in [aria-website#74](https://github.com/antonyrugama/aria-website/pull/74),
+merged as `eae7de31041ffc5e4c773ff662b6821ad09ac5ec`, along with the light-theme badge block that
+closed `ops.css`; the scripts still naming it are asserting a v2 page does **not** link it, which
+is a live assertion about a file that is gone and stays true because it is gone.
+
+```claims id=deleted-assets
+ops/assets/operate.css = gone; loaded by no page; named in ops-alerts-v2.test.mjs, ops-analytics-v2.test.mjs, ops-dead-css.test.mjs, ops-jobs-live-v2.test.mjs, ops-shell-pane-v2.test.mjs, ops-spend-v2.test.mjs, ops-users-v2.test.mjs
+ops/assets/settings.css = gone; loaded by no page; named by no script
 ```
 
 ### The v2 layer
 
 `aria.css` and `aria.js` are the design system from `docs/mocks/ops-dashboard-v2/` in the Aria
 monorepo, ported here so the panes can be remodelled one at a time. They sit **beside** `ops.css`
-and `shell.js` rather than replacing them: both define `.card`, `.rail`, `.topbar`, `.btn`,
-`.seg`, `.pill`, `.tbl` and `.nav-item` from different token sets, so **a page loads one or the
-other, never both.** **Which layer a pane is on is stated by its own page**, in the stylesheets
-and scripts its `<head>` loads, and nowhere else: a list here would have to be corrected by every
-change that moves a pane, and the first one that moved while another was in review left it saying
-something untrue. All panes read the endpoints they always read — moving a pane across changes
-its surface, never its reads. Panes move across in their own changes, and the day the last one
-moves, `ops.css`, `shell.js`, `operate.css` and `icons.js` go.
+and `shell.js` rather than replacing them: the two sheets declare a great many of the same class
+names from different token sets, so **a page loads one or the other, never both.** How many, and
+which of them carry the most selectors in `ops.css` — the widest few, ties broken on the first
+letter, so the list is a sample of that width and not all of it — is counted out of the sheets.
+**How many** is a floor in `pinned-blocks` below rather than a number in this sentence: the
+sample was free to shrink from eight rows to three, README lines and all, until round 9. A
+list typed here once said `ops.css` declares `.pill` and `.tbl`, and it declares neither, and
+never did.
+
+```claims id=v1-v2-collision
+class names declared in both ops.css and aria.css = 47
+.btn = 7 selectors in ops.css, 4 in aria.css
+.budget = 4 selectors in ops.css, 3 in aria.css
+.card-foot = 3 selectors in ops.css, 2 in aria.css
+.card-head = 3 selectors in ops.css, 1 in aria.css
+.content = 3 selectors in ops.css, 2 in aria.css
+.legend = 4 selectors in ops.css, 3 in aria.css
+.nav-item = 9 selectors in ops.css, 6 in aria.css
+.seg = 5 selectors in ops.css, 4 in aria.css
+```
+ **Which layer a pane is on is stated by its own page**, in the stylesheets
+and scripts its `<head>` loads, and nowhere else: a list written here by hand would have to be
+corrected by every change that moves a pane, and the first one that moved while another was in
+review left it saying something untrue. The list below is therefore read out of the pages. All
+panes read the endpoints they always read — moving a pane across changes its surface, never its
+reads.
+
+Every pane has now moved, and the v1 layer did **not** all die with the last one. Which files
+actually died is the `deleted-assets` block under Layout above rather than a list here — it
+carries `operate.css` and `settings.css` today, and a third deletion joins it without this
+sentence being touched; what survives, and why, is the two blocks beside it. `ops.css`
+and `icons.js` are still loaded by `login.html` and `setup.html`, which are not panes and have no
+v2 remodel; `shell.js`, `operate.js` and `pane-data.js` are loaded by no page and executed by the
+tests, so they are fixtures rather than dead code. A sentence here predicting which files go on
+which day is exactly the claim that rotted, so there is no longer one.
 
 `shell-v2.html` exists so the system can be seen and checked. It makes no API call and holds no
 operational data — every number on it is a literal in the page — so unlike a pane it has nothing
@@ -315,6 +443,24 @@ Registration rather than a flag in the registry, because the thing that knows wh
 built is the pane's own module being on the page; a boolean in the registry could claim "built"
 on a page that loads nothing to build it.
 
+That is why the list below is **read out of the pages** rather than written here: the page each
+pane names in the registry, the shell that page loads, and the pane's own stylesheet if it has
+one. A pane that moves across layers changes this block in the same change that moves it, or the
+suite is red.
+
+```claims id=panes
+overview = index.html, shell-pane-v2.js, pane-overview-v2.css
+jobs = jobs-live.html, shell-pane-v2.js, pane-jobs-live-v2.css
+history = run-history.html, shell-pane-v2.js, pane-run-history-v2.css
+alerts = alerts.html, shell-pane-v2.js, pane-alerts-v2.css
+analytics = analytics.html, shell-pane-v2.js, pane-analytics-v2.css
+spend = spend.html, shell-pane-v2.js, pane-spend-v2.css
+evals = evaluations.html, shell-pane-v2.js, pane-evaluations-v2.css
+releases = releases.html, shell-pane-v2.js, pane-releases-v2.css
+users = users.html, shell-pane-v2.js, pane-users-v2.css
+settings = settings.html, shell-pane-v2.js, pane-settings-v2.css
+```
+
 ### One registry, two shells
 
 `assets/pane-registry.js` holds `PANES`, `GROUPS`, `WAVES`, `RANGES`, `SCOPES` and `ENVS` — what
@@ -349,7 +495,7 @@ A v2 pane page loads, in this order:
 <script src="assets/pane-<name>.js"></script>
 ```
 
-and none of `ops.css`, `operate.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
+and none of `ops.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
 `data-page`, so the two shells can never both claim one document.
 
 `window.OpsPaneShell` is the whole surface, and a test holds this table to it in both directions:
@@ -450,8 +596,9 @@ number that is quietly short.
 whole of the copy. Both read their live endpoints, `GET /api/ops/usage` and `GET /api/ops/costs`,
 and land on an honest state rather than a zero wherever an answer carries no figure.
 
-**Settings** is built, and is the one pane that can change something rather than only report it.
-The section on it below is worth reading before the page is used. **Aria quality** lets
+**Settings** is built, and changes configuration rather than only reporting it — it is not the
+only pane that writes, which this file used to claim; see the derived block in the Settings
+section below. The section on it below is worth reading before the page is used. **Aria quality** lets
 viewers, operators and owners validate synthetic dataset declarations. Paste an input object
 containing `datasets` and `fixtureDigests`; the page supplies the operation envelope. The server
 returns manifest digests or field paths and reason codes. Editing the input clears the old
@@ -468,6 +615,8 @@ The same pane provides metadata-only approval request, lookup, and decision hand
 controls bind exact artifact, source, retained, request, purpose, policy, revision, and expiry
 values. Qualification is resolved server-side from an external verified record; the dashboard
 cannot provision or assert it.
+Starting another lookup clears the previous result. If it fails, only the lookup error is shown;
+a later successful lookup displays its current result.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,
@@ -529,21 +678,20 @@ set of constraints:
   deletion workflow, which needs the athlete's own confirmation.
 
 The shared filter bar round trips through the querystring, so a pane reads a selection rather
-than inventing one. A pane listens on `window` for two events, both dispatched once the session
-is confirmed and the shell is in the document, so a listener added while `shell.js` is still
-booting cannot miss them:
+than inventing one. A pane listens on `window` for two events, both dispatched by
+`shell-pane-v2.js` once the session is confirmed and the shell is in the document, so a listener
+added while the shell is still booting cannot miss them:
 
 - `ops:ready`, carrying `{ pane, filters }`, which is the signal that `#content` exists.
 - `ops:filters`, carrying the selection, fired for the starting selection as well as for every
   change to it. `OpsShell.filters()` returns the same thing on demand.
 
-Per-pane filters arrive with the pane that needs them. App releases adds a Platform switch beside
-the shared controls rather than growing a second bar underneath the first: its module appends to
-the rendered `.filterbar`, deferring to `ops:ready` when the bar is not in the document yet,
-which is the same small move `OpsOperate.paneFilters` makes for the operate panes. It is written
-out locally rather than reached for across `operate.js`, because App releases loads none of the
-rest of that file and a whole shared module pulled in for six lines is a dependency the pages do
-not need.
+Per-pane filters are declared, not appended. The bar a pane gets is the one `pane-registry.js`
+declares for it and `shell-pane-v2.js` draws, and no pane module on the v2 layer touches
+`.filterbar` at all — the only code that does is in `shell.js` and `operate.js`, which no page
+loads. App releases is the pane this paragraph used to describe as adding its own Platform
+switch; its registry entry now declares `scope`, `range` and `env` all false and carries a
+`filterNote` saying why, so the shell prints the note where controls would have been.
 
 The scope control follows the rule the mocks encode: All, Mobile and Coaches Web appear only
 where a per-app split is real. Cloud costs says so inline, because cloud spend is billed per
@@ -602,9 +750,11 @@ cannot be reached through the URL — is deliberately not asserted there: the sh
 undeclared filter before a pane sees one, so no mutation of a pane can turn that claim red. The
 narrower shell-level claim that can fail — that a pane is offered exactly the filters it
 declared and never one more — is held in `scripts/ops-shell-pane-v2.test.mjs`, and what the two
-pane suites hold instead is what their own bar draws. Cloud costs is the single exclusion, because it is
-still on the v1 shell; the lock pins the exact claim it is excused for by name **and by value**,
-so a filter or a window added to it is red as well, and it gets a live proof when it lands on v2.
+pane suites hold instead is what their own bar draws. Cloud costs is the single exclusion: that file does not boot it, so
+nothing there proves its windows. The lock pins the exact claim it is excused for by name **and
+by value**, so a filter or a window added to it is red as well. The pane itself is on the v2
+bootstrap like every other — the `panes` block above is what says so — and the exclusion is now
+about what that file boots rather than about which shell the pane is on.
 
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
@@ -637,11 +787,21 @@ measurement.
 
 Both read the transport's envelope, so the pane sees `payload.data`.
 
-**Cloud costs** expects `asOf`, `publishLagHours`, `staleness`, `currency`, `period`, `total`,
-`forecast`, `budget`, a `views` object holding any of `category`, `resourceGroup` and `service`
-as `{ label, hint, rows }`, `daily`, `unitCosts`, `reconciliation`, and `anomalies`.
-`availability.state` is `ready`, `not_published`, `mixed_currency`, or anything else, which reads
-as "no source is configured".
+**Cloud costs** expects `range`, `asOf`, `publishLagHours`, `staleness`, `scopeNote` and
+`availability` on every answer, and — only when `availability.state` is `ready` — `currency`,
+`period`, `total`, a `views` object holding `category`, `resourceGroup` and `service` as
+`{ label, hint, rows }`, and `daily`. `comparison` and `forecast` are each present or absent on
+their own terms: a comparison only when a previous window was collected in the same currency,
+and a forecast only when the period is still open, something has been billed, and the total is
+above zero — so the only range that can carry one is `month`. `availability.state` is `ready`,
+`unconfigured`, `disabled`, `not_published` or `mixed_currency`.
+
+This paragraph used to name `budget`, `unitCosts`, `reconciliation` and `anomalies`, and to list
+three availability states. The route sends none of those four fields and sends five states. The
+v1 pane read all four and drew a budget meter, an anomaly card and a unit-cost strip from
+whatever `undefined` produced, which is why they are gone from the remodel rather than
+reimplemented: there was never an answer behind them. A figure this pane cannot source is an
+issue to file, not a slot to fill.
 
 `mixed_currency` has its own card rather than falling into either neighbour, because neither is
 true of it. The route withholds the total when a period was billed in more than one currency, and
@@ -797,14 +957,54 @@ than only by the page's `connect-src`.
 
 The pane that has no data yet says so, and says it without a promise it cannot keep: the state
 tells you the reporting behind it is unbuilt and that the release which builds it points the
-pane at it. It does not claim figures will appear "without another release", because both
-`endpoint` values are `null` in these files and a backend publishing a route would change
-nothing on its own.
+pane at it. It does not claim figures will appear "without another release", and the reason is
+not that the routes are unnamed. Every `pane-*.js` in the tree has a line here, and the line is
+every `/api/…` string literal that file spells:
+
+```claims id=pane-read-endpoints
+pane-alerts.js = /api/ops/alerts/problems, /api/ops/alerts/problems/, /api/ops/alerts/rules, /api/ops/alerts/rules/
+pane-analytics.js = /api/ops/usage
+pane-data.js = (no route literal)
+pane-evaluations.js = /api/ops/ciel/operations
+pane-jobs-live-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
+pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
+pane-registry.js = (no route literal)
+pane-releases.js = /api/ops/releases
+pane-run-history-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
+pane-spend.js = /api/ops/costs, /api/ops/summary
+pane-users.js = /api/ops/users/, /api/ops/users/lookup
+```
+
+A backend publishing `/api/ops/usage` or `/api/ops/costs` changes nothing on its own, because a
+fixture is read only from `localStorage` on a loopback origin and a pane pointed at one is not
+pointed at the route. The README said the two fixture-capable panes' `endpoint` values were both
+`null`, which was false against both files at the head that said it.
+
+The block is a **literal scan**, not a call graph. A pane that builds a URL by concatenation
+shows the prefix it spells — `/api/ops/users/` and `/api/ops/alerts/problems/` are that, not
+routes of their own — and a route named only in a comment would appear here too. What the block
+does guarantee is that no pane leaves the list: a file with nothing matched says
+`(no route literal)` rather than dropping out, which is how the first spelling of this block hid
+three panes that do name routes. Whether a named route is ever *called*, and by what, is not
+decided here.
 
 ## The Settings pane
 
-Settings is owner only and is the one pane that can change something, so it is worth being exact
-about what it does and does not do. It runs on the v2 shell: `settings.html` loads `aria.css`,
+Settings is owner only. It used to say here, and in the tour above, that it is "the one pane that
+can change something". That was false when it was written: Problems acknowledges and closes
+problems, People reveals a masked field, and Aria quality posts an evaluation. Derived rather
+than asserted, from the HTTP method each file spells:
+
+```claims id=write-capable-assets
+ops assets naming a write method = login.js, pane-alerts.js, pane-evaluations.js, pane-users.js, session.js, settings.js, setup.js
+of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-users.js
+```
+
+`settings.js` is the v1 script and `session.js` is the transport every one of them calls through;
+`login.js` and `setup.js` are the two pages outside the shell. The line is per file and not per
+call site — it reads the HTTP method a call site spells, so a file keeps its place until its last
+write method goes, and says nothing about whether any of those calls is reachable or authorised. What is true of Settings is
+narrower and worth being exact about: It runs on the v2 shell: `settings.html` loads `aria.css`,
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
 
@@ -998,7 +1198,11 @@ and the future-date and 90-day retention bounds are unchanged.
 
 ## Departures from the approved mocks
 
-`assets/ops.css` is the mock stylesheet with these changes:
+`assets/ops.css` is the mock stylesheet with these changes. Read the list as the record of the
+v1 stylesheet: `ops.css` is now loaded by `login.html` and `setup.html` only (the block under
+Layout is where that is read off the pages), so an item below saying "every page" or naming a
+pane page is describing what that rule reached while the panes were on it. The v2 sheets carry
+those panes now.
 
 1. **No Google Fonts `@import`.** The font stacks are unchanged, so anyone with Fira Sans or
    JetBrains Mono installed sees the intended faces and everyone else falls back cleanly.
@@ -1007,10 +1211,42 @@ and the future-date and 90-day retention bounds are unchanged.
    and the `--note-bg` token that only they used.
 3. **`--mono` gains `Consolas`** before the generic `monospace`, so Windows has a real fallback.
 4. **Dark `--text-3` moved from `#667484` to `#8593A2`.** The original measured 3.35:1 on
-   `--surface-3`, its worst rendered pairing, which `.masked` draws, and 3.93:1 on a card. It
+   `--surface-3`, its worst rendered pairing at the time, and 3.93:1 on a card. It
    needs 4.5:1, because it carries metadata, table headers, filter labels and placeholder text,
-   all of which are text. The new value clears 4.71:1 on every surface the stylesheet actually
-   pairs it with.
+   all of which are text. What the new value clears is not typed here — it is measured from the
+   shipped token against the **surfaces** of that same block, named below rather than counted, so
+   a surface renamed or added is a red run and not a number that still reads 5. Every other
+   opaque token in the block is named on the last line for the same reason: a new one belongs to
+   one list or the other, and until somebody says which, this is red. The figure that used to sit
+   in this sentence disagreed with the comment on the token itself by 0.05:
+
+   ```claims id=dark-text-3
+   --text-3 in ops.css's dark :root = #8593A2
+   surfaces it is measured against = --bg, --surface-1, --surface-2, --surface-3, --surface-hover
+   worst pairing = --surface-hover #1E2833 at 4.76:1
+   clears 4.5:1 on every one of them = true
+   every other opaque token in that block = --ai, --border, --border-strong, --brand, --brand-bright, --control-border, --control-border-hover, --crit, --cta-end, --info, --ok, --s1, --s2, --s3, --s4, --s5, --s6, --text, --text-2, --text-3, --text-inverse, --warn
+   tokens in that block this cannot read as a flat colour = --glow, --ink-mix, --scrim, --shadow-1, --shadow-2, --shadow-3, --tint, --tint-line, --tint-soft, --topbar-bg
+   later :root rules redeclaring any of them = (none)
+   ```
+
+   Every custom property that block declares is on exactly one of those three lines, under
+   whatever name CSS allows — `--panel_bg` and `--PanelBg` are legal custom properties and used
+   to fall through a `[a-z0-9-]` name class into none of the lists. A colour is resolved from its
+   **value** rather than matched by its spelling: `#abc`, `#AABBCC` and `rgb(170, 187, 204)` are
+   one colour here, where the block once read only the six-digit hex and a surface written any
+   other way was measured against nothing. A property declared twice in that rule resolves to the
+   **last** declaration, as it does in a browser. The surfaces are the tokens named `--bg` and
+   `--surface-*`, spelled exactly that way; anything else opaque is named on the second line, so a
+   surface introduced under some other name is a red run rather than a silent omission. The fourth
+   line exists because `ops.css` declares `:root` more than once and a later one wins: a token
+   redeclared below this block would not be the colour measured above.
+
+   What it does **not** answer is where the ink lands: `--topbar-bg` and `--scrim` are `rgba()`
+   and composite over whatever is behind them, so no arithmetic over this block can judge the
+   pairing a translucent bar produces — which is why they are named on the third line rather than
+   quietly dropped. `check-ops-contrast.mjs` measures the rendered pair in a browser, and that is
+   the oracle for it.
 5. **A new `--cta-end` token** ends the primary-button gradient. White on the light theme's
    `#0092AE` measured 3.67:1; `#007A93` holds 4.99:1. Splitting it from `--brand` darkens the
    button without darkening every tint derived from the brand. Dark mode is unchanged, because
@@ -1058,31 +1294,68 @@ and the future-date and 90-day retention bounds are unchanged.
     keeps the inverse text colour: white on pale grey, 1.2:1, so the label vanished under the
     pointer that was about to click it. This is not a pane-scoped fix and it is not a token
     change; the sign-in button is the one it was found on.
-14. **The two ship and support panes darken the light-theme status ink**, scoped to those two
-    pages. Same debt as item 11's neighbours and the same shape of fix as `operate.css`; see the
-    second half of the note below.
-15. **`.table-wrap` is positioned.** `overflow-x` clips only a descendant whose containing block
-    is the wrapper, and an absolutely positioned one resolves that to the nearest positioned
-    ancestor. Left static, an `.sr-only` span inside a table wider than a phone resolves to the
-    page, escapes the wrapper's clip, and extends the document's scroll width: the table scrolls
-    inside its card and the whole page scrolls sideways with it. `position: relative` puts the
-    containing block back where the clip is.
+14. **Gone: the two ship and support panes darkened the light-theme status ink**, scoped to
+    those two pages. That block was deleted from the end of `ops.css` in `aria-website#74` when
+    App releases and Look up a user moved to the v2 layer and stopped loading this stylesheet;
+    the arithmetic it was computed from is kept in the historical record below.
+15. **A sideways-scrolling wrapper needs to be positioned, and some of the v2 ones are not.**
+    `overflow-x` clips only a descendant whose containing block is the wrapper, and an absolutely
+    positioned one resolves that to the nearest **positioned** ancestor. Left static, an
+    `.sr-only` span inside a table wider than a phone resolves past the wrapper, escapes its
+    clip, and extends the document's scroll width: the table scrolls inside its card and the
+    whole page scrolls sideways with it. `position: relative` puts the containing block back
+    where the clip is.
 
-    Stated exactly, because the rule is on every page: **no pane ships a span that triggers this
-    today**, so it is a guard rather than a repair, and it was measured as one. Put a
-    screen-reader-only span in the last cell of each wrapper at 375px and delete the declaration
-    at run time, and the document's scroll width goes from 375 to 1118 on Settings and to 434 on
-    App releases, with the span's offset parent moving from the wrapper to `body`; with the
-    declaration it stays 375 on both. Settings reaches the same end by a second route, using
-    `aria-label` on the revoke buttons rather than a hidden span, and App releases and People and
-    usage already carry hidden spans inside a wrapper that happen to sit inside the visible width.
-    Both are one layout change away from not doing so.
+    This item used to say the declaration was "on every page". It was not, and on the v2 layer it
+    is not now. Where it actually is, derived from the sheets by finding each box through its own
+    `overflow-x` rather than by class name:
 
-    It changes nothing else. Every element on all seven pane pages was measured at 1440px and
-    375px with the declaration and without it: the only difference anywhere is the wrapper's own
-    computed `position`. No geometry, paint order, or sticky behaviour moves, because a sticky
-    header is itself positioned and was already painting in the positioned layer, and `z-index`
-    stays `auto` so no stacking context is created.
+    ```claims id=scroll-wrapper-position
+    ops.css .table-wrap = position: relative
+    pane-alerts-v2.css .scrollx = position: static (the sheet sets none)
+    pane-analytics-v2.css .u-scroll = position: relative
+    pane-evaluations-v2.css .tbl-wrap = position: relative
+    pane-releases-v2.css .tbl-scroll = position: relative
+    pane-run-history-v2.css .tbl-wrap = position: static (the sheet sets none)
+    pane-settings-v2.css .tbl-wrap = position: relative
+    pane-spend-v2.css .sp-scroll = position: static (the sheet sets none)
+    pane-users-v2.css .tbl-wrap = position: relative
+    ```
+
+    `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
+    `login.html` and `setup.html` load and neither of them draws a table. Evaluations'
+    `.tbl-wrap`, Releases' `.tbl-scroll`, Settings' `.tbl-wrap` and People's `.tbl-wrap` were
+    repaired under Stadiora/Aria#10706 and join `.u-scroll` in carrying it; the escape route
+    above is open on every wrapper still marked static. The block
+    is derived from the sheets on every run, so read the count off it rather than off this
+    sentence.
+
+    This item used to add "no pane ships such a span today". That was false, and it was false in
+    the most expensive way — a reassuring sentence nobody re-derived. Panes ship them:
+
+    ```claims id=sr-span-classes
+    absolutely positioned screen-reader classes = aria.css .sr, ops.css .sr-only
+    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-releases.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
+    ```
+
+    `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-users.js`
+    and `pane-releases.js` do the same inside `div.tbl-wrap` and `div.tbl-scroll`. Of those three
+    wrappers, Releases' and People's are now positioned and Alerts' `.scrollx` is still static in
+    the block above, so for that one the containing block of the caption is not the wrapper. Nothing is broken on screen anyway, for a reason this item had never stated: a
+    1px-wide clipped caption's static position is the table's left edge, so resolving past the
+    wrapper adds no scroll width to the right of anything. That is a claim about layout, not
+    about text, and it is **not derived here** — `scripts/check-ops-narrow-overflow.mjs` is the
+    oracle that would catch it if it stopped being true. The gap stays open because a span whose
+    static position is *not* at the left edge would escape, and nothing in this tree stops one
+    being added. Tracked as `Stadiora/Aria#10706`.
+
+    **Not covered here.** The original item carried measured figures — a document scroll width
+    going from 375px to 1118px on Settings and to 434px on App releases with the declaration
+    deleted at run time. Those were taken against the v1 `.table-wrap` before the panes were
+    remodelled, and nothing in this tree reproduces them: the sheets those panes load today
+    declare no `position` to delete. They are gone rather than restated, because an unreproducible
+    number in a departures record is the defect this file was just corrected for.
+
 16. **A filter-bar note wraps.** `.badge` is `nowrap`, which is right for a chip and wrong for
     the sentence a `scopeNote` or `filterNote` puts in the bar. A flex item will not shrink
     below unbreakable content, so on a phone the note was wider than the bar and pushed the
@@ -1200,7 +1473,8 @@ would blend them is not drawn.
    order loses it entirely between 561px and 650px. Putting the share first is not a fix
    either: it only moves the clip onto the version. The version is on the key beside the bar,
    so the chip states the share alone and nothing unbounded goes in it.
-   See `assets/pane-releases.js:173-188` and `assets/pane-releases-v2.css:157-166`.
+   See the comments in `assets/pane-releases.js` and `assets/pane-releases-v2.css` that the
+   `source-anchors` block pins.
 
 Two additions the mock does not have, both of which exist because the pane reads a live answer
 where the mock reads its own sample text:
@@ -1265,14 +1539,14 @@ the thing it describes is the worse of the two failures.
    it.** It belongs to the card in 5 that has no source, and the fact it carries has no home
    here: it is a statement about **consent** — nothing was collected, so there is nothing behind
    the mask to unlock — and on this pane a mask is the opposite, a value the owner *can* unlock
-   with a recorded reason. The account card's foot (`assets/pane-users.js:943`) says that
+   with a recorded reason. The account card's foot says that
    plainly, "Hidden for every role, including this one, until a reveal is recorded", and reading
    it as the mock's sentence in a new place would get it backwards. Nothing replaces the mock's
    sentence, because the pane has no consent input to state it from: the API tells this pane
    whether a field can be *shown*, never whether it was collected. Both notes it prints are
    about showability — `neverShownNote` for a field that is never shown here at all
-   (`assets/pane-users.js:692`, health readings and any field the API marks `reveal: 'never'`)
-   and `unavailableNote` for one that cannot be revealed right now (`:702`). Neither claims a
+   (health readings and any field the API marks `reveal: 'never'`)
+   and `unavailableNote` for one that cannot be revealed right now. Neither claims a
    value does or does not exist behind the mask, and the pane does not author that claim.
 7. **The mock's `why` blocks are not reproduced.** They argue for the design rather than state a
    fact about the account, and the mocks' own rule is one fact per slot. What they carried that
@@ -1298,11 +1572,21 @@ reads its own sample text:
 
 `assets/pane-users-v2.css` carries this pane's own shapes.
 
-One inherited leftover is worth naming here rather than fixing: the light-theme badge block at
-the end of `ops.css` is scoped `[data-theme="light"] body:is([data-page="releases"],
-[data-page="users"])`, and neither page carries `data-page` any more — releases lost it in #55
-and this change takes the last one. The block now matches nothing. `ops.css` is not this change's
-to edit, so it is filed rather than deleted here.
+One inherited leftover used to be named here rather than fixed: a light-theme badge block at the
+end of `ops.css`, scoped `[data-theme="light"] body:is([data-page="releases"],
+[data-page="users"])`, matching nothing once releases lost its `data-page` in #55 and this change
+took the last one. **That block is gone** — deleted from `ops.css` in `aria-website` #74 — and
+this paragraph described it as still filed here for as long as it took somebody to look. What is
+true now is derived rather than described:
+
+```claims id=data-page-scoping
+ops.css rules scoped to a data-page attribute = (none)
+pages carrying a data-page attribute = login.html, setup.html
+```
+
+The two pages still carrying the attribute are the pair that never moved to the v2 shell, and no
+rule anywhere in `ops.css` selects on it, so the attribute currently styles nothing. If either
+half of that changes, the block above is a red run rather than a stale sentence.
 
 ### What happened on v2: where the pane departs from the mock
 
@@ -1399,7 +1683,8 @@ from the answer.
    dialog. The detail expands in place under the card instead, with `aria-expanded` and
    `aria-controls`, and Close is an inline form. At 375px a modal is a focus trap over a page
    the operator still needs to read, and a second thing that can overflow sideways; the v1
-   drawer also lived in `operate.css`, which a v2 page cannot load.
+   drawer also lived in `operate.css`, which a v2 page could not load and which has since been
+   deleted outright.
 2. **No meter on a problem card.** The answer carries an observed value and a threshold and no
    scale to put them on. A bar between two numbers with no axis is the budget-bar problem from
    Overview in another shape.
@@ -1434,8 +1719,33 @@ at all: Chrome grants a scrollable box a tab stop of its own, but leaves it unna
 roleless, and Safari grants none. So the box carries `tabindex="0"`, `role="region"` and the
 table's own screen-reader `<caption>` as its accessible name, and the focus ring is pulled
 inside its edge, because `aria.css` draws that ring 2px outside the element and the box is
-flush with the card. Same three attributes and the same one CSS line as App releases'
-`.tbl-scroll` and Settings' `tableWrap()` (`Stadiora/Aria#10459`).
+flush with the card: with `aria.css`'s `+2px` left alone, `aria-website#72` measured 21,234
+device pixels of ring painted entirely beyond the box and none of its four edges showing ring
+inside it, all of that outside the card it belongs to.
+
+Same three attributes as App releases' `.tbl-scroll` and Settings' `tableWrap()`
+(`Stadiora/Aria#10459`) — but **not the same one CSS line**, and there never was one. Some of the
+sideways-scrolling boxes on the v2 panes pull the ring inside with an `outline-offset` of their
+own, one of those adds a `border-radius` beside it, and the rest declare nothing and take
+`aria.css`'s ring wherever that sheet puts it. Which box does which is the block below, read out
+of the sheets and out of `aria.css`, and deliberately **not** counted or listed in this sentence:
+a sentence enumerating them is what was wrong here before, and a second one would rot the same
+way.
+
+Which boxes carry a ring of their own is read out of the v2 pane sheets — every box that
+declares `overflow-x: auto`, found by that declaration and not by its class name, with whatever
+its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is red here.
+
+```claims id=table-focus-rings
+pane-alerts-v2.css .scrollx = outline-offset: -2px
+pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
+pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
+pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
+pane-run-history-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
+pane-settings-v2.css .tbl-wrap = outline-offset: -2px
+pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
+pane-users-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
+```
 
 ### People and usage on v2: where the pane departs from the mock
 
@@ -1470,7 +1780,7 @@ answer.
    that instead. (`chartName` and `seriesSentence` in `ops/assets/pane-analytics.js`; the
    sentences are pinned in `scripts/ops-analytics-v2.test.mjs`.)
 6. **No Custom range**, which is the registry's decision, recorded in the comment above the
-   entry at `pane-registry.js:103-110`: the bar carries a range name and no bounds, so a custom
+   entry in `assets/pane-registry.js`: the bar carries a range name and no bounds, so a custom
    window reaches the usage API with no start and no end, and that route answers over the widest
    window retention allows rather than refusing it. The figures would be confident and for a
    window nobody chose. Nothing states this **on screen** — `shell-pane-v2.js` renders
@@ -1484,8 +1794,13 @@ answer.
 8. **The mock's explanatory captions are not reproduced, and neither are four of the route's
    own sentences nor four of its counts**, under the same rule: the mocks encode one fact per
    slot, which is what took the approved set from 7,240 words to 4,842. What was dropped, and
-   why, since these are fields the answer carries — read as a sweep of `OpsUsagePayload`, so
-   every non-optional member the pane does not read is on this list:
+   why, since these are fields the answer carries. The list names **the members whose absence
+   carries a decision**, and nothing here claims it is every member the pane does not read: it
+   once did, and that claim was false, because `asOf` and `apps[].app` are non-optional members
+   the pane does not read and neither was on it (`Stadiora/Aria#10474`). Completeness is in the
+   NOT COVERED list under "What checks this" and stays there: `OpsUsagePayload` is declared in
+   the Aria monorepo, at `app-backend/server/services/opsUsage/opsUsageView.ts`, so no check in
+   this repository can enumerate its members to subtract the read ones from.
    - `coverage.shortfall.detail` was the versions card's footer. It is the complement of the
      coverage pill — 30.7% did not report *is* 69.3% did — and the `Reporting` column beside it
      names which versions, which is the part an operator acts on. What makes *already on screen*
@@ -1493,7 +1808,9 @@ answer.
      the ones with two columns.
    - `features.coverageNote` was the feature card's footer, twenty words carrying that same
      coverage figure a third time. The method survives as nine: *Only seen on app versions that
-     report feature use.* The number does not.
+     report feature use.* The number does not. This one is **read**, unlike the rest of the
+     list: `assets/pane-analytics.js` tests the field and draws its own nine words when the route
+     sent it, so what is dropped is the route's wording and its figure, not the field.
    - `features.note` and `features.hint` both say the shares are of each app's own active people.
      The card head prints `hint`, seven words; `note` is two sentences of the same thing.
    - `consent.detail` is four sentences saying the gate is at ingest. The pane prints the route's
@@ -1582,10 +1899,15 @@ answer.
 
 Two invariants on this pane are held by its own `node:test` file and by measurement in review,
 not by a repo guard. Since [Stadiora/Aria#10492](https://github.com/Stadiora/Aria/issues/10492)
-`scripts/check-ops-narrow-overflow.mjs` does render `ops/analytics.html`, at 375px and 360px in
-both themes — but with an empty `/api/ops/usage` envelope, so what it lays out is this pane's
-no-data card and not a populated pane. `scripts/check-ops-theme-redraw.mjs` renders the shell
-demo. Tracked as [Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462).
+`scripts/check-ops-narrow-overflow.mjs` does render `ops/analytics.html`, at each width in the
+`guard-constants` block below, in both themes — but with an empty `/api/ops/usage` envelope, so what it lays out is this pane's
+no-data card and not a populated pane. Since
+[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462)
+`scripts/check-ops-theme-redraw.mjs` does render this pane's own page too, in both theme
+directions — but its fixture, `scripts/ops-api-stub.mjs`, answers `/api/ops/usage` with an empty
+envelope as well, and says so in its own docblock, so that sweep also toggles the no-data card
+rather than a populated pane. What it holds there is that the toggled page equals a fresh load
+of itself, which is not one of this pane's two invariants either.
 
 ### Where this pane departs from the shared page furniture
 
@@ -1597,56 +1919,186 @@ print. It also sets `overflow-wrap: anywhere`, which is about `app_version` bein
 free-text column: `Mobile 1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f` holds one break opportunity, and the
 version token alone otherwise sets the column's minimum width and takes the page sideways.
 
-### Known contrast debt, inherited
+### Cloud costs on v2: where the pane departs from the mock
 
-Measured across both themes against composited backgrounds. **Every pairing rendered by the
-panes built so far passes in both themes**, text at 4.5:1 or better and control boundaries at
-3:1 or better. That was verified again for the two understand panes across all four of their
-states, 68 pairings in total, worst case 4.67:1 in light and 5.99:1 in dark.
+`docs/mocks/ops-dashboard-v2/spend.html` in the Aria monorepo is the approved design.
+`ops/spend.html` follows its structure and the rules its README calls normative, and reads
+`GET /api/ops/costs` unchanged: this is a surface remodel, and no field moved to make it.
 
-Settings was measured the same way and **needs no fix of its own**, which is why it carries
-neither of the two page-scoped blocks below. Every text pairing it draws was read off the
-rendered page rather than computed from tokens, by walking each element's ancestor background
-chain and compositing what the engine actually paints: 36 distinct pairings in light and 36 in
-dark, across the ready, empty, per-card failure, access-record failure and denied states, at
-1440px and 375px, plus the revoke confirmation. Nothing fails. The lowest in light is 4.665,
-`.badge-warn` on a card, and the next is `.badge-ok` at 4.695; the lowest in dark is 5.988. Both
-figures land on the "Ink was, on a card" column of the badge table below to three decimals, which
-is the point: those inks are untouched here, and what keeps them passing is where the badge is
-put. Settings draws its status badges **only** inside a card, and it draws no `.badge-crit`, no
-`.badge-info`, no `.btn-danger` and no platform tag anywhere. The whole set of tinted classes on the pane is
-`.badge`, `.badge-ok`, `.badge-warn`, `.badge-brand`, `.tag`, `.callout` and `.callout-warn`.
+The list below is **not a complete diff against the mock**. It names the departures that carry a
+decision.
 
-Two of those figures are worth keeping in view rather than filing away. 4.665 is a pass with
-0.165 to spare, so a Settings badge moved onto the page background, or onto any surface darker
-than a card, fails on the day it is moved; and the light-theme `.badge-warn` ink there is the
-same `#9A5B06` the two blocks below darken elsewhere, so the eventual token change closes this
-margin too.
+1. **No budget hero and no budget meter.** The mock's largest object is spend against a budget,
+   with a forecast marker on the same bar. No budget is configured anywhere behind this route
+   and none is in the response, so the bar would have been drawn against a number this codebase
+   invented. What survives is the half that is real: the period total, and the forecast to
+   period end when the period is open.
+2. **No anomalies card and no unit costs strip.** Same reason, and the same reason the v1 pane
+   was wrong to draw them: `anomalies` and `unitCosts` are not fields the route sends.
+3. **No per-service category column, so the second card is the table and not a switch state.**
+   The service view's rows carry no category key, so the mock's `Top services` column would
+   have had to be reconstructed by matching a service name against the category view — a join
+   this pane is not the right place to perform and would silently get wrong for any service the
+   two views name differently. Without that column the top-N table and the service grouping are
+   the same rows, so the switch offers the two **allocation** cuts only (category, resource
+   group) and the per-service rows are drawn once, by the table. Offering all three drew two
+   cards with the same title, the same rows and the same reconciliation line.
 
-Part of that debt has now come due, and three separate fixes have landed against it. Which pages
-get which follows from where each one lives, so it is worth being explicit: `ops.css` is on every
-page, `operate.css` is on the four operate pages only, and the third fix is in `ops.css` but
-scoped by a selector to the two ship and support pages.
+   Each reconciliation line names what it added up — `5 categories`, `3 resource groups`,
+   `5 services` — rather than `N rows`, so two cards on one page never end in the same
+   sentence.
+4. **No Export button.** Nothing behind the pane produces a file.
+5. **`ungrouped` is real, and drawn.** The mock states there is no uncategorised bucket. The
+   route has six category keys and one of them is `ungrouped`, so the pane draws it and marks
+   the row in its own words — `Unmapped: no category covers these services yet`. Drawing zero
+   rows would have been the mock's claim; hiding a non-zero one would have broken the only
+   arithmetic this pane exists to show, because the unmapped row is inside the sum.
+6. **The reconciliation line is a row under the grouping, not a card.** The pane's main claim is
+   that the categories add up to the invoice exactly. It is one line — a glyph, the row count,
+   and the two figures — and it states both directions: it says the rows reconcile when they do,
+   and names the gap when they do not. It also has a third form, for when the sum cannot be
+   checked at all, which is not the same statement as a gap of zero.
+7. **The chart's scale is HTML beside the drawing rather than `<text>` inside it**, for the
+   reason People and usage gives: `role="img"` is `children-presentational`, so a `<text>`
+   element inside the figure is announced to nobody. The figure's accessible name carries the
+   series, their billed-day counts, and each one's low, high and closing figure.
+8. **One caption per card.** The mock captions the grouping card above the rows and again
+   beneath them. The lower caption is gone wherever it restated the upper one; what stayed is
+   the route's own `daily.note`, which says either that there is no comparison line and why, or
+   that the two stretches are different lengths — both facts that appear nowhere else and that
+   change how the picture should be read.
+9. **`7d` is absent from the range control** because `pane-registry.js` does not offer it, and
+   **Custom is absent** because the route refuses an unbounded range with
+   `ops_cost_range_unsupported`: offering it would put a control on screen whose only outcome is
+   a failure card with a retry that cannot succeed. Neither is this pane's decision to revisit.
 
-**The callout fix is in `ops.css`, so it reaches every page.** The warning and critical callout
-inks measured 4.41:1 and 4.26:1 in the light theme *only when the callout sat directly on the
-page background*, which is darker than a card; on a card they passed. A translucent tint takes
-its final colour from whatever is behind it, so the same component had two different ratios
-depending on where it was put. The fix mixes the tint into `--surface-1` instead of into
-transparency, which makes the fill, and therefore the ratio, independent of the surface
-underneath. They now measure 4.94:1 and 4.74:1. No approved hue changed, and dark is unaffected.
+This pane's invariants are held by `scripts/ops-spend-v2.test.mjs` and by measurement in review.
+Browser guards **do** render `ops/spend.html` — `check-ops-shell-v2.mjs` names every page in
+`ops/`, and the registry-driven sweeps reach every pane the registry declares, which includes
+this one; the `browser-guards` block below derives that reach rather than asserting it here. What
+none of them renders is a *populated* Cloud costs pane: `scripts/ops-api-stub.mjs` answers
+`/api/ops/costs` with an empty envelope, exactly as People and usage describes for
+`/api/ops/usage`, so those sweeps lay out this pane's no-data card. That gap is tracked as
+[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462); the sentence this replaces
+said no guard rendered the page at all, two sections above a derived block saying one renders
+every page in `ops/`.
 
-**The badge fix is in `operate.css`, so it reaches the operate panes only.** They are the first
-to draw a status badge loose on the page background, and `operate.css` darkens the three
-light-theme inks, scoped to `[data-theme="light"]` and to the badge's ink alone.
+### Where Cloud costs departs from the shared page furniture
 
-The ratios are computed rather than eyeballed, and are reproducible from the shipped tokens. The
-badge tint is semi-transparent, so the background that decides is the tint composited over
-whatever the badge sits on: `composited = 0.11 x status token + 0.89 x parent surface` in sRGB,
-because `--tint` is 11% in the light theme, then the WCAG 2 relative-luminance ratio. These panes
-put a badge on `--surface-1` `#FFFFFF` (a card, the alert list, the drawer), on `--surface-2`
-`#F6F8FB` (an alert row on hover, the runbook card) and on `--bg` `#EEF2F7` (the filter bar). The
-page is the darkest of the three, so it is the one that has to clear 4.5:1.
+`assets/pane-spend-v2.css` carries this pane's own shapes. Three rules in it reach past this
+pane's own classes, each because a shared rule assumes content this pane does not have:
+
+- `.band-end .pill { white-space: normal; }`. A `.pill` is `nowrap` and the poller-failure pill
+  carries a whole sentence, so `.band-end` grows to hold it on one line and takes the page
+  sideways. Re-measured in the poller-failure state with the declaration deleted through CSSOM
+  and nothing else, naming each node: `.band-end` `offsetWidth` is 288 / 343 / 736 with the rule
+  at 320 / 375 / 768 and 926 at all three without it, and `document.scrollWidth` is 320 / 375 /
+  768 with and 942 without. It is not inside a media query because the pill is as long as the
+  failure text, so no viewport is wide enough by construction.
+- `.card-head { flex-wrap: wrap }` and `.card-end { width: 100% }` under 720px, so the view
+  switch gets its own row rather than squeezing the card title beside it. Re-measured on the
+  grouping card: at 375px the rule holds the title block at 127.02px against 125.13px without it
+  and keeps its note on one line rather than two, and at 320px it holds 127.02px against 102.27px.
+  At 700px the two buttons still fit beside the title, so there the rule only moves the switch
+  down a row.
+- `.grid > .card { min-width: 0 }`, so a grid track may be narrower than the table inside it and
+  the table scrolls in its own card rather than widening the page.
+
+### Known contrast debt, inherited — a historical record
+
+**This section is a record of the v1 status palette, not a reading of what pages paint today**
+— what it measured, the arithmetic the figures come from, and the two page-scoped fixes that
+were shipped against it. Which of these classes anything still draws is the block below, and
+that block is derived: a row naming a page and reading `painted where drawn` is a live pairing
+rather than history. `.field-error` is one today, on the four pages that draw it, because
+`login.html` and `setup.html` still load `ops.css` — its 5.321 below is the ratio those two
+pages still paint. Both of those fixes have since been deleted,
+and every pane is now on the v2 layer, with its own `pane-*-v2.css` and its own inks. It is kept
+because the arithmetic recomputes from the shipped tokens and the palette owner acts on these
+numbers, and because the first pane to draw one of these classes again inherits the debt with it.
+
+What changed, and when:
+
+- Every pane in the rail moved to v2. App releases and Look up a user — the two pages the second
+  table below is about — moved with the rest; the epic closed when Cloud costs merged as
+  `c791c8dac68f08be684902139d601be9107e27c8`. This section used to describe both as pre-remodel
+  pages that load no stylesheet of their own (`Stadiora/Aria#10457`).
+- `operate.css` was deleted, all 257 lines of it, in `aria-website#74`
+  (`eae7de31041ffc5e4c773ff662b6821ad09ac5ec`), and the light-theme badge block at the end of
+  `ops.css` went in the same change. Those were the two fixes this section describes as live
+  (`Stadiora/Aria#10639`).
+- `ops.css` itself is now loaded by `login.html` and `setup.html` only, so a rule in it reaches
+  the sign-in and setup pages and nothing else. The block under Layout above is where that is
+  read off the pages.
+
+Which of these classes any page can still draw is therefore derived rather than remembered. A
+`(no page)` means no file the scan can read assembles that token; `no sheet declares it on
+<page>` means the page writes the token and loads no stylesheet that carries a rule for it.
+
+```claims id=v1-status-classes
+.badge = declared in ops.css; drawn by (no page)
+.badge-ai = declared in ops.css; drawn by (no page)
+.badge-brand = declared in ops.css; drawn by (no page)
+.badge-crit = declared in ops.css; drawn by (no page)
+.badge-info = declared in ops.css; drawn by (no page)
+.badge-ok = declared in ops.css; drawn by (no page)
+.badge-warn = declared in ops.css; drawn by (no page)
+.tag = declared in ops.css; drawn by (no page)
+.tag-backend = declared in ops.css; drawn by (no page)
+.tag-coaches = declared in ops.css; drawn by (no page)
+.tag-mobile = declared in ops.css; drawn by (no page)
+.tag-watch = declared in ops.css; drawn by (no page)
+.callout = declared in ops.css, pane-evaluations-v2.css, pane-releases-v2.css; drawn by evaluations.html, releases.html; painted where drawn
+.callout-ai = declared in ops.css; drawn by (no page)
+.callout-crit = declared in ops.css; drawn by (no page)
+.callout-info = declared in ops.css; drawn by (no page)
+.callout-warn = declared in ops.css, pane-evaluations-v2.css; drawn by evaluations.html; painted where drawn
+.verdict-better = declared in ops.css; drawn by (no page)
+.verdict-slightly-worse = declared in ops.css; drawn by (no page)
+.verdict-worse = declared in ops.css; drawn by (no page)
+.flagchip = declared in ops.css; drawn by (no page)
+.build = declared in ops.css; drawn by (no page)
+.masked = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
+.reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
+.nav-count = declared in ops.css; drawn by (no page)
+.btn-danger = declared in ops.css, pane-settings-v2.css; drawn by settings.html; painted where drawn
+.field-error = declared in ops.css, pane-evaluations-v2.css, pane-users-v2.css; drawn by evaluations.html, login.html, setup.html, users.html; painted where drawn
+```
+
+Three lines in that block are worth reading twice:
+
+- **`.btn-danger` is drawn, and painted.** Settings writes it on the revoke controls and on the
+  confirmation's submit, and `pane-settings-v2.css` declares it. This section used to file it
+  under "drawn by nothing built so far", and said in as many words that Settings draws none. The
+  4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
+  paints it now. No figure in this file describes what does. `check-ops-contrast.mjs` is **not**
+  that oracle either: `scripts/check-ops-contrast.mjs` fixes its page to `/ops/shell-v2.html`
+  and never opens `settings.html`, so the live pairing is unmeasured by
+  anything in the tree. That is a gap, stated as one rather than closed with a pointer at a guard
+  that does not look.
+- **Two classes were written with nothing behind them, and are not any more.** `.masked` and
+  `.callout-warn` were both tokens whose rule stayed in `ops.css` when their pane moved to v2,
+  so the page that wrote them loaded no sheet declaring them. `aria-website#83` gave
+  `pane-users-v2.css` a `.locked.masked` rule and `aria-website#84` gave `pane-evaluations-v2.css`
+  a `.callout-warn` rule, and both lines now read `painted where drawn`. **Nothing in this
+  section was edited to say so either time** — the block is derived, so each sibling merge moved
+  its own line, and this PR found out both times by running red on a rebase.
+- **`.field-error` is drawn on four pages and painted on all four.** It is the one pairing in
+  this record that is still live rather than historical, which is why the 5.321 figure below is
+  a measurement of the sign-in and setup pages as they stand and not of a page that is gone.
+
+The badge, flagchip, platform-tag and verdict vocabularies are assembled by nothing the scan can
+see — every one of their rows reads `(no page)` — but that too is the block's answer rather than
+this sentence's, and a class that starts being drawn again moves its own line.
+
+What the figures were. The ratios are computed rather than eyeballed, and are reproducible from
+the shipped tokens. The badge tint is semi-transparent, so the background that decides is the
+tint composited over whatever the badge sits on: `composited = 0.11 x status token + 0.89 x
+parent surface` in sRGB, because `--tint` was 11% in the light theme, then the WCAG 2
+relative-luminance ratio. The operate panes put a badge on `--surface-1` `#FFFFFF` (a card, the
+alert list, the drawer), on `--surface-2` `#F6F8FB` (an alert row on hover, the runbook card) and
+on `--bg` `#EEF2F7` (the filter bar). The page was the darkest of the three, so it was the one
+that had to clear 4.5:1.
 
 | Badge | Ink was | Ink now | On a card | On a hovered row | On the page |
 |---|---|---|---|---|---|
@@ -1654,34 +2106,35 @@ page is the darkest of the three, so it is the one that has to clear 4.5:1.
 | `.badge-warn` | `#9A5B06` | `#885005` | 4.665 to 5.652 | 4.399 to 5.331 | 4.176 to 5.060 |
 | `.badge-ok` | `#047857` | `#046B4D` | 4.695 to 5.591 | 4.429 to 5.275 | 4.205 to 5.008 |
 
-All three now clear 4.5:1 on every surface W2 draws them on. Before, only the card cleared it and
-only just. The two variants these panes draw but the fix does not touch already pass: `.badge-info`
-is 5.649 on a card and 5.058 on the page, and the plain `.badge` is 6.82 on a card.
+All three cleared 4.5:1 on every surface those panes drew them on. Before the fix, only the card
+cleared it and only just. The two variants those panes drew but the fix did not touch already
+passed: `.badge-info` was 5.649 on a card and 5.058 on the page, and the plain `.badge` 6.82 on
+its own opaque fill. That fix lived in the three rules at the end of `operate.css`, and went with
+the file.
 
 An earlier version of this section recorded 4.15 / 4.22 / 4.27 before and 4.55 or better after.
 Neither figure reproduces from the tokens, and the before figures also disagreed with W1's own
 record of 4.04 / 4.21 / 4.17 for crit / ok / warn over the page background, which does match the
 table above. The palette owner acts on these numbers, so they need to be recomputable.
 
-That is a patch and not the fix. The base status tokens are also the dots, the chart series, the
-meters and the callout borders, all of which pass where they are used and all of which are shared
-with the panes other waves are building; darkening the tokens themselves is a decision about the
-approved palette and belongs to whoever owns it. When it happens, the three rules at the end of
-`operate.css` become redundant and should be deleted.
+The callout fix is the one piece of this that is still in a file a page loads. Warning and
+critical callout inks measured 4.41:1 and 4.26:1 in the light theme *only when the callout sat
+directly on the page background*, which is darker than a card; on a card they passed. A
+translucent tint takes its final colour from whatever is behind it, so the same component had two
+different ratios depending on where it was put. The fix mixes the tint into `--surface-1` instead
+of into transparency, which makes the fill, and therefore the ratio, independent of the surface
+underneath. They measured 4.94:1 and 4.74:1 after it. No approved hue changed, and dark was
+unaffected. It is in `ops.css`, so what it reaches now is `login.html` and `setup.html`.
 
-**The third fix is the same shape, for App releases and Look up a user.** Those two pages load no
-stylesheet of their own, so it sits at the end of `ops.css` and is scoped by the page rather than
-by the file: `[data-theme="light"] body:is([data-page="releases"], [data-page="users"])`. Nothing
-outside those two pages is restyled by it. The three badge inks are byte-identical to the three
-in `operate.css` on purpose; a second set of values would mean a critical badge was one red on
-Problems and a different red on Look up a user, which is worse than the debt.
-
-These two panes never put a tinted status loose on the page background, so the surface that
-decides is a different one: the selected match row, which is `--brand-dim` over a card and
-composites to `#E3F3F6`. They also draw one pairing that composites twice, a state badge inside a
-`.build` chip already tinted with the same hue, and that is the worst pairing on either pane.
-Same formula as above, with `--tint-soft` 9% for a platform tag and no tint at all where the ink
-goes straight onto a card.
+The second fix was the same shape, for App releases and Look up a user, and sat at the end of
+`ops.css` scoped by the page rather than by the file:
+`[data-theme="light"] body:is([data-page="releases"], [data-page="users"])`. Both panes have
+since moved to v2 and that block has been deleted, so the table below is a record of what the v1
+pages measured, not of what those pages paint. The surface that decided was the selected match
+row, `--brand-dim` over a card, compositing to `#E3F3F6`; the worst pairing on either pane
+composited twice, a state badge inside a `.build` chip already tinted with the same hue. Same
+formula as above, with `--tint-soft` 9% for a platform tag and no tint at all where the ink went
+straight onto a card.
 
 | Pair | Ink was | Ink now | On a card | On a hovered row | On a selected row |
 |---|---|---|---|---|---|
@@ -1692,54 +2145,59 @@ goes straight onto a card.
 | `.tag-coaches` | `#7C3AED` | `#7434DF` | 4.978 to 5.560 | 4.706 to 5.257 | 4.390 to 4.903 |
 
 And the double-tinted pairing, on a card: `.badge-crit` inside `.build.is-blocked` 3.852 to
-4.771, `.badge-ok` inside `.build.is-live` 4.059 to 4.834. 4.771 is the worst figure either pane
-produces after the fix, and 3.852 was the worst before it. Of the 36 pairings the two panes draw
-with a status token as text, 17 were below 4.5:1 and none is now.
+4.771, `.badge-ok` inside `.build.is-live` 4.059 to 4.834. 4.771 was the worst figure either pane
+produced after the fix, and 3.852 the worst before it. Of the 36 pairings the two panes drew with
+a status token as text, 17 were below 4.5:1 and none was after.
 
 Every figure above is the arithmetic, so it recomputes from the tokens. The same pairings were
-also measured against what the browser actually composites, by walking each element's ancestor
-background chain: those agree to within 0.03 (the engine mixes at a precision the hex round trip
-here does not keep), and the worst rendered pairing on either pane is 4.778. Deleting the five
-rules at run time and re-measuring brings back exactly five failures, worst 3.970, which is what
-makes them load bearing rather than decorative. The lowest rendered figure on App releases is not
-in the table at all: it is `--text-3` on the tinted `.build` chip at 4.586, which passes untouched
-and is recorded so the next person to darken a chip knows how little room is left.
+also measured against what the browser composited at the time, by walking each element's ancestor
+background chain: those agreed to within 0.03 (the engine mixes at a precision the hex round trip
+here does not keep), and the worst rendered pairing on either pane was 4.778. Deleting the five
+rules at run time and re-measuring brought back exactly five failures, worst 3.970, which is what
+made them load bearing rather than decorative. The lowest rendered figure on the v1 App releases
+pane was not in the table at all: `--text-3` on the tinted `.build` chip at 4.586, recorded so
+the next person to darken a chip knows how little room was left.
 
-Three of those rows already passed and are moved anyway: `.verdict-worse` 5.321 to 6.590,
+Three of those rows already passed and were moved anyway: `.verdict-worse` 5.321 to 6.590,
 `.verdict-slightly-worse` and `.reveal-note` 5.422 to 6.570, `.verdict-better` 5.484 to 6.531.
-`.verdict-worse` and `.badge-crit` are drawn in adjacent cells of the same release-health row, and
-two reds a shade apart in one row read as a mistake rather than as a palette.
+`.verdict-worse` and `.badge-crit` were drawn in adjacent cells of the same release-health row,
+and two reds a shade apart in one row read as a mistake rather than as a palette.
 
-Deliberately untouched on these two pages, with the worst figure each reaches on them:
+Deliberately untouched on those two pages, with the worst figure each reached on them:
 `.badge-info` and `.flagchip.is-info` 4.837 inside a `.build` chip and 4.998 on a selected row,
-`.badge-brand` 4.825, the plain `.badge` 6.821 on its own opaque fill, `.masked` 4.706,
-`--text-3` on a selected row 4.771, and `.field-error` 5.321. `.field-error` has a second reason:
-the sign-in page draws it too, and darkening it under a page scope would give one component two
-inks across pages for no contrast gain.
+`.badge-brand` 4.825, the plain `.badge` 6.821 on its own opaque fill, `.masked` 4.706 — the
+figure is of `ops.css`'s rule, which is no longer what the users pane loads — `--text-3` on a
+selected row 4.771, and `.field-error` 5.321. `.field-error` had a second reason: the sign-in
+page draws it too, and darkening it under a page scope would have given one component two inks
+across pages for no contrast gain. That is still true, and the block above is where the
+pages it is drawn on are counted.
 
-What is left. The first three rows are drawn by nothing built so far, and are recorded so that
-the first pane to draw one does not ship it unnoticed. The fourth is a boundary rather than an
-untouched debt:
+What was left unfixed. These were recorded so that the first pane to draw one did not ship it
+unnoticed, and that is still what they are for; the block above is what now decides whether
+anything draws them:
 
 | Pair | Light ratio |
 |---|---|
-| `.nav-count.is-crit`, `.btn-danger` on their tint over a card | 4.49 |
-| `.btn-danger:hover` | 3.79 |
+| `.nav-count.is-crit`, `.btn-danger` on their `ops.css` tint over a card | 4.49 |
+| `.btn-danger:hover`, same | 3.79 |
 | `.tag-backend` on its tint | 4.46 |
-| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, on a page carrying neither scoped fix | 4.04 / 4.21 / 4.17 |
+| `.badge-crit` / `.badge-ok` / `.badge-warn` over the page background, with neither scoped fix | 4.04 / 4.21 / 4.17 |
 
-The last row is the badge fix's own boundary and is recorded rather than dropped, because the
-darkened inks live in `operate.css` and in a rule scoped to two pages, so People and usage, Cloud
-costs and Settings carry neither. Those panes avoid the row rather than inherit it: a status badge
-on them goes inside a card, never loose on the page background, where it measures 4.67:1 or
-better. The row closes for everyone on the day the tokens themselves are darkened, which is the
-same day the three rules at the end of `operate.css` and the block at the end of `ops.css` are
-deleted together.
+The `.btn-danger` rows are `ops.css`'s ink over `ops.css`'s tint. Settings draws that class from
+its own sheet now, so those two figures no longer describe the only place the class is drawn —
+and nothing measures what does, because `check-ops-contrast.mjs` only ever loads
+`/ops/shell-v2.html`. The last row was
+the badge fix's own boundary: it closes for good on the day the status tokens themselves are
+darkened, which is a decision about the approved palette and belongs to whoever owns it — the
+base tokens are also the dots, the chart series, the meters and the callout borders.
 
-Dark mode passes throughout and is untouched. Both badge overrides are scoped to
-`[data-theme="light"]`, so the dark inks are the ones W1 shipped: over the same three surfaces
-and the same 14% tint, the lowest of the four badges is `.badge-crit` on `--surface-2` at 5.200,
-and `.badge-info` is the next at 5.457. Every other pairing is 5.657 or better.
+Dark mode passed throughout and was untouched. Both badge overrides were scoped to
+`[data-theme="light"]`, so the dark inks were the ones W1 shipped: over the same three surfaces
+and the same 14% tint, the lowest of the four badges was `.badge-crit` on `--surface-2` at 5.200,
+and `.badge-info` the next at 5.457. Every other pairing was 5.657 or better.
+
+What measures contrast now is `scripts/check-ops-contrast.mjs`, on the rendered page rather than
+from the tokens; the section after next is about what it can and cannot see.
 
 ## Working on it locally
 
@@ -1775,8 +2233,9 @@ regression and reusable as a starting point. It serves this repository, answers 
 and the reads behind every pane except two — `/api/ops/usage` gets an empty envelope and
 `/api/ops/costs` a period that has not published, so People and usage and Cloud costs are laid
 out with no figures in them — lays **every
-pane the registry declares** out in headless Chrome at **375px and 360px** in both themes, and
-fails if `documentElement.scrollWidth` exceeds the viewport. Two widths because an overflow that
+pane the registry declares** out in headless Chrome at **each width in the `guard-constants`
+block below**, in both themes, and
+fails if `documentElement.scrollWidth` exceeds the viewport. More than one width because an overflow that
 reproduced on CI's fonts at 375px reproduced on macOS only at 360px, and a guard a reviewer
 cannot make fail locally is a guard that gets argued with instead of read. Before it measures a
 pane it requires that pane to have drawn a string only its loaded state draws, because the panes
@@ -1805,10 +2264,225 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front is older than the breach reads not clearing and one whose front arrived after it reads moving, that both can be on screen at once and stay different, that a missing unit, a missing or negative observation, a missing breach start or a span of zero produces cannot tell rather than the alarming one, that a problem whose `conditionClearedAt` is set reads stopped in the past tense rather than as a live breach, is excluded from the longest-wait tile and sorts below everything still going, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that the bar draws no app and no environment control at all and says why instead, that an empty page says whether anything was watching, that no `button` or `input` is drawn without a route behind it, and that the read carries its querystring as well as its path. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
-| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon** reaches the page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. |
+| `scripts/ops-spend-v2.test.mjs` | That each of the three cuts of the bill — the two the switch offers and the per-service table — adds up to the billed total exactly and that the line says so in both directions — reconciled, and the gap named when they do not — and that a sum which cannot be checked says that instead of reporting a gap of zero; that the `ungrouped` row is drawn and marked rather than hidden and is inside the sum; that a row with no figure prints words and is not added up as a zero; that the change pill's chevron follows the figure's own sign and that a rise and a fall are not the same glyph; that the per-service rows are drawn once and no state of the switch draws them again; that activating the switch hands focus back to the button that was activated, and only when focus was there to begin with; that a forecast is drawn only when the route sent one; that the age of the answer is printed beside the total once the poller is behind — the stale path — and against the answer's own publish lag rather than a constant in the pane; that the day line breaks on a day past the end of a stretch instead of joining across it; that each of the five availability states gets its own words and an unknown sixth still gets some; that the chart is named with its data and draws no `<text>` inside the figure; that the day chart carries the dates the route labelled under it and names both of its lines, so the dashed one is not just a texture; that a period billed only part way through says how far and to which day, and one billed to its own end does not repeat what the range name says; that the way out of an empty period travels to the closed month rather than back to the period it escapes — read from the link's `href`, not from its words; that no view button is offered for a grouping the answer did not carry; that the box holding the per-service table is reachable from a keyboard and names itself from the answer's own label, because at 320px the whole Change column is past its visible edge; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup. **Not covered**: that money is divided once at display and never summed as a float — every figure in the fixture is a whole number of dollars, so rounding each row to cents before summing changes no output and no mutation can make it red; it becomes testable when a fixture row carries a fraction of a cent. In a property whose name carries none of the colour-bearing words the value scan gates on — `text-decoration`, `text-emphasis` and `mask-image` are the three shapes — **anything the spelling clause cannot read** is seen by neither clause: a named colour, an `oklch()`, a `lab()`, a `color-mix()`. Not only the named colour `text-decoration: underline crimson` names (`Stadiora/Aria#10663`). The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Which properties are gated and which spellings are read is the `spend-colour-gate` block below, produced by running the guard's own two matchers rather than by reading them. Which exotic ways to write markup or a style attribute walk through the module guard, and whether the module writes any of them, is the `spend-write-gate` block below — run against the guard's own two patterns rather than counted in a sentence here, which is how this row came to say "none of the four" about a list of three. |
+| `node scripts/check-ops-result-view.mjs` | Whether a state the JavaScript can enter is one a loaded stylesheet can **paint**. It drives every pane the registry declares past its landing state to a result view, proves it arrived by a string only that view draws, and then asks two things in real Chrome with no pointer over the page: that every class the pane wrote is reached by at least one rule from a sheet that page loads, and that every positive `aria-current`/`-selected`/`-pressed`/`-checked`/`-expanded` is painted differently from the same shape without it. `Stadiora/Aria#10456` is the shape: `pane-users.js` wrote `is-selected` on the picked match, no sheet `users.html` loads had a rule for it, and every other guard stayed green for the life of the defect. Known failures are enumerated in `KNOWN_UNPAINTED` and `KNOWN_UNPAINTED_STATE`, and each entry must still reproduce. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here — summarising is how this row came to list seven of that docblock's nine. The bullets themselves stay in the guard; the block binds their headings and, where a bullet hides a second blind spot behind a second bold span, the count of the spans beyond the first, summed over its bullets. |
+| `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon on `/ops/shell-v2.html`** reaches that page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. All of that is measured on that one page, which is the only page in the repository that draws `aria.js`'s charts and its icon gallery. It does load every other page in `ops/` afterwards, in both themes, but only to catch a console error or a page that rendered nothing: a pane shipping an unpainted icon is **not** seen here. |
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
-| `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at 375px **and 360px** in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
-| `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the charts. Chart colours are resolved at **draw time** out of the tokens, so a chart is only correct for the theme it was drawn in; this loads the page in one theme, clicks the real button, and requires the resolved paint on every chart shape `aria.js` paints from a token to hold the other theme's pinned value. Both directions. |
+| `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at **each width in the `guard-constants` block below** — the list is read out of the guard, because this row said "375px and 360px" through the rebase onto the commit that added a third — in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten — **measured once and written down, not derived**: which panes answer an empty read with a failure card is a runtime behaviour, and the ten is the registry's, bound by the `panes` block above. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
+| `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the page. A colour resolved at **draw time** is only correct for the theme it was drawn in; this loads every pane `assets/pane-registry.js` declares plus `/ops/shell-v2.html`, clicks the real button, and requires **every node's** resolved paint to equal the paint that node carries on a **fresh load** of the same page in the theme the button switched to — sixteen paint properties per node, with a `url(#id)` gradient resolved to its stops, because the ids are minted per draw. Two assertions stand either side of that one: that the two fresh loads differ at all, so the comparison is not vacuous on a page the theme never reached, and, on the pages that draw `aria.js`'s charts, that every shape painted from a token holds the palette's pinned value — the only one of the three that would notice `aria.css` drifting away from the palette, since a page compared against itself agrees with itself. Both directions, every page. The sixteen are `PAINT_PROPS`, listed in the `guard-constants` block below. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here. |
+| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and almost every pixel must be unchanged — the comparison is not byte equality but **two gates in series**, both in the `guard-constants` block below: a pixel counts as changed only once it moves by more than `PAINT_PIXEL_DELTA`, and the run passes while the share of pixels that did counts under `PAINT_COVERAGE_LIMIT`. Both holes run the flattering way and both are real: a scrim that dims the whole plate by two units of 255 changes every pixel and scores a coverage of zero, and a scrim over a twentieth of the dialog passes however hard it dims that twentieth. A scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It fails rather than skips when it opens no dialog. |
+
+The `33` in that first row is not typed either. It is the size of the guard's own two pinned
+tables — the per-theme palette and the tokens it holds invariant across themes — counted out of
+the file:
+
+```claims id=shell-v2-pins
+palette tokens pinned for dark = 26
+palette tokens pinned for light = 26
+tokens pinned the same in every theme = 7
+tokens pinned in total for dark = 33
+tokens pinned in total for light = 33
+color-scheme pinned per theme = 2
+```
+
+Which browser guard runs where is read out of the guards and the workflows, so a guard added
+next week is a red run here rather than a paragraph that quietly describes all of them but the newest: the
+workflow whose job line carries `node scripts/<guard>`, and the pages the guard's own source
+names — `every pane the registry declares` where it boots from `OpsPaneRegistry` rather than
+from a literal list. This says what each guard **loads**, which is the half that goes stale; what
+it then asserts on each page is the table above.
+
+```claims id=browser-guards
+check-ops-contrast.mjs = ops-contrast.yml; /ops/shell-v2.html
+check-ops-dialog-hit.mjs = ops-dialog-hit.yml; /ops/settings.html
+check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry declares
+check-ops-result-view.mjs = ops-result-view.yml; every pane the registry declares + /ops/run-history.html
+check-ops-shell-v2.mjs = ops-shell-v2.yml; every page in ops/
+check-ops-theme-redraw.mjs = ops-theme-redraw.yml; every pane the registry declares + /ops/shell-v2.html
+```
+
+The **numbers** in that table are not typed either. Each is the value the guard
+itself holds, evaluated out of its own declaration rather than matched as text —
+`const WIDTHS = [375, 360, 320]` is read here as three numbers, so a fourth
+viewport is a fourth entry rather than a longer line a substring test still
+passes. Every one of these was a word in a sentence until the guard moved
+underneath it.
+
+```claims id=guard-constants
+check-ops-contrast.mjs STATES = live, loading, empty, degraded
+check-ops-contrast.mjs STATES length = 4
+check-ops-dialog-hit.mjs PAINT_PIXEL_DELTA = 2
+check-ops-dialog-hit.mjs PAINT_COVERAGE_LIMIT = 0.05
+check-ops-narrow-overflow.mjs WIDTHS = 375, 360, 320
+check-ops-narrow-overflow.mjs WIDTHS length = 3
+check-ops-result-view.mjs WIDTH = 1280
+check-ops-theme-redraw.mjs PAINT_PROPS = color, backgroundColor, backgroundImage, borderTopColor, borderRightColor, borderBottomColor, borderLeftColor, outlineColor, textDecorationColor, caretColor, columnRuleColor, accentColor, fill, stroke, stopColor, boxShadow
+check-ops-theme-redraw.mjs PAINT_PROPS length = 16
+```
+
+The five hit-test spots per control are **not** in that block: they live in an
+array inside a template literal evaluated in the browser, not in a top-level
+declaration this check can resolve, so they stay prose and stay unproven here.
+
+What each guard says it **cannot** see is read out of the guard too — the
+**leading bold run** of each bullet under its own NOT COVERED section, in its
+order. A guard whose docblock has no such section says so on its line rather
+than going quietly missing, and so does one that rewrites its bullets as prose.
+Summarising a list like this in a sentence is how the result-view row came to
+carry seven of nine.
+
+A heading is not the bullet. A bullet that names two blind spots in two bold
+spans contributes only its first, and `check-ops-narrow-overflow.mjs` has one:
+**Look up a user is measured before any lookup** also covers **Aria quality
+before any operation is submitted**, and only the first of those two is a line
+below. Telling a second heading from ordinary body emphasis needs the English
+parsed, so this does not try — each guard instead ends with an exact **count of
+the bold spans beyond the first, summed over its bullets**. Summed, not counted
+per bullet: a per-bullet tally is a boolean, and a third span added to a bullet
+that already carried two would not move it. That number names nothing; it
+refuses to hide something, and it is what makes the narrower claim in this
+paragraph checkable rather than a promise. A bolded word in a body moves it too.
+
+Bullets are read out of each guard's **leading docblock**, and two guards state
+blind spots outside theirs: `check-ops-shell-v2.mjs` says what its icon
+sweep does not measure — an ink too close to what is behind it, and all of
+geometry but `stroke-width` — and `check-ops-contrast.mjs` carries a long
+`NOT COVERED, on purpose` section. Both are in `source-anchors` above, which is
+where every line number that points at code IN THIS REPOSITORY now lives — a citation into
+the Aria monorepo is outside the rule, not an exception to it, and `opsUsageView.ts:932` is
+still spelled twice below — and the one exception here is the
+citation that is itself the record of a drift, published row by row in
+`exempt-citations` below and counted by the run, which reports it as
+`prose line citations` — the number that used to sit in this
+sentence was wrong by 343 lines, and the round that removed it re-typed the other
+one here, three lines up, in the same sentence that said it had not. Neither is carried below, and until the round
+that found this both read `(no blind-spot section)`, which is the same sentence
+a guard with nothing to declare would print. The sentinel now says which
+docblock it looked in, and every guard carries a count of the lines **anywhere**
+in it that open like a blind-spot heading, so a section outside the docblock
+flips a line rather than arriving in silence — **provided the matcher can see
+its heading at all**, which depends on the wording *and* on the comment marker
+it sits behind.
+
+That edge is not described here. It is **measured** and published at the head of
+the block: one row per probed heading line, each handed to the real matcher and
+reported `SEEN` or `INVISIBLE`, under a row carrying **how many** there are so
+that no paragraph has to. (The paragraph below used to carry it, and when the
+table grew this one was updated and that one was not.) The `INVISIBLE` rows are the
+interesting half — a section headed `KNOWN GAPS:` or `What this sweep cannot
+see:` is read by nothing and counted by nothing, and so is a recognised phrase
+written after `//`. They are in the block precisely because they are holes, and
+because a matcher that starts or stops seeing any of them flips its line either
+way.
+
+The first spelling of this paragraph claimed a three-phrase list, parsed out of
+the matcher's own source, was "the net's real width". Round 3 of PR #111 showed
+it was not, twice: reverting the marker half of the matcher left the published
+list **identical**, and a phrase added as a second top-level branch was matched
+by the matcher and **missing** from the list. Both were green. A regex parsed
+for one substring of one of its two dimensions is a description of a net, not a
+measurement of one, and over-firing was disclosed before under-firing — the
+wrong way round in a file whose defect class is the quiet direction.
+
+Within the phrases the census below reports as SEEN, the count is syntactic and deliberately dumb —
+a line inside `check-ops-narrow-overflow.mjs` refers back to its own section and
+counts as a second one — because a dumb tripwire that fires is worth more here than a
+clever one that reads English.
+
+```claims id=guard-blind-spots
+(heading probes = 14)
+(heading probe: "WHAT THIS DOES NOT COVER, in the words of what was measured:" = SEEN)
+(heading probe: "   WHAT IT DOES NOT measure:" = SEEN)
+(heading probe: "   WHAT IT DOES NOT check, in so many words:" = SEEN)
+(heading probe: "   NOT COVERED, on purpose" = SEEN)
+(heading probe: "   NOT COVERED at all:" = SEEN)
+(heading probe: "   not covered, in lower case" = SEEN)
+(heading probe: " * NOT COVERED, after a continuation marker" = SEEN)
+(heading probe: "/* NOT COVERED, sharing the comment opener" = SEEN)
+(heading probe: "/** NOT COVERED, sharing a doc-comment opener" = SEEN)
+(heading probe: "// NOT COVERED, after a line comment" = INVISIBLE)
+(heading probe: "   WHAT THIS SWEEP CANNOT SEE:" = INVISIBLE)
+(heading probe: "   KNOWN GAPS:" = INVISIBLE)
+(heading probe: "/* KNOWN GAPS, behind a comment opener" = INVISIBLE)
+(heading probe: "   see NOT COVERED above for the two panes" = INVISIBLE)
+check-ops-contrast.mjs = (no blind-spot section in the leading docblock)
+check-ops-contrast.mjs = (bold spans beyond the first, summed: 0)
+check-ops-contrast.mjs = (lines that open like a blind-spot heading: 1)
+check-ops-dialog-hit.mjs = (no blind-spot section in the leading docblock)
+check-ops-dialog-hit.mjs = (bold spans beyond the first, summed: 0)
+check-ops-dialog-hit.mjs = (lines that open like a blind-spot heading: 0)
+check-ops-narrow-overflow.mjs = People and usage, and Cloud costs, are measured with no figures in them.
+check-ops-narrow-overflow.mjs = Look up a user is measured before any lookup
+check-ops-narrow-overflow.mjs = An overflow a container clips.
+check-ops-narrow-overflow.mjs = Anything out of the document's flow, and anything past the left edge.
+check-ops-narrow-overflow.mjs = Sub-pixel overflow.
+check-ops-narrow-overflow.mjs = Every width that is not 375px, 360px or 320px.
+check-ops-narrow-overflow.mjs = ops/login.html and ops/setup.html.
+check-ops-narrow-overflow.mjs = (bold spans beyond the first, summed: 3)
+check-ops-narrow-overflow.mjs = (lines that open like a blind-spot heading: 2)
+check-ops-result-view.mjs = One width, 1280px.
+check-ops-result-view.mjs = Contrast.
+check-ops-result-view.mjs = The accessibility tree.
+check-ops-result-view.mjs = A result view nobody drives.
+check-ops-result-view.mjs = A class judged per page, not per site.
+check-ops-result-view.mjs = A sibling combinator's reach.
+check-ops-result-view.mjs = Paint that is not a class.
+check-ops-result-view.mjs = Panes with no state pair.
+check-ops-result-view.mjs = A state with no unmarked twin on the page.
+check-ops-result-view.mjs = (bold spans beyond the first, summed: 0)
+check-ops-result-view.mjs = (lines that open like a blind-spot heading: 1)
+check-ops-shell-v2.mjs = (no blind-spot section in the leading docblock)
+check-ops-shell-v2.mjs = (bold spans beyond the first, summed: 0)
+check-ops-shell-v2.mjs = (lines that open like a blind-spot heading: 1)
+check-ops-theme-redraw.mjs = Pseudo-elements.
+check-ops-theme-redraw.mjs = Anything below the paint properties listed in PAINT_PROPS.
+check-ops-theme-redraw.mjs = A gradient referenced by url(#id).
+check-ops-theme-redraw.mjs = A page whose DOM differs between the toggled and the fresh load.
+check-ops-theme-redraw.mjs = The panes' populated states, for People and usage and Cloud costs.
+check-ops-theme-redraw.mjs = Any theme beyond the two.
+check-ops-theme-redraw.mjs = (bold spans beyond the first, summed: 0)
+check-ops-theme-redraw.mjs = (lines that open like a blind-spot heading: 1)
+```
+
+The Cloud costs colour guard's own reach is not described here either. The block below is
+produced by **running** that guard's two matchers — `COLOUR_SLOT` and `rawColourSpellings`,
+lifted out of `scripts/ops-spend-v2.test.mjs` — over a fixed set of probes, so each line is the
+guard's answer rather than a reading of it. A `does not look here` or a `cannot read it` is a
+hole; they are the NOT COVERED row above, stated as values.
+
+```claims id=spend-colour-gate
+property --sp-ink = value scan looks here
+property color = value scan looks here
+property background-image = value scan looks here
+property border-color = value scan looks here
+property outline-color = value scan looks here
+property fill = value scan looks here
+property stroke = value scan looks here
+property box-shadow = value scan looks here
+property filter = value scan looks here
+property text-decoration = value scan does not look here
+property text-emphasis = value scan does not look here
+property mask-image = value scan does not look here
+property accent-color = value scan looks here
+value #2b7fff = spelling clause reads it
+value #333 = spelling clause reads it
+value rgb(255, 0, 0) = spelling clause reads it
+value hsl(0 100% 50%) = spelling clause reads it
+value crimson = spelling clause cannot read it
+value oklch(0.7 0.2 250) = spelling clause cannot read it
+value lab(50% 40 59) = spelling clause cannot read it
+value color-mix(in srgb, crimson 50%, transparent) = spelling clause cannot read it
+```
+
+The same row's other count is the three spellings the module guard is documented as **not**
+matching. Whether each still walks through it, and whether the module writes it, is run against
+the guard's own patterns:
+
+```claims id=spend-write-gate
+setAttributeNS(null, 'style', …) = walks through the guard; and the module does not write it
+a capitalised Style: key on h() = walks through the guard; and the module does not write it
+createContextualFragment() = walks through the guard; and the module does not write it
+```
 
 Charts and icons are swept for paint **separately**, with their own counts and their own
 messages, and each sweep marks what it swept so that every `<svg>` on the page has to be claimed
@@ -1825,6 +2499,324 @@ contrast oracle rather than to a paint-presence check; `check-ops-contrast.mjs` 
 and it measures text, not icons. The icon sweep reads one geometry property, `stroke-width` on
 the stroke channel, because that is the channel icons paint through; an icon hidden by
 `opacity`, `visibility`, `display`, a zero size or a broken `viewBox` still passes.
+
+### Where this README points at code
+
+The block below points at comments and lines rather than at files; how many is its own business
+rather than this sentence's. The anchor each one quotes is the subject; **the line number is
+derived**, so a pointer whose code moved is a red run naming
+the new line, and a pointer whose code is gone is a red run saying so. Three of the seven line
+citations this file used to carry had already drifted — `pane-registry.js:103-110` was the
+alerting note, not the Custom-range comment, and both `pane-users.js` citations were about 250
+lines short — which is why none of them are typed any more.
+
+```claims id=source-anchors
+scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
+scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
+ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 136
+ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
+ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
+ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
+ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
+ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 634
+```
+
+One citation is still spelled in this file, and it is the one just above: the drifted
+`pane-registry.js` pointer, kept because it is the **record** of a number that was wrong rather
+than a pointer anybody should follow. The guard refuses every other one, and what it exempts is
+published here rather than counted in a sentence — a list of things a guard declines to judge is
+its own back door, so its size is a floor and deleting a row is as red as adding one.
+
+```claims id=exempt-citations
+pane-registry.js:103-110 = exempt, the record of a citation that had already drifted
+```
+
+### What holds this README to the code
+
+Eight issues were filed against this file in one day (`Stadiora/Aria#10457`, `#10474`, `#10510`,
+`#10639`, `#10641`, `#10655`, `#10663`, `#10677`), all of them the same defect: a sentence
+describing the code more broadly, or more narrowly, than the code behaves. That number and that
+list are **not derived** — the issues live in another repository's tracker, so nothing here can
+count them; they are in the NOT COVERED list at the head of the guard for exactly that reason,
+and round 11 found this sentence saying seven and omitting the issue this PR's own table opens
+with. A README that describes a guard more
+broadly than it behaves is worse than no README, because the next reader stops looking.
+
+So the numbers and lists this file is read **for** are not typed here. They are in fenced blocks
+whose info string is `claims id=<id>`, and `scripts/ops-readme-claims.test.mjs` rebuilds each one
+from the repository — the pages' own `<link>` and `<script>` tags, `pane-registry.js` executed in
+a vm, the stylesheets parsed into rules, the guard scripts and workflows, and
+`ops-spend-v2.test.mjs`'s own regexes run against probe values — then `deepStrictEqual`s the
+block against it. No value is read out of the README, so breaking the code turns
+the run red with this file untouched. Every id it derives must appear exactly once here and every
+block here must be one it derives — and a `claims` fence it cannot parse is a failure rather than
+a block quietly skipped — so a block cannot be added, renamed or dropped silently, and the run
+prints what it judged, per block, in CI.
+
+Some blocks cannot derive **which** rows they carry, only what each row says, because their
+subjects are written in the guard rather than read out of the tree: `source-anchors` and
+`deleted-assets` name theirs directly, and the rest take theirs from hand-written arrays — no
+sheet says which of its classes carry status, no tree lists the files it has lost, and no guard
+declares which of its constants are load-bearing. **Which blocks those are is the
+`pinned-blocks` block below, not a list here**; the list that used to be here named seven when
+there were twelve, and review round 8 then found five more blocks outside the pins entirely — so
+the count in that sentence was short twice, in the same direction, and the five it missed each
+time were live holes of exactly the kind the pins
+exist to close. They still derive every
+**value**. What that shape cannot catch by itself is a **subject deleted**, which shrinks the
+expectation along with the claim, so each is pinned **row by row** in the guard — by name, not by
+count, because a count is absorbed the moment the block grows — and a row can only go by deleting
+it there too.
+
+The pin list is itself hand-written, so the same question applies one level up, and the answer
+there is different: **floors**, plain integers, in the `floor:` rows of the block below — how
+many of them there are is those rows' business, not this sentence's, which is the same trade the
+census above makes.
+Round 6 of this PR's review showed that retiring a pin together with its line in `pinned-blocks`
+ran **green at 28/28**, which put back a constant the round before had just protected. Pinning a
+pin list with another pin list only moves the hole; a count has nothing inside it to delete, so
+that is where the regress stops. A floor does not make a retirement impossible — it makes it
+**loud**: going green after one needs the integer lowered in the guard *and* the row it prints
+here changed, and both of those are visible in a diff. Growing an `at least` floor is free; an
+`exactly` floor refuses growth as well, and the two have **different reasons**: a sample that
+quietly grew would leave the sentence describing it as wrong as a sample that shrank, while an
+allowlist of things a guard refuses to judge is a weakening whichever way it moves. Which floors
+are which is in the rows below, not in this sentence — round 11 found this sentence counting one
+`exactly` floor four lines after the paragraph that says how many there are is the rows' business
+and not a paragraph's. A floor
+counts **pins that name a real block** — a key naming nothing used to be inert and still counted,
+which is round 7's `E1` — and it sees a **net** shrink only, so a derivation deleted and a trivial
+one added in the same commit passes it. That hole is stated in the guard's NOT COVERED list in
+those words; keying per block would catch it and would be another hand-written list, which is the
+regress the floors exist to end.
+
+None of that helps if the check never runs, and for seven review rounds every one of these
+checks was a `test()`, which is a thing that can be **silenced in place**. `{ skip: true }` never
+runs the body and leaves the source spelling untouched. `{ todo: true }` is worse: it runs the
+body, **discards what it found**, and reports the file as passing — and node's suppression is
+narrower than that and worse, because a *passing* todo leaves `process.exitCode` alone while a
+*failing* one swallows it. The defect you want to hide is what makes the body fail, so it
+supplies its own suppressor. Deleting a test outright moved nothing at all and took every pin
+with it.
+
+Round 7 answered that by moving the floors and the pins out of `test()`, and this paragraph then
+said nothing load-bearing was a test any more. That was false: **twenty-seven of the twenty-eight
+tests were load-bearing**, including all twenty-four block comparisons, which are the whole point
+of the file. Two one-word flags reinstated this PR's founding defect — `PAINT_COVERAGE_LIMIT`
+printed as `0.05` while the guard allowed `0.25` — and the run was green.
+
+So **there are no tests here at all.** Every check is an ordinary module-scope call. A file that
+registers none is still run and counted by `node --test`, exits 0 when module scope completes,
+and exits 1 on an uncaught throw — all three measured. There is nothing to attach a flag to,
+because there is no registration. Every check still runs after one fails, so a red run names all
+the disagreeing blocks rather than the first, and a check that neither passed nor failed is a red
+run of its own. What remains uncovered is the last assertion itself, in the guard's NOT COVERED
+list in those words.
+
+**How many blocks that is, and how many rows each pins, is derived** rather than counted here,
+and the reason is this paragraph's own history: it said "five" correctly, and then PR #111 added
+two more blocks of exactly this shape and left it saying five for four review rounds. For those
+four rounds deleting a pinned-shaped row and its README line together was **green** — which
+silently reinstated two defects earlier rounds of that same PR had fixed. A sentence counting
+the mechanism that stops claims drifting is not exempt from drifting.
+
+Which blocks those are is itself derived, out of the guard rather than out of a sentence here:
+the enumeration that used to sit in this paragraph said nine and fell three behind, missing two
+blocks added in review and one added by the commit that fixed it. Some row sets are held by a
+check instead of a block rather than by a fence, and those are the `and a check,` lines — no count
+of them is written here, because the count written here was wrong twice: the sweep requires every
+code span that is **only** a repository file path — `node scripts/x.mjs` is a command, not a path,
+and is not judged — to name something in the tree or declared in `deleted-assets`, which
+is what makes a file deleted elsewhere red here rather than quietly stale — a span carrying a
+directory counts whatever its extension **unless its first segment is one of the Aria monorepo
+directories the sweep skips by name**, which is eleven live spans in this file and is NOT
+COVERED rather than judged, and a bare `name.ext` counts when the tree uses that
+extension, which is what keeps `payload.data` out of it; and the checks table
+above must carry a row for every `check-ops-*.mjs` in `scripts/`, which is how the sixth browser
+guard got a row the day it landed instead of the day somebody noticed; and another refuses a
+**source line number** written as `file.ext:NN` inside a code span, for any file this repository
+has — in words, outside a span, or into the Aria monorepo is NOT COVERED and said so there,
+because five of the false claims found on
+the PR that built this were a `file:line` citation that was true when written and drifted after,
+one of them re-typed by the round that removed it. Prose may name a file; the line belongs in
+`source-anchors`, where it is derived, or nowhere. The ratchet that holds the floors is **not**
+one of those rows — it has no `and a check,` line and is bound a different way, by being named in
+`report()`'s expected list, so deleting it reports itself. None of these judges the **words** in a
+row — only that the row is there.
+
+```claims id=claims-blocks
+claims id=assets-by-page
+claims id=assets-only-in-tests
+claims id=browser-guards
+claims id=claims-blocks
+claims id=csp-pages
+claims id=csp-policy
+claims id=dark-text-3
+claims id=data-page-scoping
+claims id=deleted-assets
+claims id=exempt-citations
+claims id=guard-blind-spots
+claims id=guard-constants
+claims id=pane-read-endpoints
+claims id=panes
+claims id=pinned-blocks
+claims id=scroll-wrapper-position
+claims id=shell-v2-pins
+claims id=source-anchors
+claims id=spend-colour-gate
+claims id=spend-write-gate
+claims id=sr-span-classes
+claims id=table-focus-rings
+claims id=v1-status-classes
+claims id=v1-v2-collision
+claims id=write-capable-assets
+and a check, every repository file ops/README.md names is in the tree or declared deleted
+and a check, every browser guard in the tree has a row in the checks table
+and a check, ops/README.md prose spells no source line number
+```
+
+And which of them are pinned, with how many rows each pin holds:
+
+```claims id=pinned-blocks
+claims id=claims-blocks pins 3 rows by name
+claims id=csp-pages pins 5 rows by name
+claims id=csp-policy pins 9 rows by name
+claims id=dark-text-3 pins 7 rows by name
+claims id=data-page-scoping pins 2 rows by name
+claims id=deleted-assets pins 2 rows by name
+claims id=guard-blind-spots pins 15 rows by name
+claims id=guard-constants pins 9 rows by name
+claims id=pinned-blocks pins 6 rows by name
+claims id=shell-v2-pins pins 6 rows by name
+claims id=source-anchors pins 9 rows by name
+claims id=spend-colour-gate pins 21 rows by name
+claims id=spend-write-gate pins 3 rows by name
+claims id=sr-span-classes pins 2 rows by name
+claims id=v1-status-classes pins 7 rows by name
+claims id=v1-v2-collision pins 1 rows by name
+claims id=write-capable-assets pins 2 rows by name
+claims id=v1-status-classes pins the families = badge, tag, callout, verdict
+floor: blocks pinned in REQUIRED_ROWS = at least 17
+floor: blocks derived in this file = at least 25
+floor: families pinned in REQUIRED_FAMILIES = at least 4
+floor: widest shared names printed by v1-v2-collision = exactly 8
+floor: citations exempt by name = exactly 1
+```
+
+**NOT COVERED**, so a green run is not read as more than it is. Prose is not judged: a sentence
+restating a block in English, or claiming something no block carries, is nobody's red. Only
+statically spelled `assets/…` tags are seen, so a runtime-injected asset is invisible; a tag
+inside an HTML comment is cut before the count, because a page that only remembers a stylesheet
+does not load it, and neither is a tag inside a `<template>`, which the browser keeps inert.
+Every attribute this file reads out of a page goes through one pair of matchers: a name is never
+the tail of a longer one, so `data-src` is not `src`; the `=` may be spaced; a quoted value may
+hold spaces and an unquoted one may not. Markup a script writes into the page at runtime is not
+read at all. A workflow **runs** a guard when one of its `run:` steps starts a shell segment with
+that command, so a name in a comment or inside an `echo` is not read as running it; a step turned
+off by an `if:`, or a job nothing triggers, is beyond this file. The
+fixture map recognises this repository's `read('assets/NAME')` idiom and nothing else. Draw sites
+are the class tokens written in a page and the scripts it loads — `class=` in either quote,
+`class:`, `className`, `classList` and `setAttribute('class', …)`, each with a literal — but
+**not** all held to the same name guard as the page attributes above. `class=` and `className`
+refuse a preceding letter, digit, hyphen or underscore, so `data-class` is not `class`;
+`classList` and `setAttribute` use a plain word boundary, which a hyphen satisfies, so
+`data-classList` IS read as `classList`. Round 11 demonstrated that, and it is left rather than
+tightened because the error it causes is an OVER-report, the direction this table already
+declares untrustworthy. `class:` is in neither group: it requires a line start, `{`, `,` or
+whitespace in front, which is STRICTER than both, so `(class: 'a')` is missed — an
+UNDER-report, and the one spelling here whose error runs the other way. Round 12 found it
+outside both halves of this sentence; no ops asset spells it that way today — and that error runs
+**both ways**, so neither value is the safe one to trust: a name in a comment counts as a draw, and
+a class assembled at run time or spelled through some other helper is invisible, so a `(no page)`
+can be an under-report exactly as a named page can be an over-report. `painted where drawn` asks
+only whether some rule in a stylesheet that page loads names the class, not whether it applies,
+wins or paints anything. CSS is read as text with a browser's case rules — `POSITION:` is `position:`,
+`Auto` is `auto`, and a custom property name keeps its case because CSS says that one is
+case-sensitive — and an empty value (`--x: ;`, which is legal) stays a declaration rather than
+disappearing. Route blocks list the `/api/…` literals a pane source spells, not the calls it
+makes. Whether one element is drawn *inside* another is never decided here; that is what
+`check-ops-narrow-overflow.mjs` measures. A guard's page
+set is read from `OpsPaneRegistry` and the `/ops/*.html` literals in its source. `OpsUsagePayload`
+is declared in the Aria monorepo, so nothing here can decide whether departure 8's list is a
+complete sweep of it, which is why that departure no longer claims to be one. The line-number
+refusal reads **code spans**, and only for files this repository has: a citation written in
+words, one outside backticks, and one into the monorepo — `opsUsageView.ts:932` is the only
+one of those — are outside it, stated here rather than counted as clean, and nothing here
+claims that list is closed: round 13 found two more spellings of a repository file, `./x` and
+`/x`, walking through it, and the resolver drops both prefixes now rather than the sentence
+gaining two rows. Inside a span it takes
+**every** citation, not only a span that is nothing but one. What it exempts is the
+`exempt-citations` block above, row by row rather than counted in this sentence, and that
+list's size is a floor: a list of things a guard refuses to judge is its own back door, so
+growing it is loud. A declaration is
+read the way a browser reads one — whitespace around the colon, `!important`, and a property
+declared twice in a rule resolving to the last of them — but CSS is otherwise parsed by text, so
+a value behind `var()`, a `calc()`, an `hsl()` or anything else this cannot resolve to a flat
+colour is **named** as unresolvable rather than measured or dropped. `@media` and `@supports`
+blocks are flattened — under any spelling, because an at-rule name is case-insensitive too — so a
+`:root` inside one counts as a later `:root` whether or not its condition holds: that direction
+over-reports rather than hides. A value declared twice in one rule resolves last-wins, with an
+important declaration beating a later normal one, which is the one piece of cascade this does
+model. Route blocks are a **literal scan**: every `/api/…` string a pane source spells, closed by
+the quote that opened it, with a line for every `pane-*.js` so none can drop out. There is no
+resolver and no unresolved branch — a URL assembled at run time is simply not there, a prefix
+like `/api/ops/users/` is listed as the literal it is, and a route named in a comment counts.
+Contrast ratios are
+pixels, not arithmetic over the tree: `check-ops-contrast.mjs` is that oracle. And the
+`deleted-assets` list is checked for absence only — the pull request each line names is not
+verifiable from a shallow checkout. A guard's **constant** is read only where `GUARD_CONSTANTS`
+names one, and only as a top-level `const NAME = …;`: the declaration's right-hand side is
+evaluated in a fresh `vm` realm carrying **no free variables** — its intrinsics are there, which
+is exactly why `Math.round` resolves — so a value built from **another binding** in its own file
+throws rather than being guessed at. A value built from a **pure call on a built-in** —
+`Math.round(1280.4)` — does not throw; it evaluates, and the resolved number is what is bound.
+That is the honest edge: the rule is "no free variables", not "no calls". A guard added next week
+carries no numbers here until somebody names one of its constants. The five hit-test spots per control are
+the worked example — they live in an array inside a template literal evaluated in the browser,
+so they stay prose and stay unproven. A guard's **blind spots** are the leading bold run of each
+bullet under a NOT COVERED heading that opens its own line, reassembled across wrapped lines, so
+**a second blind spot named in a second bold span of the same bullet is not a line here** —
+`check-ops-narrow-overflow.mjs` carries such spans, and in one of them the second span is a second
+blind spot, Aria quality before any operation is submitted. How many bullets carry one is not
+written here: the block binds the SUM, so a span moved from one bullet to another would leave a
+per-bullet count false and the bound number unchanged. What is bound instead is the exact
+**count of the spans beyond the first, summed** per guard, so the second span cannot arrive or
+leave unseen even though it is not named; a bolded word in a bullet's body moves that count too,
+and so does a third span on a bullet that already carried two — the per-bullet tally this started
+as did not, which round 1 of PR #111 demonstrated. Bullets come from the **leading docblock**
+only: `check-ops-shell-v2.mjs` and `check-ops-contrast.mjs` state blind spots outside theirs
+and are **not** carried here, only counted — their line numbers are in `source-anchors` above,
+not spelled here, because the one that used to sit in this sentence was wrong by 343 lines — and counted only because the matcher can see
+their headings. Which headings it can see is **measured, not described**: the block opens with a
+row per probed heading line, handed to the real matcher and reported `SEEN` or `INVISIBLE`, under
+a derived count of them. A section
+headed `KNOWN GAPS:`, or headed a recognised phrase but written after `//`, is read by nothing
+and counted by nothing — those rows are in the block as holes. Round 3 of PR #111 demonstrated
+that the parse this replaced could publish a list the matcher did not agree with, in both
+directions, while staying green. Those rows **sample** the two dimensions rather than crossing
+them, and round 4 walked through two cells they had left empty: a phrase taught only behind
+`/*`, and `WHAT IT DOES NOT` narrowed to `WHAT IT DOES NOT MEASURE`, which every spelling then
+probed happened to still match. Both were green; both are now rows.
+
+**Three things the census still does not bind**, and it is worth stating them as flatly as the
+rows themselves. First, **a (phrase, marker) cell no row occupies** — the rows cannot cover
+every pairing — the count is the first row of the block above, not a number here — and a
+matcher change confined to an empty cell moves nothing. Second, **a phrase
+narrowed so that it still matches every probed spelling of itself**; each phrase needs two rows
+differing in what follows it, and where only one exists the narrowing walks through. Third, **a
+spelling nobody thought to add at all.** Each is the ordinary limit of an explicit test table,
+which is a smaller and much louder hole than the parse it replaced — but none of the three is
+covered, and the fix for the first two, when someone demonstrates one, is a **row**, not a wider
+analysis.
+
+A blind spot written into a bullet's body with no bold at all is not a
+line and is not counted, and a bullet with no bold opener is reported as one rather than
+skipped. A section written as prose says so on its guard's line; it is not read.
+
+The guard's own docblock carries that NOT COVERED list too, beside the code it is about —
+including these three — and the list of blocks is the `claims-blocks` block above, derived from
+the guard's own derivations.
 
 ### Measuring contrast where the colour lands
 
@@ -1906,8 +2898,14 @@ the run and a wrong number does not:
   of this trade. `backdrop-filter` is a deliberate omission of a different kind — it alters the
   backdrop, which the screenshot samples correctly — and that reasoning is specific to
   `backdrop-filter`, not a general property of the screenshot: `text-shadow` is painted on the
-  real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four today (its
-  one `filter` is a `:hover` the sweep never enters), so the refusals cost no coverage.
+  real page and deleted on the plate, which is its own NOT COVERED entry below. The shell sets none of the four on a
+  glyph today, so the refusals cost no coverage — but "the shell has one `filter`" was itself
+  an overclaim. The only CSS `filter` a shell page loads is `aria.css`'s
+  `.btn-primary:hover` — line number in `source-anchors`, not here — which the sweep never
+  enters; `ops.css` carries three
+  more that no v2 page loads; and three sites in `aria.js` each set a `filter`
+  **presentation attribute** on an SVG chart stroke, which is shipped, rendered, and simply not
+  a text node the sweep samples.
   `::first-line` and `::first-letter` are refused on the same terms — see the pseudo-element
   paragraph below — and likewise match nothing on the shell today.
 
@@ -1927,9 +2925,12 @@ paints words no source reaches — that one named in full, so a census that catc
 fails too. If any part fails, nothing is measured
 and the run exits non-zero.
 
-**Not covered.** Non-text contrast — control boundaries, focus rings, icon strokes, chart
-geometry against its card — is outside this check; 1.4.11 is a different requirement and this
-tool measures text only. Text over a picture is likewise outside it: the plate hides `img`,
+**Not covered.** This paragraph used to say the tool "measures text only" and put focus rings
+outside it. Both halves are stale: the script grew a focus sweep, and `--verbose` reports the
+indicators it measures against 1.4.11's 3:1 alongside its text results. What is still outside it
+is the rest of non-text contrast — control boundaries, icon strokes, chart geometry against its
+card. It is also one page: `SHELL` is `/ops/shell-v2.html` and nothing else is opened, so a class
+only a standalone page paints is unmeasured however carefully the tool measures the shell. Text over a picture is likewise outside it: the plate hides `img`,
 `canvas` and text-free `<svg>` outright, so a word sitting on an icon or an image would be
 sampled against the surface *behind* it rather than against the picture, and `video` is not
 hidden at all. The shell has no `img`, `canvas` or `video`, and its text-free SVGs paint nothing
