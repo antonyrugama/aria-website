@@ -1113,7 +1113,7 @@
         pill.appendChild(h('span', {
           className: 'dot ' + seriesTone(app.tone), 'aria-hidden': 'true'
         }));
-        pill.appendChild(h('span', { text: app.label || app.app }));
+        pill.appendChild(h('span', { text: textOf(app.label) || textOf(app.app) || 'Unnamed app' }));
         pill.appendChild(h('span', { className: 'mono', text: fmt.int(app.active) }));
         return pill;
       });
@@ -1366,7 +1366,7 @@
       series.forEach(function (one) {
         var key = h('span', { className: seriesTone(one.color) });
         key.appendChild(h('i', { 'aria-hidden': 'true' }));
-        key.appendChild(h('span', { text: one.label || one.key }));
+        key.appendChild(h('span', { text: textOf(one.label) || textOf(one.key) || 'Unnamed series' }));
         legend.appendChild(key);
       });
 
@@ -1394,9 +1394,9 @@
         body.appendChild(lineChart(series, labels, activity.window));
         if (labels.length) {
           var axis = h('div', { className: 'axis-x', 'aria-hidden': 'true' });
-          axis.appendChild(h('span', { text: labels[0] }));
+          axis.appendChild(h('span', { text: labelAt(labels, 0) }));
           if (labels.length > 1) {
-            axis.appendChild(h('span', { text: labels[labels.length - 1] }));
+            axis.appendChild(h('span', { text: labelAt(labels, labels.length - 1) }));
           }
           body.appendChild(axis);
         }
@@ -1537,11 +1537,20 @@
        and its last reading, because none of that is announced from the <text>
        nodes inside a role="img". A series with no reading at all says so
        rather than being left out of the name. */
+    /* A day label the answer sent, resolved. The chart draws labels in four
+       places -- both ends of the x axis, both ends of the spoken chart name,
+       and the day a series last reported -- and every one of them read the
+       raw array. A label of spaces put its own padding into the axis and into
+       what a screen reader says. */
+    function labelAt(labels, index) {
+      return textOf(list(labels)[index]);
+    }
+
     function chartName(series, labels, win) {
       var head = 'People active each day, one line per app, over ' + windowPhrase(win);
       if (labels.length) {
-        head += ', ' + labels[0] +
-          (labels.length > 1 ? ' to ' + labels[labels.length - 1] : '');
+        head += ', ' + labelAt(labels, 0) +
+          (labels.length > 1 ? ' to ' + labelAt(labels, labels.length - 1) : '');
       }
       return head + '. ' + series.map(function (one) {
         return seriesSentence(one, labels);
@@ -1549,7 +1558,7 @@
     }
 
     function seriesSentence(one, labels) {
-      var name = one.label || one.key;
+      var name = textOf(one.label) || textOf(one.key) || 'Unnamed series';
       var values = list(one.values);
       var reported = [];
       var lastIndex = -1;
@@ -1569,7 +1578,7 @@
         fmt.plural(values.length, 'day') + ' with a reading, ' +
         (lo === high ? 'flat at ' + fmt.int(lo) : 'low ' + fmt.int(lo) + ', high ' + fmt.int(high)) +
         ', ending ' + fmt.int(values[lastIndex]) +
-        (labels[lastIndex] ? ' on ' + labels[lastIndex] : '') + '.';
+        (labelAt(labels, lastIndex) ? ' on ' + labelAt(labels, lastIndex) : '') + '.';
     }
 
     /* One app's line, said in words: how much of the window it has a reading
@@ -1582,7 +1591,7 @@
 
       var row = h('div', { className: 'series-row ' + seriesTone(one.color) }, [
         h('i', { className: 'dot', 'aria-hidden': 'true' }),
-        h('span', { text: one.label || one.key }),
+        h('span', { text: textOf(one.label) || textOf(one.key) || 'Unnamed series' }),
         h('div', { className: 'spacer' })
       ]);
       row.appendChild(h('span', {
@@ -1590,7 +1599,7 @@
         text: lastIndex === -1
           ? 'No reading'
           : fmt.plural(values[lastIndex], 'person', 'people') +
-            (labels[lastIndex] ? ' on ' + labels[lastIndex] : '')
+            (labelAt(labels, lastIndex) ? ' on ' + labelAt(labels, lastIndex) : '')
       }));
       row.appendChild(h('span', {
         className: 'series-cover',

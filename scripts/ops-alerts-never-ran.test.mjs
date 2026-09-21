@@ -504,11 +504,28 @@ test('the shared API stub sends a shape the pane can draw destinations from', as
       + 'describing a payload the route does not send');
   }
 
-  /* And the states actually differ, so the fixture is not two copies of one
-     row wearing different names. */
-  assert.equal(new Set(rows.map((r) => r.text)).size, rows.length,
-    'every destination the stub sends draws identically, so the fixture exercises one '
-    + 'branch and reports two');
+  /* And the states actually differ, measured WITHOUT the names.
+
+     The first draft took the distinctness of `row.text`, which carries the
+     destination's own name -- so three rows in identical states wearing three
+     different names counted as three distinct states, which is precisely the
+     fixture defect the assertion claims to reject. Round 2 of the review
+     proved it by giving all three channels Teams' delivered state and leaving
+     their labels alone: 848/848 green. */
+  const states = rows.map((r) => r.text.slice(r.name.length).trim());
+  assert.equal(new Set(states).size, rows.length,
+    `the stub's destinations draw as ${JSON.stringify(states)} -- the fixture exercises `
+    + 'fewer branches than it has rows');
+
+  /* Named, so losing one to a fixture edit fails here rather than quietly
+     reducing what the stub can show. These are the three states
+     `channelNote()` has for a configured destination, and the third is what
+     Stadiora/Aria#10811 is asking somebody to create. */
+  for (const want of [/Last delivered/, /Last attempt .*refused/, /nothing sent through/]) {
+    assert.ok(states.some((t) => want.test(t)),
+      `no destination the stub sends is in the ${want} state; it draws `
+      + `${JSON.stringify(states)}`);
+  }
 });
 
 test('a destination with no label is still identified', async () => {
@@ -567,17 +584,28 @@ test('one render does not both deny and report a delivery', async () => {
   const rows = routeRows(dom);
 
   const denies = /No destination is set/.test(note || '');
-  const reports = rows.some((r) => /Connected|Set up/.test(r.text));
-  assert.ok(!(denies && reports),
-    `the note says "${note}" while a routing row says `
-    + `"${(rows.find((r) => /Connected|Set up/.test(r.text)) || {}).text}"`);
+  assert.ok(rows.length >= 2,
+    `the finder saw ${rows.length} routing rows, so the agreement below is vacuous`);
+
+  /* Asserted as the EXPECTED STATE of every row, not as the absence of two
+     spellings. The first draft tested `!/Connected|Set up/`, which round 2
+     of the review broke by having the unconfigured branch return a "Last
+     delivered ..." string: the note still denied, the rows still reported,
+     and the test passed because it had never heard of that wording. An
+     oracle that recognises a finite list of ways to be wrong is a filter, not
+     a test. */
+  for (const row of rows) {
+    assert.match(row.text, /No destination has been set/,
+      `the note says "${note}" while a routing row says "${row.text}"`);
+    assert.doesNotMatch(row.text, /\d/,
+      `a routing row reports a figure -- "${row.text}" -- over a destination the note `
+      + 'says is not set up at all');
+  }
 
   /* And the direction is the strict one, so the pane treats a value that is
      not the boolean the column holds as "not set up" rather than as set up. */
   assert.ok(denies,
     `the note reads "${note}" -- a configured flag of 'yes' was read as configured`);
-  assert.ok(rows.length >= 2,
-    `the finder saw ${rows.length} routing rows, so the agreement above is vacuous`);
 });
 
 test('a rule whose reason is a word every object answers to does not print a function',

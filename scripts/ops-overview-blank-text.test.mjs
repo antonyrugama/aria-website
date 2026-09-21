@@ -8,8 +8,7 @@
    a trailing comma with no environment after it, an empty pair of brackets
    after a version, a footnote box holding no note.
 
-   FIVE of the sixteen call sites were the reason the fix is more than one
-   line. They used `textOf(x)` as a PREDICATE and then rendered the raw `x`,
+   FIVE call sites were the reason the fix is more than one line. They used `textOf(x)` as a PREDICATE and then rendered the raw `x`,
    so trimming the predicate alone would have decided with a trimmed value and
    drawn an untrimmed one -- the same defect wearing its own fix. They are
    `people.environment`, `platform.versionCode`, `appendNote()`,
@@ -17,13 +16,12 @@
    test below.
 
    The last two of those five were found by the independent review of PR #124,
-   not by the sweep. The first pass counted three, wrote "the other fourteen
-   have no predicate/value split to get wrong" in this very block, and shipped
-   both the miss and the sentence certifying there was none -- while the whole
-   suite stayed green, because nothing in the repository could see either one.
-   Read that as the reason this list is now enumerated by name rather than by
-   subtraction: a NOT COVERED bullet reached by "everything else is fine" is a
-   claim that costs nothing to write and nothing to be wrong about.
+   not by the sweep. THREE MORE were found by the rendered sweep at the bottom
+   of this file, and none of those three is a `textOf()` call site at all --
+   `app.label || app.app`, and `one.label || one.key` twice -- so no census of
+   `textOf()` calls, however carefully counted, could ever have reached them.
+   That is the argument for the sweep in one line: it asks the screen what it
+   drew rather than asking the source what it should have.
 
    How these bind, and why it is not a source grep:
 
@@ -45,15 +43,20 @@
        of that file's hostile payloads including the whitespace one. Repeating
        it here would be a second place to update and no new binding.
 
-     - The eleven call sites that pass the resolved value straight into
-       `text:`, named rather than counted: `model.PANE_FILE[...]` (:912),
-       `cost.comparison.label` (:1255), `cost.basis` (:1296),
-       `platform.versionCode` (:1323), `platform.label` and
-       `platform.platform` (:1325-1327), `note` (:1608), `entry.title` twice
-       (:1623, :1640), `entry.detail` (:1643), `entry.block.note` (:1674) and
-       `data.consent.detail` (:1743). Trimming the function is the whole of
-       their behaviour. Checked one at a time against the render rather than
-       inferred from the other five, because that inference is what failed. */
+     - No enumeration of the other call sites, by name, by line or by count.
+       Two rounds of review found two different censuses wrong: the first
+       said "the other fourteen have no predicate/value split to get wrong"
+       and had missed two, and the REPLACEMENT -- eleven sites named with
+       line numbers -- was wrong in most of its line numbers and in two of
+       its classifications, written inside the commit that was fixing the
+       first one.
+
+       A census in a comment is a claim nothing executes, and it goes stale
+       on the next edit to the file it describes. `padding any string the
+       answer carries changes nothing on the screen`, at the bottom of this
+       file, is what replaced it: the invariant the census existed to assert,
+       checked against the render. It binds every call site at once and
+       cannot drift against a line number, because it does not know any. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -450,3 +453,162 @@ test('an omission with nothing usable to name it is not drawn at all', async () 
   assert.deepEqual(omitTitles(await boot(blank)), [],
     'an omission with no words in either field drew a heading holding nothing');
 });
+
+/* ===================================================================== */
+/* The sweep itself, rather than a list claiming one happened             */
+/* ===================================================================== */
+
+/* Round 1 of PR #124's review found two predicate/value splits this file had
+   declared absent. Round 2 found that the REPLACEMENT -- an enumeration of
+   the other eleven call sites by name and line -- was itself wrong in most of
+   its line numbers and in two of its classifications.
+
+   Twice is a pattern, and the pattern is that a census written by hand into a
+   comment is a claim nothing executes. It drifts on the next edit, and it
+   drifted inside the very commit that was fixing the previous drift.
+
+   So the census is gone, and this is what replaced it: the invariant the
+   census existed to assert, checked against the render instead of against a
+   reading of the source. PADDING A FIELD MUST CHANGE NOTHING ON SCREEN. It
+   binds every `textOf()` call site at once, it binds sites added after this
+   was written, and it cannot go stale against a line number because it does
+   not know any. */
+
+/* The same fixture with a drawn chart, so `chartCard()`'s legend and
+   `seriesSentence()` are on screen. `summaryFixture()` deliberately carries
+   no days -- it needs `activityCard()`'s no-line branch to reach
+   `appendNote()` -- and two sites live only on the other side of that
+   branch. Battery rows M30 and M31 came back GREEN against a charted-less
+   sweep, which is not a blind test and not a null payload but the third
+   thing: the experiment never reached the code. */
+function chartedFixture() {
+  const fixture = summaryFixture();
+  fixture.activity = {
+    availability: { state: 'ready' },
+    labels: ['14 Sep', '15 Sep', '16 Sep', '17 Sep', '18 Sep', '19 Sep', '20 Sep'],
+    series: [
+      { key: 'aria', label: 'Aria', color: 's1', values: [910, 940, 1001, 980, 1040, 1077, 1102] },
+      { key: 'ariaxii', label: 'Aria XII', color: 's2', values: [380, 402, 396, 410, 421, 404, 412] },
+    ],
+    daysMissingRollups: [],
+    window: { days: 7 },
+    note: 'Backfilled on 3 Sep.',
+  };
+  return fixture;
+}
+
+/* What the pane SAYS, which is more than what it draws.
+
+   `rawText` reads text nodes. The chart's name is an `aria-label`, so a
+   screen-reader user is the only person who hears it -- and two of the
+   sites this sweep exists to bind live only there. Battery rows M31 and M35
+   came back GREEN against a text-only sweep for that reason: not a blind
+   test and not a null payload, but a probe that could not reach the thing it
+   was aimed at. A sweep for "does a padded field reach a user" that ignores
+   the accessible name answers the question for sighted users only. */
+function saidBy(panel) {
+  const spoken = findAll(panel, (n) => n.getAttribute && n.getAttribute('aria-label'))
+    .map((n) => n.getAttribute('aria-label'));
+  return rawText(panel) + '\u0000' + spoken.join('\u0000');
+}
+
+/* Every string leaf in the fixture, as a path. */
+function stringPaths(node, prefix = []) {
+  if (typeof node === 'string') return [prefix];
+  if (Array.isArray(node)) {
+    return node.flatMap((v, i) => stringPaths(v, prefix.concat(String(i))));
+  }
+  if (node && typeof node === 'object') {
+    return Object.keys(node).flatMap((k) => stringPaths(node[k], prefix.concat(k)));
+  }
+  return [];
+}
+
+const getPath = (obj, path) => path.reduce((o, k) => o[k], obj);
+const setPath = (obj, path, value) => {
+  const last = path[path.length - 1];
+  path.slice(0, -1).reduce((o, k) => o[k], obj)[last] = value;
+};
+
+/* Fields whose value is not a word the pane prints but a key it looks
+   something up by, so padding them legitimately changes the render. Named
+   one at a time and justified, because "the sweep has exceptions" is how a
+   sweep stops meaning anything.
+
+   Each of these is verified below to be a LOOKUP: the padded render differs,
+   and it differs by losing a lookup rather than by carrying padding. */
+const LOOKUP_FIELDS = new Set([
+  /* Parsed as a date, not printed as a word. */
+  'generatedAt',
+  /* Enum keys the route sends, matched exactly against a state table. A
+     padded one SHOULD fall to "unavailable" -- that is the pane refusing to
+     read a state it does not recognise, which is the behaviour the honesty
+     rules ask for, not a rendering defect. */
+  'people.availability.state',
+  'aiRuns.availability.state',
+  'release.availability.state',
+]);
+
+async function sweep(make, extraLookups) {
+  const base = make();
+  const paths = stringPaths(base);
+  assert.ok(paths.length >= 15,
+    `the walker found ${paths.length} string fields in the fixture, which is too few to `
+    + 'be reading it properly');
+
+  const clean = saidBy(livePanel(await boot(make())));
+  assert.ok(clean.includes('2.4.1') && clean.includes('production'),
+    'the baseline render does not carry the fixture\'s own values, so every comparison '
+    + 'below would be comparing two blanks');
+
+  const drifted = [];
+  const exercised = [];
+  for (const path of paths) {
+    const key = path.join('.');
+    const fixture = make();
+    setPath(fixture, path, '  ' + getPath(base, path) + '  ');
+    const padded = saidBy(livePanel(await boot(fixture)));
+    if (LOOKUP_FIELDS.has(key) || extraLookups.has(key)) {
+      /* The exception list is checked in BOTH directions: a field on it that
+         has stopped mattering is a stale exception hiding a real site. */
+      assert.notEqual(padded, clean,
+        `"${key}" is on the lookup-exception list but padding it changes nothing, so the `
+        + 'exception is stale and is hiding whatever it now covers');
+      continue;
+    }
+    exercised.push(key);
+    /* Reported with the first character that differs and forty either side.
+       "these fields drifted" sends the next person hunting; "here is where"
+       does not, and seven of the eleven sites this sweep found were located
+       from this line rather than from the source. */
+    if (padded !== clean) {
+      let at = 0;
+      while (at < clean.length && padded[at] === clean[at]) at += 1;
+      drifted.push(`${key} (${JSON.stringify(clean.slice(Math.max(0, at - 40), at + 40))}`
+        + ` => ${JSON.stringify(padded.slice(Math.max(0, at - 40), at + 40))})`);
+    }
+  }
+
+  assert.ok(exercised.length >= 10,
+    `only ${exercised.length} fields were actually swept; the exception list has eaten `
+    + 'the test');
+  assert.deepEqual(drifted, [],
+    `padding these fields changed the rendered text: ${JSON.stringify(drifted)} -- each `
+    + 'is a textOf() call site that decides with the resolved value and draws the raw '
+    + 'one, or one that never resolved at all');
+}
+
+test('padding any string the answer carries changes nothing on the screen', async () => {
+  await sweep(summaryFixture, new Set());
+});
+
+test('padding any string changes nothing on the screen with the chart drawn too',
+  async () => {
+    /* The same invariant over the branch the other sweep cannot reach.
+       `summaryFixture()` carries no days on purpose -- it needs
+       `activityCard()`'s no-line branch to get to `appendNote()` -- and the
+       legend and the spoken sentence live on the other side of it. */
+    await sweep(chartedFixture, new Set([
+      'activity.availability.state',
+    ]));
+  });
