@@ -326,7 +326,42 @@
         if (token !== loadToken) return;
         region.failed(err, load);
         S.setBadge('history', null);
+        /* The shell draws Try again, and it is the only control left on the
+           pane. It carries no focus key of its own -- `shell-pane-v2.js` is
+           shared by every pane and is not this PR's to change -- so the key is
+           stamped on afterwards, from here. Measured before this: 13 tab stops
+           from <body> to the retry, mid-incident, for the operator who just
+           pressed Read again. */
+        keyRetry();
+        redirectFocus('rh-window-retry');
+        settleFocus();
+        /* Said as well as drawn. Without this the live region still holds the
+           figures from the last successful read, so a screen reader is left
+           standing behind numbers the pane has just stopped standing behind. */
+        S.announce('The window could not be read. The figures on screen before this are ' +
+          'unread now, not zero. Try again is the only control left on the pane.');
       });
+    }
+
+    /* The shell's retry button, given this pane's focus key so `settleFocus()`
+       has somewhere to land. Found by walking the live panel for a button with
+       no key rather than by a selector, because the shell owns the markup and
+       may reshape it. */
+    function keyRetry() {
+      var content = document.getElementById('content');
+      if (!content) return;
+      var boxes = content.querySelectorAll('[data-state]');
+      for (var b = 0; b < boxes.length; b += 1) {
+        var state = boxes[b].getAttribute('data-state') || '';
+        if (state.split(' ').indexOf('live') === -1) continue;
+        var buttons = boxes[b].querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i += 1) {
+          if (!buttons[i].getAttribute('data-rh-focus')) {
+            buttons[i].setAttribute('data-rh-focus', 'rh-window-retry');
+            return;
+          }
+        }
+      }
     }
 
     /* The window read. Through the shell's loader so the same-origin fixture
@@ -373,7 +408,19 @@
       });
     }
 
+    /* Every exit from a redraw has to settle focus, and `draw()` has three of
+       them. Round 3 put `settleFocus()` at the end of the body and the two
+       empty states returned above it, so the two states an operator reaches by
+       narrowing into a quiet window still dropped them to <body> -- the exact
+       defect round 2 blocked on, surviving its own fix on two paths out of
+       four. Wrapping is the shape that cannot regress that way: `draw()` may
+       return wherever it likes. */
     function render(data, selection) {
+      draw(data, selection);
+      settleFocus();
+    }
+
+    function draw(data, selection) {
       lastWindow = data;
       var coverage = (data && data.coverage) || { state: 'never_recorded' };
       var summary = (data && data.summary) || null;
@@ -420,8 +467,6 @@
          inside it is not. */
       if (detail && detail.error) region.degraded(wrap);
       else region.show(wrap);
-
-      settleFocus();
     }
 
     /* ------------------------------------------------------------- focus */
@@ -448,7 +493,47 @@
 
     /** Put focus back where it is, once the redraw has replaced that node. */
     function keepFocus() {
-      moveFocus(focusKeyNow());
+      /* With a fallback, because the control the operator is standing on may
+         not survive the read they just asked for. Narrowing from a populated
+         window into an empty one destroys the pickers and draws none, so
+         `rh-type` resolves to nothing and the request is held forever with
+         focus sitting at <body>. Every state this pane can draw carries
+         `rh-state` on its heading precisely so this fallback always lands. */
+      moveFocus(focusKeyNow(), 'rh-state');
+    }
+
+    /* Change where a pending request will land, without creating one. Used by
+       the failed read, where the pre-redraw `keepFocus()` has already asked for
+       a control the failure card does not contain, and the only control left on
+       the pane is the shell's retry. Guarded so a redraw the operator was not
+       standing in never steals their focus. */
+    function redirectFocus(key) {
+      if (!wanted && !wantedFallback) return;
+      wantedFallback = key;
+    }
+
+    /* Make a card's heading a focus target. Empty and failure states have no
+       control worth landing on, and the heading is the sentence that explains
+       why -- so it is both the reachable node and the right one to read out. */
+    function keyState(block) {
+      var title = findFirst(block, function (n) {
+        return /^H[1-6]$/.test(n.tagName || '');
+      });
+      if (!title) return block;
+      title.setAttribute('data-rh-focus', 'rh-state');
+      title.setAttribute('tabindex', '-1');
+      return block;
+    }
+
+    function findFirst(node, want) {
+      if (!node) return null;
+      if (want(node)) return node;
+      var kids = node.childNodes || [];
+      for (var i = 0; i < kids.length; i += 1) {
+        var hit = findFirst(kids[i], want);
+        if (hit) return hit;
+      }
+      return null;
     }
 
     /** Ask for focus somewhere else, but only if it is here to begin with. */
@@ -464,9 +549,25 @@
          because a key carries a job id that came off the wire. */
       var all = document.querySelectorAll('[data-rh-focus]');
       for (var i = 0; i < all.length; i += 1) {
-        if (all[i].getAttribute('data-rh-focus') === key) return all[i];
+        if (all[i].getAttribute('data-rh-focus') === key && onScreen(all[i])) return all[i];
       }
       return null;
+    }
+
+    /* A state box the shell is not showing keeps its children: `region.empty()`
+       fills the empty box and aria.js moves `data-shown` to it, so the control
+       the operator was standing on is still in the document under a
+       `display:none`. Focusing it is worse than not settling at all -- the
+       browser refuses, focus stays at <body>, and the pane believes it landed.
+       So a key inside a hidden panel does not count as found. */
+    function onScreen(node) {
+      var cur = node;
+      while (cur && cur !== document.documentElement) {
+        if (cur.getAttribute && cur.getAttribute('data-state') !== null
+          && cur.getAttribute('data-shown') === null) return false;
+        cur = cur.parentNode;
+      }
+      return true;
     }
 
     function settleFocus() {
@@ -494,8 +595,20 @@
         return;
       }
       var summary = data.summary;
+      /* A partly-covered record does not get to name the window that was
+         picked. Screen and speech publish the same span or they are two
+         different claims about the same figure -- and the measured version of
+         this said "0 runs finished in the last 7 days" over a record three
+         hours old, which is the screen defect review blocked on, surviving in
+         the live region after the screen was fixed. */
+      if (data.coverage.state === 'partial' && data.coverage.recordingSince) {
+        S.announce('Partly covered: ' +
+          fmt.plural(summary.runs, 'run', 'runs') + ' finished since the record starts at ' +
+          at(data.coverage.recordingSince) + ', which is inside ' + words + '. ' +
+          fmt.int(summary.failed) + ' failed. The rest of ' + words + ' is unread.');
+        return;
+      }
       S.announce(
-        (data.coverage.state === 'partial' ? 'Partly covered: ' : '') +
         fmt.plural(summary.runs, 'run', 'runs') + ' finished in ' + words + ', ' +
         fmt.int(summary.failed) + ' failed.');
     }
@@ -664,14 +777,14 @@
     /* Nothing has ever been recorded. Not an empty window: an unread one. */
     function neverRecorded(data) {
       var box = S.card();
-      box.appendChild(S.stateBlock('plug', 'No run has ever been recorded here', [
+      box.appendChild(keyState(S.stateBlock('plug', 'No run has ever been recorded here', [
         'The run history table holds nothing at all — not nothing for this window, nothing ' +
           'ever. Either the lifecycle recorder has not been deployed yet, or it has never ' +
           'managed to write.',
         'This is not a quiet system. Nothing below it is a zero, because there is no ' +
           'nothing below it: no figure on this page can be computed from a table with no ' +
           'rows in it, so none is drawn.'
-      ]));
+      ])));
       var row = h('div', { className: 'row mt-sm' });
       row.appendChild(S.link(S.paneHref('jobs') || JOBS_FILE, 'What is running now'));
       row.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'What the watchers caught', 'btn btn-sm sp'));
@@ -680,27 +793,56 @@
       return box;
     }
 
-    /* A readable record with nothing in this window. A genuine zero, and the
-       wording says which of the two zeroes it is. */
+    /* A readable record with nothing in this window. A genuine zero when the
+       record covers the window, and something weaker when it does not -- and
+       the weaker case is the one this pane got wrong first. A record three
+       hours old under a seven-day window is `partial`, and round 3 sent it
+       through here to be headed "No run finished in the last 7 days" and
+       footed "Counted over <7 days ago>", both of which publish a figure over
+       a span the record cannot speak for. Worse, it printed the one sentence
+       this pane uses to separate a measured zero from an unread one -- "a quiet
+       window rather than a missing one" -- over a window that is, by
+       `partial`'s definition, partly missing.
+
+       So the two are drawn as two states. Covered keeps the genuine zero.
+       Partial says what it actually knows: nothing finished in the part it can
+       see, and the rest of the window is unread. */
     function nothingFinished(data, coverage, selection) {
       var box = S.card();
       var words = WINDOW_LABEL[selection.range] || 'this window';
       var narrowed = narrowing.type !== 'all' || narrowing.outcome !== 'all';
+      var partly = coverage.state === 'partial';
+      var since = at(coverage.recordingSince);
 
-      box.appendChild(S.stateBlock('check', 'No run finished in ' + words, [
-        narrowed
-          ? 'Nothing matched the request type and outcome you picked. The record itself is ' +
-            'readable and reaches back ' + (coverage.coversWindow ? 'past the start of this window' :
-              'to ' + at(coverage.recordingSince)) + '.'
-          : 'The record is readable and reaches back ' +
-            (coverage.coversWindow ? 'past the start of this window'
-              : 'to ' + at(coverage.recordingSince)) +
-            ', so this is a quiet window rather than a missing one.',
+      var head = partly
+        ? 'No run finished since the record starts'
+        : 'No run finished in ' + words;
+
+      var first;
+      if (partly && narrowed) {
+        first = 'Nothing matched the request type and outcome you picked, in the part of ' +
+          words + ' the record covers. Recording started at ' + since + ', which is inside ' +
+          'this window, so the window before that is unread rather than empty.';
+      } else if (partly) {
+        first = 'Recording started at ' + since + ', which is inside ' + words + '. Nothing ' +
+          'finished between then and now, and what happened before then is unread rather ' +
+          'than empty. This is not a quiet window; it is a partly unread one with a quiet ' +
+          'end.';
+      } else if (narrowed) {
+        first = 'Nothing matched the request type and outcome you picked. The record itself ' +
+          'is readable and reaches back past the start of this window.';
+      } else {
+        first = 'The record is readable and reaches back past the start of this window, so ' +
+          'this is a quiet window rather than a missing one.';
+      }
+
+      box.appendChild(keyState(S.stateBlock(partly ? 'warn' : 'check', head, [
+        first,
         coverage.lastRecordedAt
           ? 'The most recent transition anywhere in the record was ' +
             at(coverage.lastRecordedAt) + '.'
           : 'Nothing has been recorded anywhere in the record.'
-      ]));
+      ])));
 
       var row = h('div', { className: 'row mt-sm' });
       if (narrowed) {
@@ -719,7 +861,7 @@
       }
       row.appendChild(S.link(S.paneHref('jobs') || JOBS_FILE, 'What is running now', 'btn btn-sm sp'));
       box.appendChild(row);
-      box.appendChild(windowFoot(data.window));
+      box.appendChild(windowFoot(data.window, coverage));
       return box;
     }
 
@@ -743,12 +885,21 @@
 
     /* Every figure carries the window it covers. Half-open, and said so: the
        end is the moment the read was taken and is not itself included. */
-    function windowFoot(window) {
+    /* No figure without the window it covers -- and the window it covers is not
+       always the window that was asked for. When the record starts inside the
+       window, the span published here is the span the record can speak for, not
+       the one the picker says. */
+    function windowFoot(window, coverage) {
       var foot = h('div', { className: 'card-foot' });
+      var partly = coverage && coverage.state === 'partial' && coverage.recordingSince;
       foot.appendChild(icon('clock'));
       foot.appendChild(h('span', {
-        text: 'Counted over ' + at(window.startAt) + ' up to but not including ' +
-          at(window.endExclusiveAt) + '.'
+        text: partly
+          ? 'Counted over ' + at(coverage.recordingSince) + ' up to but not including ' +
+            at(window.endExclusiveAt) + ', which is where the record starts rather than ' +
+            'where ' + at(window.startAt) + ' would have put it.'
+          : 'Counted over ' + at(window.startAt) + ' up to but not including ' +
+            at(window.endExclusiveAt) + '.'
       }));
       return foot;
     }
@@ -811,7 +962,10 @@
       section.appendChild(pair);
 
       var box = S.card();
-      box.appendChild(windowFoot(data.window));
+      /* Same rule as the empty state: these figures cover from where the record
+         starts, so that is the span the footer names. `partialNote()` says it
+         above the figures as well; the footer is where the span is published. */
+      box.appendChild(windowFoot(data.window, data.coverage));
       section.appendChild(box);
       return section;
     }
@@ -1227,7 +1381,10 @@
       }));
       body.appendChild(grid);
 
-      if (shared.byType.length > 1) {
+      /* Null when nothing was counted, which the branch above already sent
+         elsewhere. Read defensively anyway: this is the one field on the wire
+         whose absence and whose counted zero are both legal. */
+      if (shared.byType && shared.byType.length > 1) {
         var split = h('ul', { className: 'list-tick' });
         shared.byType.forEach(function (row) {
           var item = h('li');

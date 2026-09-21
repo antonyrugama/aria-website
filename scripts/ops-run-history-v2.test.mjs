@@ -58,6 +58,10 @@ const TOKENS = {
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
+/* Stated here rather than imported from the shell, so the expectation is an
+   independent contract instead of a restatement of the formatter under test. */
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct',
+  'Nov', 'Dec'];
 const DAY = 24 * HOUR;
 
 /* Timestamps are built relative to now, because the window under test is
@@ -273,7 +277,15 @@ async function boot(options) {
     boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
     call: (endpoint, o) => {
       calls.push({ endpoint, query: o && o.query });
-      const answer = answers[endpoint];
+      /* An answer may be a function of the query rather than a fixed payload.
+         Keying answers by path alone made a whole class of state unreachable
+         from a test: narrowing re-reads the same path, so a narrowed read
+         always came back with the populated window and no test could ever
+         arrive at the empty state by the route an operator arrives at it.
+         Review of PR #117 found the pane dropping keyboard focus on exactly
+         that path, unreachable by every focus test in this file. */
+      let answer = answers[endpoint];
+      if (typeof answer === 'function') answer = answer((o && o.query) || {});
       if (answer instanceof Error) return Promise.reject(answer);
       if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
       return Promise.resolve({ data: answer });
@@ -679,8 +691,43 @@ const attached = (dom, node) => {
 const focusKey = (dom) => {
   const live = dom.doc.activeElement;
   if (!live || !live.getAttribute || !attached(dom, live)) return null;
+  /* Attached is not the same as on screen, and the difference is a whole class
+     of false green. `region.empty()` fills the empty box and aria.js moves
+     `data-shown` to it; the live box keeps its children, so the control the
+     operator was standing on is still in the document with `display:none`
+     over it. Chrome drops focus to <body> for that node; this harness has no
+     CSS, so it happily answers with the key of a control nobody can see.
+     Review of PR #117 measured `active=BODY` in real Chrome on exactly the
+     states five of this file's assertions were passing over. */
+  if (!shown(dom, live)) return null;
+  /* And focusable. `h2.focus()` is a no-op in a browser unless the heading
+     carries a tabindex, but this harness's `focus()` sets `activeElement` on
+     anything handed to it -- so a pane that keys a heading and forgets the
+     tabindex beside it reads as a successful landing here and as <body> in
+     Chrome. Proven: dropping the `tabindex` line left the empty-state focus
+     assertions green until this check existed. */
+  if (!focusable(live)) return null;
   return live.getAttribute('data-rh-focus');
 };
+
+const NATIVELY_FOCUSABLE = ['BUTTON', 'SELECT', 'INPUT', 'TEXTAREA', 'A'];
+function focusable(node) {
+  if (node.getAttribute('tabindex') !== null) return true;
+  return NATIVELY_FOCUSABLE.indexOf(node.tagName) !== -1;
+}
+
+/* Walk to the document, refusing any ancestor that is a state box without
+   `data-shown`. Mirrors aria.css's `[data-state]:not([data-shown])` rule,
+   which is the only thing that hides these panels. */
+function shown(dom, node) {
+  let cur = node;
+  while (cur && cur !== dom.doc.documentElement) {
+    if (cur.getAttribute && cur.getAttribute('data-state') !== null
+      && cur.getAttribute('data-shown') === null) return false;
+    cur = cur.parentNode;
+  }
+  return true;
+}
 
 /* The shell's polite live region, which is a div it appends to <body> and
    whose textContent it replaces. Toasts also carry role="status", so the
@@ -770,6 +817,247 @@ test('a run whose read fails still lands focus somewhere in the pane', async () 
   assert.equal(focusKey(dom), 'rh-detail-retry',
     'focus ended at ' + (focusKey(dom) || 'nowhere in this pane') + ' after a run failed to ' +
     'read, so the operator is standing on a node the redraw removed');
+});
+
+/* The three states round 3 could not reach. `render()` returned before
+   `settleFocus()` on both empty paths and never called it on the failed one,
+   so three of the pane's four states dropped a keyboard operator to <body> --
+   and no test in this file could arrive at any of them, because the stub
+   answered by path and a narrowed re-read therefore came back populated. */
+
+const emptyWindow = (over) => windowAnswer((base) => {
+  base.summary.runs = 0; base.summary.completed = 0; base.summary.failed = 0;
+  base.summary.canceled = 0; base.summary.unfinished = 0;
+  base.runs = []; base.failures = [];
+  if (over) over(base);
+});
+
+/* Populated until narrowed, empty once narrowed: the shape an operator meets
+   when they pick a type nothing matched. */
+const emptyOnceNarrowed = (query) => (
+  query && query.type && query.type !== 'all' ? emptyWindow() : windowAnswer());
+
+test('narrowing into an empty window keeps the operator inside the pane', async () => {
+  const dom = await boot({ runs: emptyOnceNarrowed });
+  const select = selectsIn(dom)[0];
+  select.focus();
+  assert.equal(focusKey(dom), 'rh-type', 'the harness did not put focus on the picker');
+
+  select.value = 'nutrition_plan';
+  select.dispatch('change');
+  await settle();
+
+  assert.match(emptyText(dom), /Nothing matched the request type and outcome you picked/,
+    'the narrowed read did not reach the empty state, so this test is not exercising it');
+  assert.ok(focusKey(dom),
+    'focus fell out of the pane entirely after narrowing into an empty window, so the '
+    + 'operator is at the top of the document with no way back but Tab');
+});
+
+test('Read again on a window that empties keeps the operator inside the pane', async () => {
+  /* The un-narrowed empty state, which draws no picker and no Clear button --
+     the state with the fewest controls to land on, and the one most likely to
+     have nothing. */
+  let empty = false;
+  const dom = await boot({ runs: () => (empty ? emptyWindow() : windowAnswer()) });
+  const again = buttonsIn(livePanel(dom), /^Read again$/)[0];
+  again.focus();
+  assert.equal(focusKey(dom), 'rh-read-again', 'the harness did not put focus on Read again');
+
+  empty = true;
+  again.dispatch('click');
+  await settle();
+
+  assert.match(emptyText(dom), /No run finished in the last 7 days/,
+    'the re-read did not reach the empty state, so this test is not exercising it');
+  assert.ok(focusKey(dom),
+    'focus fell out of the pane after a re-read came back empty');
+});
+
+test('a window that stops being recorded at all keeps the operator inside the pane', async () => {
+  let gone = false;
+  const dom = await boot({
+    runs: () => (gone
+      ? emptyWindow((base) => {
+        base.coverage = {
+          state: 'never_recorded', recordingSince: null, lastRecordedAt: null,
+          coversWindow: false,
+        };
+      })
+      : windowAnswer()),
+  });
+  const again = buttonsIn(livePanel(dom), /^Read again$/)[0];
+  again.focus();
+
+  gone = true;
+  again.dispatch('click');
+  await settle();
+
+  assert.match(emptyText(dom), /No run has ever been recorded here/,
+    'the re-read did not reach the never-recorded state');
+  assert.ok(focusKey(dom),
+    'focus fell out of the pane after a re-read found nothing recorded at all');
+});
+
+test('a failed window read lands the operator on its retry', async () => {
+  /* The measured case from review: 13 tab stops from <body> to the only
+     control left on the pane, for the operator who pressed Read again during
+     an incident. */
+  let broken = false;
+  const dom = await boot({
+    runs: () => (broken ? new Error('upstream refused') : windowAnswer()),
+  });
+  const again = buttonsIn(livePanel(dom), /^Read again$/)[0];
+  again.focus();
+  assert.equal(focusKey(dom), 'rh-read-again', 'the harness did not put focus on Read again');
+
+  broken = true;
+  again.dispatch('click');
+  await settle();
+
+  assert.match(liveText(dom), /This pane could not be read/,
+    'the re-read did not fail, so this test is not exercising the failure');
+  assert.equal(focusKey(dom), 'rh-window-retry',
+    'focus ended at ' + (focusKey(dom) || 'nowhere in this pane') + ' after the window read '
+    + 'failed, so the retry this pane advertises is reachable only by tabbing from the top '
+    + 'of the document');
+});
+
+test('a failed window read says so, rather than leaving the last figures standing', async () => {
+  let broken = false;
+  const dom = await boot({
+    runs: () => (broken ? new Error('upstream refused') : windowAnswer()),
+  });
+  await settle();
+  assert.match(lastSaid(dom) || '', /\d/,
+    'the first read announced no figures, so this test cannot show them being withdrawn');
+
+  broken = true;
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click');
+  await settle();
+
+  const said = lastSaid(dom) || '';
+  assert.match(said, /could not be read/,
+    'the live region said "' + said + '" after a failed read, so a screen-reader operator is '
+    + 'left standing behind figures the pane has stopped standing behind');
+  assert.ok(!/\b214\b|\b11 runs\b/.test(said), 'the withdrawn figures were repeated');
+});
+
+/* A record that begins inside the window is not a genuine zero, and round 3
+   published it as one: headed with the whole window, footed with the whole
+   window, and carrying the one sentence this pane uses to separate a measured
+   zero from an unread one. */
+
+const partialEmpty = () => emptyWindow((base) => {
+  base.coverage = {
+    state: 'partial',
+    recordingSince: at(3 * HOUR),
+    lastRecordedAt: at(3 * HOUR),
+    coversWindow: false,
+  };
+});
+
+test('an empty window over a record that starts inside it is not called quiet', async () => {
+  const dom = await boot({ runs: partialEmpty() });
+  const text = emptyText(dom);
+
+  assert.match(text, /No run finished/, 'the partial empty window did not draw the empty state');
+  assert.ok(!/quiet window rather than a missing one/.test(text),
+    'a window the record covers three hours of was called a quiet one, which is the sentence '
+    + 'this pane uses to mean the opposite');
+  assert.match(text, /unread rather than empty/,
+    'nothing on screen said the rest of the window is unread');
+  assert.ok(!/^No run finished in the last 7 days/m.test(text),
+    'the heading asserted a zero across seven days the record cannot speak for');
+});
+
+test('an empty window over a partial record publishes the span it covers, not the one picked',
+  async () => {
+    const dom = await boot({ runs: partialEmpty() });
+    const foot = emptyText(dom);
+
+    /* The two instants are seven days apart, so the calendar day the pane
+       prints is enough to tell which one it published -- and the expectation
+       is computed from the fixture's own ISO strings rather than read back out
+       of the pane, so it cannot move with the code under test. */
+    const day = (iso) => {
+      const t = new Date(iso);
+      return t.getUTCDate() + ' ' + MONTH_NAMES[t.getUTCMonth()] + ' ' + t.getUTCFullYear();
+    };
+    const recordStarts = day(at(3 * HOUR));
+    const windowOpens = day(at(7 * DAY));
+    assert.notEqual(recordStarts, windowOpens,
+      'the fixture put both instants on the same day, so this test cannot tell them apart');
+
+    const counted = /Counted over ([^,]+?) up to but not including/.exec(foot);
+    assert.ok(counted, 'no window was published under the figure at all');
+    assert.ok(counted[1].indexOf(recordStarts) === 0,
+      'the footer published "' + counted[1] + '", but the record only reaches back to '
+      + recordStarts + ', so the figure is labelled with a window it does not cover');
+    assert.ok(counted[1].indexOf(windowOpens) === -1,
+      'the footer published the picked window the record cannot speak for');
+  });
+
+test('a populated partial window publishes the span it covers too', async () => {
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.coverage = {
+        state: 'partial', recordingSince: at(2 * DAY), lastRecordedAt: at(3 * MINUTE),
+        coversWindow: false,
+      };
+    }),
+  });
+  const text = liveText(dom);
+  assert.match(text, /where the record starts rather than where/,
+    'the figures were footed with the picked window over a record that starts inside it');
+});
+
+test('a partly-covered window is announced over the span it covers, not the one picked',
+  async () => {
+    /* Screen and speech have to publish the same span. The screen was fixed
+       for this in round 4; the live region still said "0 runs finished in the
+       last 7 days" over a three-hour-old record until this test existed. */
+    const dom = await boot({ runs: partialEmpty() });
+    await settle();
+    const said = lastSaid(dom) || '';
+
+    assert.match(said, /Partly covered/, 'a partly-covered read was announced as a whole one');
+    assert.ok(!/finished in the last 7 days/.test(said),
+      'the live region said "' + said + '", naming a window the record cannot speak for');
+    assert.match(said, /since the record starts at/,
+      'nothing spoken said where the figure actually starts');
+    assert.match(said, /is unread/, 'nothing spoken said the rest of the window is unread');
+
+    /* The phrase is not the claim: the instant beside it is. Pinning only the
+       words let the sentence speak the picked window's start under the label
+       "the record starts at" and stay green. Both days computed from the
+       fixture's own ISO strings. */
+    const day = (iso) => {
+      const t = new Date(iso);
+      return t.getUTCDate() + ' ' + MONTH_NAMES[t.getUTCMonth()] + ' ' + t.getUTCFullYear();
+    };
+    const spoken = /since the record starts at ([^,]+?), which is inside/.exec(said);
+    assert.ok(spoken, 'the sentence named no instant at all');
+    assert.equal(spoken[1].split(' ').slice(0, 3).join(' '), day(at(3 * HOUR)),
+      'the live region said the record starts at "' + spoken[1] + '", which is not where it '
+      + 'starts');
+    assert.ok(spoken[1].indexOf(day(at(7 * DAY))) === -1,
+      'the live region spoke the picked window\u2019s start as the record\u2019s start');
+  });
+
+test('a window whose runs all moved and never finished is not called quiet', async () => {
+  /* The gate that separates the empty state from the populated one reads
+     `!summary.unfinished` as well as `!summary.runs`. Without that clause a
+     window whose only runs are still in flight draws "No run finished ... a
+     quiet window" and drops them off the screen. */
+  const dom = await boot({
+    runs: emptyWindow((base) => { base.summary.unfinished = 4; }),
+  });
+
+  assert.ok(!/quiet window rather than a missing one/.test(emptyText(dom)),
+    'a window holding four runs that moved and never finished was called quiet');
+  assert.match(liveText(dom), /Runs finished/,
+    'runs that moved and never finished emptied the pane instead of being counted');
 });
 
 test('a run that arrives is announced, not only the intent to read it', async () => {
@@ -932,7 +1220,9 @@ test('an uncounted fault says nobody could be counted, not that nobody was hit',
       base.shared.runsWithoutAccount = null;
       base.shared.firstSeenAt = null;
       base.shared.lastSeenAt = null;
-      base.shared.byType = [];
+      /* Null, matching the wire: `[]` would be the comparison having run and
+         found no other request type, which is a counted zero. */
+      base.shared.byType = null;
       base.shared.isolated = null;
       base.shared.countIncludesThisRun = false;
     }),
