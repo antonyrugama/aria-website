@@ -306,9 +306,10 @@ function connect(url) {
   const ws = new WebSocket(url);
   let nextId = 0;
   const pending = new Map();
+  const listeners = new Set();
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.id === undefined) return;
+    if (m.id === undefined) { for (const l of listeners) l(m); return; }
     const p = pending.get(m.id);
     pending.delete(m.id);
     if (m.error) p.reject(new Error(JSON.stringify(m.error)));
@@ -317,6 +318,7 @@ function connect(url) {
   return {
     ready: new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; }),
     close: () => ws.close(),
+    on: (fn) => listeners.add(fn),
     send(method, params = {}) {
       const id = ++nextId;
       ws.send(JSON.stringify({ id, method, params }));
@@ -335,7 +337,7 @@ function connect(url) {
    pane that has not finished drawing, and the reading is an unfinished pane
    wearing a finished pane's label.
 
-   The replacement asks the page instead of the clock, and the two conditions
+   The replacement asks the page instead of the clock, and the three conditions
    are different in kind:
 
    - The shell's own signal. Both shells dispatch `ops:ready` once, after the
@@ -344,14 +346,24 @@ function connect(url) {
      miss it. That is a statement the application makes about itself, which
      beats any number this file could pick.
 
-   - Quiescence of the population this file measures. `ops:ready` fires when
-     the pane has been asked to draw, not when its reads have landed: a pane
-     that fetches and then fills is still moving afterwards. So the fingerprint
-     counts the things the probe counts -- elements, absolutely positioned
-     boxes, scrolling boxes -- and readiness means that count stopped changing
-     for SETTLE_STABLE consecutive polls. It is deliberately a superset of the
-     measured population rather than a proxy for it: anything that would change
-     a reading changes the fingerprint first.
+   - No read still in flight, counted by the browser rather than by the page.
+     This is the condition the first draft of this change left out, and the
+     battery caught it: `ops:ready` fires when the pane has been ASKED to draw,
+     and a pane draws its loading skeleton synchronously and then fetches. So a
+     pane waiting on a slow read is a perfectly still page -- nothing is
+     changing, because everything is waiting -- and a quiescence test alone
+     settles on the skeleton and calls it a pane. With the stub server slowed
+     to 1800ms the sweep measured 112 scroll boxes instead of 160 and lost both
+     escapes, which is the #10775 symptom reproduced exactly by the fix that
+     was supposed to prevent it.
+
+   - Quiescence of the population this file measures, once the reads have
+     landed and the renders they trigger have run. The fingerprint counts the
+     things the probe counts -- elements, absolutely positioned boxes,
+     scrolling boxes -- and readiness means that count stopped changing for
+     SETTLE_STABLE consecutive polls with the network idle throughout. It is
+     deliberately a superset of the measured population rather than a proxy for
+     it: anything that would change a reading changes the fingerprint first.
 
    A budget still exists, but it is an upper bound that FAILS rather than a
    sleep that proceeds. That is the whole difference. The old shape could only
@@ -390,6 +402,32 @@ async function evaluate(cdp, expression, awaitPromise = false) {
   return res.result.value;
 }
 
+/* In-flight reads, counted off the browser's own network events rather than
+   by patching fetch in the page. The browser is the authority: it sees a read
+   the application forgot it started, and it sees one issued by a script this
+   file never installed a hook into. Nothing in ops/assets opens a WebSocket or
+   an EventSource, so there is no long-lived connection here that would never
+   report finished and hang the wait on purpose. */
+function trackNetwork(cdp) {
+  const inFlight = new Map();
+  cdp.on((m) => {
+    if (m.method === 'Network.requestWillBeSent') {
+      inFlight.set(m.params.requestId, m.params.request.url);
+    } else if (m.method === 'Network.loadingFinished' || m.method === 'Network.loadingFailed') {
+      inFlight.delete(m.params.requestId);
+    } else if (m.method === 'Page.frameNavigated' && !m.params.frame.parentId) {
+      /* A subresource cancelled because its document was replaced does not
+         always report finished OR failed -- a script request for the page being
+         left simply stops being mentioned. Without this the wait hangs on a
+         read that no longer exists and fails a pane that is perfectly ready.
+         Clearing on the main frame's commit is ordered rather than timed: every
+         request of the new document is announced after this event. */
+      inFlight.clear();
+    }
+  });
+  return inFlight;
+}
+
 /* Page.navigate resolves when the navigation has been STARTED, not when the
    new document is installed, so a readiness poll issued straight afterwards
    can be answered by the document being left. That document is complete and
@@ -415,9 +453,17 @@ async function settle(cdp, what) {
   let polls = 0;
   let waitedOn = [];
   while (Date.now() < deadline) {
+    /* Read the network BEFORE the fingerprint. A read that lands between the
+       two would otherwise be credited to a poll that saw an idle network and a
+       count taken before its render, which is the exact off-by-one this whole
+       change exists to remove. */
+    const busy = [...networkInFlight.values()];
     const fp = await evaluate(cdp, FINGERPRINT);
     polls += 1;
-    if (typeof fp === 'string' && !fp.startsWith('?')) {
+    if (busy.length) {
+      repeats = 0;
+      waitedOn.push(`?${busy.length} read(s) in flight: ${busy[0].replace(/^https?:\/\/[^/]+/, '')}`);
+    } else if (typeof fp === 'string' && !fp.startsWith('?')) {
       repeats = fp === last ? repeats + 1 : 1;
       if (repeats >= SETTLE_STABLE) return { fingerprint: fp, polls, waitedOn };
     } else {
@@ -429,9 +475,10 @@ async function settle(cdp, what) {
   }
   throw new Error(
     `${what} never settled within ${SETTLE_BUDGET_MS}ms. Last reading: ${last}. ` +
+    `Still in flight: ${[...networkInFlight.values()].join(', ') || 'nothing'}. ` +
     'A fingerprint that keeps changing is a page still drawing; a `?` reading is ' +
-    'a page that never booted. Either way the sweep refuses to measure it, because ' +
-    'a half-drawn pane reads exactly like a clean one.'
+    'a page that never booted or never finished reading. Either way the sweep ' +
+    'refuses to measure it, because a half-drawn pane reads exactly like a clean one.'
   );
 }
 
@@ -602,6 +649,7 @@ const PROBE = (scrollBy, minScroll) => `(() => {
 let browser = null;
 let cdp = null;
 let profile = null;
+let networkInFlight = new Map();
 const readings = [];
 const panesSeen = new Set();
 const applications = [];
@@ -625,6 +673,8 @@ before(async () => {
   await cdp.ready;
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  networkInFlight = trackNetwork(cdp);
+  await cdp.send('Network.enable');
 
   /* Seeded before the document runs rather than after, because the shell
      decides both its session and its theme before it paints: set afterwards
@@ -706,11 +756,15 @@ before(async () => {
     `${Math.min(...polls)} poll(s) at the fastest, ${Math.max(...polls)} at the slowest, ` +
     `${polls.filter((p) => p > SETTLE_STABLE).length} that needed more than the ` +
     `${SETTLE_STABLE}-poll minimum`);
-  console.log(`#   ${waits.length} poll(s) found a page not ready, ` +
-    `${staleWaits} of them answered by the document being left`);
-  for (const w of [...new Set(waits)].sort()) {
-    console.log(`#     waited on: ${w}`);
-  }
+  const readWaits = waits.filter((w) => w.includes('read(s) in flight')).length;
+  console.log(`#   ${waits.length} poll(s) found a page not ready: ` +
+    `${readWaits} with a read still in flight, ${staleWaits} answered by the document ` +
+    'being left, ' + (waits.length - readWaits - staleWaits) + ' still booting or drawing');
+  const tally = new Map();
+  for (const w of waits) tally.set(w, (tally.get(w) || 0) + 1);
+  const top = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  for (const [w, n] of top) console.log(`#     waited on: ${n} poll(s) — ${w}`);
+  if (tally.size > top.length) console.log(`#     waited on: ${tally.size - top.length} further reason(s)`);
   const shownTotal = applications.reduce((n, a) => n + (a.shown || 0), 0);
   console.log(`#   applyState was verified at ${applications.length} point(s): ` +
     `${shownTotal} element(s) shown, ` +
