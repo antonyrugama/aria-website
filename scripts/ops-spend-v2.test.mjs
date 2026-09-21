@@ -2572,6 +2572,77 @@ test('a target the route refused is the refusal in words, with no track under it
     assert.match(ownText(budget), /No target to draw against/);
   });
 
+test('a target stating no currency is not drawn in the one the bill happens to be in',
+  async () => {
+    /* Azure states no currency on a budget AMOUNT -- the only denomination in
+       its response rides on the accrued spend -- so a budget that has never
+       accrued any arrives with a figure and nothing saying what the figure is
+       in. The route refuses that budget (`unknown_currency`) rather than
+       drawing it. This is the client half of the same rule: a payload that
+       reaches the pane with an amount and no denomination is not drawn
+       either, and specifically is not drawn in the currency this window was
+       billed in, which is a different fact about a different number.
+
+       The expectation is stated here, not taken from the pane: $300.00 is
+       what the target's micros formatted as US dollars looks like, and US
+       dollars is exactly the denomination the bill states and the target
+       does not. */
+    const summary = summaryPayload({
+      budget: (b) => { const { currency, ...rest } = b; return rest; }
+    });
+    assert.equal(summary.cost.currency, 'USD',
+      'the BILL is denominated -- this is the trap: there is a currency in the payload, it '
+      + 'just is not the target\'s');
+    assert.equal(summary.cost.budget.currency, undefined,
+      'and the target states none');
+
+    const dom = await boot({ summary });
+    const panel = livePanel(dom);
+    assert.equal(byClass(panel, BUDGET_TRACK).length, 0,
+      'an undenominated target draws no track: a bar is a comparison, and there is nothing '
+      + 'here to say the two figures are comparable');
+
+    const words = ownText(panel);
+    assert.ok(!/\$\s*300\.00/.test(words),
+      'the target is printed as US dollars, which is the bill\'s denomination borrowed for a '
+      + 'figure that never stated one. A made-up denomination is worse than a made-up number '
+      + 'because it is drawn just as confidently as a real one');
+    assert.ok(!/times the|of the \$/.test(words),
+      'and no ratio caption is drawn against it either');
+
+    /* The bill itself is untouched: refusing the target must not cost the
+       figure the pane could always draw. The bill comes from the OTHER read
+       (/api/ops/costs), so the figure checked here is that fixture's own
+       total, summed from its groups rather than copied from the pane. */
+    const billed = payload().total.micros;
+    const printed = new Intl.NumberFormat('en-US', {
+      style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2
+    }).format(billed / 1_000_000);
+    assert.ok(ownText(panel).includes(printed),
+      `the billed total ${printed} is still printed -- this refuses a comparison, not a `
+      + 'reading, and the bill was never the figure in doubt');
+  });
+
+test('the route\'s own words for an undenominated target are what the pane prints',
+  async () => {
+    /* The contract-faithful shape of the same situation: the route resolves
+       the refusal itself and sends no budget block at all, with the reason as
+       an omission. Seven refusals share one code path here, so what is
+       asserted is that the pane prints the route's sentence rather than one
+       of its own. Text taken verbatim from the shipped
+       BUDGET_REFUSAL_DETAIL.unknown_currency in Stadiora/Aria#10780. */
+    const detail = 'A cloud budget is recorded, but the source states no currency for its '
+      + 'amount, so there is no way to know whether it is comparable with this spend. Reading '
+      + 'it as the currency this window happens to be billed in would invent the denomination '
+      + 'of a target, which is drawn just as confidently as a real one.';
+    const dom = await boot({ summary: summaryPayload({ refusal: detail }) });
+    const budget = budgetCardOf(dom);
+    assert.ok(budget, 'the card is drawn: an operator has to be told why there is no bar');
+    assert.equal(byClass(budget, BUDGET_TRACK).length, 0);
+    assert.match(ownText(budget), /states no currency for its amount/,
+      'the pane prints the route\'s sentence, not a summary of it');
+  });
+
 test('a summary the pane could not read draws no budget card, and no bill is lost',
   async () => {
     const dom = await boot({ summary: new Error('summary unavailable') });

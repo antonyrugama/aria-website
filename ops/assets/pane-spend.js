@@ -346,14 +346,26 @@
     var spend = num(cost.micros);
     var target = budget ? num(budget.micros) : null;
     var ratio = budget ? num(budget.ratioBasisPoints) : null;
+    /* The target's OWN stated denomination, and nothing else. Azure states no
+       currency on a budget amount -- the only denomination in its response
+       rides on the accrued spend -- so a budget that has never accrued any
+       arrives with an amount and nothing saying what the amount is in. The
+       route refuses that budget rather than drawing it (`unknown_currency`),
+       and borrowing this window's billing currency here would put the
+       refusal back: a target read as the currency the bill happens to be in
+       is an invented denomination, drawn as confidently as a real one and
+       wrong by whatever the exchange rate is. A made-up denomination is
+       worse than a made-up number, because it looks authoritative. */
+    var denomination = budget ? text(budget.currency) : null;
 
-    if (budget && spend !== null && target !== null && target > 0 && ratio !== null) {
+    if (budget && spend !== null && target !== null && target > 0 && ratio !== null
+      && denomination) {
       return {
         drawn: true,
         spend: spend,
         target: target,
         ratio: ratio,
-        money: { currency: text(budget.currency) || text(cost.currency) },
+        money: { currency: denomination },
         window: cost.window || {}
       };
     }
