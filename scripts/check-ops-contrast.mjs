@@ -740,10 +740,12 @@ const FOCUS_ADJACENT_RADIUS = 1;
    not stated here — a number typed in a comment is exactly what
    Stadiora/Aria#10365 was. The run prints the thinnest sample it took. */
 const FOCUS_MIN_ADJACENT = 8;
-/* Between two measured populations, not picked: the largest difference a
-   QUIET row has ever shown between two identical captures is 17 pixels
-   (local; 9 on the runner), and the row that is still painting shows 29,719
-   to 32,817. This floor is 30x above the first and 58x below the second. */
+/* Calibrated between two measured populations rather than picked. The
+   multiples are NOT written here, because a multiple written beside a
+   literal is the thing that drifts: F3 computes them from these three
+   constants and fails if the floor leaves the band. */
+const SETTLE_QUIET_CEILING = 17;
+const SETTLE_DEFECT_FLOOR = 29719;
 const FOCUS_SETTLE_FLOOR = 512;
 const FOCUS_SETTLE_TRIES = 3;
 
@@ -1879,6 +1881,19 @@ async function measureFocusIndicators(where) {
         if (settleDiff >= 0 && settleDiff <= FOCUS_SETTLE_FLOOR) break;
         if (settleTries >= FOCUS_SETTLE_TRIES) break;
       }
+      /* Fail closed. A row that is STILL moving after three pairs would be
+         measured through a mask big enough to delete part of its own ring,
+         and a worst-of over what is left prints exactly like a healthy one.
+         Refusing says so; the counters printed at the end of the run say how
+         close any row came. `settleDiff` is -1 only when the two shots came
+         back different sizes, which has its own refusal below. */
+      if (settleDiff > FOCUS_SETTLE_FLOOR) {
+        refusal = `it was still painting after ${settleTries} capture pairs — two identical ` +
+          `photographs of it differed by ${settleDiff} pixels, past the ${FOCUS_SETTLE_FLOOR} ` +
+          'this tool will treat as renderer noise, and a mask that large is subtracted from ' +
+          'the ring as well as from the surface beside it';
+        break;
+      }
       const focused = await evaluate(`(() => {
         const el = document.querySelector('[data-focus-site="${c.i}"]');
         /* Read immediately before focusing, not before the first screenshot:
@@ -2750,6 +2765,21 @@ async function measureFocusIndicators(where) {
  * than the mutants, and a fixture that flakes at the defect's own rate
  * reintroduces the defect in CI. Left open deliberately, for the reason two
  * paragraphs up.
+ *
+ * SETTLING, the same gap and a narrower claim. The pair is re-taken until it
+ * holds still because masking is the wrong instrument for a page that has
+ * not finished painting: on the runner the search input in the empty state
+ * differed by 29,719 to 32,817 pixels between two identical captures, and
+ * masking that removed 517 of 2,151 pixels OF THE RING, which the sweep then
+ * judged over what was left and called ok. What IS bound by fixture: the
+ * pixel counter itself (F3, six cases including alpha-only and both size
+ * mismatches) and the floor's calibration (F3 recomputes its margins and
+ * fails if the floor leaves the band). What is NOT: the loop and the
+ * never-settles refusal, because the fixture that would bind them — a region
+ * that never holds still — sits inside the whole-document clip that .hwide
+ * requires, so it would refuse that row too. They are exercised on the shell
+ * every run instead, where the two empty-state rows take a second pair and
+ * settle to 0, and both figures are printed.
  */
 const FIXTURE_CASES = [
   { bg: '#ffffff', expect: [255, 255, 255] },
@@ -3098,6 +3128,58 @@ async function selfTest() {
           `${inBand ? '' : ' — AND THE SHIPPED CONSTANT IS OUTSIDE IT'}` +
           `${contractsBind ? '' : ' — BOUND BY A BROWSER SERIALISATION RATHER THAN BY A CONTRACT'}`
         : '\n          the edges could not be computed: a fixture ink did not serialise as color(srgb ...)'));
+  }
+
+  console.log('\n  F3. the settle floor — a pixel counter, and a floor that must stay between ' +
+    'two measured populations');
+  {
+    const shot = (w, h, fill) => ({ width: w, height: h, data: (() => {
+      const d = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < w * h; i++) {
+        d[i * 4] = fill[0]; d[i * 4 + 1] = fill[1]; d[i * 4 + 2] = fill[2]; d[i * 4 + 3] = 255;
+      }
+      return d;
+    })() });
+    const a = shot(4, 4, [10, 20, 30]);
+    const b = shot(4, 4, [10, 20, 30]);
+    b.data[0] = 11;              // one pixel, red channel
+    b.data[5 * 4 + 2] = 31;      // a second pixel, blue channel
+    const alphaOnly = shot(4, 4, [10, 20, 30]);
+    alphaOnly.data[3] = 7;       // alpha alone must not count
+    const cases = [
+      ['two identical shots', shotDiffPx(a, shot(4, 4, [10, 20, 30])), 0],
+      ['two pixels differing in one channel each', shotDiffPx(a, b), 2],
+      ['a difference in alpha alone', shotDiffPx(a, alphaOnly), 0],
+      ['shots of different widths', shotDiffPx(a, shot(5, 4, [10, 20, 30])), -1],
+      ['shots of different heights', shotDiffPx(a, shot(4, 5, [10, 20, 30])), -1],
+      ['a missing shot', shotDiffPx(a, null), -1]
+    ];
+    for (const [what, got, want] of cases) {
+      const ok = got === want;
+      if (!ok) bad++;
+      console.log(`     ${ok ? 'ok  ' : 'FAIL'} ${what.padEnd(46)} ${got}, expected ${want}`);
+    }
+    /* THE FLOOR'S CALIBRATION, asserted rather than described. The two
+       populations are what the runner measured; the multiples below are
+       computed from them here and nowhere written down, so the floor cannot
+       drift away from its own justification the way a literal drifts away
+       from the comment beside it. */
+    const above = FOCUS_SETTLE_FLOOR / SETTLE_QUIET_CEILING;
+    const below = SETTLE_DEFECT_FLOOR / FOCUS_SETTLE_FLOOR;
+    const inBand = SETTLE_QUIET_CEILING < FOCUS_SETTLE_FLOOR &&
+      FOCUS_SETTLE_FLOOR < SETTLE_DEFECT_FLOOR;
+    const roomy = above >= 10 && below >= 10;
+    if (!inBand || !roomy) bad++;
+    console.log(`     ${inBand && roomy ? 'ok  ' : 'FAIL'} ` +
+      `floor ${FOCUS_SETTLE_FLOOR} sits ${above.toFixed(1)}x above the worst quiet row ` +
+      `(${SETTLE_QUIET_CEILING}px) and ${below.toFixed(1)}x below the smallest instance of ` +
+      `the defect (${SETTLE_DEFECT_FLOOR}px)`);
+    console.log('           both measured on the runner: the quiet ceiling over ~1000 row-' +
+      'observations, the defect on the search input in the empty state, which masked 517 of ' +
+      '2151 ring pixels');
+    console.log(`     ${FOCUS_SETTLE_TRIES >= 2 ? 'ok  ' : 'FAIL'} and the pair is taken up to ` +
+      `${FOCUS_SETTLE_TRIES} times — one attempt is no retry at all`);
+    if (FOCUS_SETTLE_TRIES < 2) bad++;
   }
 
   console.log('\n  G. boundary censuses — a frame, an author shadow root and unsourced user-agent text');
