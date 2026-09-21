@@ -961,6 +961,14 @@ const FOCUSABLE_PROBES = [
     attrs: { contenteditable: 'true' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. an own contenteditable makes it a stop in a used map '
       + 'and not in an unused one, exactly as a tabindex does' },
+  { name: '<area contenteditable="false"> with no href', tag: 'area',
+    attrs: { contenteditable: 'false' }, answer: false,
+    note: 'FOUND IN REVIEW: true. the false state is not editability, and it is a stop in '
+      + 'no arrangement -- measured in a used map' },
+  { name: '<area contenteditable tabindex="-1">', tag: 'area',
+    attrs: { contenteditable: 'true', tabindex: '-1' }, answer: false,
+    note: 'FOUND IN REVIEW: true. measured: no stop in a used map, and the negative '
+      + 'tabindex answers it above this branch' },
   { name: '<details> with a <summary> child', tag: 'details', childBefore: ['summary'],
     answer: false, why: 'the <summary> is the stop; its <details> is not' },
   { name: '<details> with no <summary>', tag: 'details', answer: 'cannot tell',
@@ -1078,8 +1086,8 @@ test('focusable() answers the tab order the document can decide, and refuses the
     foundInReview: FOCUSABLE_PROBES.filter((p) => /^FOUND IN REVIEW/.test(p.note || '')).length,
   };
   assert.deepEqual(counts,
-    { cases: 88, takesATabStop: 31, doesNot: 43, refused: 14, wereWrongBefore: 7,
-      foundInReview: 35 });
+    { cases: 90, takesATabStop: 31, doesNot: 45, refused: 14, wereWrongBefore: 7,
+      foundInReview: 37 });
   console.log('focusable() probes judged: ' + JSON.stringify(counts));
 });
 
