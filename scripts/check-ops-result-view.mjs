@@ -118,6 +118,16 @@
      this sweep never scrolls and every pane is taller than the window; the
      cost is that a result parked somewhere no reader would go, but could
      scroll to, reads as on the page.
+   - **The rendered-text question is asked of boxless carriers only.** A
+     carrier that owns a box is judged by that box and checkVisibility(). A
+     carrier with none — display:contents — is judged by the boxes its text
+     produces AND by whether the region's innerText still contains the marker,
+     because a Range inside a content-visibility:hidden subtree keeps
+     reporting the rects it had when it was visible. The asymmetry is real: a
+     refactor that splits a marker into two flex items, so the page renders
+     "2." and "9.1" with the row's gap between them, is a failure on a boxless
+     carrier and a pass on a boxed one. Both answers are about the marker
+     string, not about whether a reader can see a version number.
    - **A sibling combinator's reach.** A clause like `.a ~ .b` paints an
      element that is neither the class's carrier nor inside it, so for those
      clauses the question falls back to "does this match anything on the page".
@@ -1799,8 +1809,10 @@ try {
           'and nothing carrying it — neither a box of its own nor the boxes its text ' +
           'produces — is both inside the area this page can be scrolled over and reported ' +
           'as rendered by the browser. Zero-area, display:none, visibility:hidden or ' +
-          'collapse, content-visibility, and a position outside the document all land here ' +
-          'and this check does not tell them apart; opacity it never asked about. The ' +
+          'collapse, content-visibility, a position outside the document, and a carrier ' +
+          'with no box of its own whose text the page no longer renders as one run all ' +
+          'land here and this check does not tell them apart; opacity it never asked ' +
+          'about. The ' +
           'result is in the DOM, nothing below could judge what it paints, and this run ' +
           'will not count the pane as reaching a result view.');
         continue;
