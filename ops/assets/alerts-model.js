@@ -217,6 +217,11 @@
     var lastEvaluated = latest(enabled.map(function (r) { return r.lastEvaluatedAt; }));
 
     var channels = Array.isArray(rules.channels) ? rules.channels : [];
+    /* `=== true`, and the two panes spell it the same way. A row saying
+       "Connected" while the note above the queue says "No destination is
+       set" is the two-panes-disagreeing defect of Stadiora/Aria#10630 inside
+       one render, so `channelNote()`, the routing chip and Overview's chip
+       all test this identically. */
     var configured = channels.filter(function (c) { return c.configured === true; });
 
     return {
@@ -233,8 +238,13 @@
       /* Has anything ever actually arrived, anywhere. Not "is a destination
          set": a destination that has never delivered is a destination that
          has never delivered, and seven open problems behind it read the same
-         either way (Stadiora/Aria#10811). */
-      everDelivered: configured.some(function (c) {
+         either way (Stadiora/Aria#10811).
+
+         Over every channel, not just the configured ones, because a webhook
+         that delivered and was later rotated out leaves `configured: false`
+         beside a real `lastSuccessAt` -- and "nothing here has been sent to
+         anyone" is contradicted by a field in the same payload. */
+      everDelivered: channels.some(function (c) {
         return time(c.lastSuccessAt) !== null;
       }),
       total: list.length,

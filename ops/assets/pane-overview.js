@@ -755,7 +755,7 @@
       /* A channel that was never connected is where a problem goes to be
          missed, so it is stated here rather than only on the pane that owns
          it. */
-      var unconfigured = armed.channels.filter(function (c) { return !c.configured; });
+      var unconfigured = armed.channels.filter(function (c) { return c.configured !== true; });
       if (unconfigured.length) {
         row.appendChild(chip('warn', fmt.plural(unconfigured.length, 'route') + ' not set up'));
       }
@@ -986,7 +986,11 @@
 
        Every caller uses the RESOLVED value rather than testing with this and
        rendering the raw field, because a predicate that trims over a value
-       that does not is the same defect wearing the fix. */
+       that does not is the same defect wearing the fix. Five sites did that
+       when the trim landed and all five are fixed; the count is here because
+       the first sweep reported three and shipped the miss in this comment.
+       `ops-overview-blank-text.test.mjs` binds each of the five, so a sixth
+       added later is caught by nothing — check the render, not this line. */
     function textOf(value) {
       if (typeof value !== 'string') return null;
       var trimmed = value.trim();
@@ -1322,11 +1326,14 @@
       platforms.forEach(function (platform) {
         var code = textOf(platform.versionCode);
         rows.appendChild(h('div', { className: 'kpi-row' }, [
-          h('span', { className: 'kpi-plat', text: textOf(platform.label) || platform.platform }),
+          h('span', {
+            className: 'kpi-plat',
+            text: textOf(platform.label) || textOf(platform.platform) || 'Unnamed platform'
+          }),
           h('div', { className: 'spacer' }),
           h('span', {
             className: 'num',
-            text: platform.versionName + (code ? ' (' + code + ')' : '')
+            text: textOf(platform.versionName) + (code ? ' (' + code + ')' : '')
           })
         ]));
         var read = fmt.hoursSince(platform.fetchedAt);
@@ -1637,7 +1644,7 @@
         glyph.setAttribute('aria-hidden', 'true');
         item.appendChild(glyph);
         item.appendChild(h('div', {}, [
-          h('h4', { className: 'omit-title', text: textOf(entry.title) || entry.key }),
+          h('h4', { className: 'omit-title', text: textOf(entry.title) || textOf(entry.key) }),
           h('p', {
             className: 'omit-desc',
             text: textOf(entry.detail) ||

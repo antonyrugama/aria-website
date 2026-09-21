@@ -1570,8 +1570,14 @@
       var status = rule.lastEvaluationStatus;
       var words = EVALUATION_LABEL[status] || status || 'Unknown';
       if (status === 'insufficient_data' && rule.lastInsufficientReason) {
-        words += ', ' + (INSUFFICIENT_REASON[rule.lastInsufficientReason] ||
-          rule.lastInsufficientReason);
+        /* Through textOf(), for severityWords()'s reason one screen above:
+           INSUFFICIENT_REASON is a plain object literal, so a reason of
+           `constructor` is Object and the row printed `function Object() {
+           [native code] }` at an operator. textOf() rejects anything that is
+           not a word, so the raw key prints instead -- which is what the
+           severity pill does with the same payload (Stadiora/Aria#10630). */
+        words += ', ' + (textOf(INSUFFICIENT_REASON[rule.lastInsufficientReason]) ||
+          textOf(rule.lastInsufficientReason) || 'reason not given');
       }
       var glyph = status === 'ok' ? 'check'
         : status === 'firing' ? 'warn'
@@ -1882,7 +1888,7 @@
         words.appendChild(h('div', { className: 'tiny muted', text: channelNote(channel) }));
         row.appendChild(words);
 
-        var status = channel.configured
+        var status = channel.configured === true
           ? (CHANNEL_STATUS[channel.lastDeliveryStatus] || null)
           : CHANNEL_STATUS.unconfigured;
         var tone = !status ? 'ghost'
@@ -1897,7 +1903,7 @@
     }
 
     function channelNote(channel) {
-      if (!channel.configured) return 'No destination has been set';
+      if (channel.configured !== true) return 'No destination has been set';
       if (channel.lastDeliveryStatus === 'failed') {
         var why = CHANNEL_FAILURE[channel.lastFailureReason];
         return 'Last attempt ' + fmt.ago(channel.lastAttemptAt) +

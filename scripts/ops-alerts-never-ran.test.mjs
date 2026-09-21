@@ -523,3 +523,90 @@ test('a destination with no label is still identified', async () => {
   assert.equal(rows[1].name, 'Email',
     'the labelled destination lost its label');
 });
+
+/* ====================================================================== */
+/* Raised by the independent review of PR #124                            */
+/* ====================================================================== */
+
+test('a destination that delivered before it was disconnected stops the sentence',
+  async () => {
+    /* `everDelivered` filtered to CONFIGURED channels while its comment said
+       "anywhere". A webhook that delivered and was later rotated out leaves
+       `configured: false` beside a real `lastSuccessAt`, and the pane said
+       "nothing here has been sent to anyone" over a payload carrying the
+       timestamp of something that was. `ops_alert_channel_state` keeps
+       `status` and `last_success_at` independently, so this is the state that
+       configuring Teams for #10811 and later rotating the webhook produces. */
+    const channels = prodChannels();
+    channels[0].configured = false;
+    channels[0].lastSuccessAt = at(30 * DAY);
+    const note = noteText(await boot({ rules: { rules: prodRules(), channels } }));
+
+    assert.ok(note, 'the note vanished entirely, so the absence below proves nothing');
+    assert.doesNotMatch(note, /has ever been delivered|been sent to anyone/,
+      `the note reads "${note}" and claims nothing has ever been sent, over a payload `
+      + 'whose own lastSuccessAt says something was');
+  });
+
+test('one render does not both deny and report a delivery', async () => {
+  /* Three spellings of "is this destination configured" -- `c.configured ===
+     true` in the model, `channel.configured ?` on the routing chip, and
+     `!c.configured` on Overview's -- put "No destination is set" above the
+     queue and "Connected · Last delivered 5 minutes ago" three bands below
+     it, on one render. Two panes disagreeing during one incident is
+     #10630; this was one pane disagreeing with itself. */
+  const channels = prodChannels();
+  channels.forEach((c) => {
+    c.configured = 'yes';
+    c.lastDeliveryStatus = 'ok';
+    c.lastSuccessAt = null;
+    c.lastAttemptAt = null;
+  });
+  const dom = await boot({ rules: { rules: prodRules(), channels } });
+  const note = noteText(dom);
+  const rows = routeRows(dom);
+
+  const denies = /No destination is set/.test(note || '');
+  const reports = rows.some((r) => /Connected|Set up/.test(r.text));
+  assert.ok(!(denies && reports),
+    `the note says "${note}" while a routing row says `
+    + `"${(rows.find((r) => /Connected|Set up/.test(r.text)) || {}).text}"`);
+
+  /* And the direction is the strict one, so the pane treats a value that is
+     not the boolean the column holds as "not set up" rather than as set up. */
+  assert.ok(denies,
+    `the note reads "${note}" -- a configured flag of 'yes' was read as configured`);
+  assert.ok(rows.length >= 2,
+    `the finder saw ${rows.length} routing rows, so the agreement above is vacuous`);
+});
+
+test('a rule whose reason is a word every object answers to does not print a function',
+  async () => {
+    /* #10630 on the adjacent map. `INSUFFICIENT_REASON` is a plain object
+       literal, so `INSUFFICIENT_REASON['constructor']` is `Object` and the
+       rule row printed `function Object() { [native code] }` at an operator
+       mid-incident. The severity pill one screen above was hardened for this;
+       the rule state cell was not. */
+    const healthy = ruleStates(await boot());
+    assert.ok(Object.keys(healthy).length >= 8,
+      `the finder saw ${Object.keys(healthy).length} rule rows, so a clean result below `
+      + 'would mean the probe never reached the render path');
+    assert.ok(Object.values(healthy).some((t) => /Not enough data to judge/.test(t)),
+      'no rule row reads "Not enough data to judge" on the production payload, so this '
+      + 'test is not reading the cell it names');
+
+    for (const reason of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
+      const rules = prodRules();
+      const target = rules.find((r) => r.lastEvaluationStatus === 'insufficient_data');
+      assert.ok(target, 'no rule in the production payload is short of data');
+      target.lastInsufficientReason = reason;
+      const states = ruleStates(await boot({ rules: { rules, channels: prodChannels() } }));
+      const cell = states[target.title];
+
+      assert.ok(cell, `no rule row was drawn for ${JSON.stringify(target.title)}`);
+      assert.doesNotMatch(cell, /\[native code\]|function \w*\(/,
+        `a reason of "${reason}" drew the source of a function at an operator: "${cell}"`);
+      assert.match(cell, /Not enough data to judge/,
+        `a reason of "${reason}" took down the words around it: "${cell}"`);
+    }
+  });

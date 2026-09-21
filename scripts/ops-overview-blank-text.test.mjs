@@ -8,12 +8,22 @@
    a trailing comma with no environment after it, an empty pair of brackets
    after a version, a footnote box holding no note.
 
-   Three of the seventeen call sites were the reason the fix is more than one
+   FIVE of the sixteen call sites were the reason the fix is more than one
    line. They used `textOf(x)` as a PREDICATE and then rendered the raw `x`,
    so trimming the predicate alone would have decided with a trimmed value and
-   drawn an untrimmed one -- the same defect wearing its own fix. Those three
-   are `people.environment`, `platform.versionCode` and `appendNote()`, and
-   each has a test below.
+   drawn an untrimmed one -- the same defect wearing its own fix. They are
+   `people.environment`, `platform.versionCode`, `appendNote()`,
+   `platform.versionName` and `omissionsCard()`'s `entry.key`, and each has a
+   test below.
+
+   The last two of those five were found by the independent review of PR #124,
+   not by the sweep. The first pass counted three, wrote "the other fourteen
+   have no predicate/value split to get wrong" in this very block, and shipped
+   both the miss and the sentence certifying there was none -- while the whole
+   suite stayed green, because nothing in the repository could see either one.
+   Read that as the reason this list is now enumerated by name rather than by
+   subtraction: a NOT COVERED bullet reached by "everything else is fine" is a
+   claim that costs nothing to write and nothing to be wrong about.
 
    How these bind, and why it is not a source grep:
 
@@ -35,10 +45,15 @@
        of that file's hostile payloads including the whitespace one. Repeating
        it here would be a second place to update and no new binding.
 
-     - The other fourteen `textOf()` call sites. They pass the resolved value
-       into `text:` directly, so trimming the function is the whole of their
-       behaviour and there is no predicate/value split to get wrong. The three
-       tested here are the three where the two could diverge. */
+     - The eleven call sites that pass the resolved value straight into
+       `text:`, named rather than counted: `model.PANE_FILE[...]` (:912),
+       `cost.comparison.label` (:1255), `cost.basis` (:1296),
+       `platform.versionCode` (:1323), `platform.label` and
+       `platform.platform` (:1325-1327), `note` (:1608), `entry.title` twice
+       (:1623, :1640), `entry.detail` (:1643), `entry.block.note` (:1674) and
+       `data.consent.detail` (:1743). Trimming the function is the whole of
+       their behaviour. Checked one at a time against the render rather than
+       inferred from the other five, because that inference is what failed. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -351,4 +366,87 @@ test('a note padded with spaces prints without its padding', async () => {
       `"${text}" carries its own padding into the DOM, so the predicate trimmed and the `
       + 'render did not');
   }
+});
+
+/* --------------------------------------------------- the version NAME
+
+   Sites four and five, found by the independent review of PR #124 rather
+   than by the sweep that reported three. `releaseTile()` filters platforms
+   with `textOf(platform.versionName)` at :1311 and drew the RAW field at
+   :1330 -- one line below the `versionCode` half the same sweep did fix. */
+
+test('a version name padded with spaces prints without its padding', async () => {
+  const named = versionTexts(await boot(summaryFixture()));
+  assert.equal(named.filter((t) => t.includes('2.4.1 (2410)')).length, 1,
+    'no version row reads "2.4.1 (2410)" on the healthy render, so the padding assertion '
+    + 'below is reading the wrong element');
+
+  const padded = summaryFixture();
+  padded.release.platforms[0].versionName = '  2.4.1  ';
+  const texts = versionTexts(await boot(padded));
+
+  assert.equal(texts.length, named.length,
+    'the padded version name changed how many version rows are drawn');
+  assert.ok(texts.some((t) => t === '2.4.1 (2410)'),
+    `the padded version name drew as ${JSON.stringify(texts)} rather than "2.4.1 (2410)"`);
+  for (const text of texts) {
+    assert.doesNotMatch(text, /^\s|\s\s/,
+      `"${text}" carries the field's own padding, so the predicate trimmed and the render `
+      + 'did not');
+  }
+});
+
+test('a platform with no usable name of its own is still named', async () => {
+  const named = versionTexts(await boot(summaryFixture()));
+  assert.equal(named.length, 2, 'the healthy render does not draw two platform rows');
+
+  const blank = summaryFixture();
+  blank.release.platforms[0].label = '   ';
+  blank.release.platforms[0].platform = '   ';
+  const dom = await boot(blank);
+
+  assert.equal(versionTexts(dom).length, 2,
+    'the nameless platform took its own row down rather than being named');
+  const plats = textsWithClass(dom, 'kpi-plat');
+  for (const text of plats) {
+    assert.notEqual(text.trim(), '',
+      'a platform row reached the screen with no name in it at all, which reads as a row '
+      + 'that is not there');
+  }
+  assert.ok(plats.some((t) => t === 'Unnamed platform'),
+    `the nameless platform drew as ${JSON.stringify(plats)} rather than "Unnamed platform"`);
+});
+
+/* ------------------------------------------- omissionsCard()'s entry key */
+
+const omitTitles = (dom) => textsWithClass(dom, 'omit-title');
+
+function withOmission(entry) {
+  const fixture = summaryFixture();
+  fixture.omissions = [entry];
+  return fixture;
+}
+
+test('an omission named only by a padded key prints the key without its padding',
+  async () => {
+    const named = omitTitles(await boot(withOmission({ key: 'spend_budget' })));
+    assert.deepEqual(named, ['spend_budget'],
+      'the healthy render does not draw the key as the omission title, so the padding '
+      + 'assertion below is reading the wrong element');
+
+    const padded = withOmission({ title: '  ', key: '  spend_budget  ' });
+    const texts = omitTitles(await boot(padded));
+
+    assert.deepEqual(texts, ['spend_budget'],
+      `the padded key drew as ${JSON.stringify(texts)} -- omissionsCard() decided with `
+      + 'textOf(entry.key) at :1623 and rendered the raw field at :1640');
+  });
+
+test('an omission with nothing usable to name it is not drawn at all', async () => {
+  assert.deepEqual(omitTitles(await boot(withOmission({ key: 'spend_budget' }))),
+    ['spend_budget'], 'the finder does not see an omission that IS drawn');
+
+  const blank = withOmission({ title: '   ', key: '   ' });
+  assert.deepEqual(omitTitles(await boot(blank)), [],
+    'an omission with no words in either field drew a heading holding nothing');
 });
