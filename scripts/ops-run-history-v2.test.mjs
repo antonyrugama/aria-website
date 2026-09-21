@@ -219,6 +219,7 @@ function detailAnswer(over) {
         { type: { value: 'program_generation', label: 'Training program', labelled: true }, runs: 1, accounts: 1 },
       ],
       isolated: false,
+      countIncludesThisRun: true,
     },
   };
   return over ? over(base) ?? base : base;
@@ -738,6 +739,56 @@ test('a run that failed says how many other runs and accounts hit the same fault
   assert.match(text, /1 run had no account left to count/,
     'runs whose account has been deleted were folded into the account figure, which ' +
     'undercounts the accounts and overcounts nothing');
+});
+
+test('an uncounted fault says nobody could be counted, not that nobody was hit', async () => {
+  /* The route sends null rather than nought when the window holds no run under
+     the label. Drawing `0` here would be a confident reassurance over an empty
+     read, which is the defect this whole pane exists to make impossible. */
+  const dom = await boot({
+    detail: detailAnswer((base) => {
+      base.shared.runs = null;
+      base.shared.accounts = null;
+      base.shared.runsWithoutAccount = null;
+      base.shared.firstSeenAt = null;
+      base.shared.lastSeenAt = null;
+      base.shared.byType = [];
+      base.shared.isolated = null;
+      base.shared.countIncludesThisRun = false;
+    }),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click');
+  await settle();
+  const text = allText(sectionWithHeading(dom, /One run/));
+  assert.match(text, /Nobody could be counted/, 'an empty count drew no explanation at all');
+  assert.match(text, /not a count of nought/,
+    'the pane did not say that nothing counted is different from nobody hit');
+  assert.doesNotMatch(text, /Runs that hit it/,
+    'an empty count still drew the figure grid, so absence was rendered as a number');
+  assert.doesNotMatch(text, /only run that hit it/,
+    'an empty count was read as proof this run is alone');
+});
+
+test('a run outside the compared window refuses to call itself isolated', async () => {
+  const dom = await boot({
+    detail: detailAnswer((base) => {
+      base.shared.runs = 1;
+      base.shared.accounts = 1;
+      base.shared.isolated = null;
+      base.shared.countIncludesThisRun = false;
+    }),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click');
+  await settle();
+  const text = allText(sectionWithHeading(dom, /One run/));
+  assert.match(text, /finished outside the window these figures cover/,
+    'figures taken over a window this run is not in were presented as being about it');
+  assert.match(text, /Counted, but not around this run/,
+    'the heading answered a question the figures cannot answer about this run');
+  assert.doesNotMatch(text, /only run that hit it/,
+    'a count that never saw this run was read as proof it is alone');
+  assert.match(text, /Runs that hit it/,
+    'the figures were true about the window and should still be shown');
 });
 
 test('a run that did not fail says there is nothing to compare, rather than comparing to nothing', async () => {

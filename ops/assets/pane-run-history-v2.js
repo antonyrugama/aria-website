@@ -1027,14 +1027,49 @@
       }
 
       var shared = data.shared;
+      var label = shared.failureCode
+        ? 'Everything in this window that failed with ' + coded(shared.failureCode)
+        : 'Everything in this window that failed with no label recorded';
+
+      /* The count can come back with nothing in it, and nothing is not nought.
+         `Runs that hit it: 0` would read as "nobody else", which is the one
+         reassurance this pane must never invent. The route sends null; this
+         says so and stops, rather than drawing a grid of dashes. */
+      if (shared.runs === null) {
+        box.appendChild(S.cardHead('Nobody could be counted', label));
+        var none = h('div', { className: 'card-body' });
+        none.appendChild(h('p', {
+          className: 'state-desc',
+          text: 'No run under this label is in the window above, so there was nothing to ' +
+            'count. That is not a count of nought: this run is not alone until something ' +
+            'says so, and nothing here does. Widen the range to ask again.'
+        }));
+        box.appendChild(none);
+        return box;
+      }
+
       box.appendChild(S.cardHead(
-        shared.isolated ? 'This is the only run that hit it' : 'It is happening to other people',
-        shared.failureCode
-          ? 'Everything in this window that failed with ' + coded(shared.failureCode)
-          : 'Everything in this window that failed with no label recorded'
+        shared.isolated === null
+          ? 'Counted, but not around this run'
+          : shared.isolated
+            ? 'This is the only run that hit it'
+            : 'It is happening to other people',
+        label
       ));
 
       var body = h('div', { className: 'card-body col' });
+
+      /* The window is the selection's, not the run's. Open a run from outside it
+         and the figures below are true about other runs and silent about this
+         one, so the heading above refuses to call it isolated and this says why. */
+      if (!shared.countIncludesThisRun) {
+        body.appendChild(h('p', {
+          className: 'state-desc',
+          text: 'This run finished outside the window these figures cover, so they are about ' +
+            'other runs. Whether this one is alone is not something they can say.'
+        }));
+      }
+
       var grid = h('div', { className: 'grid g2' });
       grid.appendChild(figureCard({
         label: 'Runs that hit it',
