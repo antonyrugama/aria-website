@@ -222,7 +222,7 @@ for (const m of BATTERY) {
        vanishes is how a battery comes to prove less than it claims. */
     rows.push({ ...m, anchor: null, applied: null, scored: 'SKIPPED',
       r: { verdict: 'SKIPPED', failed: [], status: null, fails: null, passes: null,
-        messages: [`fixture ${m.needs} is absent; rebuild it with the pyftsubset command in ops/assets/fonts/README.md, dropping U+00B7 from --unicodes`] } });
+        messages: [`fixture ${m.needs} is absent; rebuild it with the pyftsubset command in ops/assets/fonts/README.md VERBATIM -- including --name-IDs='*' --no-hinting --notdef-outline, or the fixture differs from the shipped font by more than the codepoint under test -- dropping U+00B7 from --unicodes`] } });
     process.stderr.write(`\n=== ${m.id} SKIPPED (no ${m.needs})\n`);
     continue;
   }

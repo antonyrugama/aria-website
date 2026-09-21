@@ -54,12 +54,38 @@ pyftsubset Geist-Variable.woff2 \
   --output-file=Geist-Variable.subset.woff2 \
   --flavor=woff2 \
   --layout-features=kern,liga,calt,tnum,ccmp,locl,mark,mkmk \
+  --name-IDs='*' --no-hinting --notdef-outline \
   --unicodes="U+0020-007E,U+00A0-00FF,U+0100-017F,U+2013,U+2014,U+2018,U+2019,\
 U+201C,U+201D,U+2022,U+2026,U+2030,U+2039,U+203A,U+2190-2193,U+20AC,U+2212,\
 U+2248,U+2264,U+2265,U+00D7,U+00F7"
 ```
 
-and identically for `GeistMono-Variable.woff2`.
+and identically for `GeistMono-Variable.woff2`. Verify with `cmp`; both files
+here are byte-identical to that command's output, so the recipe reproduces what
+ships rather than approximating it:
+
+```sh
+cmp Geist-Variable.subset.woff2 Geist-Variable.woff2
+```
+
+**`--name-IDs='*'` is not optional, and not a size knob.** pyftsubset's default
+keeps only nameIDs 0-6; the OFL licence text (nameID 13) and its URL (nameID 14)
+are dropped. That would ship a font whose own metadata no longer says what it is
+licensed under, leaving `OFL.txt` beside it as the only statement. It costs
+264 B on the sans file and 200 B on the mono -- the entire size difference
+between the default recipe and this one.
+
+`--no-hinting` and `--notdef-outline` cost nothing in size and are still
+required for reproduction: adding `--name-IDs='*'` alone gives a file of exactly
+29,272 B that is **not** the shipped file, differing from byte 14. Same size,
+different bytes, which is the reason `cmp` is the check above and `ls -l` is
+not.
+
+This paragraph exists because the command recorded here was originally written
+WITHOUT those three flags, which is not the command that produced these files.
+An independent reviewer caught it by running the documented recipe and diffing
+the result -- 29,008 B against the shipped 29,272 B, differing from byte 11. A
+build recipe nobody re-runs is a guess; re-run it and `cmp` it.
 
 What that keeps: ASCII, Latin-1 Supplement and Latin Extended-A — so every
 European diacritic a person's name is likely to carry — plus the punctuation and

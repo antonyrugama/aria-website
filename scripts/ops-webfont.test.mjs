@@ -102,10 +102,19 @@
  *    worth what the text it saw is worth. A state that failed to apply makes
  *    four labelled passes over one state's text.
  *
- * Scope: the eleven pages that load `assets/aria.css`. `login.html` and
- * `setup.html` load `assets/ops.css` instead, which declares `'Fira Sans'` and
- * `'JetBrains Mono'` -- a different design that never named Geist, not an
- * unfixed instance of #10806.
+ * Scope, stated as swept rather than as installed, because those differ by one:
+ * eleven of the thirteen `ops/*.html` load `assets/aria.css`, and this sweep
+ * visits TEN of them -- the panes in the registry. `shell-v2.html` loads the
+ * sheet and is NOT swept: it is the shell harness, not a registry pane, so the
+ * pane-boot procedure below does not address it. Any claim here about "every
+ * page" means those ten.
+ *
+ * `login.html` and `setup.html` are the other two, and they are out of scope
+ * for a different and better reason: they load `assets/ops.css` instead, which
+ * declares `'Fira Sans'` and `'JetBrains Mono'` -- a different design that
+ * never named Geist, so not an unfixed instance of #10806. Those two DO name
+ * fonts that nothing serves, which is the same defect class in a sheet this
+ * change does not own; filed separately rather than widened into here.
  */
 
 import { test, before, after } from 'node:test';
