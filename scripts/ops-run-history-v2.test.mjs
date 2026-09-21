@@ -818,6 +818,28 @@ test('a request type this build has no name for still draws, and says it has no 
     'a request type with no label printed its raw token as though it were a name');
 });
 
+test('an unnamed request type is named as unnamed in the control too, not only the table',
+  async () => {
+    const dom = await boot({
+      runs: windowAnswer((base) => {
+        base.facets.types = [
+          { value: 'future_type', label: 'future_type', labelled: false, runs: 4 },
+        ];
+      }),
+    });
+    /* The control and the rows under it have to agree. A picker printing the
+       raw token beside a table saying the page has no name for it reads as
+       two different request types, and the operator picks between them. */
+    const options = findAll(livePanel(dom), (n) => n.tagName === 'OPTION')
+      .map((n) => allText(n))
+      .filter((t) => t.includes('future_type'));
+    assert.ok(options.length, 'the control does not offer the unnamed type at all');
+    for (const text of options) {
+      assert.match(text, /no name on this page/,
+        'the control offers "' + text + '", printing a raw token as though it were a name');
+    }
+  });
+
 /* ============================ privacy ================================== */
 
 test('run content is hidden at every role, the owner included', async () => {
@@ -949,16 +971,42 @@ test('a failed window read degrades the pane and says the figures are unread', a
 
 test('every doorway points at the pane the registry says owns it', async () => {
   const dom = await boot({});
-  const registry = dom.window.OpsPaneRegistry || dom.window.OpsPanes;
   const links = findAll(livePanel(dom), (n) => n.tagName === 'A')
     .map((n) => (n.getAttribute('href') || '').split('?')[0])
     .filter((href) => href && href.endsWith('.html'));
   assert.ok(links.length, 'the pane offers no doorway to the panes that own what it cannot say');
-  const files = new Set(Object.values(dom.window.OpsPaneShell.panes).map((p) => p.file));
-  for (const href of links) {
-    assert.ok(files.has(href), 'a doorway points at ' + href + ', which no pane declares');
-  }
-  assert.ok(links.includes('users.html'), 'the privacy band does not say where a reveal is recorded');
+
+  /* The three panes are named here as ids and resolved to files through the
+     registry, rather than compared against "some file the registry declares".
+     The weaker form passes while a doorway points at the wrong pane, because
+     every pane's file is a file the registry declares — which is the defect
+     this test is named for. */
+  const panes = dom.window.OpsPaneShell.panes;
+  const fileOf = (id) => {
+    assert.ok(panes[id], 'the registry no longer declares ' + id);
+    return panes[id].file;
+  };
+  assert.deepEqual([...new Set(links)].sort(), [fileOf('alerts'), fileOf('users')].sort(),
+    'the drawn pane offers ' + [...new Set(links)].join(', ') + ': what the watchers caught '
+    + 'belongs to Problems and where a reveal is recorded to Look up a user.');
+
+  /* The empty states carry a different doorway, because what an operator
+     wants from a pane with nothing in it is the pane that has something. */
+  const bare = await boot({
+    runs: windowAnswer((base) => {
+      base.coverage = {
+        state: 'never_recorded', recordingSince: null, lastRecordedAt: null, coversWindow: false,
+      };
+      base.runs = [];
+      base.failures = [];
+    }),
+  });
+  const bareLinks = [...new Set(findAll(emptyPanel(bare), (n) => n.tagName === 'A')
+    .map((n) => (n.getAttribute('href') || '').split('?')[0])
+    .filter((href) => href && href.endsWith('.html')))].sort();
+  assert.deepEqual(bareLinks, [fileOf('alerts'), fileOf('jobs')].sort(),
+    'the unread pane offers ' + bareLinks.join(', ') + ': what is running now belongs to '
+    + 'Happening now, and what the watchers caught to Problems.');
 });
 
 /* ============================= the page ================================ */

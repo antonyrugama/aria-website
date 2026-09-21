@@ -461,10 +461,16 @@
 
       body.appendChild(picker('Request type', 'rh-type', narrowing.type,
         [{ value: 'all', label: 'Every request type' }].concat(
+          /* A request type this build has no label for is named as unnamed
+             here too, not only in the table below. Printing the raw token in
+             the control while the rows underneath say the page has no name
+             for it reads as two different request types. */
           (data.facets.types || []).map(function (type) {
             return {
               value: type.value,
-              label: coded(type.label) + ' \u00b7 ' + fmt.int(type.runs)
+              label: (type.labelled ? coded(type.label)
+                : coded(type.value) + ' (no name on this page)')
+                + ' \u00b7 ' + fmt.int(type.runs)
             };
           })
         ),
