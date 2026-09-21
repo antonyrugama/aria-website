@@ -935,6 +935,87 @@ test('the pane reads once on boot, not twice', async () => {
     'a call from the pane plus the bootstrap\'s own ops:filters would race two answers');
 });
 
+/* --------------------------------------- the windows the registry offers
+
+   scripts/ops-registry-filters.test.mjs holds "a filter a pane declares must
+   move something" for every pane it can boot, and excuses this one. Its
+   NOT COVERED entry reads:
+
+     `spend`. It is the one pane with a declared filter that this file does
+     not boot: it is the last pane on the v1 shell (assets/shell.js) rather
+     than the v2 bootstrap every pane here loads, and it is mid-conversion in
+     antonyrugama/aria-website#65. [...] What the lock cannot see is whether
+     the pane acts on any of them; that waits on v2.
+
+   v2 arrived in that PR. The stated reason is now false -- ops/spend.html
+   loads assets/shell-pane-v2.js and the test above at 'the page loads the v2
+   system and none of v1' holds that -- and Stadiora/Aria#10798 tracks the two
+   docblocks that still say otherwise. Those two files are held by open PRs
+   (antonyrugama/aria-website#117 and #120) and are not edited here.
+
+   What IS done here is the half the excuse was covering: the behaviour. Two
+   claims at this pane's own anchors, so the exclusion can be deleted against
+   evidence rather than against hope.
+
+   The list of windows is read from the registry rather than typed, so a fifth
+   window added to the declaration is covered the moment it is declared. The
+   EXPECTATION is not: each window's expected arrival is that exact string in
+   `query.range`, which is the contract stated in that file's rule 2 ('read'),
+   not anything this pane computes.
+
+   NOT COVERED here, and stated rather than implied: that file's rule 3, "no
+   value a pane offers may COST it its answer". This pane empties only when the
+   ROUTE says the period is not available (notReady, pane-spend.js:1143) -- it
+   holds no window allowlist of its own -- so whether a given window costs it
+   its answer is a fact about the cost route, and a fixture answering every
+   window happily would assert nothing but the fixture. It was written that way
+   first and taken out for exactly that reason. The claim lives where it can
+   fail: app-backend's own tests for GET /api/ops/costs. */
+
+/* The registry as the shell loads it, without booting a pane. */
+function registryPanes() {
+  const context = vm.createContext({ window: {} });
+  vm.runInContext('var global = window;', context);
+  vm.runInContext(REGISTRY_SRC, context, { filename: 'pane-registry.js' });
+  return context.window.OpsPaneRegistry.PANES;
+}
+
+test('every window the registry offers Cloud costs reaches the read under its own name',
+  async () => {
+    const declared = registryPanes().spend.range;
+    assert.ok(Array.isArray(declared) && declared.length >= 2,
+      'the registry declares a window list for spend; without one there is nothing to hold');
+
+    for (const window of declared) {
+      const dom = await boot({
+        search: '?range=' + window,
+        costs: payload({ range: window, billedThrough: 5 }),
+      });
+      const call = dom.calls.filter((c) => c.endpoint === '/api/ops/costs')[0];
+      assert.ok(call, 'the pane read the cost route for ' + window);
+      assert.equal(call.query.range, window,
+        'the bar offers ' + window + ' and the read went without it, so the answer is of some '
+        + 'other window than the one named above it');
+    }
+  });
+
+test('no window the registry offers Cloud costs leaves the headline describing dates',
+  async () => {
+    const declared = registryPanes().spend.range;
+
+    for (const window of declared) {
+      const dom = await boot({
+        search: '?range=' + window,
+        costs: payload({ range: window, billedThrough: 5 }),
+      });
+      const heads = runs(livePanel(dom))
+        .filter((run) => /^\d+ \w+ \d{4} to \d+ \w+ \d{4}$/.test(run));
+      assert.equal(heads.length, 0,
+        'the bar offers ' + window + ' and the pane has no name for it, so the headline falls '
+        + 'back to describing the period in dates under a control that named it: ' + heads[0]);
+    }
+  });
+
 /* ------------------------------------------------- the reconciliation */
 
 /* The pane's central claim, asserted in BOTH directions. One direction alone
