@@ -38,16 +38,27 @@
        in this file. A script setting `el.style.setProperty(...)` paints
        too -- CSSOM is not governed by style-src at all, and aria.js and
        shell-pane-v2.js already do it (RV22-A1) -- and is likewise unread.
-       Only the fourth route, an injected <style> ELEMENT, is closed, and
-       only while the source list that GOVERNS that route -- style-src-elem
-       if the policy declares one, else style-src, else default-src -- stays
-       exactly 'self': a hash or a nonce in whichever of those the chain
-       RESOLVES to opens it with no violation reported (RV22-2, RV23-1); a
-       hash in a directive the chain does not resolve to is shadowed and
-       opens nothing, which is why the resolved list is what is pinned
-       (RV24-A1). That resolved list is
-       what is asserted below, not the directive that happens to be spelt
-       style-src. ops/alerts.html appends no sheet today; nothing in this
+       The fourth route, an injected <style> ELEMENT, is NOT claimed to be
+       closed either, and this is the fourth round of narrowing that claim
+       rather than the first: what is asserted below is the TEXT of the
+       policy the page carries, and text is not a document. Measured in real
+       Chrome (RV25-1, re-measured in round 26): comment the meta out, move
+       it into <body>, or wrap it in <noscript>, and the page ships NO
+       policy Chrome enforces, while every assertion below still passes,
+       because each of those is still a Content-Security-Policy the file
+       spells once. Three shapes, not four: the fourth, spelling the tag
+       <meta-x>, is caught since round 26 and reds (M26-A2), because the
+       tag name is matched with a boundary now.
+       What IS bound, and all that is: IF the page carries a policy this
+       reader can find, THEN the source list that governs a <style> element
+       in it -- style-src-elem if the policy declares one, else style-src,
+       else default-src -- is exactly 'self'. A hash or a nonce in whichever
+       of those the chain RESOLVES to reds (RV22-2, RV23-1); a hash in a
+       directive the chain does not resolve to is shadowed, opens nothing,
+       and correctly does not red (RV24-A1). Whether the browser ENFORCES
+       what was read is the part no assertion in this file can reach, and
+       the four payloads above are named so nobody has to rediscover them.
+       ops/alerts.html appends no sheet today; nothing in this
        file would notice if it did.
      - Every reader of the sheet. The line below enumerates the PREFIXED
        docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the regex frames
@@ -114,7 +125,7 @@
      - The CASCADE, for the accent and ink a severity draws. The pairing
        test reads the classes off the drawn card and then reads what each
        class DECLARES, across every sheet the page loads. The two sides are
-       held differently and the difference is the point. For --acc, the six
+       held differently and the difference is the point. For --acc, the
        rules that paint it are LISTED, so a rule spelled any other way is
        red for being on no list -- `.p-item { --acc }`, green through three
        reviews as RV17-1e, reds now. The list is keyed on the SELECTOR and
@@ -142,8 +153,8 @@
        server enforces the same rules independently and is tested in the Aria
        monorepo.
      - That no value becomes markup. The test "the pane never spells
-       innerHTML, outerHTML or insertAdjacentHTML" pins three spellings and
-       nothing more; it is a prohibition, not a proof. It is not the last
+       innerHTML, outerHTML or insertAdjacentHTML" pins the spellings it
+       names and nothing more; it is a prohibition, not a proof. It is not the last
        test in the file, which is what this line said until the third review
        of #75 read it -- and the title it then cited belonged to three OTHER
        suites, which the fourth review read. Citations in THIS file now carry
@@ -2826,9 +2837,11 @@ test('the NOT COVERED bullet names every prefixed docblock line this file reads 
      one mention is green and deleting both is red (M12-B4/B4c). The claim
      bound here is "the NOT COVERED block points at the list", not which
      sentence in it does the pointing. */
-  assert.ok(notCovered[0].includes(FRAMES_LIST_NAME),
-    'the NOT COVERED block stopped naming ' + FRAMES_LIST_NAME + ', so the unprefixed '
-    + 'readers are enumerated in code and unmentioned in the prose that claims to name them');
+  assert.ok((notCovered[0].match(/[A-Z][A-Z0-9_]{3,}/g) || []).includes(FRAMES_LIST_NAME),
+    'the NOT COVERED block stopped naming ' + FRAMES_LIST_NAME + ' as a WHOLE identifier, so '
+    + 'the unprefixed readers are enumerated in code and unmentioned in the prose that claims '
+    + 'to name them. Substring was not enough: the block naming ' + FRAMES_LIST_NAME + 'S, a '
+    + 'constant that does not exist, passed a containment test (RV25-A1)');
   assert.deepEqual(
     [...new Set([...PANE_CSS.matchAll(SHEET_POINTER_SHAPE)].map((m) => m[0]))].sort(),
     [...LISTS_THE_SHEET_NAMES].sort(),
@@ -2983,7 +2996,10 @@ test('the page loads one design system and one theme decision', () => {
   }
   assert.equal((html.match(/assets\/theme\.js/g) || []).length, 1,
     'the theme is decided in more than one place');
-  assert.match(html, /Content-Security-Policy/, 'the page lost its CSP meta tag');
+  assert.match(html, /Content-Security-Policy/,
+    'the page no longer spells Content-Security-Policy anywhere -- which is as much as a scan '
+    + 'over text can say: whether what it spells is a meta element the parser APPLIES is on '
+    + 'the NOT COVERED list at the top of this file (RV25-1)');
   assert.ok(!/unsafe-inline/.test(html), 'the CSP grew unsafe-inline');
   /* `no unsafe-inline` is not the same claim as `no inline styles`: a hash
      or a nonce opens the <style> route one sheet at a time, with no
@@ -3024,7 +3040,8 @@ test('the page loads one design system and one theme decision', () => {
     'the page spells Content-Security-Policy more than once -- an old policy in a comment, a '
     + 'second meta, or a report-only twin -- and this reader takes the first spelling it '
     + 'finds, which is not necessarily the one the parser takes');
-  const cspMeta = /<meta[^>]*http-equiv="Content-Security-Policy"[^>]*>/i.exec(DECODED_HTML);
+  const cspMeta =
+    /<meta(?=[\s/>])[^>]*http-equiv="Content-Security-Policy"[^>]*>/i.exec(DECODED_HTML);
   assert.equal(cspMeta ? (cspMeta[0].match(/(?<=[\s/"'])content\s*=/gi) || []).length : 1, 1,
     'the CSP meta tag spells content= more than once and this reader is not the thing that '
     + 'should be deciding which one the parser takes');
@@ -3042,7 +3059,9 @@ test('the page loads one design system and one theme decision', () => {
     'the source list that governs a <style> ELEMENT is no longer exactly \'self\': a hash, a '
     + 'nonce or another source -- in style-src-elem, in style-src, or in the default-src this '
     + 'falls back to -- opens the <style> route that the NOT COVERED bullet at the top of this '
-    + 'file says is closed, and it opens it without reporting a violation');
+    + 'file describes, and it opens it without reporting a violation. That bullet claims the '
+    + 'route is shut only IF the page carries this policy at all, which is the part no scan '
+    + 'over text can settle (RV25-1)');
 
   /* The sheet's own first sentence: "Loaded after assets/aria.css and
      assets/shell-pane-v2.css, on ops/alerts.html and nowhere else." Order
