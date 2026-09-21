@@ -71,6 +71,13 @@
       cannot repair, so the entries carry the sheet that repairs them and the
       list empties as those sheets are fixed.
 
+   7. Every reading is in the state it is labelled with. The sweep asks for a
+      preview state and then measures; nothing used to check that the ask
+      landed. Proof: applyState reports what it showed, and an element shown
+      under a state it does not belong to fails this file. Claims 1 to 6 are
+      all reported per state, so a mislabelled state silently reattributes
+      every figure in this file.
+
    NOT COVERED, explicitly:
 
    - Wrappers the shared API stub never renders. Of the eight sideways
@@ -210,6 +217,13 @@ const ABSOLUTE_DESCENDANT_FLOOR = 2;
    pane legitimately dropping a table does not fail it. */
 const WRAPPER_FLOOR = 10;
 
+/* Claim 7's floor, on its own population again: state applications that showed
+   at least one element. 80 applications are made (10 panes x 2 themes x 2
+   widths x 4 states, less the panes that decline a state); this sits well under
+   that, and above zero so that a sweep whose applyState silently stopped
+   working fails rather than agreeing with itself. */
+const APPLIED_STATE_FLOOR = 40;
+
 /* ------------------------------------------------------------------ panes */
 
 /* Out of the registry both shells boot from, not out of a second list kept in
@@ -310,6 +324,155 @@ function connect(url) {
     }
   };
 }
+
+/* -------------------------------------------------------------- readiness */
+
+/* This sweep used to pace itself with a clock: 1500ms after navigating to a
+   pane, 200ms after applying a state. Stadiora/Aria#10775 recorded what that
+   costs. On a contended review host one run measured 134 scroll boxes where
+   every other run measures 160, because a fixed sleep is a guess about
+   somebody else's machine at a moment you cannot see. The sweep then judges a
+   pane that has not finished drawing, and the reading is an unfinished pane
+   wearing a finished pane's label.
+
+   The replacement asks the page instead of the clock, and the two conditions
+   are different in kind:
+
+   - The shell's own signal. Both shells dispatch `ops:ready` once, after the
+     session is confirmed, #content is in the document and the pane's content
+     function has run. A listener installed before the document runs cannot
+     miss it. That is a statement the application makes about itself, which
+     beats any number this file could pick.
+
+   - Quiescence of the population this file measures. `ops:ready` fires when
+     the pane has been asked to draw, not when its reads have landed: a pane
+     that fetches and then fills is still moving afterwards. So the fingerprint
+     counts the things the probe counts -- elements, absolutely positioned
+     boxes, scrolling boxes -- and readiness means that count stopped changing
+     for SETTLE_STABLE consecutive polls. It is deliberately a superset of the
+     measured population rather than a proxy for it: anything that would change
+     a reading changes the fingerprint first.
+
+   A budget still exists, but it is an upper bound that FAILS rather than a
+   sleep that proceeds. That is the whole difference. The old shape could only
+   express "waited long enough, probably"; this one either observes a settled
+   page or names the condition it was still waiting on. A spurious red is
+   cheaper than a quiet under-count, and a named red is cheaper than both. */
+
+const SETTLE_BUDGET_MS = 30000;
+const SETTLE_POLL_MS = 50;
+const SETTLE_STABLE = 3;
+
+/* Returns a string, always, so a poll can never be confused with a failure to
+   poll. A value beginning with `?` is a page that is not ready yet and says
+   which condition it is still under; anything else is a fingerprint. */
+const FINGERPRINT = `(() => {
+  if (window.__sweepStale) return '?the document being left is still installed';
+  if (document.readyState !== 'complete') return '?document.readyState=' + document.readyState;
+  if (!window.__sweepReady) return '?ops:ready has not fired on ' + location.pathname;
+  let abs = 0;
+  let scrolls = 0;
+  const all = document.querySelectorAll('*');
+  for (const el of all) {
+    const cs = getComputedStyle(el);
+    if (cs.position === 'absolute') abs += 1;
+    if (/(auto|scroll)/.test(cs.overflowX) || /(auto|scroll)/.test(cs.overflowY)) scrolls += 1;
+  }
+  const content = document.getElementById('content');
+  return [all.length, abs, scrolls, content ? content.childElementCount : -1].join('/');
+})()`;
+
+async function evaluate(cdp, expression, awaitPromise = false) {
+  const res = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise });
+  if (res.exceptionDetails) {
+    throw new Error(res.exceptionDetails.exception?.description || JSON.stringify(res.exceptionDetails));
+  }
+  return res.result.value;
+}
+
+/* Page.navigate resolves when the navigation has been STARTED, not when the
+   new document is installed, so a readiness poll issued straight afterwards
+   can be answered by the document being left. That document is complete and
+   has already fired ops:ready, so every condition above passes and the sweep
+   measures the previous pane under the next pane's name -- and for the theme
+   pass, where the same pane is loaded twice in a row, the two fingerprints are
+   plausibly identical, so nothing downstream would look wrong.
+
+   Marking the outgoing document is what makes the swap observable: a fresh
+   document cannot carry a property set on its predecessor. */
+async function navigate(cdp, url) {
+  await evaluate(cdp, 'window.__sweepStale = true, 1').catch(() => {});
+  await cdp.send('Page.navigate', { url });
+}
+
+/* Waits for the page to stop changing, or says what it was waiting on. `what`
+   is the caller's description of the step, so the failure names the pane and
+   the state rather than a line number. */
+async function settle(cdp, what) {
+  const deadline = Date.now() + SETTLE_BUDGET_MS;
+  let last = null;
+  let repeats = 0;
+  let polls = 0;
+  let waitedOn = [];
+  while (Date.now() < deadline) {
+    const fp = await evaluate(cdp, FINGERPRINT);
+    polls += 1;
+    if (typeof fp === 'string' && !fp.startsWith('?')) {
+      repeats = fp === last ? repeats + 1 : 1;
+      if (repeats >= SETTLE_STABLE) return { fingerprint: fp, polls, waitedOn };
+    } else {
+      repeats = 0;
+      waitedOn.push(String(fp));
+    }
+    last = fp;
+    await new Promise((r) => setTimeout(r, SETTLE_POLL_MS));
+  }
+  throw new Error(
+    `${what} never settled within ${SETTLE_BUDGET_MS}ms. Last reading: ${last}. ` +
+    'A fingerprint that keeps changing is a page still drawing; a `?` reading is ' +
+    'a page that never booted. Either way the sweep refuses to measure it, because ' +
+    'a half-drawn pane reads exactly like a clean one.'
+  );
+}
+
+/* The theme is decided before the first paint, so it has to be in localStorage
+   before the pane document runs -- which is why it is written on an earlier
+   document of the same origin rather than on the pane itself. The wait is for
+   the write to be READ BACK: a setItem issued against a document that does not
+   exist yet throws, and the old shape swallowed that and carried on with
+   whichever theme happened to be there. */
+async function seedTheme(cdp, theme) {
+  const deadline = Date.now() + SETTLE_BUDGET_MS;
+  const expression = `(() => { try {
+    localStorage.setItem('ops-theme', ${JSON.stringify(theme)});
+    return localStorage.getItem('ops-theme');
+  } catch (e) { return '?' + e.name; } })()`;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await evaluate(cdp, expression);
+    if (last === theme) return;
+    await new Promise((r) => setTimeout(r, SETTLE_POLL_MS));
+  }
+  throw new Error(`could not seed theme ${theme} into localStorage. Last reading: ${last}`);
+}
+
+/* applyState is synchronous -- it toggles data-shown across the document and
+   redraws the charts -- so there is nothing here to wait for, and what the old
+   200ms sleep bought was not time but the absence of a check. This returns
+   what the page did instead: how many elements the requested state showed, and
+   how many of those belong to some other state. Claim 7 judges it. */
+const APPLY = (state) => `(() => {
+  if (!window.Aria || typeof window.Aria.applyState !== 'function') {
+    return { ok: false, why: 'window.Aria.applyState is not a function' };
+  }
+  window.Aria.applyState(${JSON.stringify(state)});
+  const declared = document.querySelectorAll('[data-state]').length;
+  const shown = [...document.querySelectorAll('[data-state][data-shown]')];
+  const wrong = shown
+    .filter((el) => !el.getAttribute('data-state').split(/\\s+/).includes(${JSON.stringify(state)}))
+    .map((el) => el.getAttribute('data-state'));
+  return { ok: true, declared, shown: shown.length, wrong };
+})()`;
 
 /* ------------------------------------------------------------- page probe */
 
@@ -441,6 +604,8 @@ let cdp = null;
 let profile = null;
 const readings = [];
 const panesSeen = new Set();
+const applications = [];
+const settles = [];
 let srPositions = new Set();
 
 before(async () => {
@@ -468,7 +633,10 @@ before(async () => {
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source:
       `localStorage.setItem('ops-api-base', ${JSON.stringify(base)});` +
-      "sessionStorage.setItem('ops-refresh', JSON.stringify({ t: 'stub', s: 'adm_1' }));"
+      "sessionStorage.setItem('ops-refresh', JSON.stringify({ t: 'stub', s: 'adm_1' }));" +
+      /* Installed before the document runs, so it cannot miss the one-shot
+         event the shell dispatches when #content is in the document. */
+      "addEventListener('ops:ready', function () { window.__sweepReady = true; });"
   });
 
   for (const page of PAGES) {
@@ -477,18 +645,15 @@ before(async () => {
         width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: false
       });
       for (const theme of THEMES) {
-        await cdp.send('Page.navigate', { url: `${base}/ops/index.html` });
-        await new Promise((r) => setTimeout(r, 250));
-        await cdp.send('Runtime.evaluate', {
-          expression: `try { localStorage.setItem('ops-theme', ${JSON.stringify(theme)}); } catch (e) {}`
-        });
-        await cdp.send('Page.navigate', { url: base + page.url });
-        await new Promise((r) => setTimeout(r, 1500));
+        await navigate(cdp, `${base}/ops/index.html`);
+        await seedTheme(cdp, theme);
+        await navigate(cdp, base + page.url);
+        const where = `${page.key} at ${viewport.width}px in ${theme}`;
+        settles.push(await settle(cdp, where));
         for (const state of STATES) {
-          await cdp.send('Runtime.evaluate', {
-            expression: `window.Aria && window.Aria.applyState && window.Aria.applyState(${JSON.stringify(state)})`
-          });
-          await new Promise((r) => setTimeout(r, 200));
+          const applied = await evaluate(cdp, APPLY(state));
+          applications.push({ pane: page.key, theme, state, width: viewport.width, ...applied });
+          settles.push(await settle(cdp, `${where}, state ${state}`));
           const res = await cdp.send('Runtime.evaluate', {
             expression: `JSON.stringify(${PROBE(SCROLL_BY, MIN_SCROLL)})`, returnByValue: true
           });
@@ -528,6 +693,29 @@ before(async () => {
   const stayed = drivenObs.filter((d) => Math.abs(d.movedBy) <= EPSILON).length;
   console.log(`#   scroll-follow drove ${drivenObs.length} descendant observation(s): ` +
     `${followed} moved with the box, ${stayed} stayed behind it`);
+
+  /* The pacing reports itself too, because the cost of the old clock was
+     invisible in exactly this way: a sweep that measured too early and a sweep
+     that measured in time printed the same line. A poll count at the floor
+     (SETTLE_STABLE) is a page that was already still; anything higher is a page
+     this run had to wait for, and is the number that used to be a guess. */
+  const polls = settles.map((s) => s.polls);
+  const waits = settles.flatMap((s) => s.waitedOn);
+  const staleWaits = waits.filter((w) => w.startsWith('?the document being left')).length;
+  console.log(`#   readiness waited on ${settles.length} settle point(s): ` +
+    `${Math.min(...polls)} poll(s) at the fastest, ${Math.max(...polls)} at the slowest, ` +
+    `${polls.filter((p) => p > SETTLE_STABLE).length} that needed more than the ` +
+    `${SETTLE_STABLE}-poll minimum`);
+  console.log(`#   ${waits.length} poll(s) found a page not ready, ` +
+    `${staleWaits} of them answered by the document being left`);
+  for (const w of [...new Set(waits)].sort()) {
+    console.log(`#     waited on: ${w}`);
+  }
+  const shownTotal = applications.reduce((n, a) => n + (a.shown || 0), 0);
+  console.log(`#   applyState was verified at ${applications.length} point(s): ` +
+    `${shownTotal} element(s) shown, ` +
+    `${applications.filter((a) => !a.ok || a.wrong.length).length} disagreeing with the ` +
+    'state that was asked for');
 });
 
 after(async () => {
@@ -679,4 +867,32 @@ test('.sr is absolutely positioned, which is what lets it escape a static scroll
     'the .sr utility in ops/assets/aria.css is what every frozen escape in this file is made of. ' +
     'If it stops being absolutely positioned those escapes stop reproducing, and the frozen-entry ' +
     'check above would read that as the sheets having been repaired.');
+});
+
+/* Claim 7. Every reading above is labelled with the state it was taken in, and
+   nothing used to check that the label was true. The sweep asked for a state
+   and then slept; if applyState had not run, or had run against a document
+   that had not drawn its state boxes yet, the next four readings would be four
+   readings of the previous state carrying the next one's name. That is the
+   same defect the readiness change is for, one layer up, and it is the reason
+   this file now records what applyState did rather than assuming it.
+
+   The floor is here for the reason claim 6 needed one: the check reads a list
+   the sweep built, so an empty list agrees with it. */
+test('every state the sweep asked for was actually applied', () => {
+  const broken = applications.filter((a) => !a.ok).map((a) => `${a.pane}/${a.state}: ${a.why}`);
+  assert.deepEqual(broken, [], 'applyState was not callable on a pane this sweep measured');
+
+  const mislabelled = applications
+    .filter((a) => a.wrong.length)
+    .map((a) => `${a.pane} ${a.theme} ${a.width}px asked for "${a.state}" and showed ` +
+      `${a.wrong.length} element(s) belonging to [${[...new Set(a.wrong)].join(', ')}]`);
+  assert.deepEqual(mislabelled, [], 'a reading was taken in a state other than the one it is ' +
+    'labelled with, which makes every figure in it a figure about a different pane');
+
+  const drew = applications.filter((a) => a.shown > 0).length;
+  assert.ok(drew >= APPLIED_STATE_FLOOR,
+    `only ${drew} of ${applications.length} state applications showed anything, below the ` +
+    `declared floor of ${APPLIED_STATE_FLOOR}. A state that reveals no element cannot ` +
+    'disagree with its label, so a sweep that applied nothing would pass the check above.');
 });
