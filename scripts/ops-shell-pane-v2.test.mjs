@@ -347,6 +347,101 @@ test('a pane whose design shows a control nothing can carry says so where it wou
   }
 });
 
+/* ------------------------------------------- the filter note's own geometry */
+
+/* #10419. The note is built on aria.css's `.pill`, which is written for a
+   one-line chip label: `white-space: nowrap`, 2.5px of block padding and a
+   20px lozenge radius. A note is a sentence, so all three are wrong for it,
+   and they fail in two different ways -- the nowrap pushed a 375px page
+   sideways, and the one-line box runs the text up against its own border the
+   moment it wraps.
+   
+   check-ops-narrow-overflow.mjs binds the first of those and neither of the
+   others, and it binds the first only while a note in pane-registry.js happens
+   to be long enough to overrun 375px: measured on /ops/alerts.html with nowrap
+   restored, today's 63-character note takes the document to 381px and fails
+   the guard, while the same note cut to 40 characters fits 375px and passes
+   it. The note text is data in a file this suite does not own, so this test
+   binds the properties instead of the symptom. */
+test('the filter note wraps, and takes the geometry of the control it stands in for, in both themes', async () => {
+  const registry = registryOnly();
+  /* A pane carrying BOTH a note and a dropdown, so the note and the control
+     whose place it takes are resolved out of one document rather than two. */
+  const id = Object.keys(registry.PANES)
+    .find((k) => registry.PANES[k].filterNote && registry.PANES[k].range);
+  assert.ok(id, 'no pane declares both a filter note and a range dropdown any more');
+
+  const { doc } = await bootPane(id, { file: registry.PANES[id].file, definePane: () => {} });
+  const bar = doc.querySelector('.filters');
+  assert.ok(bar, id + ' drew no filter bar');
+  const note = bar.querySelectorAll('.filter-note')[0];
+  const wrap = bar.querySelectorAll('.sel')[0];
+  assert.ok(note && wrap, id + ' drew no note or no dropdown');
+  const select = (wrap.childNodes || []).find((n) => n.tagName && n.tagName.toLowerCase() === 'select');
+  assert.ok(select, 'the dropdown wrapper holds no <select>');
+
+  /* If the note stops being a pill, the override below stops being needed and
+     this test's reasoning is stale rather than merely failing. */
+  assert.ok(String(note.className || '').split(/\s+/).indexOf('pill') !== -1,
+    '.filter-note is no longer built on .pill, so what it must override has changed');
+
+  const chain = (el) => { const out = []; for (let at = el; at && at.tagName; at = at.parentNode) out.push(at); return out; };
+  const nodes = [...new Set([...chain(note), ...chain(select)])];
+
+  /* Which white-space values let a line break. `pre` and `nowrap` are the two
+     that do not; `white-space-collapse` governs collapsing, not wrapping, so
+     the longhand that can silently undo the shorthand is text-wrap. */
+  const WRAPS = ['normal', 'pre-wrap', 'pre-line', 'break-spaces'];
+  const box = (v) => {
+    const p = String(v == null ? '' : v).trim().split(/\s+/);
+    if (p.length === 1) return { top: p[0], right: p[0], bottom: p[0], left: p[0] };
+    if (p.length === 2) return { top: p[0], right: p[1], bottom: p[0], left: p[1] };
+    if (p.length === 3) return { top: p[0], right: p[1], bottom: p[2], left: p[1] };
+    return { top: p[0], right: p[1], bottom: p[2], left: p[3] };
+  };
+
+  const seen = {};
+  for (const theme of ['dark', 'light']) {
+    for (const width of [1440, 375]) {
+      const resolve = cascade(nodes, SHARED_SHEETS, theme);
+      const val = (el, prop) => { const d = resolve(el, { width, theme }).get(prop); return d ? String(d.value).trim() : null; };
+      const where = ' (' + theme + ' theme at ' + width + 'px)';
+
+      const ws = val(note, 'white-space');
+      assert.ok(WRAPS.indexOf(ws) !== -1,
+        'the filter note resolves white-space to ' + JSON.stringify(ws) + ', which cannot break a line, so a ' +
+        'long note runs straight out of its own box and takes the page sideways with it' + where);
+      for (const longhand of ['text-wrap', 'text-wrap-mode']) {
+        assert.notEqual(val(note, longhand), 'nowrap',
+          'the filter note wraps by its white-space shorthand but ' + longhand + ' takes it straight back' + where);
+      }
+
+      /* The expectation is stated by aria.css's `.sel select`, not by the rule
+         under test, so a padding invented for `.filter-note` alone cannot
+         satisfy it. The note stands where a control would have been and is
+         built to read as one; if the control's geometry moves, a human has to
+         decide whether the note follows, and this failing is how they hear. */
+      const notePad = box(val(note, 'padding'));
+      const selPad = box(val(select, 'padding'));
+      assert.equal(notePad.top, selPad.top,
+        'the filter note keeps a one-line chip\'s block padding above its text instead of the ' +
+        'dropdown\'s, so a wrapped note sits against its own border' + where);
+      assert.equal(notePad.bottom, selPad.bottom,
+        'the filter note keeps a one-line chip\'s block padding below its text instead of the ' +
+        'dropdown\'s, so a wrapped note sits against its own border' + where);
+      assert.equal(notePad.left, selPad.left,
+        'the filter note no longer indents its text like the dropdown it stands beside' + where);
+      assert.equal(val(note, 'border-radius'), val(select, 'border-radius'),
+        'the filter note keeps a lozenge radius sized for one line, which reads as a broken chip ' +
+        'once the sentence inside it takes three' + where);
+
+      seen[theme + width] = true;
+    }
+  }
+  /* The loop ran every combination rather than falling out of one of them. */
+  assert.deepEqual(Object.keys(seen).sort(), ['dark1440', 'dark375', 'light1440', 'light375']);
+});
+
 test('Overview offers no control at all and states the absence instead', async () => {
   const { doc } = await bootPane('overview', { definePane: () => {} });
   const drawn = controlsOn(doc);
