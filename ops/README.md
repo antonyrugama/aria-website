@@ -2366,7 +2366,7 @@ lines short — which is why none of them are typed any more.
 ```claims id=source-anchors
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 136
-ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 173
+ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112

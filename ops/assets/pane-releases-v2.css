@@ -328,6 +328,33 @@
 .callout svg { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--amber-ink); }
 .callout b { color: var(--ink); font-weight: 560; }
 
+/* A callout that is not a warning.
+
+   The bare callout above is amber, and amber on an operations dashboard means
+   something needs attention. What the route names in `omissions[]` is the
+   opposite kind of fact: App Store Connect has no field for the share of a
+   phased release, so there is nothing to attend to and nothing anybody can
+   do. Drawing that in the alert tint would train an operator to ignore the
+   tint, which costs more than the note is worth.
+
+   So the shape stays — same box, same glyph slot, same text sizes, so it is
+   recognisably the same furniture — and only the tint and the glyph ink move
+   to the neutral pair. `--ink-3` on the glyph is the ink the Overview,
+   Happening now and What happened panes already give their omission glyph, so
+   an absence reads the same on all four.
+
+   Not a new colour: --line-2 is aria.css's line token and --ink-3 its third
+   ink, both already on this page. */
+.callout.is-note {
+  background: color-mix(in srgb, var(--ink-3) 7%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.callout.is-note svg { color: var(--ink-3); }
+
+/* More than one omission stacks rather than running together, on the same
+   gap the pipeline's own blocks use. */
+.omit-list { display: flex; flex-direction: column; gap: 8px; }
+
 /* ------------------------------------------------------------ responsive */
 
 /* aria.css drops the hero to two columns under 980px and pulls its last child
