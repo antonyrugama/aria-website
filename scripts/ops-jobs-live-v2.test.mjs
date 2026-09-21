@@ -1338,6 +1338,21 @@ test('the pane writes no class only the v1 sheet defines', async () => {
       async (dom) => { for (let i = 0; i < 5; i += 1) await dom.clock.fire(); }],
   ];
 
+  /* The state list is pinned, because nothing else binds it. Measured: with
+     six states every class this guard names is reached by more than one of
+     them, so deleting ANY single state left the whole file green -- the guard
+     would have shrunk silently, which is the one failure mode a coverage
+     ratchet exists to prevent. Removing a state now has to be a deliberate
+     edit here, stating what stopped being swept. */
+  assert.deepStrictEqual(states.map((state) => state[0]), [
+    'a full reading',
+    'an idle queue',
+    'a bounded read that came back empty',
+    'a reading with nothing in it',
+    'a failed first read',
+    'a chain that gave up',
+  ], 'the sweep lost or renamed a state, and every state dropped here narrows what it covers');
+
   const written = new Map();
   for (const [label, opts, drive] of states) {
     const dom = await boot(opts);
