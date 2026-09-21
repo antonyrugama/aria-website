@@ -744,6 +744,13 @@ const FOCUS_MIN_ADJACENT = 8;
    multiples are NOT written here, because a multiple written beside a
    literal is the thing that drifts: F3 computes them from these three
    constants and fails if the floor leaves the band. */
+/* The fixture whose ring only fits in a whole-document clip. Named ONCE, as
+   a value, because the NOT COVERED paragraph below argues from it and a
+   fixture name written into prose drifts: that paragraph said `.hwide`,
+   which has never existed in this file. H interpolates this constant into
+   the sentence it prints, and asserts the same fixture measures at pad
+   `whole document`, so the claim and the fixture cannot come apart. */
+const WHOLE_DOC_FIXTURE = 'hedge';
 const SETTLE_QUIET_CEILING = 17;
 const SETTLE_DEFECT_FLOOR = 29719;
 const FOCUS_SETTLE_FLOOR = 512;
@@ -2397,11 +2404,6 @@ async function measureFocusIndicators(where) {
           }
         }
         if (!near) continue;
-        /* Same exclusion as before, moved after the adjacency test purely so
-           it can be COUNTED. A worst-of over a shrunken sample prints
-           identically to a healthy one, so the number of candidate surface
-           pixels the mask removed has to leave the loop with the sample. */
-        if (noise[p]) { adjLostToNoise++; continue; }
         const q = p * 4;
         /* A pixel the ring TOUCHES without owning is a blend of ring and
            surface, and is neither. Excluded from both sides, exactly as
@@ -2412,6 +2414,14 @@ async function measureFocusIndicators(where) {
            is the question that was always meant. */
         if (after.data[q] !== bareShot.data[q] || after.data[q + 1] !== bareShot.data[q + 1] ||
             after.data[q + 2] !== bareShot.data[q + 2]) continue;
+        /* Same exclusion as before, moved DOWN TO HERE purely so it can be
+           counted honestly. A worst-of over a shrunken sample prints
+           identically to a healthy one, so the pixels the mask removed have
+           to leave the loop with the sample — but only the ones that would
+           otherwise have BEEN surface. Counted any earlier and the census
+           folds in ring blends, which are excluded either way, and reports a
+           loss the sample never suffered. */
+        if (noise[p]) { adjLostToNoise++; continue; }
         adjacent.push([bareShot.data[q], bareShot.data[q + 1], bareShot.data[q + 2],
           bareShot.data[q + 3]]);
         /* Two counts kept for the record, both derived here and neither used
@@ -2775,11 +2785,13 @@ async function measureFocusIndicators(where) {
  * pixel counter itself (F3, six cases including alpha-only and both size
  * mismatches) and the floor's calibration (F3 recomputes its margins and
  * fails if the floor leaves the band). What is NOT: the loop and the
- * never-settles refusal, because the fixture that would bind them — a region
- * that never holds still — sits inside the whole-document clip that .hwide
- * requires, so it would refuse that row too. They are exercised on the shell
- * every run instead, where the two empty-state rows take a second pair and
- * settle to 0, and both figures are printed.
+ * never-settles refusal. The reason is structural rather than an oversight,
+ * and it is NOT restated here, because a claim written twice drifts once:
+ * section H prints it, interpolating WHOLE_DOC_FIXTURE into the sentence and
+ * asserting in the same breath that that fixture measures at pad `whole
+ * document`. They are exercised on the shell every run instead, where the
+ * empty-state rows take a second pair and settle to 0, and both figures are
+ * printed.
  */
 const FIXTURE_CASES = [
   { bg: '#ffffff', expect: [255, 255, 255] },
@@ -3486,13 +3498,23 @@ async function selfTest() {
        that exist are the measurement. Refusing here cost four real dark-theme
        measurements of ops/assets/aria.css's .skip on Linux and none on macOS,
        because a box-shadow — not the ring — reached y=0 on one renderer. */
-    const edge = shows('hedge', 1.6060,
+    const edge = shows(WHOLE_DOC_FIXTURE, 1.6060,
       'sits flush against x=0, so a quarter of its ring is off the document');
     const measuredAnyway = !!edge && !edge.refused && edge.pad === 'whole document';
     if (!measuredAnyway) bad++;
     console.log(`     ${measuredAnyway ? 'ok  ' : 'FAIL'} and it ran the clip out to the whole ` +
       `document and then measured: pad ${edge ? edge.pad : '?'}, expected whole document ` +
       '(every narrower clip has the ring on its border, and so does this one)');
+    /* AND THE NOT COVERED CLAIM THAT ARGUES FROM IT, printed here with the
+       fixture name interpolated rather than typed into a comment somewhere
+       else. This is the whole reason the constant exists: the paragraph used
+       to name a fixture that has never existed, and nothing could tell,
+       because prose is not checked and a name in a comment resolves to
+       nothing. Stated beside the assertion that the fixture really does need
+       the whole document, the claim and its premise fail together. */
+    console.log(`     ${measuredAnyway ? 'ok  ' : 'FAIL'} so the settle loop and the never-` +
+      `settles refusal are NOT fixture-bound: a region that never holds still would sit ` +
+      `inside .${WHOLE_DOC_FIXTURE}'s whole-document clip and refuse it too`);
 
     /* The branch that turns a measured ring into a FINDING, run over this
        fixture's rows through the very function the shell's run loop calls.
