@@ -2349,16 +2349,27 @@ that found this both read `(no blind-spot section)`, which is the same sentence
 a guard with nothing to declare would print. The sentinel now says which
 docblock it looked in, and every guard carries a count of the lines **anywhere**
 in it that open like a blind-spot heading, so a section outside the docblock
-flips a line rather than arriving in silence — **provided it is headed one of
-three phrases**. That proviso is the net's real width and it is the block's
-first line, read out of the matching regex's own source rather than described:
-`WHAT THIS DOES NOT COVER`, `WHAT IT DOES NOT`, `NOT COVERED`. A section headed
-any other way — "What this sweep cannot see", say — is invisible to the bullet
-read **and** to the count, and arrives in exactly the silence this paragraph
-claimed to have closed. Round 2 of PR #111 demonstrated it with a seven-line
-addition that left the suite green. Over-firing was disclosed here before
-under-firing was, which is the wrong way round: over-firing is loud, and it is
-the quiet direction that is this file's defect class.
+flips a line rather than arriving in silence — **provided the matcher can see
+its heading at all**, which depends on the wording *and* on the comment marker
+it sits behind.
+
+That edge is not described here. It is **measured** and published as the first
+eleven lines of the block: eleven concrete heading lines handed to the real
+matcher, each reported `SEEN` or `INVISIBLE`. The `INVISIBLE` rows are the
+interesting half — a section headed `KNOWN GAPS:` or `What this sweep cannot
+see:` is read by nothing and counted by nothing, and so is a recognised phrase
+written after `//`. They are in the block precisely because they are holes, and
+because a matcher that starts or stops seeing any of them flips its line either
+way.
+
+The first spelling of this paragraph claimed a three-phrase list, parsed out of
+the matcher's own source, was "the net's real width". Round 3 of PR #111 showed
+it was not, twice: reverting the marker half of the matcher left the published
+list **identical**, and a phrase added as a second top-level branch was matched
+by the matcher and **missing** from the list. Both were green. A regex parsed
+for one substring of one of its two dimensions is a description of a net, not a
+measurement of one, and over-firing was disclosed before under-firing — the
+wrong way round in a file whose defect class is the quiet direction.
 
 Within those three phrases the count is syntactic and deliberately dumb —
 `check-ops-narrow-overflow.mjs:189` refers back to its own section and counts as
@@ -2366,7 +2377,17 @@ a second one — because a dumb tripwire that fires is worth more here than a
 clever one that reads English.
 
 ```claims id=guard-blind-spots
-(headings recognised: WHAT THIS DOES NOT COVER | WHAT IT DOES NOT | NOT COVERED)
+(heading probe: "WHAT THIS DOES NOT COVER, in the words of what was measured:" = SEEN)
+(heading probe: "   WHAT IT DOES NOT measure:" = SEEN)
+(heading probe: "   NOT COVERED, on purpose" = SEEN)
+(heading probe: "   not covered, in lower case" = SEEN)
+(heading probe: " * NOT COVERED, after a continuation marker" = SEEN)
+(heading probe: "/* NOT COVERED, sharing the comment opener" = SEEN)
+(heading probe: "/** NOT COVERED, sharing a doc-comment opener" = SEEN)
+(heading probe: "// NOT COVERED, after a line comment" = INVISIBLE)
+(heading probe: "   WHAT THIS SWEEP CANNOT SEE:" = INVISIBLE)
+(heading probe: "   KNOWN GAPS:" = INVISIBLE)
+(heading probe: "   see NOT COVERED above for the two panes" = INVISIBLE)
 check-ops-contrast.mjs = (no blind-spot section in the leading docblock)
 check-ops-contrast.mjs = (bold spans beyond the first, summed: 0)
 check-ops-contrast.mjs = (lines that open like a blind-spot heading: 1)
@@ -2605,11 +2626,13 @@ leave unseen even though it is not named; a bolded word in a bullet's body moves
 and so does a third span on a bullet that already carried two — the per-bullet tally this started
 as did not, which round 1 of PR #111 demonstrated. Bullets come from the **leading docblock**
 only: `check-ops-shell-v2.mjs:583` and `check-ops-contrast.mjs:2239` state blind spots outside
-theirs and are **not** carried here, only counted — and counted only because they happen to be
-headed one of the **three phrases** the matching regex knows. Those three are the first line of
-the block, read out of the regex's own source: a section headed any other way is read by nothing
-and counted by nothing, which is the one direction here that fails quietly, and round 2 of
-PR #111 demonstrated it. A blind spot written into a bullet's body with no bold at all is not a
+theirs and are **not** carried here, only counted — and counted only because the matcher can see
+their headings. Which headings it can see is **measured, not described**: the block opens with
+eleven concrete lines handed to the real matcher and reported `SEEN` or `INVISIBLE`. A section
+headed `KNOWN GAPS:`, or headed a recognised phrase but written after `//`, is read by nothing
+and counted by nothing — those rows are in the block as holes. Round 3 of PR #111 demonstrated
+that the parse this replaced could publish a list the matcher did not agree with, in both
+directions, while staying green. A blind spot written into a bullet's body with no bold at all is not a
 line and is not counted, and a bullet with no bold opener is reported as one rather than
 skipped. A section written as prose says so on its guard's line; it is not read.
 
