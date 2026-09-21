@@ -64,16 +64,22 @@ let androidState = null;
    approval cards render rather than erroring. */
 function operations(body) {
   const req = body || {};
-  const op = String(req.operation || '');
+  /* `operationId`, which is what approvalEnvelope in pane-evaluations.js sets.
+     Reading `operation` instead leaves this branch unreachable and every
+     approval answering out of the dataset envelope below, whose value carries
+     no state — the slot then renders `is undefined at revision 1`, which is
+     true of the stub and not of the pane. */
+  const op = String(req.operationId || '');
   const envelope = (type, id, value) => ({
     schemaVersion: 'ciel.operation.response.v1',
     requestId: req.requestId, operationId: req.operationId,
     status: 'success', exitCode: 0,
     resource: { type: type, id: id, revision: 1, value: value }
   });
-  if (op.indexOf('approval') === 0) {
-    return envelope('ciel.evidence-approval', 'apr_9f3c',
-      { approvalRequestId: 'apr_9f3c', state: 'pending', revision: 2 });
+  if (op.indexOf('ciel.approval.') === 0) {
+    const asked = (req.input && req.input.approvalRequestId) || 'apr_9f3c';
+    return envelope('ciel.evidence-approval', asked,
+      { approvalRequestId: asked, state: 'pending', revision: 2 });
   }
   return envelope('ciel.dataset-validation', req.requestId, {
     valid: true, issues: [],
