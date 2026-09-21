@@ -1362,6 +1362,8 @@ DERIVED['dark-text-3'] = () => {
    the README, because the README's enumeration of them fell three behind. */
 const SWEEP_TEST = 'every repository file ops/README.md names is in the tree or declared deleted';
 const RATCHET_TEST = 'no defence in this file was retired without lowering a floor';
+const JUDGED_TEST = 'the run reports what it judged';
+const BLOCK_SET_TEST = 'every claims block is derived here, and every derivation has a block';
 
 DERIVED['claims-blocks'] = () => {
   /* Two row sets are judged by a test rather than by a block — the file
@@ -1499,9 +1501,52 @@ DERIVED['deleted-assets'] = () => {
     });
 };
 
+/* Which tests actually RAN, as opposed to which registrations are still in
+   the text. Round 7 showed the difference matters and that this file had been
+   confusing the two: `claims-blocks` decides whether to carry a test's row by
+   looking for `\ntest(NAME,` in this source, and `test(NAME, { skip: true },
+   () => {...})` leaves that spelling untouched while the body never executes.
+   The README row still printed. The ratchet was silent. A `{ skip: true }`
+   added on its own, with the README byte-identical, was green.
+
+   Two tests had a second net and one did not: the block tests and the two row-
+   set tests record into JUDGED and `the run reports what it judged` misses
+   them if they vanish, but that test could itself be DELETED outright with
+   nothing moving, which took every pin and every family check with it. Round
+   7 demonstrated exactly that.
+
+   So execution is recorded here instead of inferred from text. Every test
+   below opens by adding its own name, the expected set is built from the same
+   derivations the tests are built from, and an exit handler - NOT a test,
+   because a test cannot police its own non-execution - fails the run for
+   anything that did not report in. Skipping, deleting, renaming or throwing
+   before the first line all land in the same place.
+
+   The residual, stated rather than implied: this handler can be deleted, and
+   then nothing checks. No guard closes that, and the NOT COVERED list says so
+   in those words. What it buys is that every OTHER defence in this file now
+   has to be removed in the open. */
+const RAN = new Set();
+const ran = (name) => { RAN.add(name); return name; };
+
+process.on('exit', () => {
+  const expected = [
+    ...Object.keys(DERIVED).map((id) => `ops/README.md claims id=${id} still describe the code`),
+    BLOCK_SET_TEST, TABLE_TEST, SWEEP_TEST, JUDGED_TEST, RATCHET_TEST,
+  ];
+  const silent = expected.filter((name) => !RAN.has(name));
+  if (silent.length === 0) return;
+  process.exitCode = 1;
+  console.error(`\n${silent.length} test(s) in ${SELF} did not run, so what they check `
+    + `was not checked:\n  ${silent.join('\n  ')}\n`
+    + 'A test that is skipped, deleted or renamed is indistinguishable from a passing one '
+    + 'in the summary line, which is why this is counted rather than read out of the source.\n');
+});
+
 /* ------------------------------------------------------------------ tests */
 
-test('every claims block is derived here, and every derivation has a block', () => {
+test(BLOCK_SET_TEST, () => {
+  ran(BLOCK_SET_TEST);
   assert.deepStrictEqual([...BLOCKS.keys()].sort(), Object.keys(DERIVED).sort(),
     'a claims block was added, renamed or dropped without a derivation to hold it');
 });
@@ -1510,6 +1555,7 @@ const JUDGED = {};
 
 for (const id of Object.keys(DERIVED)) {
   test(`ops/README.md claims id=${id} still describe the code`, () => {
+    ran(`ops/README.md claims id=${id} still describe the code`);
     JUDGED[id] = judge(id, DERIVED[id]());
   });
 }
@@ -1522,6 +1568,7 @@ for (const id of Object.keys(DERIVED)) {
    judged — see NOT COVERED at the top of this file. */
 const TABLE_TEST = 'every browser guard in the tree has a row in the checks table';
 test(TABLE_TEST, () => {
+  ran(TABLE_TEST);
   const head = README.indexOf('| Check | What it can see that nothing else can |');
   assert.ok(head > -1, 'ops/README.md: the checks table header is gone or reworded, so no row set can be read');
   const body = README.slice(head).split(/\n(?!\|)/)[0];
@@ -1548,6 +1595,7 @@ test(TABLE_TEST, () => {
    dead in the deleted-assets block — which is what makes a deletion elsewhere
    in the repository red here rather than silently stale. */
 test(SWEEP_TEST, () => {
+  ran(SWEEP_TEST);
   const inTree = new Set([
     ...PAGES.map((p) => `ops/${p}`),
     ...list('ops/assets').map((a) => `ops/assets/${a}`),
@@ -1650,10 +1698,61 @@ const REQUIRED_FAMILIES = ['badge', 'tag', 'callout', 'verdict'];
    number here AND the row it prints into `claims id=pinned-blocks`. That is the
    property being bought — not that a retirement is impossible, but that it
    cannot be quiet. */
-const FLOORS = { pinnedBlocks: 7, derivedBlocks: 24, statusFamilies: 4 };
+const FLOORS = { pinnedBlocks: 12, derivedBlocks: 24, statusFamilies: 4 };
 
 const REQUIRED_ROWS = {
+  /* Five more, found in round 7 by the reviewer enumerating every derivation
+     rather than re-reading the list the round before had named. Each takes its
+     subjects from a hand-written array in this file and each was free to
+     shrink: retiring `pages loading assets/theme.js` together with its README
+     line ran GREEN, which is round 5's defect in five places nobody had
+     looked. Generated from the run, not counted by hand - the last time these
+     were hand-written three of seven were wrong. */
+  'csp-pages': [
+    "pages in ops/",
+    "pages declaring the policy in a <meta>",
+    "pages loading assets/theme.js",
+    "pages with an inline <script>",
+    "pages with a style attribute in markup",
+  ],
+  'dark-text-3': [
+    "--text-3 in ops.css's dark :root",
+    "surfaces it is measured against",
+    "worst pairing",
+    "clears 4.5:1 on every one of them",
+    "every other opaque token in that block",
+    "tokens in that block this cannot read as a flat colour",
+    "later :root rules redeclaring any of them",
+  ],
+  'data-page-scoping': [
+    "ops.css rules scoped to a data-page attribute",
+    "pages carrying a data-page attribute",
+  ],
+  'csp-policy': [
+    "default-src",
+    "script-src",
+    "style-src",
+    "img-src",
+    "font-src",
+    "connect-src",
+    "base-uri",
+    "form-action",
+    "pages carrying this exact policy",
+  ],
+  'shell-v2-pins': [
+    "palette tokens pinned for dark",
+    "palette tokens pinned for light",
+    "tokens pinned the same in every theme",
+    "tokens pinned in total for dark",
+    "tokens pinned in total for light",
+    "color-scheme pinned per theme",
+  ],
   'source-anchors': [
+    /* Two guard citations the README used to SPELL. `check-ops-contrast.mjs:2239`
+       was wrong by 343 lines when round 7 checked it - a number nothing
+       regenerated, in the file whose subject is numbers nothing regenerates. */
+    'scripts/check-ops-contrast.mjs "NOT COVERED, on purpose \u2014 this is the list of exclusions decided, not an"',
+    'scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too"',
     'ops/assets/pane-analytics.js "`features.coverageNote` carries two facts"',
     'ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs"',
     'ops/assets/pane-releases.js "The chip carries the share and nothing else"',
@@ -1735,7 +1834,8 @@ const REQUIRED_ROWS = {
    a green run says nothing about how much was compared. So the count goes in
    the log, per block, and the run is red if any of it is empty or if a
    README-subject block lost a row. */
-test('the run reports what it judged', () => {
+test(JUDGED_TEST, () => {
+  ran(JUDGED_TEST);
   const rows = Object.keys(JUDGED).sort().map((id) => `  ${id}: ${JUDGED[id]}`);
   const total = Object.values(JUDGED).reduce((a, b) => a + b, 0);
   console.log(`ops/README.md claims judged against the code:\n${rows.join('\n')}\n  TOTAL: ${total}`);
@@ -1746,6 +1846,11 @@ test('the run reports what it judged', () => {
     'a block was not judged in this run');
   assert.ok(total > 0, 'nothing was judged');
   for (const [id, required] of Object.entries(REQUIRED_ROWS)) {
+    /* A key naming no block is inert - its subject set is empty, nothing is
+       missing from it, and it passes while inflating FLOORS.pinnedBlocks.
+       Round 7's E1 added `'zz-nothing': []` and the floor held. */
+    assert.ok(BLOCKS.has(id),
+      `REQUIRED_ROWS pins ${id}, and ${README_PATH} carries no such block, so that pin holds nothing`);
     /* The subject is everything left of the row's last ` = `, matched
        WHOLE. A prefix match would let `.badge-ok` satisfy the pin on
        `.badge`, which is a pin on nothing for every subject that is a
@@ -1785,6 +1890,7 @@ test('the run reports what it judged', () => {
    because the arithmetic is not the finding: the finding is which defence
    stopped existing. */
 test(RATCHET_TEST, () => {
+  ran(RATCHET_TEST);
   const pinned = Object.keys(REQUIRED_ROWS).sort();
   assert.ok(pinned.length >= FLOORS.pinnedBlocks,
     `REQUIRED_ROWS pins ${pinned.length} blocks and FLOORS.pinnedBlocks is ${FLOORS.pinnedBlocks}: `
