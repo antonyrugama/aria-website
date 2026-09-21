@@ -863,7 +863,7 @@ for (const page of PAGES) {
    that guesses is worse than none. */
 const FLOOR_HINTS = {
   spend: 'The pair comes from the Group-the-bill-by switch, which viewCard draws only ' +
-    'when two or more of the groupings in VIEW_ORDER (ops/assets/pane-spend.js:302) ' +
+    'when two or more of the groupings in VIEW_ORDER (declared in ops/assets/pane-spend.js) ' +
     'arrive with rows. PREFLIGHT in this file tested the COSTS fixture against that one ' +
     'rule before Chrome started and it passed, since a failure there exits before this ' +
     'point — so read that rule as already checked and start downstream of it.',
@@ -918,34 +918,60 @@ const PREFLIGHT = [
       const src = raw
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/^[ \t]*\/\/.*$/gm, '');
-      const decl = src.match(/(?:var|let|const)\s+VIEW_ORDER\s*=\s*\[([^\]]*)\]/);
+      const decl = src.match(/(?:var|let|const)\s+VIEW_ORDER\s*=\s*([^;]*);/);
       if (!decl) {
-        return `${rel} no longer declares VIEW_ORDER as a var/let/const array literal, so ` +
-          'this check cannot tell whether the COSTS fixture can draw the Group-the-bill-by ' +
-          'switch. Re-derive it from whatever replaced it rather than deleting this check.';
+        return `${rel} no longer declares VIEW_ORDER as a var/let/const initialised in one ` +
+          'statement, so this check cannot tell whether the COSTS fixture can draw the ' +
+          'Group-the-bill-by switch. Re-derive it from whatever replaced it rather than ' +
+          'deleting this check.';
       }
-      const body = decl[1].trim();
-      const order = [...decl[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
-      /* A PARTLY read array is not a short array. ['category', RG] yields one
-         quoted string, and reporting that as the whole of VIEW_ORDER said the
-         pane could no longer draw its switch while the pane drew it from two
-         groupings. So the items are counted independently of the strings, and
-         anything this cannot account for falls to the unsupported-shape
-         message below, which tells the reader not to touch the floor.
+      /* Read strictly, and refuse anything this grammar does not cover.
+         Everything below is a NARROWING of a looser parse that had been wrong
+         twice in the same way: a declaration it read only part of, reported as
+         the whole of VIEW_ORDER, over a pane drawing its switch from two
+         groupings and a fixture with nothing wrong with it.
 
-         An EMPTY array, by contrast, is not an unreadable shape: with no
-         groupings viewCard draws no switch for any fixture, so [] belongs in
-         the fewer-than-two case and not in the shape case. */
-      const items = body === '' ? []
-        : body.split(',').map((s) => s.trim()).filter((s) => s !== '');
-      if (order.length !== items.length) {
-        return `${rel} declares VIEW_ORDER as ${JSON.stringify(body)} and this check read ` +
-          `${order.length} quoted grouping name${order.length === 1 ? '' : 's'} out of ` +
-          `${items.length} item${items.length === 1 ? '' : 's'} — it reads quoted string ` +
-          'literals, and at least one of those is not one. Teach it the new shape; do not ' +
-          'assume the pane lost its switch, and do not touch EXPECTED_PAIRS.spend on the ' +
-          'strength of this.';
+           ['category', RG]                  one quoted string out of two items
+           ['category', // the pane's ...]   the apostrophe pairs with the next
+                                             real quote: two strings, two
+                                             comma-items, resourceGroup gone
+           ['category'].concat(EXTRA)        the old [^\]]* stopped at the ]
+           [['category', 'resourceGroup']]   likewise, one item deep
+
+         The last three all AGREED with a count of comma-items, so counting
+         items was not the invariant either. What is checked now is the shape
+         itself: the initialiser must be a bracketed list, and every item in it
+         must be a plain quoted literal with nothing else attached. Anything
+         else exits on the message below, which tells the reader to teach it
+         the shape and to leave EXPECTED_PAIRS.spend alone.
+
+         An EMPTY array is not an unreadable shape: with no groupings viewCard
+         draws no switch for any fixture, so [] belongs in the fewer-than-two
+         case below and not here. */
+      const init = decl[1].trim();
+      const snip = (s) => JSON.stringify(s.length > 90 ? `${s.slice(0, 90)}…` : s);
+      const unsupported = (what) =>
+        `${rel} declares VIEW_ORDER as ${snip(init)}, and this check cannot read that as ` +
+        `a plain array of quoted grouping names: ${what}. It reads a bracketed list of ` +
+        'single- or double-quoted literals and nothing else, so it refuses rather than ' +
+        'guess at the rest. Teach it the new shape; do not assume the pane lost its ' +
+        'switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
+      const bracketed = init.match(/^\[([\s\S]*)\]$/);
+      if (!bracketed) {
+        return unsupported('the initialiser does not both open with "[" and end with "]"');
       }
+      const body = bracketed[1].trim();
+      const items = body === '' ? [] : body.split(',').map((s) => s.trim());
+      /* A trailing comma is house style here and leaves one empty last item.
+         An empty item anywhere else is a hole, and falls to the message. */
+      if (items.length > 1 && items[items.length - 1] === '') items.pop();
+      const QUOTED = /^(?:'[^'"\\\n]*'|"[^'"\\\n]*")$/;
+      const badAt = items.findIndex((s) => !QUOTED.test(s));
+      if (badAt !== -1) {
+        return unsupported(`item ${badAt + 1} of ${items.length}, ${snip(items[badAt])}, ` +
+          'is not a quoted string literal on its own');
+      }
+      const order = items.map((s) => s.slice(1, -1));
       if (order.length < 2) {
         return `${rel} declares VIEW_ORDER as ${JSON.stringify(order)}, fewer than the two ` +
           'groupings viewCard needs before it draws the switch at all, so EXPECTED_PAIRS.spend ' +
@@ -958,10 +984,13 @@ const PREFLIGHT = [
       /* The whole point of reading VIEW_ORDER at run time is that the rule can
          change, so the note about "service" has to be conditional on the rule
          just read. Printed unconditionally it contradicted the sentence above
-         it the moment the pane put "service" INTO the order. */
+         it the moment the pane put "service" INTO the order. The clause that
+         followed — "and draws it as a table instead" — was asserted about a
+         function this check never opens, and printed over a serviceCard()
+         returning null. What is left is what the order above shows. */
       const serviceNote = order.includes('service') ? '' :
-        ' Note that "service" does NOT count: the pane excludes it from the switch on ' +
-        'purpose (ops/assets/pane-spend.js:288-302) and draws it as a table instead.';
+        ' Note that "service" does NOT count: it is absent from the order just read, ' +
+        `because ${rel} excludes it from the switch on purpose.`;
       return `the COSTS fixture supplies ${supplied.length} of the groupings the pane ` +
         `switches between. ${rel} reads ${JSON.stringify(order)} and viewCard draws the ` +
         'Group-the-bill-by switch only when two or more of them arrive with rows; this ' +
@@ -1748,12 +1777,16 @@ for (const page of PAGES) {
       /* "Drawing fewer of them than it was" is not measured — nothing here
          knows what the pane was drawing before. Raising EXPECTED_PAIRS.spend
          with the pane untouched printed it over a byte-identical result view.
-         So it states the two numbers and stops. */
+         So it states the two numbers and stops. Round 7 caught the sentence
+         adding a third number the first two refute: "look for the ONE state"
+         printed under "judged 2 here, fewer than 4". The shortfall is
+         subtracted, not assumed. */
       saw = `It judged ${had} here, fewer than ${due} rather than none — its result view ` +
-        `declared ${inventory}${inTheme}. Look for the one state that stopped being drawn, ` +
-        'or stopped having an unmarked peer to compare against; either the pane stopped ' +
-        'writing it or the fixture stopped producing the shape it needs, and the counts ' +
-        'above are what tell those apart.';
+        `declared ${inventory}${inTheme}. That is ${due - had} short: look for ` +
+        `${due - had === 1 ? 'a state' : 'states'} that stopped being drawn, or stopped ` +
+        'having an unmarked peer to compare against; either the pane stopped writing ' +
+        'one or the fixture stopped producing the shape it needs, and the counts above ' +
+        'are what tell those apart.';
     } else if (declared.length) {
       /* One sentence covering both shapes this case takes — every value
          negative, and positives nobody could pair. The earlier wording, "no
