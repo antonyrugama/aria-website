@@ -591,6 +591,53 @@ function cssRules(css, media = null) {
 
 const RULES = cssRules(PANE_CSS);
 
+/* The stylesheet as `cssRules()` reads it -- comments taken out by the same
+   string-blind sweep. The shape test asserts on THIS text rather than on the
+   file, so what it refuses is what the rest of this file actually parsed. */
+const STRIPPED = PANE_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+
+/* One rule's declarations, as a property map. Splitting on `;` and `:`
+   outright loses any value holding either character -- `content: ";"`, a
+   `url(data:...)`, a `var()` fallback with a semicolon -- and a property that
+   disappears from this map is a property every check below reads as
+   agreeing. So the scan steps over anything inside brackets or quotes. */
+function declarations(body) {
+  const out = new Map();
+  /* Every property name this scan could not read, kept rather than thrown
+     away. A name dropped in silence is a name every check below reads as
+     agreeing: `posi\74 ion: static` is `position` to a browser, fails the
+     name pattern here, and shipped 67.35% of the plot green. The shape test
+     refuses a rule that has any. */
+  const dropped = [];
+  let depth = 0;
+  let quote = null;
+  let start = 0;
+  let colon = -1;
+  const take = (end) => {
+    if (colon > start) {
+      const property = body.slice(start, colon).trim().toLowerCase();
+      const value = body.slice(colon + 1, end).trim();
+      if (/^[-a-z]+$/.test(property) && value) out.set(property, value);
+      else if (property && value) dropped.push(property);
+    }
+    start = end + 1;
+    colon = -1;
+  };
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i];
+    if (quote) {
+      if (ch === quote && body[i - 1] !== '\\') quote = null;
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '(' || ch === '[') depth += 1;
+    else if (ch === ')' || ch === ']') depth -= 1;
+    else if (depth === 0 && ch === ':' && colon === -1) colon = i;
+    else if (depth === 0 && ch === ';') take(i);
+  }
+  take(body.length);
+  out.dropped = dropped;
+  return out;
+}
+
 /* ------------------------------------------------------------- the page */
 
 function buildPage(dom, body) {
@@ -1122,8 +1169,903 @@ test('the day chart carries an x axis of the dates the route labelled', async ()
   assert.ok(axis, 'a chart of days with no dates under it is a shape, not a reading');
   assert.deepEqual(runs(axis), sent,
     'every label the route sent, in the order it sent them');
-  assert.equal(axis.getAttribute('aria-hidden'), 'true',
+  const row = byClass(livePanel(dom), 'sp-xaxis-row')[0];
+  assert.ok(row, 'the strip sits in the row that carries the drawing\'s own gutter');
+  assert.ok(findAll(row, (n) => n === axis).length === 1, 'and the dates are inside it');
+
+  /* In that order. The empty cell reserves the width of the money scale, so
+     the strip after it starts where the drawing's plot starts. Swap the two
+     and the strip is still exactly as wide as the plot -- every width
+     assertion below still holds -- but it starts a whole gutter plus gap to
+     the left of it, and every date is 66.0px off its day at 1440px, 60.0px
+     at 320px, measured in Chrome. Membership is not order. */
+  const cells = row.children;
+  assert.equal(cells.length, 2, 'the row is the reserved cell and the strip, nothing else');
+  assert.match(cells[0].getAttribute('class') || '', /\bsp-xaxis-gutter\b/,
+    'the reserved cell comes first, or the strip does not start where the plot starts');
+  assert.equal(cells[1], axis, 'and the dates are the cell after it');
+
+  assert.equal(row.getAttribute('aria-hidden'), 'true',
     'and it is hidden from the reader, because the chart\'s own name already carries the dates');
+
+  /* In the card body, beside the drawing's own box, and AFTER it.
+
+     Every date stays over its own day however this row is re-parented -- the
+     horizontal story is untouched -- so nothing else in this file notices,
+     and neither does Chrome's placement sweep: `body.insertBefore(axis,
+     plot.node)` moves the axis above the chart and `plot.node.appendChild(
+     axis)` drops it INSIDE the drawing's box, overlapping the plot by more
+     than its own width, and both are green everywhere but here.
+
+     The box is named, not followed. Round 9 broke the first version of this,
+     which took `row.parentNode` as the box and therefore travelled with the
+     row: the assertion moved with the mutation, which is the defect it exists
+     to catch wearing the assertion's own clothes. */
+  const box = row.parentNode;
+  assert.match(box.getAttribute('class') || '', /\bcard-body\b/,
+    'the strip is printed in the card body, not inside the drawing it labels');
+  const drawing = findAll(box, (n) => n.getAttribute && n.getAttribute('role') === 'img')[0];
+  assert.ok(drawing, 'the drawing is in that same box');
+  const wrap = drawing.parentNode;
+  assert.equal(wrap.parentNode, box,
+    'the drawing\'s box is a child of the card body, beside the strip, not somewhere else');
+  const order = (node) => box.childNodes.indexOf(node);
+  assert.ok(order(wrap) >= 0 && order(row) > order(wrap),
+    'the dates are printed under the drawing they label, not over it');
+});
+
+/* --------------------------------------------- the dates under the drawing
+
+   Stadiora/Aria#10507: every date after the first was drawn over a day it
+   does not name.
+
+   The route strides its labels -- every Nth day, never every day -- and sends
+   them as bare formatted dates. So a label's position is not its place in the
+   list: over three months the six dates name days 0, 15, 30, 45, 60 and 75 of
+   89, and the last of them belongs 84.6% of the way across rather than at the
+   right-hand end. The strip was a `justify-content: space-between` row, which
+   put it at 100%: 14.3% of the plot away from its own day, measured in Chrome
+   at 1440px before this change and 0.01% after.
+
+   Why the assertions below are not circular. WHICH DAY a label names is taken
+   from the route's own striding rule, re-derived in the fixture port at the
+   head of this file and never read back off the pane. WHERE THAT DAY IS DRAWN
+   is read out of the `d` attribute of the path the chart drew, which is the
+   geometry a reader actually sees. The percentage the pane writes on each
+   date is then compared against that drawn x, and against the closed form
+   stated below, which is written here rather than imported from the pane.
+
+   NOT COVERED here, and deliberately: that the strip's box is the same box as
+   the drawing. Nothing in this file lays anything out. That half is CSS --
+   one width shared by the money gutter and the empty cell under it, one gap
+   shared by the two rows -- and it is asserted from the stylesheet further
+   down this file and measured in headless Chrome for the pull request. */
+
+const PLOT = { width: 640, padLeft: 6, padRight: 6 };
+
+/* Where a day index is drawn across the plot, in the drawing's own viewBox
+   units. Stated from the drawing's geometry rather than imported from the
+   pane: an expectation computed by the code under test moves with the
+   mutation and proves nothing. */
+function plotX(index, span) {
+  const inner = PLOT.width - PLOT.padLeft - PLOT.padRight;
+  return PLOT.padLeft + (span > 1 ? (index / (span - 1)) * inner : inner / 2);
+}
+
+/* The points the chart actually drew, in viewBox units, read off the path. */
+function drawnPoints(dom, seriesLabel) {
+  const group = findAll(livePanel(dom), (n) => n.getAttribute
+    && n.getAttribute('data-series') === seriesLabel)[0];
+  assert.ok(group, 'the chart drew a group for ' + seriesLabel);
+  const points = [];
+  findAll(group, (n) => n.tagName && n.tagName.toLowerCase() === 'path').forEach((path) => {
+    const d = path.getAttribute('d') || '';
+    const matches = d.match(/[ML]\s*(-?[\d.]+)\s+(-?[\d.]+)/g) || [];
+    matches.forEach((one) => {
+      points.push(Number(/[ML]\s*(-?[\d.]+)/.exec(one)[1]));
+    });
+  });
+  return points;
+}
+
+/* What the pane wrote on each date, unit and all.
+
+   The unit is not decoration: `left: 84.567` is not a length, so a browser
+   drops the whole declaration and the date falls back into static flow --
+   the defect of #10507, arrived at by deleting three characters. So the raw
+   string is kept and checked against the one shape a percentage can take
+   BEFORE anything parses it. Normalising the value first threw that away:
+   `Number('84.567%')` and `Number('84.567')` are the same number, so the
+   suite caught the WRONG unit (`Number('84.567px')` is NaN) and not the
+   MISSING one, which is the likelier mistake. */
+const PERCENT = /^-?\d+(?:\.\d+)?%$/;
+
+function placedAt(dom, expecting) {
+  const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
+  assert.ok(strip, 'the date strip is on the page');
+  const isLoose = /\bsp-xaxis-loose\b/.test(strip.getAttribute('class') || '');
+
+  /* The positioned strip and the unpositioned fallback are the SAME element
+     with a different class, and `.sp-xaxis-loose span` sets `position:
+     static; transform: none` at equal specificity and later in the sheet. So
+     a strip carrying both classes keeps every `left` this function reads --
+     every percentage below stays true -- and the browser ignores all of
+     them: measured 61.48% of the plot at 1440px, 75.99% at 320px, which is
+     worse than the defect #10507 was. Positioned or loose, never both. */
+  assert.equal(isLoose, expecting === 'loose',
+    expecting === 'loose'
+      ? 'the strip that claims no position says so in its class'
+      : 'the strip that carries positions is not also the one that says it has none');
+
+  return findAll(strip, (n) => n.tagName && n.tagName.toLowerCase() === 'span')
+    .map((cell) => {
+      const left = cell.style && cell.style.left;
+      const text = String(cell.textContent || '').trim();
+      if (left === undefined) return { text, raw: null, left: null };
+      assert.match(String(left), PERCENT,
+        'the position written on ' + text + ' is a percentage, unit included -- '
+        + 'a bare number is not a length and a browser drops the declaration');
+      return { text, raw: String(left), left: Number(String(left).replace('%', '')) };
+    });
+}
+
+test('each date is drawn over the day it names, not over its own place in the list',
+  async () => {
+    /* Three months: 89 days billed, strided to six dates, and the stride does
+       not divide the window. So the dates are NOT evenly spread across the
+       plot -- five steps of 15 days and a tail of 13 unlabelled days -- which
+       is the shape `space-between` gets wrong and an evenly spaced fixture
+       would hide. */
+    const data = payload({ range: '3m' });
+    const sent = data.daily.labels.filter(Boolean);
+    const span = Math.max(...data.daily.series.map((one) => one.values.length));
+    const stride = Math.max(1, Math.ceil(data.period.billedDays / MAX_DAILY_LABELS));
+    assert.equal(sent.length, 6, 'six dates, which is what the route strides down to');
+    assert.equal(span, 89);
+    assert.equal(stride, 15);
+    assert.ok((span - 1) % stride !== 0,
+      'the last date is short of the last day, or this fixture cannot fail the old way');
+
+    const dom = await boot({ costs: data });
+    const placed = placedAt(dom);
+    const points = drawnPoints(dom, data.daily.series[0].label);
+    assert.equal(placed.length, sent.length, 'every date the route sent is drawn');
+
+    const errors = placed.map((cell, i) => {
+      const dayIndex = i * stride;          // the route's own rule, not the pane's
+      const drawn = points[dayIndex];       // where the chart put that day
+      const stated = plotX(dayIndex, span);
+      assert.ok(typeof drawn === 'number', 'the chart drew day ' + dayIndex);
+      /* The path is written to two decimal places, so the drawing can differ
+         from the stated geometry by half of that and no more. Anything larger
+         means the two have parted company and every figure below is moot. */
+      assert.ok(Math.abs(drawn - stated) <= 0.005,
+        'the drawing and the stated geometry agree about day ' + dayIndex
+        + ': drawn ' + drawn + ', stated ' + stated.toFixed(4));
+      assert.equal(cell.text, sent[i], 'in the order the route sent them');
+      assert.ok(cell.left !== null, 'date ' + cell.text + ' carries a position');
+      return {
+        text: cell.text,
+        dayIndex,
+        wanted: (stated / PLOT.width) * 100,
+        got: cell.left,
+        off: Math.abs(cell.left - (stated / PLOT.width) * 100),
+      };
+    });
+
+    const worst = Math.max(...errors.map((one) => one.off));
+    assert.ok(worst < 0.002,
+      'every date sits on its own day, within the rounding the percentage is written to. '
+      + 'Worst: ' + JSON.stringify(errors.find((one) => one.off === worst)));
+
+    /* The one the old layout could not get right: the last date names day 75
+       of 89 and belongs at 84.6% of the drawing, not at its right-hand end. */
+    const last = errors[errors.length - 1];
+    assert.equal(last.dayIndex, 75, 'the last date names day 75');
+    assert.equal(last.got.toFixed(1), '84.6', 'and is drawn at 84.6% of the drawing');
+    assert.ok(last.got < 95, 'a date at the right-hand end is the defect in #10507');
+  });
+
+/* The other half of the mapping, and until now the half held up by a
+   comment. Every position above is a viewBox x divided by the drawing's own
+   viewBox width and written as a percentage of the STRIP. That is a page
+   position only because of two attributes on the <svg>:
+
+     preserveAspectRatio="none"   stretches the drawing to its box on each
+                                  axis independently. Take it away and the
+                                  svg letterboxes to the default
+                                  `xMidYMid meet`: the drawing shrinks inside
+                                  its box, every date stays where the CSSOM
+                                  put it, and the pane draws #10507 again
+                                  from the other side -- 20.80% of the plot at 1440px at 1440px,
+                                  with every other check in this repository
+                                  green.
+     viewBox="0 0 640 ..."        is the scale those x values are in. Widen
+                                  it alone -- room on the right for a legend,
+                                  say -- and the divisor and the drawing
+                                  disagree by a constant ratio: 7.39% of the plot, at 1440px and at 320px alike, the
+                                  same at every width, again all green.
+
+   Both are asserted on the rendered element rather than on the source text,
+   and the viewBox width is checked against PLOT.width -- the number stated
+   at the top of this section from the drawing's geometry, not imported from
+   the pane -- so the two halves of the mapping have to agree with one
+   independently written constant rather than with each other. */
+test('the drawing is stretched to its box, in the scale the dates are placed in',
+  async () => {
+    const data = payload({ range: '3m' });
+    const dom = await boot({ costs: data });
+    const charts = findAll(livePanel(dom), (n) => n.getAttribute
+      && n.getAttribute('role') === 'img');
+    assert.equal(charts.length, 1, 'one drawing on the page');
+    const svg = charts[0];
+
+    assert.equal(svg.getAttribute('preserveAspectRatio'), 'none',
+      'the drawing is stretched to its box on both axes. Without it the svg letterboxes '
+      + 'to xMidYMid meet, the drawing is narrower than the box the dates are '
+      + 'percentages of, and every date stands 20.80% of the plot at 1440px from its day');
+
+    const box = String(svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+    assert.equal(box.length, 4, 'the drawing has a viewBox');
+    assert.equal(box[0], 0, 'that starts at x 0, which is what makes an x a fraction of it');
+    assert.equal(box[2], PLOT.width,
+      'and is ' + PLOT.width + ' units wide -- the width every position below is a '
+      + 'fraction of. Widen the viewBox alone and every date moves 7.39% of the plot, at 1440px and at 320px alike at every '
+      + 'width, because the divisor and the drawing disagree by a constant ratio');
+
+    /* And the percentages the pane wrote are percentages of THAT width: the
+       contract the two attributes exist to serve, stated here in one place. */
+    const span = Math.max(...data.daily.series.map((one) => one.values.length));
+    const stride = Math.max(1, Math.ceil(data.period.billedDays / MAX_DAILY_LABELS));
+    placedAt(dom).forEach((cell, i) => {
+      const wanted = (plotX(i * stride, span) / box[2]) * 100;
+      assert.ok(Math.abs(cell.left - wanted) < 0.002,
+        cell.text + ' is written at ' + cell.left + '% of the strip, and day '
+        + (i * stride) + ' is at ' + wanted.toFixed(3) + '% of the viewBox');
+    });
+  });
+
+/* The edge the fix decided NOT to clamp, pinned here so the decision is a
+   measurement rather than a claim.
+
+   A strided route reaches the last day whenever (billedDays - 1) is a
+   multiple of the stride. `last-month` on a 31-day month does it: 31 days,
+   stride 6, six dates, the last naming day 30 of 31. Centred on its day, that
+   date is written at 99.063% of the strip and half of its box hangs past the
+   right-hand end of the drawing. Measured in Chrome on that fixture, on this
+   head:
+
+     width    past the plot's right edge    clearance to the card's inner edge
+     1440px            7.34px                          8.66px
+      768px           11.17px                          4.83px
+      375px           13.34px                          2.66px
+      320px           13.86px                          2.14px
+
+   Nothing is clipped and the page never scrolls sideways (documentElement
+   scrollWidth - clientWidth is 0 at all four widths), because the card's own
+   padding absorbs the overhang -- with 2.14px to spare at the narrowest
+   width the shell supports. Clamping the last date back inside the plot
+   would buy those pixels by drawing the date somewhere other than over its
+   day, which is exactly the defect #10507 reported. So it is not clamped,
+   and this test fails if anybody clamps it without re-measuring the
+   clearance above. */
+test('a date that names the last day of the window is written over it, not pulled back',
+  async () => {
+    const data = payload({ range: 'last-month', billedThrough: 31 });
+    const span = Math.max(...data.daily.series.map((one) => one.values.length));
+    const stride = Math.max(1, Math.ceil(data.period.billedDays / MAX_DAILY_LABELS));
+    assert.equal(span, 31, 'a 31-day window');
+    assert.equal(stride, 6, 'strided to six dates');
+    assert.equal((span - 1) % stride, 0,
+      'so the last date names the last day -- the case the 3m fixture cannot reach');
+
+    const dom = await boot({ costs: data });
+    const placed = placedAt(dom);
+    const last = placed[placed.length - 1];
+    assert.equal(last.text, 'Aug 31', 'the last date names the last day of the window');
+    assert.equal(last.raw, ((plotX(span - 1, span) / PLOT.width) * 100).toFixed(3) + '%',
+      'and is written over that day, at the plot\'s right-hand end, not pulled back '
+      + 'inside it. Half of its box hangs over the end of the drawing by 7.34px at '
+      + '1440px and 13.86px at 320px, measured in Chrome, and the card\'s padding '
+      + 'absorbs it with 2.14px to spare at the narrowest width. Clamping it would put '
+      + 'the date somewhere other than over its day, which is #10507');
+    assert.equal(last.raw, '99.063%', 'stated outright, so the number is in the file');
+  });
+
+/* The other way this formatter can be wrong, and the only one that does not
+   announce itself. A date the pane cannot recognise at all falls into the
+   unpositioned strip, loudly. A date it recognises as the WRONG DAY keeps
+   every position and is quietly one day out -- which is #10507 again, in
+   miniature and permanently.
+
+   That is what dropping `timeZone: 'UTC'` from `dayNamer()` does. The route
+   spells its dates in UTC; a reader west of UTC spells the same instant as
+   the day before, so every label matches one index late. It is invisible to
+   a suite that runs where the two spellings agree, and CI runs on
+   `ubuntu-latest`, which is UTC. Measured in Chrome at UTC-4 with the option
+   removed: the strip does NOT fall back, and every date stands one day off
+   its day -- 0.908% of the plot on a 109-day window, 2.336% on 43 days,
+   16.7% on a week, because the error is 1/(span-1) and grows as the window
+   shortens.
+
+   So this test moves the reader instead of trusting the runner: it renders
+   the pane where the two spellings disagree. Node re-reads `process.env.TZ`
+   for each new formatter, so the zone below applies to the pane's own
+   `Intl.DateTimeFormat` and to nothing in the fixture, which pins UTC
+   exactly as the route does. */
+test('a date is matched to its day in UTC, wherever the reader is', async () => {
+  const was = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  try {
+    assert.equal(new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' })
+      .format(Date.UTC(2026, 8, 6, 0, 0, 0)), 'Sep 5',
+    'the zone really did change: a UTC midnight is the day before here, which is the '
+      + 'disagreement this test needs to exist');
+
+    const data = payload({ range: '3m' });
+    const sent = data.daily.labels.filter(Boolean);
+    const span = Math.max(...data.daily.series.map((one) => one.values.length));
+    const stride = Math.max(1, Math.ceil(data.period.billedDays / MAX_DAILY_LABELS));
+
+    const dom = await boot({ costs: data });
+    const placed = placedAt(dom);
+    assert.equal(placed.length, sent.length, 'every date the route sent is still drawn');
+
+    placed.forEach((cell, i) => {
+      const dayIndex = i * stride;
+      const wanted = (plotX(dayIndex, span) / PLOT.width) * 100;
+      assert.ok(cell.left !== null,
+        'date ' + cell.text + ' carries a position west of UTC too');
+      assert.ok(Math.abs(cell.left - wanted) < 0.002,
+        'date ' + cell.text + ' names day ' + dayIndex + ' and belongs at '
+        + wanted.toFixed(3) + '% of the drawing, but is at ' + cell.left + '%. A reader '
+        + 'west of UTC spells the route\'s own dates a day early, so a formatter without '
+        + '`timeZone: \'UTC\'` matches every date to the day after the one it names');
+    });
+  } finally {
+    if (was === undefined) delete process.env.TZ;
+    else process.env.TZ = was;
+  }
+});
+
+test('dates the route spaced unevenly are placed unevenly, one per day named', async () => {
+  /* A shape the route does not send today: its stride is uniform, so the
+     dates it sends are a constant number of days apart. This fixture names
+     days 0, 1, 7 and 29 of the same window to show that what places a date is
+     the day it names and nothing else -- not the stride, not its place in the
+     list, not an even share of the width. The route-shaped proof is the test
+     above; this one is the rule underneath it. */
+  const data = payload({ range: 'last-month' });
+  const span = Math.max(...data.daily.series.map((one) => one.values.length));
+  const dayNames = new Intl.DateTimeFormat('en-US', {
+    day: 'numeric', month: 'short', timeZone: 'UTC',
+  });
+  const named = [0, 1, 7, 29];
+  assert.ok(named[named.length - 1] < span, 'every day named is inside the window');
+  data.daily.labels = named.map((offset) =>
+    dayNames.format(dayStart(addDays(data.period.start, offset))));
+
+  const dom = await boot({ costs: data });
+  const placed = placedAt(dom);
+  assert.equal(placed.length, named.length);
+  placed.forEach((cell, i) => {
+    assert.equal(cell.left.toFixed(3),
+      ((plotX(named[i], span) / PLOT.width) * 100).toFixed(3),
+      cell.text + ' sits on day ' + named[i]);
+  });
+
+  const steps = placed.slice(1).map((cell, i) => cell.left - placed[i].left);
+  assert.ok(new Set(steps.map((one) => one.toFixed(2))).size === steps.length,
+    'no two gaps are equal, which is what an evenly spread row would produce');
+});
+
+test('a date the pane cannot match to a day is not placed as though it could be',
+  async () => {
+    /* The route changing how it formats a date, or an answer with no window
+       start, leaves the pane unable to say which day any date names. It then
+       draws them as a plain list claiming no position, rather than spreading
+       them over days they were not measured on -- which is exactly the defect
+       in #10507, arrived at by a different road. */
+    const data = payload({ range: 'last-month' });
+    data.daily.labels = data.daily.labels.map((one, i) => 'Week ' + (i + 1));
+
+    const dom = await boot({ costs: data });
+    const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
+    assert.ok(strip, 'the dates are still on the page');
+    assert.match(strip.getAttribute('class'), /\bsp-xaxis-loose\b/,
+      'in the shape that claims no position');
+    assert.deepEqual(runs(strip), data.daily.labels,
+      'and none of them is dropped');
+    placedAt(dom, 'loose').forEach((cell) => {
+      assert.equal(cell.left, null, cell.text + ' is not positioned');
+    });
+  });
+
+test('a window with no start leaves the dates unplaced rather than placed by guess',
+  async () => {
+    const data = payload({ range: 'last-month' });
+    delete data.period.start;
+
+    const dom = await boot({ costs: data });
+    const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
+    assert.match(strip.getAttribute('class'), /\bsp-xaxis-loose\b/);
+    placedAt(dom, 'loose').forEach((cell) => assert.equal(cell.left, null));
+  });
+
+test('the narrow layout drops every other date to a line of its own, clear of the first',
+  () => {
+    /* At 320px six dates at 9.5px do not fit side by side: measured in Chrome
+       on a twelve-month period, the closest pair overlaps by 0.74px. Every
+       other date therefore drops to a second line, rather than some of them
+       being dropped altogether -- which days the route chose to label is its
+       statement about the series.
+
+       The drop has to clear the line box it came from or the two lines still
+       touch: measured at 9.5px the line box is 14.25px, so 1.5em, and an
+       earlier 1.35em stagger left the boxes overlapping by 1.4px while the
+       text looked separated. The strip then has to be tall enough for both
+       lines or the second one paints over whatever follows it. */
+    const LINE_BOX_EM = 1.5;   // 14.25px at 9.5px, measured in Chrome
+    const narrow = RULES.filter((r) => r.media && /max-width:\s*420px/.test(r.media));
+    assert.ok(narrow.length > 0, 'the stylesheet has a narrow layout');
+
+    const stagger = narrow.filter((r) => r.targets(/nth-child\(even\)/))[0];
+    assert.ok(stagger, 'every other date is offset at this width');
+    const top = /(?:^|[;{\s])top:\s*([\d.]+)em/.exec(stagger.body);
+    assert.ok(top, 'offset in em, so it follows the font size rather than a fixed pixel guess');
+    assert.ok(Number(top[1]) >= LINE_BOX_EM,
+      'a date dropped ' + top[1] + 'em still sits inside the ' + LINE_BOX_EM
+      + 'em line box of the one before it');
+
+    const strip = narrow.filter((r) => r.targets(/^\s*\.sp-xaxis$/))[0];
+    assert.ok(strip, 'the strip is restyled at this width');
+    const min = /(?:^|[;{\s])min-height:\s*([\d.]+)em/.exec(strip.body);
+    assert.ok(min, 'and given a height');
+    assert.ok(Number(min[1]) >= Number(top[1]) + LINE_BOX_EM,
+      'the strip is ' + min[1] + 'em tall, which does not hold a second line at '
+      + top[1] + 'em');
+  });
+
+/* ------------------------------------------ what a date's position rests on
+
+   Everything from here to the end of this block is about the same question:
+   the pane writes a correct percentage onto every date, so what else has to
+   be true for that percentage to put the date over its day?
+
+   The answer is a small, closed set of declarations in this stylesheet. This
+   file cannot lay out -- the harness has no layout at all -- so it cannot
+   check the pixels. What it can do is refuse to let that set change without
+   somebody measuring the change in a browser.
+
+   Three ways of writing this guard have now been broken by review, each
+   with the suite green:
+
+     "is the declaration present"   a declaration does not have to be deleted
+                                    to stop applying. Appending `.sp-xaxis
+                                    { position: static }`, or adding it to
+                                    the 420px rule, reinstates #10507 at
+                                    7.9% of the plot at 1440px and 39.07% at
+                                    320px -- the same pixels as deleting
+                                    `position: relative` outright, which was
+                                    caught.
+     "do all the rules agree"       agreeing about five NAMED properties says
+                                    nothing about a sixth. `margin-left: 24px`
+                                    on a date moves it 24px (12.24% at 320px);
+                                    `flex-direction: row-reverse` or
+                                    `direction: rtl` on the row moves every
+                                    date 30.62% at 320px, which is the same
+                                    geometry as swapping the row's two cells,
+                                    a swap this file DOES catch; `flex-grow: 0`
+                                    on the strip beats `flex: 1` (83.97%);
+                                    `translate: 50%` on a date beats
+                                    `transform` (8.26%). All five were green.
+     "the subject is the last      a selector does not have to NAME an element
+      compound"                     to land on it. `.sp-xaxis-row span` is a
+                                    date, `.sp-xaxis > *` is a date, and
+                                    `.sp-xaxis-row > div:last-child` is the
+                                    strip -- the last compound of all three is
+                                    a bare type or universal selector, so a
+                                    matcher keyed on it saw none of them. The
+                                    first two move every date 12.48% at 320px
+                                    and the third renders no date at all; all
+                                    three were green.
+     the whole thing                still cannot see a browser. What it can
+                                    be is CLOSED on BOTH axes: which rules
+                                    reach these elements, and what those rules
+                                    are allowed to say.
+
+   So there are two guards below, and they are closed worlds rather than
+   checklists. The first: a rule whose selector NAMES any of these elements
+   must be one of the ten selectors measured here -- a spelling nobody has
+   measured is a failure, whatever it says. The second: a declaration those
+   rules give must be one named here with the figure a browser produced when
+   it changed -- a property nobody has measured is a failure, whatever its
+   value. What escapes both, and cannot be closed by any scan of this file,
+   is a rule that reaches these elements WITHOUT naming them
+   (`.card div { margin-left: 24px }`). That is in the PR's NOT COVERED list.
+
+   The ten selectors, and the element each one is. Keyed on the exact text
+   because that is the point: `.sp-xaxis span` is measured and
+   `.sp-xaxis > *` is not, though they hit the same element. */
+const MEASURED_SELECTORS = new Map([
+  ['.sp-xaxis-row', 'the row'],
+  ['.sp-xaxis', 'the strip'],
+  ['.sp-xaxis span', 'a date'],
+  ['.sp-xaxis span:nth-child(even)', 'a date'],
+  ['.sp-xaxis-loose', 'the unpositioned fallback'],
+  ['.sp-xaxis-loose span', 'a date of the fallback'],
+  ['.sp-chart-wrap', 'the drawing\'s own row'],
+  ['.sp-chart-wrap .chart', 'the drawing'],
+  ['.sp-axis', 'the money gutter'],
+  ['.sp-xaxis-gutter', 'the cell under the money gutter'],
+]);
+
+/* A class token of the strip's own family, anywhere in a selector -- not
+   only in its last compound. `.sp-xaxis-row` is not a mention of `sp-xaxis`,
+   which is what the trailing guard is for. */
+const NAMES_THE_STRIP = new RegExp('(^|[^-\\w])\\.(?:'
+  + ['sp-xaxis-row', 'sp-xaxis-loose', 'sp-xaxis-gutter', 'sp-xaxis',
+    'sp-chart-wrap', 'sp-axis'].join('|')
+  + ')(?![-\\w])');
+
+const oneLine = (selector) => selector.trim().replace(/\s+/g, ' ');
+
+/* Both closed worlds below read this stylesheet as TEXT: the selector map
+   matches the literal characters of a selector, and the declaration allowlist
+   reads a rule's body as a flat list of `property: value`. Five ordinary CSS
+   spellings make that reading wrong rather than incomplete, and every one of
+   them ships a visibly broken strip green:
+
+     nesting     `.sp-xaxis { & span { position: static } }` is one rule whose
+                 body is not declarations. The property name comes out as
+                 `& span { position`, fails the name pattern, and is dropped --
+                 and a property that disappears from that map is a property
+                 every check below reads as agreeing. Measured: 69.86% of the
+                 plot with every pair of dates touching (0.00px apart), 68/0
+                 green -- the same displacement to the digit as the flat
+                 spelling of the same declaration, which is RED.
+     escapes     `.sp\-xaxis` and `.sp-\78 axis` are the same class to a
+                 browser as `.sp-xaxis` and are different strings to a regex.
+                 Measured: 39.07% at 320px and 7.90% at 1440px, 68/0 green --
+                 again the same figures as the unescaped spelling, which is RED.
+     escaped     `.sp-xaxis span { posi\74 ion: static }` is `position` to a
+     properties  browser and fails the property-name pattern here, so it is
+                 dropped from the map with the same consequence. Measured:
+                 69.86% of the plot at 1440px and 7.22% at 320px, with every pair of dates touching (0.00px apart), against an unescaped control that is RED at the
+                 same anchor with the same figure.
+     attribute   `[class~="sp-xaxis"] span` selects exactly the elements
+     selectors   `.sp-xaxis span` selects, names the class in its own text,
+                 and does not start with a dot -- so the selector map never
+                 sees it. Measured: 69.86% of the plot at 1440px and 7.22% at 320px, every pair of dates touching, against `.sp-xaxis span` at the
+                 same anchor, which is RED with the same figure.
+     strings     a `content` value holding an open-comment delimiter is a
+                 string to a browser and the start of a comment to the
+                 stripper at the top of this file. Every rule between it and
+                 the next close-comment delimiter inside a string vanishes
+                 from RULES, so all of these checks sweep a stylesheet the
+                 browser is not using. Measured: 69.86% of the plot at 1440px and 7.22% at 320px, and the two
+                 sentinel rules are the whole difference between that and a
+                 RED suite.
+
+   None of them is closed by reading harder -- reading harder is what has been
+   broken five times. They are closed by refusing the five shapes outright,
+   which costs nothing because this sheet uses none of them: a nested block,
+   an escape, an attribute selector other than the one measured, or a string
+   is a shape this file cannot read, so it fails until somebody teaches it to,
+   and the failure says so. */
+test('this stylesheet is in a shape the two closed worlds can actually read', () => {
+  const NESTED = (rule) => /\{/.test(rule.body);
+  const ESCAPED = (text) => /\\/.test(text);
+  const ATTRS = (text) => text.match(/\[[^\]]*\]/g) || [];
+  /* The one attribute selector this sheet uses, and the only one the
+     selector map has been measured against. */
+  const MEASURED_ATTRIBUTE = '[scope="row"]';
+
+  /* Positive controls: the refusals must see the real payloads, in the real
+     shape they arrive in, or they are five more assertions that pass on
+     nothing. */
+  assert.ok(NESTED({ body: ' & span { position: static; } ' }), 'a nested block with `&`');
+  assert.ok(NESTED({ body: ' span { position: static; } ' }), 'a nested block without `&`');
+  assert.ok(!NESTED({ body: ' position: relative; flex: 1; ' }), 'and a flat body is not one');
+  assert.ok(ESCAPED('.sp\\-xaxis'), 'a backslash escape');
+  assert.ok(ESCAPED('.sp-\\78 axis'), 'a hex escape');
+  assert.ok(ESCAPED(' posi\\74 ion: static; '), 'an escape in a property name, not a selector');
+  assert.ok(!ESCAPED('.sp-xaxis span'), 'and an ordinary selector is neither');
+  assert.deepEqual(ATTRS('[class~="sp-xaxis"] span'), ['[class~="sp-xaxis"]'],
+    'an attribute selector on the class');
+  assert.deepEqual(ATTRS('.sp-xaxis-row[aria-hidden="true"] span'),
+    ['[aria-hidden="true"]'], 'and on any other attribute the pane sets');
+  assert.deepEqual(ATTRS('.sp-xaxis span'), [], 'and an ordinary selector has none');
+  assert.equal(declarations(' posi\\74 ion: static; ').dropped.length, 1,
+    'a property name this scan cannot read is kept, not dropped in silence');
+  assert.equal(declarations(' position: static; ').dropped.length, 0,
+    'and one it can read is not');
+
+  RULES.forEach((rule) => {
+    const where = ' in ' + (rule.media || 'the base sheet');
+    assert.ok(!NESTED(rule),
+      '`' + rule.selectors.join(', ') + '`' + where
+      + ' has a nested block in its body. Every check in this file reads a rule body as a '
+      + 'flat list of declarations, so a nested one is not read as anything at all: '
+      + '`.sp-xaxis { & span { position: static } }` put every date 69.86% of the plot '
+      + 'from its day with every pair touching, and was 68 pass / 0 fail. Flatten it, or '
+      + 'teach `declarations()` about braces first and prove it with a mutation');
+    assert.ok(!ESCAPED(rule.body),
+      '`' + rule.selectors.join(', ') + '`' + where + ' has a CSS escape in its body. A '
+      + 'property name is an identifier, so a browser reads `posi\\74 ion` as `position` '
+      + 'while the name pattern in `declarations()` drops it -- and a property dropped '
+      + 'there is a property every check below reads as agreeing: `.sp-xaxis span '
+      + '{ posi\\74 ion: static }` moved every date 69.86% of the plot at 1440px and 7.22% '
+      + 'at 320px, with every pair of dates touching (0.00px apart), while the selector '
+      + 'map and the declaration allowlist below both read this stylesheet as agreeing. '
+      + 'Spell it plainly');
+    assert.deepEqual(declarations(rule.body).dropped, [],
+      '`' + rule.selectors.join(', ') + '`' + where + ' has a property name this file '
+      + 'cannot read. It is not treated as absent, because absent is exactly how a '
+      + 'defect gets through here: every check below would read this rule as agreeing '
+      + 'with whatever it is asked. Spell the property plainly, or teach the scan the '
+      + 'shape and prove it with a mutation');
+    rule.selectors.forEach((selector) => {
+      assert.ok(!ESCAPED(selector),
+        '`' + selector.trim() + '`' + where + ' spells a '
+        + 'class with a CSS escape. The selector map matches literal text, so an escaped '
+        + 'name is a different string and the same element: `.sp\\-xaxis { position: '
+        + 'static }` moved every date 39.07% of the plot at 320px, and was 68 pass / 0 '
+        + 'fail. Spell it plainly');
+      ATTRS(selector).forEach((attribute) => {
+        assert.equal(attribute, MEASURED_ATTRIBUTE,
+          '`' + oneLine(selector) + '`' + where + ' selects on an attribute. An '
+          + 'attribute selector reaches an element without spelling it the way the '
+          + 'selector map reads -- `[class~="sp-xaxis"] span` is the same subject as '
+          + '`.sp-xaxis span`, names the class in its own text, and starts with `[` '
+          + 'rather than `.`, so nothing here sees it: it moved every date '
+          + '69.86% of the plot at 1440px and 7.22% at 320px with every pair of dates '
+          + 'touching, the same figures to the digit as the dot-spelled control at the '
+          + 'same anchor, which is RED. '
+          + '`[aria-hidden="true"]` reaches the same row, because the pane sets that '
+          + 'attribute on it. Spell the subject as a class');
+      });
+    });
+  });
+
+  /* And no string anywhere, because a string can carry a comment delimiter
+     past the stripper at the top of this file and hide the rules behind it
+     from every check here. Read on the stripped source, so what is asserted
+     is what the rest of this file actually parsed. */
+  const outsideMeasured = STRIPPED.split(MEASURED_ATTRIBUTE).join('');
+  assert.equal(outsideMeasured.match(/["']/g), null,
+    'this stylesheet has a string literal in it, outside the one measured attribute '
+    + 'selector. `content: "/*"` is a string to a browser and an open comment to the '
+    + 'stripper `cssRules()` runs, so every rule between it and the next `*/` inside a '
+    + 'string disappears from RULES while Chrome applies it: three rules spelled that '
+    + 'way put every date 69.86% of the plot at 1440px and 7.22% at 320px, with the '
+    + 'selector map and the declaration allowlist below both reading this stylesheet as '
+    + 'agreeing, and the middle rule ON ITS OWN is RED with the identical figure -- the '
+    + 'two sentinels are the whole difference. Take the string out, or make the stripper '
+    + 'string-aware and prove it with a mutation');
+  assert.ok(STRIPPED.includes(MEASURED_ATTRIBUTE),
+    'and that one attribute selector is still here, or this check is asserting nothing');
+});
+
+test('every rule that names the date strip is one that has been measured', () => {
+  const named = [];
+  RULES.forEach((rule) => rule.selectors.forEach((raw) => {
+    if (NAMES_THE_STRIP.test(oneLine(raw))) named.push({ rule, selector: oneLine(raw) });
+  }));
+  assert.ok(named.length >= MEASURED_SELECTORS.size,
+    'the stylesheet still names these elements');
+
+  named.forEach(({ rule, selector }) => {
+    assert.ok(MEASURED_SELECTORS.has(selector),
+      '`' + selector + '` in ' + (rule.media || 'the base sheet') + ' reaches the date '
+      + 'strip by a spelling nobody has measured. A selector does not have to NAME an '
+      + 'element to land on it, so this list is keyed on the exact text rather than on '
+      + 'which element the text resolves to: `.sp-xaxis-row span { margin-left: 24px }` '
+      + 'moves every date 12.48% of the plot at 320px, `.sp-xaxis > * { margin-left: '
+      + '24px }` the same 12.48%, and `.sp-xaxis-row > div:last-child { display: none }` '
+      + 'renders no date at all -- each of them green before this test existed, and the '
+      + 'last compound of all three is a bare type or universal selector. Measure it in '
+      + 'a browser and add it to MEASURED_SELECTORS with what it does, or spell the rule '
+      + 'as one of the ten that are already there');
+  });
+
+  /* And every measured selector is really in the sheet, so the map cannot rot
+     into a list of names for rules that no longer exist. */
+  const present = new Set(named.map((one) => one.selector));
+  MEASURED_SELECTORS.forEach((_role, selector) => {
+    assert.ok(present.has(selector),
+      '`' + selector + '` is measured here but no longer in the stylesheet');
+  });
+});
+
+test('every declaration the date strip is given is one that has been measured', () => {
+  /* Which rules are which element is decided by the map above, not by a
+     rule about compounds -- the test before this one has already refused
+     every spelling that is not in it, so there is nothing here to infer.
+     `.sp-xaxis span` and `.sp-xaxis-loose span` both style a span; only the
+     first styles a span of the positioned strip, and the map says so. */
+  const subject = (role) => (rule) => rule.selectors
+    .some((raw) => MEASURED_SELECTORS.get(oneLine(raw)) === role);
+
+  const ANY = null;                       // measured as unable to move a date sideways
+
+  /* Every declaration, keyed by the element it is given to. The regex is the
+     value the declaration must have; ANY means the property cannot move a
+     date across the plot whatever its value (a colour, a font size, a
+     vertical offset). The sentence is what a browser measured when it
+     changed. */
+  const ALLOWED = [
+    ['the row', subject('the row'), {
+      display: [/^flex$/, 'the row is a flex row, so its first cell can reserve the '
+        + 'scale column: without it -30.91% at 320px'],
+      gap: [/^[\d.]+px$/, 'and puts the same gap after that cell as the drawing does, '
+        + 'checked against the drawing\'s own below'],
+      'margin-top': [ANY, 'vertical'],
+    }],
+    ['the strip', subject('the strip'), {
+      position: [/^relative$/, 'the strip is what a percentage inside it resolves '
+        + 'against: without it -39.07% at 320px'],
+      flex: [/^1$/, 'and fills the rest of the row, which is what makes it the '
+        + 'plot\'s width: without it -86.18%. Exactly `1`, because the shorthand '
+        + 'carries a basis and a shrink factor too: `flex: 1 0 400px` keeps the grow '
+        + 'term and stops the strip shrinking, which moves every date 51.16% of the plot at 375px and 89.70% at 320px, with 117px and 172px of horizontal page overflow '
+        + 'with nothing in this repository red -- the three browser sweeps that visit '
+        + 'a narrow width answer this pane with an unpublished period, so they never '
+        + 'build the strip at all'],
+      'min-width': [/^0$/, 'and may shrink below its content, or a long date would '
+        + 'widen it past the plot'],
+      'min-height': [/^[\d.]+em$/, 'and reserves its own height, because every date in '
+        + 'it is out of flow: without it the row is 0px tall and the last date crosses '
+        + 'the card edge. In em, so it follows the font size the same rule sets'],
+      'font-size': [ANY, 'vertical and horizontal, but only of the text inside a box '
+        + 'that is positioned independently of it'],
+      color: [ANY, 'paint'],
+    }],
+    ['a date', subject('a date'), {
+      position: [/^absolute$/, 'a date is placed by its own left, not by the date '
+        + 'before it: without it -69.86%'],
+      transform: [/^translateX\(-50%\)$/, 'and sits centred on its day rather than '
+        + 'starting at it: without it +8.45% at 320px'],
+      top: [ANY, 'vertical -- this is the narrow layout\'s stagger'],
+      'white-space': [/^nowrap$/, 'and is one line, or a wrapped date is centred on '
+        + 'its own second line'],
+    }],
+    ['the unpositioned fallback', subject('the unpositioned fallback'), {
+      display: [/^flex$/, 'the fallback lays its dates out in a row'],
+      'flex-wrap': [/^wrap$/, 'that wraps, because it has no width to spread over'],
+      gap: [/^[\d.]+px\s+[\d.]+px$/, 'and separates one date from the next, which in '
+        + 'that state nothing else does: h() appends its children with no whitespace '
+        + 'between them, so without this the six dates render as one unbroken string'],
+    }],
+    ['a date of the fallback', subject('a date of the fallback'), {
+      position: [/^static$/, 'a fallback date claims no position at all'],
+      transform: [/^none$/, 'and is not centred on a day it was never matched to'],
+    }],
+    ['the drawing\'s own row', subject('the drawing\'s own row'), {
+      display: [/^flex$/, 'the drawing sits in the same shape as the strip below it'],
+      'align-items': [ANY, 'vertical'],
+      gap: [/^[\d.]+px$/, 'with the gap the strip is checked against'],
+    }],
+    ['the drawing', subject('the drawing'), {
+      flex: [/^1$/, 'the drawing takes the rest of its row exactly as the strip '
+        + 'takes the rest of its own, which is what makes one plot two boxes wide the '
+        + 'same. Move the drawing alone -- `.sp-chart-wrap .chart '
+        + '{ margin-left: 20px }` -- and every date stays where it was while the day it '
+        + 'names slides: 1.97% of the plot at 1440px, 11.48% at 320px. Exactly `1`, for '
+        + 'the same reason the strip is: a basis in the shorthand stops the box '
+        + 'shrinking and the two boxes stop being the same width'],
+      'min-width': [/^0$/, 'and may shrink below its content, for the same reason'],
+      height: [ANY, 'vertical'],
+    }],
+    ['the money gutter', subject('the money gutter'), {
+      position: [/^relative$/, 'the money scale places its own labels inside this cell'],
+      flex: [/^none$/, 'and is the width it is given rather than a share of the row, on '
+        + 'both rows at once: let the cell under it grow alone -- `.sp-xaxis-gutter '
+        + '{ flex: 1 }` -- and the strip starts somewhere the drawing does not: every date lands 47.68% of the plot from its day at '
+        + '1440px and 37.08% at 320px'],
+      width: [/^[\d.]+px$/, 'and is as wide as the cell under it, which is what lines '
+        + 'the strip up with the drawing: checked as one declaration below'],
+    }],
+    ['the cell under the money gutter', subject('the cell under the money gutter'), {
+      flex: [/^none$/, 'the empty cell is the width it is given, not a share: every date lands 47.68% of the plot from its day at '
+        + '1440px and 37.08% at 320px'],
+      width: [/^[\d.]+px$/, 'and that width is the money gutter\'s own, which is what '
+        + 'lines the strip up with the drawing: checked as one declaration below'],
+    }],
+  ];
+
+  ALLOWED.forEach(([name, matches, allowed]) => {
+    const rules = RULES.filter(matches);
+    assert.ok(rules.length > 0, 'the stylesheet styles ' + name);
+
+    rules.forEach((rule) => {
+      declarations(rule.body).forEach((value, property) => {
+        const spec = allowed[property];
+        assert.ok(spec, name + ' is given `' + property + ': ' + value + '` in '
+          + (rule.media || 'the base sheet') + ', which nothing here has measured. '
+          + 'A declaration this list does not name can move a date across the plot '
+          + 'without touching any it does: margin-left moved every date 12.24% of the '
+          + 'plot, flex-direction and direction 30.62%, flex-grow 83.97%, translate '
+          + '8.26% -- all with this file green. Measure it in a browser and add it '
+          + 'here with the figure, or take it out');
+        if (spec[0]) {
+          assert.match(value, spec[0], name + ' is given `' + property + ': ' + value
+            + '` in ' + (rule.media || 'the base sheet') + ', and ' + spec[1]);
+        }
+      });
+    });
+
+    /* And the ones with a value are in the base sheet, so none of them is a
+       thing that only holds at one width. */
+    Object.keys(allowed).filter((property) => allowed[property][0]).forEach((property) => {
+      assert.ok(rules.some((r) => !r.media && declarations(r.body).has(property)),
+        name + ' has lost `' + property + '` from the base sheet, so ' + allowed[property][1]);
+    });
+  });
+});
+
+test('the date strip is laid out in the same box as the drawing it labels', () => {
+  /* The percentages above are percentages OF THE STRIP. They are percentages
+     of the plot only while the strip is the same width as the drawing, which
+     is a fact about this stylesheet: both rows are flex rows with the same
+     gap, and the money gutter and the empty cell under it take their width
+     from one declaration. Split that declaration in two and every date moves
+     by the difference, at every width, silently. */
+  const widths = RULES.filter((r) => r.targets(/\.sp-xaxis-gutter\b/) && /width:/.test(r.body));
+  assert.ok(widths.length >= 1, 'the cell under the money gutter has a width');
+  widths.forEach((rule) => {
+    assert.ok(rule.selectors.some((s) => /^\.sp-axis$/.test(s.trim())),
+      'and it is the same declaration the money gutter itself takes its width from, '
+      + 'in ' + (rule.media || 'the base sheet'));
+  });
+
+  /* Every width the money gutter is given is given to the cell under it. */
+  const gutterWidths = RULES
+    .filter((r) => r.targets(/\.sp-axis\b/) && /(^|[;{\s])width:/.test(r.body))
+    .map((r) => ({ media: r.media, selectors: r.selectors.map((s) => s.trim()) }));
+  gutterWidths.forEach((rule) => {
+    assert.ok(rule.selectors.includes('.sp-xaxis-gutter'),
+      'the scale column is sized alone in ' + (rule.media || 'the base sheet')
+      + ', so the strip under it no longer starts where the drawing starts');
+  });
+
+  /* The gap, in every media context either row declares one -- the strip and
+     the drawing must put the SAME gap after their gutter cell at every width,
+     not only in the base sheet. Adding `.sp-chart-wrap { gap: 4px }` to the
+     720px block drifts every date 4.0px from its day below that breakpoint,
+     which the base-sheet-only version of this assertion could not see.
+
+     Read as a COLUMN gap rather than as the `gap` shorthand: `column-gap`
+     added later beats the shorthand without ever appearing under that key,
+     and drifts every date 3.95px (1.98% of the plot). The allowlist above
+     refuses `column-gap` on either row outright; this resolves whichever of
+     the two spellings is there, so the two guards do not depend on each
+     other. */
+  const columnGap = (rule) => {
+    const decls = declarations(rule.body);
+    if (decls.has('column-gap')) return decls.get('column-gap').trim();
+    if (!decls.has('gap')) return null;
+    const parts = decls.get('gap').trim().split(/\s+/);
+    return (parts.length > 1 ? parts[1] : parts[0]);
+  };
+  const gapsOf = (selector) => {
+    const found = RULES.filter((r) => r.targets(selector))
+      .map((r) => ({ media: r.media, gap: columnGap(r) }))
+      .filter((one) => one.gap)
+      .map((one) => [one.media || '', one.gap]);
+    assert.ok(found.length > 0, selector + ' sets the gap between the gutter and what follows it');
+    return new Map(found);
+  };
+  const rowGaps = gapsOf(/^\.sp-xaxis-row$/);
+  const chartGaps = gapsOf(/^\.sp-chart-wrap$/);
+  assert.ok(rowGaps.has('') && chartGaps.has(''),
+    'both rows state their gap in the base sheet, or one of them inherits nothing');
+  const contexts = new Set([...rowGaps.keys(), ...chartGaps.keys()]);
+  contexts.forEach((media) => {
+    assert.equal(rowGaps.get(media) || rowGaps.get(''), chartGaps.get(media) || chartGaps.get(''),
+      'the strip and the drawing put the same gap after their gutter cell in '
+      + (media || 'the base sheet'));
+  });
 });
 
 test('both lines on the day chart are named, so the dashed one is not just a texture', async () => {
@@ -1693,10 +2635,17 @@ const MARKUP_WRITE = /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*wri
    pattern allows for both.
 
    NOT COVERED, deliberately: `element.style.setProperty(...)`. The module
-   does that twice on purpose -- a share bar's width and a gridline label's
-   offset are lengths computed from the answer -- and CSSOM is not gated by
-   the policy. The clause below pins that exception rather than trusting it:
-   every `.style` contact in the module must BE a `setProperty` call. Also
+   does that three times on purpose -- a share bar's width, a gridline
+   label's offset and a date's left, all lengths computed from the answer --
+   and CSSOM is not gated by the policy. The clause below pins that exception
+   rather than trusting it: every `.style` contact in the module must be a
+   `setProperty` call FOR ONE OF THOSE THREE PROPERTIES. Pinning only the
+   form was a hole: the stylesheet allowlist further up cannot see CSSOM at
+   all, so `cell.style.setProperty('position', 'static')` added inside the
+   date loop's own `if (placed)` gate was a `setProperty` call, was green,
+   and put the worst date 69.86% of the plot from its day with two dates
+   touching. A fourth property here is a length this file has not reasoned
+   about, and it has to be argued for rather than typed. Also
    not covered: an attribute name assembled at runtime, which no source scan
    can see and which the page's own policy is the enforcement for. And three
    further spellings, verified SURVIVED rather than assumed: a namespaced
@@ -1704,7 +2653,15 @@ const MARKUP_WRITE = /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*wri
    (HTML lowercases attribute names, so it writes a real style attribute), and
    `document.createRange().createContextualFragment(...)`. This module writes
    none of the three, and widening an analyzer to reach them adds guard code
-   nothing has reviewed; they are recorded here rather than matched. */
+   nothing has reviewed; they are recorded here rather than matched. All three
+   write a style ATTRIBUTE, which the page's own `style-src 'self'` refuses,
+   so a browser is the backstop behind this record. CSSOM has no such
+   backstop, which is why the spellings of THAT are pinned by the rendered
+   result below rather than recorded here. One further Typed OM spelling,
+   `cell.attributeStyleMap.set(...)`, is red today only because this harness
+   has no Typed OM and the pane throws: a crash, not a catch. If the harness
+   ever grows the API, the write lands in the same style object the test below
+   reads. */
 const STYLE_ATTR_WRITE = /setAttribute\(\s*['"]style['"]|[{,]\s*['"]?style['"]?\s*:/;
 
 test('the pane module writes no markup and no style attribute', () => {
@@ -1734,16 +2691,167 @@ test('the pane module writes no markup and no style attribute', () => {
   assert.ok(!STYLE_ATTR_WRITE.test(PANE_CODE),
     'a style attribute is forbidden by the page\'s own policy');
 
-  /* The documented exception, held to its own words: CSSOM, and only CSSOM. */
-  const styleContacts = PANE_CODE.match(/\.style\b[\s\S]{0,14}/g) || [];
-  assert.ok(styleContacts.length > 0, 'the two computed lengths are still there to be checked');
-  styleContacts.forEach(function (contact) {
-    assert.match(contact, /^\.style\s*\.\s*setProperty\(/,
-      'the docblock allows CSSOM for two computed lengths and nothing else; this is: ' + contact);
+  /* The documented exception, held to its own words: CSSOM, for three named
+     lengths, and nothing else. Wide enough a capture to read the property
+     name out of the call, because the name is the half that matters. */
+  const CSSOM_LENGTH = /^\.style\s*\.\s*setProperty\(\s*'(?:width|top|left)'/;
+  [["  .style.setProperty('position', 'static');", false],
+    ['  .style.setProperty(\'margin-left\', \'24px\');', false],
+    ['  .style.marginLeft = \'24px\';', false],
+    ["  .style.setProperty('left', value);", true],
+  ].forEach(function (pair) {
+    assert.equal(CSSOM_LENGTH.test(pair[0].trim()), pair[1],
+      'the CSSOM clause reads this spelling wrong: ' + pair[0].trim());
   });
+
+  const styleContacts = PANE_CODE.match(/\.style\b[\s\S]{0,34}/g) || [];
+  styleContacts.forEach(function (contact) {
+    assert.match(contact, CSSOM_LENGTH,
+      'the docblock allows CSSOM for three computed lengths -- a bar\'s width, a gridline '
+      + 'label\'s top and a date\'s left -- and nothing else. Any other property set this '
+      + 'way is invisible to the stylesheet allowlist above: adding '
+      + '`cell.style.setProperty(\'position\', \'static\')` inside the date loop\'s own '
+      + '`if (placed)` gate put the worst date 69.86% of the plot from its day with two '
+      + 'dates touching (0.00px apart), and was green. This is: ' + contact);
+  });
+  assert.equal(styleContacts.length, 3,
+    'a fourth `.style` contact, or one fewer: the three are a bar\'s width, a gridline '
+    + 'label\'s top and a date\'s left');
 
   assert.ok(!/\bstyle\s*=/.test(PAGE_HTML), 'and none is written into the page either');
 });
+
+/* ------------------------------ the inline styles the RENDERED pane carries
+
+   The clause above reads the source for the literal text `.style`, so it sees
+   the spelling this module uses and no other. Measured rather than assumed: a
+   fourth CSSOM write added inside the date loop's own `if (placed)` gate is
+   green there -- 72 pass, 0 fail -- when it is spelled `cell['style']`, when
+   the key is built at runtime (`var K = 'sty' + 'le'; cell[K]`), or through a
+   bound `setProperty`, and all three put the worst date 83.80% of the plot
+   from its day at 1440px. Widening that regex would close the spellings
+   somebody thought of, which is the failure shape it already is.
+
+   So the property axis is pinned a second time, by the RESULT rather than by
+   the spelling. Every route into an element's inline style -- dotted,
+   bracketed, computed, bound, `cssText`, `Object.assign`, `attributeStyleMap`
+   if the harness ever grows one -- ends at the same style object, and this
+   reads that object on every element the pane rendered. A fourth property
+   arrives here whatever it was typed as, and it does not need to be
+   enumerated first.
+
+   The sweep starts at the document element rather than at the pane's region,
+   because a write does not have to land on a node the pane built to matter:
+   `document.documentElement['style'].setProperty('overflow-x', 'hidden')`
+   inside the date loop's own gate was green while this read `#content`.
+
+   What this does NOT cover: a write that never reaches the fake DOM -- a
+   style attribute (the clause above, and `style-src 'self'` behind it) -- and
+   a property set from a branch neither fixture below takes. Two renders,
+   chosen for their branches: a closed three-month window, which places every
+   date, and an open month whose labels name no day in it, which takes the
+   unpositioned fallback and draws the forecast block that a closed period has
+   none of. The skeleton the shell draws while the answer is in flight is
+   inside the swept region and is not this module's: its bar heights
+   (`shell-pane-v2.js:687`) are pinned below rather than skipped. */
+test('the rendered pane carries three inline lengths and no fourth, however it is spelled',
+  async () => {
+    /* Two renders, for their branches. The first places every date. The
+       second is an open month -- so the forecast block is drawn, which a
+       closed period has none of -- whose labels name no day in the window, so
+       `labelDays()` returns null and the strip takes the unpositioned
+       fallback. A bracketed write in either of those two branches was green
+       while this test rendered only the first. */
+    const placed = payload({ range: '3m' });
+    const loose = payload();
+    loose.daily.labels = loose.daily.labels.map((one, i) => '2026-01-' + String(i + 1));
+    assert.ok(loose.forecast, 'the open month forecasts, or the second branch is not taken');
+
+    for (const data of [placed, loose]) {
+      const dom = await boot({ costs: data });
+      const isLoose = data === loose;
+
+      /* This harness's style object is a plain object: `setProperty` writes
+         the property as an own key beside its own two methods, so the own
+         keys that are not those methods are exactly what something has
+         written. */
+      const METHODS = ['setProperty', 'removeProperty'];
+      const propsOn = (node) => Object.keys(node.style || {})
+        .filter((name) => METHODS.indexOf(name) === -1);
+      const entries = (root) => [root].concat(findAll(root, () => true))
+        .flatMap((node) => propsOn(node).map((name) => ({ node, name })));
+
+      /* One region of the swept tree is not written by this module: the
+         skeleton the shell draws while the answer is in flight sets a height
+         on each bar (`shell-pane-v2.js:687`). It is pinned here rather than
+         skipped, so a length this module wrote into that box is still a
+         failure. */
+      const loading = panel(dom, 'loading');
+      const inLoading = new Set([loading].concat(findAll(loading, () => true)));
+      entries(loading).forEach((one) => {
+        assert.equal(one.name, 'height',
+          'the shell\'s skeleton sets a bar height and nothing else');
+        assert.ok(hasClass(one.node, 'skel'), 'on a skeleton bar');
+      });
+
+      const written = entries(dom.doc.documentElement).filter((one) => !inLoading.has(one.node));
+
+      /* The fallback strip claims no position, so `left` is absent from it by
+         design -- the one difference between the two renders. */
+      const ALLOWED = isLoose ? ['top', 'width'] : ['left', 'top', 'width'];
+      const names = [...new Set(written.map((one) => one.name))].sort();
+      assert.deepEqual(names, ALLOWED,
+        'the three lengths this module computes are a bar\'s width, a gridline label\'s top '
+        + 'and a date\'s left. A fourth inline property is a length this file has not reasoned '
+        + 'about, and the stylesheet allowlist above cannot see it: found ' + names.join(', ')
+        + (isLoose ? ' on the fallback render' : ''));
+
+      written.forEach((one) => {
+        assert.equal(propsOn(one.node).length, 1,
+          'an element carries one computed length, not a declaration block: '
+          + String(one.node.tagName) + '.' + String(one.node.className || '') + ' carries '
+          + propsOn(one.node).join(', '));
+      });
+
+      /* Which element each length is allowed to land on, so a `left` written
+         on a bar or a `width` written on a date is a failure even though the
+         name is one of the three. */
+      const holders = (name) => written.filter((one) => one.name === name).map((one) => one.node);
+      holders('width').forEach((node) => {
+        assert.equal(String(node.tagName).toLowerCase(), 'i', 'a width is a bar\'s fill');
+        assert.ok(hasClass(node.parentNode, 'sp-bar'), 'inside the share meter');
+      });
+      holders('top').forEach((node) => {
+        assert.ok(hasClass(node, 'sp-tick'), 'a top is a gridline\'s number');
+      });
+      holders('left').forEach((node) => {
+        assert.equal(String(node.tagName).toLowerCase(), 'span', 'a left is a date');
+        assert.ok(hasClass(node.parentNode, 'sp-xaxis'), 'in the date strip');
+      });
+
+      /* The counts come from the fixture and from the scale's stated design,
+         not from the tree they are checked against. Without them this test
+         passes on a pane that rendered nothing at all. */
+      assert.equal(holders('left').length,
+        isLoose ? 0 : data.daily.labels.filter(Boolean).length,
+        'one position per date the route sent, and none at all on the fallback');
+      assert.equal(holders('top').length, 5,
+        'one number per gridline: four ticks and the baseline');
+      assert.equal(holders('width').length,
+        data.views.category.rows.filter((row) => row.shareBasisPoints !== undefined).length,
+        'one bar per row of the grouping on screen that has a share');
+
+      /* The second render is only worth making if it really took the other
+         two branches, so the branches are asserted rather than assumed. */
+      if (isLoose) {
+        const strip = byClass(livePanel(dom), 'sp-xaxis')[0];
+        assert.ok(strip && /\bsp-xaxis-loose\b/.test(strip.getAttribute('class') || ''),
+          'the second render takes the unpositioned fallback');
+        assert.equal(byClass(livePanel(dom), 'sp-fore').length, 1,
+          'and draws the forecast block a closed period has none of');
+      }
+    }
+  });
 
 /* ------------------------------------------- colour values in the sheet
 
