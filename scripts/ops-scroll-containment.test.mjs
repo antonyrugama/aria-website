@@ -77,6 +77,17 @@
       under a state it does not belong to fails this file. Claims 1 to 6 are
       all reported per state, so a mislabelled state silently reattributes
       every figure in this file.
+   8. Every reading is in the THEME it is labelled with. The same shape as
+      claim 7, one axis over, and left behind when claim 7 was added: `theme`
+      was a label written onto every reading and printed in every failure
+      message that nothing confirmed. Proof: the attribute `theme.js` sets
+      pre-paint is read back at every pane load and must be the one asked for,
+      and the two themes must paint different backgrounds -- an attribute that
+      flips while the paint does not is a theme axis that exists only in the
+      labels. Found by the independent reviewer of this PR, who supplied the
+      mutation: `seedTheme` writing 'dark' unconditionally while still
+      returning the requested theme left the suite green at 160 observations
+      with 80 readings filed under `light` that were rendered dark.
 
    NOT COVERED, explicitly:
 
@@ -228,10 +239,11 @@ const ABSOLUTE_DESCENDANT_FLOOR = 2;
 const WRAPPER_FLOOR = 10;
 
 /* Claim 7's floor, on its own population again: state applications that showed
-   at least one element. 80 applications are made (10 panes x 2 themes x 2
-   widths x 4 states, less the panes that decline a state); this sits well under
-   that, and above zero so that a sweep whose applyState silently stopped
-   working fails rather than agreeing with itself. */
+   at least one element. 160 applications are made (10 panes x 2 themes x 2
+   widths x 4 states) and 144 of them draw something -- the 16 that do not are
+   one state a pane declines. This sits well under 144, and above zero so that a
+   sweep whose applyState silently stopped working fails rather than agreeing
+   with itself. */
 const APPLIED_STATE_FLOOR = 40;
 
 /* ------------------------------------------------------------------ panes */
@@ -372,8 +384,17 @@ function connect(url) {
      things the probe counts -- elements, absolutely positioned boxes,
      scrolling boxes -- and readiness means that count stopped changing for
      SETTLE_STABLE consecutive polls with the network idle throughout. It is
-     deliberately a superset of the measured population rather than a proxy for
-     it: anything that would change a reading changes the fingerprint first.
+     deliberately a superset of the measured POPULATION rather than a proxy for
+     it: a box arriving, leaving or changing kind moves a count first. It is not
+     a superset of the measured GEOMETRY -- the probe reads `scrollWidth -
+     clientWidth` and `getBoundingClientRect()`, and a resize that moves neither
+     the element count nor the positioned count would move a reading without
+     moving the fingerprint. That does not bite on this tree, for two reasons I
+     checked rather than assumed: `ops/` declares no `@font-face` and loads no
+     web font, so there is no metric swap to race; and the probe's before/after
+     rects are read inside a single synchronous `Runtime.evaluate`, where the
+     animation clock cannot advance, so the transitions on `.meter-fill` and the
+     transform transitions cannot pollute `movedBy`.
 
    A budget still exists, but it is an upper bound that FAILS rather than a
    sleep that proceeds. That is the whole difference. The old shape could only
@@ -567,6 +588,17 @@ const APPLY = (state) => `(() => {
    the wider viewport for tables that only overflow on a phone. The reading is
    then offsetParent alone, and the sweep says so rather than implying a
    proof it did not run. */
+/* Claim 8's reading. `theme` is a label the sweep writes onto every reading and
+   prints in every failure message, and until now nothing confirmed the page was
+   in it -- the same shape as the state label that claim 7 exists for, one axis
+   over. Two independent facts are taken: the attribute `theme.js` sets
+   pre-paint, and the background the page actually painted, so an attribute set
+   without the stylesheet following it is still caught. */
+const RENDERED_THEME = `JSON.stringify({
+  attr: document.documentElement.getAttribute('data-theme'),
+  bg: getComputedStyle(document.body).backgroundColor
+})`;
+
 const PROBE = (scrollBy, minScroll) => `(() => {
   const SCROLL_BY = ${scrollBy};
   const MIN_SCROLL = ${minScroll};
@@ -676,13 +708,20 @@ const readings = [];
 const panesSeen = new Set();
 const applications = [];
 const settles = [];
+const themings = [];
 let srPositions = new Set();
 
 before(async () => {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  profile = fs.mkdtempSync(path.join(fs.realpathSync(process.env.RUNNER_TEMP || ROOT), 'scroll-'));
+  /* Dot-prefixed, and matched by a .gitignore entry, because the fallback
+     when RUNNER_TEMP is unset -- every laptop; Actions always sets it -- is the
+     repository root, and `after()` only removes it if the run reaches the end.
+     An interrupted run must leave something git will not offer to commit. The
+     two sibling guards keep their profiles in the repository on exactly these
+     terms. */
+  profile = fs.mkdtempSync(path.join(fs.realpathSync(process.env.RUNNER_TEMP || ROOT), '.ops-scroll-containment-'));
   browser = spawn(chromePath(), [
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
     '--no-first-run', '--no-default-browser-check', '--disable-gpu',
@@ -722,6 +761,7 @@ before(async () => {
         await navigate(cdp, base + page.url);
         const where = `${page.key} at ${viewport.width}px in ${theme}`;
         settles.push(await settle(cdp, where));
+        themings.push({ pane: page.key, width: viewport.width, asked: theme, ...JSON.parse(await evaluate(cdp, RENDERED_THEME)) });
         for (const state of STATES) {
           const applied = await evaluate(cdp, APPLY(state));
           applications.push({ pane: page.key, theme, state, width: viewport.width, ...applied });
@@ -792,6 +832,11 @@ before(async () => {
     `${shownTotal} element(s) shown, ` +
     `${applications.filter((a) => !a.ok || a.wrong.length).length} disagreeing with the ` +
     'state that was asked for');
+  const byTheme = new Map();
+  for (const t of themings) byTheme.set(`${t.asked} -> ${t.attr}`, (byTheme.get(`${t.asked} -> ${t.attr}`) || 0) + 1);
+  console.log(`#   theme was verified at ${themings.length} pane load(s): ` +
+    `${[...byTheme.entries()].map(([k, n]) => `${n} ${k}`).join(', ')}, ` +
+    `${new Set(themings.map((t) => t.bg)).size} distinct background(s) painted`);
 });
 
 after(async () => {
@@ -971,4 +1016,29 @@ test('every state the sweep asked for was actually applied', () => {
     `only ${drew} of ${applications.length} state applications showed anything, below the ` +
     `declared floor of ${APPLIED_STATE_FLOOR}. A state that reveals no element cannot ` +
     'disagree with its label, so a sweep that applied nothing would pass the check above.');
+});
+
+/* Claim 8. Every reading carries a `theme` label and every failure message
+   prints it, so a reading rendered in one theme and filed under the other
+   reattributes its figures exactly as a mislabelled state would. Two conditions,
+   because either alone can be satisfied while the page is wrong: the attribute
+   must be the one that was asked for, and the two themes must have painted
+   DIFFERENT backgrounds -- an attribute that flips while the paint does not is
+   a theme axis that exists only in the labels. */
+test('every reading was taken in the theme it is filed under', () => {
+  const wrong = themings
+    .filter((t) => t.attr !== t.asked)
+    .map((t) => `${t.pane} at ${t.width}px asked for "${t.asked}" and rendered "${t.attr}"`);
+  assert.deepEqual(wrong, [], 'a pane was measured in a theme other than the one its readings ' +
+    'are labelled with, which misattributes every figure taken from it');
+
+  assert.ok(themings.length >= PANE_FLOOR * THEMES.length,
+    `only ${themings.length} theme reading(s) were taken, below ${PANE_FLOOR * THEMES.length}. ` +
+    'A sweep that stopped loading panes would satisfy the check above by having nothing to check.');
+
+  const painted = new Map();
+  for (const t of themings) painted.set(t.asked, (painted.get(t.asked) || new Set()).add(t.bg));
+  const shared = [...painted.get(THEMES[0]) || []].filter((bg) => (painted.get(THEMES[1]) || new Set()).has(bg));
+  assert.deepEqual(shared, [], 'both themes painted the same background, so the theme axis ' +
+    'is a label the page is not actually honouring');
 });
