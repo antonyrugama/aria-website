@@ -1169,8 +1169,18 @@ for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
       /* Anchor: the `.form-alert` block. Payload: the block deleted, which is
          what ops/evaluations.html shipped — the sentence laid out as an
          anonymous block in the stack, wearing the same face as the page's own
-         copy. Each declaration is asserted on its own so that deleting one of
-         them is not absorbed by the others. */
+         copy. Eight of the block's nine declarations are asserted on their own
+         below, so that deleting one of them is not absorbed by the others.
+         NOT COVERED, and deliberately: `color: var(--ink)` is unobservable on
+         this pane — deleting it leaves the rendered colour byte-identical,
+         because the inherited colour already resolves to `--ink`. It is
+         declared for property-set parity with `.modal-card .form-alert`, which
+         is what keeps this rule out of the re-authentication modal, and there
+         is no rendered behaviour here to bind. `gap` is in the same position
+         on the page today — one anonymous flex item, nothing to space — but it
+         is asserted anyway, because unlike `color` it resolves to a different
+         computed value with the class off, so the declaration can be bound
+         even where its effect cannot be seen. */
       await show(theme);
       const seen = await evaluate(`(() => {
         const el = document.querySelector('#approval-result');
@@ -1214,6 +1224,16 @@ for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
         'the answer has no fill of its own, which is what Stadiora/Aria#10674 reported');
       assert.notStrictEqual(seen.on.size, seen.off.size,
         'the answer is set at the page copy size, so `font-size` is not reaching it');
+      /* Leading is bound as a ratio, not as a px pair. The arms already differ
+         in `font-size`, so computed `line-height` in px differs between them
+         whether or not this rule sets it — asserting the px values would pass
+         with `line-height: 1.55` deleted, which is a false green of exactly
+         the kind this file exists to catch. The ratio collapses to the
+         inherited one the moment the declaration goes. */
+      const ratio = (a) => Number.parseFloat(a.leading) / Number.parseFloat(a.size);
+      assert.ok(Math.abs(ratio(seen.on) - ratio(seen.off)) > 0.01,
+        'the answer is set at the page copy leading, so `line-height` is not reaching it: ' +
+        `on ${seen.on.leading}/${seen.on.size}, off ${seen.off.leading}/${seen.off.size}`);
       assert.strictEqual(seen.on.display, 'flex',
         'the answer is displayed as `' + seen.on.display + '`');
       assert.notStrictEqual(seen.on.gap, seen.off.gap,
@@ -1453,5 +1473,102 @@ for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
         `it is ${seen.form}px — ops.css capped both and this sheet arrived capping neither`);
       assert.notStrictEqual(seen.on.cap, seen.off.cap,
         'the answer resolves the same max-width with and without the class');
+    });
+}
+
+for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
+  test(`the approval answer takes the same measure as the workflow above it, in the ${theme.theme} theme`,
+    async () => {
+      /* Anchor: `#approval-result` in the `max-width: 920px` group. Payload:
+         the selector removed from that group.
+
+         This one is here because painting the box is what made its width
+         visible. Unpainted, a full-band sentence is a paragraph and nobody
+         reads a width off it; filled, ringed and railed, it is a box, and a
+         box that overhangs the cards it answers by 64px at this viewport is a
+         second measure in a single column. The sheet's own rule at :55 is one
+         measure per surface a person reads an answer off.
+
+         Bound against the workflow grid's laid-out width — the thing that
+         produced the answer, capped at :108 by a different rule this PR does
+         not touch — rather than against 920, so the claim is "the answer is
+         the width of its question" and not a literal copied out of the rule.
+
+         The id is toggled rather than a class because the element has no class
+         of its own to toggle: `form-alert is-ok` both name the modal alert
+         too, which is exactly why the cap is on the id. */
+      await show(theme);
+      const seen = await evaluate(`(() => {
+        const answer = document.querySelector('#approval-result');
+        const work = document.querySelector('.approval-workflow-grid');
+        const read = () => {
+          answer.getBoundingClientRect();
+          return {
+            answer: Math.round(answer.getBoundingClientRect().width),
+            cap: getComputedStyle(answer).maxWidth
+          };
+        };
+        const on = read();
+        answer.id = '';
+        const off = read();
+        answer.id = 'approval-result';
+        return { on, off, work: Math.round(work.getBoundingClientRect().width),
+          band: Math.round(answer.parentElement.getBoundingClientRect().width),
+          restored: Math.round(answer.getBoundingClientRect().width) };
+      })()`);
+
+      assert.ok(seen.band > seen.work,
+        `the band is ${seen.band}px and the workflow ${seen.work}px; with nothing to ` +
+        'measure against, this test cannot tell a capped answer from an uncapped one');
+      assert.strictEqual(seen.off.answer, seen.band,
+        `with the id removed the answer should run the full ${seen.band}px of the ` +
+        `band and runs ${seen.off.answer}px`);
+      assert.strictEqual(seen.on.answer, seen.work,
+        `the approval answer is ${seen.on.answer}px wide where the workflow that produced ` +
+        `it is ${seen.work}px, so the newly painted box overhangs the cards it answers`);
+      assert.notStrictEqual(seen.on.cap, seen.off.cap,
+        'the answer resolves the same max-width with and without the id');
+      assert.strictEqual(seen.restored, seen.on.answer,
+        'the test left the answer at a width it was not found at');
+    });
+}
+
+for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
+  test(`capping the approval answer leaves the re-authentication alert uncapped, in the ${theme.theme} theme`,
+    async () => {
+      /* The other half of the measure claim, and the reason it is written on an
+         id. shell-pane-v2.css:265 declares nine properties for the modal's own
+         alert and `max-width` is not among them, so a cap on `.form-alert`
+         would be the one declaration this sheet could leak into a surface it
+         does not own. Built here rather than asserted from the sheet text: a
+         real `.modal-card > .form-alert` is constructed on the live page, the
+         shape session.js:1028 builds, and its resolved cap is read. */
+      await show(theme);
+      const seen = await evaluate(`(() => {
+        const card = document.createElement('form');
+        card.className = 'modal-card';
+        const alert = document.createElement('div');
+        alert.className = 'form-alert mt';
+        alert.textContent = 'Session expired.';
+        card.appendChild(alert);
+        document.body.appendChild(card);
+        const modal = getComputedStyle(alert).maxWidth;
+        const answer = getComputedStyle(document.querySelector('#approval-result')).maxWidth;
+        const bare = document.createElement('div');
+        bare.className = 'form-alert';
+        document.body.appendChild(bare);
+        const plain = getComputedStyle(bare).maxWidth;
+        card.remove(); bare.remove();
+        return { modal, answer, plain };
+      })()`);
+
+      assert.strictEqual(seen.modal, 'none',
+        `the re-authentication alert resolves max-width ${seen.modal}; this sheet has ` +
+        'leaked a measure into a surface shell-pane-v2.css owns');
+      assert.strictEqual(seen.plain, 'none',
+        `a bare .form-alert resolves max-width ${seen.plain}, so the cap is on the class ` +
+        'and not on the one element that needs it');
+      assert.notStrictEqual(seen.answer, 'none',
+        'the approval answer resolves no max-width, so it is uncapped after all');
     });
 }

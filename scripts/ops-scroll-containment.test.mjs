@@ -48,8 +48,8 @@
       both directions: it absorbs new instances when it is keyed too coarsely,
       and it outlives its own violations when nothing checks that the entries
       are still true. An entry that stops reproducing fails this file and asks
-      to be deleted, which is how the seven leave the list one at a time as
-      the sheets that own them are repaired.
+      to be deleted, which is how entries leave the list one at a time as the
+      sheets that own them are repaired.
 
    4. The sweep judged a non-zero number of scroll boxes, of absolutely
       positioned descendants inside them, and of panes. A containment check
@@ -93,16 +93,20 @@
 
    NOT COVERED, explicitly:
 
-   - Wrappers the shared API stub never renders. Of the eight sideways
-     scrolling wrappers declared across the v2 sheets, this sweep reaches
-     five: `.scrollx` (Problems), `.tbl-scroll` (Releases) and the `.tbl-wrap`
-     of Evaluations, Run history and Settings. `.sp-scroll` (Cloud costs) and
-     People's `.tbl-wrap` are static too, but need data or an interaction this
-     sweep does not drive, so they are absent from the rendered tree and this
-     file judges them not at all. `.u-scroll` (Usage) is the one of the eight
-     that already carries `position: relative`, and it does not render here
-     either. The floors in claim 4 bind the count that IS swept; they cannot
-     bind a box that never existed.
+   - Wrappers the shared API stub never renders. Of the sideways scrolling
+     wrappers declared across the v2 sheets, this sweep reaches `.scrollx`
+     (Problems), `.tbl-scroll` (Releases) and the `.tbl-wrap` of Evaluations,
+     Run history and Settings. `.sp-scroll` (Cloud costs) and People's
+     `.tbl-wrap` need data or an interaction this sweep does not drive, so they
+     are absent from the rendered tree and this file judges them not at all,
+     repaired or otherwise; the same is true of `.u-scroll` (Usage). The floors
+     in claim 4 bind the count that IS swept; they cannot bind a box that never
+     existed.
+
+     Deliberately no tally of how many are positioned today: that number moves
+     every time one of these sheets is repaired, and a prose count is the one
+     claim in this file nothing re-derives. Claim 6 enumerates the live answer
+     from the rendered tree on every run.
    - `position: fixed` descendants. A fixed element is positioned against the
      viewport and is not clipped by any ancestor's overflow unless that
      ancestor establishes a containing block through `transform`, `filter` or
@@ -205,7 +209,7 @@ const KNOWN_ESCAPES = [
    rendered with, not on a list of class names kept in step by hand.
 
    Every entry is asserted to STILL be static, so an entry outliving its own
-   repair fails this file and asks to be deleted. That is how the seven leave
+   repair fails this file and asks to be deleted. That is how entries leave
    the list one at a time as the sheets that own them are fixed. */
 const KNOWN_STATIC_SCROLLERS = [
   { pane: 'alerts', box: 'div.scrollx', repairIn: 'ops/assets/pane-alerts-v2.css .scrollx' },
