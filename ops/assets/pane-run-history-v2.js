@@ -314,6 +314,16 @@
     function load() {
       var token = ++loadToken;
       var selection = current;
+      /* Captured here, before anything is drawn, because after `region.failed()`
+         the box is hidden and Chrome has already blurred to <body> -- the
+         information cannot be reconstructed from the other side of the read.
+         Round 4 used "a request is outstanding" as the proxy for "the operator
+         is standing in the pane", and the two are not the same: `settleFocus()`
+         clears the request when it lands, so pressing the retry the pane had
+         just handed the operator, or arriving at a failure on first load and
+         tabbing to it, found no request to redirect and dropped them back to
+         <body>. Measured at 0 of 15 tab stops, both viewports. */
+      var wasInPane = !!focusKeyNow();
 
       region.loading(SKELETON);
 
@@ -333,7 +343,7 @@
            from <body> to the retry, mid-incident, for the operator who just
            pressed Read again. */
         keyRetry();
-        redirectFocus('rh-window-retry');
+        landOnRetry(wasInPane);
         settleFocus();
         /* Said as well as drawn. Without this the live region still holds the
            figures from the last successful read, so a screen reader is left
@@ -450,10 +460,19 @@
       wrap.appendChild(controls(data, selection));
       partialNote(coverage, wrap);
       if (data.truncated) {
+        /* The second sentence names what the figures cover, and over a partly
+           covered record that is NOT the picked window. Written when the
+           footer still named the picked window, it survived the coverage work
+           and turned into the one sentence on the screen contradicting the two
+           around it -- phrased as the reassurance, and sitting directly above
+           the figures, so an operator reading top-down met the false claim
+           first. */
         wrap.appendChild(noteLine('warn',
           'The newest ' + fmt.int(data.selection.limit) + ' runs are listed, so the list below ' +
           'is the most recent part of this window rather than all of it. The figures above it ' +
-          'are counted over the whole window.'));
+          'are counted over ' + (partlyCovered(coverage)
+            ? 'everything the record holds, which starts at ' + at(coverage.recordingSince) + '.'
+            : 'the whole window.')));
       }
       wrap.appendChild(summaryBand(data, selection));
       if (failures.length) wrap.appendChild(failureBand(data));
@@ -502,14 +521,15 @@
       moveFocus(focusKeyNow(), 'rh-state');
     }
 
-    /* Change where a pending request will land, without creating one. Used by
-       the failed read, where the pre-redraw `keepFocus()` has already asked for
-       a control the failure card does not contain, and the only control left on
-       the pane is the shell's retry. Guarded so a redraw the operator was not
-       standing in never steals their focus. */
-    function redirectFocus(key) {
-      if (!wanted && !wantedFallback) return;
-      wantedFallback = key;
+    /* Aim the failed read's landing at the shell's retry, which is the only
+       control the failure card leaves on the pane. Takes the operator's
+       position as it was BEFORE the read rather than testing for it now, for
+       the reason `load()` explains. A read the operator was not standing in
+       never moves them. */
+    function landOnRetry(wasInPane) {
+      if (!wasInPane) return;
+      wanted = null;
+      wantedFallback = 'rh-window-retry';
     }
 
     /* Make a card's heading a focus target. Empty and failure states have no
@@ -570,14 +590,44 @@
       return true;
     }
 
+    /* One predicate, because four sites disagreeing about what "partial" means
+       is how a heading ends up saying "since the record starts" over a footer
+       printing the picked window. Both halves are required: a partial state
+       with no instant cannot name where the record starts, so it is not
+       something this pane can describe and is treated as full coverage. */
+    function partlyCovered(coverage) {
+      return !!(coverage && coverage.state === 'partial' && coverage.recordingSince);
+    }
+
     function settleFocus() {
       if (!wanted && !wantedFallback) return;
       var node = byKey(wanted) || byKey(wantedFallback);
       if (!node || !node.focus) {
-        /* Not drawn yet. Opening a run redraws twice -- once for the skeleton
-           and once when it lands -- and Close only exists on the second, so
-           the request is held rather than dropped. Nothing here runs on a
-           timer, so the next redraw is the operator's next action. */
+        /* Held only while the read that will draw the target is still in
+           flight: opening a run redraws twice -- once for the skeleton and
+           once when it lands -- and Close only exists on the second. That
+           hold is bound by `opening a run still lands on Close across the two
+           redraws it takes`; dropping it unconditionally turns that test red.
+
+           Otherwise dropped, because a request kept past its own redraw waits
+           for some later, unrelated redraw to contain its target and then
+           takes focus off whatever the operator moved to in the meantime.
+           Review measured exactly that steal, off the shell's own Range
+           picker, and it was reachable because the clear-narrowing site above
+           asked for `rh-type` with no fallback.
+
+           NOT BOUND BY A TEST, and deliberately so: with that fallback in
+           place every remaining `moveFocus` call site names a key or a
+           fallback the very next redraw draws, so no reachable sequence now
+           strands a request, and a test claiming to prove this drop would
+           pass with the drop removed. It is kept as the bound on the damage
+           when some future site forgets its fallback -- mutation R5 in the
+           round-5 battery is that site, and it is the pairing under which
+           the steal reappears. */
+        if (!(detail && detail.loading)) {
+          wanted = null;
+          wantedFallback = null;
+        }
         return;
       }
       node.focus();
@@ -601,7 +651,7 @@
          this said "0 runs finished in the last 7 days" over a record three
          hours old, which is the screen defect review blocked on, surviving in
          the live region after the screen was fixed. */
-      if (data.coverage.state === 'partial' && data.coverage.recordingSince) {
+      if (partlyCovered(data.coverage)) {
         S.announce('Partly covered: ' +
           fmt.plural(summary.runs, 'run', 'runs') + ' finished since the record starts at ' +
           at(data.coverage.recordingSince) + ', which is inside ' + words + '. ' +
@@ -648,9 +698,15 @@
       var parts = [];
       if (narrowing.type !== 'all') parts.push(facetLabel(facets.types, narrowing.type));
       if (narrowing.outcome !== 'all') parts.push(facetLabel(facets.outcomes, narrowing.outcome));
-      var covers = parts.length
-        ? ' in this window, among ' + parts.join(' and ') + ' only'
+      /* Coverage is the same class of qualifier as narrowing and gets the same
+         treatment: over a partly covered record "in this window" names seven
+         days for a count that may cover three hours. */
+      var span = partlyCovered(coverage)
+        ? ' since the record starts at ' + at(coverage.recordingSince)
         : ' in this window';
+      var covers = parts.length
+        ? span + ', among ' + parts.join(' and ') + ' only'
+        : span;
       S.setBadge('history', {
         label: fmt.int(summary.failed),
         tone: 'hot',
@@ -811,7 +867,7 @@
       var box = S.card();
       var words = WINDOW_LABEL[selection.range] || 'this window';
       var narrowed = narrowing.type !== 'all' || narrowing.outcome !== 'all';
-      var partly = coverage.state === 'partial';
+      var partly = partlyCovered(coverage);
       var since = at(coverage.recordingSince);
 
       var head = partly
@@ -852,7 +908,10 @@
           /* This button is the one control that removes itself: with the
              narrowing gone there is nothing to clear. So the operator is put
              on the type picker, the nearest thing to where they were. */
-          moveFocus('rh-type');
+          /* A stale narrowing carried into a quiet window clears into a
+             window that is itself empty, which draws no pickers at all -- so
+             the same `rh-state` fallback every other state relies on. */
+          moveFocus('rh-type', 'rh-state');
           narrowing = { type: 'all', outcome: 'all' };
           detail = null;
           load();
@@ -891,7 +950,7 @@
        the one the picker says. */
     function windowFoot(window, coverage) {
       var foot = h('div', { className: 'card-foot' });
-      var partly = coverage && coverage.state === 'partial' && coverage.recordingSince;
+      var partly = partlyCovered(coverage);
       foot.appendChild(icon('clock'));
       foot.appendChild(h('span', {
         text: partly

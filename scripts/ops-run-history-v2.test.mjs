@@ -923,6 +923,268 @@ test('a failed window read lands the operator on its retry', async () => {
     + 'of the document');
 });
 
+/* Round 4 of review measured the fix above working on the FIRST failure only.
+   `settleFocus()` clears the request when it lands, so by the time the
+   operator presses the retry the pane just handed them there is no request
+   left to redirect: 0 of 15 tab stops, both viewports, in real Chrome. */
+test('pressing the retry the pane handed you, onto a read that fails again, still lands', async () => {
+  let broken = false;
+  const dom = await boot({
+    runs: () => (broken ? new Error('upstream refused') : windowAnswer()),
+  });
+  const again = buttonsIn(livePanel(dom), /^Read again$/)[0];
+  again.focus();
+  broken = true;
+  again.dispatch('click');
+  await settle();
+  assert.equal(focusKey(dom), 'rh-window-retry',
+    'the first failure did not land on the retry, so this test never reaches the repeat case');
+
+  const retry = buttonsIn(livePanel(dom), /^Try again$/)[0];
+  assert.ok(retry, 'the failure card offered no retry to press');
+  retry.dispatch('click');
+  await settle();
+
+  assert.match(liveText(dom), /This pane could not be read/,
+    'the second read did not fail, so this test is not exercising the repeat failure');
+  assert.equal(focusKey(dom), 'rh-window-retry',
+    'focus ended at ' + (focusKey(dom) || 'nowhere in this pane') + ' after pressing the retry '
+    + 'the pane had just handed the operator, so the second failure drops them to the top of '
+    + 'the document mid-incident');
+});
+
+/* The likelier half of the same defect: a first-load failure, which is how an
+   operator most often meets this pane during a rollout. No request was ever
+   created, so there was never anything to redirect. */
+test('a retry pressed after a first-load failure lands rather than dropping to the document', async () => {
+  const dom = await boot({ runs: new Error('the operations API did not answer') });
+  const retry = buttonsIn(livePanel(dom), /^Try again$/)[0];
+  assert.ok(retry, 'the boot failure offered no retry to press');
+
+  retry.focus();
+  assert.equal(focusKey(dom), 'rh-window-retry',
+    'the harness did not put focus on the retry, so this test starts outside the pane');
+  retry.dispatch('click');
+  await settle();
+
+  assert.match(liveText(dom), /This pane could not be read/,
+    'the retry succeeded, so this test is not exercising a failure');
+  assert.equal(focusKey(dom), 'rh-window-retry',
+    'focus ended at ' + (focusKey(dom) || 'nowhere in this pane') + ' after retrying a '
+    + 'first-load failure');
+});
+
+/* The guard the fix must not cost: a read nobody was standing in still must
+   not reach out and take focus. */
+test('a failed read the operator was not standing in does not take their focus', async () => {
+  let broken = false;
+  const dom = await boot({
+    runs: () => (broken ? new Error('upstream refused') : windowAnswer()),
+  });
+  const outside = dom.doc.getElementById('fRange');
+  assert.ok(outside, 'the shell drew no range picker, so there is nowhere outside to stand');
+  outside.focus();
+  assert.equal(focusKey(dom), null, 'the shell control is keyed, so this test proves nothing');
+
+  broken = true;
+  dom.window.dispatchEvent({ type: 'ops:filters', detail: { range: '30d' } });
+  await settle();
+
+  assert.match(liveText(dom), /This pane could not be read/,
+    'the read did not fail, so this test is not exercising the failure path');
+  assert.equal(dom.doc.activeElement, outside,
+    'a failed read the operator was not standing in pulled focus into the pane');
+});
+
+/* Clearing a stale narrowing can land in a window that is itself empty, which
+   draws no pickers at all. Measured at 0 of 16 tab stops. */
+test('clearing a narrowing into an empty window keeps the operator inside the pane', async () => {
+  /* The way an operator reaches it: narrow in a busy window, then move the
+     range to a window that is empty narrowed OR not -- the stale narrowing
+     `picker()` documents. Clearing it draws no pickers to land on. */
+  let quiet = false;
+  const dom = await boot({
+    runs: (query) => (quiet || (query.type && query.type !== 'all')
+      ? emptyWindow() : windowAnswer()),
+  });
+  const select = selectsIn(dom)[0];
+  select.value = 'nutrition_plan';
+  select.dispatch('change');
+  await settle();
+  quiet = true;
+  dom.window.dispatchEvent({ type: 'ops:filters', detail: { range: '30d' } });
+  await settle();
+
+  const clear = buttonsIn(emptyPanel(dom), /Clear the narrowing/)[0];
+  assert.ok(clear, 'the narrowed empty state offered no way to clear the narrowing');
+  clear.focus();
+  assert.equal(focusKey(dom), 'rh-clear-narrowing',
+    'the harness did not put focus on the clear control');
+
+  clear.dispatch('click');
+  await settle();
+
+  assert.ok(!/Clear the narrowing/.test(emptyText(dom)),
+    'the narrowing was not cleared, so this test is not in the un-narrowed state');
+  assert.equal(focusKey(dom), 'rh-state',
+    'focus ended at ' + (focusKey(dom) || 'nowhere in this pane') + ' after clearing a '
+    + 'narrowing into a window that is also empty');
+});
+
+/* And the hold the drop must not cost: opening a run redraws twice and Close
+   only exists on the second. */
+test('opening a run still lands on Close across the two redraws it takes', async () => {
+  const dom = await boot({
+    detail: detailAnswer(),
+    detailFor: '11111111-1111-4111-8111-111111111111',
+  });
+  const open = buttonsIn(livePanel(dom), /^Open$/)[0];
+  open.focus();
+  assert.match(focusKey(dom) || '', /^rh-open-/,
+    'the harness did not put focus on an Open control');
+  open.dispatch('click');
+  await settle();
+
+  assert.equal(focusKey(dom), 'rh-detail-close',
+    'focus ended at ' + (focusKey(dom) || 'nowhere in this pane') + ' after opening a run, so '
+    + 'dropping unlanded requests cost the one case that legitimately needs holding');
+});
+
+/* Over a partly covered record the figures are NOT counted over the picked
+   window, and the truncation note sat directly above them saying they were --
+   phrased as the reassurance, so an operator reading top-down met the false
+   claim first and the two true sentences after it. */
+test('the truncation note does not claim the whole window over a partly covered record', async () => {
+  const since = at(3 * HOUR);
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.truncated = true;
+      base.coverage = {
+        state: 'partial', recordingSince: since, lastRecordedAt: at(MINUTE), coversWindow: false,
+      };
+    }),
+  });
+  const text = liveText(dom);
+
+  assert.match(text, /is the most recent part of this window rather than all of it/,
+    'the truncation note did not draw, so this test is not looking at it');
+  assert.match(text, /Recording started at/,
+    'the partial note did not draw, so the two claims are not on the same screen');
+  assert.ok(!/counted over the whole window/.test(text),
+    'the truncation note still tells the operator the figures cover the whole window, directly '
+    + 'under the note telling them they do not');
+
+  const day = new Date(since);
+  const stamp = day.getUTCDate() + ' ' + MONTH_NAMES[day.getUTCMonth()];
+  assert.ok(text.indexOf('are counted over everything the record holds, which starts at '
+    + stamp) !== -1,
+    'the truncation note names no coverage start, so it publishes a figure without the window '
+    + 'it covers');
+});
+
+/* The rail is the one surface with no controls beside it to explain its
+   figure, and it already learned this for narrowing. */
+test('the rail badge names the record start rather than the window over partial coverage', async () => {
+  const since = at(3 * HOUR);
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.coverage = {
+        state: 'partial', recordingSince: since, lastRecordedAt: at(MINUTE), coversWindow: false,
+      };
+    }),
+  });
+  const item = dom.doc.getElementById('rail').querySelectorAll('.nav-item')
+    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+  assert.ok(item, 'the rail has no What happened item to badge');
+  const said = allText(item.querySelectorAll('.nav-badge-sr')[0] || item);
+  assert.match(said, /runs failed/, 'no failure badge was drawn, so there is no wording to read');
+
+  const day = new Date(since);
+  assert.ok(!/ in this window/.test(said),
+    'the badge says "' + said + '" over a record covering three hours of a seven-day window');
+  assert.match(said,
+    new RegExp('since the record starts at ' + day.getUTCDate() + ' '
+      + MONTH_NAMES[day.getUTCMonth()]),
+    'the badge published a failure count without naming what it covers');
+});
+
+/* Four sites decided "partial" for themselves and two of them left out the
+   instant, so a state with `partial` and no `recordingSince` headed "since the
+   record starts" over a footer printing the picked window. Not reachable from
+   today's route, which is why it is bound here rather than left to it. */
+test('a partial state with no record start is not described as one the pane can place', async () => {
+  const dom = await boot({
+    runs: emptyWindow((base) => {
+      base.coverage = {
+        state: 'partial', recordingSince: null, lastRecordedAt: null, coversWindow: false,
+      };
+    }),
+  });
+  const text = emptyText(dom);
+
+  assert.match(text, /No run finished/, 'the empty state did not draw');
+  assert.ok(!/since the record starts/.test(text),
+    'the pane says the record starts somewhere while the route sent no instant, so the '
+    + 'heading and the footer under it describe two different windows');
+  assert.ok(!/(^|[^\w])(null|undefined|Invalid Date|NaN)([^\w]|$)/.test(text),
+    'a missing instant reached the screen as "' + text.slice(0, 120) + '"');
+});
+
+/* Review found the narrowed half of the partial-empty state unbound: swapping
+   it for the plain narrowed text, which asserts the record "reaches back past
+   the start of this window", left the suite green. */
+test('a partial window that is also narrowed does not claim the record reaches back', async () => {
+  const dom = await boot({
+    runs: (query) => (query.type && query.type !== 'all' ? partialEmpty() : windowAnswer()),
+  });
+  const select = selectsIn(dom)[0];
+  select.value = 'nutrition_plan';
+  select.dispatch('change');
+  await settle();
+  const text = emptyText(dom);
+
+  assert.match(text, /Clear the narrowing/,
+    'the narrowed empty state did not draw, so this test is not in the narrowed arm');
+  assert.match(text, /No run finished since the record starts/,
+    'the narrowed partial state is headed "' + text.slice(0, 60) + '", which does not name the '
+    + 'record start');
+  assert.ok(!/reaches back past the start of this window/.test(text),
+    'a narrowed partial window claims the record reaches back past the start of the window, '
+    + 'which is the one thing a partial record does not do');
+});
+
+test('the partial-empty state is toned as a warning, not as a settled zero', async () => {
+  /* The icon carries no name in the DOM, so the oracle is the drawn glyph:
+     the partial state's icon must not be the same shape as the settled
+     zero's beside it. */
+  const glyph = (dom) => {
+    const found = [];
+    const walk = (n) => {
+      if (n.getAttribute && /(^| )state-icon( |$)/.test(n.getAttribute('class') || '')) {
+        const paths = [];
+        const dig = (m) => {
+          if (m.getAttribute && m.getAttribute('d')) paths.push(m.getAttribute('d'));
+          (m.children || []).forEach(dig);
+        };
+        dig(n);
+        found.push(paths.join('|'));
+      }
+      (n.children || []).forEach(walk);
+    };
+    walk(emptyPanel(dom));
+    return found.join('///');
+  };
+
+  const partial = glyph(await boot({ runs: partialEmpty() }));
+  const quiet = glyph(await boot({ runs: emptyWindow() }));
+
+  assert.ok(quiet.length, 'the genuine-zero state drew no state icon, so there is no baseline');
+  assert.ok(partial.length, 'the partial-empty state drew no state icon');
+  assert.notEqual(partial, quiet,
+    'the partial-empty state draws the same icon as the settled zero beside it, so the one '
+    + 'glance-level signal separating an unread window from a quiet one is gone');
+});
+
 test('a failed window read says so, rather than leaving the last figures standing', async () => {
   let broken = false;
   const dom = await boot({
