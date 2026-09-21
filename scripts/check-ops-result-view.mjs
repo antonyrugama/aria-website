@@ -959,10 +959,17 @@ const PREFLIGHT = [
         '(?:push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin|length\\s*=))');
       const write = rest.match(WRITE);
       if (write) {
-        return `${rel} writes to VIEW_ORDER after declaring it (${JSON.stringify(write[0].trim())}` +
-          '), so the text of the declaration is not the value the pane runs with and this ' +
-          'check cannot read the order at all. Teach it the new shape; do not assume the ' +
-          'pane lost its switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
+        /* Phrased like the count above it, and for the same reason: nothing
+           here distinguishes code from a comment or a string, so "the pane
+           writes to VIEW_ORDER" was false the moment the text appeared in a
+           comment — and the sentence after it, that the declaration is not the
+           value the pane runs with, was false with it. */
+        return `${rel} contains a text after the declaration that this check reads as a ` +
+          `write to VIEW_ORDER (${JSON.stringify(write[0].trim())}), and it does not ` +
+          'distinguish code from a comment or a string, so it cannot rely on the ' +
+          'declaration being the whole of the order. Teach it which texts are ' +
+          'authoritative; do not assume the pane lost its switch, and do not touch ' +
+          'EXPECTED_PAIRS.spend on the strength of this.';
       }
       /* Read strictly, and refuse anything this grammar does not cover.
          Everything here is a NARROWING of a looser parse that had been wrong
@@ -1566,9 +1573,26 @@ const probeFor = (markers) => `(() => {
     }
     return out;
   };
+  /* Size, renderedness, and PLACE. The first version of this asked the first
+     two and passed a result moved to left:-99999px, to translateX(-3000px),
+     or fixed at 2000px on a 1280px viewport — three boxes of the right size,
+     rendered, and nowhere a person could look. scale(0) was caught, so it saw
+     extent and not position, which is the narrower half of the same question.
+
+     The reachable area, not the viewport: this sweep never scrolls, and every
+     one of these panes is taller than the window, so a marker below the fold
+     is on the page and failing it would be a false red. documentElement's
+     scroll box is what a reader can reach by scrolling; a box that does not
+     intersect it is not reachable by scrolling either. */
+  const root = document.documentElement;
+  const reachW = Math.max(root.clientWidth, root.scrollWidth);
+  const reachH = Math.max(root.clientHeight, root.scrollHeight);
   const onScreen = (el) => {
     const box = el.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0) return false;
+    if (box.right <= 0 || box.bottom <= 0 || box.left >= reachW || box.top >= reachH) {
+      return false;
+    }
     if (typeof el.checkVisibility === 'function') {
       return el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true });
     }
@@ -1754,10 +1778,12 @@ try {
       if (seen.hiddenMarkers.length) {
         failures.push(`${where}: the pane drew ` +
           `${seen.hiddenMarkers.map((m) => JSON.stringify(m)).join(' and ')} into #content ` +
-          'and every element carrying it is off the screen — zero-area, display:none, ' +
-          'visibility:hidden or content-visibility. The result is in the DOM and not in ' +
-          'the pixels, so nothing below could judge what it paints and this run will not ' +
-          'count the pane as reaching a result view.');
+          'and no element carrying it has a box inside the area this page can be scrolled ' +
+          'over that the browser also reports as rendered — zero-area, display:none, ' +
+          'visibility:hidden, content-visibility, or placed outside the document. The ' +
+          'result is in the DOM and not anywhere a reader could look, so nothing below ' +
+          'could judge what it paints and this run will not count the pane as reaching a ' +
+          'result view.');
         continue;
       }
       if (seen.sheetsRead === 0 || seen.ruleCount === 0) {
