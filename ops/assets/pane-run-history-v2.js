@@ -694,7 +694,7 @@
       var run = data && data.run;
       if (!run) return 'That run came back.';
       var when = fmt.utcStamp(run.finishedAt);
-      return run.type.label + ', ' + (run.outcomeLabel || 'still going') +
+      return coded(run.type.label) + ', ' + (coded(run.outcomeLabel) || 'still going') +
         (when ? ', finished ' + when : '') + '. ' +
         fmt.plural((data.stages || []).length, 'step', 'steps') + ' recorded.';
     }
@@ -748,7 +748,7 @@
     function facetLabel(list, value) {
       var all = list || [];
       for (var i = 0; i < all.length; i += 1) {
-        if (all[i].value === value) return all[i].labelled === false ? value : all[i].label;
+        if (all[i].value === value) return coded(all[i].labelled === false ? value : all[i].label);
       }
       return value;
     }
@@ -1263,7 +1263,7 @@
       if (detail.error) {
         var failedBox = S.card();
         var block = S.stateBlock('warn', 'This run could not be read', [
-          S.failureMessage(detail.error),
+          coded(S.failureMessage(detail.error)),
           'Nothing here is a zero. This one run is unread; the window above it came back.'
         ], 3);
         var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });

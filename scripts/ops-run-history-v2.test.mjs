@@ -2068,6 +2068,67 @@ test('address-shaped text is masked before it reaches the screen', async () => {
     'the address was deleted silently, so the sentence has an unexplained hole in it');
 });
 
+/* The same floor, on the surfaces a screen reader reads. The test above reads
+   the visible panel only; the announcement and the rail's badge description
+   are written outside it, and review of PR #117 found both carrying an address
+   the panel had masked, so a screen-reader operator was read what the pane had
+   decided not to show. The failed-detail sentence is drawn in the panel but
+   comes from the API's own error text. */
+test('address-shaped text is masked on the surfaces a screen reader reads', async () => {
+  const ADDRESS = /@example\.invalid/;
+
+  const opened = await boot({
+    detail: detailAnswer((base) => {
+      base.run.type.label = 'Plans for athlete@example.invalid';
+      base.run.outcomeLabel = 'Failed for coach@example.invalid';
+    }),
+  });
+  buttonsIn(livePanel(opened), /^Open$/)[1].dispatch('click');
+  await settle();
+  const announced = lastSaid(opened) || '';
+  assert.match(announced, /finished .*recorded\./,
+    'opening a run announced "' + announced + '", which is not the run sentence this reads');
+  assert.doesNotMatch(announced, ADDRESS,
+    'the announcement read out "' + announced + '", an address the panel masks');
+  assert.match(announced, /\[hidden contact detail\]/,
+    'the announcement dropped the address silently: "' + announced + '"');
+
+  const narrowed = await boot({
+    runs: windowAnswer((base) => {
+      base.facets.types[0].label = 'Plans for athlete@example.invalid';
+      base.facets.outcomes[1].label = 'Failed for coach@example.invalid';
+    }),
+  });
+  const typeSelect = selectsIn(narrowed)[0];
+  typeSelect.value = 'nutrition_plan';
+  typeSelect.dispatch('change');
+  await settle();
+  const outcomeSelect = selectsIn(narrowed)[1];
+  outcomeSelect.value = 'failed';
+  outcomeSelect.dispatch('change');
+  await settle();
+  const item = narrowed.doc.getElementById('rail').querySelectorAll('.nav-item')
+    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+  const sr = item && item.querySelectorAll('.nav-badge-sr')[0];
+  const badgeSaid = sr ? allText(sr) : '';
+  assert.match(badgeSaid, /among .* and .* only$/,
+    'the badge said "' + badgeSaid + '", so both narrowings are not on the path this reads');
+  assert.doesNotMatch(badgeSaid, ADDRESS,
+    'the rail badge read out "' + badgeSaid + '", an address the picker masks');
+  assert.equal((badgeSaid.match(/\[hidden contact detail\]/g) || []).length, 2,
+    'the badge did not mask both narrowings: "' + badgeSaid + '"');
+
+  const failed = await boot({ detail: new Error('No run for athlete@example.invalid') });
+  buttonsIn(livePanel(failed), /^Open$/)[1].dispatch('click');
+  await settle();
+  const band = allText(sectionWithHeading(failed, /One run/));
+  assert.match(band, /This run could not be read/, 'the band is not in its failure state');
+  assert.doesNotMatch(band, ADDRESS,
+    'the failed run band printed the API\'s error text with an address in it');
+  assert.match(band, /No run for \[hidden contact detail\]/,
+    'the failed run band dropped the API\'s message rather than masking it: "' + band + '"');
+});
+
 test('no job id reaches the screen', async () => {
   /* A job id is not a person, and it is also not an operator-facing fact: it
      is a join key. Printing one invites it to be pasted somewhere that
