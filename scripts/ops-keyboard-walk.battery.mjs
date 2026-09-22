@@ -183,7 +183,7 @@ const EXPERIMENTS = [
     what: 'No edit, before the battery. Establishes every baseline.' },
 
   /* --- the three findings the audit publishes ------------------------- */
-  { id: 'M1', kind: 'mutation', expect: 'survive', scope: 'history', vp: '375px', signal: 'historyScrollers',
+  { id: 'M1', kind: 'mutation', expect: 'kill', scope: 'history', vp: '375px', signal: 'historyScrollers',
     file: 'ops/assets/pane-run-history-v2.js',
     anchor: "      var wrap = h('div', { className: 'tbl-wrap' });",
     payload: "      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });",
