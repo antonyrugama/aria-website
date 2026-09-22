@@ -66,8 +66,9 @@ const BATTERY = [
   },
   {
     id: 'CONTROL-2', file: CSS, expect: 'GREEN',
-    why: 'Gives `.meter.vio` the same hue as `.meter.bad`, collapsing two severities in the colour channel entirely. Must stay GREEN: after this fix the tones are told apart by notch count, so a hue collision is no longer a severity collision. This is the claim of #10825, run as an experiment.',
-    apply: (s) => replaceOnce(s, '.meter.vio  { --c: var(--violet); }', '.meter.vio  { --c: var(--rose); }')
+    why: 'Repaints EVERY bar\'s glow a flat red, a hue no tone uses. Must stay GREEN, and for a sharper reason than "the glow carries no meaning": `.meter` sets `overflow: hidden`, so the child\'s outer `box-shadow` is clipped and never painted at all. This row is the battery\'s standing evidence for that -- an independent reviewer measured it directly (flat 1.0000 from 1px to 30px above the track even with a deliberately huge `0 0 40px 6px` glow, versus 1.52 with `overflow: visible`), and if a future change removes the clip this control turns RED and says so. It previously collided `.meter.vio`\'s tone token with `.meter.bad`\'s, which stopped being inert the moment #10848 routed the FILL through the same token; the anchor was re-aimed rather than the expectation relaxed.',
+    apply: (s) => replaceOnce(s, '  box-shadow: 0 0 12px -1px var(--c, var(--cyan));',
+      '  box-shadow: 0 0 12px -1px #ff0000;')
   },
   {
     id: 'T1', file: CSS, expect: 'KILL',
@@ -87,9 +88,9 @@ const BATTERY = [
   },
   {
     id: 'T3', file: CSS, expect: 'KILL',
-    why: 'Restores the first groove colour, `color-mix(var(--c) 30%, var(--bg))`. It is plainly visible and it measured 2.67:1 against a light-theme `bad` fill -- under SC 1.4.11, and invisible to any assertion that reads the stylesheet rather than the screen.',
+    why: 'Tints the groove with the fill\'s own ink grade until it nearly disappears into it. RE-AIMED: this row used to restore the historical groove colour, `color-mix(var(--c) 30%, var(--bg))`, which measured 2.67:1 against a light-theme `bad` fill -- and that payload now SURVIVES, because Stadiora/Aria#10848 darkened the fill while that mix stays 70% `--bg`, so the two moved apart. The old payload is kept as T18 and published green on purpose. At 58% the grooves stay above the 1.8:1 detect threshold and land at 2.47:1 to 2.62:1, under SC 1.4.11. The row also reds the two count claims, because 28 of 36 grooves fall under the detector at that mix; the claim it exists for is the contrast one, which names its own numbers in the failure.',
     apply: (s) => replaceOnce(s, '  border: 0 solid var(--bg);',
-      '  border: 0 solid color-mix(in srgb, var(--c, var(--cyan)) 30%, var(--bg));')
+      '  border: 0 solid color-mix(in srgb, var(--c, var(--cyan-ink)) 58%, var(--bg));')
   },
   {
     id: 'T4', file: CSS, expect: 'KILL',
@@ -126,7 +127,7 @@ const BATTERY = [
   },
   {
     id: 'T10', file: CSS, expect: 'KILL',
-    why: 'REPAIRS Stadiora/Aria#10848 rather than breaking anything -- flattens the light fill to a flat mid grey so every light meter clears 3:1 against its own track. The ratchet holding that shortfall must red when the shortfall goes, or it outlives the issue in silence. Also raised in review: the trip was `worst < VALUE_CONTRAST + 1`, which left everything in [3, 4) green, and a repair aimed at the SC 1.4.11 threshold lands exactly there. Only `background-image`, so the forced-colors `background-color` still wins in that block.',
+    why: 'Flattens every light-theme fill to one flat mid grey. It clears 3:1 against the track (3.81:1) and against the card (4.67:1), so both contrast claims pass -- and all four tones become the same colour. Written when this row REPAIRED Stadiora/Aria#10848 and was killed by the inverted ratchet detecting its own discharge; the ratchet is gone with the issue and the payload now binds claim 9 instead, which is the honest job for it. A repair that satisfies a contrast claim by deleting the hue is exactly the shortcut #10848 invites.',
     apply: (s) => replaceOnce(s, '.meter i {\n  position: absolute;',
       '[data-theme="light"] .meter i { background-image: linear-gradient(90deg, #737373, #737373); box-shadow: none; }\n.meter i {\n  position: absolute;')
   },
@@ -152,6 +153,50 @@ const BATTERY = [
     why: 'Scrolls each meter to the TOP of the viewport rather than its centre, which is where the sticky headers at aria.css:239 and :382 sit. Binds the occlusion check: centring is not decoration, it is what holds the capture clear of the page chrome, and with nothing asserting it the sweep could measure a sticky header and report it as a bar.',
     apply: (s) => replaceOnce(s, "el.scrollIntoView({ block: 'center', inline: 'nearest' });",
       "el.scrollIntoView({ block: 'start', inline: 'nearest' });")
+  },
+  {
+    id: 'T15', file: CSS, expect: 'KILL',
+    why: 'THE row for Stadiora/Aria#10848: restores all five lines this PR changes to their verbatim `origin/main` text, so what it reinstates is the shipped defect rather than a caricature of it. Expected to red claim 7 with light-theme readings at 2.27:1 -- the number in the issue title -- and to leave dark untouched, because the dark block defines each `-ink` as an alias of its base token. It also reds claim 8, which is not incidental: `origin/main` measures 2.87:1 fill-against-card in light, itself under 3:1.',
+    apply: (s) => {
+      let out = replaceOnce(s,
+        'background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--cyan-ink)) 65%, transparent), var(--c, var(--cyan-ink)));',
+        'background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--cyan)) 65%, transparent), var(--c, var(--cyan)));');
+      for (const [tone, hue] of [['ok', 'emerald'], ['warn', 'amber'], ['bad', 'rose'], ['vio', 'violet']]) {
+        const pad = tone === 'ok' ? '   ' : tone === 'warn' ? ' ' : '  ';
+        out = replaceOnce(out, `.meter.${tone}${pad}{ --c: var(--${hue}-ink); }`,
+          `.meter.${tone}${pad}{ --c: var(--${hue}); }`);
+      }
+      return out;
+    }
+  },
+  {
+    id: 'T16', file: CSS, expect: 'KILL',
+    why: 'The ONE-TOKEN version of T15: drops `-ink` from `.meter.warn` and nothing else, leaving the other three tones and the untoned fallback fixed. This is the realistic slip -- a single tone missed in a four-line edit, or added later by copying a pre-fix line -- and it reaches only the warn bars, so a kill here shows claim 7 is per-reading rather than sweep-wide. A previous version of this row bound a claim about a `--c-ink` token that no longer exists; the token was removed from the fix entirely after review, and the row was re-aimed rather than deleted.',
+    apply: (s) => replaceOnce(s, '.meter.warn { --c: var(--amber-ink); }',
+      '.meter.warn { --c: var(--amber); }')
+  },
+  {
+    id: 'T17', file: CSS, expect: 'KILL',
+    why: 'Aimed at claim 8. NOT the only payload that reaches it -- T15, the verbatim `origin/main` revert, reds claim 8 as well, because `origin/main` measures 2.87:1 fill-against-card in light and is itself under 3:1. An earlier version of this rationale said "the only payload that reaches it" and was contradicted by another row in its own table. What T17 is the only payload for is reaching claim 8 while claim 7 stays GREEN: it makes the light-theme track OPAQUE and dark and lightens the fills to sit between it and the card, so the fill clears 3:1 against the track it is measured against and fails against the card it sits on. It takes a change this contrived because the track is a translucent wash OF the card, so the two normally move together -- the honest limit on claim 8, now actually written down in the guard header rather than merely cited there.',
+    apply: (s) => replaceOnce(s, '.meter i {\n  position: absolute;',
+      '[data-theme="light"] .meter { background: #1a1a1a; }\n' +
+      '[data-theme="light"] .meter i { background-image: linear-gradient(90deg, ' +
+      'color-mix(in srgb, var(--c, var(--cyan-ink)) 30%, white), ' +
+      'color-mix(in srgb, var(--c, var(--cyan-ink)) 30%, white)); }\n.meter i {\n  position: absolute;')
+  },
+  {
+    id: 'T19', file: CSS, expect: 'KILL',
+    why: 'Stripes every light-theme card surface at a 3px horizontal period, so a card strip spans a dark column and a pale one and the uniformity gate rejects it. This is the payload for the reviewer\'s advisory that the population floors were POOLED across themes, which the reviewer raised without a payload. Measured on the code AS REVIEWED, with the pooled floor still in place: light\'s card population collapses from 50 readings to 2 while dark keeps all 50, pooled n=52 clears the floor of 8, and claim 8 PASSES -- judging two light bars and reporting a healthy population. That is a demonstrated false green, not a theoretical one. With the floor applied per theme it reds by name: "only 2 light meters had a readable surface above them, below the declared floor of 8". HONEST LIMIT: it is not a single-claim kill. The track is `color-mix(var(--ink) 10%, transparent)` -- translucent -- so a striped card shows THROUGH the unfilled track and reds claim 7 as well. No payload isolates the floor, because anything that disturbs the surface above a meter is also visible through the bar sitting on it.',
+    apply: (s) => replaceOnce(s, '.card {',
+      '[data-theme="light"] .card, [data-theme="light"] .card *:not(.meter):not(.meter *) ' +
+      '{ background-image: repeating-linear-gradient(90deg, rgba(0,0,0,.18) 0 1px, ' +
+      'rgba(0,0,0,0) 1px 3px) !important; }\n.card {')
+  },
+  {
+    id: 'T18', file: CSS, expect: 'GREEN',
+    why: 'T3 as it was written for Stadiora/Aria#10825: the historical groove colour, `color-mix(var(--c) 30%, var(--bg))`, which measured 2.67:1 against a light-theme `bad` fill and was a real SC 1.4.11 failure at the time. Published as a GREEN on purpose rather than deleted, because the reason it stopped killing is a finding. The payload text is unchanged; what moved is the fill. The mix is 70% `--bg`, so it barely darkened when #10848 repointed `--c` at the ink grade, while the fill darkened fully -- measured directly by applying this payload and running the guard with METER_SUMMARY=1: worst notch contrast 3.94:1 across 36 grooves, up from 2.67:1. A fix for the value channel incidentally repaired a defect in the severity channel. NOTE the margin: 3.94:1 clears 3:1 by less than a point, so this row is also an early-warning line -- if a future change lightens the fill, this is where it shows up first. Without this row that would read as a row quietly dropped when it became inconvenient.',
+    apply: (s) => replaceOnce(s, '  border: 0 solid var(--bg);',
+      '  border: 0 solid color-mix(in srgb, var(--c, var(--cyan)) 30%, var(--bg));')
   }
 ];
 
