@@ -521,7 +521,7 @@ const PROOF = {
   /* COSTS.availability.detail, which both this pane and the v2 remodel print
      verbatim into whichever card they draw for `not_published`. */
   spend: ['there is no figure to read here until the export lands'],
-  evals: ['Check a dataset declaration', 'Quarantine evidence'],
+  evals: ['Check a dataset declaration', 'Quarantine unavailable'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
   settings: [ADMINS[0].email, AUDIT[0].reason]

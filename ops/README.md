@@ -1095,15 +1095,18 @@ refused sign in.
 `pane-evaluations-v2.css`. It is the one pane where **most of what is on screen is a drawing**,
 and everything about how it is built follows from that.
 
-**The operation tools work. The scoring half does not exist.** Dataset declaration validation,
-evidence quarantine and approval handoffs call the shared Ciel operation using supplied inputs. Below them
-is a design for a scoring harness that has no code, no endpoint and no stored score. The numbers
-in it were invented to draw the layout.
+**One operation works, four are disclosed as unavailable before submit, and the scoring half does not exist.**
+Dataset declaration validation calls the shared Ciel operation using supplied inputs.
+Evidence quarantine is shown as unavailable because this deployment has no evidence
+ingestion settings. The three approval forms are shown as fail-closed by design until
+an external qualification issuer and trusted policy are configured. Below them is a
+design for a scoring harness that has no code, no endpoint and no stored score. The
+numbers in it were invented to draw the layout.
 
 **How a reader tells one from the other**, three ways over, never once in colour alone:
 
-1. **A stamp in every band's status slot**, carrying a word and a glyph: `Works now` on the operation
-   tools, `Invented figures` on all three drawn bands. Same chip, same slot, so they read against
+1. **A stamp in every band's status slot**, carrying a word and a glyph: `Works now` on the dataset
+   band, `Unavailable` on the four gated actions' two bands, and `Invented figures` on all three drawn bands. Same chip, same slot, so they read against
    each other, and a screenshot of any one band still carries its own stamp.
 2. **A banner above the drawn half**, headed *The scoring harness is not built yet*, which states
    in one sentence that every figure below it was made up.
@@ -1117,7 +1120,8 @@ outside it is the reverse, **neither set is empty**, and **neither a two-decimal
 string in the file's hand-written invented inventory appears outside the panel in the two render
 states it sweeps**. Moving one band across the boundary turns seven tests in that file red.
 Nothing real on this pane is written as a two-decimal figure, which is what makes that sweep a
-usable rule rather than a coincidence: the working half prints digests, byte counts and timestamps.
+usable rule rather than a coincidence: the submitted tool prints digests, and the gated forms
+print prose about why they are blocked.
 
 The sweep reads one string taken from `<body>` with the panel's subtree removed, so it covers the
 shell's live region — `announce()` is how a screen-reader operator hears every success here, and
@@ -1131,8 +1135,8 @@ and the box on screen is full. Two shapes qualify: text painted on screen, like 
 a placeholder shown until the operator types, and text a screen reader substitutes for the
 element's own, like an `aria-label` — a figure in the second is worse than one in the live region,
 because it suppresses the real words underneath it as well. The two states are the booted page and
-the page after the dataset and quarantine forms have been submitted and answered. This sweep
-does not cover post-submission approval states.
+the page after the dataset form has been submitted and answered. This sweep does not cover
+error branches.
 
 Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
 inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in
@@ -1142,22 +1146,23 @@ boot-state hint turns three tests red. **A figure split mid-token** across two e
 a space here and without one in a browser. Adding invented data to this pane means adding it to
 the inventory by hand, and the test file says so where a reader will meet it.
 
-**What the working tools do.** Validation takes an input object containing `datasets` and
+**What the working tool and gated forms do.** Validation takes an input object containing `datasets` and
 `fixtureDigests`; the page supplies the operation envelope. The server returns manifest digests
 or field paths and reason codes. Editing the input clears the old result. Validation stores no
 dataset, inspects no referenced bytes, verifies no qualification and grants no evidence access or
 release approval.
 
-Owners and operators can also submit a local synthetic or exactly authorised production-derived
-file to the shared Ciel operation. The page sends no credential or endpoint in request data,
-renders no raw evidence or storage location, and never describes quarantine as admission,
-evaluation consent, training consent, export permission, or proof of de-identification. A viewer
-is told in a named block that the import needs operator access, rather than being shown a gap
-where a form was.
+Owners and operators see the quarantine form, but it is disabled and described by the
+upfront evidence-ingestion gate. The copy says the deployment is not configured; it does
+not call that a design decision. The page still never describes quarantine as admission,
+evaluation consent, training consent, export permission, or proof of de-identification. A
+viewer is told in a named block that the import needs operator access, rather than being shown
+a gap where a form was.
 
-Approval lookup remains available to viewers. Operators and owners also see request and decision
-forms. The backend checks record access, fresh authentication, independence and verified qualification;
-the page cannot grant qualification or admit evidence. An unconfigured authority remains unavailable.
+Approval lookup, request and decision forms are disabled and described by the same
+approval gate. That gate names the recorded decision: approvals are fail-closed until an
+external qualification issuer and trusted policy exist. The page cannot grant qualification
+or admit evidence.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,
@@ -1169,9 +1174,10 @@ and the future-date and 90-day retention bounds are unchanged.
 
 **Where the pane departs from `docs/mocks/ops-dashboard-v2/evaluations.html`:**
 
-- **The working tools come first, then the banner, then the drawing.** The mock opens with the
-  banner, because the mock is a drawing of a pane where nothing is built. Here operation tools are, so
-  a page that opens by saying it is not built would be false. The banner sits directly above the
+- **The operation bands come first, then the banner, then the drawing.** The mock opens with the
+  banner, because the mock is a drawing of a pane where nothing is built. Here one operation works
+  and four are deliberately disclosed as unavailable, so a page that opens by saying it is not built
+  would be false. The banner sits directly above the
   half it describes and its claim is scoped to that half.
 - **The drawn half is not faded.** The mock sets `opacity: .55` over it, which multiplies every
   ink in the panel and takes text the v2 palette places at 4.5:1 down below 3:1. The dashed

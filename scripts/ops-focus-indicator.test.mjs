@@ -981,7 +981,7 @@ test('every focus indicator on the v2 shell is a measurable outline, and clears 
           `${site.text ? ` "${site.text}"` : ''}`;
         const r = await judge(site.i);
         if (r.refused) {
-          failures.push(`${where}: REFUSED — ${r.refused}`);
+          failures.push(`${where}: REFUSED - ${r.refused}`);
           continue;
         }
         n++;
@@ -1039,7 +1039,7 @@ test('the three controls the issues name are still in the swept set', async () =
     const site = sites.find(w.match);
     assert.ok(site, `${w.label}: no such control on ${SHELL} any more`);
     const r = await judge(site.i);
-    assert.equal(r.refused, undefined, `${w.label}: REFUSED — ${r.refused}`);
+    assert.equal(r.refused, undefined, `${w.label}: REFUSED - ${r.refused}`);
     assert.ok(r.ratio + EPS >= FOCUS_RATIO,
       `${w.label}: ${r.ratio.toFixed(2)}:1 against ${r.surface}, needs ${FOCUS_RATIO.toFixed(1)}:1`);
     if (w.place) assert.equal(w.place(r), null, `${w.label}: ${w.place(r)}`);
@@ -1101,7 +1101,7 @@ test('every focus indicator on the evaluations pane is a measurable outline, and
         `${site.text ? ` "${site.text}"` : ''}`;
       const r = await judge(site.i);
       if (r.refused) {
-        failures.push(`${where}: REFUSED — ${r.refused}`);
+        failures.push(`${where}: REFUSED - ${r.refused}`);
         continue;
       }
       n++;
@@ -1116,7 +1116,7 @@ test('every focus indicator on the evaluations pane is a measurable outline, and
     perPass.push({ theme, n, sites: sites.length });
     if (n < EVALS_FLOOR) {
       failures.push(`${theme}: only ${n} of ${sites.length} focus sites on ${EVALS} were judged, ` +
-        `under the floor of ${EVALS_FLOOR} — a sweep that judges nothing reports nothing`);
+        `under the floor of ${EVALS_FLOOR}. A sweep that judges nothing reports nothing`);
     }
   }
 
@@ -1131,28 +1131,44 @@ test('every focus indicator on the evaluations pane is a measurable outline, and
     `\n${failures.length} focus indicator problem(s) on ${EVALS}:\n  ` + failures.join('\n  ') + '\n');
 });
 
-test('the evaluations pane\'s text inputs carry their own measurable ring (#10694)', async () => {
-  /* The named-control contract, on the same terms as the shell's three. The
-     sweep above would still pass if `.field-input` stopped being focusable or
-     stopped being drawn; this names it and fails on its absence. */
+test('the evaluations pane\'s reachable text inputs carry their own measurable ring (#10694)', async () => {
+  /* #10813 intentionally disables the quarantine and approval controls before
+     submit. Disabled controls cannot receive keyboard focus, so this test now
+     checks both halves: the reachable dataset field still has a measured ring,
+     and the input/select controls that left the focus census are disabled for
+     a named gate rather than silently missing from the pane. */
   const results = [];
   for (const theme of THEMES) {
     await loadPane(EVALS, theme);
     await keyboardModality();
+    const fields = await evaluate(`(() => JSON.stringify([...document.querySelectorAll('.field-input')].map((el) => ({
+      tag: el.tagName.toLowerCase(),
+      disabled: !!el.disabled,
+      id: el.id || '',
+      describedBy: el.getAttribute('aria-describedby') || ''
+    }))))()`);
+    const liveTags = new Set(fields.filter((f) => !f.disabled).map((f) => f.tag));
+    const gatedTags = new Set(fields.filter((f) => f.disabled &&
+      /(?:evidence-ingestion-gate|approval-operations-gate)/.test(f.describedBy)).map((f) => f.tag));
+    assert.ok(liveTags.has('textarea'),
+      `${theme}: no enabled textarea.field-input remains for dataset validation on ${EVALS}`);
+    for (const tag of ['input', 'select']) {
+      assert.ok(gatedTags.has(tag),
+        `${theme}: no disabled, gate-described <${tag} class="field-input"> was found on ${EVALS}`);
+    }
+
     const sites = await evaluate(FOCUS_SITES);
     const inputs = sites.filter((s) => s.cls.split(/\s+/).includes('field-input'));
-    assert.ok(inputs.length >= 3,
-      `${theme}: ${inputs.length} focusable .field-input controls on ${EVALS}, expected at least 3`);
+    assert.ok(inputs.length >= 1,
+      `${theme}: no focusable .field-input controls on ${EVALS}; the dataset field was not measured`);
     const tags = new Set(inputs.map((s) => s.tag));
-    for (const tag of ['input', 'select', 'textarea']) {
-      assert.ok(tags.has(tag),
-        `${theme}: no <${tag} class="field-input"> was swept, and the rule under test styles all ` +
-        `three — swept: ${[...tags].join(', ')}`);
-    }
+    assert.deepEqual(tags, new Set(['textarea']),
+      `${theme}: focusable .field-input controls should now be the dataset textarea only, swept: ` +
+      `${[...tags].join(', ')}`);
     for (const site of inputs) {
       const r = await judge(site.i);
       assert.equal(r.refused, undefined,
-        `${theme} ${site.tag}.field-input "${site.text}": REFUSED — ${r.refused}`);
+        `${theme} ${site.tag}.field-input "${site.text}": REFUSED - ${r.refused}`);
       assert.ok(r.ratio + EPS >= FOCUS_RATIO,
         `${theme} ${site.tag}.field-input "${site.text}": ${r.ratio.toFixed(2)}:1 against ` +
         `${r.surface}, needs ${FOCUS_RATIO.toFixed(1)}:1`);

@@ -559,7 +559,7 @@ test('the body wrapper keeps the spacing the band used to give its children', as
   }
 });
 
-/* ============ Stadiora/Aria#10809 — the answer slot's live region ========= */
+/* ============ Stadiora/Aria#10809, the answer slot's live region ========= */
 
 /* Resolves #approval-result from the real accessibility tree. Whether an
    assistive technology can announce a live region is a fact about the tree,
@@ -613,7 +613,7 @@ test('the answer region stays in the accessibility tree across the whole answer'
   const axBefore = await answerSlotAx();
 
   /* Arm one: before any answer has ever been asked for, the region is already
-     there to be watched. This is the whole of Stadiora/Aria#10809 — a live
+     there to be watched. This is the whole of Stadiora/Aria#10809, a live
      region an assistive technology only learns about at the moment it already
      holds its text is a region creation, not a change, and the announcement
      can be nothing at all. */
@@ -644,44 +644,33 @@ test('the answer region stays in the accessibility tree across the whole answer'
   assert.equal(before.border, '0px');
   assert.equal(before.shadow, 'none');
 
-  await evaluate(`(() => {
+  const blocked = await evaluate(`(() => {
     document.querySelector('#approval-get-id').value = 'apr_9f3c';
     document.querySelector('#approval-get-form')
       .dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    return {
+      slot: ${SLOT_BOX},
+      formDescribedBy: document.querySelector('#approval-get-form').getAttribute('aria-describedby') || '',
+      submitDisabled: document.querySelector('#approval-get-form button[type="submit"]').disabled,
+      inputDisabled: document.querySelector('#approval-get-id').disabled
+    };
   })()`);
-  await waitFor("document.querySelector('#approval-result').textContent.trim().length > 0",
-    'the answer to arrive');
+  const axBlocked = await answerSlotAx();
 
-  const filled = await evaluate(SLOT_BOX);
-  const axFilled = await answerSlotAx();
-  assert.ok(filled.chars > 0, 'the answer should have landed');
-  assert.ok(filled.height > 0, 'and taken up room once it had something to say');
-  assert.equal(axFilled.ignored, false, 'the filled region is still in the tree');
-  assert.equal(axFilled.role, 'status');
-
-  /* Arm two, and the one a re-read of the source cannot supply: asking a
-     second time must EMPTY the slot rather than hide it. Hiding it between
-     answers pulls the region out of the tree, so the second answer announces
-     a creation exactly like the first did and the bug is back for every
-     operator who asks about more than one approval. Read in the same task as
-     the dispatch, because the stub answers in single-digit milliseconds. */
-  const cleared = await evaluate(`(() => {
-    document.querySelector('#approval-get-form')
-      .dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-    return ${SLOT_BOX};
-  })()`);
-  const axCleared = await answerSlotAx();
-
-  assert.equal(cleared.chars, 0, 'asking again should clear the previous answer');
-  assert.equal(cleared.hiddenAttr, false,
-    'asking again must not hide the region — empty it instead');
-  assert.ok(cleared.rects > 0,
-    'the cleared region must still be rendered between answers');
-  assert.equal(cleared.height, 0, 'and back to no extent while it is empty');
-  assert.equal(axCleared.ignored, false,
-    `the region must stay in the tree between answers, got ignored for "${axCleared.why}"`);
-  assert.equal(axCleared.role, 'status',
-    'and keep its role, so the next answer is a change and not a creation');
+  assert.equal(blocked.formDescribedBy, 'approval-operations-gate',
+    'the approval lookup form must name the fail-closed gate before submit');
+  assert.equal(blocked.submitDisabled, true, 'the approval lookup submit stays disabled');
+  assert.equal(blocked.inputDisabled, true, 'the approval lookup input stays disabled');
+  assert.equal(blocked.slot.chars, 0, 'a blocked submit must not write an approval answer');
+  assert.equal(blocked.slot.hiddenAttr, false,
+    'a blocked submit must not hide the live region');
+  assert.ok(blocked.slot.rects > 0,
+    'the blocked live region must still be rendered');
+  assert.equal(blocked.slot.height, 0, 'and still have no extent while empty');
+  assert.equal(axBlocked.ignored, false,
+    `the region must stay in the tree while the gate blocks submit, got ignored for "${axBlocked.why}"`);
+  assert.equal(axBlocked.role, 'status',
+    'and keep its role, so a future enabled answer is a change and not a creation');
 });
 
 test('the light theme folds and rails the same way', async () => {
