@@ -184,7 +184,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const browser = spawn(chromePath(), [
   '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check', '--disable-gpu',
-  '--hide-scrollbars', '--force-device-scale-factor=1', 'about:blank'
+  '--hide-scrollbars', '--force-device-scale-factor=1', '--no-sandbox', 'about:blank'
 ], { stdio: 'ignore' });
 
 const port = await devtoolsPort(profile);
@@ -637,7 +637,9 @@ for (const p of PANES) {
     for (const st of ordered) {
       const r = rankOf.get(st.key);
       if (r === undefined) continue;
-      if (r < lastRank) backwards.push({ stop: st, rank: r, afterRank: lastRank, afterPath: lastStop && lastStop.path });
+      if (r < lastRank) backwards.push({
+        path: st.path, stop: st, rank: r, afterRank: lastRank, afterPath: lastStop && lastStop.path
+      });
       lastRank = Math.max(lastRank, r);
       lastStop = st;
     }
@@ -976,23 +978,25 @@ const sum = (rows, f) => rows.reduce((a, w) => a + f(w), 0);
    findings list two of them. The count and the list must be the same
    population or one of them is lying.
 
-   AND THE KEY HAS TO SEPARATE SIBLINGS. `pathOf()` stops at five ancestors
+   AND THE KEY HAS TO SEPARATE SIBLINGS AND FINDING KINDS. `pathOf()` stops at five ancestors
    and two classes, so settings' three `div.tbl-wrap` boxes -- three
    different tables, three different labels -- produce one byte-identical
    path. Keying on the path alone collapsed them: the shipped document said
    the walk found 3 declared scroll containers when its own record held 5,
    and with those three undeclared it printed a headline of 1 above a list of
-   3. The key now carries the element's ORDINAL among same-path rows in the
-   same walk, and `sameWalkCollision` below turns the remaining possibility
-   into a refusal rather than a smaller number. */
-const keyed = (rows, f) => rows.flatMap((w) => {
+   3. A single element can also be more than one finding kind, and a key
+   shared across kinds either refused for the wrong cause or zeroed the second
+   kind. The key now carries the kind plus the element's ORDINAL among
+   same-path rows in the same list, and `sameWalkCollision` below turns the
+   remaining possibility into a refusal rather than a smaller number. */
+const keyed = (rows, f, kind = 'value') => rows.flatMap((w) => {
   const xs = f(w);
   return xs.map((x, i) => ({
-    w, x, key: `${w.pane}|${x.path}#${xs.filter((y, j) => y.path === x.path && j < i).length}`
+    w, x, key: `${kind}|${w.pane}|${x.path}#${xs.filter((y, j) => y.path === x.path && j < i).length}`
   }));
 });
 const distinct = (rows, f) => new Set(keyed(rows, f).map((r) => r.key)).size;
-const list = (rows, f) => keyed(rows, f);
+const list = (rows, f, kind) => keyed(rows, f, kind);
 const md = [];
 const P = (...x) => md.push(...x);
 
@@ -1056,7 +1060,7 @@ const FILED = {
 
 const findings = [];
 
-for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers)) {
+for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers, 'undeclared-scroller')) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'undeclared-scroller',
     title: 'A sideways-scrolling table is never declared keyboard-focusable',
@@ -1092,7 +1096,7 @@ for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers)) {
     ].join('\n') });
 }
 
-for (const { w, x, key } of list(R, (w) => w.hiddenPainted)) {
+for (const { w, x, key } of list(R, (w) => w.hiddenPainted, 'hidden-painted')) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'hidden-painted',
     title: `An element the code hides is still painted (\`${x.tag}\`)`,
@@ -1137,7 +1141,7 @@ for (const { w, x, key } of list(R, (w) => w.hiddenPainted)) {
    findings over twenty walks and listing them over ten. Every walk the
    fraction excludes is enumerated here with the stop it first disagreed on. */
 for (const { w, x, key } of list(R, (w) => (w.reverseMatches === false
-  ? [{ path: w.reverseGot.findIndex((k, i) => k !== w.reverseExpected[i]) }] : []))) {
+  ? [{ path: w.reverseGot.findIndex((k, i) => k !== w.reverseExpected[i]) }] : []), 'reverse-order')) {
   const at = x.path;
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'reverse-order',
@@ -1148,19 +1152,19 @@ for (const { w, x, key } of list(R, (w) => (w.reverseMatches === false
       `${w.reversePresses} presses against ${w.stops} forward stops.` });
 }
 
-for (const { w, x, key } of list(R, (w) => w.unreachable)) {
+for (const { w, x, key } of list(R, (w) => w.unreachable, 'unreachable')) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'unreachable',
     title: 'An enabled, visible control is never reached by Tab',
     body: `\`${x.path}\` (${x.tag}, ${Math.round(x.rect.w)}×${Math.round(x.rect.h)}px) on **${w.pane}/${w.viewport}**.` });
 }
-for (const { w, x, key } of list(R, (w) => w.backwards)) {
+for (const { w, x, key } of list(R, (w) => w.backwards, 'backwards')) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'backwards',
     title: 'Tab order does not follow reading order',
     body: `\`${x.stop.path}\` (DOM rank ${x.rank}) is reached after \`${x.afterPath}\` (rank ${x.afterRank}).` });
 }
-for (const { w, x, key } of list(R, (w) => w.mismatched)) {
+for (const { w, x, key } of list(R, (w) => w.mismatched, 'label-in-name')) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'label-in-name',
     title: 'Accessible name does not contain the visible label (WCAG 2.5.3)',
@@ -1172,7 +1176,7 @@ for (const { w, x, key } of list(R, (w) => w.mismatched)) {
    headline was an OCCURRENCE count over twenty walks while every other row
    under it counts distinct elements. `keyed()` needs a `path`, which a
    dup-id row does not have, so the id itself is the path. */
-for (const { w, x, key } of list(R, (w) => w.dupIds.map((d) => ({ ...d, path: `#${d.id}` })))) {
+for (const { w, x, key } of list(R, (w) => w.dupIds.map((d) => ({ ...d, path: `#${d.id}` })), 'dup-id')) {
   findings.push({ sev: 'defect', pane: w.pane, viewport: w.viewport, key,
     kind: 'dup-id',
     title: 'The same `id` appears more than once in the document',
@@ -1382,20 +1386,24 @@ P('Each was opened **by Tab and Enter**, never by `element.focus()`: a dialog op
   'it has controls is a coincidence, not a trap.', '');
 
 P('## NOT COVERED', '');
-/* NARROWING, NOT ANALYSIS. A finding group is keyed by pane and CSS path and
-   an ordinal within the walk, deliberately without the viewport, so one
-   element seen at both widths prints as one finding saying "Seen on: both".
-   The cost is that two DIFFERENT same-path siblings, each a finding at only
+/* NARROWING, NOT ANALYSIS. A finding group is keyed by kind, pane, CSS path
+   and a per-list ordinal, deliberately without the viewport, so one element
+   seen at both widths prints as one finding saying "Seen on: both". The cost
+   is that two DIFFERENT same-kind, same-path siblings, each a finding at only
    one of the two widths, would share an ordinal and merge. `sameWalkCollision`
    catches the same-viewport case and refuses; the cross-viewport case is not
    detectable without an identity that survives two separate page loads, which
    the stamped id does not. Today's pages do not reach it. Saying so is
    cheaper and more honest than an identity scheme built for a case that has
    never occurred. */
-P('- **Two different same-path siblings, each a finding at only one width, would merge into one',
-  '  group.** Findings are grouped by pane, CSS path and ordinal-within-walk so that one element',
-  '  seen at both widths is one finding. A same-viewport collision refuses; this cross-viewport',
-  '  shape does not, and no element in this sweep is in it.');
+P('- **Two different same-kind, same-path siblings, each a finding at only one width, would merge',
+  '  into one group.** Findings are grouped by kind, pane, CSS path and per-list ordinal so',
+  '  one element seen at both widths is one finding. A same-viewport collision within one',
+  '  list refuses; the cross-viewport shape does not, and no element in this sweep is in it.');
+P('- **Four clean rows are live measurements, not battery-exercised claims.** The mutation',
+  '  battery does not carry payloads for focus traps, retrace forward-leg agreement, backwards',
+  '  reading-order rows or duplicate `id` rows. They are printed from the run, but they are not',
+  '  part of the battery coverage claim.');
 P('- **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is',
   '  answered only for the two mechanical proxies a browser can be asked about — duplicate `id`',
   '  attributes and `aria-label` attributes that drop their visible text. An element announced',
@@ -1486,9 +1494,9 @@ READ_INTO.forEach((lines) => {
   P(`- ${lines[0]}`, ...lines.slice(1).map((l) => `  ${l}`));
 });
 P('');
-P('Every claim in this file is exercised by the mutation battery in the pull request that added it:',
-  'each finding has a payload that makes it disappear, each instrument rule has a payload that',
-  'reverts it to the defective version, and each control has a payload the numbers must ignore.', '');
+P('The mutation battery exercises the three filed findings above and the instrument rules named',
+  'in its generated table. It does not exercise every clean row in this document; the unexercised',
+  'rows are listed under NOT COVERED instead of being claimed as proven.', '');
 
 fs.writeFileSync(OUT, md.join('\n') + '\n');
 process.stderr.write(`wrote ${OUT}\n`);

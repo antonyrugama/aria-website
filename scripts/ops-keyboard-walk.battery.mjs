@@ -44,6 +44,7 @@ import { fileURLToPath } from 'node:url';
    only "the record is missing" caught it. */
 const ROOT = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
 const WT = path.resolve(process.argv[2] || ROOT);
+const HEAD_SHA = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: WT, encoding: 'utf8' }).trim();
 const OUTDIR = path.join(WT, '.probe');
 fs.mkdirSync(OUTDIR, { recursive: true });
 const TOOL = 'scripts/ops-keyboard-walk.mjs';
@@ -336,9 +337,9 @@ const EXPERIMENTS = [
 
   { id: 'M19', kind: 'mutation', expect: 'kill', scope: 'history,settings', vp: '375px',
     signal: 'docDeclaredScrollers', file: TOOL,
-    anchor: "    w, x, key: `${w.pane}|${x.path}#${xs.filter((y, j) => y.path === x.path && j < i).length}`",
-    payload: "    w, x, key: `${w.pane}|${x.path}`",
-    what: 'B2. `pathOf()` stops at five ancestors and two classes, so settings\' three tbl-wrap boxes -- three tables, three labels -- produce one byte-identical path. Keying on the path alone collapses them, and the DOCUMENT is where that surfaces: the shipped run held 5 declared scroll containers in its record and published 3. The ordinal makes siblings distinct. Scored on the published sentence rather than the record, because the record never moved.' },
+    anchor: "    w, x, key: `${kind}|${w.pane}|${x.path}#${xs.filter((y, j) => y.path === x.path && j < i).length}`",
+    payload: "    w, x, key: `${kind}|${w.pane}|${x.path}`",
+    what: 'B2. `pathOf()` stops at five ancestors and two classes, so settings\' three tbl-wrap boxes -- three tables, three labels -- produce one byte-identical path. Keying on the path alone collapses them, and the DOCUMENT is where that surfaces: the shipped run held 5 declared scroll containers in its record and published 3. The ordinal makes siblings distinct; the kind separates finding classes. Scored on the published sentence rather than the record, because the record never moved.' },
 
   { id: 'M20', kind: 'mutation', expect: 'kill', scope: 'evals', vp: 'desktop',
     signal: 'evalsReverse', file: 'ops/assets/pane-evaluations.js',
@@ -360,14 +361,14 @@ const EXPERIMENTS = [
 
   { id: 'M22', kind: 'mutation', expect: 'kill', scope: '*', vp: '*', signal: '__exit',
     file: TOOL,
-    anchor: "for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers)) {",
-    payload: "for (const { w, x, key } of list(d, (w) => w.undeclaredScrollers)) {",
+    anchor: "for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers, 'undeclared-scroller')) {",
+    payload: "for (const { w, x, key } of list(d, (w) => w.undeclaredScrollers, 'undeclared-scroller')) {",
     what: 'B4. The two-population defect, restored: the headline counted findings over all twenty walks and the list enumerated the ten desktop ones. The only undeclared scroller in this dashboard is at 375px, so it was counted, never named, never given an issue number, and the run still exited 0. Both numbers come from one array now, and the filed-issue reconciliation refuses when the kind it cites is not in it.' },
 
   { id: 'M22b', kind: 'tolerance-control', expect: 'survive', scope: 'settings', vp: 'desktop',
     signal: '__exit', file: TOOL,
-    anchor: "for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers)) {",
-    payload: "for (const { w, x, key } of list(d, (w) => w.undeclaredScrollers)) {",
+    anchor: "for (const { w, x, key } of list(R, (w) => w.undeclaredScrollers, 'undeclared-scroller')) {",
+    payload: "for (const { w, x, key } of list(d, (w) => w.undeclaredScrollers, 'undeclared-scroller')) {",
     what: 'The same payload on a SCOPED run must NOT refuse: on a scoped run "the finding did not reproduce" means "you did not look". Proves the refusal is gated on a full sweep and not on the payload.' },
 
   { id: 'M23', kind: 'mutation', expect: 'kill', scope: 'settings', vp: '375px',
@@ -434,6 +435,7 @@ const EXPERIMENTS = [
    that code moves some of them. BATTERY_PREFLIGHT=1 runs this and stops. */
 function preflight() {
   const bad = [];
+  process.stderr.write(`head: ${HEAD_SHA}\n`);
   for (const e of EXPERIMENTS) {
     for (const ed of (e.edits || (e.anchor === null ? [] : [{ file: e.file, anchor: e.anchor, payload: e.payload }]))) {
       const txt = fs.readFileSync(path.join(WT, ed.file), 'utf8');
@@ -652,6 +654,8 @@ for (const e of EXPERIMENTS) {
 const out = [];
 const cell = (s) => '`' + s.split('\n')[0].trim().slice(0, 60).replace(/\|/g, '\\|') + '`' +
   (s.includes('\n') ? ` +${s.split('\n').length - 1}L` : '');
+out.push(`Measured head: \`${HEAD_SHA}\``);
+out.push('');
 out.push('| # | kind | file | anchor (line, restored tree) | payload | signal | baseline -> got | verdict |');
 out.push('|---|---|---|---|---|---|---|---|');
 for (const r of rows) {
@@ -683,4 +687,5 @@ out.push(`**${rows.length} experiments, ${rows.length - unexpected.length} as ex
 if (ONLY.length) out.push(`\n**SUBSET RUN — \`BATTERY_ONLY=${ONLY.join(',')}\`. Not the published table.**`);
 fs.writeFileSync(path.join(OUTDIR, 'keyboard-battery.md'), out.join('\n') + '\n');
 fs.writeFileSync(path.join(OUTDIR, 'keyboard-battery.json'), JSON.stringify(rows, null, 2));
+fs.writeFileSync(path.join(OUTDIR, 'keyboard-battery-head.txt'), `${HEAD_SHA}\n`);
 process.stderr.write(`\n${rows.length} experiments, ${unexpected.length} unexpected\n`);
