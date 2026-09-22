@@ -587,6 +587,56 @@ const DETAIL = {
   supportActions: { available: [] }
 };
 
+/* One window of run history, for What happened. Stadiora/Aria#5563 moved that
+   pane off the alerting routes and onto GET /api/ops/runs, so its markers
+   below come off this object rather than off the rules and the problem. */
+const RUNS = {
+  window: { range: '7d', startAt: ago(7 * DAY), endExclusiveAt: ago(0) },
+  selection: { type: null, outcome: null, limit: 50 },
+  coverage: {
+    state: 'ready', recordingSince: ago(30 * DAY), lastRecordedAt: ago(4 * MINUTE),
+    coversWindow: true
+  },
+  summary: {
+    runs: 214, completed: 198, failed: 13, canceled: 3, failureReasons: 2, unfinished: 1,
+    duration: { p50Ms: 8400, measured: 211, total: 214 },
+    queued: { p50Ms: 900, measured: 214, total: 214 }
+  },
+  facets: {
+    types: [
+      { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true, runs: 140 },
+      { value: 'video_analysis', label: 'Sprint video analysis', labelled: true, runs: 74 }
+    ],
+    outcomes: [
+      { value: 'completed', label: 'Worked', runs: 198 },
+      { value: 'failed', label: 'Failed', runs: 13 },
+      { value: 'canceled', label: 'Cancelled', runs: 3 }
+    ]
+  },
+  failures: [
+    { failureCode: 'model_timeout', runs: 9, retryable: true,
+      firstSeenAt: ago(3 * DAY), lastSeenAt: ago(2 * HOUR),
+      byType: [{ type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+        runs: 9 }] },
+    { failureCode: 'upstream_rejected', runs: 4, retryable: false,
+      firstSeenAt: ago(2 * DAY), lastSeenAt: ago(5 * HOUR),
+      byType: [{ type: { value: 'video_analysis', label: 'Sprint video analysis',
+        labelled: true }, runs: 4 }] }
+  ],
+  runs: [
+    { jobId: '11111111-1111-4111-8111-111111111111',
+      type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+      outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout',
+      retryable: true, modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 60000,
+      finishedAt: ago(2 * HOUR) },
+    { jobId: '22222222-2222-4222-8222-222222222222',
+      type: { value: 'video_analysis', label: 'Sprint video analysis', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR) }
+  ],
+  truncated: false
+};
+
 function stub(pathname, body) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
@@ -617,6 +667,7 @@ function stub(pathname, body) {
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) return { data: { problems: PROBLEMS } };
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/usage')) return { data: USAGE };
@@ -726,7 +777,9 @@ const RESULT_PROOF = {
      worker-load sentence, which the route sends as prose and the pane prints
      verbatim. Both are absent until a reading has been drawn. */
   jobs: [JOBS.workingSet.jobs[0].id, JOBS.capacity.reason],
-  history: [RULES[0].title, PROBLEMS[0].category],
+  /* RUNS.failures[0].failureCode and the model its first run used. Neither
+     is on this pane's landing state, either empty state, or failure card. */
+  history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
   alerts: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
   analytics: ['1,061', '8,430', USAGE.apps[1].label],
   spend: [COST_ROWS[0].label, COST_ROWS[2].label],

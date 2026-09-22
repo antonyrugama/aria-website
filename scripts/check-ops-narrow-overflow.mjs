@@ -145,15 +145,10 @@
    - **Every width that is not 375px, 360px or 320px.** This is three point
      samples, not a range. Nothing narrower than 320px is laid out and nothing
      wider than 375px is either, so an overflow confined to any other width is
-     invisible here on every pane. ops/assets/*.css declares thirteen width
-     breakpoints for itself and no swept width reaches any of them —
-     `grep -rhoE '\((max|min)-width: *[0-9]+px\)' ops/assets/*.css |
-     grep -oE '[0-9]+' | sort -nu` prints the list rather than trusting this
-     sentence to stay current. The phone widths
-     above 375px that most current large handsets report are in the same gap.
+     invisible here on every pane. The phone widths above 375px that most
+     current large handsets report are in that gap.
      Not theoretical: it is why this check never saw Stadiora/Aria#7365, whose
-     band starts at 861px — a number that is itself one of those breakpoints.
-     Appending
+     band starts at 861px. Appending
      `@media (min-width: 421px) and (max-width: 460px) { .content { min-width:
      560px } }` to assets/aria.css reds every pane at 430px and leaves this
      check green at all three of its widths.
@@ -526,6 +521,56 @@ const PROBLEM = {
    side effect: the markers are kept in step by hand, on the same terms as the
    fixtures they are taken from, and a pane remodel that moves one is meant to
    come past this file. */
+/* One window of run history, for What happened. Stadiora/Aria#5563 moved that
+   pane off the alerting routes and onto GET /api/ops/runs, so its markers
+   below come off this object rather than off the rules and the problem. */
+const RUNS = {
+  window: { range: '7d', startAt: ago(7 * DAY), endExclusiveAt: ago(0) },
+  selection: { type: null, outcome: null, limit: 50 },
+  coverage: {
+    state: 'ready', recordingSince: ago(30 * DAY), lastRecordedAt: ago(4 * MINUTE),
+    coversWindow: true
+  },
+  summary: {
+    runs: 214, completed: 198, failed: 13, canceled: 3, failureReasons: 2, unfinished: 1,
+    duration: { p50Ms: 8400, measured: 211, total: 214 },
+    queued: { p50Ms: 900, measured: 214, total: 214 }
+  },
+  facets: {
+    types: [
+      { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true, runs: 140 },
+      { value: 'video_analysis', label: 'Sprint video analysis', labelled: true, runs: 74 }
+    ],
+    outcomes: [
+      { value: 'completed', label: 'Worked', runs: 198 },
+      { value: 'failed', label: 'Failed', runs: 13 },
+      { value: 'canceled', label: 'Cancelled', runs: 3 }
+    ]
+  },
+  failures: [
+    { failureCode: 'model_timeout', runs: 9, retryable: true,
+      firstSeenAt: ago(3 * DAY), lastSeenAt: ago(2 * HOUR),
+      byType: [{ type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+        runs: 9 }] },
+    { failureCode: 'upstream_rejected', runs: 4, retryable: false,
+      firstSeenAt: ago(2 * DAY), lastSeenAt: ago(5 * HOUR),
+      byType: [{ type: { value: 'video_analysis', label: 'Sprint video analysis',
+        labelled: true }, runs: 4 }] }
+  ],
+  runs: [
+    { jobId: '11111111-1111-4111-8111-111111111111',
+      type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+      outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout',
+      retryable: true, modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 60000,
+      finishedAt: ago(2 * HOUR) },
+    { jobId: '22222222-2222-4222-8222-222222222222',
+      type: { value: 'video_analysis', label: 'Sprint video analysis', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR) }
+  ],
+  truncated: false
+};
+
 const PROOF = {
   /* SUMMARY.people.platform.active and SUMMARY.release.platforms[0].versionName,
      both of which the failure card replaces with "Not reported". */
@@ -534,7 +579,9 @@ const PROOF = {
      prints, and the worker-load sentence, which the route sends as prose and
      the pane prints verbatim. Both are absent until a reading is drawn. */
   jobs: [JOBS.workingSet.jobs[0].id, JOBS.capacity.reason],
-  history: [RULES[0].title, PROBLEM.category],
+  /* RUNS.failures[0].failureCode and the model its first run used. Both are
+     inside cells this sweep measures, and neither is on an empty state. */
+  history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
   /* The drill-down link the workPane rename restored, and the problem's own
      reference. Both sit in the action row this check measures. */
   alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
@@ -592,6 +639,7 @@ function stub(pathname) {
     return { data: { problems: [PROBLEM] } };
   }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };

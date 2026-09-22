@@ -110,7 +110,11 @@ const at = (ms) => new Date(Date.now() - ms).toISOString();
    anything the panes or the registry say, so that a pane which stops acting
    on a filter cannot bring this table with it. */
 const HONOURED = {
-  history: { range: 'answer' },
+  /* Was 'answer' while this pane drew the alerting record from a route that
+     took no window. Stadiora/Aria#5563 gave it GET /api/ops/runs, which takes
+     one, so the window now reaches the read and check 3 proves it rather than
+     check 4. */
+  history: { range: 'read' },
   alerts: { range: 'answer' },
   analytics: { scope: 'read', range: 'read', env: 'read' },
   users: { scope: 'read' },
@@ -188,6 +192,48 @@ function problem(over) {
     acknowledgedAt: null, acknowledgedByEmail: null,
     closedAt: null, closedByEmail: null, closeReason: null,
   }, over || {});
+}
+
+/* One window's worth of runs, for What happened. The same answer whatever
+   window is asked for, on purpose: this file proves the SELECTION reaches the
+   read, and an answer that varied with it would let a pane pass by drawing a
+   difference it was handed rather than one it asked for. */
+function runsAnswer() {
+  return {
+    window: { range: '7d', startAt: at(7 * DAY), endExclusiveAt: at(0) },
+    selection: { type: null, outcome: null, limit: 50 },
+    coverage: {
+      state: 'ready', recordingSince: at(30 * DAY), lastRecordedAt: at(3 * MINUTE),
+      coversWindow: true,
+    },
+    summary: {
+      runs: 2, completed: 1, failed: 1, canceled: 0, failureReasons: 1, unfinished: 0,
+      duration: { p50Ms: 8400, measured: 2, total: 2 },
+      queued: { p50Ms: 900, measured: 2, total: 2 },
+    },
+    facets: {
+      types: [{ value: 'nutrition_plan', label: 'Nutrition plan', labelled: true, runs: 2 }],
+      outcomes: [
+        { value: 'completed', label: 'Worked', runs: 1 },
+        { value: 'failed', label: 'Failed', runs: 1 },
+      ],
+    },
+    failures: [{
+      failureCode: 'model_timeout', runs: 1, retryable: true,
+      firstSeenAt: at(2 * HOUR), lastSeenAt: at(2 * HOUR),
+      byType: [{
+        type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true }, runs: 1,
+      }],
+    }],
+    runs: [{
+      jobId: '11111111-1111-4111-8111-111111111111',
+      type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked',
+      failureCode: null, retryable: null, modelUsed: 'gpt-5-mini',
+      queuedMs: 900, durationMs: 8400, finishedAt: at(2 * HOUR),
+    }],
+    truncated: false,
+  };
 }
 
 function rules() {
@@ -305,12 +351,8 @@ const PAGES = {
   },
   history: {
     file: 'run-history.html',
-    scripts: ['assets/alerts-model.js', 'assets/pane-run-history-v2.js'],
-    answer: (endpoint) => {
-      if (endpoint === '/api/ops/alerts/problems') return { problems: [problem()], summary: {} };
-      if (endpoint === '/api/ops/alerts/rules') return rules();
-      return undefined;
-    },
+    scripts: ['assets/pane-run-history-v2.js'],
+    answer: (endpoint) => (endpoint === '/api/ops/runs' ? runsAnswer() : undefined),
   },
   alerts: {
     file: 'alerts.html',
@@ -755,55 +797,16 @@ test('a filter carried into the read arrives with the value the operator picked'
 
 /* ================= 4. a filter applied to the answer =================== */
 
-/* The other way a filter can be real. These two panes read a route that takes
-   no window, so the window is applied to what came back — which narrows the
-   page just as honestly, and is why neither is required to send it. Each
-   probe straddles the boundary in both directions, so a pane that simply drew
-   nothing, or drew everything, fails it. */
+/* The other way a filter can be real. This pane reads a route that takes no
+   window, so the window is applied to what came back — which narrows the page
+   just as honestly, and is why it is not required to send it. The probe
+   straddles the boundary in both directions, so a pane that simply drew
+   nothing, or drew everything, fails it.
+
+   What happened used to be here too and is not any more: since
+   Stadiora/Aria#5563 it reads GET /api/ops/runs, which takes a window, so its
+   range is proved by check 3 above. */
 const ANSWER_PROBES = {
-  'history.range': async () => {
-    /* The pane groups failures by rule and request type rather than printing
-       a reference, so the two are told apart by the rule and the request type
-       they carry, and by the count of failures the page reports. */
-    const recent = problem({ id: 'prb_recent', title: 'Raised this morning' });
-    const old = problem({
-      id: 'prb_old', title: 'Raised last month',
-      ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
-      scopeKey: 'coach_invites', scopeLabel: 'Coach invites',
-      status: 'closed',
-      firstBreachedAt: at(20 * DAY), firedAt: at(20 * DAY),
-      lastObservedAt: at(20 * DAY), closedAt: at(20 * DAY),
-    });
-    const both = { problems: [recent, old], summary: {} };
-    const previous = PAGES.history.answer;
-    PAGES.history.answer = (endpoint) => {
-      if (endpoint === '/api/ops/alerts/problems') return both;
-      if (endpoint === '/api/ops/alerts/rules') return rules();
-      return undefined;
-    };
-    try {
-      const narrow = await bootPane('history', '?range=24h');
-      const wide = await bootPane('history', '?range=30d');
-      assert.equal(stateOf(narrow), 'live', 'the narrow window took the page off the screen');
-      assert.equal(stateOf(wide), 'live', 'the wide window took the page off the screen');
-
-      assert.match(shownText(narrow), /Sprint video/,
-        'the narrow window dropped a failure raised inside it');
-      assert.doesNotMatch(shownText(narrow), /Coach invites/,
-        'a failure from twenty days ago is on the page under a twenty-four hour window');
-      assert.match(shownText(wide), /Coach invites/,
-        'the wide window did not reach a failure from twenty days ago, so the narrow '
-        + 'one proves nothing');
-
-      assert.match(shownText(narrow), /Failures raised 1\b/,
-        'the narrow window counted something other than the one failure inside it');
-      assert.match(shownText(wide), /Failures raised 2\b/,
-        'the wide window counted something other than both failures');
-    } finally {
-      PAGES.history.answer = previous;
-    }
-  },
-
   'alerts.range': async () => {
     const stale = problem({
       id: 'prb_stale', reference: 'AO-301', title: 'Open since last month',
@@ -905,7 +908,6 @@ const MARKER = /Coach invites/;
    a fourteen-day window of its own that the shell's range does not touch, so
    whole-page text there would answer a question nobody asked. */
 const RECORDS_SHOWN = {
-  history: (dom) => shownText(dom),
   alerts: (dom) => withClass(dom, 'p-item').map(allText).join(' '),
 };
 
@@ -922,6 +924,7 @@ function markedRecord(ageMs, closed) {
 test('no value a pane offers reaches a record that lies outside all of them', async () => {
   const { PANES } = registry();
   let checked = 0;
+  const visited = new Set();
 
   for (const id of Object.keys(HONOURED)) {
     for (const filter of Object.keys(HONOURED[id])) {
@@ -959,6 +962,7 @@ test('no value a pane offers reaches a record that lies outside all of them', as
           assert.match(readRecords(near), MARKER,
             id + ' left a record from an hour ago off the page under ' + filter + '='
             + value + ', so the check above proves nothing: this fixture never draws.');
+          visited.add(id);
           checked += 1;
         }
       } finally {
@@ -967,7 +971,17 @@ test('no value a pane offers reaches a record that lies outside all of them', as
     }
   }
 
-  assert.ok(checked >= 6,
+  /* The floor is stated as the panes rather than as a count, because a count
+     is a number the next change lowers to whatever it produced — which is the
+     failure this floor exists to catch, one level up. Problems is named here
+     literally: if it stops being an answer-filtered pane, this line goes red
+     and somebody decides that deliberately rather than by editing a 6 to a 3.
+     (What happened was the second name on this line until Stadiora/Aria#5563
+     moved its window into the read, where check 3 proves it.) */
+  assert.deepEqual([...visited].sort(), ['alerts'],
+    'the panes whose answer-side filtering was actually exercised were '
+    + JSON.stringify([...visited].sort()));
+  assert.ok(checked >= 3,
     'only ' + checked + ' values were reached, so this proves less than it reads');
 });
 

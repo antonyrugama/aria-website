@@ -272,6 +272,56 @@ const PROBLEM = {
   notificationsFailed: 0, events: []
 };
 
+/* One window of run history, for What happened. Stadiora/Aria#5563 moved that
+   pane off the alerting routes and onto GET /api/ops/runs, so its markers
+   below come off this object rather than off the rules and the problem. */
+const RUNS = {
+  window: { range: '7d', startAt: ago(7 * DAY), endExclusiveAt: ago(0) },
+  selection: { type: null, outcome: null, limit: 50 },
+  coverage: {
+    state: 'ready', recordingSince: ago(30 * DAY), lastRecordedAt: ago(4 * MINUTE),
+    coversWindow: true
+  },
+  summary: {
+    runs: 214, completed: 198, failed: 13, canceled: 3, failureReasons: 2, unfinished: 1,
+    duration: { p50Ms: 8400, measured: 211, total: 214 },
+    queued: { p50Ms: 900, measured: 214, total: 214 }
+  },
+  facets: {
+    types: [
+      { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true, runs: 140 },
+      { value: 'video_analysis', label: 'Sprint video analysis', labelled: true, runs: 74 }
+    ],
+    outcomes: [
+      { value: 'completed', label: 'Worked', runs: 198 },
+      { value: 'failed', label: 'Failed', runs: 13 },
+      { value: 'canceled', label: 'Cancelled', runs: 3 }
+    ]
+  },
+  failures: [
+    { failureCode: 'model_timeout', runs: 9, retryable: true,
+      firstSeenAt: ago(3 * DAY), lastSeenAt: ago(2 * HOUR),
+      byType: [{ type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+        runs: 9 }] },
+    { failureCode: 'upstream_rejected', runs: 4, retryable: false,
+      firstSeenAt: ago(2 * DAY), lastSeenAt: ago(5 * HOUR),
+      byType: [{ type: { value: 'video_analysis', label: 'Sprint video analysis',
+        labelled: true }, runs: 4 }] }
+  ],
+  runs: [
+    { jobId: '11111111-1111-4111-8111-111111111111',
+      type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+      outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout',
+      retryable: true, modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 60000,
+      finishedAt: ago(2 * HOUR) },
+    { jobId: '22222222-2222-4222-8222-222222222222',
+      type: { value: 'video_analysis', label: 'Sprint video analysis', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR) }
+  ],
+  truncated: false
+};
+
 /* ------------------------------------------------- proof the pane drew itself */
 
 /* One thing per pane that only that pane's LOADED state puts on the page.
@@ -313,7 +363,10 @@ const PROOF = {
      prints, and the worker-load sentence, which the route sends as prose and
      the pane prints verbatim. Both are absent until a reading is drawn. */
   jobs: [JOBS.workingSet.jobs[0].id, JOBS.capacity.reason],
-  history: [RULES[0].title, PROBLEM.category],
+  /* RUNS.failures[0].failureCode and the model its first run used, both
+     printed verbatim. Absent from every empty state this pane has and from
+     its failure card, none of which names a failure code or a model. */
+  history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
   /* The drill-down link the workPane rename restored, and the problem's own
      reference. Both sit in the action row the narrow-viewport sweep
      measures. */
@@ -349,11 +402,28 @@ function stub(pathname) {
         severity: 'warning', category: 'ai_reliability',
         lastInsufficientReason: null, lastEvaluatedAt: ago(2 * MINUTE), lastFiredAt: null
       }, r)),
+      /* The shape `pane-alerts.js:routingCard()` actually reads. The stub used
+         to send `status`/`target`/`lastDeliveredAt`/`failureReason`, none of
+         which the pane looks at, so "Where problems are sent" drew two
+         nameless rows both reading "No destination has been set"
+         (Stadiora/Aria#10821). A fixture describing a payload the route does
+         not send is a picture of nothing.
+
+         Teams delivering, email set up but refused, webhook set up and never
+         used: all three branches `channelNote()` has for a configured
+         destination. The third is the state configuring a channel produces
+         before its first delivery, which is exactly what Stadiora/Aria#10811
+         asks somebody to create, and the stub had no picture of it. */
       channels: [
-        { channel: 'teams', status: 'ok', target: 'Aria operations',
-          lastDeliveredAt: ago(5 * MINUTE), failureReason: null },
-        { channel: 'email', status: 'failed', target: 'ops@example.invalid',
-          lastDeliveredAt: ago(2 * HOUR), failureReason: 'auth' }
+        { channel: 'teams', label: 'Microsoft Teams', configured: true,
+          lastDeliveryStatus: 'ok', lastFailureReason: null, consecutiveFailures: 0,
+          lastAttemptAt: ago(5 * MINUTE), lastSuccessAt: ago(5 * MINUTE) },
+        { channel: 'email', label: 'Email', configured: true,
+          lastDeliveryStatus: 'failed', lastFailureReason: 'auth', consecutiveFailures: 3,
+          lastAttemptAt: ago(2 * HOUR), lastSuccessAt: ago(2 * DAY) },
+        { channel: 'webhook', label: 'Webhook', configured: true,
+          lastDeliveryStatus: null, lastFailureReason: null, consecutiveFailures: 0,
+          lastAttemptAt: null, lastSuccessAt: null }
       ]
     } };
   }
@@ -361,6 +431,7 @@ function stub(pathname) {
     return { data: { problems: [PROBLEM] } };
   }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
@@ -373,5 +444,5 @@ function stub(pathname) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, COSTS, PROBLEM, PROOF, stub
+  ADMINS, SESSIONS, AUDIT, COSTS, PROBLEM, RUNS, PROOF, stub
 };
