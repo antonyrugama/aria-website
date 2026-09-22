@@ -24,14 +24,14 @@ on:
     paths:
       - 'ops/**'
       - 'scripts/check-ops-result-view.mjs'
-      - 'scripts/check-ops-result-view-geometry.test.mjs'
+      - 'scripts/ops-result-view-geometry.test.mjs'
       - '.github/workflows/ops-result-view.yml'
   push:
     branches: [main]
     paths:
       - 'ops/**'
       - 'scripts/check-ops-result-view.mjs'
-      - 'scripts/check-ops-result-view-geometry.test.mjs'
+      - 'scripts/ops-result-view-geometry.test.mjs'
       - '.github/workflows/ops-result-view.yml'
   workflow_dispatch:
 
@@ -57,6 +57,6 @@ jobs:
       # The reach arithmetic, without a browser, so a change to this script
       # alone runs it: ops-pane-tests.yml does not trigger on this file.
       - name: Check the per-character reach rule
-        run: node --test scripts/check-ops-result-view-geometry.test.mjs
+        run: node --test scripts/ops-result-view-geometry.test.mjs
       - name: Check what every pane paints in its result view
         run: node scripts/check-ops-result-view.mjs
