@@ -60,4 +60,5 @@ jobs:
         with:
           name: keyboard-audit-battery
           path: .probe/keyboard-battery.*
+          include-hidden-files: true
           if-no-files-found: error

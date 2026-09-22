@@ -73,7 +73,7 @@ Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not re
 
 - **No focus traps.** 20 walks, 312 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
 - **Nothing unreachable.** 280 enabled, visible, interactive controls; 0 were not reached by Tab.
-- **12 stops landed on something this tool does not call interactive**, and 10 of 20 walks ended by wrapping back to their first stop (10 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
+- **12 stops landed on something this tool does not call interactive**, and 3 of 20 walks ended by wrapping back to their first stop (17 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
 - **Tab order is reading order** on all 20 walks: 0 stops out of DOM order, where a stop is out of order if its element precedes the previous stop's element in document order.
 - **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks, over the WHOLE walk rather than a prefix of it: 272 stops retraced against 312 forward stops, which took 284 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
 - **The skip link works.** It is the first stop on 20/20 walks and Enter lands focus on `main#content` on 20/20.
@@ -94,10 +94,14 @@ it has controls is a coincidence, not a trap.
 
 ## NOT COVERED
 
-- **Two different same-path siblings, each a finding at only one width, would merge into one
-  group.** Findings are grouped by pane, CSS path and ordinal-within-walk so that one element
-  seen at both widths is one finding. A same-viewport collision refuses; this cross-viewport
-  shape does not, and no element in this sweep is in it.
+- **Two different same-kind, same-path siblings, each a finding at only one width, would merge
+  into one group.** Findings are grouped by kind, pane, CSS path and per-list ordinal so
+  one element seen at both widths is one finding. A same-viewport collision within one
+  list refuses; the cross-viewport shape does not, and no element in this sweep is in it.
+- **Four clean rows are live measurements, not battery-exercised claims.** The mutation
+  battery does not carry payloads for focus traps, retrace forward-leg agreement, backwards
+  reading-order rows or duplicate `id` rows. They are printed from the run, but they are not
+  part of the battery coverage claim.
 - **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is
   answered only for the two mechanical proxies a browser can be asked about — duplicate `id`
   attributes and `aria-label` attributes that drop their visible text. An element announced
@@ -169,7 +173,7 @@ produced plausible output that a reader would have believed.
   Scoring it on the match would have been a coin flip with a decimal point. It is scored on
   the press count, which was 3 in six unmutated runs across both shapes and 4 without the fix.
 
-Every claim in this file is exercised by the mutation battery in the pull request that added it:
-each finding has a payload that makes it disappear, each instrument rule has a payload that
-reverts it to the defective version, and each control has a payload the numbers must ignore.
+The mutation battery exercises the three filed findings above and the instrument rules named
+in its generated table. It does not exercise every clean row in this document; the unexercised
+rows are listed under NOT COVERED instead of being claimed as proven.
 
