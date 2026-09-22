@@ -750,7 +750,7 @@
       for (var i = 0; i < all.length; i += 1) {
         if (all[i].value === value) return coded(all[i].labelled === false ? value : all[i].label);
       }
-      return value;
+      return coded(value);
     }
 
     /* ------------------------------------------------------ the controls */
@@ -1290,7 +1290,7 @@
       var data = detail.data;
       var box = S.card();
       box.appendChild(S.cardHead(
-        coded(data.run.type.label) + ' \u00b7 ' + (data.run.outcomeLabel || 'still going'),
+        coded(data.run.type.label) + ' \u00b7 ' + (coded(data.run.outcomeLabel) || 'still going'),
         data.run.finishedAt
           ? 'Started ' + at(data.run.startedAt) + ', finished ' + at(data.run.finishedAt)
           : 'Started ' + at(data.run.startedAt) + ', and has not finished',

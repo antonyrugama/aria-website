@@ -2092,6 +2092,15 @@ test('address-shaped text is masked on the surfaces a screen reader reads', asyn
     'the announcement read out "' + announced + '", an address the panel masks');
   assert.match(announced, /\[hidden contact detail\]/,
     'the announcement dropped the address silently: "' + announced + '"');
+  /* The same run, on the card it opened: the heading is visible text built
+     from the same two fields. */
+  const card = liveText(opened);
+  assert.match(card, /Plans for \[hidden contact detail\] \u00b7 /,
+    'the opened run card has no heading built from the run, so the check below reads nothing');
+  assert.doesNotMatch(card, ADDRESS,
+    'the opened run card printed an address the announcement masks');
+  assert.match(card, /\u00b7 Failed for \[hidden contact detail\]/,
+    'the run card heading dropped the outcome rather than masking it');
 
   const narrowed = await boot({
     runs: windowAnswer((base) => {
@@ -2117,6 +2126,36 @@ test('address-shaped text is masked on the surfaces a screen reader reads', asyn
     'the rail badge read out "' + badgeSaid + '", an address the picker masks');
   assert.equal((badgeSaid.match(/\[hidden contact detail\]/g) || []).length, 2,
     'the badge did not mask both narrowings: "' + badgeSaid + '"');
+
+  /* A narrowing the new window no longer holds is named by its raw value,
+     and that value is still the route's: the picker option it came from was
+     built out of the facets. */
+  const dropped = await boot({
+    runs: windowAnswer((base) => {
+      base.facets.types[0].value = 'nutrition_plan_for_athlete@example.invalid';
+    }),
+  });
+  const droppedSelect = selectsIn(dropped)[0];
+  droppedSelect.value = 'nutrition_plan_for_athlete@example.invalid';
+  droppedSelect.dispatch('change');
+  await settle();
+  dropped.answers['/api/ops/runs'] = windowAnswer((base) => {
+    base.facets.types = [
+      { value: 'program_generation', label: 'Training program', labelled: true, runs: 5 },
+    ];
+  });
+  buttonsIn(livePanel(dropped), /Read again/)[0].dispatch('click');
+  await settle();
+  const droppedItem = dropped.doc.getElementById('rail').querySelectorAll('.nav-item')
+    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+  const droppedSr = droppedItem && droppedItem.querySelectorAll('.nav-badge-sr')[0];
+  const droppedSaid = droppedSr ? allText(droppedSr) : '';
+  assert.match(droppedSaid, /among .* only$/,
+    'the badge said "' + droppedSaid + '", so the dropped narrowing is not on the path this reads');
+  assert.doesNotMatch(droppedSaid, ADDRESS,
+    'the rail badge read out "' + droppedSaid + '" for a narrowing the window no longer holds');
+  assert.match(droppedSaid, /among \[hidden contact detail\] only$/,
+    'the badge dropped the narrowing rather than masking it: "' + droppedSaid + '"');
 
   const failed = await boot({ detail: new Error('No run for athlete@example.invalid') });
   buttonsIn(livePanel(failed), /^Open$/)[1].dispatch('click');
