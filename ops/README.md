@@ -299,7 +299,7 @@ code behaves. The block below is read out of the `<link>` and `<script>` tags in
 something, or a file that is deleted, is a red test rather than a stale sentence.
 
 ```claims id=assets-by-page
-alerts-model.js = alerts.html, index.html, jobs-live.html
+alerts-model.js = alerts.html, index.html
 api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
 aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
@@ -549,29 +549,39 @@ same list is what replaced the old "Not on this page yet" block, and it is rende
 answer rather than from a list in the client, so a figure that gains a source leaves it without
 an edit here.
 
-**Happening now** draws what a rule reported in the last few minutes, because no route lists
-jobs. It does not have a job table, a lane, an age per job or a retry count, and it says so in a
-band of its own rather than drawing an empty one. Its one real question is whether a queue that
-is over the line is **moving, behind** or **not clearing**, which are different problems with
-different fixes and look identical in a count: it compares the age of the job at the front of the
-queue against how long the queue has been over the line. A front younger than the breach proves
-the queue emptied past everything it held when it crossed the line; a front older than the breach
-proves only that nothing queued since has reached the front, and the pane claims no more than
-that — a burst that all arrived before the breach can drain steadily and still show an old front.
-Neither reading is a rate. One sample of one age counts nothing and times nothing, so **moving,
-behind** says the queue turned over and that everything in it now arrived after the line was
-crossed, and never that work is arriving faster than it leaves: a queue that shrank from five
-jobs to one and then stalled reads the same way.
-Where the unit of the observation, the observation itself, the breach start or the elapsed time is
-missing, the verdict is **cannot tell**, drawn in words — the two verdicts are never guessed at,
-and an unknown is never rounded up to the alarming one. A fourth verdict comes before all three:
-the alerting engine does not close a problem when its condition stops, it records a recovery and
-waits for a person, so a problem can arrive here with its figures frozen at the last observation
-that was over the line. `conditionClearedAt` is read first, and such a problem reads **stopped**,
-past tense, with its figures labelled as of when it stopped, excluded from the longest-wait tile
-and sorted below everything still going. A count of running
-or queued jobs is not drawn at all: a tile reading zero and a tile with no pipeline behind it
-look identical, and that is the one thing an operations screen must never be.
+**Happening now** draws the live queue from `GET /api/ops/jobs`, which app-backend serves off the
+job lifecycle state recorded by Stadiora/Aria#5561. It has counts by state, and a working set of
+the jobs in flight carrying the lane, the state it is in, how long each has been queued and running, and how
+that running time compares against the usual duration of its own kind — which is what lets a run
+read as overdue rather than merely slow. Two figures an operator will look for are not on it and
+say so on the page itself: which attempt a run is, because a retry here creates a new job rather
+than incrementing a counter, and how loaded the workers are, because nothing records how many
+workers exist. Both are absent from the platform rather than from this page. Nothing on it is
+zero-filled: a figure the route
+could not read is drawn as absent and says so, because during an incident a confident zero is
+worse than a blank. The pane re-reads every fifteen seconds and stops the moment the tab is
+hidden or the page is left, which is the one thing that makes a self-refreshing pane safe.
+
+Its one real question is which runs the platform has either lost or is taking far longer over
+than usual, and it separates those two because they have different fixes. A run whose worker
+stopped reporting in is **given up on** — the reaper will fail it on its next sweep, and nobody
+is waiting on a person. A run that is still reporting in but has passed a multiple of the usual
+duration for its own kind of work is **overdue**. The multiple is the one the route applied and
+is printed from the reading rather than written into the sentence, because a route that changes
+its threshold and a page that keeps saying "three times" is how a screen starts lying slowly.
+The comparison is drawn per kind, against that kind's own recent median, so a video analysis is
+never called slow for taking longer than a weekly report.
+
+Every one of those statements carries the scope it was made over. The attention list is read
+from the working set, which is capped, so "nothing flagged" means nothing flagged *in what was
+read* and says so; where the route does not state the scope at all, the pane treats it as
+unread rather than as complete. The same rule governs every count on the page: a figure the
+route could not produce is drawn as absent with a reason, never as zero, because a tile reading
+zero and a tile with no pipeline behind it look identical and that is the one thing an
+operations screen must never be. Every zero it does print is one something counted: a lane pill
+reading `Stopping 0` was answered with a zero, and the idle queue says so out loud — "Counted, not
+assumed: every lane answered and every state was asked about." A zero is a reading here, never a
+gap wearing a reading's clothes.
 
 **What happened** draws the runs themselves. It used to answer from the alerting record because
 no route listed runs; `GET /api/ops/runs` now does, over the append-only transition log
@@ -739,10 +749,12 @@ Two more came off later, for the same reason and after a spell of doing the othe
 Happening now and What happened each declared an app control and an environment control, and
 each then explained, in prose underneath the bar the registry had made the shell draw, that the
 app control narrowed nothing and that Staging would be refused rather than answered. What
-happened also offered a custom window whose one outcome was a refusal card. Neither record is
-kept per app — the alerting record is kept per request type, and the run record carries no
-client app or environment column at all — there is no staging alerting record, and no bar on
-this dashboard can supply a start and an end. All of it is now declared `false` — or, for the
+happened also offered a custom window whose one outcome was a refusal card. Each pane now gives
+its own reason, because the two panes no longer read the same record: Happening now's job
+lifecycle state is kept per job type and written by production workers only, so it has neither an
+app nor an environment to narrow by; What happened's run record carries no client app or
+environment column at all. No bar on this dashboard can supply a start and an end. All of it is
+now declared `false` — or, for the
 custom window, simply not listed — and one `filterNote` on each pane says why, which is what
 Overview has done since it was built.
 
@@ -982,7 +994,7 @@ pane-alerts.js = /api/ops/alerts/problems, /api/ops/alerts/problems/, /api/ops/a
 pane-analytics.js = /api/ops/usage
 pane-data.js = (no route literal)
 pane-evaluations.js = /api/ops/ciel/operations
-pane-jobs-live-v2.js = /api/ops/alerts/problems, /api/ops/alerts/rules
+pane-jobs-live-v2.js = /api/ops/jobs
 pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
 pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
@@ -1331,6 +1343,7 @@ those panes now.
     pane-alerts-v2.css .scrollx = position: static (the sheet sets none)
     pane-analytics-v2.css .u-scroll = position: relative
     pane-evaluations-v2.css .tbl-wrap = position: relative
+    pane-jobs-live-v2.css .u-scroll = position: relative
     pane-releases-v2.css .tbl-scroll = position: relative
     pane-run-history-v2.css .tbl-wrap = position: static (the sheet sets none)
     pane-settings-v2.css .tbl-wrap = position: relative
@@ -1649,50 +1662,59 @@ is not a complete diff: it names the departures that carry a decision.
 `docs/mocks/ops-dashboard-v2/jobs-live.html` in the Aria monorepo is the approved design. The
 pane keeps what that design is for — the one-line verdict at the top, the counters beneath it,
 the queue read worst-first, the callout that separates a queue which is not clearing from a busy
-one — and departs where nothing behind the page can answer what the mock draws. As with the
-sections above, this is not a complete diff: it names the departures that carry a decision.
+one — and now draws them off a real read, `GET /api/ops/jobs`, which app-backend serves from the
+job lifecycle state Stadiora/Aria#5561 records. It departs where the record still cannot answer
+what the mock draws. As with the sections above, this is not a complete diff: it names the
+departures that carry a decision.
 
-1. **There is no job table, because there are no jobs to list.** The mock draws every open job
-   with its lane, its age and its retry count. No route serves a job, a lane or a retry, so the
-   table, the three lanes and the per-job age are absent and named in a band instead.
-2. **Running and queued are not counted.** The mock draws both as tiles. Nothing serves either
-   count, and a tile reading zero is indistinguishable from a tile with nothing behind it, so
-   neither is drawn as a numeral.
-3. **Moving, not clearing and cannot tell are three answers, not two.** The mock's callout says
-   a queue is stuck. Two numbers cannot prove that, so the pane says less: it compares the age of
-   the job at the front of the queue against how long the queue has been over the line, and calls
-   the older front **not clearing** — work that was already waiting when it crossed the line is
-   still waiting — rather than stuck, which would claim the front has not moved. The younger
-   front is **moving, behind**, which says the queue turned over and stops there: two numbers
-   carry no rate, so nothing on the pane says work is arriving faster than it leaves. It prints
-   **cannot tell** when the unit, the observation, the breach start or the elapsed time is
-   missing. The unit lives only on the rules read, so a failure of that read costs the verdict
-   rather than producing a guessed one. The pane's question in `pane-registry.js` still reads
-   "is anything stuck?" and is deliberately left alone: that is the operator's question, and
-   answering it with the strongest thing the record supports is the point.
-4. **Stopped is a fourth answer, and it is the ordinary one.** The mock has no state for an
-   incident that ended and is still open, because in the mock a problem that stops disappears. It
-   does not: `record_recovery` sets `conditionClearedAt` and leaves the problem open until a
-   person closes it, and `observedValue` and `lastObservedAt` stop being written, because
-   `refreshProblem` runs only on a breaching observation. `status=open` means open-or-acknowledged
-   and never consults `conditionClearedAt`. Drawn live, the frozen figures say a queue that
-   recovered forty minutes ago is not clearing. So the pane reads the field ahead of the
-   arithmetic and draws the past tense, matching the Problems pane, which has said
-   "Stopped <ago>" against the same field since before this pane existed.
-5. **Cancel, retry and export are absent.** The mock offers all three. There is no route behind
-   any of them; a control that cannot succeed says the thing is within reach, so the pane names
-   the three rather than drawing them disabled.
-6. **The app control and the environment control are not drawn at all.** The alerting record is
-   kept per request type rather than per app, exactly as on What happened, and there is no
-   staging alerting record, so production figures under a staging label would be worse than a
-   refusal. Both were drawn for a while and then explained away underneath themselves, which
-   rule 5 above already settles: a control that cannot succeed says the thing is within reach,
-   and a filter that narrows nothing is that same control in a different widget. The registry
-   declares neither, and a `filterNote` says why they are missing.
+1. **An unread figure is drawn as absent, never as zero.** This is the rule the whole pane is
+   built around. A count the route could not produce is missing from the page with a reason, not
+   printed as `0`. Where a zero IS printed it is a counted one — a lane answered with none of
+   that kind, or an idle queue, which draws "Counted, not assumed: every lane answered and every
+   state was asked about" because that count comes from an unbounded read over all three open
+   states. A bounded or unstated queue
+   scope reads as unread instead. During an incident a confident zero is worse than a blank.
+2. **The callout names two problems, not one, and neither of them is "stuck".** The mock's
+   callout says a queue is stuck. The record cannot prove that, so the pane says what it can
+   tell apart: a run whose worker stopped reporting in is **given up on**, and a run still
+   reporting in but past a multiple of the usual duration for its own kind is **overdue**. The
+   multiple is read off the response rather than written into the sentence, and the comparison
+   is per kind against that kind's own recent median, so a video analysis is never called slow
+   for taking longer than a weekly report. Every statement carries the scope it was made over:
+   the attention list comes from a capped working set, so "nothing flagged" means nothing
+   flagged in what was read, and a scope the route leaves unstated is treated as unread rather
+   than as complete.
+
+3. **The pane refreshes itself, and stops itself.** The mock reads as a feed, and so does the
+   pane: it re-reads every fifteen seconds. The departure is in the stopping, not the starting.
+   It cancels on `visibilitychange` to hidden and on `pagehide`, re-arms on return, never lets
+   two reads overlap, and gives up after five consecutive failures with a way back — because a
+   pane that keeps polling after the operator navigated away is Stadiora/Aria#5543, and that is
+   the defect this mechanism exists to not repeat. `Pause` stops it by hand, and a paused pane
+   keeps saying how stale what it is showing has become.
+4. **A refresh does not move the operator.** Redrawing swaps the whole box out, so the focused
+   control and the table's horizontal scroll position are carried across the swap by `data-retain`
+   name and put back. Without it the pane would drop focus to the document and rewind the table
+   to column one four times a minute, which on a 375px screen hides most of the table.
+5. **Cancel, retry and export are absent.** The mock offers all three. Stadiora/Aria#5562 is
+   read-only by decision — the record now supports listing work but nothing serves an action
+   against it, and a control that cannot succeed says the thing is within reach, so the pane
+   names the three rather than drawing them disabled.
+6. **The app control and the environment control are not drawn at all.** The route keeps no
+   per-app split and there is no staging record, so production figures under a staging label
+   would be worse than a refusal. A filter that narrows nothing is a control that cannot succeed
+   in a different widget. The registry declares neither, and a `filterNote` says why.
    `scripts/ops-registry-filters.test.mjs` holds the registry to it, keyed off the call each
    pane recorded rather than off anything a file says about itself.
-7. **The page does not refresh itself.** The mock reads as a feed. What is drawn is one reading
-   taken when the page loaded, and the page says so rather than implying a live one.
+7. **Four things the mock draws have no record behind them, and are named rather than drawn.**
+   Worker load has no denominator, because nothing records how many workers exist. "Attempt 2 of
+   3" does not exist on the platform: a retry creates a new job rather than incrementing a
+   counter. A per-run progress bar would be drawing a number with no history behind it, where a
+   job that has reported nothing carries the same zero as one that has done nothing. And the
+   mock's third lane, Streaming, creates no job at all, so it would report zero forever — the one
+   reading worse than leaving it out. All four sit in a band called "What this pane cannot answer
+   yet", and the worker-load sentence is printed as the route sent it rather than mapped through
+   a lookup, so a live read and a deleted field cannot end up on the same fallback branch.
 
 `assets/pane-jobs-live-v2.css` carries this pane's own shapes.
 ### Problems on v2: where the pane departs from the mock
@@ -1766,6 +1788,7 @@ its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is 
 pane-alerts-v2.css .scrollx = outline-offset: -2px
 pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
+pane-jobs-live-v2.css .u-scroll = outline-offset: -2px
 pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
 pane-run-history-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
@@ -2287,7 +2310,7 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
 | `scripts/ops-registry-filters.test.mjs` | That every filter the registry declares is one the pane behind it can act on — for every pane on the v2 bootstrap, Cloud costs excepted, where only the declaration is held: the value the operator picked either reaches that pane's own read in a field of the same name, or narrows what the page draws, proved from the call the pane recorded and the DOM it wrote rather than from anything a file says about itself. It locks its own coverage as well, so a pane that gains a filter is red here until somebody writes down how that filter is acted on. |
 | `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that the bar draws a window control and nothing else and says why the other two are gone, that a custom window asked for in the URL is clamped back to the window the pane starts on, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
-| `scripts/ops-jobs-live-v2.test.mjs` | That a queue whose front is older than the breach reads not clearing and one whose front arrived after it reads moving, that both can be on screen at once and stay different, that a missing unit, a missing or negative observation, a missing breach start or a span of zero produces cannot tell rather than the alarming one, that a problem whose `conditionClearedAt` is set reads stopped in the past tense rather than as a live breach, is excluded from the longest-wait tile and sorts below everything still going, that work which is flowing and failing is a third fact rather than a queue, that a figure nothing records renders words and never a numeral, that the bar draws no app and no environment control at all and says why instead, that an empty page says whether anything was watching, that no `button` or `input` is drawn without a route behind it, and that the read carries its querystring as well as its path. |
+| `scripts/ops-jobs-live-v2.test.mjs` | That the pane reads `/api/ops/jobs` and nothing else, carrying no querystring because it declares no filter; that a count the route could not produce is drawn as absent rather than as zero, that an idle queue says which of the two it is, and that a queue scope the route leaves unstated reads unread rather than complete; that a run whose worker stopped reporting in reads given up on and one still reporting in but past its kind’s usual duration reads overdue, each counted and flagged in its own right so neither half of that band rests on the other being non-empty, with the multiple printed from the response rather than from the sentence; that a lane whose contents cannot be read is not drawn as an empty one; that a truncated working set says so; that a rate travels as its own numerator and denominator and a period figure publishes its window; that the refresh chain arms exactly one timer, never overlaps two reads, cancels when the tab is hidden or the page is left, arms nothing when a read lands after the operator paused as well as after they left, re-arms on return, and gives up after five failures with a way back; that a refresh keeps the operator’s focus and the table’s scroll position rather than rewinding either; that a failed refresh leaves the last reading on screen and says how stale it is, while a failed first read takes the pane; that the job table’s scroll box is named, focusable and reachable; that no class the pane draws is one only the retired v1 sheet defines — read off the DOM the pane actually builds across six states, one of them driven to a stopped chain by interaction rather than by a fixture, rather than parsed out of its source, because three successive parsers were each green over a delivery shape nobody had taught them, and a sweep of what was built has no shapes left to miss; the source parse is kept, pointed the other way, so a class literal the sweep never saw names a branch no state boots, which narrows the remaining state axis without closing it — it reaches such a branch only when no other node in the swept panel carries that class, **including nodes the shell wrote**, which is how `btn-primary` looked reached while the pane's own branch was not; and a literal DELETED from the source is outside it entirely, which is why the way back from a stopped chain asserts its own primary class; it matches selector text, so the resolved proof against the rules reaching each node stays `scripts/check-ops-result-view.mjs`; that a job id which looks like an address is masked; and that the pane loads neither the retired awaiting-data module nor the alerting model it used to fall back to. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
 | `scripts/ops-spend-v2.test.mjs` | That each of the three cuts of the bill — the two the switch offers and the per-service table — adds up to the billed total exactly and that the line says so in both directions — reconciled, and the gap named when they do not — and that a sum which cannot be checked says that instead of reporting a gap of zero; that the `ungrouped` row is drawn and marked rather than hidden and is inside the sum; that a row with no figure prints words and is not added up as a zero; that the change pill's chevron follows the figure's own sign and that a rise and a fall are not the same glyph; that the per-service rows are drawn once and no state of the switch draws them again; that activating the switch hands focus back to the button that was activated, and only when focus was there to begin with; that a forecast is drawn only when the route sent one; that the age of the answer is printed beside the total once the poller is behind — the stale path — and against the answer's own publish lag rather than a constant in the pane; that the day line breaks on a day past the end of a stretch instead of joining across it; that each of the five availability states gets its own words and an unknown sixth still gets some; that the chart is named with its data and draws no `<text>` inside the figure; that the day chart carries the dates the route labelled under it and names both of its lines, so the dashed one is not just a texture; that a period billed only part way through says how far and to which day, and one billed to its own end does not repeat what the range name says; that the way out of an empty period travels to the closed month rather than back to the period it escapes — read from the link's `href`, not from its words; that no view button is offered for a grouping the answer did not carry; that the box holding the per-service table is reachable from a keyboard and names itself from the answer's own label, because at 320px the whole Change column is past its visible edge; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup. **Not covered**: that money is divided once at display and never summed as a float — every figure in the fixture is a whole number of dollars, so rounding each row to cents before summing changes no output and no mutation can make it red; it becomes testable when a fixture row carries a fraction of a cent. In a property whose name carries none of the colour-bearing words the value scan gates on — `text-decoration`, `text-emphasis` and `mask-image` are the three shapes — **anything the spelling clause cannot read** is seen by neither clause: a named colour, an `oklch()`, a `lab()`, a `color-mix()`. Not only the named colour `text-decoration: underline crimson` names (`Stadiora/Aria#10663`). The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Which properties are gated and which spellings are read is the `spend-colour-gate` block below, produced by running the guard's own two matchers rather than by reading them. Which exotic ways to write markup or a style attribute walk through the module guard, and whether the module writes any of them, is the `spend-write-gate` block below — run against the guard's own two patterns rather than counted in a sentence here, which is how this row came to say "none of the four" about a list of three. |
@@ -2544,7 +2567,7 @@ lines short — which is why none of them are typed any more.
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 142
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 144
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014

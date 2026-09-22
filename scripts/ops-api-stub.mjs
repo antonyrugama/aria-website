@@ -29,6 +29,22 @@
    the pane itself, so a fixture pinned to a fixed instant writes a different
    sentence every day it is run and a longer one every year. */
 const NOW = Date.now();
+import fsJobs from 'node:fs';
+import pathJobs from 'node:path';
+import { fileURLToPath as fileURLToPathJobs } from 'node:url';
+
+/* One reading of the live queue, for Happening now. Stadiora/Aria#5562 moved
+   that pane off the alerting record and onto GET /api/ops/jobs, so its markers
+   below come off this reading rather than off the rules. It is the route's own
+   recorded output -- scripts/fixtures/ops-jobs-live-view.json is a literal
+   buildOpsJobsView result -- so this stub and the pane's suite read the same
+   shape the server sends, rather than a hand-written object that can drift. */
+const JOBS = JSON.parse(fsJobs.readFileSync(
+  pathJobs.join(pathJobs.dirname(fileURLToPathJobs(import.meta.url)),
+    'fixtures/ops-jobs-live-view.json'),
+  'utf8'
+));
+
 const ago = (ms) => new Date(NOW - ms).toISOString();
 const ahead = (ms) => new Date(NOW + ms).toISOString();
 const MINUTE = 60_000;
@@ -343,7 +359,10 @@ const PROOF = {
   /* SUMMARY.people.platform.active and SUMMARY.release.platforms[0].versionName,
      both of which the failure card replaces with "Not reported". */
   overview: ['1,102', SUMMARY.release.platforms[0].versionName],
-  jobs: [RULES[0].thresholdLabel, `of ${RULES.length} rules were checking`],
+  /* The id of the first job in the working set, which only the job table
+     prints, and the worker-load sentence, which the route sends as prose and
+     the pane prints verbatim. Both are absent until a reading is drawn. */
+  jobs: [JOBS.workingSet.jobs[0].id, JOBS.capacity.reason],
   /* RUNS.failures[0].failureCode and the model its first run used, both
      printed verbatim. Absent from every empty state this pane has and from
      its failure card, none of which names a failure code or a model. */
@@ -411,6 +430,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/alerts/problems')) {
     return { data: { problems: [PROBLEM] } };
   }
+  if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
