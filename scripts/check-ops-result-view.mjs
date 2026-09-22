@@ -1830,11 +1830,14 @@ const probeFor = (markers) => `(() => {
      find and a line break's rect is degenerate; a marker's own non-space
      characters decide it.
 
-     Cost is kept near the old one by asking the cheap question first: a node
-     laid out on a single line has one rect, and one rect answers for all of
-     its characters. Per-character measurement happens only inside a node that
-     actually wrapped, and the answer is cached per text node, so the page's
-     text is measured once however many carriers are asked about it. Keying
+     Every node is measured this way, including one laid out on a single
+     line. A shortcut that let a single-rect node answer for all of its
+     characters shipped until round 18, which showed why it cannot: inReach
+     and inView ask whether a rect INTERSECTS the allowed area, so a line
+     that starts on screen and runs past the viewport's right edge, or starts
+     left of the document, passed characters that lie wholly outside it.
+     The answer is cached per text node, so the page's text is measured once
+     however many carriers are asked about it. Keying
      on the node alone is safe because the predicate is a function of the
      node's PARENT — walk() derives reaches from the element it is iterating,
      never from the carrier the walk started at — so one node is never asked
@@ -1848,7 +1851,6 @@ const probeFor = (markers) => `(() => {
     const rects = [].slice.call(range.getClientRects());
     let out;
     if (!rects.length) out = null;
-    else if (rects.length === 1) out = rects.some(reaches) ? true : false;
     else {
       out = new Array(value.length);
       for (let i = 0; i < value.length; i += 1) {
