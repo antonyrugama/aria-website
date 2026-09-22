@@ -1095,18 +1095,20 @@ refused sign in.
 `pane-evaluations-v2.css`. It is the one pane where **most of what is on screen is a drawing**,
 and everything about how it is built follows from that.
 
-**One operation works, four are disclosed as unavailable before submit, and the scoring half does not exist.**
+**All five Ciel forms submit to the backend, and the scoring half does not exist.**
 Dataset declaration validation calls the shared Ciel operation using supplied inputs.
-Evidence quarantine is shown as unavailable because this deployment has no evidence
-ingestion settings. The three approval forms are shown as fail-closed by design until
-an external qualification issuer and trusted policy are configured. Below them is a
-design for a scoring harness that has no code, no endpoint and no stored score. The
+Evidence quarantine and the three approval forms also submit to the shared operation route;
+the backend decides whether each request is available and allowed. The pane tells operators
+before submit that quarantine answers only when storage and authority settings are configured,
+and that ADR 0040 keeps approval actions closed until an external qualification issuer exists.
+If the backend refuses, submitting changes nothing and the pane shows the refusal. Below those
+forms is a design for a scoring harness that has no code, no endpoint and no stored score. The
 numbers in it were invented to draw the layout.
 
 **How a reader tells one from the other**, three ways over, never once in colour alone:
 
-1. **A stamp in every band's status slot**, carrying a word and a glyph: `Works now` on the dataset
-   band, `Unavailable` on the four gated actions' two bands, and `Invented figures` on all three drawn bands. Same chip, same slot, so they read against
+1. **A stamp in every band's status slot**, carrying a word and a glyph: `Works now` on every
+   working form band, and `Invented figures` on all three drawn bands. Same chip, same slot, so they read against
    each other, and a screenshot of any one band still carries its own stamp.
 2. **A banner above the drawn half**, headed *The scoring harness is not built yet*, which states
    in one sentence that every figure below it was made up.
@@ -1120,8 +1122,7 @@ outside it is the reverse, **neither set is empty**, and **neither a two-decimal
 string in the file's hand-written invented inventory appears outside the panel in the two render
 states it sweeps**. Moving one band across the boundary turns seven tests in that file red.
 Nothing real on this pane is written as a two-decimal figure, which is what makes that sweep a
-usable rule rather than a coincidence: the submitted tool prints digests, and the gated forms
-print prose about why they are blocked.
+usable rule rather than a coincidence: submitted tools print digests, metadata or backend refusals, and the disclosure copy prints no figures.
 
 The sweep reads one string taken from `<body>` with the panel's subtree removed, so it covers the
 shell's live region — `announce()` is how a screen-reader operator hears every success here, and
@@ -1146,23 +1147,23 @@ boot-state hint turns three tests red. **A figure split mid-token** across two e
 a space here and without one in a browser. Adding invented data to this pane means adding it to
 the inventory by hand, and the test file says so where a reader will meet it.
 
-**What the working tool and gated forms do.** Validation takes an input object containing `datasets` and
+**What the working forms do.** Validation takes an input object containing `datasets` and
 `fixtureDigests`; the page supplies the operation envelope. The server returns manifest digests
 or field paths and reason codes. Editing the input clears the old result. Validation stores no
 dataset, inspects no referenced bytes, verifies no qualification and grants no evidence access or
 release approval.
 
-Owners and operators see the quarantine form, but it is disabled and described by the
-upfront evidence-ingestion gate. The copy says the deployment is not configured; it does
-not call that a design decision. The page still never describes quarantine as admission,
-evaluation consent, training consent, export permission, or proof of de-identification. A
-viewer is told in a named block that the import needs operator access, rather than being shown
-a gap where a form was.
+Owners and operators see the quarantine form and can submit it. The pre-submit copy says the
+backend decides availability, quarantine answers only when private storage and authority settings
+are configured, and a refused request changes nothing except the refusal shown on the pane. The
+page still never describes quarantine as admission, evaluation consent, training consent, export
+permission, or proof of de-identification. A viewer is told in a named block that the import needs
+operator access, rather than being shown a gap where a form was.
 
-Approval lookup, request and decision forms are disabled and described by the same
-approval gate. That gate names the recorded decision: approvals are fail-closed until an
-external qualification issuer and trusted policy exist. The page cannot grant qualification
-or admit evidence.
+Approval lookup, request and decision forms also stay enabled. Their pre-submit copy names the
+recorded decision: under ADR 0040, approval actions stay closed until an external qualification
+issuer exists. The page cannot grant qualification or admit evidence; it submits and renders the
+backend response.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,
@@ -1175,8 +1176,7 @@ and the future-date and 90-day retention bounds are unchanged.
 **Where the pane departs from `docs/mocks/ops-dashboard-v2/evaluations.html`:**
 
 - **The operation bands come first, then the banner, then the drawing.** The mock opens with the
-  banner, because the mock is a drawing of a pane where nothing is built. Here one operation works
-  and four are deliberately disclosed as unavailable, so a page that opens by saying it is not built
+  banner, because the mock is a drawing of a pane where nothing is built. Here the Ciel operation forms submit to the backend, so a page that opens by saying it is not built
   would be false. The banner sits directly above the
   half it describes and its claim is scoped to that half.
 - **The drawn half is not faded.** The mock sets `opacity: .55` over it, which multiplies every

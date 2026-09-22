@@ -159,6 +159,22 @@ function treeText(node) {
   return [node.textContent || '', ...(node.children || []).map(treeText)].join(' ');
 }
 
+function treeOrder(root) {
+  const out = [];
+  (function visit(node) {
+    out.push(node);
+    for (const child of node.children || []) visit(child);
+  })(root);
+  return out;
+}
+
+function assertBefore(root, first, second, message) {
+  const order = treeOrder(root);
+  assert.ok(order.indexOf(first) !== -1, 'first node is missing from tree order');
+  assert.ok(order.indexOf(second) !== -1, 'second node is missing from tree order');
+  assert.ok(order.indexOf(first) < order.indexOf(second), message);
+}
+
 function datasetInput() {
   const reference = (id, path) => ({ id, version: 1, path, sha256: 'a'.repeat(64) });
   return {
@@ -307,11 +323,71 @@ test('viewers can validate declarations without being offered evidence import', 
   assert.equal(findNode(root, node => node.className === 'card evidence-form'), null);
 });
 
-test('a viewer requester sees approval lookup gated before submit', async () => {
+test('dataset validation stays enabled while operation availability disclosures stay pre-submit copy only', () => {
+  const view = renderedPane();
+  const datasetForm = findNode(view.root, node => node.className === 'card dataset-form');
+  const datasetSubmit = findNode(datasetForm, node => node.tag === 'button');
+  assert.equal(datasetSubmit.disabled, false, 'dataset validation submit must remain enabled');
+  assert.equal(datasetSubmit.attributes['aria-disabled'], undefined);
+  assert.equal(datasetSubmit.attributes['aria-describedby'], undefined);
+
+  const evidenceNote = view.byId('evidence-availability-note');
+  assert.ok(evidenceNote, 'evidence availability disclosure is missing');
+  assert.match(treeText(evidenceNote), /backend decides/i);
+  assert.match(treeText(evidenceNote), /storage and authority settings are configured/i);
+  assert.match(treeText(evidenceNote), /submitting changes nothing/i);
+  assert.equal(view.submit.disabled, false, 'quarantine submit must remain enabled');
+  assert.equal(view.submit.attributes['aria-disabled'], undefined);
+  assert.match(view.submit.attributes['aria-describedby'], /evidence-availability-note/);
+  assertBefore(view.form, evidenceNote, view.submit,
+    'evidence availability disclosure must appear before the quarantine submit control');
+
+  const approvalCases = [
+    ['approval-request-form', 'approval-request-availability-note', 'Create pending request'],
+    ['approval-get-form', 'approval-get-availability-note', 'Load request'],
+    ['approval-decision-form', 'approval-decision-availability-note', 'Record decision'],
+  ];
+  for (const [formId, noteId, label] of approvalCases) {
+    const form = view.byId(formId);
+    const note = view.byId(noteId);
+    const submit = findNode(form, node => node.tag === 'button');
+    assert.ok(note, `${noteId} is missing`);
+    assert.match(treeText(note), /backend decides/i);
+    assert.match(treeText(note), /ADR 0040/);
+    assert.match(treeText(note), /external qualification issuer/i);
+    assert.match(treeText(note), /submitting changes nothing/i);
+    assert.equal(submit.textContent, label);
+    assert.equal(submit.disabled, false, `${formId} submit must remain enabled`);
+    assert.equal(submit.attributes['aria-disabled'], undefined);
+    assert.match(submit.attributes['aria-describedby'], new RegExp(noteId));
+    assertBefore(form, note, submit,
+      `${formId} availability disclosure must appear before its submit control`);
+  }
+});
+
+test('a viewer requester can submit approval lookup without mutation controls', async () => {
+  const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
   const calls = [];
   const view = renderedPane(async (path, options) => {
     calls.push({ path, options: plain(options) });
-    throw new Error('approval lookup should be blocked before transport');
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: options.body.requestId,
+      operationId: 'ciel.approval.get',
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.approval-request',
+        id: approvalRequestId,
+        revision: 1,
+        value: {
+          approvalRequestId,
+          revision: 1,
+          state: 'pending',
+          expiresAt: '2026-10-19T00:00:00.000Z',
+        },
+      },
+    };
   }, Date, 'viewer');
 
   assert.equal(view.byId('approval-request-form'), null);
@@ -319,17 +395,17 @@ test('a viewer requester sees approval lookup gated before submit', async () => 
   assert.equal(findNode(view.root, node => node.className === 'card evidence-form'), null);
   const form = view.byId('approval-get-form');
   assert.ok(form, 'viewer approval lookup form is missing');
-  assert.equal(form.attributes['aria-disabled'], 'true');
-  assert.equal(form.attributes['aria-describedby'], 'approval-operations-gate');
-  assert.match(treeText(view.byId('approval-operations-gate')),
-    /Approvals are fail-closed on this deployment/);
-  const submit = findNode(form, node => node.tag === 'button');
-  assert.equal(submit.disabled, true);
-  assert.equal(submit.textContent, 'Approval unavailable');
-  assert.equal(submit.attributes['aria-describedby'], 'approval-operations-gate');
-  view.byId('approval-get-id').value = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
+  view.byId('approval-get-id').value = approvalRequestId;
   await form.dispatch('submit');
-  assert.deepEqual(calls, []);
+  await waitFor(() => calls.length === 1, 'viewer approval lookup did not complete');
+
+  assert.equal(calls[0].path, '/api/ops/ciel/operations');
+  assert.deepEqual(calls[0].options.body.input, { approvalRequestId });
+  assert.equal(calls[0].options.body.operationId, 'ciel.approval.get');
+  /* Awaited, not read: the answer lands a task after the region is revealed,
+     and this still fails if it never lands. */
+  await waitFor(() => /pending/i.test(view.byId('approval-result').textContent),
+    'the approval lookup answer never reached the region');
 });
 
 test('dataset form reports local request preparation errors and restores the submit button', async () => {
@@ -432,7 +508,7 @@ function renderedPane(call, Clock = Date, role = 'operator') {
     error: form ? findNode(form, node => node.className === 'field-error') : null,
     result: findNode(root, node => node.className === 'evidence-result'),
     submit: form
-      ? findNode(form, node => node.tag === 'button' && node.attributes.type === 'submit')
+      ? findNode(form, node => node.tag === 'button')
         || findNode(form, node => node.tag === 'button')
       : null,
   };
@@ -780,53 +856,76 @@ test('approval operation builders bind exact artifact digests without qualificat
   ]), /qualification|credential|issuer/i);
 });
 
-test('the rendered approval forms disclose the fail-closed gate before submit', async () => {
+test('the rendered approval forms submit request, get and decision operations without trust provisioning', async () => {
   const calls = [];
+  const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
   const view = renderedPane(async (path, options) => {
     calls.push({ path, options: plain(options) });
-    throw new Error('approval operation should be blocked before transport');
+    const operationId = options.body.operationId;
+    const state = operationId === 'ciel.approval.decide' ? 'approved' : 'pending';
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: options.body.requestId,
+      operationId,
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.approval-request',
+        id: approvalRequestId,
+        revision: state === 'approved' ? 2 : 1,
+        value: {
+          approvalRequestId,
+          revision: state === 'approved' ? 2 : 1,
+          state,
+          expiresAt: '2026-10-19T00:00:00.000Z',
+        },
+      },
+    };
   });
-  const gate = view.byId('approval-operations-gate');
-  assert.match(treeText(gate), /Approvals are fail-closed on this deployment/);
-  assert.match(treeText(gate), /external qualification issuer/);
-  assert.match(treeText(gate), /503/);
-  const forms = [
-    view.byId('approval-request-form'),
-    view.byId('approval-get-form'),
-    view.byId('approval-decision-form'),
-  ];
-  assert.deepEqual(forms.map(form => form.attributes['aria-disabled']), ['true', 'true', 'true']);
-  assert.deepEqual(forms.map(form => form.attributes['aria-describedby']), [
-    'approval-operations-gate',
-    'approval-operations-gate',
-    'approval-operations-gate',
+
+  view.byId('approval-artifact-id').value = '4e1d10f7-1f13-4daf-82b6-c9dd43124138';
+  view.byId('approval-artifact-revision').value = '1';
+  view.byId('approval-source-digest').value = 'a'.repeat(64);
+  view.byId('approval-retained-digest').value = 'b'.repeat(64);
+  view.byId('approval-target-digest').value = 'c'.repeat(64);
+  view.byId('approval-purpose').value = 'quality_review';
+  view.byId('approval-policy-revision').value = 'ciel-evidence-admission.v1';
+  view.byId('approval-expiry').value = '2026-10-19T00:00';
+  view.byId('approval-request-key').value = 'dashboard-approval-request-1';
+  view.byId('approval-request-form').dispatch('submit');
+  await waitFor(() => calls.length === 1, 'approval request did not complete');
+
+  view.byId('approval-get-id').value = approvalRequestId;
+  view.byId('approval-get-form').dispatch('submit');
+  await waitFor(() => calls.length === 2, 'approval lookup did not complete');
+
+  view.byId('approval-decision-id').value = approvalRequestId;
+  view.byId('approval-expected-revision').value = '1';
+  view.byId('approval-decision').value = 'approved';
+  view.byId('approval-reason').value = 'Exact retained bytes and policy binding reviewed.';
+  view.byId('approval-decision-key').value = 'dashboard-approval-decision-1';
+  view.byId('approval-decision-form').dispatch('submit');
+  await waitFor(() => calls.length === 3, 'approval decision did not complete');
+
+  assert.deepEqual(calls.map(call => call.path), [
+    '/api/ops/ciel/operations',
+    '/api/ops/ciel/operations',
+    '/api/ops/ciel/operations',
   ]);
-  const submits = [
-    findNode(view.byId('approval-request-form'), node => node.tag === 'button'),
-    findNode(view.byId('approval-get-form'), node => node.tag === 'button'),
-    findNode(view.byId('approval-decision-form'), node => node.tag === 'button'),
-  ];
-  assert.deepEqual(submits.map(submit => submit.disabled), [true, true, true]);
-  assert.deepEqual(submits.map(submit => submit.textContent), [
-    'Approval unavailable',
-    'Approval unavailable',
-    'Approval unavailable',
+  assert.deepEqual(calls.map(call => call.options.body.operationId), [
+    'ciel.approval.request',
+    'ciel.approval.get',
+    'ciel.approval.decide',
   ]);
-  assert.deepEqual(submits.map(submit => submit.attributes['aria-describedby']), [
-    'approval-operations-gate',
-    'approval-operations-gate',
-    'approval-operations-gate',
-  ]);
-  await view.byId('approval-request-form').dispatch('submit');
-  await view.byId('approval-get-form').dispatch('submit');
-  await view.byId('approval-decision-form').dispatch('submit');
-  assert.deepEqual(calls, []);
+  assert.equal(calls[1].options.body.idempotencyKey, undefined);
+  assert.equal(calls[2].options.body.expectedRevision, 1);
   assert.equal(view.byId('approval-qualification'), null);
   assert.ok(findNode(
     view.byId('approval-trust-note'),
     node => /cannot provision qualification/i.test(node.textContent),
   ));
-  assert.equal(view.byId('approval-result').textContent, '');
+  await waitFor(() => /approved/i.test(view.byId('approval-result').textContent),
+    'the approval decision answer never reached the region');
 });
 
 test('blank dashboard idempotency input derives a unique key from the request correlation', async () => {
@@ -860,51 +959,91 @@ test('the registered pane appends the quarantine interface into the shell conten
   assert.equal(root.children[0].className, 'stack');
 });
 
-test('the rendered quarantine form discloses the unavailable evidence gate before submit', async () => {
+test('the rendered form submits an authorized empty-removal request over the real route and replays idempotently', async () => {
+  const server = await operationServer();
+  try {
+    const view = renderedPane(httpSession(server.baseUrl, 'dashboard-test-token'));
+    setProductionForm(view);
+
+    view.form.dispatch('submit');
+    await waitFor(
+      () => server.requests.length === 1 && !view.submit.disabled,
+      'the first dashboard quarantine request did not complete',
+    );
+    assert.equal(view.error.textContent, '');
+    assert.equal(view.result.children.length, 1);
+    assert.equal(server.requests[0].url, '/api/ops/ciel/operations');
+    assert.equal(server.requests[0].authorization, 'Bearer dashboard-test-token');
+    assert.deepEqual(
+      server.requests[0].body.input.manifest.minimization.removedCategories,
+      [],
+    );
+
+    view.form.dispatch('submit');
+    await waitFor(
+      () => server.requests.length === 2 && !view.submit.disabled,
+      'the replayed dashboard quarantine request did not complete',
+    );
+    assert.equal(server.requests[1].body.idempotencyKey, 'dashboard-production-1');
+    assert.equal(server.requests[1].url, '/api/ops/ciel/operations');
+    assert.equal(view.error.textContent, '');
+  } finally {
+    await server.close();
+  }
+});
+
+test('the rendered form surfaces authorization denial from the real operation route', async () => {
+  const server = await operationServer();
+  try {
+    const view = renderedPane(httpSession(server.baseUrl, 'dashboard-test-token'));
+    setProductionForm(view, { 'evidence-authority': 'approval/other' });
+
+    view.form.dispatch('submit');
+    await waitFor(
+      () => server.requests.length === 1 && !view.submit.disabled,
+      'the denied dashboard quarantine request did not complete',
+    );
+    assert.equal(server.requests[0].url, '/api/ops/ciel/operations');
+    assert.match(view.error.textContent, /authorization does not match/i);
+    assert.equal(view.result.children.length, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test('the rendered form surfaces dashboard authentication failure from the real operation route', async () => {
+  const server = await operationServer();
+  try {
+    const view = renderedPane(httpSession(server.baseUrl, null));
+    setProductionForm(view);
+
+    view.form.dispatch('submit');
+    await waitFor(
+      () => server.requests.length === 1 && !view.submit.disabled,
+      'the unauthenticated dashboard quarantine request did not complete',
+    );
+    assert.match(view.error.textContent, /sign in to the operations dashboard/i);
+    assert.equal(view.result.children.length, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test('the rendered form rejects invalid minimization before transport', async () => {
   let calls = 0;
   const view = renderedPane(async () => {
     calls += 1;
-    throw new Error('quarantine should be blocked before transport');
+    throw new Error('unexpected request');
   });
-  setProductionForm(view);
+  setProductionForm(view, { 'evidence-necessary': 'none,identifiers' });
 
-  const gate = view.byId('evidence-ingestion-gate');
-  assert.match(treeText(gate), /Evidence ingestion is not enabled on this deployment/);
-  assert.match(treeText(gate), /private storage and an authority registry/);
-  assert.match(treeText(gate), /503/);
-  assert.equal(view.form.attributes['aria-disabled'], 'true');
-  assert.equal(view.form.attributes['aria-describedby'], 'evidence-ingestion-gate');
-  assert.equal(view.submit.disabled, true);
-  assert.equal(view.submit.textContent, 'Quarantine unavailable');
-  assert.equal(view.submit.attributes['aria-describedby'], 'evidence-ingestion-gate');
-  assert.equal(view.byId('evidence-authority').disabled, true);
-  assert.equal(view.byId('evidence-consent').disabled, true);
-  assert.equal(view.byId('evidence-provider').disabled, true);
   view.form.dispatch('submit');
-  assert.equal(view.error.textContent, '');
-  assert.equal(view.result.children.length, 0);
-  assert.equal(calls, 0);
-});
-
-test('quarantine request validation still rejects invalid minimization when called directly', async () => {
-  const pane = loadPane();
-  await assert.rejects(
-    () => pane.buildQuarantineRequest({
-      bytes: new TextEncoder().encode('approved fixture'),
-      mediaType: 'text/plain',
-      contentProfile: 'trace',
-      sourceKind: 'production_derived',
-      purpose: 'incident_reproduction',
-      expiresAt: futureExpiry(),
-      idempotencyKey: 'dashboard-production-1',
-      necessaryCategories: 'none,identifiers',
-      removedCategories: '',
-      authorityRef: 'approval/42',
-      consentRef: 'consent/42',
-      providerApprovalRef: 'provider/no-transfer/42',
-    }, '83525f56-198f-4c2f-8f83-93c8e4ab7248'),
-    /necessary categories cannot combine/i,
+  await waitFor(
+    () => !view.submit.disabled && view.error.textContent !== '',
+    'the dashboard validation failure did not complete',
   );
+  assert.match(view.error.textContent, /necessary categories cannot combine/i);
+  assert.equal(calls, 0);
 });
 
 function retentionView(t, timeZone, now) {
@@ -920,7 +1059,13 @@ function retentionView(t, timeZone, now) {
     }
     static now() { return Date.parse(now); }
   }
-  const view = renderedPane(() => Promise.reject(new Error('retention tests call the builder directly')), Clock);
+  const requests = [];
+  const view = renderedPane(async (path, options) => {
+    assert.equal(path, '/api/ops/ciel/operations');
+    assert.equal(options.method, 'POST');
+    requests.push(plain(options.body));
+    return { status: 'success', resource: { value: { artifactId: 'example', state: 'quarantined' } } };
+  }, Clock);
   const bytes = new TextEncoder().encode('example');
   view.byId('evidence-file').files = [{
     name: 'example.txt',
@@ -930,16 +1075,7 @@ function retentionView(t, timeZone, now) {
   view.byId('evidence-profile').value = 'trace';
   view.byId('evidence-type').value = 'text/plain';
   view.byId('evidence-purpose').value = 'quality_review';
-  const requestFor = expiresAt => view.pane.buildQuarantineRequest({
-    bytes,
-    mediaType: 'text/plain',
-    contentProfile: 'trace',
-    sourceKind: 'synthetic',
-    purpose: 'quality_review',
-    expiresAt,
-    idempotencyKey: 'dashboard-retention-1',
-  }, '83525f56-198f-4c2f-8f83-93c8e4ab7248');
-  return { view, requestFor };
+  return { view, requests };
 }
 
 for (const scenario of [
@@ -975,11 +1111,13 @@ for (const scenario of [
   },
 ]) {
   test(`default retention uses ${scenario.name}`, async t => {
-    const { view, requestFor } = retentionView(t, scenario.zone, scenario.now);
+    const { view, requests } = retentionView(t, scenario.zone, scenario.now);
     assert.equal(view.byId('evidence-expiry').value, scenario.local);
-    const request = await requestFor(view.byId('evidence-expiry').value);
+    view.form.dispatch('submit');
+    await waitFor(() => !view.submit.disabled, 'default retention submission did not finish');
     assert.equal(view.error.textContent, '');
-    assert.equal(request.input.manifest.retention.expiresAt, scenario.utc);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].input.manifest.retention.expiresAt, scenario.utc);
     assert.equal(view.byId('evidence-expiry').value, scenario.local);
   });
 }
@@ -1001,23 +1139,26 @@ for (const scenario of [
   { name: 'a manual edit past 90 days', local: '2026-04-03T09:25', error: /cannot exceed 90 days/ },
 ]) {
   test(`retention preserves validation for ${scenario.name}`, async t => {
-    const { view, requestFor } = retentionView(t, 'America/Los_Angeles', '2026-01-01T12:00:00Z');
+    const { view, requests } = retentionView(t, 'America/Los_Angeles', '2026-01-01T12:00:00Z');
     view.byId('evidence-expiry').value = scenario.local;
+    view.form.dispatch('submit');
+    await waitFor(() => !view.submit.disabled, 'manual retention submission did not finish');
     assert.equal(view.byId('evidence-expiry').value, scenario.local);
     if (scenario.error) {
-      await assert.rejects(() => requestFor(scenario.local), scenario.error);
+      assert.match(view.error.textContent, scenario.error);
+      assert.equal(requests.length, 0);
     } else {
-      const request = await requestFor(scenario.local);
       assert.equal(view.error.textContent, '');
-      assert.equal(request.input.manifest.retention.expiresAt, scenario.utc);
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].input.manifest.retention.expiresAt, scenario.utc);
     }
   });
 }
 
 /* ===================================================================== v2
 
-   The block above exercises the request builders and the one submitted tool,
-   out of a hand-written stub. This one boots ops/evaluations.html the way a browser
+   The block above exercises what the two working tools send, out of a
+   hand-written stub. This one boots ops/evaluations.html the way a browser
    does — the registry, aria.js, assets/shell-pane-v2.js, then the pane — and
    asserts the one thing this pane can get wrong in a way that matters:
    whether a reader can tell the two figures that were measured from the
@@ -1070,8 +1211,8 @@ for (const scenario of [
        it. Adding invented data to the pane means adding it to an inventory
        by hand; there is no mechanism that notices you did not.
      - RENDER STATES BEYOND TWO. The outward sweeps read the page as it boots,
-       and again after dataset validation has been submitted and answered.
-       The ERROR branches are a third state and nothing reads them:
+       and again after each of the two working tools has been submitted and
+       answered. The ERROR branches are a third state and nothing reads them:
        a two-decimal score and a listed phrase appended to the JSON-parse
        catch in datasetValidationSection leave the whole suite green, while the
        same string on a boot-state hint in evidenceQuarantineSection turns
@@ -1096,9 +1237,9 @@ for (const scenario of [
        attempt to reproduce it locally by settling the receipt on a timer is
        recorded on the PR as contaminated and was withdrawn rather than
        published. What IS asserted here is that a wait which ends early cannot
-       pass silently: the receipt is looked for by name and the failure
+       pass silently: the two receipts are looked for by name and the failure
        message says the test swept nothing.
-     - The dataset transport and quarantine request builder, which the block above owns. */
+     - The dataset and quarantine transports, which the block above owns. */
 
 const OPS = new URL('../ops/', import.meta.url);
 const readOps = rel => readFileSync(new URL(rel, OPS), 'utf8');
@@ -1153,8 +1294,8 @@ const INVENTED_PHRASES = [
 
 /* A score is written to two decimals everywhere on this pane, so this is the
    shape of "a figure somebody could quote". It is asserted to appear only
-   inside the preview. Nothing real on this pane is written this way: the
-   submitted tool prints a 64-character digest. */
+   inside the preview. Nothing real on this pane is written this way: the two
+   working tools print a 64-character digest, a byte count and a timestamp. */
 const SCORE = /\d\.\d\d(?!\d)/;
 
 function buildEvalsPage(dom, body) {
@@ -1232,32 +1373,100 @@ function approvalLookupResponse(id, state, revision) {
   };
 }
 
-test('v2: approval lookup is disabled and described by the fail-closed gate', async () => {
+test('v2: approval lookup clears the previous success while its replacement is pending', async () => {
+  let resolveReplacement;
+  let calls = 0;
+  const view = await bootPane({
+    role: 'viewer',
+    call: () => ++calls === 1
+      ? Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2))
+      : new Promise(resolve => { resolveReplacement = resolve; }),
+  });
+  const form = view.doc.getElementById('approval-get-form');
+  const input = view.doc.getElementById('approval-get-id');
+  const result = view.doc.getElementById('approval-result');
+  const submit = form.querySelector('button');
+  assert.equal(view.doc.getElementById('approval-request-form'), null);
+  assert.equal(view.doc.getElementById('approval-decision-form'), null);
+  input.value = 'approval-first';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'first approval lookup did not settle');
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  input.value = 'approval-next';
+  form.dispatch('submit');
+  assert.equal(submit.disabled, true);
+  assert.equal(submit.textContent, 'Loading…');
+  try {
+    assert.equal(result.textContent, '',
+      'the previous approval must not remain current while loading');
+    assert.notEqual(result.hidden, true,
+      'and it must be EMPTIED rather than hidden: hiding the region between '
+      + 'answers takes it out of the accessibility tree, so the replacement '
+      + 'announces as a fresh region rather than a change (Stadiora/Aria#10809)');
+  } finally {
+    resolveReplacement(approvalLookupResponse('approval-next', 'pending', 4));
+  }
+  await waitFor(() => !submit.disabled, 'replacement approval lookup did not settle');
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
+  assert.equal(result.textContent, 'Approval request approval-next is pending at revision 4.');
+});
+
+test('v2: approval lookup keeps old success cleared after denial and shows a later successful lookup', async () => {
   let calls = 0;
   const view = await bootPane({
     role: 'viewer',
     call: () => {
       calls += 1;
-      throw new Error('approval lookup should be blocked before transport');
+      if (calls === 2) return Promise.reject(new Error('Lookup denied.'));
+      return Promise.resolve(calls === 1
+        ? approvalLookupResponse('approval-first', 'approved', 2)
+        : approvalLookupResponse('approval-recovered', 'pending', 5));
     },
   });
-  const gate = view.doc.getElementById('approval-operations-gate');
   const form = view.doc.getElementById('approval-get-form');
   const input = view.doc.getElementById('approval-get-id');
   const result = view.doc.getElementById('approval-result');
   const submit = form.querySelector('button');
-
-  assert.match(allText(gate), /Approvals are fail-closed on this deployment/);
-  assert.equal(form.getAttribute('aria-disabled'), 'true');
-  assert.equal(form.getAttribute('aria-describedby'), 'approval-operations-gate');
-  assert.equal(input.disabled, true);
-  assert.equal(input.getAttribute('aria-describedby'), 'approval-operations-gate');
-  assert.equal(submit.disabled, true);
-  assert.equal(submit.textContent, 'Approval unavailable');
-  assert.equal(submit.getAttribute('aria-describedby'), 'approval-operations-gate');
+  const error = form.querySelector('[role="alert"]');
+  input.value = 'approval-first';
   form.dispatch('submit');
-  assert.equal(calls, 0);
-  assert.equal(result.textContent, '');
+  await waitFor(() => !submit.disabled, 'first approval lookup did not settle');
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  input.value = 'approval-denied';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'denied approval lookup did not settle');
+  assert.equal(error.textContent, 'Lookup denied.');
+  assert.equal(result.textContent, '', 'a denial must not retain the earlier approval');
+  assert.notEqual(result.hidden, true,
+    'and the emptied region stays in the accessibility tree (Stadiora/Aria#10809)');
+  assert.equal(submit.textContent, 'Load request');
+
+  input.value = 'approval-recovered';
+  form.dispatch('submit');
+  await waitFor(() => !submit.disabled, 'recovered approval lookup did not settle');
+  assert.equal(error.textContent, '');
+  assert.notEqual(result.hidden, true,
+    'the pane must never hide the answer slot: ops-dom-harness leaves `hidden` '
+    + 'undefined until something assigns it, so this reads as red the moment '
+    + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
+    + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
+  assert.equal(result.textContent, 'Approval request approval-recovered is pending at revision 5.');
 });
 
 const hasClass = (node, cls) => (node.getAttribute('class') || '').split(/\s+/).includes(cls);
@@ -1335,7 +1544,7 @@ function previewOf(dom) {
 }
 
 /* The stamp a band carries, as the word a reader sees plus whether it is the
-   available variant. Read off .band-end so a chip sitting somewhere else in the
+   working variant. Read off .band-end so a chip sitting somewhere else in the
    band cannot stand in for the one in the status slot. */
 function bandStamp(section) {
   const end = find(section, node => hasClass(node, 'band-end'));
@@ -1353,7 +1562,7 @@ test('v2: the pane reads no API on boot', async () => {
     'both tools act on what the operator supplies and the scoring half has no API');
 });
 
-test('v2: every band is stamped as invented, working or unavailable in its status slot', async () => {
+test('v2: every band in the preview is stamped invented and every band outside it is stamped working', async () => {
   const dom = await bootPane();
   const preview = previewOf(dom);
   assert.ok(preview, 'the deferred scoring preview is missing');
@@ -1365,7 +1574,7 @@ test('v2: every band is stamped as invented, working or unavailable in its statu
   /* Neither half may be empty. A partition with one side empty is the shape
      that stays green when every card is marked, or none is. */
   assert.ok(inside.length >= 3, `the preview must hold the drawn bands, saw ${inside.length}`);
-  assert.ok(outside.length >= 2, `the operation bands must be outside the preview too, saw ${outside.length}`);
+  assert.ok(outside.length >= 2, `the working tools must be bands too, saw ${outside.length}`);
   assert.equal(inside.length + outside.length, bands.length);
 
   for (const section of inside) {
@@ -1378,13 +1587,11 @@ test('v2: every band is stamped as invented, working or unavailable in its statu
   }
   for (const section of outside) {
     const stamp = bandStamp(section);
-    const title = bandTitle(section);
-    assert.ok(stamp, `operation band "${title}" carries no stamp`);
-    const expected = title === 'Check a dataset declaration' ? 'Works now' : 'Unavailable';
-    assert.equal(stamp.word, expected,
-      `operation band "${title}" is stamped "${stamp.word}"`);
-    assert.equal(stamp.works, expected === 'Works now',
-      `operation band "${title}" has the wrong availability style`);
+    assert.ok(stamp, `working band "${bandTitle(section)}" carries no stamp`);
+    assert.equal(stamp.word, 'Works now',
+      `working band "${bandTitle(section)}" is stamped "${stamp.word}"`);
+    assert.equal(stamp.works, true,
+      `working band "${bandTitle(section)}" carries the invented stamp`);
   }
 });
 
@@ -1553,8 +1760,8 @@ test('v2: the banner states no figure and claims nothing that runs', async () =>
 
   /* And no stamp chip anywhere on the pane carries a figure. A stamp is a
      status marker, so a digit inside one is a claim wearing a status. Every
-     chip the pane draws is a word: "Works now", "Unavailable",
-     "Invented figures", "No harness", "No stored scores", "No alerting". */
+     chip the pane draws is a word: "Works now", "Invented figures",
+     "No access granted", "No harness", "No stored scores", "No alerting". */
   const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
   assert.ok(chips.length >= 6, `expected the drawn stamps, saw ${chips.length}`);
   const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
@@ -1563,17 +1770,17 @@ test('v2: the banner states no figure and claims nothing that runs', async () =>
 
   const preview = previewOf(dom);
   const bands = findAll(dom.content, isBand);
-  const available = bands.filter(section => bandTitle(section) === 'Check a dataset declaration');
-  assert.equal(available.length, 1, `expected the dataset band to be the one available band, saw ${available.length}`);
+  const working = bands.filter(section => !within(section, preview));
+  assert.ok(working.length >= 2, `expected the working bands, saw ${working.length}`);
   const marked = findAll(dom.content,
     node => hasClass(node, 'u-tag') && hasClass(node, 'works'));
-  assert.ok(marked.length >= 1,
+  assert.ok(marked.length >= 2,
     `nothing wears the working marker, so this test proves nothing: ${marked.length}`);
   const stray = marked
-    .filter(node => !available.some(section => within(node, section)))
+    .filter(node => !working.some(section => within(node, section)))
     .map(node => allText(node));
   assert.deepEqual(stray, [],
-    'the marker for "this really runs" is worn by something outside the dataset band');
+    'the marker for "this really runs" is worn by something outside a working band');
 });
 
 /* A rise and a fall reached a screen reader as the same three characters,
@@ -1619,14 +1826,15 @@ test('v2: no invented phrase reaches the page outside the preview', async () => 
     'a made-up string outside the preview is an unstamped claim');
 });
 
-/* Every sweep above reads the page as it boots, and dataset validation draws a
-   card only AFTER a submit. A reviewer printed round one's dated chip onto the receipt and the
+/* Every sweep above reads the page as it boots, and the two working tools each
+   draw a card only AFTER a submit — a validation receipt and a quarantine
+   receipt. A reviewer printed round one's dated chip onto the receipt and the
    whole suite stayed green: the partition was asserted over a DOM that does
    not contain the half most likely to grow a claim, because that is where the
    server's answer lands.
 
-   This boots the pane with a working transport, submits that form, and runs
-   the outward-facing sweeps again over the page that results. */
+   This boots the pane with a working transport, submits both forms, and runs
+   the three outward-facing sweeps again over the page that results. */
 async function bootPaneWithReceipts() {
   const digest = 'b'.repeat(64);
   const dom = await bootPane({
@@ -1653,7 +1861,19 @@ async function bootPaneWithReceipts() {
           },
         });
       }
-      return Promise.reject(new Error('only dataset validation submits in this sweep'));
+      return Promise.resolve({
+        schemaVersion: 'ciel.operation.response.v1',
+        requestId,
+        operationId: 'ciel.evidence.quarantine',
+        status: 'success',
+        exitCode: 0,
+        resource: {
+          type: 'ciel.evidence',
+          id: 'evd_1',
+          revision: 2,
+          value: { artifactId: 'evd_1', state: 'quarantined', revision: 2 },
+        },
+      });
     },
   });
 
@@ -1670,15 +1890,43 @@ async function bootPaneWithReceipts() {
     }],
     fixtureDigests: [{ datasetId: 'dataset.example', revision: 1, sha256: digest }],
   });
+  const bytes = new TextEncoder().encode('example');
+  const set = (id, value) => {
+    const node = dom.doc.getElementById(id);
+    assert.ok(node, `the ${id} control is gone`);
+    node.value = value;
+    return node;
+  };
+  set('evidence-source', 'synthetic');
+  set('evidence-profile', 'trace');
+  set('evidence-type', 'text/plain');
+  set('evidence-purpose', 'quality_review');
+  /* Inside the 90-day ceiling the form enforces, expressed in local wall-clock
+     fields the way the control does. */
+  const soon = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  set('evidence-expiry', `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-` +
+    `${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`);
+  const file = dom.doc.getElementById('evidence-file');
+  assert.ok(file, 'the evidence file control is gone');
+  file.files = [{ name: 'example.txt', async arrayBuffer() { return bytes.slice().buffer; } }];
+
   const forms = findAll(dom.content, node => node.tagName.toLowerCase() === 'form' &&
-    hasClass(node, 'dataset-form'));
-  assert.equal(forms.length, 1, `expected the dataset form, saw ${forms.length}`);
+    (hasClass(node, 'dataset-form') || hasClass(node, 'evidence-form')));
+  assert.equal(forms.length, 2, `expected dataset and quarantine forms, saw ${forms.length}`);
 
   /* One reading per submit, not one at the end. The shell's live region is a
-     single node that announce() overwrites, so this records the page after the
-     receipt rather than assuming the boot-state sweep covers submitted cards. */
+     single node that each announce() overwrites, so a figure announced by the
+     first tool is gone by the time the second has answered. Reading only the
+     final DOM would see the last announcement and call the rest covered.
+
+     Each reading waits for the RECEIPT, not for a fixed number of microtask
+     turns. A turn budget is a guess about machine speed: quarantine awaits
+     crypto.subtle.digest, which on a cold CI runner does not settle inside any
+     budget that is comfortable locally, and this test was red on ubuntu-latest
+     for five heads because of it while passing on every developer machine. */
   const snapshots = [];
-  const receipts = ['Declarations valid'];
+  const receipts = ['Declarations valid', 'Quarantined, review required'];
   for (let i = 0; i < forms.length; i += 1) {
     forms[i].dispatch('submit', { preventDefault() {} });
     await waitFor(
@@ -1695,11 +1943,15 @@ test('v2: the sweeps hold over the cards a submit draws, not only over the boot'
      about a DOM that never grew the thing it is sweeping for. */
   const receipt = find(dom.content, node => (node.textContent || '') === 'Declarations valid');
   assert.ok(receipt, 'the validation receipt never rendered, so this test sweeps nothing');
+  const quarantined = find(dom.content,
+    node => (node.textContent || '') === 'Quarantined, review required');
+  assert.ok(quarantined, 'the quarantine receipt never rendered, so this test sweeps nothing');
 
-  /* True by construction today: bootPaneWithReceipts asserts the dataset form
-     and pushes one reading, and THAT assertion is what catches an unread tool.
-     This one holds the shape if a future edit makes the push conditional. */
-  assert.equal(dom.snapshots.length, 1, 'one reading for the one submitted tool');
+  /* True by construction today: bootPaneWithReceipts asserts the dataset and quarantine forms and
+     pushes one reading each, and THAT assertion is what catches an unread
+     tool. This one holds the shape if a future edit makes the push
+     conditional. */
+  assert.equal(dom.snapshots.length, 2, 'one reading per submit');
   for (const outside of dom.snapshots) {
     assert.deepEqual(scoresOutside(outside), [],
       'a two-decimal figure reached a card a submit drew, outside the preview');
@@ -1708,8 +1960,10 @@ test('v2: the sweeps hold over the cards a submit draws, not only over the boot'
   }
 
   const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
-  assert.ok(chips.length >= 9,
-    `expected the boot stamps to remain after the validation receipt, saw ${chips.length}`);
+  /* Nine at boot, including approval, plus the quarantine receipt's one.
+     The validation receipt carries no chip. */
+  assert.ok(chips.length >= 10,
+    `expected the boot stamps plus the quarantine receipt's stamp, saw ${chips.length}`);
   const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
   assert.deepEqual(numeric, [],
     'a stamp on a card a submit drew carries a figure');

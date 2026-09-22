@@ -1,12 +1,12 @@
-/* Aria quality: one working tool, four disclosed gates, and a drawing of the
-   pane this one is named for.
+/* Aria quality: working tools, plus a drawing of the pane this one is named for.
 
    Dataset validation checks supplied declarations without reading referenced
-   files or storing a dataset. Evidence import would place bytes behind the
-   server's private, immutable quarantine boundary, but production currently
-   returns 503 because its evidence ingestion settings are absent. Approval
-   handoffs are also unavailable, separately: ADR 0040 makes the three approval
-   operations fail closed until there is an external qualification issuer.
+   files or storing a dataset. Evidence import places bytes behind the server's
+   private, immutable quarantine boundary when the backend accepts the request.
+   Neither successful operation is admission, evaluation consent, training
+   consent, export permission, provider-transfer permission, or proof of
+   de-identification. Approval handoffs expose metadata only and leave
+   qualification checks and operation availability to the server.
 
    The selected file exists only in this page's memory until the operator
    submits it. The page displays file metadata before submission and the
@@ -33,7 +33,7 @@
 
        What the tests prove about that, exactly: every listed figure and
        phrase is printed inside the preview, and in TWO render states — the
-       booted page, and the page after dataset validation has been submitted
+       booted page, and the page after both working tools have been submitted
        — no two-decimal score and no listed phrase appears under <body>
        outside the preview, in an element's text, in the shell's live region,
        or on an attribute a person receives (the test file's SPOKEN_ATTRS is
@@ -47,12 +47,12 @@
        inventories are hand-written, so a made-up string in neither of them
        that is also not a two-decimal score can be added outside the preview
        and go unseen. The error branches are a third render state that nothing
-       reads: a score printed into a validation failure message
+       reads: a score printed into a validation or quarantine failure message
        is not found. And a figure split MID-TOKEN across two elements joins
        with a space in the sweep and without one in a browser, so "0.8" and
        "2" side by side read as 0.82 on screen and are not found.
      - previewBand() is the only way a band gets into the preview, and it
-       stamps the band. operationBand() is the only way a band is built outside
+       stamps the band. workingBand() is the only way a band is built outside
        it, and it stamps that. Neither stamp is a colour: each carries a word.
      - The preview holds no control of any kind. A disabled or faded button is
        still in the tab order, and a control that changes nothing is worse than
@@ -88,12 +88,6 @@
     health_details: 1,
     none: 1
   };
-  /* This is a disclosed production gate, not a live capability probe. The
-     backend exposes no read endpoint for operation availability; Stadiora/Aria#10813
-     records the 503s seen from this deployment. If the backend later exposes a
-     capability read, replace this with that signal rather than guessing here. */
-  var EVIDENCE_INGESTION_ENABLED = false;
-  var APPROVAL_OPERATIONS_ENABLED = false;
 
   /* Every made-up number on this pane, in one place, so that "is this figure
      stamped" is a question about a list rather than about a reader's memory.
@@ -479,12 +473,8 @@
   }
 
   /* The only way a band is built outside the preview. */
-  function operationBand(title, note, available) {
-    return foldable(title, note, [
-      available
-        ? stamp('u-tag works', 'check', 'Works now')
-        : stamp('u-tag', 'lock', 'Unavailable')
-    ]);
+  function workingBand(title, note) {
+    return foldable(title, note, [stamp('u-tag works', 'check', 'Works now')]);
   }
 
   /* The only way a band gets into the preview, so every band in it is stamped
@@ -538,27 +528,6 @@
       .filter(Boolean);
     if (existing.indexOf(id) === -1) existing.push(id);
     node.setAttribute('aria-describedby', existing.join(' '));
-  }
-
-  function disableGateControls(reasonId, controls) {
-    controls.forEach(function (control) {
-      control.disabled = true;
-      control.setAttribute('aria-disabled', 'true');
-      appendDescription(control, reasonId);
-    });
-  }
-
-  function gateNotice(id, title, text) {
-    var notice = h('div', { className: 'callout' }, [
-      icon('lock'),
-      h('div', {}, [
-        h('strong', { text: title }),
-        h('p', { text: text })
-      ])
-    ]);
-    notice.setAttribute('id', id);
-    notice.setAttribute('role', 'note');
-    return notice;
   }
 
   function datasetValidationSection() {
@@ -693,7 +662,7 @@
       }
     });
 
-    var built = operationBand('Check a dataset declaration', 'Any signed-in role, and no dataset is stored', true);
+    var built = workingBand('Check a dataset declaration', 'Any signed-in role, and no dataset is stored');
     var section = built.section;
     var bandBody = built.body;
     bandBody.appendChild(form);
@@ -702,7 +671,7 @@
   }
 
   function evidenceQuarantineSection() {
-    var built = operationBand('Put evidence into quarantine', 'Operator and owner, 5 MiB and 90 days at most', EVIDENCE_INGESTION_ENABLED);
+    var built = workingBand('Put evidence into quarantine', 'Operator and owner, 5 MiB and 90 days at most');
     var section = built.section;
     var bandBody = built.body;
 
@@ -720,15 +689,6 @@
         })
       ])
     ]));
-
-    var evidenceGateId = 'evidence-ingestion-gate';
-    if (!EVIDENCE_INGESTION_ENABLED) {
-      bandBody.appendChild(gateNotice(
-        evidenceGateId,
-        'Evidence ingestion is not enabled on this deployment.',
-        'Quarantine needs configured private storage and an authority registry. The backend currently answers this action with 503, so the dashboard blocks the form before submit.'
-      ));
-    }
 
     if (!session.hasRole(['owner', 'operator'])) {
       var denied = shell.card();
@@ -793,13 +753,19 @@
       type: 'submit',
       text: 'Quarantine evidence'
     });
+    var evidenceAvailability = h('p', {
+      className: 'field-hint',
+      text: 'The backend decides whether quarantine is available. Evidence quarantine answers only when private storage and authority settings are configured. If the backend refuses, submitting changes nothing and this pane shows the refusal.'
+    });
+    evidenceAvailability.setAttribute('id', 'evidence-availability-note');
+    appendDescription(submit, 'evidence-availability-note');
 
     function updateSourceFields() {
       var production = source.value === 'production_derived';
       productionFields.hidden = !production;
       [authority, consent, providerApproval].forEach(function (control) {
-        control.disabled = !EVIDENCE_INGESTION_ENABLED || !production;
-        control.required = EVIDENCE_INGESTION_ENABLED && production;
+        control.disabled = !production;
+        control.required = production;
       });
     }
 
@@ -845,27 +811,14 @@
             'Comma-separated contract categories; leave blank when none were removed.')
         ]),
         productionFields,
+        evidenceAvailability,
         error
       ]),
       h('div', { className: 'card-foot evidence-actions' }, [submit])
     ]);
-    if (!EVIDENCE_INGESTION_ENABLED) {
-      form.setAttribute('aria-disabled', 'true');
-      appendDescription(form, evidenceGateId);
-      disableGateControls(evidenceGateId, [
-        fileInput, source, profile, mediaType, purpose, expiry, necessary,
-        removed, idempotency, authority, consent, providerApproval, submit
-      ]);
-      submit.textContent = 'Quarantine unavailable';
-    }
 
     form.addEventListener('submit', function (event) {
       event.preventDefault();
-      if (!EVIDENCE_INGESTION_ENABLED) {
-        error.textContent = '';
-        shell.announce('Evidence ingestion is not enabled on this deployment.');
-        return;
-      }
       error.textContent = '';
       status.textContent = '';
       var file = fileInput.files && fileInput.files[0];
@@ -961,6 +914,13 @@
       type: 'submit',
       text: 'Create pending request'
     });
+    var approvalAvailabilityText = 'The backend decides whether approval operations are available. Under Aria ADR 0040, approval actions stay closed until an external qualification issuer exists. If the backend refuses, submitting changes nothing and this pane shows the refusal.';
+    var approvalRequestAvailability = h('p', {
+      className: 'field-hint',
+      text: approvalAvailabilityText
+    });
+    approvalRequestAvailability.setAttribute('id', 'approval-request-availability-note');
+    appendDescription(approvalRequestSubmit, 'approval-request-availability-note');
     var approvalRequestForm = h('form', { className: 'stack' }, [
       h('div', { className: 'grid g2 evidence-form-grid' }, [
         field('approval-artifact-id', 'Artifact ID', approvalArtifactId),
@@ -975,6 +935,7 @@
         field('approval-request-key', 'Idempotency key', approvalRequestKey,
           'Optional. Reuse only for the same exact digest binding.')
       ]),
+      approvalRequestAvailability,
       approvalRequestError,
       h('div', { className: 'row evidence-actions' }, [approvalRequestSubmit])
     ]);
@@ -988,8 +949,15 @@
       type: 'submit',
       text: 'Load request'
     });
+    var approvalGetAvailability = h('p', {
+      className: 'field-hint',
+      text: approvalAvailabilityText
+    });
+    approvalGetAvailability.setAttribute('id', 'approval-get-availability-note');
+    appendDescription(approvalGetSubmit, 'approval-get-availability-note');
     var approvalGetForm = h('form', { className: 'stack' }, [
       field('approval-get-id', 'Approval request ID', approvalGetId),
+      approvalGetAvailability,
       approvalGetError,
       h('div', { className: 'row evidence-actions' }, [approvalGetSubmit])
     ]);
@@ -1010,6 +978,12 @@
       type: 'submit',
       text: 'Record decision'
     });
+    var approvalDecisionAvailability = h('p', {
+      className: 'field-hint',
+      text: approvalAvailabilityText
+    });
+    approvalDecisionAvailability.setAttribute('id', 'approval-decision-availability-note');
+    appendDescription(approvalDecisionSubmit, 'approval-decision-availability-note');
     var approvalDecisionForm = h('form', { className: 'stack' }, [
       h('div', { className: 'grid g2 evidence-form-grid' }, [
         field('approval-decision-id', 'Approval request ID', approvalDecisionId),
@@ -1020,6 +994,7 @@
         field('approval-decision-key', 'Idempotency key', approvalDecisionKey,
           'Optional. Reuse only for the same decision.')
       ]),
+      approvalDecisionAvailability,
       approvalDecisionError,
       h('div', { className: 'row evidence-actions' }, [approvalDecisionSubmit])
     ]);
@@ -1049,12 +1024,6 @@
       ])
     ]);
     approvalTrustNote.setAttribute('id', 'approval-trust-note');
-    var approvalGateId = 'approval-operations-gate';
-    var approvalGate = gateNotice(
-      approvalGateId,
-      'Approvals are fail-closed on this deployment.',
-      'These three approval operations are intentionally off until an external qualification issuer and trusted policy are configured. The backend currently answers them with 503.'
-    );
 
     /* A step of the handoff. shell.cardHead builds exactly this head — an h3
        .card-title with a .card-note under it — so the hand-rolled copy that
@@ -1108,35 +1077,8 @@
       if (resource.revision) approvalExpectedRevision.value = String(resource.revision);
     }
 
-    if (!APPROVAL_OPERATIONS_ENABLED) {
-      [
-        approvalRequestForm,
-        approvalGetForm,
-        approvalDecisionForm
-      ].forEach(function (form) {
-        form.setAttribute('aria-disabled', 'true');
-        appendDescription(form, approvalGateId);
-      });
-      disableGateControls(approvalGateId, [
-        approvalArtifactId, approvalArtifactRevision, approvalSourceDigest,
-        approvalRetainedDigest, approvalTargetDigest, approvalPurpose,
-        approvalPolicyRevision, approvalExpiry, approvalRequestKey,
-        approvalRequestSubmit, approvalGetId, approvalGetSubmit,
-        approvalDecisionId, approvalExpectedRevision, approvalDecision,
-        approvalReason, approvalDecisionKey, approvalDecisionSubmit
-      ]);
-      approvalRequestSubmit.textContent = 'Approval unavailable';
-      approvalGetSubmit.textContent = 'Approval unavailable';
-      approvalDecisionSubmit.textContent = 'Approval unavailable';
-    }
-
     approvalRequestForm.addEventListener('submit', function (event) {
       event.preventDefault();
-      if (!APPROVAL_OPERATIONS_ENABLED) {
-        approvalRequestError.textContent = '';
-        shell.announce('Approvals are fail-closed on this deployment.');
-        return;
-      }
       approvalRequestError.textContent = '';
       approvalRequestSubmit.disabled = true;
       approvalRequestSubmit.textContent = 'Creating…';
@@ -1179,11 +1121,6 @@
 
     approvalGetForm.addEventListener('submit', function (event) {
       event.preventDefault();
-      if (!APPROVAL_OPERATIONS_ENABLED) {
-        approvalGetError.textContent = '';
-        shell.announce('Approvals are fail-closed on this deployment.');
-        return;
-      }
       approvalGetError.textContent = '';
       /* Emptied, not hidden: hiding it between answers is what takes the
          live region out of the accessibility tree, so the next answer has to
@@ -1211,11 +1148,6 @@
 
     approvalDecisionForm.addEventListener('submit', function (event) {
       event.preventDefault();
-      if (!APPROVAL_OPERATIONS_ENABLED) {
-        approvalDecisionError.textContent = '';
-        shell.announce('Approvals are fail-closed on this deployment.');
-        return;
-      }
       approvalDecisionError.textContent = '';
       approvalDecisionSubmit.disabled = true;
       approvalDecisionSubmit.textContent = 'Recording…';
@@ -1241,7 +1173,7 @@
       });
     });
 
-    var built = operationBand('Qualified approval handoff', 'Metadata only; the backend enforces qualification', APPROVAL_OPERATIONS_ENABLED);
+    var built = workingBand('Qualified approval handoff', 'Metadata only; the backend enforces qualification');
     var section = built.section;
     var bandBody = built.body;
     bandBody.appendChild(h('p', {
@@ -1251,7 +1183,6 @@
     var sections = [];
     if (!canMutateEvidence) {
       sections.push(
-        approvalGate,
         approvalCard(
           'Get approval state',
           'Reads metadata for a request the current principal may inspect.',
@@ -1263,7 +1194,6 @@
       return section;
     }
     sections.push(
-      approvalGate,
       approvalTrustNote,
       approvalCard(
         'Request approval',

@@ -1,11 +1,10 @@
 /* Aria quality, on the v2 pane bootstrap.
 
-   The pane holds three things that must not be confused for one another.
-   Dataset declaration validation works today. Evidence quarantine and the
-   three approval operations are blocked before submit because this production
-   deployment returns 503 for them. The scoring harness the pane is named for
-   does not exist. Everything below the violet banner is a drawing of the
-   harness's agreed layout filled with numbers somebody made up.
+   The pane holds two things that must not be confused for one another. Two
+   tools work today — dataset declaration validation and evidence quarantine —
+   and the scoring harness the pane is named for does not exist. Everything
+   below the violet banner is a drawing of the harness's agreed layout filled
+   with numbers somebody made up.
 
    So the rules here are mostly about keeping that line visible:
 
@@ -29,7 +28,7 @@
    .field — the search box in the top bar — and a form field is not that. */
 
 /* ------------------------------------------------------------------ forms
-   The operation tools are forms, and aria.css is a reading system: it has
+   The two working tools are forms, and aria.css is a reading system: it has
    panels, figures and tables, and no text input a person types a paragraph
    into. This is that gap, scoped to this pane. */
 
@@ -135,13 +134,6 @@
   outline-offset: -2px;
 }
 .field-input:disabled { color: var(--ink-3); background: var(--surface); }
-.evidence-actions .btn:disabled {
-  opacity: .55;
-  cursor: not-allowed;
-  pointer-events: none;
-  filter: none;
-  transform: none;
-}
 textarea.field-input { resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
 select.field-input { appearance: none; padding-right: 26px; }
 
