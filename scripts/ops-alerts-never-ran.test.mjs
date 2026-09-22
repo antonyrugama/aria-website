@@ -785,6 +785,37 @@ test('a delivery time the pane cannot read is not reported as never delivered',
     }
   });
 
+/* ====================================================================== */
+/* Raised by round 6 of the independent review of PR #124                 */
+/* ====================================================================== */
+
+test('an unreadable delivery on a destination no longer set up is neither denied '
+  + 'nor mistaken for a configured one', async () => {
+  /* The two premises above, crossed: a destination rotated out (`configured:
+     false` beside a stamp) whose stamp cannot be read. `unreadableDelivery`
+     looks at EVERY channel for the same reason `everDelivered` does, and the
+     note keeps "No destination is set." in front of the refusal because that
+     half is still true. Scoping the flag to configured channels put back
+     "nothing here has been sent to anyone" over a payload reporting a
+     delivery; dropping the prefix lost the true half. */
+  for (const stamp of UNREADABLE) {
+    const channels = prodChannels();
+    assert.ok(channels.every((c) => c.configured !== true),
+      'the production payload now has a configured destination, so this test no longer '
+      + 'builds the unconfigured case it names');
+    channels[0].lastSuccessAt = stamp;
+    const note = noteText(await boot({ rules: { rules: prodRules(), channels } }));
+
+    assert.ok(note, `"${stamp}" drew no note, so the absences below prove nothing`);
+    assert.doesNotMatch(note, /has ever been delivered|been sent to anyone/,
+      `the note reads "${note}" and denies any delivery, over an unconfigured destination `
+      + `whose lastSuccessAt of "${stamp}" reports one`);
+    assert.match(note, /No destination is set\. A delivery is reported at a time that cannot be read/,
+      `the note reads "${note}" -- nothing is configured, and the refusal must still say so `
+      + 'in front of the stamp it cannot read');
+  }
+});
+
 test('a destination whose failure reason is a word every object answers to '
   + 'does not print a function', async () => {
   /* #10630 again, on the destinations card rather than the rule table.
