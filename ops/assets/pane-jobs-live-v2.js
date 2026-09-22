@@ -475,7 +475,7 @@
 
       wrap.appendChild(laneBand(list(queue.lanes)));
       if (jobs.length) {
-        wrap.appendChild(jobsBand(jobs, workingSet));
+        wrap.appendChild(jobsBand(jobs, workingSet, baseline));
       } else if (workingSet.truncated === true) {
         /* Nothing came back and the route still calls the read bounded. That
            is a contradiction worth showing rather than swallowing: dropping
@@ -815,7 +815,7 @@
 
     /* ----------------------------------------------------------- the work */
 
-    function jobsBand(jobs, workingSet) {
+    function jobsBand(jobs, workingSet, baseline) {
       var section = S.band('The work itself', 'Oldest first');
       var box = S.card();
 
@@ -880,10 +880,27 @@
             fmt.int(workingSet.limit) + ' this read will carry. The queue is longer.'
           : 'This is the whole queue, not a page of it.'
       }));
+      foot.appendChild(h('span', { text: baselineWindowText(baseline) }));
       box.appendChild(foot);
 
       section.appendChild(box);
       return section;
+    }
+
+    /* "Usually" is a median taken over a window of its own, separate from the
+       throughput window below. No figure without the window it covers
+       (Stadiora/Aria#5562), so the period is read off the response and printed
+       beside the table; a response without one says so rather than letting
+       the column borrow the throughput window. */
+    function baselineWindowText(baseline) {
+      var win = (baseline && baseline.window) || {};
+      var from = fmt.utcDay(win.from);
+      var to = fmt.utcDay(win.to);
+      if (!fmt.isNum(win.days) || !from || !to) {
+        return '"Usually" is a median over a window this read did not state.';
+      }
+      return '"Usually" is the median run time for that kind over the ' +
+        fmt.plural(win.days, 'day') + ' from ' + from + ' to ' + to + '.';
     }
 
     /* ----------------------------------------------------- what has flowed */
@@ -1012,10 +1029,16 @@
       box.appendChild(body);
 
       var foot = h('div', { className: 'card-foot' });
-      foot.appendChild(S.link(S.paneHref('history') || HISTORY_FILE,
-        'What happened', 'btn btn-sm'));
-      foot.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE,
-        'Open Problems', 'btn btn-sm'));
+      /* Rebuilt on every refresh like everything else here, so each carries a
+         retain name or a keyboard operator parked on it loses focus. */
+      var toHistory = S.link(S.paneHref('history') || HISTORY_FILE,
+        'What happened', 'btn btn-sm');
+      toHistory.setAttribute(RETAIN_ATTR, 'jobs-link-history');
+      foot.appendChild(toHistory);
+      var toAlerts = S.link(S.paneHref('alerts') || ALERTS_FILE,
+        'Open Problems', 'btn btn-sm');
+      toAlerts.setAttribute(RETAIN_ATTR, 'jobs-link-alerts');
+      foot.appendChild(toAlerts);
       box.appendChild(foot);
 
       section.appendChild(box);

@@ -809,6 +809,38 @@ test('every throughput figure is published with the window it covers', async () 
     'a period figure was published with no window against it');
 });
 
+/* Stadiora/Aria#5562: no figure without the window it covers. "Usually" is a
+   median over the baseline's own window, not the throughput one, so its
+   period has to come off `baseline.window` and move when that does. */
+test('the "Usually" column is published with the baseline window it was taken over', async () => {
+  const week = await boot({
+    view: viewFixture({
+      workingSet: { returned: 1, truncated: false, jobs: [jobFixture({ id: 'job_1' })] },
+      baseline: { window: { days: 7, from: '2026-09-15T09:00:00.000Z', to: '2026-09-22T09:00:00.000Z' } },
+    }),
+  });
+  assert.match(liveText(week), /over the 7 days from 15 Sep 2026 to 22 Sep 2026/,
+    'the median was printed without the window it was taken over');
+
+  const month = await boot({
+    view: viewFixture({
+      workingSet: { returned: 1, truncated: false, jobs: [jobFixture({ id: 'job_1' })] },
+      baseline: { window: { days: 30, from: '2026-08-23T09:00:00.000Z', to: '2026-09-22T09:00:00.000Z' } },
+    }),
+  });
+  assert.match(liveText(month), /over the 30 days from 23 Aug 2026 to 22 Sep 2026/,
+    'a different baseline window left the printed period unchanged');
+
+  const unstated = await boot({
+    view: viewFixture({
+      workingSet: { returned: 1, truncated: false, jobs: [jobFixture({ id: 'job_1' })] },
+      baseline: { window: null },
+    }),
+  });
+  assert.match(liveText(unstated), /median over a window this read did not state/,
+    'a baseline with no window was not called out as unstated');
+});
+
 test('an unrecorded throughput is absent, and says which kind of absent', async () => {
   const never = await boot({
     view: viewFixture({
@@ -1241,6 +1273,28 @@ test('a refresh keeps focus on the Pause button', async () => {
   assert.notStrictEqual(after, before, 'the refresh did not rebuild the footer');
   assert.strictEqual(dom.doc.activeElement, after, 'the refresh dropped focus off Pause');
 });
+
+function linkNamed(dom, label) {
+  return findAll(dom.content, (n) => n.tagName === 'A')
+    .filter((l) => allText(l).trim() === label)[0] || null;
+}
+
+for (const label of ['What happened', 'Open Problems']) {
+  test(`a refresh keeps focus on the ${label} link`, async () => {
+    const dom = await boot({ view: WITH_ROWS() });
+    const before = linkNamed(dom, label);
+    assert.ok(before, `no ${label} link, so this proves nothing`);
+    before.focus();
+    assert.strictEqual(dom.doc.activeElement, before, 'the link did not take focus');
+
+    await dom.clock.fire();
+
+    const after = linkNamed(dom, label);
+    assert.notStrictEqual(after, before, 'the refresh did not rebuild the footer');
+    assert.strictEqual(dom.doc.activeElement, after,
+      `the refresh dropped focus off ${label}`);
+  });
+}
 
 test('a refresh does not steal focus from somewhere else on the page', async () => {
   const dom = await boot({ view: WITH_ROWS() });
