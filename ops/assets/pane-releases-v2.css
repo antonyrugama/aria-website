@@ -285,10 +285,19 @@
    that minimum is wider than a phone. The table scrolls inside this box
    rather than taking the document sideways with it.
 
+   Positioned, because `overflow-x` clips only a descendant whose containing
+   block is this box. An absolutely positioned one resolves its containing
+   block to the nearest positioned ancestor, so while this box was static the
+   nearest was the page: a visually-hidden span inside a table wider than the
+   phone would sit at its static position in page coordinates, escape this
+   clip and take the document sideways while the table around it scrolled
+   correctly. ops.css carried this on .table-wrap and the v2 sheets dropped it.
+   Stadiora/Aria#10706.
+
    outline-offset is pulled inside the box because aria.css's global
    :focus-visible sits 2px outside it, and 2px outside a full-width child of a
    card is 2px into the card's own edge. */
-.tbl-scroll { overflow-x: auto; }
+.tbl-scroll { overflow-x: auto; position: relative; }
 .tbl-scroll:focus-visible { outline-offset: -2px; border-radius: 0; }
 
 /* aria.css styles .tbl th as a column header: uppercase, 9.5px, tracked out.
@@ -319,6 +328,33 @@
 .callout svg { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--amber-ink); }
 .callout b { color: var(--ink); font-weight: 560; }
 
+/* A callout that is not a warning.
+
+   The bare callout above is amber, and amber on an operations dashboard means
+   something needs attention. What the route names in `omissions[]` is the
+   opposite kind of fact: App Store Connect has no field for the share of a
+   phased release, so there is nothing to attend to and nothing anybody can
+   do. Drawing that in the alert tint would train an operator to ignore the
+   tint, which costs more than the note is worth.
+
+   So the shape stays — same box, same glyph slot, same text sizes, so it is
+   recognisably the same furniture — and only the tint and the glyph ink move
+   to the neutral pair. `--ink-3` on the glyph is the ink the Overview,
+   Happening now and What happened panes already give their omission glyph, so
+   an absence reads the same on all four.
+
+   Not a new colour: --line-2 is aria.css's line token and --ink-3 its third
+   ink, both already on this page. */
+.callout.is-note {
+  background: color-mix(in srgb, var(--ink-3) 7%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.callout.is-note svg { color: var(--ink-3); }
+
+/* More than one omission stacks rather than running together, on the same
+   gap the pipeline's own blocks use. */
+.omit-list { display: flex; flex-direction: column; gap: 8px; }
+
 /* ------------------------------------------------------------ responsive */
 
 /* aria.css drops the hero to two columns under 980px and pulls its last child
@@ -348,8 +384,67 @@
 }
 @media (max-width: 980px) {
   .pipe-row { grid-template-columns: minmax(0, 1fr); }
-  .pipe-track { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 14px; }
-  .pipe-step:nth-child(2)::before { display: none; }
+}
+
+/* The track turns vertical rather than wrapping.
+
+   It used to become a 2x2 grid here, with the connector after step 2 switched
+   off. That removed the rail dangling off the end of row one and left
+   something worse: two rows of two, both starting at the same left edge, each
+   with its own rail. One progression read as two, and "Released" read as the
+   start of a fresh one. For a release pipeline that is not a cramped layout,
+   it is a false statement — the single thing this pane exists to get right.
+   Stadiora/Aria#10826.
+
+   Wrapping is what made it false, so nothing here wraps. Four across survives
+   down to this breakpoint and the measurement is why 560 is the number: the
+   widest string in the track is .pipe-date's "20% of devices, 6 days
+   unchanged" at 113.8px, which needs a 125.8px column once .pipe-step's 12px
+   of padding-right is counted, so the track has to hold 503px, so the page has
+   to be about 535 wide. Under that the date is what breaks, not the stage
+   name — the widest of those is "Rolling out" at 59.8px and it still fits a
+   quarter of a 375px page.
+
+   Below it the four stages stack and the rail rotates to run down the column,
+   node to node, unbroken from the first stage to the last. A single vertical
+   rail cannot read as two progressions: there is only one line on the screen.
+   The node leaves the flow so the label and the date get the full width
+   beside it, which is the other half of the fix — at 375 neither string has
+   to wrap or truncate any more. */
+@media (max-width: 560px) {
+  .pipe-track { grid-template-columns: minmax(0, 1fr); }
+  /* min-height is what keeps the rail a rail. A stage carrying no date is
+     only its label tall, which left the run between two such nodes about 6px
+     — a dot rather than a connector, and four dots down a column read as a
+     dashed line, which is the spelling this sheet gives a stage that has not
+     been reached. The floor puts at least 18px of rail under every node. */
+  .pipe-step { padding-right: 0; padding-left: 32px; padding-bottom: 13px; min-height: 40px; }
+  .pipe-step:last-child { padding-bottom: 0; min-height: 22px; }
+  .pipe-node { position: absolute; left: 0; top: 0; }
+
+  /* Vertical now, so every property of the horizontal rail that would still
+     apply has to be unset by name: `right` and `height` are what the rules
+     above set, and leaving either in place draws the old bar across the node.
+     It starts at 22px, the node's own bottom edge, and ends at the padding
+     edge, which is exactly where the next step's node begins — no gap at
+     either end, because a gap under every node is the dotted reading again.
+     The horizontal rail needed one; it ran behind the nodes, and the node
+     fill is a 16% tint rather than an opaque disc, so a solid bar showed
+     through the glyph. Nothing runs behind a node here. */
+  .pipe-step::before {
+    left: 10px; right: auto;
+    top: 22px; bottom: 0;
+    width: 2px; height: auto;
+  }
+  .pipe-step.done::before {
+    left: 9.5px; right: auto;
+    top: 22px; bottom: 0;
+    width: 3px; height: auto;
+  }
+  .pipe-step.todo::before {
+    background: repeating-linear-gradient(180deg, var(--line-2) 0 4px, transparent 4px 8px);
+  }
+  .pipe-label { margin-top: 0; }
 }
 
 /* On a phone the widest segment holds about eight characters, so the chip

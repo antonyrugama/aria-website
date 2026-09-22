@@ -35,8 +35,8 @@ permissions:
 jobs:
   narrow-viewport:
     runs-on: ubuntu-latest
-    # Ten panes at two widths in two themes is forty page loads, against one
-    # before Stadiora/Aria#10492. A run takes a couple of minutes; the ceiling
+    # Ten panes at three widths in two themes is sixty page loads, against one
+    # before Stadiora/Aria#10492. A run takes about three minutes; the ceiling
     # is here so a slow cold start cannot turn the sweep into a red check that
     # measured nothing, which reads the same as a red check that found
     # something.
@@ -48,5 +48,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check every pane fits a 375px viewport
+      - name: Check every pane fits a phone-width viewport
         run: node scripts/check-ops-narrow-overflow.mjs

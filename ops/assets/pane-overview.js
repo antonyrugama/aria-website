@@ -129,28 +129,62 @@
         { type: 'block', height: 210 }
       ]);
 
-      Promise.all([
-        session.call('/api/ops/alerts/problems', { query: { status: 'open', limit: model.PAGE } })
-          .then(function (p) { return p.data; }),
-        session.call('/api/ops/alerts/rules').then(function (p) { return p.data; }),
-        /* The figures fail on their own terms rather than through the pane.
-           The two halves of this page answer different questions from
-           different tables, and a summary read that is down must not take the
-           urgent queue off the screen with it: an operator who cannot see
-           spend can still act on a critical problem. The rejection is
-           therefore carried as a value and drawn as one failed section, with
-           the pane in its degraded state rather than its live one. */
+      /* Three reads, each carried as a value or as the error it failed with.
+
+         Every one of them fails on its own terms rather than through the
+         pane. The halves of this page answer different questions from
+         different tables, and a read that is down must not take the others
+         off the screen with it: an operator who cannot see spend can still
+         act on a critical problem, and one who cannot read the queue can
+         still be told what the figures say. Each rejection is therefore
+         carried as a value and drawn as one failed section, with the pane in
+         its degraded state rather than its live one.
+
+         Bare reads under Promise.all did the opposite. A single failed
+         problems or rules request rejected the whole thing and replaced the
+         entire pane with "This pane could not be read", including the
+         sections whose own reads had landed (Stadiora/Aria#5498). */
+      /* Returned, not fired and forgotten. A control that re-renders the pane
+         has to be able to act AFTER the new nodes exist -- the one that
+         pressed it is gone by then -- and a promise is the only deterministic
+         way to know when that is. Sleeping for a plausible interval is how a
+         focus test passes on one machine and fails on the runner. */
+      return Promise.all([
+        settled(session.call('/api/ops/alerts/problems',
+          { query: { status: 'open', limit: model.PAGE } })),
+        settled(session.call('/api/ops/alerts/rules')),
         summary().then(function (payload) {
           return { data: (payload && typeof payload === 'object') ? payload : null };
         }, function (err) {
           return { error: err };
         })
       ]).then(function (results) {
-        if (token !== loadToken) return;
+        /* Whether THIS read is the one on screen, handed back so a retry can
+           ask. Two presses in quick succession start two reads, loadToken
+           suppresses the older render, and without this the older promise
+           still fulfils and still lands: the operator is dragged back to a
+           heading by a request that drew nothing, after they have moved on.
+           Reported rather than inferred, because the reason the render was
+           skipped is not visible from outside. */
+        if (token !== loadToken) return false;
         render({ open: results[0], rules: results[1], summary: results[2] });
+        return true;
       }).catch(function (err) {
-        if (token !== loadToken) return;
-        region.failed(err, load);
+        /* Not a failed read any more — the three above cannot reject. This is
+           the backstop for render() itself throwing, which is the one failure
+           that really does leave nothing on screen. */
+        if (token !== loadToken) return false;
+        region.failed(err, retryAction(ATTENTION_BAND));
+        return true;
+      });
+    }
+
+    /* A read as a value: { data } or { error }, never a rejection. */
+    function settled(promise) {
+      return promise.then(function (payload) {
+        return { data: payload.data };
+      }, function (err) {
+        return { error: err };
       });
     }
 
@@ -168,42 +202,292 @@
     }
 
     function render(data) {
-      var armed = model.armedState(data.rules);
-      var problems = data.open.problems.slice().sort(model.byWorstThenOldest);
+      var openFailed = !!data.open.error;
+      var rulesFailed = !!data.rules.error;
+      var failed = !!(data.summary && data.summary.error);
+
+      /* armedState({}) is the empty answer, not the unread one, so every
+         branch that reads `armed` has to be told which it is looking at.
+         Without that, an unreadable rules request renders as "no rule
+         exists", which is the pane stating as fact the one thing it does not
+         know. */
+      var armed = model.armedState(rulesFailed ? {} : (data.rules.data || {}));
+      var openProblems = openFailed ? [] : list(data.open.data && data.open.data.problems);
+      var problems = openProblems.slice().sort(model.byWorstThenOldest);
       /* A full read is a floor, not a total: problems come back worst first
          and then oldest and stop at model.PAGE, so every count on this pane is
          "at least" when the page came back full. */
-      var capped = model.capped(data.open.problems);
-      var failed = !!(data.summary && data.summary.error);
+      var capped = model.capped(openProblems);
       var figures = data.summary && data.summary.data;
 
-      badgeProblems(problems, capped);
+      badgeProblems(problems, capped, openFailed);
+
+      /* Every read unreadable is the whole pane unreadable. Anything less
+         renders what did come back.
+
+         The shell draws this card and its retry, and takes the action as an
+         argument -- so the landing has to be handed in here. Bare load was
+         Stadiora/Aria#10784's third site: pressing it re-read the pane and
+         dropped focus on <body>. The band id is the target because a retry
+         that works draws bands, and landOn falls through to this card's own
+         heading when it does not. */
+      if (openFailed && rulesFailed && failed) {
+        region.failed(data.open.error, retryAction(ATTENTION_BAND));
+        return;
+      }
 
       /* Empty is a real state with a real trigger, and a narrow one: not one
-         quiet window, but a pane with nothing behind either of its halves.
-         Anything less than that renders whatever did come back. */
-      if (!failed && !figures && !problems.length && !armed.total) {
+         quiet window, but a pane with nothing behind either of its halves,
+         from reads that landed. A read that never landed has not earned the
+         sentence "there is nothing here". */
+      if (!failed && !openFailed && !rulesFailed &&
+          !figures && !problems.length && !armed.total) {
         region.empty(nothingBehindIt());
         return;
       }
 
       var wrap = h('div', { className: 'stack' });
-      wrap.appendChild(ribbon(problems, armed, capped));
+      wrap.appendChild(ribbon(problems, armed, capped, openFailed, rulesFailed));
 
       var attention = S.band('What needs a person');
-      attention.appendChild(queueCard(problems, armed, capped));
+      attention.setAttribute('id', ATTENTION_BAND);
+      /* Where the rules failure gets to say so. The queue card draws it when
+         the queue card exists AND has no rows, because there it is also the
+         reason the list is short. Every other state has no room for it inside
+         the card, so it becomes a card of its own -- exactly one of the two
+         renders on any screen that got this far, never both, because the same
+         words twice is the density this dashboard was redrawn to remove. The
+         qualifier is load-bearing: every read down returns above without
+         drawing a band, and then the headline is not on screen at all,
+         because the shell's own card has already said the whole pane is
+         unread. */
+      var rulesHosted = !openFailed && !problems.length;
+      if (openFailed) {
+        failedSection(attention, 'The problems could not be read', data.open.error);
+      } else {
+        attention.appendChild(queueCard(problems, armed, capped, data.rules.error));
+      }
+      if (rulesFailed && !rulesHosted) {
+        var rulesBox = S.card();
+        rulesBox.appendChild(rulesUnreadBlock(data.rules.error, 3, ATTENTION_BAND));
+        attention.appendChild(rulesBox);
+      }
       wrap.appendChild(attention);
 
       var going = S.band('How things are going');
-      figuresSection(going, data.summary);
+      going.setAttribute('id', FIGURES_BAND);
+      figuresSection(going, data.summary, openFailed);
       wrap.appendChild(going);
 
       /* Degraded is the pane on screen with one of its reads unusable, which
-         is exactly this: the problems half answered and the figures half did
-         not. It is not the empty state, because a read that never landed has
-         not earned the sentence "there is nothing here". */
-      if (failed) region.degraded(wrap);
+         is exactly this: some of it answered and some of it did not. It is not
+         the empty state, because a read that never landed has not earned the
+         sentence "there is nothing here". */
+      if (failed || openFailed || rulesFailed) region.degraded(wrap);
       else region.show(wrap);
+    }
+
+    /* A section whose own read failed, in place of what it would have drawn.
+       Named where the content would have been rather than replacing the pane,
+       because the rest of the page is still true. The same shape the Problems
+       pane uses for the same two reads, so an operator moving between the two
+       during one incident meets one treatment. */
+    function failedSection(band, headline, err) {
+      var box = S.card();
+      var block = S.stateBlock('warn', headline, [
+        S.failureMessage(err),
+        'Nothing here is a zero. This part is unread, not empty.'
+      ], 3);
+      var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+      nameRetry(block, again);
+      retryHandler(again, band.getAttribute('id'));
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      box.appendChild(block);
+      band.appendChild(box);
+    }
+
+    /* The two bands, by a name that survives the re-render. The nodes do not:
+       every retry here replaces the whole panel, so a control that wants to
+       put the operator back where they were has to name a PLACE, not hold a
+       node. */
+    var ATTENTION_BAND = 'ov-band-attention';
+    var FIGURES_BAND = 'ov-band-figures';
+
+    /* What a retry does, all of it: re-read, then put the operator somewhere
+       they can perceive. The second half is Stadiora/Aria#10784 and it is the
+       reason load() returns its promise.
+
+       Available as a value and not only as a listener, because the shell draws
+       the whole-pane failure card's retry itself and takes the action as an
+       argument: region.failed(err, retry). Handing it bare load was the third
+       site Stadiora/Aria#10784 names, and it stranded focus on <body> exactly
+       like the other two. */
+    function retryAction(bandId, want) {
+      return function () {
+        return load().then(function (landed) {
+          if (landed) landOn(bandId, want);
+        });
+      };
+    }
+
+    function retryHandler(button, bandId) {
+      button.addEventListener('click', function () {
+        retryAction(bandId, String(button.getAttribute('data-retry') || ''))();
+      });
+    }
+
+    /* The panel the operator can actually see.
+
+       #content holds the loading, empty and live panels at the same time, and
+       aria.js shows one of them by putting data-shown on it. Every box is
+       cleared when it is filled -- but only the box being filled, so a render
+       that switches panels leaves the previous one populated and hidden. A
+       band only ever reaches the live box, so the stale node a retry can find
+       is the one this pane itself drew a render ago, sitting in a live box
+       that is no longer shown. There is no second node with that id to choose
+       between: document.getElementById would return that one, being the only
+       one, put focus on a heading nobody can see, and read the previous
+       render's failure back as if it were this one's. Every lookup below
+       starts from the shown panel for that reason. */
+    function shownPanel() {
+      return first(content, '[data-shown]');
+    }
+
+    function first(root, selector) {
+      var found = root.querySelectorAll(selector);
+      return found.length ? found[0] : null;
+    }
+
+    /* Where the operator is put when the read comes back, and why it is a
+       heading rather than the button they pressed.
+
+       Pressing Try again re-renders the whole panel, which destroys that
+       button. Focus falls back to <body>: everything the operator can perceive
+       goes quiet, and the next Tab starts again from the top of the document.
+       Restoring focus to the rebuilt button is the obvious repair and it is
+       the wrong one, because a retry that SUCCEEDS deletes its own control --
+       the section it was in has nothing left to press. The band's heading is
+       the node that exists either way, it names the section, and reading on
+       from it reaches whatever replaced the content.
+
+       A render that draws no bands at all -- the empty state, or the shell's
+       own whole-pane failure card -- lands on that panel's first state
+       heading instead. That is the result rather than a place, which is the
+       better target when the place is gone.
+
+       Nothing happens if neither is there, and one state reaches that: a
+       second load started before this one's landing ran, so the loading
+       skeleton is what is shown. Leaving focus alone is right there -- the
+       newer read has its own landing coming. */
+    function landOn(bandId, want) {
+      var panel = shownPanel();
+      if (!panel) return;
+      var band = first(panel, '[id="' + bandId + '"]');
+      var head = band ? first(band, '.band-title') : first(panel, '.state-title');
+      if (!head) return;
+      /* tabindex -1 so a heading can hold focus without joining the tab order:
+         the operator is put there, and Tab carries on into the section rather
+         than back to it. */
+      head.setAttribute('tabindex', '-1');
+      head.focus();
+      announceOutcome(head, band, want);
+    }
+
+    /* What happened to the read, said out loud, because moving focus to a
+       heading announces the heading and not the outcome.
+
+       Whether a section is still unreadable is read off the rendered band
+       rather than off the read, so the sentence describes what is now on the
+       screen. Every retry this pane draws carries data-retry holding the
+       headline of the failure it would re-read, written by nameRetry out of
+       the same heading it composes the button's name from -- so the spoken
+       outcome and the button's own name cannot drift apart.
+
+       One band can hold two failures, and then the answer has to be about the
+       read the operator actually asked for: retrying the rules read and being
+       told the problems read is down is a true sentence about the wrong
+       thing. So the retried headline wins when it is still on screen. When it
+       is gone, what is left in the band is the news -- one read came back and
+       another did not, and the one that did not is what the operator needs.
+       Only a band with nothing stuck in it is read back as read again. */
+    function announceOutcome(head, band, want) {
+      var title = String(head.textContent || '');
+      if (!band) { S.announce(title + '.'); return; }
+      var stuck = band.querySelectorAll('[data-retry]');
+      if (!stuck.length) { S.announce(title + ' was read again.'); return; }
+      var say = String(stuck[0].getAttribute('data-retry') || '');
+      for (var i = 0; i < stuck.length; i++) {
+        if (String(stuck[i].getAttribute('data-retry') || '') === want) { say = want; break; }
+      }
+      S.announce(title + ': ' + say + '.');
+    }
+
+    /* The rules read's own failure, in the shape the other two reads already
+       get: what went wrong, that it is unread rather than zero, and a control
+       that asks again.
+
+       It was the one read with no retry (Stadiora/Aria#10771). Its failure
+       was surfaced honestly -- the ribbon says `rules unread` and the queue
+       card says whether the checks are running could not be read -- and then
+       the operator was stranded, with nothing to press and no error to read.
+       Reloading the whole pane was the only way to ask again, which also
+       re-runs the two reads that already worked. */
+    function rulesUnreadBlock(err, level, bandId) {
+      var block = S.stateBlock('warn', 'Whether the checks are running could not be read', [
+        S.failureMessage(err),
+        'Nothing here is a zero. This part is unread, not empty.'
+      ], level);
+      var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+      nameRetry(block, again);
+      retryHandler(again, bandId);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      return block;
+    }
+
+    /* Two reads can fail at once, and then two buttons reading "Try again" are
+       on the page with nothing between them.
+
+       aria-describedby was the first attempt and it was the wrong tool: it
+       supplies a DESCRIPTION, announced on focus, and every list that
+       enumerates controls — NVDA's Elements List, the VoiceOver rotor — reads
+       NAMES. Both entries stayed "Try again" there. Composing the name out of
+       the button and its own headline is what those lists read, and it keeps
+       the visible word as the first token, so voice control still works on
+       what the operator can see. aria-label would have replaced that word. */
+    var retryN = 0;
+    function nameRetry(block, again) {
+      var kids = block.childNodes || [];
+      for (var i = 0; i < kids.length; i++) {
+        if (/^h[1-6]$/i.test(String(kids[i].tagName || ''))) {
+          retryN += 1;
+          /* setAttribute, not .id. The DOM harness these are tested through
+             has no id accessor, so a property write leaves getAttribute('id')
+             null: every reference would dangle in the tests while working in
+             a browser. That is a false RED, not a false green -- measured on
+             this head, three tests fail, one in
+             ops-overview-degraded.test.mjs and two in
+             ops-overview-retry-focus.test.mjs -- but it is the kind of false
+             red that gets "fixed" by loosening the assertion, and then the
+             loosened assertion is the false green. (Stadiora/Aria#10824: this
+             comment used to say "false green by construction", which is
+             backwards, and the clone of this function in pane-alerts.js was
+             corrected first.) */
+          var headingId = kids[i].getAttribute('id');
+          if (!headingId) {
+            headingId = 'ov-failed-' + retryN;
+            kids[i].setAttribute('id', headingId);
+          }
+          var buttonId = 'ov-retry-' + retryN;
+          again.setAttribute('id', buttonId);
+          again.setAttribute('aria-labelledby', buttonId + ' ' + headingId);
+          /* The same heading again, as a value this time, for the spoken
+             outcome after a retry lands. Written here rather than at the three
+             call sites so the sentence an operator hears and the name their
+             screen reader speaks are the same string by construction. */
+          again.setAttribute('data-retry', String(kids[i].textContent || ''));
+          return;
+        }
+      }
     }
 
     /* The Problems count beside the rail item.
@@ -211,9 +495,11 @@
        A real read or nothing: this is the count this pane just asked for, and
        a rail badge that invents one is worse than a rail with no badge. It is
        cleared as well as set, so a page that lands on a quiet system does not
-       keep a stale count from a previous render. */
-    function badgeProblems(problems, capped) {
-      var needing = model.needingAction(problems).length;
+       keep a stale count from a previous render, and a read that failed takes
+       the badge away rather than leaving yesterday's number beside a queue
+       this pane could not read. */
+    function badgeProblems(problems, capped, failed) {
+      var needing = failed ? 0 : model.needingAction(problems).length;
       if (!needing) {
         S.setBadge('alerts', null);
         return;
@@ -261,7 +547,7 @@
        what needs a person and what is being worked on are different lists. */
     var RIBBON_TONE = { crit: 'st-bad', warn: 'st-warn', info: 'st-acc' };
 
-    function ribbon(problems, armed, capped) {
+    function ribbon(problems, armed, capped, openFailed, rulesFailed) {
       var active = model.active(problems);
       var needing = model.needingAction(problems);
       var worst = model.worstSeverity(active);
@@ -270,7 +556,25 @@
       var sub;
       var tone;
 
-      if (!armed.trustworthy) {
+      /* Two more readings of "we do not know", both of them a read that never
+         landed rather than a check that is not running. They come first
+         because every branch below states something this pane was not told:
+         an unread queue cannot say "everything is working", and an unread
+         rules list cannot tell an empty queue apart from nothing looking. */
+      if (openFailed) {
+        tone = 'st-warn';
+        title = 'Whether anything is wrong is unknown';
+        /* No sub. "The problems could not be read" is the heading of the card
+           directly beneath this ribbon, and saying it twice in two inches is
+           the density the whole remodel is trying to remove. The title above
+           already states what is unknown. */
+        sub = '';
+      } else if (rulesFailed && !active.length) {
+        tone = 'st-warn';
+        title = 'Nothing is open, and whether anything is watching is unknown';
+        sub = 'The rules could not be read, so a quiet queue cannot be told apart ' +
+          'from nothing looking.';
+      } else if (!rulesFailed && !armed.trustworthy) {
         tone = 'st-warn';
         title = 'Nothing is being checked';
         sub = unarmedSentence(armed);
@@ -301,7 +605,7 @@
       var words = h('div', {}, [h('h2', { className: 'hero-title', text: title })]);
       if (sub) words.appendChild(h('p', { className: 'hero-sub', text: sub }));
       hero.appendChild(words);
-      hero.appendChild(ribbonChips(problems, armed, capped));
+      hero.appendChild(ribbonChips(problems, armed, capped, rulesFailed));
       return hero;
     }
 
@@ -400,7 +704,7 @@
       return pill;
     }
 
-    function ribbonChips(problems, armed, capped) {
+    function ribbonChips(problems, armed, capped, rulesFailed) {
       var row = h('div', { className: 'hero-chips' });
       var counts = { critical: 0, warning: 0, info: 0 };
       /* Everything still open whose severity is not one of the three. Counted
@@ -437,13 +741,21 @@
           model.atLeast(fmt.plural(taken.length, 'problem'), capped) + ' taken on'));
       }
 
-      row.appendChild(chip(armed.trustworthy ? 'ok' : 'warn',
-        fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking'));
+      /* The armed proof. `0 of 0 rules checking` is a real answer when the
+         rules read landed and a fabrication when it did not, and the two look
+         identical on screen, so the unread case says it is unread instead of
+         printing a count nobody reported. */
+      if (rulesFailed) {
+        row.appendChild(chip('warn', 'rules unread'));
+      } else {
+        row.appendChild(chip(armed.trustworthy ? 'ok' : 'warn',
+          fmt.int(armed.checking) + ' of ' + fmt.int(armed.total) + ' rules checking'));
+      }
 
       /* A channel that was never connected is where a problem goes to be
          missed, so it is stated here rather than only on the pane that owns
          it. */
-      var unconfigured = armed.channels.filter(function (c) { return !c.configured; });
+      var unconfigured = armed.channels.filter(function (c) { return c.configured !== true; });
       if (unconfigured.length) {
         row.appendChild(chip('warn', fmt.plural(unconfigured.length, 'route') + ' not set up'));
       }
@@ -452,8 +764,9 @@
 
     /* -------------------------------------------------------------- queue */
 
-    function queueCard(problems, armed, capped) {
+    function queueCard(problems, armed, capped, rulesError) {
       var card = S.card();
+      var rulesFailed = !!rulesError;
       var needing = model.needingAction(problems);
       var taken = model.takenOn(problems);
 
@@ -481,10 +794,17 @@
         /* The ribbon above already carries the reason, and it carries it in
            these exact words. This block keeps its own heading, because a
            reader who scrolled to the queue needs to know why it is empty
-           without scrolling back, and adds nothing the ribbon said. */
-        body.appendChild(armed.trustworthy
-          ? quietBlock(armed)
-          : S.stateBlock('warn', 'The checks are not running', [], 4));
+           without scrolling back, and adds nothing the ribbon said.
+
+           Three readings, not two: the checks are running, the checks are not
+           running, and nobody could read which. The third used to render as
+           the second, because an unread rules list reaches armedState as the
+           empty one. */
+        body.appendChild(rulesFailed
+          ? rulesUnreadBlock(rulesError, 4, ATTENTION_BAND)
+          : (armed.trustworthy
+              ? quietBlock(armed)
+              : S.stateBlock('warn', 'The checks are not running', [], 4)));
         card.appendChild(body);
         return card;
       }
@@ -539,13 +859,16 @@
        dashboard has a word for.
 
        An unrecognised severity is shown exactly as it arrived rather than
-       translated, which is what alerts-model.js says its lookups do. For a
-       plain unrecognised word the Problems pane prints the same thing for the
-       same problem (pane-alerts.js:741), so two panes an operator moves
-       between during one incident say one word for one state. It does not
-       hold for the two cases below: that pane prints a function for
-       `constructor` and nothing at all for a severity that never arrived, and
-       fixing it is not in this pane's gift.
+       translated, which is what alerts-model.js says its lookups do. The
+       Problems pane takes the same three steps for the same problem
+       (`severityWords()` there too, Stadiora/Aria#10630), so two panes an
+       operator moves between during one incident say one word for one state.
+
+       Both panes' `textOf()` TRIM, which is what makes the agreement hold on
+       every payload rather than on the three #10630 tabulated. Until
+       Stadiora/Aria#10799 this one did not, so a severity of nothing but
+       spaces read "Unknown" on the Problems pane and printed a blank prefix
+       here — #10630's defect 1 surviving on the other pane by another route.
 
        Only a severity that did not arrive at all, or arrived as something
        that is not a word, falls back to "Unknown", because there is nothing
@@ -652,8 +975,36 @@
       return (typeof detail === 'string' && detail) ? detail : fallback;
     }
 
+    /* A string worth showing, or nothing.
+
+       Trimmed, because a severity of three spaces is a non-empty string and
+       would otherwise print as a blank where a word belongs — visible to
+       nobody, and indistinguishable from a row that never had one
+       (Stadiora/Aria#10799). The Problems pane's `textOf()` has always
+       trimmed; this is the two of them agreeing on every payload rather than
+       on the three #10630 happened to tabulate.
+
+       Every caller uses the RESOLVED value rather than testing with this and
+       rendering the raw field, because a predicate that trims over a value
+       that does not is the same defect wearing the fix.
+
+       No count of those callers lives here. Three were written into this
+       comment across three rounds of PR #124's review and all three were
+       wrong; the invariant is checked by
+       `ops-overview-blank-text.test.mjs`'s "padding any string the answer
+       carries changes nothing on the screen", which pads every string the
+       fixture holds and requires the rendered panel to come back
+       byte-identical. Check the render, not this line.
+
+       And note what this function returns for a value that does not
+       resolve: null. `S.h` maps that to an empty string, but a caller that
+       CONCATENATES it prints the four characters `null` — which is how
+       `chartName()` came to say "over the last 7 whole UTC days, null to
+       null" in review round 3. Concatenating callers must guard. */
     function textOf(value) {
-      return (typeof value === 'string' && value) ? value : null;
+      if (typeof value !== 'string') return null;
+      var trimmed = value.trim();
+      return trimmed || null;
     }
 
     /* The window a figure covers, in words, read from the answer rather than
@@ -757,8 +1108,8 @@
 
       value(card, fmt.int(active));
       meta(card, peopleChange(people, active));
-      why(card, windowLabel(people.window) +
-        (textOf(people.environment) ? ', ' + people.environment : ''));
+      var environment = textOf(people.environment);
+      why(card, windowLabel(people.window) + (environment ? ', ' + environment : ''));
 
       /* The two apps, side by side and never added. The headline above them is
          the platform's own distinct count rather than their sum, so a reader
@@ -772,7 +1123,7 @@
         pill.appendChild(h('span', {
           className: 'dot ' + seriesTone(app.tone), 'aria-hidden': 'true'
         }));
-        pill.appendChild(h('span', { text: app.label || app.app }));
+        pill.appendChild(h('span', { text: textOf(app.label) || textOf(app.app) || 'Unnamed app' }));
         pill.appendChild(h('span', { className: 'mono', text: fmt.int(app.active) }));
         return pill;
       });
@@ -983,13 +1334,16 @@
       var rows = h('div', { className: 'kpi-rows' });
       var newest = null;
       platforms.forEach(function (platform) {
+        var code = textOf(platform.versionCode);
         rows.appendChild(h('div', { className: 'kpi-row' }, [
-          h('span', { className: 'kpi-plat', text: textOf(platform.label) || platform.platform }),
+          h('span', {
+            className: 'kpi-plat',
+            text: textOf(platform.label) || textOf(platform.platform) || 'Unnamed platform'
+          }),
           h('div', { className: 'spacer' }),
           h('span', {
             className: 'num',
-            text: platform.versionName +
-              (textOf(platform.versionCode) ? ' (' + platform.versionCode + ')' : '')
+            text: textOf(platform.versionName) + (code ? ' (' + code + ')' : '')
           })
         ]));
         var read = fmt.hoursSince(platform.fetchedAt);
@@ -1022,7 +1376,7 @@
       series.forEach(function (one) {
         var key = h('span', { className: seriesTone(one.color) });
         key.appendChild(h('i', { 'aria-hidden': 'true' }));
-        key.appendChild(h('span', { text: one.label || one.key }));
+        key.appendChild(h('span', { text: textOf(one.label) || textOf(one.key) || 'Unnamed series' }));
         legend.appendChild(key);
       });
 
@@ -1050,9 +1404,9 @@
         body.appendChild(lineChart(series, labels, activity.window));
         if (labels.length) {
           var axis = h('div', { className: 'axis-x', 'aria-hidden': 'true' });
-          axis.appendChild(h('span', { text: labels[0] }));
+          axis.appendChild(h('span', { text: labelAt(labels, 0) }));
           if (labels.length > 1) {
-            axis.appendChild(h('span', { text: labels[labels.length - 1] }));
+            axis.appendChild(h('span', { text: labelAt(labels, labels.length - 1) }));
           }
           body.appendChild(axis);
         }
@@ -1193,11 +1547,29 @@
        and its last reading, because none of that is announced from the <text>
        nodes inside a role="img". A series with no reading at all says so
        rather than being left out of the name. */
+    /* A day label the answer sent, resolved. The chart draws labels in four
+       places -- both ends of the x axis, both ends of the spoken chart name,
+       and the day a series last reported -- and every one of them read the
+       raw array. A label of spaces put its own padding into the axis and into
+       what a screen reader says. */
+    function labelAt(labels, index) {
+      return textOf(list(labels)[index]);
+    }
+
     function chartName(series, labels, win) {
       var head = 'People active each day, one line per app, over ' + windowPhrase(win);
-      if (labels.length) {
-        head += ', ' + labels[0] +
-          (labels.length > 1 ? ' to ' + labels[labels.length - 1] : '');
+      var first = labelAt(labels, 0);
+      var last = labelAt(labels, labels.length - 1);
+      /* Named only when BOTH ends resolve, and this guard is the whole point.
+         `labelAt()` returns null for a label that is blank or not a string,
+         and this is a string concatenation: without the guard the four
+         characters `null` land in the accessible name, which for a
+         role="img" chart is the only thing a screen-reader user gets. Saying
+         nothing costs nothing here -- `windowPhrase(win)` has already said
+         how long the window is. Naming one end and not the other would read
+         as a one-day window, so a half-resolved pair says neither. */
+      if (first && last) {
+        head += ', ' + first + (labels.length > 1 ? ' to ' + last : '');
       }
       return head + '. ' + series.map(function (one) {
         return seriesSentence(one, labels);
@@ -1205,7 +1577,7 @@
     }
 
     function seriesSentence(one, labels) {
-      var name = one.label || one.key;
+      var name = textOf(one.label) || textOf(one.key) || 'Unnamed series';
       var values = list(one.values);
       var reported = [];
       var lastIndex = -1;
@@ -1225,7 +1597,7 @@
         fmt.plural(values.length, 'day') + ' with a reading, ' +
         (lo === high ? 'flat at ' + fmt.int(lo) : 'low ' + fmt.int(lo) + ', high ' + fmt.int(high)) +
         ', ending ' + fmt.int(values[lastIndex]) +
-        (labels[lastIndex] ? ' on ' + labels[lastIndex] : '') + '.';
+        (labelAt(labels, lastIndex) ? ' on ' + labelAt(labels, lastIndex) : '') + '.';
     }
 
     /* One app's line, said in words: how much of the window it has a reading
@@ -1238,7 +1610,7 @@
 
       var row = h('div', { className: 'series-row ' + seriesTone(one.color) }, [
         h('i', { className: 'dot', 'aria-hidden': 'true' }),
-        h('span', { text: one.label || one.key }),
+        h('span', { text: textOf(one.label) || textOf(one.key) || 'Unnamed series' }),
         h('div', { className: 'spacer' })
       ]);
       row.appendChild(h('span', {
@@ -1246,7 +1618,7 @@
         text: lastIndex === -1
           ? 'No reading'
           : fmt.plural(values[lastIndex], 'person', 'people') +
-            (labels[lastIndex] ? ' on ' + labels[lastIndex] : '')
+            (labelAt(labels, lastIndex) ? ' on ' + labelAt(labels, lastIndex) : '')
       }));
       row.appendChild(h('span', {
         className: 'series-cover',
@@ -1268,8 +1640,9 @@
     }
 
     function appendNote(card, note) {
-      if (!textOf(note)) return;
-      card.appendChild(h('div', { className: 'card-foot' }, [h('span', { text: note })]));
+      var words = textOf(note);
+      if (!words) return;
+      card.appendChild(h('div', { className: 'card-foot' }, [h('span', { text: words })]));
     }
 
     /* --------------------------------------------- what is not drawn here */
@@ -1299,7 +1672,7 @@
         glyph.setAttribute('aria-hidden', 'true');
         item.appendChild(glyph);
         item.appendChild(h('div', {}, [
-          h('h4', { className: 'omit-title', text: textOf(entry.title) || entry.key }),
+          h('h4', { className: 'omit-title', text: textOf(entry.title) || textOf(entry.key) }),
           h('p', {
             className: 'omit-desc',
             text: textOf(entry.detail) ||
@@ -1346,16 +1719,25 @@
         num(people.platform && people.platform.previousActive) !== null;
     }
 
-    function figuresSection(band, result) {
+    function figuresSection(band, result, openFailed) {
       if (result && result.error) {
         var box = S.card();
-        var block = S.stateBlock('warn', 'These figures could not be read', [
+        /* The second sentence is a claim about the OTHER read, so it is made
+           only when that read actually landed. Both halves down and it would
+           be telling the operator their queue is fine while the section above
+           says it could not be read. */
+        var lines = [
           S.failureMessage(result.error),
-          'Nothing here is a zero: the figures are unread, not absent. The problems ' +
-            'above were read separately and are unaffected.'
-        ], 3);
+          openFailed
+            ? 'Nothing here is a zero: the figures are unread, not absent. The ' +
+              'problems above could not be read either.'
+            : 'Nothing here is a zero: the figures are unread, not absent. The ' +
+              'problems above were read separately and are unaffected.'
+        ];
+        var block = S.stateBlock('warn', 'These figures could not be read', lines, 3);
         var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
-        again.addEventListener('click', function () { load(); });
+        nameRetry(block, again);
+        retryHandler(again, band.getAttribute('id'));
         block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
         box.appendChild(block);
         band.appendChild(box);

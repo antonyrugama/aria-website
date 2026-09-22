@@ -237,7 +237,15 @@
 
 /* A table narrower than its card scrolls rather than pushing the page wide.
    scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
-.tbl-wrap { overflow-x: auto; }
+/* Positioned, because `overflow-x` clips only a descendant whose containing
+   block is this box. An absolutely positioned one resolves its containing
+   block to the nearest positioned ancestor, so while this box was static the
+   nearest was the page: a `caption.sr` inside a table wider than the phone sat
+   at its static position in page coordinates, escaped this clip and took the
+   document sideways while the table around it scrolled correctly. ops.css
+   carried this on .table-wrap and the v2 sheets dropped it when they were
+   written from the template. Stadiora/Aria#10706. */
+.tbl-wrap { overflow-x: auto; position: relative; }
 
 /* aria.css styles .tbl th as a column header: uppercase, 9.5px, tracked out.
    A row header is a row's NAME, and on this pane one of those names is a

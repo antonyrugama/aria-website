@@ -31,12 +31,22 @@
    of this check failed at 375px on a second badge that the same commit had
    passed locally on Windows. Linux is what the check is measured on.
 
-   Two widths, 375px and 360px. 375px is the acceptance criterion; 360px exists
-   because of the platform split above. The first CI run of the v2 Problems
-   pane failed at 375px on Linux on a filter note that fitted 375px on macOS
+   Three widths, 375px, 360px and 320px. 375px is the acceptance criterion;
+   360px exists because of the platform split above. The first CI run of the
+   v2 Problems pane failed at 375px on Linux on a filter note that fitted on macOS
    with nothing to spare, so a local run could not see it and a reviewer on a
    Mac had to find it by hand. 360px reproduces on any platform what CI's wider
-   font metrics produce at 375px.
+   font metrics produce at 375px. 320px was added while auditing #7366, which
+   filed the overflow this list used to describe at that width: it is the
+   narrowest width the check named but did not lay out, and all ten v2 panes
+   now fit it on Linux CI. That is the whole of the claim. It is deliberately
+   not a claim that #7366's own control was retired here: that control is
+   `div.filter-item.filter-gap`, styled by assets/ops.css:434 and built only by
+   assets/shell.js and assets/operate.js, none of which any pane loads — see
+   the ops.css bullet below, which says this sweep has never laid that sheet
+   out at all. Only assets/pane-alerts.js draws a Severity control today, and
+   `.seg { min-width: 900px }` appended to ops.css leaves this check green at
+   320px on all ten panes while the same rule in assets/aria.css reds it.
 
    The stub is deliberately hostile rather than tidy. It sends a rule that
    cannot judge and whose reason is the longest sentence the vocabulary in
@@ -62,15 +72,18 @@
    own, and a failure card passes all five: it is the right file, it sets the
    right `data-pane`, the shell reaches ready, the top bar is written from the
    registry rather than from the read, and all three clear the floor of eight
-   elements — by 23, 30 and 115. Without a per-pane marker the sweep shrank from
+   elements, each with room to spare. Without a per-pane marker the sweep shrank from
    ten laid-out panes to seven and went on printing that it had swept ten.
 
-   Two shells, so two spellings of everything the sweep reads off the page.
-   assets/shell-pane-v2.js boots from `data-pane` and writes the question into
-   `.page-sub`; the v1 assets/shell.js boots from `data-page` and writes it
-   into `.page-question`. Cloud costs is the one pane still on the v1 shell.
-   Reading only the v2 spelling drops it out of the sweep silently, which is
-   how both of these were found.
+   Two shells have existed, so the sweep reads two spellings of everything it
+   takes off the page. assets/shell-pane-v2.js boots from `data-pane` and
+   writes the question into `.page-sub`; the v1 assets/shell.js boots from
+   `data-page` and writes it into `.page-question`. Which pages use which is
+   deliberately not stated here — that sentence was written when it was true
+   and went stale without anything noticing. Reading only one spelling drops a
+   pane out of the sweep silently, which is how both of these were found, and
+   the `measured.size !== PAGES.length` check below is what actually catches
+   that rather than this comment.
 
    WHAT THIS DOES NOT COVER, in the words of what was actually measured:
 
@@ -90,13 +103,38 @@
    - **An overflow a container clips.** The verdict is the width of the
      document, so an element that overruns inside an ancestor that clips it
      never reaches the document and is invisible here on every pane. Measured:
-     deleting the four per-pane copies of `.hero > .hero-chips { grid-column:
-     1 / -1 }` collapses the hero's title column to 0px on three panes and to
-     41px on App releases, and `.hero` itself then reports scrollWidth 398
-     against clientWidth 343 — while `documentElement.scrollWidth` stays 375
-     and this check stays green, byte-identically, in both states. That defect
-     class needs an element-level check and is filed as Stadiora/Aria#10397
-     rather than folded in.
+     deleting **all five** copies of `.hero > .hero-chips { grid-column: 1 / -1
+     }`, each at its own site inside its file's existing `@media (max-width:
+     980px)` block — pane-alerts-v2.css, pane-overview-v2.css,
+     pane-releases-v2.css, pane-settings-v2.css and the shared assets/aria.css
+     — collapses the hero's title column to 0px on three panes and to 41px on
+     App releases, and `.hero` itself then reports scrollWidth 398 against
+     clientWidth 343, while `documentElement.scrollWidth` stays 375 and this
+     check stays green in both states. Deleting only the four per-pane copies
+     is a no-op: 4bf94af (PR #92) added the fifth to the shared sheet, so
+     either set alone is masked by the other. This bullet published the
+     four-site version until round 2 of PR #103 re-ran it. That defect class
+     needs an element-level check; scripts/ops-hero-narrow.test.mjs already
+     binds the hero half of it on /ops/shell-v2.html, where the shared rule is
+     unmasked, and the rest is filed as Stadiora/Aria#10397.
+   - **Anything out of the document's flow, and anything past the left edge.**
+     `documentElement.scrollWidth` does not grow for a `position: fixed` box
+     however far past the right edge it sits, and it does not grow for any box
+     past the *left* edge either. The shell puts real chrome in fixed
+     positioning — shell-pane-v2.css:88, :114, :175, :293 — so this is not a
+     hypothetical shape here. Measured at 320px in both themes, one pseudo
+     element appended unscoped to assets/aria.css, one property changed
+     between rows: `body::after { content:''; position: fixed; left: 0; top: 0;
+     width: 900px; height: 8px }` leaves this check **green** on all ten panes,
+     a 900px bar hanging 580px past the edge; the identical box at `position:
+     absolute` reds it at `documentElement.scrollWidth` 900 against 320; and
+     that same absolute box at `left: -900px` is green again. The per-element
+     report cannot close either gap, because it filters on `box.right >
+     viewport + 0.5` and has no left-edge test. Note for anyone re-running it:
+     a `position: fixed` descendant of `.topbar` is NOT viewport-fixed, because
+     assets/aria.css gives `.topbar` a `backdrop-filter`, which makes it the
+     containing block. Round 1 of PR #103 tested this class there and got a
+     false negative for exactly that reason.
    - **Sub-pixel overflow.** The verdict is `documentElement.scrollWidth`
      against `documentElement.clientWidth`, and both are integers, so overflow
      below about half a pixel is not visible to it. The per-element report
@@ -104,10 +142,22 @@
      only elements more than half a pixel past the edge and it decides nothing,
      so it does not close that gap either. Nothing here catches a margin that
      small.
-   - **320px.** Only 375px and 360px are laid out. A further overflow exists at
-     320px — the Severity segmented control is wider than the bar — and it is
-     filed rather than folded in, so an overflow that appears only below 360px
-     is invisible to this check on every pane, not just that one.
+   - **Every width that is not 375px, 360px or 320px.** This is three point
+     samples, not a range. Nothing narrower than 320px is laid out and nothing
+     wider than 375px is either, so an overflow confined to any other width is
+     invisible here on every pane. The phone widths above 375px that most
+     current large handsets report are in that gap.
+     Not theoretical: it is why this check never saw Stadiora/Aria#7365, whose
+     band starts at 861px. Appending
+     `@media (min-width: 421px) and (max-width: 460px) { .content { min-width:
+     560px } }` to assets/aria.css reds every pane at 430px and leaves this
+     check green at all three of its widths.
+   - **ops/login.html and ops/setup.html.** PAGES comes from the pane registry
+     and those two are not panes, so no width here ever lays them out. They are
+     also the only two pages still linking assets/ops.css, so the one
+     stylesheet Stadiora/Aria#7365 and #7366 were filed against has never been
+     laid out narrow by anything. check-ops-shell-v2.mjs loads both, at 1440px
+     only.
 
    Usage:  node scripts/check-ops-narrow-overflow.mjs
    Chrome: CHROME_PATH, or the usual install locations on Linux and Windows.
@@ -121,7 +171,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = 'ops/assets/pane-registry.js';
-const WIDTHS = [375, 360];
+const WIDTHS = [375, 360, 320];
 const HEIGHT = 812;
 const THEMES = ['dark', 'light'];
 
@@ -132,8 +182,8 @@ const SETTLE_MS = 2500;
 /* A floor, and only a floor: it says the pane put something on the page
    rather than nothing. It is not a claim that the pane drew its data — see
    WHAT THIS DOES NOT COVER above for the two panes where it did not. The
-   thinnest pane in this sweep today is Cloud costs, whose not-published card
-   is 19 elements. */
+   floor is set well under the thinnest pane's real count, which the run prints
+   and this comment deliberately does not restate. */
 const MIN_CONTENT_ELEMENTS = 8;
 
 /* The things a shell puts on screen INSTEAD of a pane. Each is a single card
@@ -216,8 +266,8 @@ const SESSION = { id: 'ses_1', createdAt: ago(10 * MINUTE), lastSeenAt: ago(1000
    the longest of the five labels, followed by INSUFFICIENT_REASON.no_baseline,
    the longest of the four reasons — 'there is no history to compare against'
    at 38 characters against below_minimum_samples' 27. Both lists are in
-   assets/alerts-model.js:50-68, and assets/pane-alerts.js:1406-1408 composes
-   the pill by joining them with ', '. That row is the one this check was
+   assets/alerts-model.js:50-68, and assets/pane-alerts.js:1429-1434 composes
+   the pill, joining them with ', ' on :1432-1433. That row is the one this check was
    written for, and NARROW_BADGE below asserts it reached the DOM.
 
    no_baseline is sent for cost_anomaly, whose scope is "Against the last 7
@@ -414,9 +464,9 @@ const PROBLEM = {
   description: 'Worker memory pressure is killing the generation process.',
   ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
   /* workPane, not pane: assets/pane-alerts.js:928-931,
-     assets/pane-overview.js:539-544 and assets/pane-jobs-live-v2.js:921-924
+     assets/pane-overview.js:589-594 and assets/pane-jobs-live-v2.js:897-900
      all read problem.workPane / problem.workPaneLabel, and so does the panes'
-     own fixture at scripts/ops-alerts-v2.test.mjs:124. Spelled `pane` this
+     own fixture at scripts/ops-alerts-v2.test.mjs:137. Spelled `pane` this
      stub drew an action row with the drill-down link missing, so the widest
      row the sweep laid out was one button narrower than the real one
      (Stadiora/Aria#10461). */
@@ -458,12 +508,64 @@ const PROBLEM = {
    side effect: the markers are kept in step by hand, on the same terms as the
    fixtures they are taken from, and a pane remodel that moves one is meant to
    come past this file. */
+/* One window of run history, for What happened. Stadiora/Aria#5563 moved that
+   pane off the alerting routes and onto GET /api/ops/runs, so its markers
+   below come off this object rather than off the rules and the problem. */
+const RUNS = {
+  window: { range: '7d', startAt: ago(7 * DAY), endExclusiveAt: ago(0) },
+  selection: { type: null, outcome: null, limit: 50 },
+  coverage: {
+    state: 'ready', recordingSince: ago(30 * DAY), lastRecordedAt: ago(4 * MINUTE),
+    coversWindow: true
+  },
+  summary: {
+    runs: 214, completed: 198, failed: 13, canceled: 3, failureReasons: 2, unfinished: 1,
+    duration: { p50Ms: 8400, measured: 211, total: 214 },
+    queued: { p50Ms: 900, measured: 214, total: 214 }
+  },
+  facets: {
+    types: [
+      { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true, runs: 140 },
+      { value: 'video_analysis', label: 'Sprint video analysis', labelled: true, runs: 74 }
+    ],
+    outcomes: [
+      { value: 'completed', label: 'Worked', runs: 198 },
+      { value: 'failed', label: 'Failed', runs: 13 },
+      { value: 'canceled', label: 'Cancelled', runs: 3 }
+    ]
+  },
+  failures: [
+    { failureCode: 'model_timeout', runs: 9, retryable: true,
+      firstSeenAt: ago(3 * DAY), lastSeenAt: ago(2 * HOUR),
+      byType: [{ type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+        runs: 9 }] },
+    { failureCode: 'upstream_rejected', runs: 4, retryable: false,
+      firstSeenAt: ago(2 * DAY), lastSeenAt: ago(5 * HOUR),
+      byType: [{ type: { value: 'video_analysis', label: 'Sprint video analysis',
+        labelled: true }, runs: 4 }] }
+  ],
+  runs: [
+    { jobId: '11111111-1111-4111-8111-111111111111',
+      type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+      outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout',
+      retryable: true, modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 60000,
+      finishedAt: ago(2 * HOUR) },
+    { jobId: '22222222-2222-4222-8222-222222222222',
+      type: { value: 'video_analysis', label: 'Sprint video analysis', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR) }
+  ],
+  truncated: false
+};
+
 const PROOF = {
   /* SUMMARY.people.platform.active and SUMMARY.release.platforms[0].versionName,
      both of which the failure card replaces with "Not reported". */
   overview: ['1,102', SUMMARY.release.platforms[0].versionName],
   jobs: [RULES[0].thresholdLabel, `of ${RULES.length} rules were checking`],
-  history: [RULES[0].title, PROBLEM.category],
+  /* RUNS.failures[0].failureCode and the model its first run used. Both are
+     inside cells this sweep measures, and neither is on an empty state. */
+  history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
   /* The drill-down link the workPane rename restored, and the problem's own
      reference. Both sit in the action row this check measures. */
   alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
@@ -520,6 +622,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/alerts/problems')) {
     return { data: { problems: [PROBLEM] } };
   }
+  if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
@@ -688,10 +791,11 @@ const probeFor = (markers) => `(() => {
     viewport: viewport,
     /* Which pane the page says it is, and which theme actually got applied.
 
-       Two spellings because there are two shells: shell-pane-v2.js boots from
-       data-pane and the v1 assets/shell.js from data-page, and Cloud costs is
-       the one page still on the v1 one. Reading only the v2 spelling drops
-       that pane out of the swept count, which is how this was found.
+       Two spellings because two shells have existed: shell-pane-v2.js boots
+       from data-pane and the v1 assets/shell.js from data-page. Which pages
+       use which is not asserted here; reading only one spelling would drop a
+       pane out of the swept count, and the count check on the next line is
+       what catches that rather than this comment.
 
        The theme is set through localStorage before the navigation and read
        back here because a write that silently failed would leave this sweep

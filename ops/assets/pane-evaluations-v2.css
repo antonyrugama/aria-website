@@ -53,13 +53,23 @@
    classes the same band writes.
 
    One measure for every surface a person types into or reads an answer off.
-   ops.css capped .evidence-form at 920px and capped nothing else, so the
-   dataset form, its answer and the widest approval card ran the full 984px of
-   the band while the evidence form beside them stopped short. A form is a
-   measure, not a page width. */
+   ops.css capped the evidence form and the answer under it at 920px and
+   capped nothing else, so the dataset form, its answer and the widest
+   approval card ran the full 984px of the band while that pair beside them
+   stopped short. A form is a measure, not a page width.
+
+   `#approval-result` is here by id rather than by class because it has no
+   class of its own: pane-evaluations.js gives it `form-alert is-ok`, and both
+   of those also name the re-authentication modal's alert, which
+   shell-pane-v2.css owns. Capping `.form-alert` would put a `max-width` on
+   that alert — the one declaration `.modal-card .form-alert` does not itself
+   declare, so the one this sheet could actually leak into it. An id reaches
+   exactly the element that needs the measure and nothing else. */
 .dataset-form,
 .dataset-result,
 .evidence-form,
+.evidence-result,
+#approval-result,
 .approval-card { max-width: 920px; }
 
 /* Neither a validation message nor a dataset name has a space in it to break
@@ -143,6 +153,94 @@ select.field-input { appearance: none; padding-right: 26px; }
 }
 .dataset-issues { margin: 6px 0 0 16px; display: flex; flex-direction: column; gap: 3px; }
 .dataset-issues li { font-family: var(--mono); font-size: 11.5px; }
+
+/* The approval band's answer slot: hidden until a request is read or decided,
+   then one sentence saying which request is in which state at which revision.
+   ops.css drew it as a box; v2 arrived with nothing, so the sentence landed as
+   bare body text in the stack's 26px gap — a returned answer wearing the same
+   face as page copy. Stadiora/Aria#10674, which is Stadiora/Aria#10456's shape
+   again.
+
+   Every declaration here is also declared by `.modal-card .form-alert` in
+   shell-pane-v2.css, which this page also loads and which is the more specific
+   selector, so the re-authentication modal's own alert is untouched by this
+   rule. That parity is the whole argument, which is why this block declares
+   nine properties and not eight: `gap` has no rendered effect here — the pane
+   only ever writes `textContent`, so the flex container holds one anonymous
+   item and there is nothing to space — and `color` is inert too, because the
+   inherited colour already resolves to `--ink`. Both are carried so the
+   property sets match. Drop either and this rule starts declaring something
+   the modal rule does not, which is the only way it could reach the modal. */
+.form-alert {
+  display: flex;
+  gap: 9px;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+/* `display: flex` above is an author rule and `[hidden]` is a user-agent one,
+   so painting this box at all un-hides the empty slot the pane keeps hidden
+   between answers. This is the half that keeps it hidden. The modal alert is
+   never `hidden` — it collapses on `:empty` — and login and setup clear the
+   class outright, so no other .form-alert in the repository reaches this.
+
+   shell-pane-v2.css:259 makes the opposite choice for that modal alert, and
+   this sheet now agrees with it: pane-evaluations.js no longer hides the
+   approval slot at all, so `#approval-result` never reaches this rule. It
+   collapses on `:empty` below instead, which keeps the live region in the
+   accessibility tree between answers (Stadiora/Aria#10809). The rule stays
+   because .form-alert is a shared class and a `hidden` one must still
+   disappear; it is simply not how the approval answer is emptied. */
+.form-alert[hidden] { display: none; }
+
+/* `is-ok` says the call came back, not that the news is good: the sentence it
+   carries may well read `rejected`. So the mark means "this is the answer",
+   the box stays a neutral surface under it, and the mark itself is a 3px rail
+   — a shape, legible in greyscale, under every colour-vision deficiency, and
+   in forced-colours mode, where a border survives and every shadow and tint is
+   thrown away. A left border rather than an inset shadow for that last reason.
+   Colour is the third channel here, never the only one.
+
+   The pane bakes the class in at construction and never removes it, so today
+   the rail is on whenever the slot is visible. It is a modifier rather than
+   part of the base so that the base stays property-for-property with the modal
+   rule above; `border-left` is the one thing here the modal must not inherit. */
+.form-alert.is-ok {
+  border-left: 3px solid var(--emerald);
+  background: color-mix(in srgb, var(--emerald) 10%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--emerald) 26%, transparent);
+}
+
+/* The approval answer slot, present and still empty, has no extent.
+
+   This rule is what lets assets/pane-evaluations.js keep the region in the
+   document permanently. `role="status"` is announced by diffing a live region
+   between serialisations of the accessibility tree, so a region that only
+   appears at the moment it already holds its text is a region CREATION rather
+   than a change, and may be announced to nobody (Stadiora/Aria#10809). The
+   pane therefore never hides the slot — it empties it — and this rule pays
+   for that by taking the box's decoration off while it has nothing to say.
+   Without it the form would carry a permanent empty railed box.
+
+   `display` is deliberately untouched, and so is `visibility`: either would
+   take the region back out of the accessibility tree and put the defect
+   straight back while leaving the DOM looking correct. A zero `height` is
+   NOT in that list — a 0px-tall box is still rendered and still in the tree,
+   measured `ignored: false, role: status` at height 0 — but dropping padding,
+   shadow and border is enough to reach 0 here without asking for it.
+
+   Addressed by id rather than as `.form-alert:empty` for two reasons. The
+   class form also reaches the shell's own dialog alert, which is a shared
+   surface a pane sheet has no business restyling, and assets/shell-pane-v2.css
+   already collapses that one at :275 by the same argument. And 1,0,0 beats
+   `.form-alert.is-ok`, so the rail this has to switch off goes off wherever
+   the rule sits in the file, rather than only while it sits below. */
+#approval-result:empty { padding: 0; box-shadow: none; border-left-width: 0; }
 
 .q-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 
@@ -278,8 +376,17 @@ select.field-input { appearance: none; padding-right: 26px; }
 .preview .tbl tbody tr:hover { background: none; }
 
 /* A table has a minimum width its columns cannot go under, so on a phone it
-   scrolls inside its own panel rather than taking the document with it. */
-.tbl-wrap { overflow-x: auto; }
+   scrolls inside its own panel rather than taking the document with it.
+
+   Positioned, because `overflow-x` clips only a descendant whose containing
+   block is this box. An absolutely positioned one resolves its containing
+   block to the nearest positioned ancestor, so while this box was static the
+   nearest was the page: a visually-hidden span inside a table wider than the
+   phone would sit at its static position in page coordinates, escape this
+   clip and take the document sideways while the table around it scrolled
+   correctly. ops.css carried this on .table-wrap and the v2 sheets dropped it.
+   Stadiora/Aria#10706. */
+.tbl-wrap { overflow-x: auto; position: relative; }
 .tbl-wrap:focus-visible { outline-offset: -2px; }
 .tbl-wrap .tbl { min-width: 560px; }
 
@@ -358,6 +465,60 @@ select.field-input { appearance: none; padding-right: 26px; }
 .u-list-end { display: flex; align-items: center; gap: 8px; }
 
 /* -------------------------------------------------------------- narrow */
+
+/* The folds. assets/pane-evaluations.js has the reasoning for why this pane
+   folds at all and why 900 is the width; this is only what it looks like.
+
+   .band-body exists because aria.css:365 makes .band a column flex container
+   with a 13px gap, so the bands' children were flex items spaced by their
+   parent. Moving them inside a wrapper would have collapsed every one of
+   those gaps to nothing at every width, desktop included. The wrapper
+   restores the container it interposed, exactly: same display, same
+   direction, same gap.
+
+   And it restores `display` under [hidden] too. `[hidden] { display: none }`
+   is a user-agent rule, so the author `display: flex` above beats it and the
+   attribute would have gone on being set and unset while every band stayed
+   open. Painting a box is how you stop `hidden` working. */
+.band-body { display: flex; flex-direction: column; gap: 13px; }
+.band-body[hidden] { display: none; }
+
+/* Above the fold width there is no control and nothing folded: the button is
+   out of the layout, out of the tab order and out of the accessibility tree,
+   and pane-evaluations.js shows every body. */
+.band-fold { display: none; }
+
+@media (max-width: 900px) {
+  /* Out of flow, so it cannot wrap onto a line of its own — .band-head is a
+     wrapping flex row (aria.css:366) and at 375 the title, the note and the
+     stamp already fill more than one line between them. Pinned to the top
+     right it is in the same place on every band, and the padding keeps the
+     title from running under it. */
+  .band > .band-head { position: relative; padding-right: 42px; }
+  .band-fold {
+    position: absolute; top: -4px; right: 0;
+    display: grid; place-items: center;
+    width: 36px; height: 36px;
+    padding: 0;
+    border: 0; border-radius: var(--r-sm, 8px);
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .band-fold:hover { background: var(--surface-2); color: var(--ink); }
+  .band-fold svg { width: 18px; height: 18px; transition: transform 140ms ease; }
+  /* The chevron points down at a band that will open downwards and up at one
+     already open. Rotation rather than two glyphs keeps it one element, so
+     the state cannot be half-applied. */
+  .band-fold[aria-expanded="true"] svg { transform: rotate(180deg); }
+}
+
+/* A chevron that spins is decoration on a state the attribute already
+   carries, and is not essential motion. */
+@media (prefers-reduced-motion: reduce) {
+  .band-fold svg { transition: none; }
+}
+
 @media (max-width: 1280px) {
   .u-score { grid-template-columns: minmax(0, 1fr) 110px 48px 78px; gap: 12px; }
 }

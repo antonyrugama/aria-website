@@ -88,6 +88,16 @@
 
   var RANGE_DAYS = { '7d': 7, '30d': 30 };
 
+  /* What the close endpoint keeps of a note, and the same number the textarea
+     stops at, so the field cannot accept text the record will not hold.
+
+     The attribute alone is not the whole fix. `maxlength` stops typing, but a
+     PASTE past the limit is truncated by the browser without a word, so an
+     operator who pastes a paragraph gets a note ending mid-sentence and no
+     sign that anything was dropped (Stadiora/Aria#5498). The line beside the
+     field is silent until the limit is actually reached and then says so. */
+  var NOTE_LIMIT = 500;
+
   /* How far back the closed list looks, and how many of them it shows. The
      window is this pane's own rather than the shell's: the shell's range
      decides which problems are in the QUEUE, and a closed list that emptied
@@ -417,7 +427,7 @@
       var wrap = h('div', { className: 'stack' });
       wrap.appendChild(hero(queue, armed, capped, queueCapped, rulesFailed));
 
-      var late = latenessNote(armed, rulesFailed);
+      var late = latenessNote(armed, rulesFailed, queue);
       if (late) wrap.appendChild(late);
 
       wrap.appendChild(openFailed
@@ -445,11 +455,63 @@
         'Nothing here is a zero. This part is unread, not empty.'
       ]);
       var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
+      nameRetry(block, again);
       again.addEventListener('click', function () { reload(); });
       block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
       box.appendChild(block);
       section.appendChild(box);
       return section;
+    }
+
+    /* A control whose whole name is "Try again" says the action and never its
+       object. A screen reader's control list enumerates by NAME, so an
+       operator pulling one up is told what the button does and not which read
+       it would repeat -- and this pane draws one of these on four different
+       failures.
+
+       #10760 says three are on screen at once. They are not: render() treats
+       both reads failing as the whole pane unreadable and returns through
+       region.failed(), so two of THESE can never share a screen. The pair the
+       pane can really draw is one of these beside the record-detail retry,
+       which carries its own `sr` span. So this is not about disambiguating a
+       pair; it is about one button, on its own, saying nothing.
+
+       #10760 proposed aria-describedby. That is what PR #98 tried first on
+       the Overview pane and then replaced, because a description is announced
+       on focus and every list that enumerates controls -- NVDA's Elements
+       List, JAWS's button list, the VoiceOver rotor -- reads names, so both
+       entries stayed "Try again" there. Composing the NAME out of the button
+       and its own headline is what those lists read, and it keeps the visible
+       word as the first token so voice control still works on what the
+       operator can see. aria-label would have replaced that word.
+
+       Copied from pane-overview.js rather than shared, because the two panes
+       load no common module of their own and the shell is not this pane's to
+       extend. */
+    var retryN = 0;
+    function nameRetry(block, again) {
+      var kids = block.childNodes || [];
+      for (var i = 0; i < kids.length; i++) {
+        if (/^h[1-6]$/i.test(String(kids[i].tagName || ''))) {
+          retryN += 1;
+          /* setAttribute, not .id. The DOM harness these are tested through
+             has no id accessor, so a property write leaves getAttribute('id')
+             null: every reference would dangle in the tests while working in
+             a browser. That is a false RED, not a false green -- five of the
+             ten tests fail -- but it is the kind of false red that gets
+             "fixed" by loosening the assertion, and then the loosened
+             assertion is the false green. */
+          var headingId = kids[i].getAttribute('id');
+          if (!headingId) {
+            headingId = 'pb-failed-' + retryN;
+            kids[i].setAttribute('id', headingId);
+          }
+          var buttonId = 'pb-retry-' + retryN;
+          again.setAttribute('id', buttonId);
+          again.setAttribute('aria-labelledby', buttonId + ' ' + headingId);
+          return;
+        }
+      }
     }
 
     /* The Problems count beside the rail item. A real read or nothing: it is
@@ -581,25 +643,83 @@
        well enough for the list under them to be read as everything that is
        wrong. It is not the degraded preview state — the reads all landed — it
        is the answer itself saying the watching is short. */
-    function latenessNote(armed, rulesFailed) {
-      if (rulesFailed || !armed.total) return null;
+    function latenessNote(armed, rulesFailed, queue) {
+      if (rulesFailed) return null;
       var bits = [];
-      if (armed.errored) {
-        bits.push(fmt.plural(armed.errored, 'rule') + ' failed the check itself.');
+      if (armed.total) {
+        if (armed.errored) {
+          bits.push(fmt.plural(armed.errored, 'rule') + ' failed the check itself.');
+        }
+        /* Waiting and never-wired are counted apart, because they ask the
+           operator for different things: one for patience, one for a source.
+           Saying "cannot reach a verdict yet" over a rule nothing feeds sends
+           somebody back tomorrow to read the identical sentence
+           (Stadiora/Aria#10812). */
+        if (armed.insufficientData > armed.unconfigured) {
+          bits.push(fmt.plural(armed.insufficientData - armed.unconfigured, 'rule') +
+            ' cannot reach a verdict yet.');
+        }
+        if (armed.unconfigured) {
+          bits.push(fmt.plural(armed.unconfigured, 'rule') +
+            (armed.unconfigured === 1
+              ? ' has nothing wired up to feed it'
+              : ' have nothing wired up to feed them') +
+            ', so waiting will not help.');
+        }
+        if (armed.neverRun) {
+          bits.push(fmt.plural(armed.neverRun, 'rule') +
+            (armed.neverRun === 1 ? ' has' : ' have') + ' never run.');
+        }
+        if (bits.length) {
+          bits.push('A rule that is not judging is not watching, whatever the list below says.');
+        }
       }
-      if (armed.insufficientData) {
-        bits.push(fmt.plural(armed.insufficientData, 'rule') + ' cannot reach a verdict yet.');
-      }
-      if (armed.neverRun) {
-        bits.push(fmt.plural(armed.neverRun, 'rule') + ' has never run.');
-      }
+
+      var undelivered = deliveryGap(armed, queue);
+      if (undelivered) bits.push(undelivered);
+
       if (!bits.length) return null;
-      bits.push('A rule that is not judging is not watching, whatever the list below says.');
 
       var note = h('div', { className: 'note' });
       note.appendChild(icon('warn', 'is-warn'));
       note.appendChild(h('div', { text: bits.join(' ') }));
       return note;
+    }
+
+    /* Nothing has ever reached anybody, said where the problems are rather
+       than three bands further down beside the destinations.
+
+       "Where problems are sent" already reports each destination honestly, one
+       row at a time. What no row can say is the thing that matters: that these
+       open problems, the oldest of them 51 days old at the time of writing,
+       have sat here without a single notification ever going out
+       (Stadiora/Aria#10811). An operator reading a queue is entitled to know
+       that reading it is the only way anyone finds out.
+
+       Gated on there being something undelivered, because with an empty queue
+       nothing has failed to arrive and the sentence would be an unprompted
+       complaint about configuration. Gated on `channelsKnown` because a
+       payload that did not mention delivery cannot support a claim about it. */
+    function deliveryGap(armed, queue) {
+      if (!armed.channelsKnown) return null;
+      if (!queue || !queue.length) return null;
+      if (armed.everDelivered) return null;
+      /* Before either claim below, because both of them are claims that
+         nothing arrived and an unreadable stamp does not support one. Over
+         every channel for the same reason `everDelivered` is: a rotated-out
+         destination's stamp is still a delivery this payload reports -- and
+         that is also why "No destination is set" survives in front of it
+         when nothing is configured. Both facts are true and only one of them
+         is actionable. */
+      if (armed.unreadableDelivery) {
+        return (armed.channelsConfigured ? '' : 'No destination is set. ')
+          + 'A delivery is reported at a time that cannot be read, so whether '
+          + 'anything here has been sent cannot be told.';
+      }
+      if (!armed.channelsConfigured) {
+        return 'No destination is set, so nothing here has been sent to anyone.';
+      }
+      return 'Nothing has ever been delivered, on any destination that is set up.';
     }
 
     /* -------------------------------------------------------- the problems */
@@ -721,6 +841,28 @@
       return box;
     }
 
+    /* The severity in words, for a severity the answer chose and this file did
+       not. Three steps, the same three the Overview pane takes since #10393,
+       because an operator moving between the two panes during one incident
+       must meet one word for one state:
+
+         - the label this file keeps for a severity it knows,
+         - the severity itself when that is a word, so an unrecognised one is
+           reported rather than hidden,
+         - "Unknown" when neither is a word. Not a blank: shell-pane-v2.js:97
+           skips textContent entirely for `undefined`, so an absent severity
+           drew a pill with nothing in it and told the operator nothing was
+           missing.
+
+       Both lookups go through textOf(), which is what stops `constructor` and
+       `toString` -- words every plain object in JavaScript answers to -- from
+       reaching the screen as the source of a function. SEVERITY_LABEL is a
+       plain object literal, so SEVERITY_LABEL['constructor'] is Object, and
+       the pill printed it. */
+    function severityWords(severity) {
+      return textOf(SEVERITY_LABEL[severity]) || textOf(severity) || 'Unknown';
+    }
+
     function problemHead(problem, tone) {
       var row = h('div', { className: 'p-head' });
 
@@ -738,7 +880,7 @@
       }));
       strip.appendChild(h('span', {
         className: 'pill ' + (SEVERITY_PILL[tone] || 'info'),
-        text: SEVERITY_LABEL[problem.severity] || problem.severity
+        text: severityWords(problem.severity)
       }));
       if (textOf(problem.reference)) {
         strip.appendChild(h('span', { className: 'pill ghost' }, [
@@ -1166,8 +1308,23 @@
       noteWrap.appendChild(h('label', {
         className: 'p-label', 'for': noteId, text: 'What happened? Kept with the record'
       }));
-      var note = h('textarea', { id: noteId, rows: '2', maxlength: '500' });
+      var limitId = discloseId('close-note-limit', surface);
+      var note = h('textarea', {
+        id: noteId, rows: '2', maxlength: String(NOTE_LIMIT),
+        'aria-describedby': limitId
+      });
       noteWrap.appendChild(note);
+      /* Empty until the limit is reached, so the ordinary case carries no
+         extra words, and a sentence the moment the field starts dropping
+         what is put into it. role="status" rather than "alert": nothing is
+         wrong, and it is not worth interrupting what is being typed. */
+      var limit = h('p', { className: 'tiny muted', id: limitId, role: 'status' });
+      noteWrap.appendChild(limit);
+      note.addEventListener('input', function () {
+        limit.textContent = String(note.value || '').length >= NOTE_LIMIT
+          ? 'At the ' + NOTE_LIMIT + '-character limit. Anything past it is not kept.'
+          : '';
+      });
       box.appendChild(noteWrap);
 
       var confirm = h('button', {
@@ -1429,8 +1586,14 @@
       var status = rule.lastEvaluationStatus;
       var words = EVALUATION_LABEL[status] || status || 'Unknown';
       if (status === 'insufficient_data' && rule.lastInsufficientReason) {
-        words += ', ' + (INSUFFICIENT_REASON[rule.lastInsufficientReason] ||
-          rule.lastInsufficientReason);
+        /* Through textOf(), for severityWords()'s reason one screen above:
+           INSUFFICIENT_REASON is a plain object literal, so a reason of
+           `constructor` is Object and the row printed `function Object() {
+           [native code] }` at an operator. textOf() rejects anything that is
+           not a word, so the raw key prints instead -- which is what the
+           severity pill does with the same payload (Stadiora/Aria#10630). */
+        words += ', ' + (textOf(INSUFFICIENT_REASON[rule.lastInsufficientReason]) ||
+          textOf(rule.lastInsufficientReason) || 'reason not given');
       }
       var glyph = status === 'ok' ? 'check'
         : status === 'firing' ? 'warn'
@@ -1704,6 +1867,20 @@
         return box;
       }
 
+      /* Absent is not empty. An answer that carried no channel list at all
+         cannot support "No notification channel is set up" -- that is a
+         statement about the world derived from a gap in the payload
+         (Stadiora/Aria#10811). */
+      if (!armed.channelsKnown) {
+        body.appendChild(h('p', {
+          className: 'tiny is-warn',
+          text: 'The answer did not say where problems are sent, so whether ' +
+            'anything is getting through is unknown.'
+        }));
+        box.appendChild(body);
+        return box;
+      }
+
       if (!armed.channels.length) {
         body.appendChild(h('p', {
           className: 'tiny muted', text: 'No notification channel is set up.'
@@ -1716,12 +1893,26 @@
       armed.channels.forEach(function (channel) {
         var row = h('div', { className: 'c-route' });
         var words = h('div', { className: 'grow' });
-        words.appendChild(h('div', { className: 'strong tiny', text: channel.label }));
+        /* Named by its key when the answer carries no label, because an empty
+           element is indistinguishable from a row that is simply not there --
+           to a reader, to a screen reader, and to a test (Stadiora/Aria#10821).
+           The key is not pretty and is not meant to be: it is the only thing
+           on hand that identifies WHICH destination this row is about, and a
+           row that cannot say that is not worth drawing. */
+        words.appendChild(h('div', { className: 'strong tiny',
+          text: textOf(channel.label) || textOf(channel.channel) || 'Unnamed destination' }));
         words.appendChild(h('div', { className: 'tiny muted', text: channelNote(channel) }));
         row.appendChild(words);
 
-        var status = channel.configured
-          ? (CHANNEL_STATUS[channel.lastDeliveryStatus] || null)
+        /* An own-property test, not `|| null`. CHANNEL_STATUS is a plain
+           object literal, so `lastDeliveryStatus: 'constructor'` resolves to
+           Object -- which is TRUTHY, so the fallback never fired and the
+           chip rendered the literal string `undefined` from `status.label`.
+           A falsy-fallback cannot catch a prototype hit (Stadiora/Aria#10630). */
+        var status = channel.configured === true
+          ? (Object.prototype.hasOwnProperty.call(CHANNEL_STATUS, channel.lastDeliveryStatus)
+            ? CHANNEL_STATUS[channel.lastDeliveryStatus]
+            : null)
           : CHANNEL_STATUS.unconfigured;
         var tone = !status ? 'ghost'
           : status.tone === 'ok' ? 'up'
@@ -1735,16 +1926,32 @@
     }
 
     function channelNote(channel) {
-      if (!channel.configured) return 'No destination has been set';
+      if (channel.configured !== true) return 'No destination has been set';
       if (channel.lastDeliveryStatus === 'failed') {
-        var why = CHANNEL_FAILURE[channel.lastFailureReason];
+        /* Through textOf() and an own-property test, the same two guards
+           `ruleState()` puts on INSUFFICIENT_REASON one screen above. A
+           failure reason of `constructor` reaches Object through the
+           prototype chain and drew `function Object() { [native code] }` at
+           an operator, which is Stadiora/Aria#10630 on the destinations
+           card. The raw key prints instead. */
+        var why = Object.prototype.hasOwnProperty.call(CHANNEL_FAILURE, channel.lastFailureReason)
+          ? textOf(CHANNEL_FAILURE[channel.lastFailureReason])
+          : null;
         return 'Last attempt ' + fmt.ago(channel.lastAttemptAt) +
           (why ? ', ' + why : '') +
           (channel.consecutiveFailures > 1
             ? ', ' + fmt.int(channel.consecutiveFailures) + ' in a row'
             : '');
       }
-      if (channel.lastSuccessAt) return 'Last delivered ' + fmt.ago(channel.lastSuccessAt);
+      /* Parsed, not tested for truth. The row and `deliveryGap()` answer the
+         same question and must answer it the same way; a stamp the pane
+         cannot read is reported as unreadable rather than printed as
+         "Last delivered -", which reads as a delivery whose time is simply
+         missing. */
+      if (time(channel.lastSuccessAt) !== null) {
+        return 'Last delivered ' + fmt.ago(channel.lastSuccessAt);
+      }
+      if (channel.lastSuccessAt) return 'Delivered, at a time that cannot be read';
       return 'Set up, nothing sent through it yet';
     }
 

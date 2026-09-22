@@ -19,10 +19,35 @@ name: Ops v2 contrast
 # A ring is judged against the surfaces BESIDE it, and `outline-offset` decides
 # which those are -- positive puts the ring outside the control, on whatever
 # the control sits on, negative puts it on the control itself. So each control
-# is photographed unfocused and focused and the ring is read off the pixels
-# that moved, rather than modelled from geometry. Real Tab presses drive it:
+# is photographed THREE times -- unfocused, focused, and focused again with
+# the ring alone switched off -- rather than modelled from geometry. The ring
+# is what the third differs from the second in; the surface it lands on is
+# read from the third, so a control whose focus style also repaints its own
+# surround (a glow standing down as the ring goes up) is measured rather than
+# guessed at against stale pixels. Real Tab presses drive it:
 # `:focus-visible` is a modality heuristic, and scripted focus alone matches it
 # on nothing, which would make every ring on the page look absent.
+#
+# A FOURTH capture is taken before any of those three, and it is not a
+# photograph of a state: it is a second shot of the SAME unfocused page, taken
+# back to back with the first. Chrome does not hold text perfectly still
+# between two identical captures -- removing a composited layer makes it
+# re-rasterise glyphs -- so pixels that disagree between those two shots are
+# excluded from the change mask BY NAME. That is a noise floor measured on the
+# run rather than a tolerance chosen once and left to drift from its comment,
+# and it matters which way round it is done: a tolerance on the size of the
+# change would be blind to an indicator smaller than the noise, and worse, it
+# would convert the FINDING "this control paints nothing on focus" into the
+# EXCUSE "this is not an outline". See Stadiora/Aria#10778.
+#
+# Whose surface the ring lands on is asked of the DOM rather than of the
+# pixels, because pixels cannot tell a surface from the content drawn on it.
+# The ring band is hit-tested against the document, and a control with nowhere
+# beside its ring that belongs to its own layout context is refused: it has no
+# surface, and its worst neighbouring pixel is another control's. The log
+# prints how many rows could not be fully hit-tested, because a sample that
+# silently shrinks makes "every sampled point is foreign" cheap to satisfy.
+# See Stadiora/Aria#10686.
 #
 # The tool proves itself before it judges anything (`--self-test`) and exits
 # non-zero if that fails, so a run that cannot trust its own numbers reports
