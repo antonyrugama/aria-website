@@ -24,9 +24,14 @@
      - and what the STYLESHEET's docblock claims about its own paint, which is
        prose about code and so is derived from the code instead.
 
-   Every test here has a published mutation in the pull request: the exact file
-   and the exact original line whose removal, inversion or insertion makes that
-   test fail. A test with no such line pins nothing.
+   The standard this file is written to is that every test has a published
+   mutation in the pull request -- the exact file and the exact original line
+   whose removal, inversion or insertion makes that test fail -- because a test
+   with no such line pins nothing. NOTHING IN THIS FILE CHECKS THAT IT HOLDS:
+   no assertion here reads the pull request, so whether the correspondence is
+   complete across all of these tests is unverified. The sentence that stood
+   here asserted it was, in the present tense, over every test in the file, and
+   a claim that size with no reader is the thing this file exists to catch.
 
    NOT COVERED, deliberately and named rather than implied:
 
@@ -310,7 +315,8 @@ const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
    where the tag is dropped exactly as the parser drops it. What holds the
    invariant now is a single equality against the list above, `PAGE_SHEETS`
    against `V2_STYLESHEETS` in the accent-ink test at the bottom of this
-   file, and every read of the walk is gated on it having refused nothing.
+   file, and every read of the walk the census at the bottom can SEE is gated
+   on it having refused nothing.
 
    The walk reads BYTES where the parser reads a DECODED attribute value,
    and `rel="&#115;tylesheet"` is `rel="stylesheet"` to the browser and not
@@ -465,12 +471,14 @@ const appropriateEndOf = (html, name, from) => {
    M30R-1), each time by a shape the round before had not thought of, so it
    is deleted rather than re-qualified. What is true is narrower and is all
    that is claimed: ONE shape is refused by name (a double-escaped
-   <script>, below), the refusal list this returns is asserted empty by
-   every test that reads the walk, and WHICH tests those are is derived
-   from this file's source by the census at the bottom rather than counted
-   in this sentence -- the sentence said "both" when there were three (the
-   thirtieth review of #75, finding 2). Everything else this walk gets
-   wrong, it gets wrong silently.
+   <script>, below), and the refusal list this returns is asserted empty by
+   every test the census at the bottom SEES reading the walk. That is
+   narrower than "every test that reads the walk", and deliberately so: the
+   census reaches exactly as far as its own text scan does, its docblock
+   says how far, and this sentence claims no more than it. WHICH tests
+   those are is derived there rather than counted here -- this sentence
+   said "both" when there were three (the thirtieth review of #75, finding
+   2). Everything else this walk gets wrong, it gets wrong silently.
 
    What the walk does, in the tokeniser's order: `<` followed by an ASCII
    letter starts a tag and nothing else does; `<!--` runs to wherever
@@ -592,12 +600,13 @@ function nodesOf(html, refusals = []) {
   }
   return out;
 }
-/* Shapes the walk refused to model on THIS page. Every test that reads the
-   walk asserts this is empty, so the refusal is a red rather than a comment
-   nobody runs -- and the set of those tests is derived from this file's
+/* Shapes the walk refused to model on THIS page. Every test the census
+   SEES reading the walk asserts this is empty, so the refusal is a red
+   rather than a comment nobody runs. The set is derived from this file's
    source by `every test that reads the document walk asserts the walk
    refused nothing`, because the sentence that used to stand here counted
-   them by hand and counted wrong. */
+   them by hand and counted wrong; what that census can and cannot see is
+   in its own docblock, and this sentence claims no more than it. */
 const WALK_REFUSALS = [];
 const PAGE_NODES = nodesOf(RAW_HTML, WALK_REFUSALS);
 const PAGE_TAGS = PAGE_NODES.filter((n) => n.kind === 'start');
@@ -3221,9 +3230,16 @@ const FILE_CITATIONS = ['the pane never spells innerHTML, outerHTML or insertAdj
 /* The NOT COVERED bullet at the top of this file used to count the
    machine-read lines by hand, and it was one short from the commit that
    added the fourth. The count is gone: the bullet NAMES them, and the names
-   are matched both ways against MACHINE_READ_PREFIXES, which machineLine()
-   holds every reader to. A fifth reader cannot be added without listing it,
-   and a fifth line cannot be written in the sheet without being read.
+   are matched both ways against MACHINE_READ_PREFIXES. What that binds, and
+   all it binds: machineLine() refuses a prefix that is not on the list, the
+   bullet and the list are held equal in both directions, and the sheet
+   carries no heading-shaped line that is not on the list. Two absolutes
+   stood here -- that a fifth reader cannot be added without listing it, and
+   that a fifth line cannot be written in the sheet without being read -- and
+   both are DELETED rather than qualified. Neither is bound: a reader that
+   matches a prefixed line with its own regex never reaches machineLine() and
+   nothing here notices, and the paragraph below already contradicted the
+   second one three lines later.
 
    What it does not see: a machine-read line that does not LOOK like a
    heading. The sheet scan matches an upper-case run, hyphens included,
@@ -4553,10 +4569,18 @@ test('no sheet the page loads spells an ident with an escape, and no character r
    the literal `assert.deepEqual(WALK_REFUSALS, []` -- a gate written any
    other way reds this test rather than passing it, and a test that merely
    mentions a name in a comment inside its own body is counted as a reader
-   and has to carry the gate. Both of those are the loud direction. The
-   quiet direction -- a read this cannot see -- is a read from inside a
-   nested function defined in another test, which nothing in this file
-   does. */
+   and has to carry the gate. Both of those are the loud direction.
+
+   NOT COVERED, and deliberately not enumerated: the reads this CANNOT see.
+   A sentence here named one shape -- a read from inside a nested function
+   defined in another test -- and called it THE quiet direction, which is a
+   claim that a list of blind spots is complete. That list was not complete:
+   a test is seen at all only when its registration begins at column 0 with
+   `test(`, so a test registered any other way is absent from the set this
+   walks and carries no gate whether it reads the walk or not. The sentence
+   is deleted rather than extended with the shapes found since, because the
+   shape that matters is the one nobody has thought of yet, and thirty
+   rounds on this file have been that lesson one spelling at a time. */
 test('every test that reads the document walk asserts the walk refused nothing', () => {
   assert.deepEqual(WALK_REFUSALS, [],
     'the document walk refused to model a shape in this page, and this test is itself a '
@@ -4590,13 +4614,17 @@ test('every test that reads the document walk asserts the walk refused nothing',
     + 'nothing, so on a page the walk cannot tokenise it reads a node the parser never built '
     + 'and passes. Add `assert.deepEqual(WALK_REFUSALS, [], ...)` to it, or stop reading the '
     + 'walk in it');
+  /* `gated` was a fourth field here, readers.length - ungated.length. It could
+     not fail: the assertion above throws unless ungated is empty, so by this
+     line it always equalled readers. An expectation derived from something
+     already asserted is not a second check, and a number that cannot move
+     reads as one. Deleted rather than kept for symmetry. */
   const counts = {
     walkNames: walkNames.size,
     tests: tests.length,
     readers: readers.length,
-    gated: readers.length - ungated.length,
   };
-  assert.deepEqual(counts, { walkNames: 8, tests: 77, readers: 4, gated: 4 },
+  assert.deepEqual(counts, { walkNames: 8, tests: 77, readers: 4 },
     'the shape of this file moved under the reader census: ' + JSON.stringify(counts) + '. '
     + 'That is not a failure by itself -- it is this count refusing to be a sentence nobody '
     + 'checks. Read the numbers, and if they are right, write them here');
