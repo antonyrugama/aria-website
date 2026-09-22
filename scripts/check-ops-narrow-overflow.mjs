@@ -145,15 +145,10 @@
    - **Every width that is not 375px, 360px or 320px.** This is three point
      samples, not a range. Nothing narrower than 320px is laid out and nothing
      wider than 375px is either, so an overflow confined to any other width is
-     invisible here on every pane. ops/assets/*.css declares thirteen width
-     breakpoints for itself and no swept width reaches any of them —
-     `grep -rhoE '\((max|min)-width: *[0-9]+px\)' ops/assets/*.css |
-     grep -oE '[0-9]+' | sort -nu` prints the list rather than trusting this
-     sentence to stay current. The phone widths
-     above 375px that most current large handsets report are in the same gap.
+     invisible here on every pane. The phone widths above 375px that most
+     current large handsets report are in that gap.
      Not theoretical: it is why this check never saw Stadiora/Aria#7365, whose
-     band starts at 861px — a number that is itself one of those breakpoints.
-     Appending
+     band starts at 861px. Appending
      `@media (min-width: 421px) and (max-width: 460px) { .content { min-width:
      560px } }` to assets/aria.css reds every pane at 430px and leaves this
      check green at all three of its widths.
