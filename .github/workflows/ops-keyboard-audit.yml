@@ -57,7 +57,15 @@ jobs:
       - name: Run keyboard audit mutation battery
         run: |
           mkdir -p .probe
+          set +e
           node scripts/ops-keyboard-walk.battery.mjs > .probe/keyboard-battery.stdout 2> .probe/keyboard-battery.stderr
+          status=$?
+          set -e
+          cat .probe/keyboard-battery.stderr
+          if [ -f .probe/keyboard-battery.md ]; then
+            cat .probe/keyboard-battery.md
+          fi
+          exit "$status"
       - name: Upload battery output
         if: always()
         uses: actions/upload-artifact@v4

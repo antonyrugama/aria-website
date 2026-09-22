@@ -1385,6 +1385,24 @@ P('Each was opened **by Tab and Enter**, never by `element.focus()`: a dialog op
   'time more than the dialog has controls, because a trap that holds for exactly as many presses as',
   'it has controls is a coincidence, not a trap.', '');
 
+const batteryUsedSignals = (() => {
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'ops-keyboard-walk.battery.mjs'), 'utf8');
+  return new Set([...src.matchAll(/\bsignal:\s*'([^']+)'/g)].map((m) => m[1]));
+})();
+const cleanRowsForBatteryCoverage = [
+  { name: 'focus traps', signals: [] },
+  { name: 'retrace forward-leg agreement', signals: [] },
+  { name: 'backwards reading-order rows', signals: [] },
+  { name: 'duplicate `id` rows', signals: [] },
+  {
+    name: 'theme re-render focus retention',
+    signals: ['settingsRerender'],
+    note: 'The walk samples focus 500ms after pressing the theme toggle; a slower rebuild could drop focus after that sample.'
+  }
+];
+const unexercisedCleanRows = cleanRowsForBatteryCoverage
+  .filter((row) => !row.signals.some((signal) => batteryUsedSignals.has(signal)));
+
 P('## NOT COVERED', '');
 /* NARROWING, NOT ANALYSIS. A finding group is keyed by kind, pane, CSS path
    and a per-list ordinal, deliberately without the viewport, so one element
@@ -1400,10 +1418,13 @@ P('- **Two different same-kind, same-path siblings, each a finding at only one w
   '  into one group.** Findings are grouped by kind, pane, CSS path and per-list ordinal so',
   '  one element seen at both widths is one finding. A same-viewport collision within one',
   '  list refuses; the cross-viewport shape does not, and no element in this sweep is in it.');
-P('- **Four clean rows are live measurements, not battery-exercised claims.** The mutation',
-  '  battery does not carry payloads for focus traps, retrace forward-leg agreement, backwards',
-  '  reading-order rows or duplicate `id` rows. They are printed from the run, but they are not',
-  '  part of the battery coverage claim.');
+P(`- **${unexercisedCleanRows.length} clean rows are live measurements, not battery-exercised claims.**`,
+  `  This list is derived from the mutation battery's \`signal:\` wiring. The battery does not`,
+  `  carry payloads for ${unexercisedCleanRows.map((row) => row.name).join(', ')}.`,
+  '  They are printed from the run, but they are not part of the battery coverage claim.');
+unexercisedCleanRows.filter((row) => row.note).forEach((row) => {
+  P(`  ${row.note}`);
+});
 P('- **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is',
   '  answered only for the two mechanical proxies a browser can be asked about — duplicate `id`',
   '  attributes and `aria-label` attributes that drop their visible text. An element announced',

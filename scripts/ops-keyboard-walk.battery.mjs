@@ -689,3 +689,7 @@ fs.writeFileSync(path.join(OUTDIR, 'keyboard-battery.md'), out.join('\n') + '\n'
 fs.writeFileSync(path.join(OUTDIR, 'keyboard-battery.json'), JSON.stringify(rows, null, 2));
 fs.writeFileSync(path.join(OUTDIR, 'keyboard-battery-head.txt'), `${HEAD_SHA}\n`);
 process.stderr.write(`\n${rows.length} experiments, ${unexpected.length} unexpected\n`);
+if (unexpected.length) {
+  process.stderr.write(`unexpected rows: ${unexpected.map((r) => r.id).join(', ')}\n`);
+  process.exitCode = 1;
+}
