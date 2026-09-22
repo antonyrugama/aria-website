@@ -330,11 +330,28 @@ function stub(pathname) {
         severity: 'warning', category: 'ai_reliability',
         lastInsufficientReason: null, lastEvaluatedAt: ago(2 * MINUTE), lastFiredAt: null
       }, r)),
+      /* The shape `pane-alerts.js:routingCard()` actually reads. The stub used
+         to send `status`/`target`/`lastDeliveredAt`/`failureReason`, none of
+         which the pane looks at, so "Where problems are sent" drew two
+         nameless rows both reading "No destination has been set"
+         (Stadiora/Aria#10821). A fixture describing a payload the route does
+         not send is a picture of nothing.
+
+         Teams delivering, email set up but refused, webhook set up and never
+         used: all three branches `channelNote()` has for a configured
+         destination. The third is the state configuring a channel produces
+         before its first delivery, which is exactly what Stadiora/Aria#10811
+         asks somebody to create, and the stub had no picture of it. */
       channels: [
-        { channel: 'teams', status: 'ok', target: 'Aria operations',
-          lastDeliveredAt: ago(5 * MINUTE), failureReason: null },
-        { channel: 'email', status: 'failed', target: 'ops@example.invalid',
-          lastDeliveredAt: ago(2 * HOUR), failureReason: 'auth' }
+        { channel: 'teams', label: 'Microsoft Teams', configured: true,
+          lastDeliveryStatus: 'ok', lastFailureReason: null, consecutiveFailures: 0,
+          lastAttemptAt: ago(5 * MINUTE), lastSuccessAt: ago(5 * MINUTE) },
+        { channel: 'email', label: 'Email', configured: true,
+          lastDeliveryStatus: 'failed', lastFailureReason: 'auth', consecutiveFailures: 3,
+          lastAttemptAt: ago(2 * HOUR), lastSuccessAt: ago(2 * DAY) },
+        { channel: 'webhook', label: 'Webhook', configured: true,
+          lastDeliveryStatus: null, lastFailureReason: null, consecutiveFailures: 0,
+          lastAttemptAt: null, lastSuccessAt: null }
       ]
     } };
   }

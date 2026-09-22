@@ -148,6 +148,26 @@ function rulesFixture() {
    column holding whitespace is an ordinary thing for a text column to hold,
    and it lands on defect 1's symptom by a different route: `'   ' || 'Unknown'`
    is truthy, so a pill of three spaces is a blank chip again. */
+/* A whole function declaration, taken from `head` to its matching brace.
+
+   A regex that stops at the first `;` reads one statement and calls it the
+   function. This counts braces, so it lifts what the file actually runs --
+   and returns null rather than a fragment when the head is gone, so the
+   caller's assertion fires instead of a fragment being evaluated. */
+function lift(source, head) {
+  const at = source.indexOf(head);
+  if (at === -1 || source.indexOf(head, at + 1) !== -1) return null;
+  let depth = 0;
+  for (let i = at + head.length - 1; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(at, i + 1);
+    }
+  }
+  return null;
+}
+
 function hostileSeverities() {
   const absent = problem({ id: 'p2', reference: 'AO-2', title: 'Field absent' });
   delete absent.severity;
@@ -471,8 +491,15 @@ test('Problems and Overview give one word for one state', async () => {
   /* Overview's own `textOf()`, lifted from its own source rather than
      rewritten here. Typing a copy of it would make this test agree with
      itself: Overview could stop guarding the lookup entirely and the local
-     copy would keep answering the way the fixed file used to. */
-  const ovTextOf = /function textOf\(value\) \{\s*return ([^;]+);/.exec(ovSrc);
+     copy would keep answering the way the fixed file used to.
+
+     Taken by brace-matching the whole declaration rather than by capturing a
+     single `return` expression, which is how an earlier draft did it. That
+     draft broke the moment #10799 gave the function a body of more than one
+     statement -- and it broke LOUDLY, which is the only reason it is worth
+     mentioning: a lift that had silently matched a DIFFERENT textOf would
+     have compared this pane against a function Overview does not run. */
+  const ovTextOf = lift(ovSrc, 'function textOf(value) {');
   assert.ok(ovTextOf, 'pane-overview.js no longer has a textOf() to run');
 
   /* And Overview's `model` is `global.OpsAlertsModel` -- the same
@@ -497,17 +524,20 @@ test('Problems and Overview give one word for one state', async () => {
   const overview = vm.runInNewContext(
     `(function (model, textOf) { return function (severity) { return ${words[1]}; }; })`,
     {},
-  )(ovModel, vm.runInNewContext(`(function (value) { return ${ovTextOf[1]}; })`, {}));
+  )(ovModel, vm.runInNewContext(`(${ovTextOf})`, {}));
 
-  /* #10630's three tabulated payloads only. AO-4 is deliberately not here:
-     this pane's textOf() TRIMS and Overview's does not, so the two answer
-     differently for any severity with surrounding whitespace -- `'   '` reads
-     "Unknown" here and as a blank prefix there, and `' critical '` reads
-     `critical` here and ` critical ` there. Asserting agreement on those
-     would be asserting something untrue. It is an Overview defect, filed as
-     Stadiora/Aria#10799 rather than fixed from a PR that does not own that
-     pane. */
-  const severities = { 'AO-1': 'notice', 'AO-2': undefined, 'AO-3': 'constructor' };
+  /* All FOUR of the fixture's payloads, where #10630 could only bind three.
+
+     AO-4 -- a severity of nothing but spaces -- is the whole of
+     Stadiora/Aria#10799. It was excluded here as a documented disagreement
+     because this pane's textOf() trimmed and Overview's did not, so `'   '`
+     read "Unknown" here and as a blank prefix there. Overview now trims too,
+     which is what lets the payload that used to SPLIT the two panes become
+     the one that binds them. Put Overview's trim back and this row goes red
+     while the other three stay green. */
+  const severities = {
+    'AO-1': 'notice', 'AO-2': undefined, 'AO-3': 'constructor', 'AO-4': '   ',
+  };
   for (const [reference, severity] of Object.entries(severities)) {
     assert.equal(severityPill(dom, reference), overview(severity),
       `the two panes print different words for severity ${String(severity)} during one `
