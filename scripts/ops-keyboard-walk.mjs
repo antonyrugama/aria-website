@@ -1524,7 +1524,7 @@ READ_INTO.forEach((lines) => {
   P(`- ${lines[0]}`, ...lines.slice(1).map((l) => `  ${l}`));
 });
 P('');
-P('The mutation battery exercises the three filed findings above and the instrument rules named',
+P('The mutation battery exercises the filed finding kinds above and the instrument rules named',
   'in its generated table. Some clean rows are only live measurements. Rows with no executed',
   'killing experiment at all are named under NOT COVERED; the table remains the exact coverage',
   'record for everything else.', '');
