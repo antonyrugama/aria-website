@@ -98,10 +98,11 @@ it has controls is a coincidence, not a trap.
   into one group.** Findings are grouped by kind, pane, CSS path and per-list ordinal so
   one element seen at both widths is one finding. A same-viewport collision within one
   list refuses; the cross-viewport shape does not, and no element in this sweep is in it.
-- **Four clean rows are live measurements, not battery-exercised claims.** The mutation
-  battery does not carry payloads for focus traps, retrace forward-leg agreement, backwards
-  reading-order rows or duplicate `id` rows. They are printed from the run, but they are not
-  part of the battery coverage claim.
+- **5 clean rows are live measurements, not battery-exercised claims.**
+  This list is derived from the mutation battery's `signal:` wiring. The battery does not
+  carry payloads for focus traps, retrace forward-leg agreement, backwards reading-order rows, duplicate `id` rows, theme re-render focus retention.
+  They are printed from the run, but they are not part of the battery coverage claim.
+  The walk samples focus 500ms after pressing the theme toggle; a slower rebuild could drop focus after that sample.
 - **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is
   answered only for the two mechanical proxies a browser can be asked about — duplicate `id`
   attributes and `aria-label` attributes that drop their visible text. An element announced
