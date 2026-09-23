@@ -476,6 +476,15 @@ function rowCellText(row, index) {
   return allText(row.children[index]);
 }
 
+function integrationBandNoteText(dom) {
+  const heading = find(livePanel(dom), (n) => n.className === 'band-title'
+    && n.textContent === 'Integrations');
+  assert.ok(heading, 'the Integrations band title is missing');
+  const note = heading.parentNode.querySelector('.band-note');
+  assert.ok(note, 'the Integrations band note is missing');
+  return allText(note);
+}
+
 /* Every endpoint this boot actually read. DELETE is excluded: a revoke is a
    write, and a card claiming to be filled from one would be claiming
    something it cannot be. */
@@ -785,6 +794,7 @@ test('an empty integrations read is treated as unreadable health, not all fine',
 
     assert.match(text, /No connection states came back/i);
     assert.match(text, /not a clean bill/i);
+    assert.equal(integrationBandNoteText(dom), 'No connection states came back');
     assert.doesNotMatch(text, /Connected/);
   });
 
@@ -798,6 +808,7 @@ test('an integrations read failure degrades only the Outside connections card', 
   const card = cardByTitle(dom, 'Outside connections');
   assert.match(allText(card), /could not be read/i);
   assert.match(allText(card), /unread, not absent/i);
+  assert.equal(integrationBandNoteText(dom), 'Could not be read');
 });
 
 test('an integrations role refusal is shown as a denied card, not a zero state',
