@@ -99,6 +99,22 @@
 .cell-wrap { white-space: normal; min-width: 160px; }
 .cell-nowrap { white-space: nowrap; }
 
+.integration-state {
+  gap: 7px;
+}
+.integration-state-stale {
+  color: var(--amber-ink);
+}
+.integration-state-muted {
+  color: var(--ink-2);
+}
+.integration-state-missing {
+  color: var(--amber-ink);
+}
+.integration-last-stale {
+  color: var(--amber-ink);
+}
+
 /* A row's actions sit at the right edge, under a right-aligned header. */
 .cell-act { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 

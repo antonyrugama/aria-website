@@ -82,6 +82,7 @@ const TOKENS = {
 const ADMINS = '/api/ops/admins';
 const SESSIONS = '/api/ops/sessions';
 const AUDIT = '/api/ops/audit';
+const INTEGRATIONS = '/api/ops/integrations';
 
 /* -------------------------------------------------------------- fixtures
 
@@ -167,6 +168,103 @@ function auditFixture() {
   ];
 }
 
+function integrationRow(overrides) {
+  return {
+    pollerKey: overrides.pollerKey,
+    label: overrides.label,
+    usedFor: overrides.usedFor,
+    scopeKey: Object.prototype.hasOwnProperty.call(overrides, 'scopeKey')
+      ? overrides.scopeKey
+      : '(none)',
+    status: Object.prototype.hasOwnProperty.call(overrides, 'status') ? overrides.status : 'ok',
+    failureReason: overrides.failureReason || null,
+    consecutiveFailures: Object.prototype.hasOwnProperty.call(overrides, 'consecutiveFailures')
+      ? overrides.consecutiveFailures
+      : 0,
+    lastAttemptAt: Object.prototype.hasOwnProperty.call(overrides, 'lastAttemptAt')
+      ? overrides.lastAttemptAt
+      : back(10 * MINUTE),
+    lastSuccessAt: Object.prototype.hasOwnProperty.call(overrides, 'lastSuccessAt')
+      ? overrides.lastSuccessAt
+      : back(10 * MINUTE),
+    connectionState: overrides.connectionState,
+    freshnessThreshold: overrides.freshnessThreshold || {
+      seconds: 900,
+      source: 'server/notification-jobs.ts cron */15 * * * *',
+    },
+  };
+}
+
+function integrationsFixture() {
+  return {
+    generatedAt: back(MINUTE),
+    integrations: [
+      integrationRow({
+        pollerKey: 'azure_cost',
+        label: 'Azure Cost Management',
+        usedFor: 'Cloud spend and invoice-backed cost panes.',
+        scopeKey: 'sub-example',
+        connectionState: 'connected',
+        freshnessThreshold: { seconds: 86400, source: 'daily cost poll' },
+      }),
+      integrationRow({
+        pollerKey: 'app_store_connect',
+        label: 'App Store Connect',
+        usedFor: 'TestFlight and App Store release track state.',
+        scopeKey: 'com.example.ios',
+        status: 'failed',
+        failureReason: 'auth',
+        consecutiveFailures: 2,
+        lastAttemptAt: back(5 * MINUTE),
+        lastSuccessAt: back(25 * HOUR),
+        connectionState: 'stale',
+      }),
+      integrationRow({
+        pollerKey: 'google_play',
+        label: 'Google Play',
+        usedFor: 'Play internal, closed, open and production track state.',
+        scopeKey: 'com.example.android',
+        status: 'failed',
+        failureReason: 'transport',
+        consecutiveFailures: 3,
+        lastAttemptAt: back(3 * MINUTE),
+        lastSuccessAt: null,
+        connectionState: 'failed',
+      }),
+      integrationRow({
+        pollerKey: 'azure_budget',
+        label: 'Azure budgets',
+        usedFor: 'Budget targets for the cloud spend overview.',
+        status: 'disabled',
+        lastSuccessAt: null,
+        connectionState: 'disabled',
+        freshnessThreshold: { seconds: 86400, source: 'daily budget poll' },
+      }),
+      integrationRow({
+        pollerKey: 'ai_cost_reconciliation',
+        label: 'AI cost reconciliation',
+        usedFor: 'Nightly comparison between modelled AI usage and the Azure bill.',
+        status: 'unconfigured',
+        lastSuccessAt: null,
+        connectionState: 'unconfigured',
+        freshnessThreshold: { seconds: 86400, source: 'nightly reconciliation' },
+      }),
+      integrationRow({
+        pollerKey: 'ai_cost_reconciliation',
+        label: 'AI cost reconciliation',
+        usedFor: 'Nightly comparison between modelled AI usage and the Azure bill.',
+        scopeKey: null,
+        status: null,
+        consecutiveFailures: null,
+        lastAttemptAt: null,
+        lastSuccessAt: null,
+        connectionState: 'not_reporting',
+        freshnessThreshold: { seconds: 86400, source: 'nightly reconciliation' },
+      }),
+    ],
+  };
+}
+
 /* ---------------------------------------------------------------- the page */
 
 function buildPage(dom, body) {
@@ -202,6 +300,7 @@ async function boot(options) {
     [ADMINS]: opts.admins === undefined ? adminsFixture() : opts.admins,
     [SESSIONS]: opts.sessions === undefined ? sessionsFixture() : opts.sessions,
     [AUDIT]: opts.audit === undefined ? auditFixture() : opts.audit,
+    [INTEGRATIONS]: opts.integrations === undefined ? integrationsFixture() : opts.integrations,
   };
 
   const dom = makeDom({
@@ -435,9 +534,107 @@ test('the three areas Stadiora/Aria#5442 will wire up are the static ones', asyn
   const dom = await boot();
   const titles = (source) => cards(dom, source)
     .map((c) => allText(find(c, (n) => n.className === 'card-title'))).sort();
-  assert.deepEqual(titles('static'), ['Cost categories', 'Data retention', 'Outside connections']);
-  assert.deepEqual(titles('live'), ['Accounts', 'Signed in now', 'What was done']);
+  assert.deepEqual(titles('static'), ['Cost categories', 'Data retention']);
+  assert.deepEqual(titles('live'), [
+    'Accounts',
+    'Outside connections',
+    'Signed in now',
+    'What was done',
+  ]);
 });
+
+/* ====================================================== outside connections */
+
+test('outside connections is a live card filled from the integrations route', async () => {
+  const dom = await boot();
+  const card = cardByTitle(dom, 'Outside connections');
+
+  assert.equal(card.getAttribute('data-source'), 'live');
+  assert.equal(card.getAttribute('data-endpoint'), INTEGRATIONS);
+  assert.ok(readEndpoints(dom).indexOf(INTEGRATIONS) !== -1,
+    'the card claims the integrations route without reading it');
+});
+
+test('each integration connection state renders as distinct text on its own pill',
+  async () => {
+    const dom = await boot();
+    const card = cardByTitle(dom, 'Outside connections');
+    const pills = findAll(card, (n) => n.className && n.className.indexOf('integration-state') !== -1);
+    const byText = new Map(pills.map((p) => [allText(p), p.className]));
+
+    assert.deepEqual([...byText.keys()].sort(), [
+      'Connected',
+      'Connected, stale',
+      'Disabled',
+      'Failed',
+      'Not configured',
+      'Not reporting',
+    ].sort());
+    assert.notEqual(byText.get('Connected, stale'), byText.get('Connected'),
+      'stale is styled the same as connected');
+    assert.notEqual(byText.get('Connected, stale'), byText.get('Failed'),
+      'stale is styled the same as failed');
+  });
+
+test('outside connections prints last success with an age and separates never succeeded',
+  async () => {
+    const dom = await boot();
+    const text = allText(cardByTitle(dom, 'Outside connections'));
+
+    assert.match(text, /10 minutes ago/,
+      'the connected row does not show the age of the last successful run');
+    assert.match(text, /25 hours ago/,
+      'the stale row does not show the older last successful run');
+    assert.match(text, /Never succeeded/,
+      'a poller with no successful run is not separated from a connected one');
+    assert.match(text, /No reporting record exists/,
+      'not_reporting is not distinguished from a poller that ran and failed');
+  });
+
+test('the Integrations band summary counts connections and stale rows', async () => {
+  const dom = await boot();
+  const heading = find(livePanel(dom), (n) => n.className === 'band-title'
+    && n.textContent === 'Integrations');
+  const note = heading.parentNode.querySelector('.band-note');
+
+  assert.equal(allText(note), '6 connections · 1 stale');
+});
+
+test('an empty integrations read is treated as unreadable health, not all fine',
+  async () => {
+    const dom = await boot({ integrations: { generatedAt: back(MINUTE), integrations: [] } });
+    const text = allText(cardByTitle(dom, 'Outside connections'));
+
+    assert.match(text, /No connection states came back/i);
+    assert.match(text, /not a clean bill/i);
+    assert.doesNotMatch(text, /Connected/);
+  });
+
+test('an integrations read failure degrades only the Outside connections card', async () => {
+  const dom = await boot({ integrations: new Error('The operations API did not answer.') });
+
+  assert.equal(dom.states[dom.states.length - 1], 'degraded');
+  assert.match(liveText(dom), /owner@ops\.invalid/,
+    'the account list went away because the integrations read failed');
+
+  const card = cardByTitle(dom, 'Outside connections');
+  assert.match(allText(card), /could not be read/i);
+  assert.match(allText(card), /unread, not absent/i);
+});
+
+test('an integrations role refusal is shown as a denied card, not a zero state',
+  async () => {
+    const refused = Object.assign(new Error('Your role does not allow this'), {
+      code: 'ops_role_insufficient',
+      requiredRoles: ['owner', 'operator'],
+    });
+    const dom = await boot({ integrations: refused });
+    const text = allText(cardByTitle(dom, 'Outside connections'));
+
+    assert.match(text, /do not have access/i);
+    assert.match(text, /owner or operator/i);
+    assert.doesNotMatch(text, /ops_role_insufficient|0 connections/i);
+  });
 
 /* ======================================================== owner-only gating */
 

@@ -14,11 +14,11 @@ colour. This is traversal.
 | | |
 |---|---|
 | Panes walked | 10, at desktop 1440×900 and 375px 375×812 — **20 walks** |
-| Tab stops recorded | 330 |
+| Tab stops recorded | 332 |
 | Interactive controls found | 296 |
 | Controls never reached by Tab | **0** |
 | Focus traps | **0** |
-| Walks whose Shift+Tab exactly retraces Tab | 20/20, **290 stops retraced** over 302 Shift+Tab presses |
+| Walks whose Shift+Tab exactly retraces Tab | 20/20, **292 stops retraced** over 304 Shift+Tab presses |
 | Walks that made no Shift+Tab press at all (scored neither way) | **0** |
 | Walks where the retrace's forward leg landed where the first walk said it would | 20/20 |
 | Stops that jump backwards in reading order | **0** |
@@ -39,7 +39,7 @@ colour. This is traversal.
 
 The walk **did** reach it (stop 8 of 13), but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox do not, and neither does any Chrome older than that. It announces as a bare `div`.
 
-The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found 6 scroll containers the page declares focusable, 6 of them carrying both `role="region"` and an `aria-label`. This one was missed.
+The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found 7 scroll containers the page declares focusable, 7 of them carrying both `role="region"` and an `aria-label`. This one was missed.
 
 Seen on: history/375px.
 
@@ -51,7 +51,7 @@ Filed as Stadiora/Aria#10868. Not fixed here: this audit reports, it does not re
 
 The walk **never reached it**: it is out of the tab order in the browser that ran this sweep, which is the browser most willing to volunteer focus to a scroll container. Its clipped content is unreachable from the keyboard here, in Safari and in Firefox alike.
 
-The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found 6 scroll containers the page declares focusable, 6 of them carrying both `role="region"` and an `aria-label`. This one was missed.
+The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found 7 scroll containers the page declares focusable, 7 of them carrying both `role="region"` and an `aria-label`. This one was missed.
 
 Seen on: history/375px.
 
@@ -83,11 +83,11 @@ Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not re
 
 ## What is clean, and how that is known
 
-- **No focus traps.** 20 walks, 330 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
+- **No focus traps.** 20 walks, 332 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
 - **Nothing unreachable.** 296 enabled, visible, interactive controls; 0 were not reached by Tab.
-- **14 stops landed on something this tool does not call interactive**, and 3 of 20 walks ended by wrapping back to their first stop (17 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
+- **16 stops landed on something this tool does not call interactive**, and 3 of 20 walks ended by wrapping back to their first stop (17 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
 - **Tab order is reading order** on all 20 walks: 0 stops out of DOM order, where a stop is out of order if its element precedes the previous stop's element in document order.
-- **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks, over the WHOLE walk rather than a prefix of it: 290 stops retraced against 330 forward stops, which took 302 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
+- **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks, over the WHOLE walk rather than a prefix of it: 292 stops retraced against 332 forward stops, which took 304 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
 - **The skip link works.** It is the first stop on 20/20 walks and Enter lands focus on `main#content` on 20/20.
 - **Focus survives a re-render** on 20/20 walks: the theme toggle rebuilds the pane and focus stays on the button that did it.
 - **No duplicate ids** (0), and **no `aria-label` that drops its visible text** (0). That is the attribute, not the computed accessible name — see NOT COVERED.
