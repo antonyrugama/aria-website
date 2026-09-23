@@ -90,10 +90,15 @@
 
   var INTEGRATION_FAILURE_LABELS = {
     auth: 'Authentication failed',
+    timeout: 'The service timed out',
     transport: 'The service did not answer',
-    rate_limit: 'The service is rate limiting',
-    unknown: 'The last attempt failed'
+    throttled: 'The service is throttling requests',
+    http_error: 'The service returned an error response',
+    malformed: 'The service returned data this dashboard cannot read',
+    config: 'Configuration is invalid',
+    untrusted_next_link: 'The service returned an unsafe next-page link'
   };
+  var INTEGRATION_UNKNOWN_FAILURE = 'An unrecognised failure reason was reported';
 
   /* ------------------------------------------------------------ formatting */
 
@@ -1277,9 +1282,12 @@
       var rows = integrationRows(result);
       if (result && result.error) return 'Could not be read';
       if (!rows.length) return 'No connection states came back';
-      var stale = rows.filter(function (row) { return row.connectionState === 'stale'; }).length;
+      var notConnected = rows.filter(function (row) {
+        return row.connectionState !== 'connected';
+      }).length;
+      var problemCount = notConnected === 1 ? '1 not connected' : notConnected + ' not connected';
       return fmt.plural(rows.length, 'connection') + ' · ' +
-        (stale ? fmt.plural(stale, 'stale') : 'none stale');
+        (notConnected ? problemCount : 'all connected');
     }
 
     function integrationStateMeta(state) {
@@ -1298,7 +1306,10 @@
       if (state === 'unconfigured') {
         return { label: 'Not configured', tone: 'ghost integration-state-muted', dot: 'acc' };
       }
-      return { label: 'Not reporting', tone: 'warn integration-state-missing', dot: 'warn' };
+      if (state === 'not_reporting') {
+        return { label: 'Not reporting', tone: 'warn integration-state-missing', dot: 'warn' };
+      }
+      return { label: 'State not readable', tone: 'warn integration-state-missing', dot: 'warn' };
     }
 
     function integrationStatePill(row) {
@@ -1309,20 +1320,24 @@
       return el;
     }
 
-    function thresholdWords(row) {
+    function freshnessWindowWords(row) {
       var seconds = row && row.freshnessThreshold && row.freshnessThreshold.seconds;
-      if (seconds === 900) return 'every 15 min';
-      if (seconds === 3600) return 'hourly';
-      if (seconds === 86400) return 'daily';
-      if (seconds && seconds % 3600 === 0) return 'every ' + fmt.plural(seconds / 3600, 'hour');
-      if (seconds && seconds % 60 === 0) return 'every ' + fmt.plural(seconds / 60, 'minute');
+      if (seconds === 900) return 'stale after 15 minutes';
+      if (seconds === 3600) return 'stale after 1 hour';
+      if (seconds === 86400) return 'stale after 24 hours';
+      if (seconds && seconds % 3600 === 0) {
+        return 'stale after ' + fmt.plural(seconds / 3600, 'hour');
+      }
+      if (seconds && seconds % 60 === 0) {
+        return 'stale after ' + fmt.plural(seconds / 60, 'minute');
+      }
       return null;
     }
 
     function failureCopy(row) {
       if (!row || !row.failureReason) return null;
       var label = INTEGRATION_FAILURE_LABELS[row.failureReason] ||
-        INTEGRATION_FAILURE_LABELS.unknown;
+        INTEGRATION_UNKNOWN_FAILURE;
       if (row.consecutiveFailures && row.consecutiveFailures > 0) {
         return label + ' on ' + fmt.plural(row.consecutiveFailures, 'attempt') + '.';
       }
@@ -1344,12 +1359,12 @@
       }
       if (!row || !row.lastSuccessAt) {
         var attempted = row && row.lastAttemptAt ? ago(row.lastAttemptAt) : null;
+        var failed = failureCopy(row);
+        var sub = failed || (attempted ? 'Last attempt ' + attempted : 'No attempt reported');
+        if (failed && attempted) sub += ' Last attempt ' + attempted + '.';
         return h('td', {}, [
           h('div', { className: 't-main muted', text: 'Never succeeded' }),
-          h('div', {
-            className: 't-sub',
-            text: attempted ? 'Last attempt ' + attempted : 'No attempt reported'
-          })
+          h('div', { className: 't-sub', text: sub })
         ]);
       }
 
@@ -1357,7 +1372,7 @@
       var age = ago(row.lastSuccessAt);
       if (age) sub.push(age);
       var fail = failureCopy(row);
-      sub.push(fail || thresholdWords(row) || 'freshness window reported');
+      sub.push(fail || freshnessWindowWords(row) || 'freshness window reported');
       return h('td', {}, [
         h('div', {
           className: row.connectionState === 'stale'
@@ -1408,7 +1423,7 @@
     function integrationDeniedBody() {
       var body = h('div', { className: 'card-body' });
       body.appendChild(S.stateBlock('lock', 'You do not have access to outside connections', [
-        'The integrations read is limited to the owner or operator role.',
+        'The integrations read is limited to the owner role.',
         'Nothing here is zero-filled, and no credential is shown on this page.'
       ], 4));
       return body;

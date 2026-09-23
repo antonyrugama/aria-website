@@ -246,7 +246,8 @@ const INTEGRATIONS = {
       lastAttemptAt: ago(10 * MINUTE),
       lastSuccessAt: ago(10 * MINUTE),
       connectionState: 'connected',
-      freshnessThreshold: { seconds: 86400, source: 'daily cost poll' }
+      freshnessThreshold: { seconds: 86400,
+        source: 'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS' }
     },
     {
       pollerKey: 'app_store_connect',
@@ -259,7 +260,8 @@ const INTEGRATIONS = {
       lastAttemptAt: ago(5 * MINUTE),
       lastSuccessAt: ago(25 * HOUR),
       connectionState: 'stale',
-      freshnessThreshold: { seconds: 900, source: 'store release poll' }
+      freshnessThreshold: { seconds: 900,
+        source: 'server/notification-jobs.ts cron */15 * * * *; shared/operations-cost.ts OPS_RELEASE_POLL_SECONDS' }
     },
     {
       pollerKey: 'google_play',
@@ -272,7 +274,8 @@ const INTEGRATIONS = {
       lastAttemptAt: ago(3 * MINUTE),
       lastSuccessAt: null,
       connectionState: 'failed',
-      freshnessThreshold: { seconds: 900, source: 'store release poll' }
+      freshnessThreshold: { seconds: 900,
+        source: 'server/notification-jobs.ts cron */15 * * * *; shared/operations-cost.ts OPS_RELEASE_POLL_SECONDS' }
     },
     {
       pollerKey: 'azure_budget',
@@ -285,7 +288,8 @@ const INTEGRATIONS = {
       lastAttemptAt: ago(2 * HOUR),
       lastSuccessAt: null,
       connectionState: 'disabled',
-      freshnessThreshold: { seconds: 86400, source: 'daily budget poll' }
+      freshnessThreshold: { seconds: 86400,
+        source: 'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS' }
     },
     {
       pollerKey: 'ai_cost_reconciliation',
@@ -298,7 +302,7 @@ const INTEGRATIONS = {
       lastAttemptAt: null,
       lastSuccessAt: null,
       connectionState: 'not_reporting',
-      freshnessThreshold: { seconds: 86400, source: 'nightly reconciliation' }
+      freshnessThreshold: { seconds: 86400, source: 'server/notification-jobs.ts cron 20 5 * * *' }
     }
   ]
 };

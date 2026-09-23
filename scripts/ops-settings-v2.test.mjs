@@ -4,8 +4,8 @@
    Two of the rules this pane has to hold are the kind that pass a badly built
    test by construction, so they are written here first and deliberately:
 
-   THE LIVE-AGAINST-STATIC PARTITION. Three of the six areas on this pane are
-   read from an API and three are not, and the whole point of the remodel is
+   THE LIVE-AGAINST-STATIC PARTITION. Four of the six areas on this pane are
+   read from an API and two are not, and the whole point of the remodel is
    that a reader can tell which is which. Asserting that a marker element
    EXISTS is the classic false green: it stays green when the marker is on
    every card, on none, or on the wrong ones. So the assertion here is the
@@ -83,6 +83,27 @@ const ADMINS = '/api/ops/admins';
 const SESSIONS = '/api/ops/sessions';
 const AUDIT = '/api/ops/audit';
 const INTEGRATIONS = '/api/ops/integrations';
+const ROUTE_FAILURE_REASONS = [
+  'auth',
+  'timeout',
+  'transport',
+  'throttled',
+  'http_error',
+  'malformed',
+  'config',
+  'untrusted_next_link',
+];
+
+const FAILURE_REASON_COPY = {
+  auth: 'Authentication failed',
+  timeout: 'The service timed out',
+  transport: 'The service did not answer',
+  throttled: 'The service is throttling requests',
+  http_error: 'The service returned an error response',
+  malformed: 'The service returned data this dashboard cannot read',
+  config: 'Configuration is invalid',
+  untrusted_next_link: 'The service returned an unsafe next-page link',
+};
 
 /* -------------------------------------------------------------- fixtures
 
@@ -183,7 +204,7 @@ function integrationRow(overrides) {
       : 0,
     lastAttemptAt: Object.prototype.hasOwnProperty.call(overrides, 'lastAttemptAt')
       ? overrides.lastAttemptAt
-      : back(10 * MINUTE),
+      : back(47 * MINUTE),
     lastSuccessAt: Object.prototype.hasOwnProperty.call(overrides, 'lastSuccessAt')
       ? overrides.lastSuccessAt
       : back(10 * MINUTE),
@@ -205,7 +226,11 @@ function integrationsFixture() {
         usedFor: 'Cloud spend and invoice-backed cost panes.',
         scopeKey: 'sub-example',
         connectionState: 'connected',
-        freshnessThreshold: { seconds: 86400, source: 'daily cost poll' },
+        freshnessThreshold: {
+          seconds: 86400,
+          source:
+            'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS',
+        },
       }),
       integrationRow({
         pollerKey: 'app_store_connect',
@@ -238,16 +263,22 @@ function integrationsFixture() {
         status: 'disabled',
         lastSuccessAt: null,
         connectionState: 'disabled',
-        freshnessThreshold: { seconds: 86400, source: 'daily budget poll' },
+        lastAttemptAt: back(2 * HOUR),
+        freshnessThreshold: {
+          seconds: 86400,
+          source:
+            'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS',
+        },
       }),
       integrationRow({
         pollerKey: 'ai_cost_reconciliation',
-        label: 'AI cost reconciliation',
+        label: 'AI cost configuration',
         usedFor: 'Nightly comparison between modelled AI usage and the Azure bill.',
         status: 'unconfigured',
+        lastAttemptAt: back(90 * MINUTE),
         lastSuccessAt: null,
         connectionState: 'unconfigured',
-        freshnessThreshold: { seconds: 86400, source: 'nightly reconciliation' },
+        freshnessThreshold: { seconds: 86400, source: 'server/notification-jobs.ts cron 20 5 * * *' },
       }),
       integrationRow({
         pollerKey: 'ai_cost_reconciliation',
@@ -259,7 +290,7 @@ function integrationsFixture() {
         lastAttemptAt: null,
         lastSuccessAt: null,
         connectionState: 'not_reporting',
-        freshnessThreshold: { seconds: 86400, source: 'nightly reconciliation' },
+        freshnessThreshold: { seconds: 86400, source: 'server/notification-jobs.ts cron 20 5 * * *' },
       }),
     ],
   };
@@ -430,6 +461,21 @@ function cardByTitle(dom, title) {
   })[0];
 }
 
+function integrationTableRow(dom, label) {
+  const card = cardByTitle(dom, 'Outside connections');
+  const body = card.querySelectorAll('tbody')[0];
+  assert.ok(body, 'outside connections has no table body');
+  const rows = body.children;
+  const row = rows.find((r) => allText(r).includes(label));
+  assert.ok(row, `outside connections has no row for ${label}`);
+  return row;
+}
+
+function rowCellText(row, index) {
+  assert.ok(row.children[index], `row has no cell ${index}`);
+  return allText(row.children[index]);
+}
+
 /* Every endpoint this boot actually read. DELETE is excluded: a revoke is a
    write, and a card claiming to be filled from one would be claiming
    something it cannot be. */
@@ -530,7 +576,7 @@ test('the source chips differ in their word, not in their colour', async () => {
   assert.deepEqual([...words(staticChips)], ['No API yet']);
 });
 
-test('the three areas Stadiora/Aria#5442 will wire up are the static ones', async () => {
+test('the remaining unwired areas Stadiora/Aria#5442 tracks are the static ones', async () => {
   const dom = await boot();
   const titles = (source) => cards(dom, source)
     .map((c) => allText(find(c, (n) => n.className === 'card-title'))).sort();
@@ -576,29 +622,161 @@ test('each integration connection state renders as distinct text on its own pill
       'stale is styled the same as failed');
   });
 
-test('outside connections prints last success with an age and separates never succeeded',
+test('outside connections prints each last-success cell with its own age and window',
   async () => {
     const dom = await boot();
-    const text = allText(cardByTitle(dom, 'Outside connections'));
+    const connectedLastSuccess = rowCellText(
+      integrationTableRow(dom, 'Azure Cost Management'),
+      3
+    );
+    const staleLastSuccess = rowCellText(
+      integrationTableRow(dom, 'App Store Connect'),
+      3
+    );
 
-    assert.match(text, /10 minutes ago/,
+    assert.match(connectedLastSuccess, /10 minutes ago/,
       'the connected row does not show the age of the last successful run');
-    assert.match(text, /25 hours ago/,
+    assert.match(connectedLastSuccess, /stale after 24 hours/,
+      'the connected row labels the freshness window as a cadence');
+    assert.doesNotMatch(connectedLastSuccess, /daily/,
+      'the connected row invents a run cadence from the staleness window');
+    assert.match(staleLastSuccess, /25 hours ago/,
       'the stale row does not show the older last successful run');
-    assert.match(text, /Never succeeded/,
+    assert.match(rowCellText(integrationTableRow(dom, 'Google Play'), 3), /Never succeeded/,
       'a poller with no successful run is not separated from a connected one');
-    assert.match(text, /No reporting record exists/,
+    assert.match(rowCellText(integrationTableRow(dom, 'AI cost reconciliation'), 3),
+      /No reporting record exists/,
       'not_reporting is not distinguished from a poller that ran and failed');
   });
 
-test('the Integrations band summary counts connections and stale rows', async () => {
+test('the Integrations band summary counts every non-connected state honestly',
+  async () => {
+    const dom = await boot({
+      integrations: {
+        generatedAt: back(MINUTE),
+        integrations: [
+          integrationRow({
+            pollerKey: 'one',
+            label: 'Working connection',
+            usedFor: 'Reference connected row.',
+            connectionState: 'connected',
+          }),
+          integrationRow({
+            pollerKey: 'two',
+            label: 'Broken connection',
+            usedFor: 'Failure state.',
+            status: 'failed',
+            failureReason: 'transport',
+            consecutiveFailures: 2,
+            lastSuccessAt: null,
+            connectionState: 'failed',
+          }),
+          integrationRow({
+            pollerKey: 'three',
+            label: 'Silent connection',
+            usedFor: 'Reporting state.',
+            lastAttemptAt: null,
+            lastSuccessAt: null,
+            connectionState: 'not_reporting',
+          }),
+        ],
+      },
+    });
+    const heading = find(livePanel(dom), (n) => n.className === 'band-title'
+      && n.textContent === 'Integrations');
+    const note = heading.parentNode.querySelector('.band-note');
+
+    assert.equal(allText(note), '3 connections · 2 not connected');
+  });
+
+test('the default Integrations band summary counts connections and non-connected rows',
+  async () => {
   const dom = await boot();
   const heading = find(livePanel(dom), (n) => n.className === 'band-title'
     && n.textContent === 'Integrations');
   const note = heading.parentNode.querySelector('.band-note');
 
-  assert.equal(allText(note), '6 connections · 1 stale');
+  assert.equal(allText(note), '6 connections · 5 not connected');
 });
+
+test('outside connections maps every route failure reason to distinct plain copy',
+  async () => {
+    const rows = ROUTE_FAILURE_REASONS.map((reason, index) => integrationRow({
+      pollerKey: `reason_${index}`,
+      label: `Reason ${index + 1}`,
+      usedFor: 'Failure reason contract row.',
+      status: 'failed',
+      failureReason: reason,
+      consecutiveFailures: index + 1,
+      lastAttemptAt: back((index + 2) * MINUTE),
+      lastSuccessAt: null,
+      connectionState: 'failed',
+    }));
+    const dom = await boot({
+      integrations: { generatedAt: back(MINUTE), integrations: rows },
+    });
+    const cardText = allText(cardByTitle(dom, 'Outside connections'));
+
+    assert.equal(new Set(Object.values(FAILURE_REASON_COPY)).size, ROUTE_FAILURE_REASONS.length,
+      'the route failure reasons must not collapse into shared copy');
+    for (const [index, reason] of ROUTE_FAILURE_REASONS.entries()) {
+      const cell = rowCellText(integrationTableRow(dom, `Reason ${index + 1}`), 3);
+      assert.match(cell, new RegExp(`${FAILURE_REASON_COPY[reason]} on ${index + 1} attempt`),
+        `${reason} did not render its own failure sentence with the failure count`);
+      assert.doesNotMatch(cardText, new RegExp(reason),
+        `${reason} leaked as a raw backend identifier`);
+    }
+  });
+
+test('a failed connection that never succeeded still shows its reason and count',
+  async () => {
+    const dom = await boot({
+      integrations: {
+        generatedAt: back(MINUTE),
+        integrations: [
+          integrationRow({
+            pollerKey: 'google_play',
+            label: 'Google Play',
+            usedFor: 'Play internal, closed, open and production track state.',
+            status: 'failed',
+            failureReason: 'transport',
+            consecutiveFailures: 3,
+            lastSuccessAt: null,
+            connectionState: 'failed',
+          }),
+        ],
+      },
+    });
+    const lastSuccessCell = rowCellText(integrationTableRow(dom, 'Google Play'), 3);
+
+    assert.match(lastSuccessCell, /Never succeeded/);
+    assert.match(lastSuccessCell, /The service did not answer on 3 attempts\./);
+  });
+
+test('an unknown integration failure reason gets a safe fallback, not the raw code',
+  async () => {
+    const dom = await boot({
+      integrations: {
+        generatedAt: back(MINUTE),
+        integrations: [
+          integrationRow({
+            pollerKey: 'unknown_failure',
+            label: 'Unknown failure',
+            usedFor: 'Fallback failure reason row.',
+            status: 'failed',
+            failureReason: 'new_backend_code',
+            consecutiveFailures: 1,
+            lastSuccessAt: null,
+            connectionState: 'failed',
+          }),
+        ],
+      },
+    });
+    const lastSuccessCell = rowCellText(integrationTableRow(dom, 'Unknown failure'), 3);
+
+    assert.match(lastSuccessCell, /An unrecognised failure reason was reported on 1 attempt\./);
+    assert.doesNotMatch(lastSuccessCell, /new_backend_code/);
+  });
 
 test('an empty integrations read is treated as unreadable health, not all fine',
   async () => {
@@ -626,13 +804,13 @@ test('an integrations role refusal is shown as a denied card, not a zero state',
   async () => {
     const refused = Object.assign(new Error('Your role does not allow this'), {
       code: 'ops_role_insufficient',
-      requiredRoles: ['owner', 'operator'],
+      requiredRoles: ['owner'],
     });
     const dom = await boot({ integrations: refused });
     const text = allText(cardByTitle(dom, 'Outside connections'));
 
     assert.match(text, /do not have access/i);
-    assert.match(text, /owner or operator/i);
+    assert.match(text, /owner role/i);
     assert.doesNotMatch(text, /ops_role_insufficient|0 connections/i);
   });
 

@@ -451,6 +451,26 @@ const AUDIT = [
     targetType: null, targetId: null, reason: null, ipAddress: '203.0.113.4' }
 ];
 
+const INTEGRATIONS = {
+  generatedAt: ago(MINUTE),
+  integrations: [
+    { pollerKey: 'azure_cost', label: 'Azure Cost Management',
+      usedFor: 'Cloud spend and invoice-backed cost panes.', scopeKey: 'sub-example',
+      status: 'ok', failureReason: null, consecutiveFailures: 0,
+      lastAttemptAt: ago(10 * MINUTE), lastSuccessAt: ago(10 * MINUTE),
+      connectionState: 'connected',
+      freshnessThreshold: { seconds: 86400,
+        source: 'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS' } },
+    { pollerKey: 'google_play', label: 'Google Play',
+      usedFor: 'Play internal, closed, open and production track state.',
+      scopeKey: 'com.example.android', status: 'failed', failureReason: 'transport',
+      consecutiveFailures: 3, lastAttemptAt: ago(3 * MINUTE), lastSuccessAt: null,
+      connectionState: 'failed',
+      freshnessThreshold: { seconds: 900,
+        source: 'server/notification-jobs.ts cron */15 * * * *; shared/operations-cost.ts OPS_RELEASE_POLL_SECONDS' } }
+  ]
+};
+
 /* Cloud costs, in the state a period that has not published yet produces.
    Both generations of this pane read `availability.state` first and print
    `availability.detail` verbatim into the card they draw for it, so the detail
@@ -592,7 +612,7 @@ const PROOF = {
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
-  settings: [ADMINS[0].email, AUDIT[0].reason]
+  settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label]
 };
 
 /* A pane joining the registry without a marker would otherwise be swept on the
@@ -646,6 +666,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
+  if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
   return { data: {} };
 }
 

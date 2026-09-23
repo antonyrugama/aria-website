@@ -127,6 +127,26 @@ const AUDIT = [
     action: 'admin.login', targetEmail: 'first.owner@example.invalid', reason: null }
 ];
 
+const INTEGRATIONS = {
+  generatedAt: iso(-60000),
+  integrations: [
+    { pollerKey: 'azure_cost', label: 'Azure Cost Management',
+      usedFor: 'Cloud spend and invoice-backed cost panes.', scopeKey: 'sub-example',
+      status: 'ok', failureReason: null, consecutiveFailures: 0,
+      lastAttemptAt: iso(-10 * 60000), lastSuccessAt: iso(-10 * 60000),
+      connectionState: 'connected',
+      freshnessThreshold: { seconds: 86400,
+        source: 'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS' } },
+    { pollerKey: 'google_play', label: 'Google Play',
+      usedFor: 'Play internal, closed, open and production track state.',
+      scopeKey: 'com.example.android', status: 'failed', failureReason: 'transport',
+      consecutiveFailures: 3, lastAttemptAt: iso(-3 * 60000), lastSuccessAt: null,
+      connectionState: 'failed',
+      freshnessThreshold: { seconds: 900,
+        source: 'server/notification-jobs.ts cron */15 * * * *; shared/operations-cost.ts OPS_RELEASE_POLL_SECONDS' } }
+  ]
+};
+
 /* The viewer. `owner`, because the settings pane refuses every other role and
    draws a "you do not have access" card instead of the account table -- and
    that card has no dialog, so there would be no ring to measure. */
@@ -151,6 +171,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
+  if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
   return { data: [] };
 }
 
