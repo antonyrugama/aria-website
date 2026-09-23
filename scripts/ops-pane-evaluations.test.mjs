@@ -1653,6 +1653,72 @@ test('v2: replacement lookup preserves manually edited decision context after in
     'manual expected revisions are operator-owned and must survive lookup invalidation');
 });
 
+test('v2: replacement lookup clears only an untouched auto-filled decision id', async () => {
+  let calls = 0;
+  const view = await bootPane({
+    role: 'operator',
+    call: () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2))
+        : Promise.reject(new Error('Lookup denied.'));
+    },
+  });
+  const lookupForm = view.doc.getElementById('approval-get-form');
+  const lookupSubmit = lookupForm.querySelector('button');
+  const result = view.doc.getElementById('approval-result');
+  const decisionId = view.doc.getElementById('approval-decision-id');
+  const expectedRevision = view.doc.getElementById('approval-expected-revision');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-first';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'first approval lookup did not settle');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  expectedRevision.value = '3';
+  view.doc.getElementById('approval-get-id').value = 'approval-denied';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'denied approval lookup did not settle');
+  assert.equal(result.textContent, '');
+  assert.equal(decisionId.value, '',
+    'an untouched auto-filled decision id must clear when its result is invalidated');
+  assert.equal(expectedRevision.value, '3',
+    'an edited expected revision is operator-owned and must survive lookup invalidation');
+});
+
+test('v2: replacement lookup clears only an untouched auto-filled expected revision', async () => {
+  let calls = 0;
+  const view = await bootPane({
+    role: 'operator',
+    call: () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2))
+        : Promise.reject(new Error('Lookup denied.'));
+    },
+  });
+  const lookupForm = view.doc.getElementById('approval-get-form');
+  const lookupSubmit = lookupForm.querySelector('button');
+  const result = view.doc.getElementById('approval-result');
+  const decisionId = view.doc.getElementById('approval-decision-id');
+  const expectedRevision = view.doc.getElementById('approval-expected-revision');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-first';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'first approval lookup did not settle');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  decisionId.value = 'approval-other';
+  view.doc.getElementById('approval-get-id').value = 'approval-denied';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'denied approval lookup did not settle');
+  assert.equal(result.textContent, '');
+  assert.equal(decisionId.value, 'approval-other',
+    'an edited decision id is operator-owned and must survive lookup invalidation');
+  assert.equal(expectedRevision.value, '',
+    'an untouched auto-filled expected revision must clear when its result is invalidated');
+});
+
 const hasClass = (node, cls) => (node.getAttribute('class') || '').split(/\s+/).includes(cls);
 const isBand = node => node.tagName === 'SECTION' && hasClass(node, 'band');
 const within = (node, ancestor) => {

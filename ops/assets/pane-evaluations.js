@@ -1086,11 +1086,8 @@
 
     function clearAutofilledDecisionTarget() {
       if (!approvalAutofilledDecision) return;
-      if (approvalDecisionId.value === approvalAutofilledDecision.id &&
-          approvalExpectedRevision.value === approvalAutofilledDecision.revision) {
-        approvalDecisionId.value = '';
-        approvalExpectedRevision.value = '';
-      }
+      if (approvalDecisionId.value === approvalAutofilledDecision.id) approvalDecisionId.value = '';
+      if (approvalExpectedRevision.value === approvalAutofilledDecision.revision) approvalExpectedRevision.value = '';
       approvalAutofilledDecision = null;
     }
 

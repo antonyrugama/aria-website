@@ -634,9 +634,9 @@ controls bind exact artifact, source, retained, request, purpose, policy, revisi
 values. Qualification is resolved server-side from an external verified record; the dashboard
 cannot provision or assert it.
 Starting another lookup clears the previous result. If it fails, only the lookup error is shown;
-auto-filled decision request id and revision values from the invalidated result are cleared
-with it, while manually edited decision fields are treated as operator-owned form state and
-are preserved. Starting an approval request or decision also clears any older shared result;
+each auto-filled decision request id or revision value from the invalidated result is cleared
+unless that field was manually edited. Edited decision fields are operator-owned and are
+preserved. Starting an approval request or decision also clears any older shared result;
 a later successful lookup, request, or decision displays its current result.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
