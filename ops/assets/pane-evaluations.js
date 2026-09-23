@@ -1006,6 +1006,7 @@
       role: 'status'
     });
     approvalResult.setAttribute('id', 'approval-result');
+    var approvalAutofilledDecision = null;
     var approvalTrustNote = h('div', {
       className: 'callout callout-warn'
     }, [
@@ -1044,10 +1045,12 @@
       var resource = response && response.resource;
       var value = resource && resource.value;
       if (!value) throw new Error('The approval operation did not return a resource.');
+      var resultId = String(value.approvalRequestId || resource.id || '');
+      var resultRevision = String(value.revision || resource.revision || '');
       var message = 'Approval request ' +
-        String(value.approvalRequestId || resource.id) + ' is ' +
+        resultId + ' is ' +
         String(value.state) + ' at revision ' +
-        String(value.revision || resource.revision) + '.';
+        resultRevision + '.';
 
       /* Just the text. The slot is never `hidden`, so this is a change
          inside a region an assistive technology is already watching.
@@ -1075,6 +1078,25 @@
         approvalDecisionId.value = resource.id;
       }
       if (resource.revision) approvalExpectedRevision.value = String(resource.revision);
+      approvalAutofilledDecision = {
+        id: approvalDecisionId.value,
+        revision: approvalExpectedRevision.value
+      };
+    }
+
+    function clearAutofilledDecisionTarget() {
+      if (!approvalAutofilledDecision) return;
+      if (approvalDecisionId.value === approvalAutofilledDecision.id &&
+          approvalExpectedRevision.value === approvalAutofilledDecision.revision) {
+        approvalDecisionId.value = '';
+        approvalExpectedRevision.value = '';
+      }
+      approvalAutofilledDecision = null;
+    }
+
+    function invalidateApprovalResult(clearDecisionTarget) {
+      approvalResult.textContent = '';
+      if (clearDecisionTarget) clearAutofilledDecisionTarget();
     }
 
     approvalRequestForm.addEventListener('submit', function (event) {
@@ -1103,6 +1125,7 @@
         approvalRequestSubmit.textContent = 'Create pending request';
         return;
       }
+      invalidateApprovalResult(true);
       session.call('/api/ops/ciel/operations', {
         method: 'POST',
         body: request
@@ -1126,7 +1149,7 @@
          live region out of the accessibility tree, so the next answer has to
          announce a region that did not exist a moment ago. Empty, it is
          still there and still has no extent. */
-      approvalResult.textContent = '';
+      invalidateApprovalResult(true);
       approvalGetSubmit.disabled = true;
       approvalGetSubmit.textContent = 'Loading…';
       session.call('/api/ops/ciel/operations', {
@@ -1149,6 +1172,7 @@
     approvalDecisionForm.addEventListener('submit', function (event) {
       event.preventDefault();
       approvalDecisionError.textContent = '';
+      invalidateApprovalResult(false);
       approvalDecisionSubmit.disabled = true;
       approvalDecisionSubmit.textContent = 'Recording…';
       session.call('/api/ops/ciel/operations', {
