@@ -14,14 +14,16 @@
    nothing here reads anything until definePane's callback runs.
 
    SECOND, IT SAYS WHICH HALF OF ITSELF IS REAL. Six areas are on screen and
-   three of them are read from an API: administrators, active sessions and the
-   access record. Retention windows, the cost-category mapping and integration
-   state have no endpoint to read or write, so they print no figure at all.
+   four of them are read from an API: administrators, active sessions, the
+   access record and outside connections. Retention windows and the
+   cost-category mapping have no endpoint to read or write, so they print no
+   figure at all.
    They say what is missing and which of "not built" and "not reported"
-   applies. Rendering them as populated tables would be the worst outcome
+   applies. Rendering the remaining static cards as populated tables would be the worst outcome
    available, because a number nobody can check is indistinguishable from one
-   that came from somewhere. Stadiora/Aria#5442 wires those three up; this file
-   restyles all six and moves none of them across the line.
+   that came from somewhere. Stadiora/Aria#11214 moves Outside connections
+   across that line; Stadiora/Aria#5442 still tracks the static cards left
+   behind it.
 
    The split is drawn three ways, and never in colour alone:
 
@@ -53,6 +55,7 @@
   var ADMINS = '/api/ops/admins';
   var SESSIONS = '/api/ops/sessions';
   var AUDIT = '/api/ops/audit';
+  var INTEGRATIONS = '/api/ops/integrations';
   var OPS_SOURCE_PARTS = ['', 'api', 'ops'];
   var AUDIT_PAGE = 50;
 
@@ -84,6 +87,18 @@
     ops_admin_session: 'sign in session',
     ops_admin_account: 'administrator account'
   };
+
+  var INTEGRATION_FAILURE_LABELS = {
+    auth: 'Authentication failed',
+    timeout: 'The service timed out',
+    transport: 'The service did not answer',
+    throttled: 'The service is throttling requests',
+    http_error: 'The service returned an error response',
+    malformed: 'The service returned data this dashboard cannot read',
+    config: 'Configuration is invalid',
+    untrusted_next_link: 'The service returned an unsafe next-page link'
+  };
+  var INTEGRATION_UNKNOWN_FAILURE = 'An unrecognised failure reason was reported';
 
   /* ------------------------------------------------------------ formatting */
 
@@ -183,7 +198,7 @@
     return box;
   }
 
-  /* A card for one of the three areas nothing serves yet. It carries no
+  /* A card for one of the areas nothing serves yet. It carries no
      endpoint and prints no numeral: what it has to say is which of "not built"
      and "not reported" applies, and what stays true regardless. */
   function staticCard(title, note, lines, rules) {
@@ -496,6 +511,14 @@
       });
     }
 
+    function softObject(promise) {
+      return promise.then(function (payload) {
+        return { data: payload && payload.data ? payload.data : null };
+      }, function (err) {
+        return { error: err };
+      });
+    }
+
     function load() {
       var token = ++loadToken;
       region.loading([
@@ -523,17 +546,18 @@
       Promise.all([
         readAdmins(),
         soft(session.call(SESSIONS)),
-        soft(session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: 0 } }))
+        soft(session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: 0 } })),
+        softObject(session.call(INTEGRATIONS))
       ]).then(function (results) {
         if (token !== loadToken) return;
-        render(results[0], results[1], results[2]);
+        render(results[0], results[1], results[2], results[3]);
       }, function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
       });
     }
 
-    function render(adminRows, sessionResult, recordResult) {
+    function render(adminRows, sessionResult, recordResult, integrationResult) {
       var admins = Array.isArray(adminRows) ? adminRows : [];
 
       /* Empty is a real state with a real trigger, and here it is a narrow
@@ -548,7 +572,7 @@
       }
 
       var sessions = sessionResult.rows || [];
-      var degraded = !!(sessionResult.error || recordResult.error);
+      var degraded = !!(sessionResult.error || recordResult.error || integrationResult.error);
 
       var stack = h('div', { className: 'stack' });
       stack.appendChild(hero(admins, sessions, sessionResult.error));
@@ -556,7 +580,7 @@
       stack.appendChild(sessionsBand(admins, sessions, sessionResult));
       stack.appendChild(recordBand(recordResult));
       stack.appendChild(keepBand());
-      stack.appendChild(integrationsBand());
+      stack.appendChild(integrationsBand(integrationResult));
 
       if (degraded) region.degraded(stack);
       else region.show(stack);
@@ -1247,9 +1271,171 @@
       S.announce(fmt.plural(rows.length, 'row') + ' exported.');
     }
 
+    /* ------------------------------------------------------- integrations */
+
+    function integrationRows(result) {
+      var data = result && result.data;
+      return Array.isArray(data && data.integrations) ? data.integrations : [];
+    }
+
+    function integrationSummary(result) {
+      var rows = integrationRows(result);
+      if (result && result.error) return 'Could not be read';
+      if (!rows.length) return 'No connection states came back';
+      var notConnected = rows.filter(function (row) {
+        return row.connectionState !== 'connected';
+      }).length;
+      var problemCount = notConnected === 1 ? '1 not connected' : notConnected + ' not connected';
+      return fmt.plural(rows.length, 'connection') + ' · ' +
+        (notConnected ? problemCount : 'all connected');
+    }
+
+    function integrationStateMeta(state) {
+      if (state === 'connected') {
+        return { label: 'Connected', tone: 'up', dot: 'ok' };
+      }
+      if (state === 'stale') {
+        return { label: 'Connected, stale', tone: 'warn integration-state-stale', dot: 'warn' };
+      }
+      if (state === 'failed') {
+        return { label: 'Failed', tone: 'down', dot: 'bad' };
+      }
+      if (state === 'disabled') {
+        return { label: 'Disabled', tone: 'ghost integration-state-muted', dot: 'vio' };
+      }
+      if (state === 'unconfigured') {
+        return { label: 'Not configured', tone: 'ghost integration-state-muted', dot: 'acc' };
+      }
+      if (state === 'not_reporting') {
+        return { label: 'Not reporting', tone: 'warn integration-state-missing', dot: 'warn' };
+      }
+      return { label: 'State not readable', tone: 'warn integration-state-missing', dot: 'warn' };
+    }
+
+    function integrationStatePill(row) {
+      var meta = integrationStateMeta(row && row.connectionState);
+      var el = h('span', { className: 'pill integration-state ' + meta.tone });
+      el.appendChild(h('span', { className: 'dot ' + meta.dot, 'aria-hidden': 'true' }));
+      el.appendChild(h('span', { text: meta.label }));
+      return el;
+    }
+
+    function freshnessWindowWords(row) {
+      var seconds = row && row.freshnessThreshold && row.freshnessThreshold.seconds;
+      if (seconds === 900) return 'stale after 15 minutes';
+      if (seconds === 3600) return 'stale after 1 hour';
+      if (seconds === 86400) return 'stale after 24 hours';
+      if (seconds && seconds % 3600 === 0) {
+        return 'stale after ' + fmt.plural(seconds / 3600, 'hour');
+      }
+      if (seconds && seconds % 60 === 0) {
+        return 'stale after ' + fmt.plural(seconds / 60, 'minute');
+      }
+      return null;
+    }
+
+    function failureCopy(row) {
+      if (!row || !row.failureReason) return null;
+      var label = INTEGRATION_FAILURE_LABELS[row.failureReason] ||
+        INTEGRATION_UNKNOWN_FAILURE;
+      if (row.consecutiveFailures && row.consecutiveFailures > 0) {
+        return label + ' on ' + fmt.plural(row.consecutiveFailures, 'attempt') + '.';
+      }
+      return label + '.';
+    }
+
+    function scopeLine(row) {
+      if (!row || row.scopeKey === null || row.scopeKey === undefined) return 'Scope not reported';
+      if (row.scopeKey === '(none)') return 'Default scope';
+      return 'Scope ' + row.scopeKey;
+    }
+
+    function integrationLastSuccess(row) {
+      if (row && row.connectionState === 'not_reporting') {
+        return h('td', {}, [
+          h('div', { className: 't-main muted', text: 'No reporting record exists' }),
+          h('div', { className: 't-sub', text: 'Nothing has succeeded or failed here yet' })
+        ]);
+      }
+      if (!row || !row.lastSuccessAt) {
+        var attempted = row && row.lastAttemptAt ? ago(row.lastAttemptAt) : null;
+        var failed = failureCopy(row);
+        var sub = failed || (attempted ? 'Last attempt ' + attempted : 'No attempt reported');
+        if (failed && attempted) sub += ' Last attempt ' + attempted + '.';
+        return h('td', {}, [
+          h('div', { className: 't-main muted', text: 'Never succeeded' }),
+          h('div', { className: 't-sub', text: sub })
+        ]);
+      }
+
+      var sub = [];
+      var age = ago(row.lastSuccessAt);
+      if (age) sub.push(age);
+      var fail = failureCopy(row);
+      sub.push(fail || freshnessWindowWords(row) || 'freshness window reported');
+      return h('td', {}, [
+        h('div', {
+          className: row.connectionState === 'stale'
+            ? 'num integration-last-stale'
+            : 'num dim',
+          text: fmt.utcStamp(row.lastSuccessAt) || 'Last success reported'
+        }),
+        h('div', { className: 't-sub', text: sub.join(' · ') })
+      ]);
+    }
+
+    function integrationsTable(rows) {
+      var tbl = table([
+        { label: 'Connection' }, { label: 'State' }, { label: 'Used for' },
+        { label: 'Last successful run' }
+      ]);
+      var tbody = bodyOf(tbl);
+
+      rows.forEach(function (row) {
+        var tr = h('tr');
+        var connection = h('td');
+        connection.appendChild(h('div', {
+          className: 't-main',
+          text: row && row.label ? row.label : 'Unnamed connection'
+        }));
+        connection.appendChild(h('div', { className: 't-sub', text: scopeLine(row) }));
+        tr.appendChild(connection);
+        tr.appendChild(h('td', {}, [integrationStatePill(row)]));
+        tr.appendChild(h('td', { className: 'cell-wrap', text: row && row.usedFor
+          ? row.usedFor
+          : 'Use not reported' }));
+        tr.appendChild(integrationLastSuccess(row));
+        tbody.appendChild(tr);
+      });
+
+      return tableWrap('Outside connections', tbl);
+    }
+
+    function noIntegrationsBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('warn', 'No connection states came back', [
+        'This is not a clean bill. It means the route answered without the known connections.',
+        'Nothing here is zero-filled, and no credential is shown on this page.'
+      ], 4));
+      return body;
+    }
+
+    function integrationDeniedBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('lock', 'You do not have access to outside connections', [
+        'The integrations read is limited to the owner role.',
+        'Nothing here is zero-filled, and no credential is shown on this page.'
+      ], 4));
+      return body;
+    }
+
+    function deniedIntegrationError(err) {
+      return err && (err.code === 'ops_role_insufficient' || err.status === 403);
+    }
+
     /* --------------------------------------------- what nothing serves yet
 
-       Every string below is written without a digit in it, on purpose. See the
+       Every static string below is written without a digit in it, on purpose. See the
        third rule in this file's opening block: a card with no API behind it
        prints no numeral, so that no figure on this pane can be read as
        measured when it was typed. */
@@ -1285,17 +1471,25 @@
       return band;
     }
 
-    function integrationsBand() {
-      var band = S.band('Integrations', 'Connection state');
-      band.appendChild(staticCard(
-        'Outside connections', 'Whether each one is working',
-        [
-          'Nothing reports connection state yet, so anything here would be a claim rather ' +
-            'than a measurement.',
-          'A connection going unreported here says nothing about whether it works. The ' +
-            'pane that depends on it is where you would see it fail.'
-        ]
-      ));
+    function integrationsBand(result) {
+      var band = S.band('Integrations', integrationSummary(result));
+      var host = liveCard('integrations', 'Outside connections', 'Whether each one is working');
+      var rows = integrationRows(result);
+
+      if (result && deniedIntegrationError(result.error)) {
+        host.appendChild(integrationDeniedBody());
+      } else if (result && result.error) {
+        host.appendChild(failureBody(result.error, load));
+      } else if (!rows.length) {
+        host.appendChild(noIntegrationsBody());
+      } else {
+        host.appendChild(integrationsTable(rows));
+        host.appendChild(cardFoot(
+          'A stale connection keeps its last good answer. The age is shown beside it.',
+          'info'));
+      }
+
+      band.appendChild(host);
       return band;
     }
 

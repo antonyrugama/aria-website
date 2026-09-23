@@ -232,6 +232,81 @@ const AUDIT = [
     targetType: null, targetId: null, reason: null, ipAddress: '203.0.113.4' }
 ];
 
+const INTEGRATIONS = {
+  generatedAt: ago(MINUTE),
+  integrations: [
+    {
+      pollerKey: 'azure_cost',
+      label: 'Azure Cost Management',
+      usedFor: 'Cloud spend and invoice-backed cost panes.',
+      scopeKey: 'sub-example',
+      status: 'ok',
+      failureReason: null,
+      consecutiveFailures: 0,
+      lastAttemptAt: ago(10 * MINUTE),
+      lastSuccessAt: ago(10 * MINUTE),
+      connectionState: 'connected',
+      freshnessThreshold: { seconds: 86400,
+        source: 'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS' }
+    },
+    {
+      pollerKey: 'app_store_connect',
+      label: 'App Store Connect',
+      usedFor: 'TestFlight and App Store release track state.',
+      scopeKey: 'com.example.ios',
+      status: 'failed',
+      failureReason: 'auth',
+      consecutiveFailures: 2,
+      lastAttemptAt: ago(5 * MINUTE),
+      lastSuccessAt: ago(25 * HOUR),
+      connectionState: 'stale',
+      freshnessThreshold: { seconds: 900,
+        source: 'server/notification-jobs.ts cron */15 * * * *; shared/operations-cost.ts OPS_RELEASE_POLL_SECONDS' }
+    },
+    {
+      pollerKey: 'google_play',
+      label: 'Google Play',
+      usedFor: 'Play internal, closed, open and production track state.',
+      scopeKey: 'com.example.android',
+      status: 'failed',
+      failureReason: 'transport',
+      consecutiveFailures: 3,
+      lastAttemptAt: ago(3 * MINUTE),
+      lastSuccessAt: null,
+      connectionState: 'failed',
+      freshnessThreshold: { seconds: 900,
+        source: 'server/notification-jobs.ts cron */15 * * * *; shared/operations-cost.ts OPS_RELEASE_POLL_SECONDS' }
+    },
+    {
+      pollerKey: 'azure_budget',
+      label: 'Azure budgets',
+      usedFor: 'Budget targets for the cloud spend overview.',
+      scopeKey: '(none)',
+      status: 'disabled',
+      failureReason: null,
+      consecutiveFailures: 0,
+      lastAttemptAt: ago(2 * HOUR),
+      lastSuccessAt: null,
+      connectionState: 'disabled',
+      freshnessThreshold: { seconds: 86400,
+        source: 'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS' }
+    },
+    {
+      pollerKey: 'ai_cost_reconciliation',
+      label: 'AI cost reconciliation',
+      usedFor: 'Nightly comparison between modelled AI usage and the Azure bill.',
+      scopeKey: null,
+      status: null,
+      failureReason: null,
+      consecutiveFailures: null,
+      lastAttemptAt: null,
+      lastSuccessAt: null,
+      connectionState: 'not_reporting',
+      freshnessThreshold: { seconds: 86400, source: 'server/notification-jobs.ts cron 20 5 * * *' }
+    }
+  ]
+};
+
 /* Cloud costs, in the state a period that has not published yet produces.
    Both generations of this pane read `availability.state` first and print
    `availability.detail` verbatim into the card they draw for it, so the detail
@@ -378,7 +453,7 @@ const PROOF = {
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
-  settings: [ADMINS[0].email, AUDIT[0].reason]
+  settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label]
 };
 
 
@@ -438,11 +513,12 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
+  if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
   return { data: {} };
 }
 
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, COSTS, PROBLEM, RUNS, PROOF, stub
+  ADMINS, SESSIONS, AUDIT, INTEGRATIONS, COSTS, PROBLEM, RUNS, PROOF, stub
 };

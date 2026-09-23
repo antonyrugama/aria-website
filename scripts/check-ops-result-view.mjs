@@ -475,6 +475,26 @@ const AUDIT = [
     targetType: null, targetId: null, reason: null, ipAddress: '198.51.100.9' }
 ];
 
+const INTEGRATIONS = {
+  generatedAt: ago(MINUTE),
+  integrations: [
+    { pollerKey: 'azure_cost', label: 'Azure Cost Management',
+      usedFor: 'Cloud spend and invoice-backed cost panes.', scopeKey: 'sub-example',
+      status: 'ok', failureReason: null, consecutiveFailures: 0,
+      lastAttemptAt: ago(10 * MINUTE), lastSuccessAt: ago(10 * MINUTE),
+      connectionState: 'connected',
+      freshnessThreshold: { seconds: 86400,
+        source: 'server/notification-jobs.ts cron 20 */8 * * *; shared/operations-cost.ts OPS_BUDGET_STALE_AFTER_MS' } },
+    { pollerKey: 'google_play', label: 'Google Play',
+      usedFor: 'Play internal, closed, open and production track state.',
+      scopeKey: 'com.example.android', status: 'failed', failureReason: 'transport',
+      consecutiveFailures: 3, lastAttemptAt: ago(3 * MINUTE), lastSuccessAt: null,
+      connectionState: 'failed',
+      freshnessThreshold: { seconds: 900,
+        source: 'server/notification-jobs.ts cron */15 * * * *; shared/operations-cost.ts OPS_RELEASE_POLL_SECONDS' } }
+  ]
+};
+
 const TREND = (scale) => Array.from({ length: 30 }, (_, i) =>
   Math.round((900 + Math.sin(i / 3) * 90 + i * 4) * scale));
 
@@ -730,6 +750,7 @@ function stub(pathname, body) {
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
+  if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
   if (pathname.startsWith('/api/ops/users/lookup')) return { data: LOOKUP };
   if (/^\/api\/ops\/users\/[^/]+$/.test(pathname)) {
     return { data: Object.assign({}, DETAIL,
@@ -860,7 +881,7 @@ const RESULT_PROOF = {
      been picked: the masked address comes off the account record the pick
      requested, and "Access record" is the band the account column ends with. */
   users: ['Access record', 'Selected', DETAIL.summary.fields[1].maskedValue],
-  settings: [ADMINS[0].email, AUDIT[0].reason]
+  settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label]
 };
 
 for (const page of PAGES) {

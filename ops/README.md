@@ -1039,9 +1039,9 @@ narrower and worth being exact about: It runs on the v2 shell: `settings.html` l
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
 
-**Six areas, and only three of them are read from anywhere.** Administrators, active sessions and
-the access record come from the API. Retention windows, the cost-category mapping and integration
-state have no endpoint to read or write. Both halves are on the same pane, so the pane has to say
+**Six areas, and four of them are read from anywhere.** Administrators, active sessions,
+the access record and outside connections come from the API. Retention windows and the
+cost-category mapping have no endpoint to read or write. Both halves are on the same pane, so the pane has to say
 which is which, and it says so three times over, never once in colour alone:
 
 1. **The word.** Every card head carries a source chip reading either `Live` or `No API yet`.
@@ -1060,12 +1060,14 @@ A live card also carries `data-endpoint` naming the path it was filled from, and
 `data-source="static"` names none and contains no digit, and **neither set is empty**. Moving one
 card across the boundary fails the suite.
 
-`Stadiora/Aria#5442` is the issue that gives the three static cards an API. Until it lands, the
-line stays where it is: this pane restyles all six areas and moves none of them across it.
+`Stadiora/Aria#11214` is the issue that moved Outside connections across that line. Until the
+matching backend deploys, that card shows a degraded "could not be read" state, not a fake empty
+table. `Stadiora/Aria#5442` still tracks the remaining static cards.
 
 **What the live half does.** Each account's role, status, last sign in and current session expiry;
-every live session with who holds it, when it started, when it was last used and when it ends; and
-the access record, newest first, with paging and an export. Revoking asks first, requires a
+every live session with who holds it, when it started, when it was last used and when it ends; the
+access record, newest first, with paging and an export; and outside connection state from
+`GET /api/ops/integrations`, including the last successful run and its age. Revoking asks first, requires a
 written reason, sends that reason, and reports what the server answered rather than what was asked
 for. The record is reloaded beside the change, so the entry describing it is on screen next to the
 thing it describes.
