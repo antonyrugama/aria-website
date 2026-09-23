@@ -1385,15 +1385,22 @@ P('Each was opened **by Tab and Enter**, never by `element.focus()`: a dialog op
   'time more than the dialog has controls, because a trap that holds for exactly as many presses as',
   'it has controls is a coincidence, not a trap.', '');
 
-const batteryUsedSignals = (() => {
+const batteryKillSignals = (() => {
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'ops-keyboard-walk.battery.mjs'), 'utf8');
-  return new Set([...src.matchAll(/\bsignal:\s*'([^']+)'/g)].map((m) => m[1]));
+  const signals = new Set();
+  for (const block of src.matchAll(/\{\s*id:\s*'[^']+'[\s\S]*?(?=\n\s*\{ id:|\n\];)/g)) {
+    if (!/\bexpect:\s*'kill'/.test(block[0])) continue;
+    const m = /\bsignal:\s*'([^']+)'/.exec(block[0]);
+    if (m) signals.add(m[1]);
+  }
+  return signals;
 })();
 const cleanRowsForBatteryCoverage = [
-  { name: 'focus traps', signals: [] },
-  { name: 'retrace forward-leg agreement', signals: [] },
-  { name: 'backwards reading-order rows', signals: [] },
-  { name: 'duplicate `id` rows', signals: [] },
+  { name: 'focus traps', signals: ['focusTraps'] },
+  { name: 'retrace forward-leg agreement', signals: ['retraceForwardLegAgrees'] },
+  { name: 'backwards reading-order rows', signals: ['backwardsRows'] },
+  { name: 'duplicate `id` rows', signals: ['duplicateIds'] },
+  { name: 'vacuous reverse-walk rows', signals: ['reverseVacuous'] },
   {
     name: 'theme re-render focus retention',
     signals: ['settingsRerender'],
@@ -1401,7 +1408,7 @@ const cleanRowsForBatteryCoverage = [
   }
 ];
 const unexercisedCleanRows = cleanRowsForBatteryCoverage
-  .filter((row) => !row.signals.some((signal) => batteryUsedSignals.has(signal)));
+  .filter((row) => !row.signals.some((signal) => batteryKillSignals.has(signal)));
 
 P('## NOT COVERED', '');
 /* NARROWING, NOT ANALYSIS. A finding group is keyed by kind, pane, CSS path
@@ -1419,8 +1426,10 @@ P('- **Two different same-kind, same-path siblings, each a finding at only one w
   '  one element seen at both widths is one finding. A same-viewport collision within one',
   '  list refuses; the cross-viewport shape does not, and no element in this sweep is in it.');
 P(`- **${unexercisedCleanRows.length} clean rows are live measurements, not battery-exercised claims.**`,
-  `  This list is derived from the mutation battery's \`signal:\` wiring. The battery does not`,
-  `  carry payloads for ${unexercisedCleanRows.map((row) => row.name).join(', ')}.`,
+  '  This list is generated from the clean-claim catalog in this file and a source-text scan',
+  '  of mutation-battery experiment blocks that contain both `expect: \'kill\'` and',
+  '  `signal: \'...\'`. A row stays here when none of its catalogued signals is used by an',
+  `  executed killing experiment. Today that leaves ${unexercisedCleanRows.map((row) => row.name).join(', ')}.`,
   '  They are printed from the run, but they are not part of the battery coverage claim.');
 unexercisedCleanRows.filter((row) => row.note).forEach((row) => {
   P(`  ${row.note}`);
@@ -1516,8 +1525,9 @@ READ_INTO.forEach((lines) => {
 });
 P('');
 P('The mutation battery exercises the three filed findings above and the instrument rules named',
-  'in its generated table. It does not exercise every clean row in this document; the unexercised',
-  'rows are listed under NOT COVERED instead of being claimed as proven.', '');
+  'in its generated table. Some clean rows are only live measurements. Rows with no executed',
+  'killing experiment at all are named under NOT COVERED; the table remains the exact coverage',
+  'record for everything else.', '');
 
 fs.writeFileSync(OUT, md.join('\n') + '\n');
 process.stderr.write(`wrote ${OUT}\n`);

@@ -184,10 +184,19 @@ const EXPERIMENTS = [
 
   /* --- the three findings the audit publishes ------------------------- */
   { id: 'M1', kind: 'mutation', expect: 'kill', scope: 'history', vp: '375px', signal: 'historyScrollers',
-    file: 'ops/assets/pane-run-history-v2.js',
-    anchor: "      var wrap = h('div', { className: 'tbl-wrap' });",
-    payload: "      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });",
-    what: 'Run history\'s sideways-scrolling table is given the declaration every other pane\'s already has. The finding must stop being reported, or it was never about the declaration.' },
+    edits: [
+      {
+        file: 'ops/assets/pane-run-history-v2.js',
+        anchor: "      var section = S.band('Why things failed', 'Most runs first, then most recent');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap' });",
+        payload: "      var section = S.band('Why things failed', 'Most runs first, then most recent');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });"
+      },
+      {
+        file: 'ops/assets/pane-run-history-v2.js',
+        anchor: "      var section = S.band('The runs', 'Newest first');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap' });",
+        payload: "      var section = S.band('The runs', 'Newest first');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });"
+      }
+    ],
+    what: 'Run history\'s sideways-scrolling tables are given the declaration every other pane\'s already has. The finding must stop being reported, or it was never about the declaration.' },
 
   { id: 'M2', kind: 'mutation', expect: 'kill', scope: 'evals', signal: 'evalsHidden',
     file: 'ops/assets/pane-evaluations-v2.css',
@@ -311,15 +320,33 @@ const EXPERIMENTS = [
 
   /* --- the filed-issue reconciliation, the newest claim in this file ----- */
   { id: 'M17', kind: 'mutation', expect: 'kill', scope: '*', vp: '*', signal: '__exit',
-    file: 'ops/assets/pane-run-history-v2.js',
-    anchor: "      var wrap = h('div', { className: 'tbl-wrap' });",
-    payload: "      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });",
-    what: 'The REAL scenario the reconciliation exists for: somebody fixes the scroll container, so the full sweep produces no undeclared-scroller finding, and the document would otherwise keep citing Stadiora/Aria#10868 for a defect that is gone. The tool must refuse to write the document rather than publish a stale issue reference. Scored on the tool\'s exit, over a FULL sweep, because that is how the check is gated.' },
+    edits: [
+      {
+        file: 'ops/assets/pane-run-history-v2.js',
+        anchor: "      var section = S.band('Why things failed', 'Most runs first, then most recent');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap' });",
+        payload: "      var section = S.band('Why things failed', 'Most runs first, then most recent');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });"
+      },
+      {
+        file: 'ops/assets/pane-run-history-v2.js',
+        anchor: "      var section = S.band('The runs', 'Newest first');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap' });",
+        payload: "      var section = S.band('The runs', 'Newest first');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });"
+      }
+    ],
+    what: 'The REAL scenario the reconciliation exists for: somebody fixes the run-history scroll containers, so the full sweep produces no undeclared-scroller finding, and the document would otherwise keep citing Stadiora/Aria#10868 for a defect that is gone. The tool must refuse to write the document rather than publish a stale issue reference. Scored on the tool\'s exit, over a FULL sweep, because that is how the check is gated.' },
 
   { id: 'M17b', kind: 'tolerance-control', expect: 'survive', scope: 'settings', signal: '__exit',
-    file: 'ops/assets/pane-run-history-v2.js',
-    anchor: "      var wrap = h('div', { className: 'tbl-wrap' });",
-    payload: "      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });",
+    edits: [
+      {
+        file: 'ops/assets/pane-run-history-v2.js',
+        anchor: "      var section = S.band('Why things failed', 'Most runs first, then most recent');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap' });",
+        payload: "      var section = S.band('Why things failed', 'Most runs first, then most recent');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });"
+      },
+      {
+        file: 'ops/assets/pane-run-history-v2.js',
+        anchor: "      var section = S.band('The runs', 'Newest first');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap' });",
+        payload: "      var section = S.band('The runs', 'Newest first');\n      var box = S.card();\n      var wrap = h('div', { className: 'tbl-wrap', tabindex: '0', role: 'region' });"
+      }
+    ],
     what: 'The same payload on a SCOPED run, which never walks history at 375px. The reconciliation must NOT fire: on a scoped run "the finding did not reproduce" means "you did not look", and the first version of this check could not tell those apart and refused on every KBD_ONLY run. Proves the narrowing, not just the throw.' },
 
   /* --- the five blocking findings of round 1, each scored --------------- */
