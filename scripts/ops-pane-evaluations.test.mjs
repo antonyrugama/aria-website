@@ -1373,6 +1373,18 @@ function approvalLookupResponse(id, state, revision) {
   };
 }
 
+function fillApprovalRequestForm(view, suffix = 'one') {
+  view.doc.getElementById('approval-artifact-id').value = `artifact-${suffix}`;
+  view.doc.getElementById('approval-artifact-revision').value = '1';
+  view.doc.getElementById('approval-source-digest').value = 'a'.repeat(64);
+  view.doc.getElementById('approval-retained-digest').value = 'b'.repeat(64);
+  view.doc.getElementById('approval-target-digest').value = 'c'.repeat(64);
+  view.doc.getElementById('approval-purpose').value = 'quality_review';
+  view.doc.getElementById('approval-policy-revision').value = 'ciel-evidence-admission.v1';
+  view.doc.getElementById('approval-expiry').value = '2026-10-19T00:00';
+  view.doc.getElementById('approval-request-key').value = `dashboard-approval-request-${suffix}`;
+}
+
 test('v2: approval lookup clears the previous success while its replacement is pending', async () => {
   let resolveReplacement;
   let calls = 0;
@@ -1467,6 +1479,244 @@ test('v2: approval lookup keeps old success cleared after denial and shows a lat
     + 'anything sets it (Stadiora/Aria#10809). The strict `=== false` binding is '
     + 'in scripts/ops-narrow-panes.test.mjs, against a real DOM.');
   assert.equal(result.textContent, 'Approval request approval-recovered is pending at revision 5.');
+});
+
+test('v2: approval request clears stale shared results through pending, failure and recovery', async () => {
+  let resolvePending;
+  let calls = 0;
+  const view = await bootPane({
+    role: 'operator',
+    call: (endpoint, options) => {
+      calls += 1;
+      if (calls === 1) return Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2));
+      if (calls === 2) return new Promise((resolve, reject) => { resolvePending = { resolve, reject }; });
+      return Promise.resolve(approvalLookupResponse('approval-created', 'pending', 7));
+    },
+  });
+  const lookupForm = view.doc.getElementById('approval-get-form');
+  const requestForm = view.doc.getElementById('approval-request-form');
+  const requestSubmit = requestForm.querySelector('button');
+  const result = view.doc.getElementById('approval-result');
+  const error = requestForm.querySelector('[role="alert"]');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-first';
+  lookupForm.dispatch('submit');
+  await waitFor(() => result.textContent === 'Approval request approval-first is approved at revision 2.',
+    'first approval lookup did not render');
+
+  fillApprovalRequestForm(view, 'denied');
+  requestForm.dispatch('submit');
+  assert.equal(requestSubmit.disabled, true);
+  assert.equal(requestSubmit.textContent, 'Creating…');
+  assert.equal(result.textContent, '',
+    'starting a replacement approval request must invalidate the earlier shared result');
+  assert.equal(view.doc.getElementById('approval-decision-id').value, '',
+    'auto-filled decision target from the invalidated result must be cleared');
+  assert.equal(view.doc.getElementById('approval-expected-revision').value, '',
+    'auto-filled decision revision from the invalidated result must be cleared');
+  resolvePending.reject(new Error('Request refused.'));
+  await waitFor(() => !requestSubmit.disabled, 'failed approval request did not settle');
+  assert.equal(error.textContent, 'Request refused.');
+  assert.equal(result.textContent, '', 'a failed replacement request must not retain the old result');
+
+  fillApprovalRequestForm(view, 'created');
+  requestForm.dispatch('submit');
+  await waitFor(() => !requestSubmit.disabled, 'recovered approval request did not settle');
+  assert.equal(error.textContent, '');
+  assert.equal(result.textContent, 'Approval request approval-created is pending at revision 7.');
+  assert.equal(view.doc.getElementById('approval-decision-id').value, 'approval-created');
+  assert.equal(view.doc.getElementById('approval-expected-revision').value, '7');
+});
+
+test('v2: approval decision clears stale shared results through pending, failure and recovery', async () => {
+  let resolvePending;
+  let calls = 0;
+  const view = await bootPane({
+    role: 'operator',
+    call: (endpoint, options) => {
+      calls += 1;
+      if (calls === 1) return Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2));
+      if (calls === 2) return new Promise((resolve, reject) => { resolvePending = { resolve, reject }; });
+      return Promise.resolve(approvalLookupResponse('approval-other', 'rejected', 3));
+    },
+  });
+  const lookupForm = view.doc.getElementById('approval-get-form');
+  const decisionForm = view.doc.getElementById('approval-decision-form');
+  const decisionSubmit = decisionForm.querySelector('button');
+  const result = view.doc.getElementById('approval-result');
+  const error = decisionForm.querySelector('[role="alert"]');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-first';
+  lookupForm.dispatch('submit');
+  await waitFor(() => result.textContent === 'Approval request approval-first is approved at revision 2.',
+    'first approval lookup did not render');
+
+  view.doc.getElementById('approval-decision-id').value = 'approval-other';
+  view.doc.getElementById('approval-expected-revision').value = '1';
+  view.doc.getElementById('approval-decision').value = 'rejected';
+  view.doc.getElementById('approval-reason').value = 'Replacement request denied.';
+  view.doc.getElementById('approval-decision-key').value = 'dashboard-approval-decision-denied';
+  decisionForm.dispatch('submit');
+  assert.equal(decisionSubmit.disabled, true);
+  assert.equal(decisionSubmit.textContent, 'Recording…');
+  assert.equal(result.textContent, '',
+    'starting a decision for another request must invalidate the earlier shared result');
+  assert.equal(view.doc.getElementById('approval-decision-id').value, 'approval-other');
+  assert.equal(view.doc.getElementById('approval-expected-revision').value, '1');
+  resolvePending.reject(new Error('Decision denied.'));
+  await waitFor(() => !decisionSubmit.disabled, 'failed approval decision did not settle');
+  assert.equal(error.textContent, 'Decision denied.');
+  assert.equal(result.textContent, '', 'a failed decision must not retain the old result');
+
+  decisionForm.dispatch('submit');
+  await waitFor(() => !decisionSubmit.disabled, 'recovered approval decision did not settle');
+  assert.equal(error.textContent, '');
+  assert.equal(result.textContent, 'Approval request approval-other is rejected at revision 3.');
+});
+
+test('v2: replacement lookup clears auto-filled decision context after invalidating its result', async () => {
+  let calls = 0;
+  const view = await bootPane({
+    role: 'operator',
+    call: () => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error('Lookup denied.'));
+      return Promise.resolve(calls === 1
+        ? approvalLookupResponse('approval-first', 'approved', 2)
+        : approvalLookupResponse('approval-recovered', 'pending', 5));
+    },
+  });
+  const lookupForm = view.doc.getElementById('approval-get-form');
+  const lookupSubmit = lookupForm.querySelector('button');
+  const result = view.doc.getElementById('approval-result');
+  const error = lookupForm.querySelector('[role="alert"]');
+  const decisionId = view.doc.getElementById('approval-decision-id');
+  const expectedRevision = view.doc.getElementById('approval-expected-revision');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-first';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'first approval lookup did not settle');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+  assert.equal(decisionId.value, 'approval-first');
+  assert.equal(expectedRevision.value, '2');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-denied';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'denied approval lookup did not settle');
+  assert.equal(error.textContent, 'Lookup denied.');
+  assert.equal(result.textContent, '');
+  assert.equal(decisionId.value, '',
+    'a denied replacement lookup must not leave the prior auto-filled decision id');
+  assert.equal(expectedRevision.value, '',
+    'a denied replacement lookup must not leave the prior auto-filled revision');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-recovered';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'recovered approval lookup did not settle');
+  assert.equal(error.textContent, '');
+  assert.equal(result.textContent, 'Approval request approval-recovered is pending at revision 5.');
+  assert.equal(decisionId.value, 'approval-recovered');
+  assert.equal(expectedRevision.value, '5');
+});
+
+test('v2: replacement lookup preserves manually edited decision context after invalidation', async () => {
+  let calls = 0;
+  const view = await bootPane({
+    role: 'operator',
+    call: () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2))
+        : Promise.reject(new Error('Lookup denied.'));
+    },
+  });
+  const lookupForm = view.doc.getElementById('approval-get-form');
+  const lookupSubmit = lookupForm.querySelector('button');
+  const result = view.doc.getElementById('approval-result');
+  const decisionId = view.doc.getElementById('approval-decision-id');
+  const expectedRevision = view.doc.getElementById('approval-expected-revision');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-first';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'first approval lookup did not settle');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  decisionId.value = 'operator-owned-request';
+  expectedRevision.value = '9';
+  view.doc.getElementById('approval-get-id').value = 'approval-denied';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'denied approval lookup did not settle');
+  assert.equal(result.textContent, '');
+  assert.equal(decisionId.value, 'operator-owned-request',
+    'manual decision ids are operator-owned and must survive lookup invalidation');
+  assert.equal(expectedRevision.value, '9',
+    'manual expected revisions are operator-owned and must survive lookup invalidation');
+});
+
+test('v2: replacement lookup clears only an untouched auto-filled decision id', async () => {
+  let calls = 0;
+  const view = await bootPane({
+    role: 'operator',
+    call: () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2))
+        : Promise.reject(new Error('Lookup denied.'));
+    },
+  });
+  const lookupForm = view.doc.getElementById('approval-get-form');
+  const lookupSubmit = lookupForm.querySelector('button');
+  const result = view.doc.getElementById('approval-result');
+  const decisionId = view.doc.getElementById('approval-decision-id');
+  const expectedRevision = view.doc.getElementById('approval-expected-revision');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-first';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'first approval lookup did not settle');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  expectedRevision.value = '3';
+  view.doc.getElementById('approval-get-id').value = 'approval-denied';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'denied approval lookup did not settle');
+  assert.equal(result.textContent, '');
+  assert.equal(decisionId.value, '',
+    'an untouched auto-filled decision id must clear when its result is invalidated');
+  assert.equal(expectedRevision.value, '3',
+    'an edited expected revision is operator-owned and must survive lookup invalidation');
+});
+
+test('v2: replacement lookup clears only an untouched auto-filled expected revision', async () => {
+  let calls = 0;
+  const view = await bootPane({
+    role: 'operator',
+    call: () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve(approvalLookupResponse('approval-first', 'approved', 2))
+        : Promise.reject(new Error('Lookup denied.'));
+    },
+  });
+  const lookupForm = view.doc.getElementById('approval-get-form');
+  const lookupSubmit = lookupForm.querySelector('button');
+  const result = view.doc.getElementById('approval-result');
+  const decisionId = view.doc.getElementById('approval-decision-id');
+  const expectedRevision = view.doc.getElementById('approval-expected-revision');
+
+  view.doc.getElementById('approval-get-id').value = 'approval-first';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'first approval lookup did not settle');
+  assert.equal(result.textContent, 'Approval request approval-first is approved at revision 2.');
+
+  decisionId.value = 'approval-other';
+  view.doc.getElementById('approval-get-id').value = 'approval-denied';
+  lookupForm.dispatch('submit');
+  await waitFor(() => !lookupSubmit.disabled, 'denied approval lookup did not settle');
+  assert.equal(result.textContent, '');
+  assert.equal(decisionId.value, 'approval-other',
+    'an edited decision id is operator-owned and must survive lookup invalidation');
+  assert.equal(expectedRevision.value, '',
+    'an untouched auto-filled expected revision must clear when its result is invalidated');
 });
 
 const hasClass = (node, cls) => (node.getAttribute('class') || '').split(/\s+/).includes(cls);
