@@ -363,10 +363,10 @@ const EXPERIMENTS = [
     what: 'The same line M18 mutates, whitespace only, scored on the same signal: proves M18\'s kill came from the tabindex VALUE and not from touching that line.' },
 
   { id: 'M19', kind: 'mutation', expect: 'kill', scope: 'history,settings', vp: '375px',
-    signal: 'docDeclaredScrollers', file: TOOL,
+    signal: '__exit', file: TOOL,
     anchor: "    w, x, key: `${kind}|${w.pane}|${x.path}#${xs.filter((y, j) => y.path === x.path && j < i).length}`",
     payload: "    w, x, key: `${kind}|${w.pane}|${x.path}`",
-    what: 'B2. `pathOf()` stops at five ancestors and two classes, so settings\' three tbl-wrap boxes -- three tables, three labels -- produce one byte-identical path. Keying on the path alone collapses them, and the DOCUMENT is where that surfaces: the shipped run held 5 declared scroll containers in its record and published 3. The ordinal makes siblings distinct; the kind separates finding classes. Scored on the published sentence rather than the record, because the record never moved.' },
+    what: 'B2. `pathOf()` stops at five ancestors and two classes, so settings\' three tbl-wrap boxes -- three tables, three labels -- produce one byte-identical path. Keying on the path alone collapses them. The merged run-history pane now has the same shape, and the fixed tool refuses before writing a document when two findings from one walk share a key. The ordinal makes siblings distinct; the kind separates finding classes.' },
 
   { id: 'M20', kind: 'mutation', expect: 'kill', scope: 'evals', vp: 'desktop',
     signal: 'evalsReverse', file: 'ops/assets/pane-evaluations.js',
