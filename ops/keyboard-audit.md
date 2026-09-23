@@ -14,11 +14,11 @@ colour. This is traversal.
 | | |
 |---|---|
 | Panes walked | 10, at desktop 1440×900 and 375px 375×812 — **20 walks** |
-| Tab stops recorded | 312 |
-| Interactive controls found | 280 |
+| Tab stops recorded | 330 |
+| Interactive controls found | 296 |
 | Controls never reached by Tab | **0** |
 | Focus traps | **0** |
-| Walks whose Shift+Tab exactly retraces Tab | 20/20, **272 stops retraced** over 284 Shift+Tab presses |
+| Walks whose Shift+Tab exactly retraces Tab | 20/20, **290 stops retraced** over 302 Shift+Tab presses |
 | Walks that made no Shift+Tab press at all (scored neither way) | **0** |
 | Walks where the retrace's forward leg landed where the first walk said it would | 20/20 |
 | Stops that jump backwards in reading order | **0** |
@@ -28,24 +28,36 @@ colour. This is traversal.
 | `aria-label` attributes missing their visible text (WCAG 2.5.3) | 0 |
 | Duplicate `id` attributes | 0 |
 | Modal dialogs probed | 2, 2 clean on all six properties |
-| **Scroll containers never declared focusable** | **1** |
+| **Scroll containers never declared focusable** | **2** |
 | **Elements marked `hidden` that the stylesheet still paints** | **2** |
 
 ## Findings
 
 ### F1. A sideways-scrolling table is never declared keyboard-focusable
 
-`div.stack > div.stack > section.band > div.card > div.tbl-wrap` on **history/375px** clips **374px** of content horizontally and has no `tabindex` attribute. It carries no `role` and neither `aria-label` nor `aria-labelledby`.
+`div.stack > div.stack > section.band > div.card > div.tbl-wrap` on **history/375px** clips **286px** of content horizontally and has no `tabindex` attribute. It carries no `role` and neither `aria-label` nor `aria-labelledby`.
 
-The walk **did** reach it (stop 5 of 8), but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox do not, and neither does any Chrome older than that. It announces as a bare `div`.
+The walk **did** reach it (stop 8 of 13), but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox do not, and neither does any Chrome older than that. It announces as a bare `div`.
 
-The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found 5 scroll containers the page declares focusable, 5 of them carrying both `role="region"` and an `aria-label`. This one was missed.
+The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found 6 scroll containers the page declares focusable, 6 of them carrying both `role="region"` and an `aria-label`. This one was missed.
 
 Seen on: history/375px.
 
 Filed as Stadiora/Aria#10868. Not fixed here: this audit reports, it does not repair.
 
-### F2. An element the code hides is still painted (`fieldset`)
+### F2. A sideways-scrolling table is never declared keyboard-focusable
+
+`div.stack > div.stack > section.band > div.card > div.tbl-wrap` on **history/375px** clips **324px** of content horizontally and has no `tabindex` attribute. It carries no `role` and neither `aria-label` nor `aria-labelledby`.
+
+The walk **never reached it**: it is out of the tab order in the browser that ran this sweep, which is the browser most willing to volunteer focus to a scroll container. Its clipped content is unreachable from the keyboard here, in Safari and in Firefox alike.
+
+The pattern Stadiora/Aria#10822 established is a declared, named region — the walk found 6 scroll containers the page declares focusable, 6 of them carrying both `role="region"` and an `aria-label`. This one was missed.
+
+Seen on: history/375px.
+
+Filed as Stadiora/Aria#10868. Not fixed here: this audit reports, it does not repair.
+
+### F3. An element the code hides is still painted (`fieldset`)
 
 `div#fold-body-2 > form.card.evidence-form > div.card-body > fieldset.evidence-authority` on **evals** carries the `hidden` attribute and computes to `display: flex`, so it is **888×292px of visible interface the code believes is not there**, containing 3 form controls.
 
@@ -57,7 +69,7 @@ Seen on: evals/desktop.
 
 Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not repair.
 
-### F3. An element the code hides is still painted (`button`)
+### F4. An element the code hides is still painted (`button`)
 
 `div.stack > section.band > div.card > div.card-foot > button.btn.btn-sm` on **settings** carries the `hidden` attribute and computes to `display: flex`, so it is **73×25px of visible interface the code believes is not there**.
 
@@ -71,11 +83,11 @@ Filed as Stadiora/Aria#10869. Not fixed here: this audit reports, it does not re
 
 ## What is clean, and how that is known
 
-- **No focus traps.** 20 walks, 312 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
-- **Nothing unreachable.** 280 enabled, visible, interactive controls; 0 were not reached by Tab.
-- **12 stops landed on something this tool does not call interactive**, and 3 of 20 walks ended by wrapping back to their first stop (17 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
+- **No focus traps.** 20 walks, 330 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
+- **Nothing unreachable.** 296 enabled, visible, interactive controls; 0 were not reached by Tab.
+- **14 stops landed on something this tool does not call interactive**, and 3 of 20 walks ended by wrapping back to their first stop (17 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
 - **Tab order is reading order** on all 20 walks: 0 stops out of DOM order, where a stop is out of order if its element precedes the previous stop's element in document order.
-- **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks, over the WHOLE walk rather than a prefix of it: 272 stops retraced against 312 forward stops, which took 284 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
+- **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks, over the WHOLE walk rather than a prefix of it: 290 stops retraced against 330 forward stops, which took 302 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
 - **The skip link works.** It is the first stop on 20/20 walks and Enter lands focus on `main#content` on 20/20.
 - **Focus survives a re-render** on 20/20 walks: the theme toggle rebuilds the pane and focus stays on the button that did it.
 - **No duplicate ids** (0), and **no `aria-label` that drops its visible text** (0). That is the attribute, not the computed accessible name — see NOT COVERED.
@@ -98,9 +110,11 @@ it has controls is a coincidence, not a trap.
   into one group.** Findings are grouped by kind, pane, CSS path and per-list ordinal so
   one element seen at both widths is one finding. A same-viewport collision within one
   list refuses; the cross-viewport shape does not, and no element in this sweep is in it.
-- **5 clean rows are live measurements, not battery-exercised claims.**
-  This list is derived from the mutation battery's `signal:` wiring. The battery does not
-  carry payloads for focus traps, retrace forward-leg agreement, backwards reading-order rows, duplicate `id` rows, theme re-render focus retention.
+- **6 clean rows are live measurements, not battery-exercised claims.**
+  This list is generated from the clean-claim catalog in this file and a source-text scan
+  of mutation-battery experiment blocks that contain both `expect: 'kill'` and
+  `signal: '...'`. A row stays here when none of its catalogued signals is used by an
+  executed killing experiment. Today that leaves focus traps, retrace forward-leg agreement, backwards reading-order rows, duplicate `id` rows, vacuous reverse-walk rows, theme re-render focus retention.
   They are printed from the run, but they are not part of the battery coverage claim.
   The walk samples focus 500ms after pressing the theme toggle; a slower rebuild could drop focus after that sample.
 - **Screen-reader output.** Nothing here listens to a screen reader. "Announced twice" is
@@ -174,7 +188,8 @@ produced plausible output that a reader would have believed.
   Scoring it on the match would have been a coin flip with a decimal point. It is scored on
   the press count, which was 3 in six unmutated runs across both shapes and 4 without the fix.
 
-The mutation battery exercises the three filed findings above and the instrument rules named
-in its generated table. It does not exercise every clean row in this document; the unexercised
-rows are listed under NOT COVERED instead of being claimed as proven.
+The mutation battery exercises the filed finding kinds above and the instrument rules named
+in its generated table. Some clean rows are only live measurements. Rows with no executed
+killing experiment at all are named under NOT COVERED; the table remains the exact coverage
+record for everything else.
 
