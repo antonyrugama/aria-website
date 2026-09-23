@@ -1,7 +1,24 @@
 /* =========================================================================
    Aria Operations — Problems pane (v2)
    Loaded after assets/aria.css and assets/shell-pane-v2.css, on
-   ops/alerts.html and nowhere else.
+   ops/alerts.html and nowhere else — scripts/ops-alerts-v2.test.mjs reads
+   every ops/*.html to say so ("the page loads one design system and one
+   theme decision").
+
+   HOW TO READ THIS COMMENT. Anything this sheet says about another file is
+   bound by a test ONLY where the sentence saying it, or the paragraph that
+   sentence sits in, names that test. The
+   NOT BOUND list at the bottom of this block collects the ones that name
+   none, so a cross-file claim with neither a test name nor a line in that
+   list is a defect (Stadiora/Aria#10632). That list is kept BY HAND and
+   nothing checks it is complete: whether a sentence makes a claim about
+   another file is a reading rather than a parse, and reviews of
+   antonyrugama/aria-website#75 have found sentences missing from it more
+   than once. Read it as the claims somebody noticed, not as all of
+   them. Every title quoted below is
+   checked to be a test that exists ("every test the stylesheet cites by name
+   is a test this file registers"), so a citation cannot go stale in place
+   and leave the sentence around it reading as proven.
 
    Adapted from docs/mocks/ops-dashboard-v2/assets/pane-operate.css in the Aria
    monorepo, narrowed to the shapes this one pane uses. The mock groups pane
@@ -10,34 +27,118 @@
    already declares is used from there rather than copied.
 
    Every colour here comes from a token aria.css declares — the palette made
-   WCAG AA by construction (monorepo #10042) — bar the spellings on the line
+   WCAG AA by construction (monorepo #10042) — bar the sites on the line
    below, which scripts/ops-alerts-v2.test.mjs reads out of this comment and
-   checks against what the sheet actually paints, so the two cannot drift:
+   checks against what the sheet actually paints ("every colour this sheet
+   paints is a token aria.css declares, bar the 6 sites named here" and
+   "every token this sheet paints with is one aria.css actually declares"),
+   so the two cannot drift:
 
-   NON-TOKEN PAINT: transparent, black
+   NON-TOKEN PAINT: black in color-mix(), transparent in color-mix()
+   AVATAR INK TOKEN: --cyan
 
-   `transparent` adds no colour of its own: it is what a color-mix() lays a
-   token over. And `.av`'s ink mixes var(--cyan) toward `black`, which is the
-   one real exception. The avatar tile is an opaque cyan gradient in BOTH
-   themes and its ink has to clear AA against both, and no token aria.css
-   declares can do that — the same test tries every one of them in that mix to
-   say so, rather than leaving it asserted here. Both spellings are pinned
-   there per site (NON_TOKEN_PAINT), so a third fails the suite rather than
-   joining the list quietly.
+   The reader behind the first line refuses a hex and an unclassified function
+   on EVERY property. A colour KEYWORD it looks for on every CUSTOM property
+   (any name starting with two dashes, because any of them can carry a paint)
+   and on a property whose own NAME carries a paint stem (color, background,
+   shadow, outline, border, fill, stroke), so a keyword on column-rule,
+   text-decoration, mask-image or list-style walks past it — inside a
+   color-mix() or not. A -color longhand,
+   where one exists, is caught: the stem is in its name. `filter` is not on
+   that list although its name carries no stem either, because both syntaxes
+   that bring a colour to it — drop-shadow(), and a URL reference to an SVG
+   filter that paints one — are unclassified functions, and an unclassified
+   function is refused on every property (RV22-A2 corrected the earlier
+   version of this sentence, which named only drop-shadow(); the URL form
+   cannot be spelt in this comment, because a guard below reds the sheet for
+   growing one — it is spelt in the probe table instead, which no such guard
+   scans, and it has been run there since RV27-2 found this paragraph
+   claiming it was run while only drop-shadow() was). Every one of those is a
+   case that gets RUN
+   rather than asserted ("the reader refuses what READER_PROBES says it
+   refuses, and walks past what it says it misses") — and `filter` is off the
+   list because running it is what showed the sheet had it wrong.
+
+   So qualified: `transparent` adds no colour of its own, it is what a
+   color-mix() lays a token over, which is why every entry on that line says
+   `in color-mix()` — the pin is per site AND per enclosing function, so a
+   bare `transparent` on a paint-named property fails the suite rather than
+   passing as the same entry. And `.av`'s ink mixes the token on the second
+   line toward `black`, which is the one real exception. The avatar tile is an
+   opaque gradient of that same token in BOTH themes and its ink has to clear
+   AA against both, and no token aria.css declares can do that — every token
+   the sweep can read is tried in that mix to say so ("the avatar ink is the
+   one paint no aria.css token could have made"), rather than being asserted
+   here. The ones it cannot read are named one by one in UNREADABLE_TOKENS,
+   so a new token in an unhandled spelling fails the suite instead of being
+   counted as tried. Both
+   lines are deepEqual to what the sheet paints, so on a paint-named property
+   a third spelling, a moved one or a renamed token fails the suite rather
+   than joining the list quietly.
 
    Status text takes the -ink variant of its tone, because the base colour is
-   the tint and the -ink is the text on that tint.
+   the tint and the -ink is the text on that tint. Every .is- rule here is
+   paired with the tone token aria.css declares beside its -ink ("every
+   status tone here paints the -ink of a tint aria.css also declares"), and
+   WHICH tone is its own is read off the drawn card rather than from this
+   sentence: the severity that draws .is-crit draws the accent CLASS whose
+   declared token this ink has to be the -ink of ("the ink on a severity is
+   the -ink of the accent that severity draws"). What that class declares,
+   not what the cascade finally paints — see NOT BOUND above.
 
-   Nothing here carries a status by colour alone. Every tinted thing on this
-   page — a card's accent, a severity in ink, a switch, a dot — sits beside the
-   same fact in words, written by assets/pane-alerts.js.
+   Nothing here carries a status by colour alone: every severity on the page
+   sits beside the same fact in words, written by assets/pane-alerts.js and
+   asserted in scripts/ops-alerts-v2.test.mjs ("every severity on the page is
+   a word, not only a colour").
+
+   NOT BOUND by any test, enumerated rather than left to look bound:
+
+     - every claim in this file about the monorepo mock, because that file is
+       not in this repository: the provenance paragraph above, including its
+       closing claim that anything aria.css already declares is used from
+       there rather than copied, of which only the accents are checked; what
+       the hero's third child is there; and what the switch is drawn from
+       there;
+     - that aria.css's palette is WCAG AA by construction, which is a fact
+       about the monorepo issue cited and is not rechecked here;
+     - what aria.css does with the hero below 980px, and that the card is the
+       accent shape aria.css already has;
+     - what the browser-driving checks under scripts/ render or measure, and
+       at what width — they are not run from here, and their coverage of this
+       page is their business rather than this sheet's;
+     - that the scrolling box is flush with its card's edges, and the rendered
+       pixel measurements quoted at .scrollx:focus-visible, which came off
+       screenshots in antonyrugama/aria-website#72 and which no check
+       re-measures;
+     - that :focus-visible, spelled exactly so and in one origin, is where
+       aria.css's global ring comes from. The width and offset read below are
+       resolved by importance and then by order within that; a ring painted
+       by some other selector, by a user or agent sheet, or inside an
+       @media block — whose condition the reader discards, so a gated rule
+       would be read as an ungated later one — is not modelled and would not
+       be noticed;
+     - every layout rule below, bar the ones named next: .scrollx's own
+       overflow-x, which
+       the focus-ring test reads to find the box it belongs to, and the ones
+       justified by what the page draws — the rules table's columns, the
+       words in the condition pill, the cards per problem, the fact
+       columns and the chip strip's place in the hero — which are checked
+       against the drawn page. Each item named there is checked; the list's
+       own completeness is not, and it went one short for a round;
+     - what the problems answer and the closed-problem record carry: that an
+       answer holds an observed value and a threshold but no full scale, and
+       that the note is the one line in the record a person wrote rather than
+       the system. Both are facts about an API that is not in this
+       repository.
    ========================================================================= */
 
 /* --------------------------------------------------------------- the hero */
 
 /* aria.css drops the hero to two columns below 980px and moves its third
    child to a row of its own — written against the mock, where that child is a
-   .row. Here it is the chip strip. */
+   .row (NOT BOUND, see the top of this file). Here that third child is the
+   chip strip ("the rules the sheet justifies by what the page draws name
+   what it draws"). */
 @media (max-width: 980px) {
   .hero > .hero-chips { grid-column: 1 / -1; }
 }
@@ -46,19 +147,26 @@
 
    The accent down a problem card, the ink on its title and the glyph beside
    it are three sightings of one fact, so assets/pane-alerts.js derives all
-   three from the model's severity tone rather than setting them apart. */
+   three from the model's severity tone rather than setting them apart —
+   asserted on the drawn page, over more than one severity at once ("a problem
+   card carries one severity, in the accent and both inks alike"). */
 
 .is-crit { color: var(--rose-ink); }
 .is-warn { color: var(--amber-ink); }
 .is-info { color: var(--blue-ink); }
 
-/* aria.css declares .acc-bad and .acc-warn; info problems need the blue. */
+/* aria.css declares .acc-bad and .acc-warn but no blue, so info problems need
+   one declared here; both sheets are read to say so ("the accent this sheet
+   adds is the one aria.css leaves out"). */
 .acc-blue { --acc: var(--blue); }
 
 /* ------------------------------------------------------------ the problems
 
-   One card per problem, in a column. The card is the accent shape aria.css
-   already has, so only the inside of it is declared here. */
+   One card per problem, in a column, which is what the page draws ("the
+   rules the sheet justifies by what the page draws name what it draws").
+   The card is the accent shape aria.css already has, so only the inside of
+   it is declared here (NOT BOUND, see the
+   top of this file). */
 
 .p-list { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
 .p-item .card-body { display: flex; flex-direction: column; gap: 13px; }
@@ -71,15 +179,19 @@
 
 /* The condition pill sits at the end of the head row and keeps its width:
    "Still happening" wrapping to two words over a long title is the one piece
-   of the row that must stay readable at a glance. */
+   of the row that must stay readable at a glance — those are the pill's own
+   words on the drawn page ("the rules the sheet justifies by what the page
+   draws name what it draws"). */
 .p-head > .pill { flex: none; margin-left: auto; }
 .p-live { white-space: nowrap; }
 
 /* --------------------------------------------------------- what it measured
 
-   Three columns of label-and-value rows. No meter: the answer carries an
+   Three columns of label-and-value rows, which is what the page draws ("the
+   rules the sheet justifies by what the page draws name what it draws"). No
+   meter: the answer carries an
    observed value and a threshold, and the bar between them would need a full
-   scale nothing sends. */
+   scale nothing sends (NOT BOUND, see the top of this file). */
 
 .p-facts { gap: 12px; }
 .p-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -142,7 +254,7 @@
 
 /* The note somebody wrote when they closed it. Set apart because it is the
    one line in the record that is a person talking rather than the system
-   reporting. */
+   reporting (NOT BOUND, see the top of this file). */
 .p-log-note {
   margin-top: 4px;
   padding-left: 9px;
@@ -203,18 +315,36 @@
 .scrollx > .tbl { min-width: 760px; }
 
 /* The box carries a tab stop (pane-alerts.js), so it takes a focus ring, and
-   aria.css's global :focus-visible sits 2px OUTSIDE the element. This box is
+   aria.css's global :focus-visible sits OUTSIDE the element. This box is
    flush with its card's left, right and top edges, so outside the box is
-   outside the CARD: measured on the rendered page, every pixel of the default
-   ring falls beyond the box and none of it on the table it belongs to.
-   Negating the offset draws the same 2px ring the same 2px in, on the table's
-   own surface. The test derives this value from aria.css rather than typing
-   it. Same line as pane-releases-v2.css .tbl-scroll and pane-settings-v2.css
-   .tbl-wrap. */
+   outside the CARD: measured on the rendered page in
+   antonyrugama/aria-website#72, every pixel of the default ring falls beyond
+   the box and none of it on the table it belongs to.
+
+   A ring lands wholly inside its box only when the offset pulls it in by at
+   least its own WIDTH — `outline-offset <= -outline-width` — so BOTH
+   quantities are derived from aria.css rather than typed, the width from
+   whichever of the shorthand and the longhand the cascade lands on last
+   (Stadiora/Aria#10633): a global ring that grows fatter without this line
+   growing with it is the failure this override exists to prevent. All of it
+   is in "the rules table scrolls inside a box a keyboard can reach and a
+   screen reader can name", which is also where the tab stop is asserted.
+
+   SAME FOCUS RING AS: pane-settings-v2.css, pane-evaluations-v2.css
+   DIFFERENT FOCUS RING: pane-releases-v2.css adds border-radius: 0
+
+   Both lines are read by the same test, which finds each named sheet's
+   sideways-scrolling box by its overflow rather than by a class name and
+   compares the focus rule declaration for declaration: the ones on the SAME
+   line must match this one exactly, and pane-releases-v2.css's must differ by
+   exactly the declaration named on the line above, value included, which this
+   sheet does not make at all. */
 .scrollx:focus-visible { outline-offset: -2px; }
 
 /* Six columns in 760px leaves the rule's name in a strip barely wider than
-   one word, which turns every row into a paragraph. Percentage widths do not
+   one word, which turns every row into a paragraph. That is what the table
+   draws ("the rules the sheet justifies by what the page draws name what it
+   draws"). Percentage widths do not
    fix it: `table-layout: auto` treats them as hints and keeps shrinking the
    column to its longest word. Refusing to break the name raises the column's
    own minimum instead, which the auto algorithm has to honour. */
@@ -224,8 +354,10 @@
 /* ---------------------------------------------------------------- switch
 
    A real checkbox carrying role="switch", so it is focusable, announced with
-   its state and named by the rule it belongs to. The mock draws a <button>
-   with an <i> inside; an input cannot hold a child, so the knob is ::after. */
+   its state and named by the rule it belongs to — each checked on the
+   drawn page ("every rule switch is a real checkbox, reachable, stateful and
+   named"). The mock draws a <button> with an <i> inside (NOT BOUND, see the
+   top of this file); an input cannot hold a child, so the knob is ::after. */
 
 .sw {
   position: relative;

@@ -33,6 +33,34 @@
  * So every number here comes from `Page.captureScreenshot` of the meter's own
  * box, decoded, and read along the row through the middle of the bar.
  *
+ * STADIORA/ARIA#10848, THE SECOND DEFECT THIS FILE FOUND
+ *
+ * The value ratchet added above caught its own subject: in light theme the
+ * filled part measured 2.27:1 against the UNFILLED part, and the boundary
+ * between them is what carries the value, so it is a graphical object owing
+ * 3:1 under SC 1.4.11. The track is `color-mix(var(--ink) 10%, transparent)`
+ * -- ONE declaration resolving to opposite things, a pale grey over a
+ * near-white card and a dark wash over a near-black one -- so only light
+ * theme failed.
+ *
+ * The fix repoints each tone's `--c` at the `-ink` grade of the same hue,
+ * and the untoned fallback with it. That token family is defined per theme as
+ * "the legible grade of this hue", and in the DARK block each `-ink` is an
+ * alias of the base token, so dark theme is byte-identical by construction
+ * and measured so. Light theme moves to 3.64:1 worst. Two side effects, both
+ * measured and both good: the notches are cut in `--bg` so a darker fill
+ * IMPROVES them (4.28:1 -> 6.36:1 worst), and fill-against-card rose from
+ * 2.87:1 to 4.78:1 -- which means `origin/main` was under 3:1 on the CARD
+ * relationship too, and this change repairs a SECOND SC 1.4.11 failure that
+ * neither #10848 nor the first draft of this file knew about.
+ *
+ * One side effect is a real cost. Every `-ink` grade is darker, and darker
+ * colours sit closer together, so light-theme hue separation compresses by
+ * 33% at the closest pair -- `none` vs `ok`, 59.2 -> 39.9 RGB distance. That
+ * is acceptable ONLY because #10825 moved severity off hue and onto notch
+ * count, which claim 4 binds without reference to colour. Claim 9 stops the
+ * compression before the tones become one colour.
+ *
  * A groove is found, never assumed to be at a known offset: the row's MEDIAN
  * luminance is the fill level (grooves are at most 6px of a 120px bar, so the
  * median cannot be one), and a groove is a run of pixels standing clear of
@@ -69,6 +97,50 @@
  *   detecting a bad capture and retrying, which could swallow a genuinely
  *   blank bar. A blank bar is what the two forced-colors claims exist to
  *   catch, so a retry there would have been a guard eating its own evidence.
+ * - The UNFILLED track's own visibility against the card behind it. Measured
+ *   by this sweep's instrument on the surfaces that actually surround a meter
+ *   -- 1.21:1 to 1.34:1 in dark and 1.24:1 to 1.33:1 in light, n=46 per theme
+ *   -- and NOT claimed; `METER_SUMMARY=1` prints it under `[not claimed]`.
+ *   The track is a deliberate 10% ink wash, both themes read about the same,
+ *   and #10848's fix does not move it: it is the fill that changed. Whether a
+ *   bar whose maximum is invisible reports its value is a separate question
+ *   from whether the filled part is visible, and widening this file to answer
+ *   it would repaint the base appearance of a component on every pane. Raised
+ *   as Stadiora/Aria#10891 rather than folded in here.
+ * - A meter that inherits a `--c` from a `.tone-*` ancestor without carrying
+ *   a tone class of its own. Custom properties inherit, and `--c` is set by
+ *   `.dot.*`, the six `.tone-*` classes and four pane sheets this file does
+ *   not own. Such a bar would paint the inherited hue's BASE grade rather
+ *   than its ink grade, which is the 2.27:1 defect again for that one bar.
+ *   Claim 7 measures every meter it finds and would red on it -- but only
+ *   once one exists, and today ZERO of 96 meters inherit a `--c`, so nothing
+ *   currently exercises that path. An earlier draft asserted this directly;
+ *   the assertion could not distinguish the case it was named for from an
+ *   ordinary untoned bar, so it is recorded here instead of claimed.
+ * - Whether the two card strips ever disagree. `CARD_AGREE` has rejected 0 of
+ *   100 instrumented readings, worst ratio 1.000000. The gate is retained for
+ *   a future layout that puts content between 18px and 26px above a track;
+ *   as of this head it decides nothing, and no mutation in the battery kills
+ *   it.
+ * - Whether two tones are PERCEPTUALLY distinct. Claim 9 uses euclidean RGB
+ *   distance, which is not a perceptual metric; a fixed distance means
+ *   different things in different parts of the space. It binds collapse --
+ *   two tones resolving to one colour -- and nothing finer. A real answer
+ *   wants CIEDE2000 and a stated observer, which is a judgement, not a pixel.
+ * - Claim 8 as an INDEPENDENT claim. It is nearly subsumed by claim 7. The
+ *   track is `color-mix(var(--ink) 10%, transparent)` -- a translucent wash OF
+ *   the card -- so card and track move together, and in light theme the card
+ *   is lighter than the track, which makes fill-vs-card ALWAYS the easier of
+ *   the two ratios. Any realistic payload that reds claim 8 reds claim 7
+ *   first; T15, the verbatim `origin/main` revert, reds both. Reaching claim 8
+ *   while claim 7 stays green takes T17's contrivance -- an opaque dark track
+ *   with fills lightened to sit between it and the card. Claim 8 is kept
+ *   because it names the trade #10848 makes explicitly, not because it is
+ *   independently reachable.
+ * - The surface BELOW a meter. Claim 8 reads two strips above the track's top
+ *   edge, because that is where every meter on this board has clear card. A
+ *   bar sitting on a boundary -- card above, table row tint below -- would be
+ *   judged against the better of its two surfaces and pass on the easier one.
  * - A groove displaced onto UNFILLED track. This was claimed and then
  *   withdrawn, because it was measured and the instrument cannot see it.
  *   Pushing the first groove 6px past the fill's trailing edge moves the
@@ -312,20 +384,22 @@ const GROOVE_CONTRAST = 3;
    measured 1:1 under forced-colors because the fill painted nothing at all. */
 const VALUE_CONTRAST = 3;
 
-/* In NORMAL rendering the light theme does not reach that, and never has: the
+/* In NORMAL rendering the light theme did not reach that, and never had: the
    track is `color-mix(var(--ink) 10%, transparent)` over a near-white card,
-   and the fills measure 2.27:1 to 2.81:1 against it. That is a real SC 1.4.11
-   shortfall, it predates this change, and it is not what #10825 is about --
-   repainting the meter's base appearance would touch every pane for a defect
-   this pull request did not introduce. So the normal-mode claim is a RATCHET,
-   not an endorsement: it pins today's worst reading so the value cannot get
-   quieter while the severity work lands. Filed as Stadiora/Aria#10848.
+   and the fills measured 2.27:1 to 3.08:1 against it -- a real SC 1.4.11
+   shortfall, filed as Stadiora/Aria#10848 and DISCHARGED here.
 
-   The number is literal and sits just under the measured minimum rather than
-   on it, because a floor set exactly at the observed value reds on rounding.
-   It is NOT computed from the run -- a floor derived from the thing under test
-   is the most common false green in this repository. */
-const VALUE_RATCHET = 2.2;
+   The fix routes the fill through the `-ink` grade of its own tone
+   (`aria.css:756-765`), which the light block defines as genuinely darker and
+   the DARK block defines as an alias of the base token -- so dark theme is
+   byte-identical and only the failing theme moved. Measured after: light
+   3.64:1 to 4.59:1, dark unchanged at 4.54:1 to 6.80:1.
+
+   This was a ratchet at 2.2 while the shortfall stood, with an inverted
+   assertion that reds the moment the worst reading cleared 3:1 so the ratchet
+   could not outlive the issue in silence. It fired, which is how #10848 came
+   to be fixed here, and both halves are now gone: ONE threshold, the SC
+   1.4.11 one, applied to every bar in both themes. */
 
 /* Trimmed from each end of a sampled row. A bar has an antialiased boundary
    against whatever is behind it, and a ramp pixel is neither fill nor groove.
@@ -339,6 +413,49 @@ const EDGE_TRIM = 2;
 const METER_FLOOR = 40;
 const TONED_FLOOR = 24;
 const VALUE_FLOOR = 8;
+
+/* #10848's fix darkens the light-theme fill to clear 3:1 against the TRACK,
+   and the obvious way to cheat that is to darken it against everything -- the
+   card included. These bind the other side of the trade. Distances are in px
+   above the track's top edge. They are NOT clearing the bar's glow: `.meter`
+   sets `overflow: hidden`, which clips the child's outer `box-shadow`
+   entirely, so no halo is painted above the track at any distance. 18 and 26
+   were picked to clear the track's own top rows -- a 3px strip nearer than
+   about 6px straddles them and the uniformity gate rejects it -- and to sit
+   below the card's own padded content. */
+const CARD_NEAR = 18;
+const CARD_FAR = 26;
+const CARD_CONTRAST = 3;
+/* Both literal. A strip spanning more than CARD_UNIFORM top-to-bottom is not
+   one surface; two strips further apart than CARD_AGREE are not the same
+   surface. HONEST RECORD of what the second strip has done so far: across
+   100 instrumented readings the two returned EXACTLY equal luminance, worst
+   ratio 1.000000, so `CARD_AGREE` has rejected nothing and the `readCard`
+   role-conservative pick has always chosen between two identical numbers.
+   Kept, not deleted, for a narrow and stated reason: the region between 18
+   and 26 is not guaranteed empty forever -- instrumented readings at other
+   distances differ by up to 7.22x where real card content intervenes -- so a
+   layout change that puts a border or a label between the two strips is the
+   case this gate exists to catch. It has caught none to date. */
+const CARD_UNIFORM = 1.1;
+const CARD_AGREE = 1.03;
+/* And a population floor, because a claim that judges nothing passes: if the
+   uniformity gate ever rejected every strip, "every bar clears 3:1 against
+   its card" would be vacuously true. Applied PER THEME -- a pooled floor is
+   satisfied by either theme alone, so a change that makes light-theme cards
+   non-uniform empties light's population while dark's 50 readings keep the
+   count healthy and the claim silently judges one theme. T19 in the battery
+   is that payload. Counted today: see the run summary. */
+const CARD_FLOOR = 8;
+
+/* The severity hues are closer together after #10848 than before it --
+   measured, light theme, closest pair `none` vs `ok` at 59.2 -> 39.9 RGB
+   distance, a 33% compression. That is acceptable ONLY because #10825 moved
+   severity off hue and onto notch count, which the separability claim below
+   binds independently. This floor stops the compression continuing until the
+   tones are one colour; it is literal, and sits under the measured minimum
+   rather than on it. */
+const TONE_SEPARATION = 30;
 
 /* Which severities a REAL pane must be caught drawing, per theme, declared
    rather than counted. The totals above cannot do this job: `RANK.ok` is 0, so
@@ -464,10 +581,16 @@ const READ_METERS = `Array.prototype.map.call(document.querySelectorAll('.meter'
   var t = m.getBoundingClientRect(), f = i.getBoundingClientRect();
   var left = Math.max(t.left, f.left), right = Math.min(t.right, f.right);
   var tones = ['ok', 'warn', 'bad', 'vio'].filter(function (c) { return m.classList.contains(c); });
+  var cs = getComputedStyle(m);
   return {
     idx: n,
     tones: tones,
     synthetic: m.classList.contains('severity-probe'),
+    /* Read as COMPUTED values so inheritance is included. \`--c\` is set by the
+       \`.tone-*\` vocabulary too (aria.css:962-967, and \`.tone-muted\` /
+       \`.tone-older\` in three pane sheets), and custom properties inherit, so
+       a meter nested in a toned ancestor picks one up without carrying a tone
+       class of its own. Claim 10 is what makes that safe to rely on. */
     trackWidth: t.width,
     fillWidth: f.width,
     visibleFill: Math.max(0, right - left),
@@ -512,6 +635,47 @@ async function shoot(box) {
   const shot = await cdp.send('Page.captureScreenshot',
     { format: 'png', captureBeyondViewport: false, clip });
   return decodePNG(Buffer.from(shot.data, 'base64'));
+}
+
+/* The surface the bar SITS ON, read from pixels rather than looked up from a
+   token, because the adjacent surface is whatever actually surrounds the
+   meter -- `--surface` inside a card on the real panes, `--bg` on the
+   synthetic host -- and #10848's whole lesson is that one declaration can
+   resolve to opposite things.
+
+   Two strips are taken at different distances and must AGREE. NOT because of
+   the bar's `box-shadow: 0 0 12px -1px var(--c)` -- that halo is never
+   painted, because `.meter` sets `overflow: hidden` and an outer shadow on
+   the child is clipped by it. Verified with controls: with `overflow` forced
+   back to `visible` a strip 1px above the track reads 1.37 against a strip at
+   30px, and with a deliberately huge `0 0 40px 6px red` glow it reads 1.52;
+   restore `overflow: hidden` with that same huge glow in place and every
+   distance from 1px to 30px reads flat 1.0000. So the contaminant the two
+   strips can actually catch is CARD CONTENT between them -- a cell border, a
+   label above the bar -- and such a reading is DROPPED rather than guessed
+   at. `CARD_FLOOR` below then refuses to let the claim judge too few of them
+   to mean anything. */
+async function readCard(box, fillL) {
+  const strips = [];
+  for (const d of [CARD_NEAR, CARD_FAR]) {
+    const y = Math.round(box.y) - d;
+    if (y < 0) return null;
+    const img = await shoot({ x: box.x, y, width: box.width, height: 3 });
+    const px = rowOf(img, EDGE_TRIM, img.width - EDGE_TRIM);
+    if (px.length < 6) return null;
+    const lums = px.map(relativeLuminance);
+    /* A strip crossing text or a border is not one surface, so it is not a
+       reading of one. Judged within the strip before the two are compared. */
+    if (ratioL(Math.max(...lums), Math.min(...lums)) > CARD_UNIFORM) return null;
+    strips.push(median(lums));
+  }
+  if (ratioL(strips[0], strips[1]) > CARD_AGREE) return null;
+  /* Conservative PER ROLE, not once for the analysis: the card is a backdrop
+     for a fill whose luminance is already measured, so the conservative strip
+     is whichever reads LOWER against THIS fill. In light theme that is the
+     darker strip and in dark theme the lighter one; picking either globally
+     would over-report in one of them. */
+  return ratioL(strips[0], fillL) <= ratioL(strips[1], fillL) ? strips[0] : strips[1];
 }
 
 /* Puts one meter on screen and re-reads it there. Three things make this the
@@ -650,6 +814,7 @@ function analyseValue(img, visibleFill, trackWidth) {
   if (fill.length < 6 || empty.length < 6) return null;
   return {
     contrast: ratioL(median(fill.map(relativeLuminance)), median(empty.map(relativeLuminance))),
+    emptyL: median(empty.map(relativeLuminance)),
     emptyWidth: empty.length
   };
 }
@@ -701,12 +866,18 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
       `${where} changed fill width when it was scrolled into view`);
     const img = await shoot(at.box);
     const tone = m.tones[0] || null;
+    const value = analyseValue(img, Math.round(m.visibleFill), Math.round(m.trackWidth));
+    const fillPx = rowOf(img, EDGE_TRIM, Math.round(m.visibleFill) - EDGE_TRIM);
+    const fillL = fillPx.length >= 6 ? median(fillPx.map(relativeLuminance)) : null;
     out.push({
       pane, state, theme, tone, tones: m.tones, synthetic: m.synthetic,
       trackWidth: m.trackWidth, fillWidth: m.fillWidth, visibleFill: m.visibleFill,
+      fillL,
+      fillRGB: fillPx.length >= 6 ? [0, 1, 2].map((k) => median(fillPx.map((p) => p[k]))) : null,
+      cardL: fillL === null ? null : await readCard(at.box, fillL),
       ...analyseFill(img, Math.round(m.visibleFill)),
       strayScan: analyseStray(img, Math.round(m.visibleFill), Math.round(m.trackWidth)),
-      value: analyseValue(img, Math.round(m.visibleFill), Math.round(m.trackWidth))
+      value
     });
   }
   return out;
@@ -765,6 +936,15 @@ test('the sweep judged a real board of meters, not an empty one', () => {
   assert.ok(readings.length >= METER_FLOOR,
     `judged ${readings.length} meters, below the declared floor of ${METER_FLOOR}; ` +
     'a board that rendered nothing would satisfy every other claim in this file');
+  /* PER THEME, not pooled. A pooled floor lets one theme contribute zero while
+     the other carries the count, and every claim downstream then reports a
+     healthy population for a sweep that judged one theme. */
+  for (const theme of THEMES) {
+    const here = readings.filter((r) => r.theme === theme);
+    assert.ok(here.length >= Math.floor(METER_FLOOR / THEMES.length),
+      `judged ${here.length} meters in ${theme}, below its share of the floor; ` +
+      'a pooled count hides a theme that rendered nothing');
+  }
   assert.ok(toned.length >= TONED_FLOOR,
     `judged ${toned.length} severity-bearing meters, below the declared floor of ${TONED_FLOOR}`);
   /* See REQUIRED_REAL: a total cannot tell a board of `ok` meters from a
@@ -837,16 +1017,22 @@ test('every severity-bearing fill is wide enough for its own notches', () => {
 
 test('the bar reports its value, filled against unfilled, in both themes', () => {
   const judged = readings.filter((r) => r.value && r.value.emptyWidth >= 4);
-  assert.ok(judged.length >= VALUE_FLOOR,
-    `only ${judged.length} meters had enough unfilled track to judge the value against, ` +
-    `below the declared floor of ${VALUE_FLOOR}`);
-  const weak = judged.filter((r) => r.value.contrast < VALUE_RATCHET);
+  for (const theme of THEMES) {
+    const here = judged.filter((r) => r.theme === theme);
+    assert.ok(here.length >= VALUE_FLOOR,
+      `only ${here.length} ${theme} meters had enough unfilled track to judge the value ` +
+      `against, below the declared floor of ${VALUE_FLOOR} -- and a pooled floor would ` +
+      'have passed on the other theme\'s population');
+  }
+  const weak = judged.filter((r) => r.value.contrast < VALUE_CONTRAST);
   assert.deepEqual(weak.map((r) =>
     `${r.theme}/${r.pane}/${r.state} .meter${r.tone ? '.' + r.tone : ''} fill vs track ` +
     `measured ${r.value.contrast.toFixed(2)}:1`), [],
-  `a bar below the ${VALUE_RATCHET}:1 ratchet is quieter than the day #10825 landed`);
+  `the boundary between filled and unfilled IS the value, so it is a graphical ` +
+  `object under SC 1.4.11 and owes ${VALUE_CONTRAST}:1 (Stadiora/Aria#10848)`);
 
   const worst = Math.min(...judged.map((r) => r.value.contrast));
+  assert.ok(worst >= VALUE_CONTRAST, `worst value contrast ${worst.toFixed(2)}:1`);
   if (process.env.METER_SUMMARY) {
     for (const theme of THEMES) {
       const here = judged.filter((r) => r.theme === theme).map((r) => r.value.contrast);
@@ -863,16 +1049,114 @@ test('the bar reports its value, filled against unfilled, in both themes', () =>
       `threshold, n=${sp.length}`);
     const fv = forced.filter((r) => r.value && r.value.emptyWidth >= 4).map((r) => r.value.contrast);
     console.log(`forced-colors value contrast: worst ${Math.min(...fv).toFixed(2)}:1, n=${fv.length}`);
+    const cc = [...readings, ...synthetic].filter((r) => r.cardL !== null && r.fillL !== null);
+    for (const theme of THEMES) {
+      const here = cc.filter((r) => r.theme === theme).map((r) => ratioL(r.fillL, r.cardL));
+      if (here.length) {
+        console.log(`fill vs card ${theme}: worst ${Math.min(...here).toFixed(2)}:1, ` +
+          `best ${Math.max(...here).toFixed(2)}:1, n=${here.length}`);
+      }
+    }
+    for (const theme of THEMES) {
+      const pairs = tonePairs(theme);
+      if (pairs.length) {
+        const closest = pairs.reduce((a, b) => (a.d <= b.d ? a : b));
+        console.log(`tone separation ${theme}: closest ${closest.a} vs ${closest.b} at ` +
+          `${closest.d.toFixed(1)} RGB distance, n=${pairs.length} pairs`);
+      }
+    }
+    /* Reported, never claimed -- the NOT COVERED line at the top of this file
+       owes a number measured by THIS instrument on the surfaces that actually
+       surround a meter, not one borrowed from a synthetic host. */
+    for (const theme of THEMES) {
+      const here = [...readings, ...synthetic]
+        .filter((r) => r.theme === theme && r.cardL !== null && r.value && r.value.emptyWidth >= 4)
+        .map((r) => ratioL(r.value.emptyL, r.cardL));
+      if (here.length) {
+        console.log(`[not claimed] unfilled track vs card ${theme}: worst ` +
+          `${Math.min(...here).toFixed(2)}:1, best ${Math.max(...here).toFixed(2)}:1, ` +
+          `n=${here.length}`);
+      }
+    }
   }
-  /* Trips the moment the worst reading clears 3:1, which is where the
-     shortfall is discharged. A `+ 1` slack was here first and left every
-     repair landing in [3, 4) green -- which is precisely where a repair
-     aimed at the SC 1.4.11 threshold lands, so the ratchet would have
-     outlived the issue in silence. */
-  assert.ok(worst < VALUE_CONTRAST,
-    `the light-theme shortfall this ratchet records appears to be gone (worst now ` +
-    `${worst.toFixed(2)}:1); raise the ratchet to ${VALUE_CONTRAST} and close #10848`);
 });
+
+/* The other side of #10848's trade. Darkening the light-theme fill to clear
+   3:1 against the TRACK moves it against the CARD too, and the cheap way to
+   satisfy the claim above is to keep going until the bar is a dark smear on a
+   white card -- legible against its track, and against nothing else.
+   Measured on `origin/main`: 2.87:1 worst in light. After: 4.78:1. Note the
+   before figure is UNDER 3:1, so this claim is not only guarding a trade --
+   it is repairing a second SC 1.4.11 failure that #10848 does not mention and
+   that nothing measured until this file existed. */
+test('the bar is visible against the card it sits on, not just against its own track', () => {
+  const judged = [...readings, ...synthetic].filter((r) => r.cardL !== null && r.fillL !== null);
+  for (const theme of THEMES) {
+    const here = judged.filter((r) => r.theme === theme);
+    assert.ok(here.length >= CARD_FLOOR,
+      `only ${here.length} ${theme} meters had a readable surface above them, below the ` +
+      `declared floor of ${CARD_FLOOR} -- a claim with nothing to judge passes in silence, ` +
+      'and a floor pooled across themes lets one theme empty out unnoticed');
+  }
+  const lost = judged.filter((r) => ratioL(r.fillL, r.cardL) < CARD_CONTRAST);
+  assert.deepEqual(lost.map((r) =>
+    `${r.theme}/${r.pane}/${r.state} .meter${r.tone ? '.' + r.tone : ''} fill vs card ` +
+    `measured ${ratioL(r.fillL, r.cardL).toFixed(2)}:1`), [],
+  `a fill that clears its track but not its card is legible only where it is already obvious`);
+});
+
+/* #10848 compresses the light-theme hues by 33% at the closest pair, because
+   every `-ink` grade is darker and darker colours sit closer together. That
+   is a real cost and it is acceptable only while notch COUNT carries severity
+   -- which the separability claim binds independently of this one. This stops
+   the compression before the tones become one colour, and it is deliberately
+   a floor on the measured distance rather than an equality, so a future
+   repaint may move the hues but may not collapse them. */
+/* Order-independent and conservative: every reading of tone A is compared
+   against every reading of tone B and the CLOSEST pair is the one judged.
+   Taking one representative per tone would have been unstable -- the fill is a
+   gradient from 65% to 100% of its colour, so a narrow bar's median sits at a
+   paler point of it than a wide bar's, and "the first reading" would have
+   silently depended on pane iteration order. Two meters of different widths
+   sitting in the same table is exactly where two tones come closest, so the
+   minimum over all cross pairs is both the safe direction and the real one. */
+function tonePairs(theme) {
+  const byTone = new Map();
+  for (const r of [...readings, ...synthetic]) {
+    if (r.theme !== theme || !r.fillRGB) continue;
+    const key = r.tone || 'none';
+    if (!byTone.has(key)) byTone.set(key, []);
+    byTone.get(key).push(r.fillRGB);
+  }
+  const tones = [...byTone.keys()].sort();
+  const pairs = [];
+  for (let a = 0; a < tones.length; a++) {
+    for (let b = a + 1; b < tones.length; b++) {
+      let d = Infinity;
+      for (const p of byTone.get(tones[a])) {
+        for (const q of byTone.get(tones[b])) {
+          d = Math.min(d, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
+        }
+      }
+      pairs.push({ a: tones[a], b: tones[b], d });
+    }
+  }
+  return pairs;
+}
+
+test('no two severity tones collapse into the same fill colour', () => {
+  for (const theme of THEMES) {
+    const pairs = tonePairs(theme);
+    assert.ok(pairs.length >= 6,
+      `${theme}: only ${pairs.length} tone pairs were measurable, too few to bind anything`);
+    const merged = pairs.filter((p) => p.d < TONE_SEPARATION);
+    assert.deepEqual(merged.map((p) =>
+      `${theme} .meter.${p.a} and .meter.${p.b} fills are ${p.d.toFixed(1)} apart in RGB`), [],
+    `hue is a reinforcing channel after #10825, not the severity channel, but two tones ` +
+    `that read as one colour still misreport at a glance`);
+  }
+});
+
 
 /* Measured before the fix, on evaluations.html: under forced-colors the fill's
    `background-image` resolves to `none` and its `box-shadow` to `none`, and

@@ -46,21 +46,19 @@
 
    NOT COVERED by this file, stated rather than implied:
 
-     - `spend`. It is the one pane with a declared filter that this file does
-       not boot: it is the last pane on the v1 shell (assets/shell.js) rather
-       than the v2 bootstrap every pane here loads, and it is mid-conversion
-       in antonyrugama/aria-website#65. The coverage lock below pins the exact
-       claim it is excused for — a range filter, and the four windows in it —
-       by name and by value, so a filter or a window added to spend turns this
-       file red rather than widening the hole quietly. What the lock cannot
-       see is whether the pane acts on any of them; that waits on v2.
-     - whether `alerts` acts on a window ADDED to its list. Rule 5 reaches
+     - whether `alerts` acts on a window ADDED to its list. Section 5 reaches
        Problems, but its reading only catches a pane whose fallback for an
        unrecognised window is too wide; Problems answers one on status instead
-       (pane-alerts.js:304), so the reading passes for a reason that has
+       (pane-alerts.js:314), so the reading passes for a reason that has
        nothing to do with the window. Its three windows are pinned by value in
        ALSO_PINNED for that reason, so a fourth is red at the lock rather than
-       proved here — the same trade spend gets, arrived at differently.
+       proved here. Spend is on that table too, but not for this reason: a
+       window added to spend IS proved here, by the sections banner-numbered
+       3 and 6 (NOT by section 2, whose assertion is an OR across the non-start
+       values: appending a window only lengthens the set that OR quantifies
+       over, so it cannot go red on one -- section 2's own docblock says the
+       same about itself). That is why the two entries have their reasons
+       written out separately.
      - whether the API acts on a filter the pane sends it. A client can
        promise that the operator's selection reached the request; what the
        route does with it is the route's own test.
@@ -112,33 +110,63 @@ const at = (ms) => new Date(Date.now() - ms).toISOString();
    anything the panes or the registry say, so that a pane which stops acting
    on a filter cannot bring this table with it. */
 const HONOURED = {
-  history: { range: 'answer' },
+  /* Was 'answer' while this pane drew the alerting record from a route that
+     took no window. Stadiora/Aria#5563 gave it GET /api/ops/runs, which takes
+     one, so the window now reaches the read and check 3 proves it rather than
+     check 4. */
+  history: { range: 'read' },
   alerts: { range: 'answer' },
   analytics: { scope: 'read', range: 'read', env: 'read' },
   users: { scope: 'read' },
+  spend: { range: 'read' },
 };
 
-/* The single pane this file cannot boot, and the exact claim it is excused
-   for: which filters, and — because the lock otherwise compares only names —
-   which values inside them. Anything else appearing on it turns the coverage
-   lock red. */
-const NOT_BOOTED = {
-  spend: { range: ['month', 'last-month', '3m', '12m'] },
-};
+/* Nothing is excused any more, and this table is empty. The entry that lived
+   here was `spend`, excused on the grounds that it was the last pane on the v1
+   shell and could not be booted; that conversion merged in
+   antonyrugama/aria-website#65, the PAGES table below boots the pane on a
+   two-field answer, and its windows are pinned in ALSO_PINNED like any
+   other booted pane's. The table is kept, empty, because a pane that
+   genuinely cannot be booted must still declare what it is excused for, by
+   name and by value, rather than going quiet. The loop below therefore
+   iterates nothing. */
+const NOT_BOOTED = {};
 
-/* A pane this file does boot whose windows are pinned by value anyway, because
-   rule 5 cannot see a value added to its list either. Rule 5 reads back a
-   record that lies outside every window a pane offers, which catches a
+/* Panes this file DOES boot whose window lists are additionally pinned by
+   value. The pin is the same; the reason is not, and the two are written out
+   separately because a reason reused across panes without being re-derived is
+   how the entry below came to be filed under the wrong one.
+
+   alerts: SECTION 5 cannot see a value added to its list. Section 5 reads
+   back a record lying outside every window a pane offers, which catches a
    fallback that is too WIDE: What happened finds no entry for an unrecognised
-   window in its own table, falls through to no window at all, and draws the
-   far record. Problems falls the other way — pane-alerts.js:304 is
+   window in its own table, falls through to no window at all, and draws the far
+   record. Problems falls the other way — pane-alerts.js:314 is
    `if (!days) return problem.status !== 'closed';`, the same branch its own
    'open' value uses — so the far record is dropped for a reason that has
-   nothing to do with the window, and rule 5 passes on a value nothing is
-   applying. Same consequence as spend's, different cause: a window added here
-   is watched by nobody, so it is pinned. */
+   nothing to do with the window, and section 5 passes on a value nothing is
+   applying. Section 6 DOES reach alerts — it has no 'answer' gate — and a
+   reproduction (control 6/0 with a fourth window declared and unpinned;
+   then pane-alerts.js:422 broken so that window alone draws nothing) turns
+   sections 5 and 6 red together. Section 5's red there is its own vacuity
+   guard ("this fixture never draws"), not the fallback being caught; 6's is
+   the window itself. So what the pin buys is the narrow case section 6 cannot
+   see: a window that keeps the answer and narrows nothing. The categorical
+   version of this sentence ("nothing watches a value added here") is false
+   for alerts, and was a round-4 finding.
+
+   spend: an added value IS watched, and the pin is not what watches it.
+   Sections 2, 3 and 6 sweep valuesFor(registry(), ...) live, so a fifth window
+   is read back, carried into the call and held to its state the moment it
+   is declared. (Section 5 never reaches spend at all: its sweep skips every
+   filter this file records as 'read', and spend's is.) The pin is here for
+   the weaker reason that a window added to a pane this file boots should
+   still have to be WRITTEN DOWN by whoever adds it, so the declaration is a
+   deliberate act rather than a diff nobody read. Deleting spend from this
+   table would lose that and lose no behavioural coverage. */
 const ALSO_PINNED = {
   alerts: { range: ['open', '7d', '30d'] },
+  spend: { range: ['month', 'last-month', '3m', '12m'] },
 };
 
 /* ============================== fixtures =============================== */
@@ -164,6 +192,48 @@ function problem(over) {
     acknowledgedAt: null, acknowledgedByEmail: null,
     closedAt: null, closedByEmail: null, closeReason: null,
   }, over || {});
+}
+
+/* One window's worth of runs, for What happened. The same answer whatever
+   window is asked for, on purpose: this file proves the SELECTION reaches the
+   read, and an answer that varied with it would let a pane pass by drawing a
+   difference it was handed rather than one it asked for. */
+function runsAnswer() {
+  return {
+    window: { range: '7d', startAt: at(7 * DAY), endExclusiveAt: at(0) },
+    selection: { type: null, outcome: null, limit: 50 },
+    coverage: {
+      state: 'ready', recordingSince: at(30 * DAY), lastRecordedAt: at(3 * MINUTE),
+      coversWindow: true,
+    },
+    summary: {
+      runs: 2, completed: 1, failed: 1, canceled: 0, failureReasons: 1, unfinished: 0,
+      duration: { p50Ms: 8400, measured: 2, total: 2 },
+      queued: { p50Ms: 900, measured: 2, total: 2 },
+    },
+    facets: {
+      types: [{ value: 'nutrition_plan', label: 'Nutrition plan', labelled: true, runs: 2 }],
+      outcomes: [
+        { value: 'completed', label: 'Worked', runs: 1 },
+        { value: 'failed', label: 'Failed', runs: 1 },
+      ],
+    },
+    failures: [{
+      failureCode: 'model_timeout', runs: 1, retryable: true,
+      firstSeenAt: at(2 * HOUR), lastSeenAt: at(2 * HOUR),
+      byType: [{
+        type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true }, runs: 1,
+      }],
+    }],
+    runs: [{
+      jobId: '11111111-1111-4111-8111-111111111111',
+      type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked',
+      failureCode: null, retryable: null, modelUsed: 'gpt-5-mini',
+      queuedMs: 900, durationMs: 8400, finishedAt: at(2 * HOUR),
+    }],
+    truncated: false,
+  };
 }
 
 function rules() {
@@ -281,12 +351,8 @@ const PAGES = {
   },
   history: {
     file: 'run-history.html',
-    scripts: ['assets/alerts-model.js', 'assets/pane-run-history-v2.js'],
-    answer: (endpoint) => {
-      if (endpoint === '/api/ops/alerts/problems') return { problems: [problem()], summary: {} };
-      if (endpoint === '/api/ops/alerts/rules') return rules();
-      return undefined;
-    },
+    scripts: ['assets/pane-run-history-v2.js'],
+    answer: (endpoint) => (endpoint === '/api/ops/runs' ? runsAnswer() : undefined),
   },
   alerts: {
     file: 'alerts.html',
@@ -305,6 +371,22 @@ const PAGES = {
     file: 'analytics.html',
     scripts: ['assets/pane-analytics.js'],
     answer: (endpoint) => (endpoint === '/api/ops/usage' ? usage() : undefined),
+  },
+  spend: {
+    file: 'spend.html',
+    scripts: ['assets/pane-spend.js'],
+    /* Two fields, because two is what the rules here need. The pane's own
+       suite next door needs a large payload for the reconciliation, chart and
+       staleness claims; none of those is a rule in this file, and a recipe
+       carrying them would be a second derivation of that fixture without
+       proving anything this file asks. `/api/ops/summary` is deliberately
+       left to reject: the pane's target() catches it and draws no budget
+       card, which is the absent case and not a failure. The pane still
+       reaches live on all four windows, which is what sections 2, 3 and 6
+       read back. */
+    answer: (endpoint, o) => (endpoint === '/api/ops/costs'
+      ? { range: (o && o.query && o.query.range) || null, availability: { state: 'ready' } }
+      : undefined),
   },
   users: {
     file: 'users.html',
@@ -563,8 +645,17 @@ test('every filter the registry declares is claimed by this file, and every clai
   }
 
   /* Two tables, pinned down to the values, and two messages: one claim is not
-     true of both. Everywhere else watching values is rule 5's job, and rule 5
-     needs a page to read and a fallback it can see.
+     true of both. What watches a value rather than a filter name differs by
+     pane and by rule -- section 5 only reaches a filter HONOURED records as
+     'answer' (it skips the rest at the top of its own loop), so for a 'read'
+     pane the value-level work is sections 3 and 6. Section 2 is the
+     filter-level floor, not value-level: its assertion is an OR across the
+     non-start values, so appending a value can only make it easier to pass.
+     ("Section N" throughout this file means the numbered SECTION banners,
+     e.g. `3. a filter reaches the read`; the CONTRACT block at the top of the
+     file numbers three rules separately and is not this scheme. Numbers in
+     text this PR did not write may be either.) The reasons are written
+     per pane above each table rather than once here.
 
      Read separately rather than merged, so that neither table can quietly
      replace the other's entry for the same pane. Array.from throughout,
@@ -572,7 +663,9 @@ test('every filter the registry declares is claimed by this file, and every clai
      compares prototypes as well as contents. */
   const reg = registry();
 
-  /* Nothing here boots spend, so nothing here proves any of its windows. */
+  /* NOT_BOOTED is empty, so this loop iterates nothing. It is kept for the
+     pane that cannot be booted next: the declaration it is excused for has to
+     be pinned by value, or the excuse quietly widens. */
   for (const id of Object.keys(NOT_BOOTED)) {
     for (const filter of Object.keys(NOT_BOOTED[id])) {
       const offered = Array.from(valuesFor(reg, PANES[id], filter));
@@ -586,9 +679,10 @@ test('every filter the registry declares is claimed by this file, and every clai
     }
   }
 
-  /* alerts IS booted, and every value on this list is booted by rules 1, 5 and
-     6. What none of them can see is a value ADDED to it, so the list is
-     pinned. */
+  /* Every pane on this list IS booted, and every value on it is swept by the
+     rules that apply to that pane. The pin is about a value ADDED to a list,
+     and what that costs differs per pane; the reasons are written out one by
+     one above the table. */
   for (const id of Object.keys(ALSO_PINNED)) {
     for (const filter of Object.keys(ALSO_PINNED[id])) {
       const offered = Array.from(valuesFor(reg, PANES[id], filter));
@@ -596,8 +690,9 @@ test('every filter the registry declares is claimed by this file, and every clai
         offered, ALSO_PINNED[id][filter],
         id + ' offers ' + offered.join(', ') + ' for ' + filter
         + ' and this file pins ' + ALSO_PINNED[id][filter].join(', ')
-        + '. Rule 5 cannot see a value added to this pane\'s list, which is why '
-        + 'it is pinned; the reason is written above the table.'
+        + '. A window added to a pane this file boots has to be written down '
+        + 'here as well; the reason it is pinned is written above the table, '
+        + 'per pane, because the two panes on it are pinned for different ones.'
       );
     }
   }
@@ -702,55 +797,16 @@ test('a filter carried into the read arrives with the value the operator picked'
 
 /* ================= 4. a filter applied to the answer =================== */
 
-/* The other way a filter can be real. These two panes read a route that takes
-   no window, so the window is applied to what came back — which narrows the
-   page just as honestly, and is why neither is required to send it. Each
-   probe straddles the boundary in both directions, so a pane that simply drew
-   nothing, or drew everything, fails it. */
+/* The other way a filter can be real. This pane reads a route that takes no
+   window, so the window is applied to what came back — which narrows the page
+   just as honestly, and is why it is not required to send it. The probe
+   straddles the boundary in both directions, so a pane that simply drew
+   nothing, or drew everything, fails it.
+
+   What happened used to be here too and is not any more: since
+   Stadiora/Aria#5563 it reads GET /api/ops/runs, which takes a window, so its
+   range is proved by check 3 above. */
 const ANSWER_PROBES = {
-  'history.range': async () => {
-    /* The pane groups failures by rule and request type rather than printing
-       a reference, so the two are told apart by the rule and the request type
-       they carry, and by the count of failures the page reports. */
-    const recent = problem({ id: 'prb_recent', title: 'Raised this morning' });
-    const old = problem({
-      id: 'prb_old', title: 'Raised last month',
-      ruleKey: 'ai_success_rate', ruleTitle: 'AI success rate',
-      scopeKey: 'coach_invites', scopeLabel: 'Coach invites',
-      status: 'closed',
-      firstBreachedAt: at(20 * DAY), firedAt: at(20 * DAY),
-      lastObservedAt: at(20 * DAY), closedAt: at(20 * DAY),
-    });
-    const both = { problems: [recent, old], summary: {} };
-    const previous = PAGES.history.answer;
-    PAGES.history.answer = (endpoint) => {
-      if (endpoint === '/api/ops/alerts/problems') return both;
-      if (endpoint === '/api/ops/alerts/rules') return rules();
-      return undefined;
-    };
-    try {
-      const narrow = await bootPane('history', '?range=24h');
-      const wide = await bootPane('history', '?range=30d');
-      assert.equal(stateOf(narrow), 'live', 'the narrow window took the page off the screen');
-      assert.equal(stateOf(wide), 'live', 'the wide window took the page off the screen');
-
-      assert.match(shownText(narrow), /Sprint video/,
-        'the narrow window dropped a failure raised inside it');
-      assert.doesNotMatch(shownText(narrow), /Coach invites/,
-        'a failure from twenty days ago is on the page under a twenty-four hour window');
-      assert.match(shownText(wide), /Coach invites/,
-        'the wide window did not reach a failure from twenty days ago, so the narrow '
-        + 'one proves nothing');
-
-      assert.match(shownText(narrow), /Failures raised 1\b/,
-        'the narrow window counted something other than the one failure inside it');
-      assert.match(shownText(wide), /Failures raised 2\b/,
-        'the wide window counted something other than both failures');
-    } finally {
-      PAGES.history.answer = previous;
-    }
-  },
-
   'alerts.range': async () => {
     const stale = problem({
       id: 'prb_stale', reference: 'AO-301', title: 'Open since last month',
@@ -817,8 +873,9 @@ test('a filter applied to the answer narrows what is on the page', async () => {
 /* The value-level defect, which the coverage lock cannot see on a pane this
    file boots: it compares filter NAMES there, so a window added to a list a
    pane already declares walks past it. (`spend` and `alerts` are the two
-   exceptions, for the two different reasons written above their tables: the
-   lock pins both of their window lists by value.)
+   exceptions, both on ALSO_PINNED, which pins their window lists by value;
+   the reasons they are pinned differ and are written out per pane above that
+   table.)
    What happened offered 'custom' for a while, and the pane answered it with a
    refusal card; delete the refusal and leave the value, and the pane finds no
    entry for it in its own window table, falls through to no window at all, and
@@ -839,7 +896,7 @@ test('a filter applied to the answer narrows what is on the page', async () => {
    What this reading CANNOT catch is the other fallback: a pane that answers an
    unrecognised window on some dimension of its own rather than on age drops
    the far record for a reason that has nothing to do with the window, and
-   reads as clean. Problems is that pane — pane-alerts.js:304,
+   reads as clean. Problems is that pane — pane-alerts.js:314,
    `if (!days) return problem.status !== 'closed';` — so a window added to its
    list walks past this test as well as past the lock's name comparison. Its
    windows are pinned by value in ALSO_PINNED instead, which is why the
@@ -851,7 +908,6 @@ const MARKER = /Coach invites/;
    a fourteen-day window of its own that the shell's range does not touch, so
    whole-page text there would answer a question nobody asked. */
 const RECORDS_SHOWN = {
-  history: (dom) => shownText(dom),
   alerts: (dom) => withClass(dom, 'p-item').map(allText).join(' '),
 };
 
@@ -868,6 +924,7 @@ function markedRecord(ageMs, closed) {
 test('no value a pane offers reaches a record that lies outside all of them', async () => {
   const { PANES } = registry();
   let checked = 0;
+  const visited = new Set();
 
   for (const id of Object.keys(HONOURED)) {
     for (const filter of Object.keys(HONOURED[id])) {
@@ -905,6 +962,7 @@ test('no value a pane offers reaches a record that lies outside all of them', as
           assert.match(readRecords(near), MARKER,
             id + ' left a record from an hour ago off the page under ' + filter + '='
             + value + ', so the check above proves nothing: this fixture never draws.');
+          visited.add(id);
           checked += 1;
         }
       } finally {
@@ -913,7 +971,17 @@ test('no value a pane offers reaches a record that lies outside all of them', as
     }
   }
 
-  assert.ok(checked >= 6,
+  /* The floor is stated as the panes rather than as a count, because a count
+     is a number the next change lowers to whatever it produced — which is the
+     failure this floor exists to catch, one level up. Problems is named here
+     literally: if it stops being an answer-filtered pane, this line goes red
+     and somebody decides that deliberately rather than by editing a 6 to a 3.
+     (What happened was the second name on this line until Stadiora/Aria#5563
+     moved its window into the read, where check 3 proves it.) */
+  assert.deepEqual([...visited].sort(), ['alerts'],
+    'the panes whose answer-side filtering was actually exercised were '
+    + JSON.stringify([...visited].sort()));
+  assert.ok(checked >= 3,
     'only ' + checked + ' values were reached, so this proves less than it reads');
 });
 

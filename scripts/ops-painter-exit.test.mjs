@@ -13,13 +13,14 @@
    THE SUBJECT
    -----------
    openPainter() in scripts/ops-analytics-v2.test.mjs, driven through its own
-   entry point by a real `node --test` child process, at each of the two points
-   it can fail before it returns:
+   entry point by a real `node --test` child process, at the points below. They
+   are the ones this file drives, not a survey of every way the launch can
+   fail -- NOT COVERED names two more:
 
      A  no browser to launch      -- throws while evaluating the argument to
-                                     spawn(). The profile directory is made two
-                                     statements earlier, so the server AND the
-                                     directory are open at the throw.
+                                     spawn(), after the profile directory is
+                                     made, so the server AND the directory are
+                                     open at the throw.
      B  browser dies on startup   -- throws after the profile directory is made
                                      and the process is spawned: the server, a
                                      child process, and a directory on disk.
@@ -51,37 +52,56 @@
    the child runs and then asserted dead, because a stub that never started is
    also "not running afterwards".
 
-   Case B asserts a sixth: that it ended QUICKLY. The port wait is 300 turns of
-   100ms, and it is cut short when the browser is already known to have exited.
-   Without that cut the case still passes, 313ms becomes 30.7s, and no
-   assertion in this file notices -- the fail-fast is behaviour, so it needs an
-   assertion of its own.
+   Case B asserts a sixth: that it ended QUICKLY. The port wait is cut short
+   when the browser is already known to have exited. Without that cut the case
+   still passes, its cost becomes the full port wait, and no assertion in this
+   file notices -- the fail-fast is behaviour, so it needs an assertion of its
+   own.
 
    NOT COVERED
    -----------
-   - The success path's release. It is not re-proved here because the whole
-     suite already is that proof: scripts/ops-analytics-v2.test.mjs opens a
-     painter on every run and `node --test scripts/*.test.mjs` terminates, which
-     it could not do if close() leaked. Mutation proof in the PR (M6): stubbing
-     close to a no-op hangs that file.
-   - The profile directory on case A's path, as a MEASUREMENT. It is created
-     and leaked there -- mkdtempSync runs two statements before the throw --
-     but the window between the two is a pair of adjacent synchronous
-     statements, so no poll from another process can ever catch the directory
-     existing. Asserting only that it is absent afterwards is the vacuous shape
-     this file's own header warns about, so case A does not assert it at all.
-     Cases B and C do, and the release is one unwind shared by all three.
+   - The success path's release, which is bound in the file that owns it rather
+     than here: ops-analytics-v2.test.mjs asserts its own profile directory is
+     gone after close(), two-sided against the same directory existing before
+     it, and asserts that the browser had been reaped at the instant the
+     removal ran. That assertion exists because the argument this bullet used
+     to make -- "the whole suite already is the proof, since it terminates" --
+     did not catch a real leak: ops-analytics-v2.test.mjs has ended, and green,
+     while leaving its profile behind (Stadiora/Aria#10854). No quantifier --
+     the run that found Stadiora/Aria#10800 neither ended nor passed, and this
+     file's own header says so.
+
+     That is the whole basis, and it is deliberately not generalised. Two
+     attempts to say WHY termination misses things have been wrong. The first
+     counted the handles and said one; a spawned child holds the loop open as
+     surely as a listening server. The second said a leaked handle cannot
+     survive a run that ended; an unref()'d one can, and the reviewer got the
+     suite to pass with socket.close() deleted outright. A third theory here
+     would be worth less than the observation, which needs none.
+
+     The reaped-at-removal half is there because the disk half cannot see that
+     bug on its own: the leak is a recreation, so at the moment close() returns
+     the directory is absent either way.
+   - The CDP socket's release. The reviewer deleted `opened.push(() => socket.close())`
+     outright and the suite stayed green, 53/53, so nothing here or in the
+     analytics file binds it. Left unbound rather than quietly fixed: it is
+     outside both issues this change closes, and widening scope inside a review
+     loop is how the loop stops converging. The honest record is that it is
+     open, which is what this bullet is.
+   - The profile directory on case A's path, which is created before the throw
+     and released by the same unwind as the rest -- mkdtempSync runs before the
+     throw, with nothing between them that waits --
+     but the window is narrow enough that a poll from another process catches
+     it only sometimes. Cases B and C make their cleanup assertion non-vacuous by
+     watching the directory APPEAR first; an appear-check that succeeds only
+     sometimes is a flake, and without one "it is absent afterwards" is the
+     vacuous shape this file's own header warns about. So case A asserts
+     neither. The release is one unwind shared by all three, and B and C bind it.
    - Failure points after the port is published -- a /json/list that answers
      nothing, a socket that refuses to open. They take the same unwind by
      construction, but no case here drives them; inducing them needs a fake
      DevTools endpoint that speaks enough HTTP to get past the port wait and
      then stops, which is more harness than the remaining risk is worth.
-   - The ORDER the unwind drains in. It pops, so it releases newest-first, and
-     nothing here binds that: mutation N6 in the PR swaps pop() for shift() and
-     all three cases stay green. They should. Each release is independent and
-     runs inside its own try/catch, so no case in this file can tell the two
-     orders apart -- the row is published green rather than dropped because an
-     unbound property is a fact about the suite, not an omission from the table.
    - Anything about what the paint sweep MEASURES. That is its own file's job.
      This file only asks whether a failing run ends. */
 
@@ -103,17 +123,17 @@ const PAINT_TEST = 'every class this pane draws is one a loaded sheet moves a va
    because waiting out the port loop is the thing it is testing. */
 const WATCHDOG_MS = 60_000;
 
-/* The port wait is 300 turns of 100ms. A case that sits through all of it has
-   not hung -- it has done exactly what it was asked -- so case C is allowed
-   twice that and then some, for the child's own startup on a loaded machine. */
-const PORT_WAIT_MS = 30_000;
+/* A case that sits through the whole port wait has not hung -- it has done
+   exactly what it was asked -- so case C is allowed several times the wait, for
+   the child's own startup on a loaded machine on top of it. */
 const SLOW_WATCHDOG_MS = 90_000;
 
-/* What "fast" means for case B, set against the thing it is not doing: the
-   full port wait above. Measured, both themes of load: 245ms and 329ms for the
-   two cases as they stand, so this is thirty times the observed cost and a
-   third of the loop it must not have entered. Dropping `&& !gone` from that
-   loop's condition puts case B at 30.7s, which is what this catches. */
+/* What "fast" means for case B, set between the two things it has to separate:
+   the cost of the case as it stands, and the port wait it must not have
+   entered, which is longer than this. Dropping `&& !gone` from that loop's
+   condition puts case B on the far side of this, which is what it catches.
+   Deliberately NOT stated as a multiple of a measurement: a measurement goes
+   stale, and load moves the low end. */
 const FAIL_FAST_MS = 10_000;
 
 /* Run the paint sweep, and only the paint sweep, in a child that cannot find a
@@ -125,8 +145,8 @@ function runPaintSweep(env, watchDir, options = {}) {
     const started = Date.now();
     /* node --test sets NODE_TEST_CONTEXT in the process it runs a test file in.
        Inherited, it tells the child it is already reporting to a parent runner,
-       and the child then exits 0 in ~100ms having reported its failure upward
-       to nobody -- so every assertion below passes for the wrong reason. */
+       and the child then exits 0 almost at once, having reported its failure
+       upward to nobody -- so every assertion below passes for the wrong reason. */
     const clean = Object.assign({}, process.env, env);
     delete clean.NODE_TEST_CONTEXT;
     const child = spawn(process.execPath, [
@@ -147,8 +167,9 @@ function runPaintSweep(env, watchDir, options = {}) {
        cleaned up" assertion from being vacuous. An empty directory afterwards
        reads identically whether the profile was removed or was never put there
        -- and it would never be put there if mkdtemp stopped consulting TMPDIR.
-       The directory lives for at least one 100ms turn of the port-wait loop,
-       so polling every 2ms sees it tens of times. */
+       On cases B and C the directory lives across at least one turn of the
+       port-wait loop, whose interval is the longer of the two, so it is seen
+       more than once. */
     let profileSeen = false;
     /* The same two-sidedness for the stub browser: its pid is read off the file
        it writes, and it is confirmed RUNNING at least once while the child is
@@ -174,7 +195,7 @@ function runPaintSweep(env, watchDir, options = {}) {
       clearTimeout(watchdog);
       if (poll) clearInterval(poll);
       resolve({ code, signal, timedOut, out, profileSeen, stubPid, stubSeenAlive,
-        ms: Date.now() - started });
+        watchdogMs, ms: Date.now() - started });
     });
   });
 }
@@ -193,9 +214,9 @@ function alive(pid) {
 
 function assertEndedInFailure(run, because) {
   assert.equal(run.timedOut, false,
-    'the child never exited -- it was still alive after ' + (WATCHDOG_MS / 1000) + 's and had to ' +
-    'be SIGKILLed. That is the #10800 hang: something openPainter() opened before it threw ' +
-    'is still holding the event loop open. ' + because);
+    'the child never exited -- it was still alive after ' + (run.watchdogMs / 1000) + 's and ' +
+    'had to be SIGKILLed. That is the #10800 hang: something openPainter() opened before it ' +
+    'threw is still holding the event loop open. ' + because);
   assert.notEqual(run.code, 0,
     'the child exited cleanly. A run that cannot reach a browser must FAIL, not pass: the ' +
     'fake DOM has no cascade, so a pass here is a guard reporting something it never read.');
@@ -242,11 +263,11 @@ test('a run whose browser dies on startup fails, ends, and leaves no profile beh
     /* The fail-fast, which is behaviour and not cleanup. A browser that has
        already exited will never publish a port, so the wait is cut short --
        and if it is not, this case still ends, still fails, still cleans up,
-       and takes a hundred times longer doing it. */
+       and sits out the whole port wait doing it. */
     assert.ok(run.ms < FAIL_FAST_MS,
       'the child took ' + run.ms + 'ms to report a browser that died on startup. That is the ' +
-      'port wait running to its full ' + PORT_WAIT_MS + 'ms for an answer that was already ' +
-      'decided: the loop is no longer stopping when the browser is known to be gone.');
+      'port wait running to its end for an answer that was already decided: the loop is no ' +
+      'longer stopping when the browser is known to be gone.');
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -262,7 +283,7 @@ test('a run whose browser dies on startup fails, ends, and leaves no profile beh
    pid this test watches is the pid the launch spawned and holds: no
    intermediate shell to absorb the signal and leave the sleep orphaned.
 
-   It costs the full 30s port wait, on purpose. That wait is what puts a live
+   It costs the full port wait, on purpose. That wait is what puts a live
    child under a throw. */
 test('a run whose browser never answers fails, ends, and kills the browser', async () => {
   const scratch = mkdtempSync(join(REPO, '.ops-painter-exit-'));

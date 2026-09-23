@@ -2694,19 +2694,55 @@ const PAINT_PROGRAM = String.raw`(() => {
    (#10800). The filed defect was the missing-browser path; the port-timeout
    path below leaks more than that one does, a live browser and its profile
    directory as well as the server, so the release is written once for every
-   way out rather than at each throw. */
+   way out rather than at each throw.
+
+   The browser's release WAITS for the exit it asked for. kill() is a signal,
+   not a join: Chrome keeps writing its profile out while it shuts down, so a
+   removal that runs the instant kill() returns takes the directory out from
+   under a process that is still writing, and the files come back. The drain is
+   newest-first, so the removal registered before the browser is the next thing
+   popped -- which makes that ORDER load-bearing rather than incidental. */
+const EXIT_WAIT_MS = 5_000;
+/* The removal looks back before it reports. Chrome's last writes can land
+   after the parent is reaped, so checking the instant rmSync returns is
+   checking too early -- which is the whole reason the obvious assertion could
+   not see Stadiora/Aria#10854 in the first place. */
+const REMOVE_SETTLE_MS = 150;
+
+/* Signals the child's whole process group, falling back to the single process
+   when there is no group to signal -- `detached` can be refused, and a child
+   that has already been reaped has no group left. Throwing out of a release
+   would be swallowed by the drain, so the failure mode to avoid is a throw,
+   not a missed signal. */
+function killTree(child, signal) {
+  try { process.kill(-child.pid, signal); return; } catch (e) { /* no group */ }
+  try { child.kill(signal); } catch (e) { /* already gone */ }
+}
+
+/* Waits for a child to be reaped, up to a ceiling. Returns immediately for one
+   that already has been: a browser that died on startup arrives that way, and
+   listening for an exit that has already fired would sit out the whole ceiling
+   for an event that is never coming again. */
+async function waitForExit(child, ms) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    child.once('exit', () => { clearTimeout(timer); resolve(); });
+  });
+}
+
 async function openPainter() {
   const opened = [];
-  const unwind = () => {
+  const unwind = async () => {
     while (opened.length) {
       const release = opened.pop();
-      try { release(); } catch (e) { /* releasing is best-effort by definition */ }
+      try { await release(); } catch (e) { /* releasing is best-effort by definition */ }
     }
   };
   try {
     return await launchPainter(opened, unwind);
   } catch (e) {
-    unwind();
+    await unwind();
     throw e;
   }
 }
@@ -2733,18 +2769,83 @@ async function launchPainter(opened, unwind) {
   const origin = 'http://127.0.0.1:' + server.address().port;
 
   const profile = mkdtempSync(join(tmpdir(), 'ops-analytics-paint-'));
-  opened.push(() => rmSync(profile, { recursive: true, force: true }));
+  /* Read at the instant the removal runs, from Node's own bookkeeping rather
+     than from anything this function claims about itself: a child with a null
+     exitCode and a null signalCode has not been reaped, so it may still be
+     writing into the directory about to be removed.
+
+     This is here because the obvious assertion -- look for the directory after
+     close() returns -- cannot see the bug. The leak is a RECREATION: rmSync
+     removes the tree, Chrome's shutdown writes put a new one back a few
+     milliseconds later. At the moment close() returns, the buggy version and
+     the fixed one are byte-identical on disk. The mutation battery proved that
+     by leaving two payloads green. */
+  const teardown = { browserExitedBeforeRemoval: null, profileReturned: null };
+  /* Not `browser` directly: chromePath() throws when there is no Chrome, and
+     that throw lands between this line and the spawn below. A closure closing
+     over the `const` would hit its temporal dead zone, the drain would swallow
+     the ReferenceError as a best-effort release, and the profile would leak on
+     exactly the path Stadiora/Aria#10800 was filed to stop leaking on. A null
+     holder reads "no browser exists", which is the honest answer there: a
+     process that was never spawned cannot be writing into the directory. */
+  let spawned = null;
+  opened.push(async () => {
+    teardown.browserExitedBeforeRemoval = spawned === null ||
+      spawned.exitCode !== null || spawned.signalCode !== null;
+    /* Remove, then LOOK. An earlier version re-removed the directory until it
+       stayed gone; it was deleted rather than kept, because re-removing
+       quietly is the wrong shape -- a directory that comes back is the leak
+       this whole change is about, so it should fail the run and say so, not be
+       tidied away until the assertion stops noticing. */
+    rmSync(profile, { recursive: true, force: true });
+    await new Promise((r) => setTimeout(r, REMOVE_SETTLE_MS));
+    teardown.profileReturned = existsSync(profile);
+  });
   const browser = spawn(chromePath(), [
     '--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile,
     '--no-first-run', '--no-default-browser-check', '--no-sandbox', '--disable-gpu',
     '--disable-extensions', '--hide-scrollbars', '--force-device-scale-factor=1',
     'about:blank',
-  ], { stdio: 'ignore' });
-  opened.push(() => browser.kill());
+  ], { stdio: 'ignore', detached: true });
+  spawned = browser;
+  opened.push(async () => {
+    /* Signal the process GROUP, not the process. Chrome is a process tree --
+       a zygote and one renderer per target, all holding --user-data-dir open
+       and all able to write into it. Killing the one pid node knows about
+       leaves the rest of the tree running, and "the browser exited" is then
+       true of the parent and false of the thing still writing. `detached`
+       above is what makes the group exist to be signalled. The tradeoff is
+       real and taken deliberately: its own group means a Ctrl-C at a terminal
+       no longer reaches Chrome, because the signal goes to the foreground
+       group and Chrome is no longer in it. An interrupted run leaks what it
+       always leaked; an uninterrupted one now cleans up a tree instead of a
+       process. */
+    killTree(browser, 'SIGTERM');
+    await waitForExit(browser, EXIT_WAIT_MS);
+    /* SIGTERM is a request and the ceiling can expire without it being
+       honoured -- observed on this machine at load 30, where Chrome took
+       longer than five seconds to go away and the removal then ran over a
+       process that had not been reaped. Escalating is not enough on its own:
+       SIGKILL is a signal too, so it gets its own wait. The first version of
+       this release escalated and returned in the same breath, which is the bug
+       this whole PR is about, made once more one level down.
 
-  /* A browser that has already exited will never publish a port, so waiting
-     the full 30s for one only delays a failure that is already decided — and
-     says "never published" when "died on startup" is the fact. */
+       Which of the two waits this suite BINDS is the one below, not the one
+       above. Deleting the SIGTERM wait on its own leaves the paint test green,
+       because the gate here then reads a null exitCode -- kill() is a signal,
+       so it is null one statement after the signal -- escalates, and the
+       SIGKILL's wait supplies the join the deleted one was doing. Deleting the
+       wait below fails the paint test, once the ceiling above is forced to
+       expire. Both were run. */
+    if (browser.exitCode === null && browser.signalCode === null) {
+      killTree(browser, 'SIGKILL');
+      await waitForExit(browser, EXIT_WAIT_MS);
+    }
+  });
+
+  /* A browser that has already exited will never publish a port, so sitting
+     out the whole wait below only delays a failure that is already decided —
+     and says "never published" when "died on startup" is the fact. */
   let gone = false;
   browser.on('exit', () => { gone = true; });
   let port = null;
@@ -2810,8 +2911,10 @@ async function launchPainter(opened, unwind) {
   }
 
   /* Same release path the throwing case takes, so the success case cannot
-     drift away from it and leave a handle the failure case would have let go. */
-  return { evaluate, close: unwind };
+     drift away from it and leave a handle the failure case would have let go.
+     The profile path comes back with it so the caller can check that the
+     release it just awaited actually emptied the disk. */
+  return { evaluate, close: unwind, profile, teardown };
 }
 
 /* ------------------------------------------------------------- the test -- */
@@ -2861,6 +2964,20 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
 
   const painter = await openPainter();
   try {
+    /* Inside the try, first statement. Two-sided -- "the profile is gone
+       afterwards" is also true of a profile that was never there -- and free,
+       since the painter is already open.
+
+       It sits inside rather than above because an assertion that throws ABOVE
+       the try skips the finally and leaks the browser, the server and the
+       profile it was written to police, and a leaked listening server holds
+       the event loop open so the run hangs instead of failing. The battery
+       caught that: the payload that hands back a wrong path took 20 minutes
+       and reported no failures at all, where it now fails in 30 seconds. */
+    assert.equal(existsSync(painter.profile), true,
+      'the painter handed back a profile directory that does not exist, so the removal ' +
+      'assertion at the end of this test would hold whatever the release did');
+
     const ready = await painter.evaluate(PAINT_PROGRAM);
     assert.equal(ready, 'ready', 'the paint program did not install');
 
@@ -2964,8 +3081,65 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
       'nothing and are invisible to every other check: ' +
       JSON.stringify([...unpainted.entries()]));
   } finally {
-    painter.close();
+    await painter.close();
   }
+
+  /* Outside the finally on purpose: this is a claim about the SUCCESS path, and
+     inside a finally it would mask whatever the body threw.
+
+     scripts/ops-painter-exit.test.mjs binds failing ways out of the launch,
+     and names the ones it does not. This is the way that works, and until now
+     the only thing holding it was "the suite terminates". Which is not an
+     argument that caught anything: this file has ended, and green, while
+     leaving its profile behind. No quantifier -- the run that found
+     Stadiora/Aria#10800 neither ended nor passed.
+
+     What termination does and does not reach is deliberately left unsaid here.
+     Two attempts at that sentence were both wrong -- one counted the handles
+     and said one, the next said a leaked handle cannot survive a run that
+     ended -- and the observation above needs neither. */
+  /* Printed on every run, not only on failure. Deleting the SIGKILL escalation
+     leaves this file green here, and so does signalling the one pid instead of
+     the process group; both payloads were run at this head. Neither mechanism
+     is bound on this machine, so CI is the only place either has been observed
+     mattering -- and a mechanism nobody can see working is one nobody can tell
+     has stopped. So both readings go out on every run, green or red: a profile
+     that came back is the leak, and a browser not reaped before the removal is
+     the moment it leaks at. */
+  console.log('  painter teardown: reaped before removal ' +
+    JSON.stringify(painter.teardown.browserExitedBeforeRemoval) +
+    ', profile came back ' + JSON.stringify(painter.teardown.profileReturned));
+
+  assert.equal(existsSync(painter.profile), false,
+    'the painter left its browser profile at ' + painter.profile + ' after a clean run. ' +
+    'kill() is a signal, not a join: if the removal does not wait for the browser to exit, ' +
+    'it runs while Chrome is still writing its profile out and the files come back. ' +
+    'Teardown recorded: ' + JSON.stringify(painter.teardown) + ' -- ' +
+    'browserExitedBeforeRemoval false means the removal ran too early, ' +
+    'profileReturned true means something was still writing after the parent was reaped, ' +
+    'which is a descendant rather than the browser itself.');
+
+  /* The line above binds that the removal HAPPENED. This binds that it happened
+     at a safe moment, which is the actual subject of Stadiora/Aria#10854 and is
+     invisible to any amount of looking at the disk: the leak is a recreation,
+     so a directory checked the instant close() returns is absent in the broken
+     version too. It comes back afterwards.
+
+     Read from Node's child bookkeeping at the instant rmSync ran, so it is a
+     measurement of the moment rather than a flag the painter sets to report
+     its own good behaviour -- and it is decided by the same event loop every
+     time, where "look for leftover files" only finds them when Chrome's
+     shutdown loses the race, which is a coin this machine flips differently
+     under load than a quiet CI box does. */
+  assert.equal(painter.teardown.browserExitedBeforeRemoval, true,
+    'the profile was removed while the browser still had a null exitCode and a null ' +
+    'signalCode, so Chrome had not been reaped and may still have been writing into ' +
+    'the directory. Anything that puts the removal before the browser is reaped does ' +
+    'this: a release that stops waiting for the exit it asked for, an EXIT_WAIT_MS that ' +
+    'runs out first, a drain that releases in the other order. They are different bugs ' +
+    'with one symptom, and this assertion does not tell them apart. Observed: ' +
+    JSON.stringify(painter.teardown.browserExitedBeforeRemoval) +
+    ' (null means the removal never ran at all).');
 });
 
 /* Every class in a serialised tree, from the class attribute the pane wrote.

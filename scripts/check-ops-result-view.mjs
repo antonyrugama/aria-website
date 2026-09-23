@@ -108,6 +108,61 @@
      is a rule doing something — but only a class with at least one site that
      has a box is ever reported, so a class living exclusively on zero-area
      elements is invisible to this check in both directions.
+   - **A result the scroll box still reaches.** The gate that decides whether a
+     pane reached a result view asks whether the marker's carrier has a box
+     inside documentElement's scroll box — its viewport rect plus the current
+     scroll offset, since the two are measured in different coordinate systems
+     — or, when something up its chain is position:fixed, so scrolling cannot
+     bring it anywhere, inside the viewport. Content moved left of the document, translated away, fixed past
+     the viewport in either direction, or scrolled-to-nowhere all fail it.
+     Content moved far
+     to the RIGHT does not: a box at left:99999px extends scrollWidth, the
+     reachable area grows to contain it, and the run stays green — measured,
+     not reasoned. Reachability rather than the viewport is deliberate, since
+     this sweep never scrolls and every pane is taller than the window; the
+     cost is that a result parked somewhere no reader would go, but could
+     scroll to, reads as on the page. The fixed clause has a cost of its own
+     in the other direction: a fixed box whose containing block is a
+     transformed ancestor does scroll with the page, and below the fold it
+     would read as unreachable. Nothing on this dashboard is in that shape —
+     every marker carrier on all ten panes computes static or absolute — and
+     a false red there is loud rather than silent.
+   - **A result on screen but painted with nothing.** The marker gate asks
+     where a carrier is and whether the browser renders it, not what it looks
+     like once rendered. Measured at this head, all three of
+     `font-size: 0` with padding, `clip-path: inset(100%)` and an ancestor
+     `height: 0; overflow: hidden` leave the gate saying the marker shows.
+     opacity is in the same family and is deliberately not asked about, since
+     a pane mid-transition would read as hidden. The repo's own 1x1 `.sr`
+     spans are accepted carriers for the same reason, so a marker that only a
+     screen reader can reach satisfies this gate today.
+   - **The marker is judged character by character, so a marker split across
+     what the page separates still passes.** Walk the carrier's subtree, mark
+     every character under a display:none, content-visibility:hidden, skipped
+     content-visibility:auto or visibility hidden/collapse element as not
+     drawn, and mark every other character by the rect of that character: a
+     non-empty box inside the reachable area, or, under a position:fixed
+     ancestor, inside the viewport. A marker counts when one occurrence of it
+     is drawn, character for character. Nothing about an ELEMENT decides it,
+     and nothing about a NODE does: four consecutive rounds found a state where the
+     box that proved reachability and the text that proved presence came from
+     different places — different nodes, then different line boxes of one node
+     — so the evidence is the rect of the character it is offered for. Text
+     that is not drawn is left out, as it always has been, so two halves
+     separated by an invisible sibling join: the same lenient direction as
+     the flex-item case, and what keeps an sr-only span inside a value from
+     being a false red. The cost is that a refactor splitting a marker into
+     two flex items, so the page renders "2." and "9.1" with the row's gap
+     between them, reads as shown: adjacent runs are joined with nothing
+     between, deliberately, since this clause exists to catch text drawn
+     nowhere rather than to adjudicate spacing.
+   - **Any painted occurrence answers for all of them.** A marker that a pane
+     renders twice passes when either occurrence is painted and reachable, so
+     a result view that loses the copy a reader is meant to read while an
+     incidental second copy survives still counts as reached. Each occurrence
+     is judged on its own — round 12 found the version where one occurrence's
+     geometry was combined with another's text — but the question asked over
+     them is "any", not "the one the pane means".
    - **A sibling combinator's reach.** A clause like `.a ~ .b` paints an
      element that is neither the class's carrier nor inside it, so for those
      clauses the question falls back to "does this match anything on the page".
@@ -117,7 +172,7 @@
      inline change through CSSOM, or a state expressed only through an
      attribute the sheet keys on, are all outside judgement 1. Judgement 2 sees
      them when they land on an ARIA-marked element, and nowhere else.
-   - **Panes with no state pair.** Eight of the ten panes declare no ARIA state
+   - **Panes with no state pair.** Seven of the ten panes declare no ARIA state
      in their result view, so judgement 2 has nothing to compare on them and
      they are carried by judgement 1 alone. The per-pane minimum in
      EXPECTED_PAIRS is asserted so a pane that stops drawing the pairs it has
@@ -296,6 +351,17 @@ const RULES = [
     scopeDescription: 'An app stops sending anything', thresholdLabel: 'over 15m',
     channels: ['teams', 'email'], enabled: true, lastEvaluationStatus: 'error' }
 ];
+
+/* One reading of the live queue, for Happening now. Rather than a hand-written
+   object this is the route's own recorded output: scripts/fixtures/
+   ops-jobs-live-view.json is a literal buildOpsJobsView result, committed with
+   Stadiora/Aria#5562 so the pane's suite and this sweep read the same shape the
+   server actually sends. A fixture invented here could drift from the route and
+   still pass, which is the defect the file exists to prevent. */
+const JOBS = JSON.parse(fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/ops-jobs-live-view.json'),
+  'utf8'
+));
 
 /* Three problems rather than one, in three different statuses, because the
    result views on Problems, What happened and Overview are lists: a single
@@ -576,6 +642,56 @@ const DETAIL = {
   supportActions: { available: [] }
 };
 
+/* One window of run history, for What happened. Stadiora/Aria#5563 moved that
+   pane off the alerting routes and onto GET /api/ops/runs, so its markers
+   below come off this object rather than off the rules and the problem. */
+const RUNS = {
+  window: { range: '7d', startAt: ago(7 * DAY), endExclusiveAt: ago(0) },
+  selection: { type: null, outcome: null, limit: 50 },
+  coverage: {
+    state: 'ready', recordingSince: ago(30 * DAY), lastRecordedAt: ago(4 * MINUTE),
+    coversWindow: true
+  },
+  summary: {
+    runs: 214, completed: 198, failed: 13, canceled: 3, failureReasons: 2, unfinished: 1,
+    duration: { p50Ms: 8400, measured: 211, total: 214 },
+    queued: { p50Ms: 900, measured: 214, total: 214 }
+  },
+  facets: {
+    types: [
+      { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true, runs: 140 },
+      { value: 'video_analysis', label: 'Sprint video analysis', labelled: true, runs: 74 }
+    ],
+    outcomes: [
+      { value: 'completed', label: 'Worked', runs: 198 },
+      { value: 'failed', label: 'Failed', runs: 13 },
+      { value: 'canceled', label: 'Cancelled', runs: 3 }
+    ]
+  },
+  failures: [
+    { failureCode: 'model_timeout', runs: 9, retryable: true,
+      firstSeenAt: ago(3 * DAY), lastSeenAt: ago(2 * HOUR),
+      byType: [{ type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+        runs: 9 }] },
+    { failureCode: 'upstream_rejected', runs: 4, retryable: false,
+      firstSeenAt: ago(2 * DAY), lastSeenAt: ago(5 * HOUR),
+      byType: [{ type: { value: 'video_analysis', label: 'Sprint video analysis',
+        labelled: true }, runs: 4 }] }
+  ],
+  runs: [
+    { jobId: '11111111-1111-4111-8111-111111111111',
+      type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+      outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout',
+      retryable: true, modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 60000,
+      finishedAt: ago(2 * HOUR) },
+    { jobId: '22222222-2222-4222-8222-222222222222',
+      type: { value: 'video_analysis', label: 'Sprint video analysis', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR) }
+  ],
+  truncated: false
+};
+
 function stub(pathname, body) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
@@ -605,6 +721,8 @@ function stub(pathname, body) {
     } };
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) return { data: { problems: PROBLEMS } };
+  if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/usage')) return { data: USAGE };
@@ -664,6 +782,20 @@ const DRIVE = {
     id.value = 'ath_2277';
     reason.value = 'SUP-4471';
     id.closest('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    /* Wait for the rows rather than sleeping once and hoping. The lookup is a
+       real fetch to the fixture server on loopback, and that race was lost
+       once in ~140 local runs on a loaded machine: no rows at ${STEP_MS}ms, the
+       pane judged with no result in it, a named failure that was not a defect
+       in anything. The happy path is unchanged — the rows are there within a
+       frame and the same settle follows — so this only adds patience when the
+       machine is slow. What it waits FOR is the drive's own precondition, the
+       rows it has to click, and never anything the judgement reads, so a pane
+       that draws rows nobody can see still fails. The cap keeps a step that
+       never lands loud rather than hanging. */
+    const deadline = Date.now() + ${STEP_MS} * 8;
+    while (!document.querySelectorAll('.match-row-btn').length && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
     await new Promise((r) => setTimeout(r, ${STEP_MS}));
     const picks = document.querySelectorAll('.match-row-btn');
     if (!picks.length) return 'the lookup drew no match rows';
@@ -708,8 +840,15 @@ const DRIVE = {
    the same failure wearing a better number. */
 const RESULT_PROOF = {
   overview: ['1,102', SUMMARY.release.platforms[0].versionName, PROBLEMS[0].reference],
-  jobs: [RULES[0].thresholdLabel, RULES[1].title],
-  history: [RULES[0].title, PROBLEMS[0].category],
+  /* Happening now moved off the alerting record onto GET /api/ops/jobs
+     (Stadiora/Aria#5562), so its markers come off that reading: the id of the
+     first job in the working set, which only the job table prints, and the
+     worker-load sentence, which the route sends as prose and the pane prints
+     verbatim. Both are absent until a reading has been drawn. */
+  jobs: [JOBS.workingSet.jobs[0].id, JOBS.capacity.reason],
+  /* RUNS.failures[0].failureCode and the model its first run used. Neither
+     is on this pane's landing state, either empty state, or failure card. */
+  history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
   alerts: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
   analytics: ['1,061', '8,430', USAGE.apps[1].label],
   spend: [COST_ROWS[0].label, COST_ROWS[2].label],
@@ -785,9 +924,11 @@ const KNOWN_UNPAINTED_STATE = [];
    anybody editing this table, and a pane that stops drawing the pairs it has
    today fails rather than passing on zero comparisons.
 
-   Eight panes are zero because their result views declare no ARIA state at
+   Seven panes are zero because their result views declare no ARIA state at
    all. That is stated here rather than left to be inferred from a sweep that
-   silently compared nothing. */
+   silently compared nothing. Seven, not eight: releases draws state too, and
+   this table said 0 for it until round 15 read the number the sweep prints
+   against the number this table demands. */
 const EXPECTED_PAIRS = {
   overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0,
   /* One pair: the Group-the-bill-by switch's two buttons, `category` against
@@ -798,7 +939,11 @@ const EXPECTED_PAIRS = {
      run; deleting `service` leaves it at 1. */
   spend: 1,
   evals: 0,
-  releases: 0,
+  /* Two pairs, one per platform the fixture sends: the rollout rail's current
+     stage carries aria-current="step" (ops/assets/pane-releases.js:498) and
+     the stages either side of it do not. Both iOS and Android draw a rail, so
+     both draw a pair. */
+  releases: 2,
   /* The picked row's aria-current against the unpicked row, and the pick
      control's aria-pressed against the other row's control. */
   users: 2,
@@ -810,6 +955,299 @@ for (const page of PAGES) {
     console.error(`\n${REGISTRY} declares pane "${page.key}" and EXPECTED_PAIRS in ` +
       'scripts/check-ops-result-view.mjs does not say how many state comparisons its ' +
       'result view is due, so zero of them would read as a pass.\n');
+    process.exit(1);
+  }
+}
+
+/* A sentence appended to a missed floor. Each names the mechanism that draws
+   the state and the two NUMBERS a reader can put side by side — never what
+   those numbers mean about a cause.
+
+   Three review rounds of this pull request each caught a version of this text
+   asserting a cause anyway, and the third one is the instructive one: which of
+   the fixture and the pane produced a short count is not decidable from the
+   count. Round 1 blamed the pane where the fixture was intact. Round 2 cleared
+   the fixture where the fixture was the cause. Round 3 read a census of rows
+   the pane DREW as a count of rows the fixture SENT, and proved it by making
+   the pane render one of two rows it had been handed: byte-identical output to
+   the run where the fixture sent one. The suggested repair — "the same number
+   means the fixture narrowed" — is itself false in the other proven direction,
+   where the pane writes aria-pressed on both rows and the count matches the
+   fixture exactly.
+   So these sentences state only what was observed and where the number to
+   compare it against lives — and where the comparison is between two counts,
+   BOTH are printed, derived from the fixture rather than typed, so the reader
+   is not asked to take either on faith. Round 4 added the other half of the
+   same discipline: what is counted here is ATTRIBUTES, so no sentence may
+   conclude anything about CONTROLS. Removing both ARIA writes from
+   applySelection leaves two rows and two pick controls on the page, measured
+   and clickable, and an empty census. The reader does the deducing; this file
+   has been wrong at it three times. Enumerated rather than generated: a hint
+   that guesses is worse than none. */
+const FLOOR_HINTS = {
+  spend: 'The pair comes from the Group-the-bill-by switch, which viewCard draws only ' +
+    'when two or more of the groupings in VIEW_ORDER (declared in ops/assets/pane-spend.js) ' +
+    'arrive with rows. PREFLIGHT in this file tested the COSTS fixture against VIEW_ORDER ' +
+    'AS DECLARED before Chrome started and it passed, since a failure there exits before ' +
+    'this point. That is how far it is checked and no further: PREFLIGHT reads the ' +
+    'declaration rather than running the module, and refuses only when the file holds a ' +
+    'text it reads as a write to the name, from the enumerated list of mutators beside it. ' +
+    'A mutation route outside that list would have been read past, so treat the rule as ' +
+    'checked against the declaration, not against the array the pane ran with.',
+  users: 'The pairs come from picking a row in Look up a user: aria-current on the row ' +
+    'and aria-pressed on its control. Measured at this head, a one-row result view judges ' +
+    'aria-current and not aria-pressed — the marked <tr> finds an unmarked peer among the ' +
+    'detail card\'s rows (ops/assets/pane-users.js:1095, :1156, :1239) while the marked ' +
+    'control finds none outside the match table. The census above counts every ' +
+    'aria-pressed attribute under #content, whatever wrote it, and applySelection writes ' +
+    'one on the pick control of every rendered match row that has one (:551, from :652). ' +
+    `The LOOKUP fixture in this file sent ${LOOKUP.matches.length} ` +
+    `${LOOKUP.matches.length === 1 ? 'row' : 'rows'}. Those are the two ` +
+    'numbers to hold against each other; what else on the page may carry the attribute is ' +
+    'not measured here, and a row that never rendered, a control the pane stopped writing ' +
+    'the attribute on, and a second control that started writing it all move the census ' +
+    'without moving the fixture.'
+};
+
+/* Fixture pre-flight.
+ *
+ * Stadiora/Aria#10631's guard merged green and went red on `main` seven minutes
+ * later, because its branch was cut from a `main` older than the Cloud costs v2
+ * remodel: the floor was calibrated against a pane that no longer existed. The
+ * general shape recurs whenever a guard pins a floor while panes are being
+ * remodelled concurrently, and re-reading the branch base by hand is not a fix.
+ *
+ * So each check below reads the PRODUCT source for the rule that decides
+ * whether the state can be drawn at all, and tests this file's fixture against
+ * it before the browser starts. A fixture that cannot produce the state its
+ * floor demands is a fixture bug, and it is named as one here rather than
+ * surfacing 300 lines later as a bare count of 0.
+ *
+ * Enumerated, not generic: only panes whose state depends on fixture SHAPE
+ * rather than mere presence need an entry, and each says how it derives its
+ * rule so a remodel moves the check rather than silently passing it.
+ *
+ * Its limit, stated because round 8 proved it twice: reading a declaration
+ * out of source text is NOT executing the module. `VIEW_ORDER = []` followed
+ * by `VIEW_ORDER.push('category', 'resourceGroup')` initialises to nothing and
+ * runs with two, and no amount of grammar on the initialiser closes that. So
+ * the check below refuses every file it cannot read as ONE declaration that
+ * nothing later writes to, and the sentences it does print say what the TEXT
+ * says and stop there. */
+const PREFLIGHT = [
+  {
+    pane: 'spend',
+    check() {
+      const rel = 'ops/assets/pane-spend.js';
+      const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+      /* NOT comment-stripped, and that is the fix rather than an oversight.
+         Stripping block comments first removed characters from INSIDE a quoted
+         grouping name: a name spelled 'category' with a block comment opened
+         and closed inside the quotes was read as "category", and the run then
+         said the fixture supplied one grouping and was missing "region" when
+         it supplied none and adding "region" alone would not have helped. Every transformation applied
+         before the read is a chance to report text the file does not contain,
+         so there are none. A comment anywhere inside the literal now makes an
+         item unreadable and lands on the refusal below, which is the right
+         answer: this check cannot see what the comment hides.
+
+         Two structural refusals stand in front of the grammar, because a
+         well-formed initialiser establishes nothing on its own:
+
+           var VIEW_ORDER = [];
+           VIEW_ORDER.push('category', 'resourceGroup');
+
+         passes any grammar, initialises to nothing, and runs with two — so a
+         second write to the name is refused outright rather than read past.
+         Likewise a second DECLARATION anywhere in the file, which is how a
+         dead `if (false) { var VIEW_ORDER = []; }`, a later reassignment, and
+         a string literal quoting the declaration all reached the parser with
+         the real one sitting untouched below them. */
+      const DECL = /(?:var|let|const)\s+VIEW_ORDER\s*=\s*([^;]*);/g;
+      const decls = [...src.matchAll(DECL)];
+      if (decls.length === 0) {
+        return `${rel} no longer declares VIEW_ORDER as a var/let/const initialised in one ` +
+          'statement, so this check cannot tell whether the COSTS fixture can draw the ' +
+          'Group-the-bill-by switch. Re-derive it from whatever replaced it rather than ' +
+          'deleting this check.';
+      }
+      if (decls.length > 1) {
+        return `${rel} contains ${decls.length} texts this check would read as a VIEW_ORDER ` +
+          'declaration, and it cannot tell which one the module runs — a later ' +
+          'reassignment, a declaration in a branch, and a string quoting one all look ' +
+          'alike here. Teach it which is authoritative; do not assume the pane lost its ' +
+          'switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
+      }
+      const decl = decls[0];
+      /* Everything the name touches anywhere else in the file, with the
+         declaration's own span excised so its `=` is not read as a write. A
+         read is fine; a write is not, and the list is written out rather than
+         inferred so that a mutator it does not know is a gap in this comment
+         rather than a silent pass — see the limit note above the table.
+
+         BOTH directions, because text order is not execution order. Round 17
+         declared an ordinary helper ABOVE the array and called it below:
+
+           function r17trim() { VIEW_ORDER.length = 1; }
+           var VIEW_ORDER = ['category', 'resourceGroup'];
+           ...
+           r17trim();
+
+         Only the tail was read, so nothing was refused, the run reached Chrome
+         and failed the spend floor — and the paragraph it printed told the
+         reader that PREFLIGHT had already cleared that rule and to look
+         downstream of it, which is where the cause was not. Moving the same
+         helper one line down refuses correctly, so a line number was the whole
+         difference between a true refusal and a false instruction. */
+      const rest = src.slice(0, decl.index) + src.slice(decl.index + decl[0].length);
+      const WRITE = new RegExp('\\bVIEW_ORDER\\s*(?:=[^=]|\\[[^\\]]*\\]\\s*=[^=]|\\.\\s*' +
+        '(?:push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin|length\\s*=))');
+      const write = rest.match(WRITE);
+      if (write) {
+        /* Phrased like the count above it, and for the same reason: nothing
+           here distinguishes code from a comment or a string, so "the pane
+           writes to VIEW_ORDER" was false the moment the text appeared in a
+           comment — and the sentence after it, that the declaration is not the
+           value the pane runs with, was false with it. */
+        return `${rel} contains a text outside the declaration that this check reads as a ` +
+          `write to VIEW_ORDER (${JSON.stringify(write[0].trim())}), and it does not ` +
+          'distinguish code from a comment or a string, so it cannot rely on the ' +
+          'declaration being the whole of the order. Teach it which texts are ' +
+          'authoritative; do not assume the pane lost its switch, and do not touch ' +
+          'EXPECTED_PAIRS.spend on the strength of this.';
+      }
+      /* Read strictly, and refuse anything this grammar does not cover.
+         Everything here is a NARROWING of a looser parse that had been wrong
+         four times in the same way: a declaration it read only part of,
+         reported as the whole of VIEW_ORDER, over a pane drawing its switch
+         from two groupings and a fixture with nothing wrong with it.
+
+           ['category', RG]                  one quoted string out of two items
+           ['category', // the pane's ...]   the apostrophe pairs with the next
+                                             real quote: two strings, two
+                                             comma-items, resourceGroup gone
+           ['category'].concat(EXTRA)        the old [^\]]* stopped at the ]
+           [['category', 'resourceGroup']]   likewise, one item deep
+
+         The last three all AGREED with a count of comma-items, so counting
+         items was not the invariant either. What is checked now is the shape
+         itself: the initialiser must be a bracketed list, and every item in it
+         must be a plain quoted literal with nothing else attached.
+
+         An EMPTY array is not an unreadable shape: it is a declaration this
+         check can read, saying no groupings. What that means for the running
+         pane is a separate question and the message below does not answer it. */
+      const init = decl[1].trim();
+      const snip = (s) => JSON.stringify(s.length > 90 ? `${s.slice(0, 90)}…` : s);
+      const unsupported = (what) =>
+        `${rel} declares VIEW_ORDER as ${snip(init)}, and this check cannot read that as ` +
+        `a plain array of quoted grouping names: ${what}. It reads a bracketed list of ` +
+        'single- or double-quoted literals and nothing else, so it refuses rather than ' +
+        'guess at the rest. Teach it the new shape; do not assume the pane lost its ' +
+        'switch, and do not touch EXPECTED_PAIRS.spend on the strength of this.';
+      const bracketed = init.match(/^\[([\s\S]*)\]$/);
+      if (!bracketed) {
+        return unsupported('the initialiser does not both open with "[" and end with "]"');
+      }
+      const body = bracketed[1].trim();
+      const items = body === '' ? [] : body.split(',').map((s) => s.trim());
+      /* A trailing comma is house style here and leaves one empty last item.
+         An empty item anywhere else is a hole, and falls to the message. */
+      if (items.length > 1 && items[items.length - 1] === '') items.pop();
+      const QUOTED = /^(?:'[^'"\\\n]*'|"[^'"\\\n]*")$/;
+      const badAt = items.findIndex((s) => !QUOTED.test(s));
+      if (badAt !== -1) {
+        return unsupported(`item ${badAt + 1} of ${items.length}, ${snip(items[badAt])}, ` +
+          'is not a quoted string literal on its own');
+      }
+      const order = items.map((s) => s.slice(1, -1));
+      if (order.length < 2) {
+        /* No causal claim. The earlier wording ended "a state the pane can no
+           longer draw for any fixture", which is a statement about the RUNNING
+           module, and this check has read a declaration. Under the push
+           payload above that sentence was false, and it named
+           EXPECTED_PAIRS.spend as the thing to change. */
+        return `the one VIEW_ORDER declaration this check can read in ${rel} initialises it ` +
+          `to ${JSON.stringify(order)}, and viewCard draws the Group-the-bill-by switch only ` +
+          'when two or more groupings arrive with rows. This check reads that declaration ' +
+          'and does not execute the module, so it reports the text and stops: if that is ' +
+          'the whole of the order then no fixture can produce the pair EXPECTED_PAIRS.spend ' +
+          'asks for, and if something else fills it then teach this check to see that.';
+      }
+      const has = (k) => Array.isArray(COSTS.views[k]?.rows) && COSTS.views[k].rows.length > 0;
+      const supplied = order.filter(has);
+      if (supplied.length >= 2) return null;
+      const missing = order.filter((k) => !has(k));
+      /* The whole point of reading VIEW_ORDER at run time is that the rule can
+         change, so the note about "service" has to be conditional on the rule
+         just read. Printed unconditionally it contradicted the sentence above
+         it the moment the pane put "service" INTO the order. The clause that
+         followed — "and draws it as a table instead" — was asserted about a
+         function this check never opens, and printed over a serviceCard()
+         returning null. What is left is what the order above shows. */
+      const serviceNote = order.includes('service') ? '' :
+        ' Note that "service" does NOT count: it is absent from the order just read, ' +
+        `because ${rel} excludes it from the switch on purpose.`;
+      return `the COSTS fixture supplies ${supplied.length} of the groupings the pane ` +
+        `switches between. ${rel} reads ${JSON.stringify(order)} and viewCard draws the ` +
+        'Group-the-bill-by switch only when two or more of them arrive with rows; this ' +
+        `fixture is missing ${missing.map((k) => `"${k}"`).join(', ')}. Add rows for ` +
+        `${missing.map((k) => `"${k}"`).join(', ')} rather than lowering ` +
+        'EXPECTED_PAIRS.spend — the pair on that switch is where this pane\'s floor in ' +
+        'this file comes from, and a floor of 0 would let the switch vanish unnoticed.' +
+        `${serviceNote}`;
+    }
+  }
+];
+
+{
+  const paneKeys = new Set(PAGES.map((p) => p.key));
+  /* The hints are validated here rather than at their own table because one of
+     them cites PREFLIGHT by name. A hint that claims a pre-flight this file no
+     longer runs would rule out a cause nobody checked — and the run that
+     exposed it, a PREFLIGHT emptied to [], left the hint saying the fixture had
+     been tested when the missing rows were the whole failure. This couples the
+     two tables on the literal name, which is as far as a check can reach into
+     prose: a hint that claimed a pre-flight in other words would still pass. */
+  for (const key of Object.keys(FLOOR_HINTS)) {
+    if (!EXPECTED_PAIRS[key]) {
+      console.error(`\nFLOOR_HINTS explains a missed floor for "${key}" and EXPECTED_PAIRS ` +
+        'does not set one, so the hint can never print. Delete it or set the floor.\n');
+      process.exit(1);
+    }
+    if (FLOOR_HINTS[key].includes('PREFLIGHT') && !PREFLIGHT.some((e) => e.pane === key)) {
+      console.error(`\nFLOOR_HINTS for "${key}" tells the reader PREFLIGHT already tested ` +
+        'the fixture, and PREFLIGHT has no entry for that pane, so the hint rules out a ' +
+        'cause nothing checked. Restore the pre-flight or stop citing it.\n');
+      process.exit(1);
+    }
+  }
+  const problems = [];
+  for (const entry of PREFLIGHT) {
+    if (!paneKeys.has(entry.pane)) {
+      problems.push(`PREFLIGHT names pane "${entry.pane}", which ${REGISTRY} does not ` +
+        'declare, so the check it carries runs against nothing.');
+      continue;
+    }
+    const problem = (() => {
+      try {
+        return entry.check();
+      } catch (err) {
+        /* A pre-flight that cannot read its input has to say so in the same
+           register as everything else here, rather than as a stack trace from
+           a PR about failure output that diagnoses itself. */
+        return `this check could not read what it needs — ${err && err.message}`;
+      }
+    })();
+    if (problem) problems.push(`${entry.pane}: ${problem}`);
+  }
+  if (problems.length) {
+    /* Neutral about which side is at fault: the same block reports a fixture
+       that cannot produce the state AND a declaration this check cannot read,
+       and the second is not a fixture problem. */
+    console.error('\nA pre-flight check stopped this run before Chrome started, so the cause ' +
+      'is here rather than 300 lines below as a bare count of 0:\n');
+    for (const p of problems) console.error(`  - ${p}\n`);
     process.exit(1);
   }
 }
@@ -1184,6 +1622,29 @@ const probeFor = (markers) => `(() => {
   };
 
   const pairs = [];
+  /* Every state attribute the result view declares at ALL, positive or not,
+     counted by value. Judgement 2 only keeps the positive ones, so a pane that
+     has stopped drawing a control entirely and a pane that draws it with every
+     state false both arrive at the floor check as a bare zero. This census is
+     what tells those two apart in the failure message.
+
+     Scoped to #content, which is the pane's own output. That scope is load
+     bearing and rests on a mount point rather than on the pane: the shell's
+     App-scope bar carries an aria-pressed on every button
+     (ops/assets/shell-pane-v2.js:413-421) and stays out of these counts only
+     because it is appended to main (:1094) while this walks #content. A
+     remodel that moved the bar inside #content would inflate the users
+     aria-pressed count that FLOOR_HINTS.users tells a reader to compare
+     against LOOKUP. */
+  const stateCensus = {};
+  for (const el of content.querySelectorAll('*')) {
+    for (const attr of STATES) {
+      const value = el.getAttribute(attr);
+      if (value === null) continue;
+      const key = attr + '="' + value + '"';
+      stateCensus[key] = (stateCensus[key] || 0) + 1;
+    }
+  }
   for (const el of content.querySelectorAll('*')) {
     for (const attr of STATES) {
       const value = el.getAttribute(attr);
@@ -1230,6 +1691,305 @@ const probeFor = (markers) => `(() => {
   }
 
   const contentText = content ? clean(content) : '';
+
+  /* A marker in the DOM is not a marker on screen.
+
+     Setting display:none on the wrapper a pane hands to region.show() leaves
+     every marker in textContent and every node in querySelectorAll('*'), so
+     both result gates passed over a blank content area and the pane counted
+     as judged: a result view nothing paints, which is the defect class this
+     whole file exists to catch, occurring in its own entry gate. Judgement 1
+     could not catch it either, since it reports a class only where the class
+     lands on something with a box, and judgement 2's floor for that pane is 0.
+
+     So a marker counts only when something that CARRIES it is on screen. The
+     carrier is looked for innermost-first: #content contains the text of a
+     display:none child and has a box of its own, so asking whether any
+     element containing the marker is visible answers yes for every marker on
+     the page. An element is a carrier when it holds the marker and no child
+     of it does, which also covers a marker split across two siblings — their
+     parent is then the innermost carrier.
+
+     Innermost is not the only occurrence, which round 12 demonstrated by
+     appending a hidden copy of the version number inside the span that
+     renders it: the span stopped being a carrier because a child now held
+     the marker too, the hidden copy was measured in its place, and a pane
+     whose result was untouched on the screenshot failed. Round 12 answered
+     that with "unless the element's own text holds the marker", round 14
+     widened own text from one text node to a run of adjacent ones, and round
+     16 broke both by splitting the version number across two ORDINARY inline
+     spans beside the hidden duplicate: no run of direct text nodes held it,
+     so the visible parent was discarded for the hidden copy once more.
+
+     All three are one mistake — choosing which element to measure by reading
+     text the browser may not be drawing. A child takes the carrier role from
+     its parent only when the child DRAWS the marker, so that question is now
+     asked with drawnText(), the same walk that decides the verdict. A hidden
+     duplicate draws nothing, so it never displaces its parent, and the "own
+     text" escape hatch and both of its widenings are deleted rather than
+     patched a third time.
+
+     One predicate now, asked of the carrier's own subtree: the text a reader
+     could actually read out of it. Five stood here — a box, checkVisibility(),
+     reachability, content-visibility:hidden by name, and painted text — and
+     three consecutive rounds found a state that satisfied the first four and
+     painted nothing, because all four were asked about the ELEMENT while the
+     text they stood in for lives in the nodes under it. Round 14 hid both
+     halves of a split version number: box fine, checkVisibility() true, on
+     screen, blank card. Round 15 wrapped a half parked at left:-99999px in a
+     0x0 overflow:visible span, which has no box to fail. Round 16 made the
+     carrier's box reachable through an unrelated EMPTY descendant while the
+     text itself sat off the document, and the card read "2." alone.
+
+     So the element-level proxies are gone and the walk below answers all of
+     it against the rects of the text itself. opacity is still NOT asked
+     about, because a pane mid-transition would read as hidden and this gate
+     decides whether the run happens at all. */
+  const carriers = (m) => {
+    const out = [];
+    for (const el of content.querySelectorAll('*')) {
+      if (clean(el).indexOf(m) === -1) continue;
+      let deeper = false;
+      for (const kid of el.children) {
+        if (shows(kid, m)) { deeper = true; break; }
+      }
+      if (!deeper) out.push(el);
+    }
+    return out;
+  };
+  /* Size, renderedness, and PLACE. The first version of this asked the first
+     two and passed a result moved to left:-99999px, to translateX(-3000px),
+     or fixed at 2000px on a 1280px viewport — three boxes of the right size,
+     rendered, and nowhere a person could look. scale(0) was caught, so it saw
+     extent and not position, which is the narrower half of the same question.
+
+     The reachable area, not the viewport: this sweep never scrolls, and every
+     one of these panes is taller than the window, so a marker below the fold
+     is on the page and failing it would be a false red. documentElement's
+     scroll box is what a reader can reach by scrolling; a box that does not
+     intersect it is not reachable by scrolling either.
+
+     The two have to be in the same coordinate system to be compared, and for
+     three rounds they were not. getBoundingClientRect is the VIEWPORT's, the
+     scroll box is the DOCUMENT's, and the sweep never scrolling is the only
+     reason that ever agreed. Round 14 scrolled one pane to its end before the
+     probe ran and an ordinary link in normal flow, on screen at scroll 0,
+     reported top -370 against a 1695px document and failed: the reachable
+     area is exactly what a reader reaches BY scrolling, so measuring it from
+     wherever the page happens to be scrolled to is the one thing it cannot
+     do. A pane that restores a scroll position, focuses a result, or jumps to
+     a hash gets there without the probe scrolling at all.
+
+     So the scroll offset is added back before the comparison, at call time
+     rather than captured, since anything on the page may scroll between two
+     carriers. The viewport question below keeps the raw rect, because that
+     one really is asked in viewport space. */
+  const root = document.documentElement;
+  const reachW = Math.max(root.clientWidth, root.scrollWidth);
+  const reachH = Math.max(root.clientHeight, root.scrollHeight);
+  const inReach = (b) => {
+    const left = b.left + (window.scrollX || window.pageXOffset || 0);
+    const top = b.top + (window.scrollY || window.pageYOffset || 0);
+    return b.width > 0 && b.height > 0
+      && left + b.width > 0 && top + b.height > 0 && left < reachW && top < reachH;
+  };
+  /* Scrolling is what makes the reachable area the right question, so an
+     element scrolling has to be part of asking it. A fixed box does not move
+     when the page scrolls, and its rect is the viewport's, so a drawer left
+     closed at top:1400px on a 900px window inside a 1695px document reads as
+     reachable, is never on screen at any scroll offset, and passed this gate
+     until round 13 measured it. The product's own closed-panel idiom is
+     exactly that shape: ops.css's .drawer, .toast-host and .scrim and
+     pane-settings-v2.css's .modal are all position:fixed.
+
+     So a carrier with a fixed ancestor is asked the viewport question and
+     everything else is asked the scroll-box one. position is read off the
+     chain rather than the element because the fixed thing is usually the
+     panel, not the value inside it. */
+  const inView = (b) => b.width > 0 && b.height > 0
+    && b.right > 0 && b.bottom > 0 && b.left < root.clientWidth
+    && b.top < root.clientHeight;
+  const viewportAnchored = (el) => {
+    for (let n = el; n && n !== root; n = n.parentElement) {
+      if (getComputedStyle(n).position === 'fixed') return true;
+    }
+    return false;
+  };
+  /* WHAT A CARRIER PAINTS, asked of the text and not of the element.
+
+     Three rounds of this were asked about the element: does it have a box, is
+     it reachable, does checkVisibility() like it, and then separately, does
+     its text still contain the marker. Each round found a state where those
+     answers came from different nodes. Round 14 gave both halves of a split
+     version number visibility:hidden — their parent is then the carrier, with
+     a 39.98x20.25 box, visibility:visible, checkVisibility() true and both
+     halves painted by nobody; measured, exit 0, ten panes judged, blank card.
+     Round 16 left the text itself off the document and put an ordinary empty
+     span inside the carrier: the carrier's box was reachable because of the
+     span, and the text that made it a carrier was nowhere; measured, exit 0
+     and a card reading "2." only.
+
+     So there is one question and it is asked per CHARACTER: is this character
+     being drawn, and does its own rect land somewhere a reader can reach. A
+     Range gives exactly the boxes the browser laid that text out in, which is
+     why the evidence can no longer come from a different place than the text
+     does — round 17 showed that a text node is as many places as it has line
+     boxes, and that asking the node accepted a marker on an unreachable line
+     for the sake of a reachable one fifty lines above it. What a reader could
+     read is what is kept; every other character is left out, exactly as text
+     under a display:none element always has been.
+
+     Joined with nothing between, because two runs separated by an inline
+     boundary are one run on screen, and because this clause exists to catch
+     text that is not drawn AT ALL rather than to adjudicate spacing. The cost
+     is stated in the docblock: a marker split across two flex items is joined
+     here and passes, and so, in the same lenient direction, does one whose
+     halves are separated by text a reader cannot see. Leaving that text out
+     is the same choice this file has always made about a display:none
+     sibling, which occupies no space, and it is what keeps an sr-only span
+     inside a value from being a false red.
+
+     A Range is the right instrument twice over. display:contents removes the
+     box and keeps the text — measured on this dashboard, a span carrying
+     "2.9.1" under display:contents reports a 0x0 rect AND checkVisibility()
+     false while its text is laid out at (1198, 894) 39.97x16 and is legible
+     on the screenshot — and a zero-area overflow:visible wrapper, round 15's
+     payload, has no box to fail either. Neither one hides its TEXT's rects.
+
+     What still stops the walk, and why each is read where it is read:
+     display:none and content-visibility:hidden are read per element and end
+     the descent, because nothing under them is laid out — and a
+     content-visibility:hidden subtree keeps reporting the rects it had when
+     it was visible, measured, the same [1198, 894, 40, 16], so the property
+     has to be asked for by name rather than measured. visibility is read per
+     element and silences only that element's OWN text, because it inherits
+     but any descendant may set it back to visible; round 15 found the version
+     that dropped such a descendant, a false red. content-visibility:auto is
+     asked through checkVisibility(), and only of an element that HAS a box,
+     because checkVisibility() reports false for a display:contents element
+     and round 10 shipped that false red.
+
+     Lower-cased and whitespace-collapsed so a text-transform is not a false
+     red. Memoized, because carriers() calls it once per child per candidate
+     per marker. */
+  const flat = (s) => String(s).replace(/\\s+/g, ' ').trim().toLowerCase();
+  /* A TEXT NODE IS NOT A PLACE. It is as many places as it has line boxes,
+     and round 17 is the third round in a row to find the verdict and the text
+     coming from different ones. Round 16 moved the question from the element
+     to the node; a node holding 400 words of filler and then a version number
+     wraps into 51 lines, and asking whether ANY of those rects reaches
+     accepts the node for the sake of line 1 while the marker sits on line 50
+     at y=1001 in a 900px window, reachable at no scroll offset. Measured:
+     exit 0, ten panes judged, the card blank on the screenshot in both
+     themes. Moving the same characters into their own text node — identical
+     pixels — made it exit 1, which is the whole proof that the granularity
+     was the defect and nothing else was.
+
+     So reachability is decided per CHARACTER, and a character a reader could
+     not read is left out of the string — the same thing this file has always
+     done with text under a display:none element, now at the granularity the
+     evidence actually has. Keeping it in and matching around it was the other
+     candidate and it is worse: it would make a value whose halves straddle an
+     sr-only or display:none span, which the page renders as one run of text,
+     a false red. Dropping is lenient in the direction this clause already
+     chose — it exists to catch text drawn NOWHERE — and manufacturing a
+     marker through it would need an unreachable middle between two reachable
+     ends, which a contiguous scroll band cannot produce.
+
+     Whitespace is neutral rather than judged, since a space has no glyph to
+     find and a line break's rect is degenerate; a marker's own non-space
+     characters decide it.
+
+     Every node is measured this way, including one laid out on a single
+     line. A shortcut that let a single-rect node answer for all of its
+     characters shipped until round 18, which showed why it cannot: inReach
+     and inView ask whether a rect INTERSECTS the allowed area, so a line
+     that starts on screen and runs past the viewport's right edge, or starts
+     left of the document, passed characters that lie wholly outside it.
+     The answer is cached per text node, so the page's text is measured once
+     however many carriers are asked about it. Keying
+     on the node alone is safe because the predicate is a function of the
+     node's PARENT — walk() derives reaches from the element it is iterating,
+     never from the carrier the walk started at — so one node is never asked
+     two different questions, however many carriers walk over it. */
+  const charCache = new Map();
+  const charReach = (n, reaches) => {
+    if (charCache.has(n)) return charCache.get(n);
+    const value = String(n.nodeValue);
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    const rects = [].slice.call(range.getClientRects());
+    let out;
+    if (!rects.length) out = null;
+    else {
+      out = new Array(value.length);
+      for (let i = 0; i < value.length; i += 1) {
+        if (/\\s/.test(value[i])) { out[i] = null; continue; }
+        range.setStart(n, i);
+        range.setEnd(n, i + 1);
+        out[i] = [].slice.call(range.getClientRects()).some(reaches);
+      }
+    }
+    charCache.set(n, out);
+    return out;
+  };
+  const drawnCache = new Map();
+  const drawnText = (el) => {
+    if (drawnCache.has(el)) return drawnCache.get(el);
+    let out = '';
+    const add = (value, verdict) => {
+      for (let i = 0; i < value.length; i += 1) {
+        const v = Array.isArray(verdict) ? verdict[i] : verdict;
+        if (v === false) continue;
+        out += value[i];
+      }
+    };
+    const walk = (node, dead) => {
+      const cs = getComputedStyle(node);
+      const box = node.getBoundingClientRect();
+      const boxed = box.width > 0 || box.height > 0;
+      const gone = dead || cs.display === 'none' || cs.contentVisibility === 'hidden'
+        || (boxed && typeof node.checkVisibility === 'function'
+          && !node.checkVisibility({ contentVisibilityAuto: true }));
+      const draws = !gone && cs.visibility !== 'hidden' && cs.visibility !== 'collapse';
+      const reaches = viewportAnchored(node) ? inView : inReach;
+      for (const n of node.childNodes) {
+        if (n.nodeType === 3) {
+          add(String(n.nodeValue), draws ? charReach(n, reaches) : false);
+          continue;
+        }
+        if (n.nodeType === 1) walk(n, gone);
+      }
+    };
+    /* content-visibility:hidden ABOVE the carrier, which the walk cannot see
+       from inside and a Range cannot see at all: a skipped subtree keeps
+       reporting the rects it had when it was visible, so every text node in
+       it measures as placed. Round 10's DCONTCV payload is exactly that —
+       display:contents on the carrier, content-visibility:hidden on its row —
+       and it went green under the first version of this walk, caught by this
+       file's own battery rather than by a reviewer. The property does not
+       inherit, so it is looked for by name up the chain; visibility does
+       inherit, so the computed value read per element already carries it.
+       A skipped content-visibility:auto ancestor is asked through
+       checkVisibility(), of the carrier and only when the carrier has a box,
+       since that call reports false for a display:contents element. */
+    let dead = false;
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      if (getComputedStyle(n).contentVisibility === 'hidden') { dead = true; break; }
+    }
+    const ownBox = el.getBoundingClientRect();
+    if ((ownBox.width > 0 || ownBox.height > 0) && typeof el.checkVisibility === 'function'
+      && !el.checkVisibility({ contentVisibilityAuto: true })) dead = true;
+    walk(el, dead);
+    const text = flat(out);
+    drawnCache.set(el, text);
+    return text;
+  };
+  const shows = (el, marker) => drawnText(el).indexOf(flat(marker)) !== -1;
+  const markers = ${JSON.stringify(markers)};
+  const absent = markers.filter((m) => contentText.indexOf(m) === -1);
+  const hiddenMarkers = markers.filter((m) => contentText.indexOf(m) !== -1
+    && !carriers(m).some((el) => shows(el, m)));
   const title = document.querySelector('.page-title');
   /* Two spellings. The pane header aria.js:253 builds writes the question into
      .page-sub, which is what all ten pages render. .page-question is
@@ -1246,7 +2006,8 @@ const probeFor = (markers) => `(() => {
     sub: clean(sub),
     contentElements: content ? content.querySelectorAll('*').length : -1,
     contentText: contentText.slice(0, 4000),
-    missing: ${JSON.stringify(markers)}.filter((m) => contentText.indexOf(m) === -1),
+    missing: absent,
+    hiddenMarkers,
     sheetsRead,
     ruleCount: rules.length,
     classSites: visibleSites,
@@ -1255,6 +2016,7 @@ const probeFor = (markers) => `(() => {
     unpainted,
     unevaluable: [...new Set(unevaluable)],
     pairs,
+    stateCensus,
     /* Nothing should be hovered: every driven step activates a control through
        .click() rather than a pointer, and a hover state left on the page would
        make a :hover-only rule look like paint. */
@@ -1275,6 +2037,9 @@ let resultViews = 0;
 let pairsJudged = 0;
 let classSites = 0;
 const pairsByPane = {};
+/* Per pane, every state attribute its result view declared and how many times,
+   kept so a missed floor can say which of the two things went wrong. */
+const censusByPane = {};
 
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const PORT = server.address().port;
@@ -1349,7 +2114,6 @@ try {
         continue;
       }
       const seen = JSON.parse(evaluated.result.value);
-      resultViews += 1;
 
       /* Everything from here to the judgements is evidence that what is about
          to be judged is this pane's result view. A landing state, a refusal
@@ -1394,6 +2158,27 @@ try {
           `starts ${JSON.stringify(seen.contentText.slice(0, 140))}.`);
         continue;
       }
+      /* Separated from the branch above on purpose. "The pane drew N elements
+         but not X" is false here: it drew X, and nothing on screen carries it.
+         Saying so would be this file making the reader's diagnosis harder in
+         exactly the way seven rounds of review have been about. */
+      if (seen.hiddenMarkers.length) {
+        failures.push(`${where}: the pane drew ` +
+          `${seen.hiddenMarkers.map((m) => JSON.stringify(m)).join(' and ')} into #content ` +
+          'and no occurrence of it survives character by character. Every occurrence was ' +
+          'judged on its own, and every character in it by the rect of that character ' +
+          'rather than of any node or element around it: to be kept, a character has to be ' +
+          'laid out with a non-empty box, inside the area this page can be scrolled over ' +
+          '(or, under a position:fixed ancestor, inside the viewport), and under no ' +
+          'display:none, visibility:hidden or collapse, content-visibility:hidden or ' +
+          'skipped content-visibility:auto element between it and the element holding the ' +
+          'marker. Zero-area text, a position outside the document, a line that wraps off ' +
+          'the page, and text silenced anywhere under the carrier all land here and this ' +
+          'check does not tell them apart; opacity it never asked about. The ' +
+          'result is in the DOM, nothing below it paints, and this run ' +
+          'will not count the pane as reaching a result view.');
+        continue;
+      }
       if (seen.sheetsRead === 0 || seen.ruleCount === 0) {
         failures.push(`${where}: no stylesheet could be read from the page ` +
           `(${seen.sheetsRead} sheets, ${seen.ruleCount} rules), so every class on it would ` +
@@ -1407,6 +2192,12 @@ try {
       }
 
       judged.add(seen.pane);
+      /* Counted here rather than where the probe's result is parsed, which is
+         where round 13 found it: a page that never reached a result view was
+         counted as a result view read, so a red run printed "over 20 result
+         views" against sixteen. Every gate above ends the page, so a green run
+         counts what it always counted. */
+      resultViews += 1;
       classSites += seen.classSites;
 
       /* --------------------------------------- judgement 1: class paint */
@@ -1431,7 +2222,19 @@ try {
       /* ---------------------------------- judgement 2: state pair paint */
 
       const pairCount = seen.pairs.filter((p) => p.judged).length;
-      pairsByPane[page.key] = Math.min(pairsByPane[page.key] ?? Infinity, pairCount);
+      /* The census must come from the pass that supplied the minimum, not from
+         whichever theme ran last. They can differ: a pane that writes its
+         states in one theme and not the other gives a floor of 0 from the
+         silent theme and a census full of positive states from the loud one,
+         and joining the two says the states were drawn and unjudgeable when
+         they were judged, in the other theme. Reproduced at
+         ops/assets/pane-users.js:547,551 by keying the written value on
+         data-theme. The theme is carried too, so the message can say which
+         pass it is describing. */
+      if (pairCount < (pairsByPane[page.key] ?? Infinity)) {
+        pairsByPane[page.key] = pairCount;
+        censusByPane[page.key] = { census: seen.stateCensus || {}, theme };
+      }
       pairsJudged += pairCount;
 
       for (const pair of seen.pairs) {
@@ -1481,9 +2284,83 @@ for (const page of PAGES) {
   const had = pairsByPane[page.key];
   if (had === undefined) continue;
   if (had < due) {
+    /* A bare count of 0 states the symptom and withholds everything needed to
+       act on it. Three cases, not two: the pane declared no state attribute at
+       all; it declared them but none was judgeable; or it judged SOME and is
+       short of its floor.
+
+       Every sentence below is about ATTRIBUTES, because attributes are what
+       was counted. An absent aria-pressed does not establish an absent
+       control: removing both ARIA writes from applySelection
+       (ops/assets/pane-users.js:547,551) leaves two match rows and two pick
+       controls on the page, measured at 81.4 x 28.25 px, and an empty census.
+       None of the three cases is attributed to a cause either — the third
+       arrives from a narrowed fixture and from a pane regression alike — so
+       each states what was on the page and the hint below says which number to
+       compare it against. */
+    const record = censusByPane[page.key] || { census: {}, theme: null };
+    const census = record.census || {};
+    const declared = Object.keys(census).sort();
+    const inventory = declared.map((k) => `${k} ×${census[k]}`).join(', ');
+    /* The count is a per-theme minimum, so the inventory has to come from the
+       theme that produced it or it describes a different page. */
+    const inTheme = record.theme ? ` in the ${record.theme} theme` : '';
+    let saw;
+    if (had > 0) {
+      /* "Drawing fewer of them than it was" is not measured — nothing here
+         knows what the pane was drawing before. Raising EXPECTED_PAIRS.spend
+         with the pane untouched printed it over a byte-identical result view.
+         So it states the two numbers and stops. Round 7 caught the sentence
+         adding a third number the first two refute: "look for the ONE state"
+         printed under "judged 2 here, fewer than 4". Round 8 caught what was
+         left of the tail naming causes — "either the pane stopped writing one
+         or the fixture stopped producing the shape it needs" — over the same
+         floor-only payload, where neither had. The list of inputs is printed
+         once, below, for every branch. */
+      saw = `It judged ${had} here, fewer than ${due} rather than none — its result view ` +
+        `declared ${inventory}${inTheme}. That is ${due - had} short.`;
+    } else if (declared.length) {
+      /* One sentence covering both shapes this case takes — every value
+         negative, and positives nobody could pair. The earlier wording, "no
+         positive one among them had an unmarked peer", is vacuously true of
+         the first and reads as the second. Narrowed rather than split: the
+         inventory above already shows the reader which shape this is, and a
+         new branch here would be one more piece of unproven analysis written
+         mid-review. */
+      saw = `Its result view did declare ${inventory}${inTheme}, so the attributes are ` +
+        'being written and none of them produced a pair this check could judge.';
+    } else {
+      /* Two payloads, neither asserted. The first wording of this sentence
+         read an absent attribute as an absent control, which is false when
+         applySelection stops writing its two channels and leaves both pick
+         controls drawn and clickable. Its replacement, "that is the attribute
+         missing, not the control", is the same error with the sign flipped,
+         and is false when the control genuinely goes: returning null from
+         viewSwitch (ops/assets/pane-spend.js:367) takes the Group-the-bill-by
+         switch off the page and empties the census the same way. An empty
+         census distinguishes neither, so this sentence names both. */
+      saw = `Its result view declared no state attribute of any kind${inTheme}. What this ` +
+        'counts is attributes, so that is the whole of what it says: a control that ' +
+        'stopped being drawn, and a control still drawn with its attribute dropped, both ' +
+        'empty the census.';
+    }
+    /* Printed in every case, because no hint names a cause any more. Gating it
+       on had === 0 suppressed the users hint in exactly the case it was
+       written for. */
+    const hint = FLOOR_HINTS[page.key] ? ` ${FLOOR_HINTS[page.key]}` : '';
+    /* Three inputs produce this number and only one of them is on the page.
+       The lead used to end "so the pane has stopped drawing a state this check
+       was judging", and the tail used to offer the pane and the fixture as the
+       two candidates. Raising a floor with nothing else touched makes both
+       false, and a mis-calibrated floor is the incident this whole pre-flight
+       exists for — so the input that is most likely to be wrong was the one
+       input neither sentence named. They are enumerated now, and none is
+       chosen. */
     failures.push(`${page.key}: EXPECTED_PAIRS says its result view declares at least ${due} ` +
-      `ARIA state${due === 1 ? '' : 's'} to compare and ${had} were found, so the pane has ` +
-      'stopped drawing a state this check was judging.');
+      `ARIA state${due === 1 ? '' : 's'} to compare and ${had} were found. ${saw} Three ` +
+      'things decide that number and this check measured one of them: what the pane draws, ' +
+      'what the fixture sends, and the floor itself — EXPECTED_PAIRS in this file, which a ' +
+      `raise moves without touching the page. The census above is the measurement.${hint}`);
   }
 }
 
@@ -1543,7 +2420,12 @@ try {
 }
 
 if (failures.length) {
-  console.error('\nThe operations dashboard draws states no stylesheet it loads can paint:\n');
+  /* The heading covers everything in the list below it, and the list holds
+     missed floors, unreachable result views and sweep-size mismatches as well
+     as unpainted classes. Naming one of those as the finding was false on any
+     run that did not contain it — a floor raised with the pane untouched
+     printed it over twenty passing paint judgements. */
+  console.error('\nThe result views of the operations dashboard did not come back clean:\n');
   for (const f of failures) console.error('  - ' + f);
   console.error(
     '\nA state a pane can enter has to be visible in the state the pane enters it. ' +

@@ -756,13 +756,13 @@ svg { display: block; }
 .meter i {
   position: absolute; inset: 0 auto 0 0;
   border-radius: 20px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--cyan)) 65%, transparent), var(--c, var(--cyan)));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c, var(--cyan-ink)) 65%, transparent), var(--c, var(--cyan-ink)));
   box-shadow: 0 0 12px -1px var(--c, var(--cyan));
 }
-.meter.ok   { --c: var(--emerald); }
-.meter.warn { --c: var(--amber); }
-.meter.bad  { --c: var(--rose); }
-.meter.vio  { --c: var(--violet); }
+.meter.ok   { --c: var(--emerald-ink); }
+.meter.warn { --c: var(--amber-ink); }
+.meter.bad  { --c: var(--rose-ink); }
+.meter.vio  { --c: var(--violet-ink); }
 
 /* Stadiora/Aria#10825: severity was carried by `--c` and nothing else, so in
    greyscale a bar meaning "in trouble" and a bar meaning "fine" were the same
