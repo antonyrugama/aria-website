@@ -1,11 +1,12 @@
-/* Aria quality: working tools, and a drawing of the pane this one is named for.
+/* Aria quality: working tools, plus a drawing of the pane this one is named for.
 
    Dataset validation checks supplied declarations without reading referenced
    files or storing a dataset. Evidence import places bytes behind the server's
-   private, immutable quarantine boundary. Neither successful operation is
-   admission, evaluation consent, training consent, export permission,
-   provider-transfer permission, or proof of de-identification. Approval
-   handoffs expose metadata only and leave qualification checks to the server.
+   private, immutable quarantine boundary when the backend accepts the request.
+   Neither successful operation is admission, evaluation consent, training
+   consent, export permission, provider-transfer permission, or proof of
+   de-identification. Approval handoffs expose metadata only and leave
+   qualification checks and operation availability to the server.
 
    The selected file exists only in this page's memory until the operator
    submits it. The page displays file metadata before submission and the
@@ -516,6 +517,19 @@
     ]);
   }
 
+  function attributeOf(node, name) {
+    if (typeof node.getAttribute === 'function') return node.getAttribute(name) || '';
+    return node.attributes && node.attributes[name] ? node.attributes[name] : '';
+  }
+
+  function appendDescription(node, id) {
+    var existing = attributeOf(node, 'aria-describedby')
+      .split(/\s+/)
+      .filter(Boolean);
+    if (existing.indexOf(id) === -1) existing.push(id);
+    node.setAttribute('aria-describedby', existing.join(' '));
+  }
+
   function datasetValidationSection() {
     var declarations = h('textarea', {
       className: 'field-input',
@@ -739,6 +753,12 @@
       type: 'submit',
       text: 'Quarantine evidence'
     });
+    var evidenceAvailability = h('p', {
+      className: 'field-hint',
+      text: 'The backend decides whether quarantine is available. Evidence quarantine answers only when private storage and authority settings are configured. If the backend refuses, submitting changes nothing and this pane shows the refusal.'
+    });
+    evidenceAvailability.setAttribute('id', 'evidence-availability-note');
+    appendDescription(submit, 'evidence-availability-note');
 
     function updateSourceFields() {
       var production = source.value === 'production_derived';
@@ -791,6 +811,7 @@
             'Comma-separated contract categories; leave blank when none were removed.')
         ]),
         productionFields,
+        evidenceAvailability,
         error
       ]),
       h('div', { className: 'card-foot evidence-actions' }, [submit])
@@ -893,6 +914,13 @@
       type: 'submit',
       text: 'Create pending request'
     });
+    var approvalAvailabilityText = 'The backend decides whether approval operations are available. Under Aria ADR 0040, approval actions stay closed until an external qualification issuer exists. If the backend refuses, submitting changes nothing and this pane shows the refusal.';
+    var approvalRequestAvailability = h('p', {
+      className: 'field-hint',
+      text: approvalAvailabilityText
+    });
+    approvalRequestAvailability.setAttribute('id', 'approval-request-availability-note');
+    appendDescription(approvalRequestSubmit, 'approval-request-availability-note');
     var approvalRequestForm = h('form', { className: 'stack' }, [
       h('div', { className: 'grid g2 evidence-form-grid' }, [
         field('approval-artifact-id', 'Artifact ID', approvalArtifactId),
@@ -907,6 +935,7 @@
         field('approval-request-key', 'Idempotency key', approvalRequestKey,
           'Optional. Reuse only for the same exact digest binding.')
       ]),
+      approvalRequestAvailability,
       approvalRequestError,
       h('div', { className: 'row evidence-actions' }, [approvalRequestSubmit])
     ]);
@@ -920,8 +949,15 @@
       type: 'submit',
       text: 'Load request'
     });
+    var approvalGetAvailability = h('p', {
+      className: 'field-hint',
+      text: approvalAvailabilityText
+    });
+    approvalGetAvailability.setAttribute('id', 'approval-get-availability-note');
+    appendDescription(approvalGetSubmit, 'approval-get-availability-note');
     var approvalGetForm = h('form', { className: 'stack' }, [
       field('approval-get-id', 'Approval request ID', approvalGetId),
+      approvalGetAvailability,
       approvalGetError,
       h('div', { className: 'row evidence-actions' }, [approvalGetSubmit])
     ]);
@@ -942,6 +978,12 @@
       type: 'submit',
       text: 'Record decision'
     });
+    var approvalDecisionAvailability = h('p', {
+      className: 'field-hint',
+      text: approvalAvailabilityText
+    });
+    approvalDecisionAvailability.setAttribute('id', 'approval-decision-availability-note');
+    appendDescription(approvalDecisionSubmit, 'approval-decision-availability-note');
     var approvalDecisionForm = h('form', { className: 'stack' }, [
       h('div', { className: 'grid g2 evidence-form-grid' }, [
         field('approval-decision-id', 'Approval request ID', approvalDecisionId),
@@ -952,6 +994,7 @@
         field('approval-decision-key', 'Idempotency key', approvalDecisionKey,
           'Optional. Reuse only for the same decision.')
       ]),
+      approvalDecisionAvailability,
       approvalDecisionError,
       h('div', { className: 'row evidence-actions' }, [approvalDecisionSubmit])
     ]);

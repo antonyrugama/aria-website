@@ -155,6 +155,26 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function treeText(node) {
+  return [node.textContent || '', ...(node.children || []).map(treeText)].join(' ');
+}
+
+function treeOrder(root) {
+  const out = [];
+  (function visit(node) {
+    out.push(node);
+    for (const child of node.children || []) visit(child);
+  })(root);
+  return out;
+}
+
+function assertBefore(root, first, second, message) {
+  const order = treeOrder(root);
+  assert.ok(order.indexOf(first) !== -1, 'first node is missing from tree order');
+  assert.ok(order.indexOf(second) !== -1, 'second node is missing from tree order');
+  assert.ok(order.indexOf(first) < order.indexOf(second), message);
+}
+
 function datasetInput() {
   const reference = (id, path) => ({ id, version: 1, path, sha256: 'a'.repeat(64) });
   return {
@@ -303,6 +323,48 @@ test('viewers can validate declarations without being offered evidence import', 
   assert.equal(findNode(root, node => node.className === 'card evidence-form'), null);
 });
 
+test('dataset validation stays enabled while operation availability disclosures stay pre-submit copy only', () => {
+  const view = renderedPane();
+  const datasetForm = findNode(view.root, node => node.className === 'card dataset-form');
+  const datasetSubmit = findNode(datasetForm, node => node.tag === 'button');
+  assert.equal(datasetSubmit.disabled, false, 'dataset validation submit must remain enabled');
+  assert.equal(datasetSubmit.attributes['aria-disabled'], undefined);
+  assert.equal(datasetSubmit.attributes['aria-describedby'], undefined);
+
+  const evidenceNote = view.byId('evidence-availability-note');
+  assert.ok(evidenceNote, 'evidence availability disclosure is missing');
+  assert.match(treeText(evidenceNote), /backend decides/i);
+  assert.match(treeText(evidenceNote), /storage and authority settings are configured/i);
+  assert.match(treeText(evidenceNote), /submitting changes nothing/i);
+  assert.equal(view.submit.disabled, false, 'quarantine submit must remain enabled');
+  assert.equal(view.submit.attributes['aria-disabled'], undefined);
+  assert.match(view.submit.attributes['aria-describedby'], /evidence-availability-note/);
+  assertBefore(view.form, evidenceNote, view.submit,
+    'evidence availability disclosure must appear before the quarantine submit control');
+
+  const approvalCases = [
+    ['approval-request-form', 'approval-request-availability-note', 'Create pending request'],
+    ['approval-get-form', 'approval-get-availability-note', 'Load request'],
+    ['approval-decision-form', 'approval-decision-availability-note', 'Record decision'],
+  ];
+  for (const [formId, noteId, label] of approvalCases) {
+    const form = view.byId(formId);
+    const note = view.byId(noteId);
+    const submit = findNode(form, node => node.tag === 'button');
+    assert.ok(note, `${noteId} is missing`);
+    assert.match(treeText(note), /backend decides/i);
+    assert.match(treeText(note), /ADR 0040/);
+    assert.match(treeText(note), /external qualification issuer/i);
+    assert.match(treeText(note), /submitting changes nothing/i);
+    assert.equal(submit.textContent, label);
+    assert.equal(submit.disabled, false, `${formId} submit must remain enabled`);
+    assert.equal(submit.attributes['aria-disabled'], undefined);
+    assert.match(submit.attributes['aria-describedby'], new RegExp(noteId));
+    assertBefore(form, note, submit,
+      `${formId} availability disclosure must appear before its submit control`);
+  }
+});
+
 test('a viewer requester can submit approval lookup without mutation controls', async () => {
   const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
   const calls = [];
@@ -446,7 +508,7 @@ function renderedPane(call, Clock = Date, role = 'operator') {
     error: form ? findNode(form, node => node.className === 'field-error') : null,
     result: findNode(root, node => node.className === 'evidence-result'),
     submit: form
-      ? findNode(form, node => node.tag === 'button' && node.attributes.type === 'submit')
+      ? findNode(form, node => node.tag === 'button')
         || findNode(form, node => node.tag === 'button')
       : null,
   };
