@@ -1136,8 +1136,8 @@ and the box on screen is full. Two shapes qualify: text painted on screen, like 
 a placeholder shown until the operator types, and text a screen reader substitutes for the
 element's own, like an `aria-label` — a figure in the second is worse than one in the live region,
 because it suppresses the real words underneath it as well. The two states are the booted page and
-the page after the dataset form has been submitted and answered. This sweep does not cover
-error branches.
+the page after the dataset and quarantine forms have been submitted and answered. This sweep
+does not cover post-submission approval states or error branches.
 
 Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
 inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in
