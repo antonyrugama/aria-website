@@ -56,10 +56,12 @@
 <script src="assets/session.js"></script>
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
-<!-- What happened draws the alerting record, so it shares the Problems pane's
-     model: the two panes cannot disagree about what "still open" means, about
-     when a count is a floor, or about whether anything was watching. -->
-<script src="assets/alerts-model.js"></script>
+<!-- The Problems pane's shared model is deliberately no longer loaded here.
+     It was, because this pane used to draw the alerting record that pane owns;
+     it now draws the runs themselves, so there is nothing left to share.
+     No path is named in this file on purpose: the backend repository greps
+     these pages for one, and a route named in a comment reds that guard as
+     surely as a route named in code. Stadiora/Aria#5563. -->
 <script src="assets/pane-run-history-v2.js"></script>
 </body>
 </html>

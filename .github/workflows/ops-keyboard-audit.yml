@@ -1,0 +1,76 @@
+name: Ops keyboard audit
+
+# Regenerates the committed keyboard audit and runs the mutation battery on
+# GitHub-hosted Chrome. This repo has no self-hosted runners registered, so it
+# follows the other ops browser workflows and uses ubuntu-latest.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ops-keyboard-walk*.mjs'
+      - 'ops/**'
+      - '.github/workflows/ops-keyboard-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regenerated-document:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm the runner has a browser
+        run: |
+          google-chrome --version || chromium --version
+      - name: Regenerate the keyboard audit
+        run: node scripts/ops-keyboard-walk.mjs
+      - name: Check committed audit matches regeneration
+        run: git diff --exit-code ops/keyboard-audit.md
+      - name: Upload regenerated audit on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-keyboard-audit
+          path: ops/keyboard-audit.md
+          if-no-files-found: warn
+
+  mutation-battery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm the runner has a browser
+        run: |
+          google-chrome --version || chromium --version
+      - name: Run keyboard audit mutation battery
+        run: |
+          mkdir -p .probe
+          set +e
+          node scripts/ops-keyboard-walk.battery.mjs > .probe/keyboard-battery.stdout 2> .probe/keyboard-battery.stderr
+          status=$?
+          set -e
+          cat .probe/keyboard-battery.stderr
+          if [ -f .probe/keyboard-battery.md ]; then
+            cat .probe/keyboard-battery.md
+          fi
+          exit "$status"
+      - name: Upload battery output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keyboard-audit-battery
+          path: .probe/keyboard-battery.*
+          include-hidden-files: true
+          if-no-files-found: error

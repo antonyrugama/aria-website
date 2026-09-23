@@ -1,360 +1,237 @@
 /* Happening now: what is Aria working on, and is any of it not clearing?
 
-   WHAT THIS PANE CAN ACTUALLY ANSWER TODAY, AND WHAT IT CANNOT
+   WHAT CHANGED, AND WHY THE OLD HEADER IS GONE
 
-   There is no queue behind this page. Nothing serves one: app-backend mounts
-   no route that lists jobs, their lanes, their ages or their retries, so every
-   figure of that kind is absent rather than zero. What does exist is the
-   alerting record, and two of its rules are pointed at this pane by the server
-   itself — `queue_backlog_age` and `ai_success_rate` both carry
-   linkPane: 'jobs-live'. Those two are the present tense: how long the oldest
-   queued job has been waiting, and whether the work that is flowing is
-   failing.
+   This pane used to open by saying there was no queue behind it. That was
+   true and it is no longer: `GET /api/ops/jobs` (Stadiora/Aria#5562) serves
+   the open queue and, from the lifecycle record #5561 started writing, the
+   throughput and the durations that make "slow" mean anything. The pane now
+   draws the work itself. What it still cannot answer is named at the bottom,
+   as before, because that list got shorter rather than empty.
 
-   So this pane draws what is being reported right now and NAMES the rest as
-   missing. A tile reading zero and a tile with no pipeline behind it look
-   identical, and on a pane whose whole job is to say whether anything is
-   wrong, the confident reading is the wrong one.
+   TWO TENSES, AND THE PANE KEEPS THEM APART
 
-   MOVING, NOT CLEARING, OR UNREADABLE — AND WHAT THE RECORD CAN ACTUALLY PROVE
+   The route answers in two tenses and they are not interchangeable:
 
-   A queue that is draining and a queue that is not are different facts with
-   different fixes, and an operator sent to the wrong one wastes the only time
-   that matters. The pane never collapses them into a single "needs attention".
+     the queue      counted right now, from the table the workers mutate in
+                    place. NOT a window over anything - it is the queue, so
+                    no window is printed against it and none should be.
 
-   `queue_backlog_age` records the age of the OLDEST QUEUED JOB for a request
-   type, in seconds ("Oldest queued job age, per request type"). A problem also
-   carries when the queue first crossed the line (firstBreachedAt) and when it
-   was last measured (lastObservedAt). Let
+     throughput     counted over a stated window, from the append-only
+                    lifecycle record. Every figure of this kind is drawn with
+                    the window it covers, because a count with no window is
+                    not a measurement.
 
-     oldest = observedValue, the age of the job at the front of the queue
-     span   = lastObservedAt - firstBreachedAt, how long it has been over the
-              line
+   ABSENCE, ZERO, AND THE DIFFERENCE BETWEEN THEM
 
-   then
+   The rule this pane is built around: a state whose pipeline is not connected
+   must not look like a genuine zero. During an incident a confident zero is
+   worse than a blank, because a blank sends someone to look and a zero sends
+   them away. Concretely, here:
 
-     oldest <  span   the job at the front arrived AFTER the breach began.
-                      Everything the queue was holding when it crossed the line
-                      has therefore left it — a job older than the front cannot
-                      still be queued — and what is waiting now arrived after
-                      that: MOVING, BEHIND.
+     an empty queue         IS zero and is drawn as zero. The counts come from
+                            an unbounded read over every open state, so
+                            "nothing queued" is a measurement.
 
-     oldest >= span   the front arrived at or before the breach began, so
-                      nothing queued since then has reached the front and the
-                      job at the front of that backlog is still waiting:
-                      NOT CLEARING.
+     both lanes, always     the route publishes every lane the platform routes
+                            to, holding work or not, so an idle lane and a
+                            disconnected one are never the same row.
 
-   Neither reading is a rate, and neither is a statement about the whole queue.
+     throughput: null       the recorder has never written. NOT zeros. The
+                            card says so and names when it last wrote, so a
+                            recorder that has gone quiet reads as staleness
+                            rather than as a calm hour.
 
-   NOT CLEARING does not prove the front has not moved. A burst that all
-   arrived before the breach can drain one job at a time and satisfy
-   oldest >= span the whole way, because each new front is still older than the
-   breach — so most of that backlog can be gone. What is left is the
-   existential: the job now at the front was already waiting when the line was
-   crossed, and still is.
+     oldestQueued unknown   the lane has a real queue and every job in it fell
+                            past the read's bound. Drawn as an unknown age,
+                            never as "nothing waiting". "Nothing waiting" is
+                            the answer to `none` alone -- a lane carrying no
+                            answer, or one this pane has no sentence for, says
+                            the read did not say, because a confident empty
+                            lane over an unread field is the reading that
+                            sends an operator away.
 
-   MOVING, BEHIND does not prove work is arriving faster than it leaves. One
-   sample of one age counts nothing and times nothing, so a queue that shrank
-   from five jobs to one and then stalled for seven minutes still reads this
-   way. What is left is that the queue turned over during the breach — jobs
-   left it, because the ones it held are no longer in it — and that everything
-   in it now arrived after the line was crossed. "Left it" is also as far as it
-   goes: a job leaves a queue by being cancelled, expired or permanently failed
-   as well as by succeeding, and these two numbers cannot tell those apart.
+     attention scoped       `completeness` says whether the stuck and given-up
+                            lists were read over the whole queue or only the
+                            bounded working set. An empty list from a
+                            truncated read is a narrower claim than it looks,
+                            and it says so on screen.
 
-   The unit is one reason the verdict can be unavailable. It lives on the rules
-   read and not on the problem, which is the same reason the Problems pane
-   prints no observed figure without it: a bare 620 beside a threshold of "over
-   10 minutes" is worse than saying nothing. A span of zero is another: two
-   readings taken at the same instant leave no elapsed time for either statement
-   to be about. Where the unit, the observation, the breach start or the elapsed
-   time is missing, the pane says the verdict cannot be read. It does not guess,
-   and it does not fall back to the more alarming of the two.
+     grade unknown          a run with no usable baseline, or one whose worker
+                            has never reported in, is graded `unknown` rather
+                            than healthy. "We cannot tell" is a third answer.
 
-   A third fact sits beside those two and is neither: `ai_success_rate` firing
-   means work is flowing and failing. Nothing is waiting; the answers are
-   coming back wrong. It is drawn as its own thing.
+   HOW IT UPDATES, AND HOW IT STOPS
 
-   WHEN T IS, AND WHEN IT IS NOT NOW
+   The acceptance says it must update without the operator reloading. The
+   issue also warns that polling a pane forgets to stop is how #5543 happened,
+   so the stopping is the part designed first.
 
-   Every figure on this pane is a statement about the last observation that was
-   OVER THE LINE. Call that time T. A pane called "Happening now" presents each
-   of them as a statement about now, so the step from "at T" to "now" needs a
-   reason, and there is exactly one field that supplies it.
+   #5543 was not caused by polling being the wrong tool - its declared polling
+   floor was sane. It was caused by a STREAM whose reconnect reset its backoff
+   on connect rather than on survival, so a connection that died immediately
+   reconnected forever. The lesson is about lifecycle, not mechanism: whatever
+   refreshes has to have a condition under which it stops, and that condition
+   has to be the default rather than an afterthought.
 
-   The engine does not close a problem when its condition stops. On the first
-   non-breaching check it records a recovery and sets conditionClearedAt, and
-   the problem STAYS OPEN until a person closes it
-   (opsAlertLifecycle.ts record_recovery -> opsAlertRepository.setConditionCleared,
-   which writes conditionClearedAt and nothing else). observedValue and
-   lastObservedAt are written only by refreshProblem, and refreshProblem runs
-   only on a breaching observation. So after recovery both figures are frozen
-   at T and T stops advancing, while `status=open` — the route maps it to open
-   AND acknowledged and never looks at conditionClearedAt — keeps returning the
-   problem indefinitely.
+   So: a chained setTimeout, not setInterval, and not a stream.
 
-   That is the ordinary state of every incident between "it stopped" and "a
-   human closed it", which on a small team is hours. Drawn in the present tense
-   it says a queue that recovered forty minutes ago is not clearing, with an
-   oldest-wait figure that has not been true since T.
+     why not a stream       there is no streaming route, and adding one would
+                            mean a held-open connection per operator to carry
+                            a figure that changes at human speed. That is the
+                            #5543 machinery for none of the benefit.
 
-   So conditionClearedAt is read FIRST, ahead of the arithmetic above, and a
-   problem carrying it is drawn in the past tense: the verdict becomes STOPPED,
-   the two figures keep their values but get past-tense labels, the row says
-   when it stopped, and the "Oldest job waiting" tile excludes it rather than
-   quoting a wait nobody is doing. This matches the Problems pane, which has
-   said "Stopped <ago>" against conditionClearedAt since before this pane
-   existed; the two must not disagree about the same record.
+     why chained, not an    setInterval queues ticks behind a slow read and
+     interval               they all arrive at once when it lands. A chain
+                            cannot overlap itself: the next tick is scheduled
+                            only once the previous one has settled.
 
-   The remaining gap is honest and named: T is the last BREACHING sample, so
-   while a problem is still going the figures are as fresh as the last check
-   and no fresher. The pane draws lastObservedAt-derived spans, not wall-clock
-   ones, so it never inflates a wait past what was measured.
+     it stops when hidden   `visibilitychange` cancels the pending tick. A
+                            backgrounded tab costs nothing, and resuming reads
+                            immediately so the first thing seen is current.
 
-   WHAT THIS PANE READS
+     it stops on unload     `pagehide` cancels too. Each pane is its own page,
+                            so navigation already ends the timer - this is
+                            belt and braces for bfcache.
 
-     GET /api/ops/alerts/problems ?status=open&limit=100
-       -> { data: { problems[], summary } }
+     it stops giving up     consecutive failures back off, doubling to a cap,
+                            and after enough of them the chain stops entirely
+                            and says so with a manual retry. A route that is
+                            down is not helped by being asked every 15s
+                            forever.
 
-       `status=open` is the route's own word for open AND acknowledged, and it
-       excludes `pending` — a problem that has not held for its duration is not
-       yet something a person should be looking at. It is NOT a filter on
-       whether the condition is still happening: see WHEN T IS above, and
-       conditionClearedAt on each problem, which is.
+     the operator can stop  a Pause control, because an operator reading a row
+     it                     should not have it repaint under them.
 
-     GET /api/ops/alerts/rules
-       -> { data: { rules[], summary, channels[] } }
+   A refresh repaints in place. The skeleton belongs to the first read only:
+   flashing the whole pane back to bars every 15 seconds would make a working
+   pane look like a broken one.
 
-       Read for two things: the threshold UNIT, without which an observed
-       figure cannot be turned into a duration or a percentage, and the armed
-       proof — whether anything was in a position to notice. Nothing being
-       reported is only good news if the watchers answered, so this read is the
-       difference between an idle night and an outage nobody is measuring. Its
-       failure degrades the pane rather than emptying it.
+   ROLES
 
-   THE FILTER BAR
+   Read-only, so every role that can open the pane can see all of it. Cancel
+   and requeue are explicitly out of scope for #5562 and nothing serves a route
+   behind them, so they are named in the band of what this pane cannot do yet
+   rather than drawn as buttons. NO CONTROL THAT CANNOT SUCCEED (PR #58): a
+   control an operator cannot complete says the thing is within reach.
 
-   There is none, and the bar says why. The registry used to give this pane an
-   app control and an environment control, and neither could act on the read:
+   EVENTS, NEVER CONTENT
 
-     app scope     the record is kept per request type, not per app, so no
-                   selection narrowed it, and the pane printed a note saying so
-     environment   there is no staging alerting record, so a staging selection
-                   was refused rather than answered
-
-   Both are gone from the registry instead. NO CONTROL THAT CANNOT SUCCEED,
-   which is the rule below applied to a filter: a control drawn over a read it
-   cannot narrow says the narrowing is within reach, and a note underneath
-   apologising for it is not the same thing as not drawing it.
-
-   NO CONTROL THAT CANNOT SUCCEED. The approved mock draws Cancel, Retry and
-   Export buttons. Nothing serves a route behind any of them, and PR #58
-   settled that a control an operator cannot complete is worse than no control:
-   it says the thing is within reach. They are named in the band of what this
-   pane cannot do yet instead. */
+   The route's projection is written column by column and carries no payload,
+   no result and no error text. Nothing on this page is a person's data; the
+   identifiers are job ids and numeric user ids. The mask below is kept anyway,
+   for the same reason it was kept before: the shape of today's payload is not
+   a promise about tomorrow's. */
 
 (function (global) {
   'use strict';
 
   var S = global.OpsPaneShell;
-  var model = global.OpsAlertsModel;
   var session = global.OpsSession;
   var h = S.h;
   var icon = S.icon;
   var fmt = S.fmt;
 
-  var PROBLEMS_ENDPOINT = '/api/ops/alerts/problems';
-  var RULES_ENDPOINT = '/api/ops/alerts/rules';
-
-  /* The two rules the server itself points at this pane. Anything else that is
-     open belongs to another pane and is drawn as a doorway, not as a figure. */
-  var QUEUE_RULE = 'queue_backlog_age';
-  var FAILING_RULE = 'ai_success_rate';
-
+  var JOBS_ENDPOINT = '/api/ops/jobs';
   var HISTORY_FILE = 'run-history.html';
   var ALERTS_FILE = 'alerts.html';
 
-  /* Ported from the v1 panes' formatter rather than re-invented, so a wait
-     reads the same here as it does in the Problems drawer. */
-  function waited(seconds) {
-    if (!fmt.isNum(seconds) || seconds < 0) return fmt.none;
-    if (seconds < 60) return (seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)) + 's';
-    var m = Math.floor(seconds / 60);
-    var s = Math.round(seconds % 60);
-    if (m < 60) return m + 'm ' + (s < 10 ? '0' : '') + s + 's';
-    var hrs = Math.floor(m / 60);
-    return hrs + 'h ' + (m % 60) + 'm';
-  }
+  /* Fast enough that a queue moving under an operator's eyes looks like it is
+     moving, slow enough that a page left open all afternoon is not a load.
+     Four reads a minute against a two-table query. */
+  var REFRESH_MS = 15000;
+
+  /* Failure backoff: double from the cadence to the cap, then stop. Five
+     consecutive failures spans 15s + 30s + 60s + 120s + 120s, so the chain
+     stops about five and three quarter minutes after the last successful read.
+     The first 15s is the ordinary cadence, so that span is measured from the
+     last success, not from the first failure -- which is 5m30s, one term in.
+     That is long enough that the next read is not going to be the one that
+     works, and a person should be told rather than kept waiting. */
+  var BACKOFF_CAP_MS = 120000;
+  var GIVE_UP_AFTER = 5;
+
+  var LANE_LABEL = { gpu: 'GPU', background: 'Background' };
+  var LANE_NOTE = {
+    gpu: 'Work that needs a graphics card. Video analysis runs here.',
+    background: 'Everything else Aria generates for an athlete.'
+  };
+
+  var STATE_LABEL = { queued: 'Waiting', running: 'Running', canceling: 'Stopping' };
+
+  var GRADE_LABEL = {
+    healthy: 'On time',
+    stuck: 'Overdue',
+    abandoned: 'Given up on',
+    unknown: 'Not measurable'
+  };
+  /* aria.css's pill modifiers, not ops.css's badge ones: this page loads
+     aria.css. `unknown` deliberately maps to no modifier, which is the
+     neutral pill -- a grade the route could not decide should not be painted
+     in a colour that decides it. An unrecognised grade falls to the same
+     neutral, for the same reason. */
+  var GRADE_TONE = { healthy: 'up', stuck: 'warn', abandoned: 'down', unknown: '' };
 
   /* Anything that looks like a contact detail, replaced before it reaches the
-     DOM. This pane prints service facts — a rule title, a request type — and
-     none of them is a person. That is a property of today's payload rather
-     than a promise it makes, so the pane enforces it instead of trusting it.
-
-     The replacement names the kind of thing it hid rather than deleting it
-     silently: an operator reading a sentence with a hole in it needs to know a
-     hole is what they are looking at. */
+     DOM. Kept from the previous pane unchanged: the route prints service facts
+     today, and this enforces that rather than trusting it. The replacement
+     names the kind of thing it hid, because an operator reading a sentence
+     with a hole in it needs to know a hole is what they are looking at. */
   var EMAIL = /[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+/g;
 
   function coded(text) {
     if (typeof text !== 'string' || !text) return '';
-    return text.replace(EMAIL, '[hidden contact detail]');
+    return text.replace(EMAIL, '[address hidden]');
   }
 
-  /* A figure is a number only when it is one. Everything else renders words:
-     a zero and an absence look identical once they are set in the same type,
-     and on this pane the absence is the more dangerous of the two. */
-  function figureValue(figure) {
-    if (figure.availability !== 'ready') return { text: figure.words, words: true };
-    return { text: figure.text, words: false };
+  /* ------------------------------------------------------------ formatting */
+
+  /* A duration an operator reads at a glance. Absence stays absence: a job
+     nobody can time prints the none marker rather than 0s, which would read
+     as "just started". */
+  function dur(ms) {
+    if (!fmt.isNum(ms) || ms < 0) return fmt.none;
+    var s = Math.round(ms / 1000);
+    if (s < 60) return s + 's';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ' + (s % 60 < 10 ? '0' : '') + (s % 60) + 's';
+    var hrs = Math.floor(m / 60);
+    return hrs + 'h ' + (m % 60) + 'm';
   }
 
-  function figureCard(figure) {
-    var box = S.card('kpi');
-    var body = h('div', { className: 'card-body' });
-    body.appendChild(h('div', { className: 'kpi-label', text: figure.label }));
-
-    var value = figureValue(figure);
-    body.appendChild(h('div', {
-      className: 'kpi-val' + (value.words ? ' words' : ''),
-      text: value.text
-    }));
-
-    if (figure.note) {
-      body.appendChild(h('div', { className: 'kpi-meta' }, [h('span', { text: figure.note })]));
-    }
-    box.appendChild(body);
-    return box;
+  function jobTypeLabel(jobType) {
+    if (typeof jobType !== 'string' || !jobType) return fmt.none;
+    return coded(jobType.replace(/_/g, ' '));
   }
 
-  /* --------------------------------------- moving, not clearing, unreadable */
-
-  function ruleFor(rules, ruleKey) {
-    var list = (rules && rules.rules) || [];
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].ruleKey === ruleKey) return list[i];
-    }
-    return null;
+  /* A ratio travels as its two numbers and is turned into a percentage here,
+     at the edge, so the denominator stays visible next to it. 1 of 1 and
+     847 of 848 are both "100%" and they are not the same evidence. */
+  function rate(ratio) {
+    if (!ratio || !fmt.isNum(ratio.numerator) || !fmt.isNum(ratio.denominator)) return null;
+    if (ratio.denominator <= 0) return null;
+    return Math.round((ratio.numerator / ratio.denominator) * 1000) / 10;
   }
 
-  /* The observed figure in seconds, or null. Gated on the rule's own unit:
-     the problem carries a bare number, and a number whose unit is a guess is
-     not a reading. */
-  function observedSeconds(problem, rule) {
-    if (!rule || rule.thresholdUnit !== 'seconds') return null;
-    if (!fmt.isNum(problem.observedValue) || problem.observedValue < 0) return null;
-    return problem.observedValue;
+  /* Three readings of `attention.completeness`, not two. Absent or
+     unrecognised is NOT `whole_queue`: reading it that way publishes a narrow
+     claim as a broad one on the strength of a field that never arrived, which
+     is the confident-zero shape PR #98 and #106 both found elsewhere on this
+     dashboard. An unread scope draws the band (so a finding is never silently
+     broadened) and says on the card that the scope is unknown. */
+  function scopeOf(attention) {
+    if (attention.completeness === 'whole_queue') return 'whole';
+    if (attention.completeness === 'working_set_only') return 'bounded';
+    return 'unread';
   }
 
-  /* How long the queue has been over the line, in seconds, or null. Both ends
-     have to be real times and the second has to be after the first: a span
-     measured from a missing start is not a span, and a span of zero is two
-     readings taken at the same instant, which supports no statement about what
-     happened between them. */
-  function breachSeconds(problem) {
-    var began = model.oldest([problem.firstBreachedAt]);
-    var measured = model.latest([problem.lastObservedAt]);
-    if (began === Infinity || measured === -Infinity) return null;
-    var span = (measured - began) / 1000;
-    return span > 0 ? span : null;
+  function stateCount(byState, state) {
+    var found = (byState || []).filter(function (entry) { return entry.state === state; })[0];
+    return found && fmt.isNum(found.jobs) ? found.jobs : null;
   }
 
-  /* When the condition stopped, or null while it is still going. This is the
-     one field that decides whether anything else on the row is present tense,
-     which is why it is read before the arithmetic and not after it: see WHEN
-     T IS, AND WHEN IT IS NOT NOW in the docblock. */
-  function clearedAt(problem) {
-    var when = model.latest([problem.conditionClearedAt]);
-    return when === -Infinity ? null : when;
-  }
-
-  /* One of four answers, never two of them merged. 'stopped' comes first
-     because a cleared condition makes the other three unaskable: both of them
-     are statements about a queue that is over the line, and this one is not
-     any more. 'unknown' is a real answer too and is drawn as words: told the
-     backlog is not clearing when the truth is unreadable, an operator goes
-     looking for a queue that is working. */
-  function movement(problem, rule) {
-    var oldest = observedSeconds(problem, rule);
-    var span = breachSeconds(problem);
-    var cleared = clearedAt(problem);
-    if (cleared !== null) {
-      return { state: 'stopped', oldest: oldest, span: span, cleared: cleared };
-    }
-    if (oldest === null || span === null) {
-      return { state: 'unknown', oldest: oldest, span: span, cleared: null };
-    }
-    return {
-      state: oldest >= span ? 'holding' : 'behind',
-      oldest: oldest,
-      span: span,
-      cleared: null
-    };
-  }
-
-  /* The sentences say only what two numbers can carry. 'holding' is not a
-     claim that the front has not moved — see the docblock — it is a claim that
-     nothing queued since the breach has reached it. */
-  var MOVEMENT = {
-    holding: {
-      label: 'Not clearing',
-      tone: 'down',
-      sentence: 'Work that was already waiting when this queue went over the line is still ' +
-        'waiting. Nothing queued since has reached the front.'
-    },
-    behind: {
-      label: 'Moving, behind',
-      tone: 'warn',
-      sentence: 'Everything this queue was holding when it went over the line has since left ' +
-        'it. What is waiting now arrived after that.'
-    },
-    unknown: {
-      label: 'Cannot tell',
-      tone: 'ghost',
-      sentence: 'Whether this queue is clearing cannot be read from what was recorded, so it ' +
-        'is not being guessed at.'
-    },
-    stopped: {
-      label: 'Stopped',
-      tone: 'ghost',
-      sentence: 'This queue is no longer over the line. The readings beside it are from when ' +
-        'it was, and it is still on this page because closing a problem is somebody\'s ' +
-        'decision rather than the engine\'s.'
-    }
-  };
-
-  function queueProblems(problems) {
-    return problems.filter(function (problem) { return problem.ruleKey === QUEUE_RULE; });
-  }
-
-  function failingProblems(problems) {
-    return problems.filter(function (problem) { return problem.ruleKey === FAILING_RULE; });
-  }
-
-  function elsewhereProblems(problems) {
-    return problems.filter(function (problem) {
-      return problem.ruleKey !== QUEUE_RULE && problem.ruleKey !== FAILING_RULE;
-    });
-  }
-
-  /* Still going first, then worst, then the one that has been over the line
-     longest. A queue that has stopped goes below every queue that has not,
-     whatever its severity: severity is how bad it was, and a critical row that
-     recovered is not more urgent than a warning row that is still going. At
-     equal standing a queue that has been over the line for an hour outranks
-     one that crossed it a minute ago. */
-  function worstFirst(rows) {
-    return rows.slice().sort(function (a, b) {
-      var byLive = (a.movement.state === 'stopped' ? 1 : 0) -
-        (b.movement.state === 'stopped' ? 1 : 0);
-      if (byLive) return byLive;
-      var bySeverity = model.severityRank(a.problem.severity) -
-        model.severityRank(b.problem.severity);
-      if (bySeverity) return bySeverity;
-      var aSpan = a.movement && a.movement.span !== null ? a.movement.span : -1;
-      var bSpan = b.movement && b.movement.span !== null ? b.movement.span : -1;
-      return bSpan - aSpan;
-    });
+  function list(value) {
+    return Array.isArray(value) ? value : [];
   }
 
   /* ------------------------------------------------------------- the pane */
@@ -362,590 +239,784 @@
   S.definePane('jobs', function (content) {
     var region = S.region(content);
     var loadToken = 0;
+    var timer = null;
+    var inFlight = false;
+    var failures = 0;
+    var paused = false;
+    var stopped = false;
+    var lastReadAt = null;
+    /* Held across renders because a pause must not delete it. Passing the
+       error into the footer meant the pause branch, which has no error to
+       pass, silently cleared the staleness caveat over figures exactly as
+       stale as they were a moment before. */
+    var lastError = null;
+    var drawnOnce = false;
 
     /* No ops:filters listener. This pane declares no filter in the registry,
        so the shell pins every one of them and the event can never carry a
-       selection this pane could act on. A listener that reloads on a value
-       that cannot change is a reload that never happens, dressed as one that
-       might. */
+       selection this pane could act on. */
 
-    function load() {
+    /* ----------------------------------------------------- the refresh loop */
+
+    function cancelTick() {
+      if (timer !== null) {
+        global.clearTimeout(timer);
+        timer = null;
+      }
+    }
+
+    /* Every path that schedules goes through here, and every reason not to
+       schedule is stated in one place. That is the whole defence against the
+       #5543 shape: there is no second scheduler to forget about. */
+    function scheduleTick() {
+      cancelTick();
+      if (paused || stopped || global.document.hidden) return;
+      var delay = REFRESH_MS;
+      if (failures > 0) {
+        delay = Math.min(REFRESH_MS * Math.pow(2, failures), BACKOFF_CAP_MS);
+      }
+      timer = global.setTimeout(function () {
+        timer = null;
+        load(false);
+      }, delay);
+    }
+
+    function onVisibility() {
+      if (global.document.hidden) {
+        cancelTick();
+        return;
+      }
+      if (paused || stopped) return;
+      /* Read immediately rather than waiting out a cadence that elapsed while
+         nobody was looking. The first thing a returning operator sees should
+         be current, not up to fifteen seconds stale. */
+      load(false);
+    }
+
+    function onPageHide() {
+      cancelTick();
+    }
+
+    global.document.addEventListener('visibilitychange', onVisibility);
+    global.addEventListener('pagehide', onPageHide);
+
+    function load(firstRead) {
+      /* A read already in flight owns the next schedule. Starting a second
+         one would be the overlap the chain exists to prevent. */
+      if (inFlight) return;
+      cancelTick();
+      inFlight = true;
       var token = ++loadToken;
 
-      region.loading([
-        { type: 'block', height: 62 },
-        { type: 'tiles', count: 4 },
-        { type: 'rows', count: 5 }
-      ]);
+      if (firstRead) {
+        region.loading([
+          { type: 'block', height: 62 },
+          { type: 'tiles', count: 4 },
+          { type: 'rows', count: 6 }
+        ]);
+      }
 
-      Promise.all([
-        problems(),
-        session.call(RULES_ENDPOINT).then(function (payload) {
-          return { data: payload.data };
-        }, function (err) {
-          return { error: err };
-        })
-      ]).then(function (results) {
+      S.read({ paneId: 'jobs', endpoint: JOBS_ENDPOINT }).then(function (result) {
+        inFlight = false;
         if (token !== loadToken) return;
-        render(results[0], results[1]);
-      }).catch(function (err) {
+        failures = 0;
+        stopped = false;
+        lastError = null;
+        lastReadAt = new Date();
+        drawnOnce = true;
+        render(result.data || {});
+        scheduleTick();
+      }, function (err) {
+        inFlight = false;
         if (token !== loadToken) return;
-        region.failed(err, load);
+        failures += 1;
+        lastError = err || new Error('The read failed.');
+        if (failures >= GIVE_UP_AFTER) {
+          stopped = true;
+          cancelTick();
+        }
+        /* A refresh that failed over a pane already showing a reading does not
+           blank it. The reading is stale, not wrong, and the footer says how
+           stale. Only a first read that fails takes the whole pane. */
+        if (!drawnOnce) {
+          region.failed(err, function () { failures = 0; stopped = false; lastError = null; load(true); });
+          return;
+        }
+        redrawFooter();
+        scheduleTick();
       });
     }
 
-    /* Through the shell's loader, so the same-origin fixture hook covers the
-       states a live API will not produce on demand: a quiet system, a queue
-       that is not clearing, a system with nothing watching it.
+    /* ------------------------------------------------------------- footer */
 
-       status 'open' is the route's word for open and acknowledged. This pane
-       is the present tense: a problem somebody closed on Tuesday belongs to
-       What happened, not here. */
-    function problems() {
-      return S.read({
-        paneId: 'jobs',
-        endpoint: PROBLEMS_ENDPOINT,
-        query: { status: 'open', limit: model.PAGE }
-      }).then(function (result) { return result.data; });
+    var footerHost = null;
+
+    function redrawFooter() {
+      if (!footerHost) return;
+      /* Same swap, smaller scope: the footer holds Pause and Read now, and a
+         failure redraw lands here while one of them may be focused. */
+      var held = captureRetained();
+      while (footerHost.firstChild) footerHost.removeChild(footerHost.firstChild);
+      footerHost.appendChild(refreshCard());
+      restoreRetained(held, footerHost);
     }
 
-    function render(record, rules) {
-      var open = (record && record.problems) || [];
-      var capped = model.capped(open);
-      var armed = rules.error ? null : model.armedState(rules.data || {});
-      var queueRule = rules.error ? null : ruleFor(rules.data, QUEUE_RULE);
-      var failingRule = rules.error ? null : ruleFor(rules.data, FAILING_RULE);
-
-      var queues = worstFirst(queueProblems(open).map(function (problem) {
-        return { problem: problem, movement: movement(problem, queueRule) };
-      }));
-      var failing = failingProblems(open);
-      var elsewhere = elsewhereProblems(open);
-
-      if (!open.length) {
-        region.empty(nothingReported(armed));
-        return;
-      }
-
-      var wrap = h('div', { className: 'stack' });
-      wrap.appendChild(hero(queues, failing, elsewhere));
-      selectionNotes(capped).forEach(function (note) { wrap.appendChild(note); });
-      wrap.appendChild(rightNow(open, queues, capped));
-      wrap.appendChild(watchingCard(armed));
-      if (queues.length) wrap.appendChild(queueBand(queues, queueRule));
-      if (failing.length) wrap.appendChild(failingBand(failing, failingRule));
-      if (elsewhere.length) wrap.appendChild(elsewhereBand(elsewhere));
-      wrap.appendChild(missingBand());
-
-      if (rules.error) region.degraded(wrap);
-      else region.show(wrap);
-    }
-
-    /* --------------------------------------------------------- the empties */
-
-    /* Nothing is being reported. Whether that is a quiet system or a system
-       nothing is watching is the whole question, so it is what the state
-       answers. An empty queue is only good news if the watchers replied. */
-    function nothingReported(armed) {
+    function refreshCard() {
       var box = S.card();
-      var block;
+      var body = h('div', { className: 'card-body' });
+      var row = h('div', { className: 'row row-wrap gap-sm' });
 
-      if (armed && armed.trustworthy) {
-        var lastRun = fmt.utcStamp(armed.lastEvaluatedAt);
-        block = S.stateBlock('check', 'Nothing is being reported right now', [
-          armed.checking + ' of ' + armed.total + ' rules were checking, and none of them ' +
-            'reached a verdict worth raising' + (lastRun ? ', last at ' + lastRun : '') + '.',
-          'That covers the queue and the runs. It does not count jobs: nothing serves a ' +
-            'job list to this page, so an idle night and a worker that stopped picking work ' +
-            'up would look the same here if the rules were not answering.'
-        ]);
-      } else if (armed) {
-        block = S.stateBlock('warn', 'Nothing is being reported, and nothing is watching', [
-          'None of the ' + armed.total + ' rules reached a verdict the last time they ran, ' +
-            'so an empty page here is not the same as a quiet system.',
-          'This is the silence to go and fix rather than the one to take comfort from.'
-        ]);
+      var status;
+      if (stopped) {
+        status = 'Stopped refreshing after ' + GIVE_UP_AFTER + ' failed reads.';
+      } else if (paused) {
+        status = lastError
+          ? 'Paused, and the last refresh before it had already failed.'
+          : 'Paused. Nothing on this page is changing.';
+      } else if (lastError) {
+        status = 'The last refresh failed. Retrying, more slowly each time.';
       } else {
-        block = S.stateBlock('warn', 'Nothing is being reported right now', [
-          'The rules could not be read, so whether anything was watching is unknown. An ' +
-            'empty page cannot be read as a quiet system until that answers.',
-          'Everything else on this page came back.'
-        ]);
+        status = 'Refreshing every ' + Math.round(REFRESH_MS / 1000) +
+          's while this tab is visible.';
       }
 
-      var row = h('div', { className: 'row mt-sm' });
-      row.appendChild(S.link(S.paneHref('history') || HISTORY_FILE, 'What happened earlier'));
-      block.appendChild(row);
-      box.appendChild(block);
+      var words = h('div');
+      words.appendChild(h('div', { className: 'strong', text: status }));
+      words.appendChild(h('div', {
+        className: 'tiny muted',
+        text: lastReadAt
+          ? 'Last read ' + fmt.clock(lastReadAt.toISOString()) + '.' +
+            (lastError || stopped ? ' What is above is that reading, not a current one.' : '')
+          : 'Not read yet.'
+      }));
+      row.appendChild(words);
+
+      var actions = h('div', { className: 'row gap-sm' });
+      if (stopped) {
+        var retry = h('button', {
+          className: 'btn btn-sm btn-primary', type: 'button', text: 'Start again'
+        });
+        retry.addEventListener('click', function () {
+          failures = 0;
+          stopped = false;
+          load(false);
+        });
+        actions.appendChild(retry);
+      } else {
+        var toggle = h('button', {
+          className: 'btn btn-sm',
+          type: 'button',
+          text: paused ? 'Resume' : 'Pause',
+          'aria-pressed': paused ? 'true' : 'false',
+          'data-retain': 'jobs-toggle'
+        });
+        toggle.addEventListener('click', function () {
+          paused = !paused;
+          if (paused) {
+            cancelTick();
+            redrawFooter();
+          } else {
+            /* Redraw FIRST. `load` resolves over the network, and a toggle that
+               keeps saying Resume with aria-pressed=true until the response
+               lands is reporting a state the pane left the moment it was
+               clicked. */
+            redrawFooter();
+            load(false);
+          }
+        });
+        actions.appendChild(toggle);
+      }
+
+      var now = h('button', {
+        className: 'btn btn-sm', type: 'button', text: 'Read now',
+        'data-retain': 'jobs-read-now'
+      });
+      now.addEventListener('click', function () { load(false); });
+      actions.appendChild(now);
+
+      row.appendChild(actions);
+      body.appendChild(row);
+      box.appendChild(body);
       return box;
     }
 
-    /* ------------------------------------------------------------- hero */
+    /* --------------------------------------------------------- the reading */
 
-    /* The one sentence somebody reads before they decide whether to put their
-       coffee down. Not clearing outranks behind, behind outranks failing, and
-       all three outrank a problem that belongs to another pane, because that
-       is the order in which they cost an athlete something. */
-    function hero(queues, failing, elsewhere) {
-      var holding = queues.filter(function (row) { return row.movement.state === 'holding'; });
-      var behind = queues.filter(function (row) { return row.movement.state === 'behind'; });
-      var unreadable = queues.filter(function (row) { return row.movement.state === 'unknown'; });
-      var stillFailing = failing.filter(function (problem) {
-        return clearedAt(problem) === null;
-      });
-      var stillElsewhere = elsewhere.filter(function (problem) {
-        return clearedAt(problem) === null;
-      });
-      /* Every open problem whose condition has stopped, across all three
-         groups. The three groups partition the open list by ruleKey, so when
-         nothing above matches, this is the whole of it. */
-      var stopped = queues.length + failing.length + elsewhere.length -
-        queues.filter(function (row) { return row.movement.state !== 'stopped'; }).length -
-        stillFailing.length - stillElsewhere.length;
+    function render(data) {
+      var held = captureRetained();
+      var queue = data.queue || {};
+      var workingSet = data.workingSet || {};
+      var attention = data.attention || {};
+      var baseline = data.baseline || {};
+      var jobs = list(workingSet.jobs);
+      var open = fmt.isNum(queue.open) ? queue.open : null;
 
-      var tone = 'st-acc';
-      var title = '';
-      var sub = '';
+      var wrap = h('div', { className: 'stack' });
+      /* Banded rather than given a card head of its own. cardHead is an h3 and
+         the pane's name in the top bar is the h1, so a lone card here jumps
+         h1 -> h3; bandHead is the h2 every other section on this page sits
+         under. Same heading, one level up, no skip. */
+      var now = S.band('Right now', 'Counted from the queue itself, not over a window');
+      now.appendChild(hero(queue, data.recording || {}, open));
+      wrap.appendChild(now);
 
-      if (holding.length) {
-        tone = 'st-bad';
-        title = holding.length === 1
-          ? coded(holding[0].problem.scopeLabel || 'A queue') + ' is not clearing'
-          : holding.length + ' queues are not clearing';
-        sub = 'Work that was already waiting when ' + (holding.length === 1 ? 'it' : 'they') +
-          ' went over the line is still waiting.';
-      } else if (behind.length) {
-        tone = 'st-warn';
-        title = behind.length === 1
-          ? coded(behind[0].problem.scopeLabel || 'A queue') + ' is behind'
-          : behind.length + ' queues are behind';
-        sub = 'Everything ' + (behind.length === 1 ? 'it was' : 'they were') +
-          ' holding when the line was crossed has since left. What is waiting now arrived ' +
-          'after that.';
-      } else if (unreadable.length) {
-        tone = 'st-warn';
-        title = unreadable.length === 1
-          ? coded(unreadable[0].problem.scopeLabel || 'A queue') + ' is over the line'
-          : unreadable.length + ' queues are over the line';
-        sub = 'Whether ' + (unreadable.length === 1 ? 'it is' : 'they are') +
-          ' clearing cannot be read from what was recorded.';
-      } else if (stillFailing.length) {
-        tone = 'st-bad';
-        title = stillFailing.length === 1
-          ? coded(stillFailing[0].scopeLabel || 'Aria runs') + ' are failing'
-          : stillFailing.length + ' request types are failing';
-        sub = 'Nothing is waiting. The work is flowing and the answers are coming back wrong.';
-      } else if (stillElsewhere.length) {
-        tone = 'st-warn';
-        title = stillElsewhere.length === 1
-          ? 'One problem is going, and it is not the queue'
-          : stillElsewhere.length + ' problems are going, and none is the queue';
-        sub = 'Nothing is queueing and nothing is failing. What is still going belongs to ' +
-          'another pane, and each one below says which.' + (stopped
-            ? ' The rest have stopped and are waiting to be closed.'
-            : '');
-      } else {
-        /* Nothing is happening now, and that is the answer somebody paged an
-           hour ago came here for. It is not the all-clear: the engine never
-           closes a problem itself, so these are waiting on a person to say
-           which of "we fixed it" and "it went away" happened. */
-        tone = 'st-ok';
-        title = stopped === 1
-          ? 'It has stopped, and nobody has closed it'
-          : stopped + ' have stopped, and nobody has closed them';
-        sub = 'Nothing is over the line now. What is below stopped on its own and stays open ' +
-          'until somebody says which of "we fixed it" and "it went away" happened.';
+      /* Drawn whenever there is a finding OR whenever the read that looked was
+         a partial one. An empty stuck/abandoned list over a truncated queue is
+         a much narrower claim than an empty list over the whole of it, and
+         hiding the band in that case publishes the narrow claim as the broad
+         one -- silence that reads as "nothing is wrong". The route sets
+         `attention.completeness` for exactly this (opsJobsView.ts:171-177);
+         a pane that reads it only on the branch where something was found has
+         not read it. */
+      var flagged = list(attention.stuck).length + list(attention.abandoned).length;
+      if (flagged > 0 || scopeOf(attention) !== 'whole') {
+        wrap.appendChild(attentionBand(attention, jobs, baseline));
       }
 
-      var section = h('section', { className: 'hero ' + tone });
-      section.appendChild(h('div', { className: 'hero-orb', 'aria-hidden': 'true' }, [
-        h('i'), h('i'), h('b')
-      ]));
-      section.appendChild(h('div', {}, [
-        h('h2', { className: 'hero-title', text: title }),
-        h('p', { className: 'hero-sub', text: sub })
-      ]));
+      wrap.appendChild(laneBand(list(queue.lanes)));
+      if (jobs.length) {
+        wrap.appendChild(jobsBand(jobs, workingSet, baseline));
+      } else if (workingSet.truncated === true) {
+        /* Nothing came back and the route still calls the read bounded. That
+           is a contradiction worth showing rather than swallowing: dropping
+           the band entirely would publish "no work in flight" over a read that
+           says it did not reach the end of the queue. */
+        wrap.appendChild(emptyWorkingSetBand(workingSet));
+      }
+      wrap.appendChild(throughputBand(data.throughput, data.recording || {}));
+      wrap.appendChild(missingBand(data.capacity || {}));
+
+      footerHost = h('div');
+      footerHost.appendChild(refreshCard());
+      wrap.appendChild(footerHost);
+
+      region.show(wrap);
+      restoreRetained(held, wrap);
+      shownRoot = wrap;
+    }
+
+    /* A refresh every fifteen seconds redraws the pane and `region.show`
+       swaps the whole box out, so anything the operator was holding at that
+       instant belongs to the read rather than to them: the control they had
+       tabbed to loses focus to BODY, and the table they had scrolled right
+       snaps back to column one. At 375px the table is 311 wide against 643 of
+       content, so that is most of it. Carry both across the swap and put them
+       back. Nodes are matched by `data-retain` because the node itself is a
+       new object after every render -- the name is the only stable identity
+       a rebuilt tree has. */
+    var RETAIN_ATTR = 'data-retain';
+    var shownRoot = null;
+
+    function captureRetained() {
+      var held = { focus: null, scroll: {} };
+      var active = global.document && global.document.activeElement;
+      if (active && active.getAttribute && (!shownRoot || !shownRoot.contains || shownRoot.contains(active))) {
+        held.focus = active.getAttribute(RETAIN_ATTR) || null;
+      }
+      if (shownRoot && shownRoot.querySelectorAll) {
+        var nodes = shownRoot.querySelectorAll('[' + RETAIN_ATTR + ']');
+        for (var i = 0; i < nodes.length; i += 1) {
+          var name = nodes[i].getAttribute(RETAIN_ATTR);
+          if (name) held.scroll[name] = nodes[i].scrollLeft || 0;
+        }
+      }
+      return held;
+    }
+
+    function restoreRetained(held, root) {
+      if (!held || !root || !root.querySelectorAll) return;
+      var nodes = root.querySelectorAll('[' + RETAIN_ATTR + ']');
+      for (var i = 0; i < nodes.length; i += 1) {
+        var node = nodes[i];
+        var name = node.getAttribute(RETAIN_ATTR);
+        if (!name) continue;
+        if (held.scroll[name]) node.scrollLeft = held.scroll[name];
+        if (held.focus && name === held.focus && typeof node.focus === 'function') {
+          /* preventScroll matters as much as the focus itself. Calling focus()
+             bare makes the browser scroll the node into view, so a refresh
+             that correctly KEEPS focus still throws the page's vertical
+             position away -- measured at 1709 -> 811 on a long reading. The
+             point of this whole mechanism is that a refresh moves nothing the
+             operator did not move. */
+          node.focus({ preventScroll: true });
+        }
+      }
+    }
+
+    /* ----------------------------------------------------------- the hero */
+
+    function hero(queue, recording, open) {
+      var box = S.card();
+
+      var body = h('div', { className: 'card-body' });
+
+      var quiet = open === 0;
+      body.appendChild(h('p', {
+        className: 'page-sub',
+        text: open === null
+          ? 'The queue could not be counted.'
+          : quiet
+            ? 'Aria has nothing in flight.'
+            : 'Aria is working on ' + fmt.plural(open, 'thing') + '.'
+      }));
+
+      /* The zero here is a measurement and says so. The counts come from an
+         unbounded read over all three open states, so an empty queue is a
+         fact about the queue rather than a fact about the read. */
+      if (quiet) {
+        body.appendChild(h('p', {
+          className: 'tiny muted',
+          text: 'Counted, not assumed: every lane answered and every state was asked about. ' +
+            'This is an idle queue, not an unread one.'
+        }));
+      }
+
+      var tiles = h('div', { className: 'grid g3 mt' });
+      ['queued', 'running', 'canceling'].forEach(function (state) {
+        var value = stateCount(queue.byState, state);
+        tiles.appendChild(tile(
+          STATE_LABEL[state],
+          value === null ? fmt.none : fmt.int(value),
+          value === null ? 'Not reported' : null
+        ));
+      });
+      body.appendChild(tiles);
+
+      box.appendChild(body);
+
+      var foot = h('div', { className: 'card-foot' });
+      foot.appendChild(h('span', {
+        text: recording.state === 'never_recorded'
+          ? 'The lifecycle record has never been written to, so nothing below it has a history yet.'
+          : 'Lifecycle record last written ' +
+            (recording.lastRecordedAt ? fmt.ago(recording.lastRecordedAt) : fmt.none) + '.'
+      }));
+      box.appendChild(foot);
+      return box;
+    }
+
+    /* The figure card in the v2 vocabulary: a .card.kpi holding a label, a
+       value and an optional line of meta. The names are aria.css's, which is
+       the sheet this page loads. An earlier draft of this pane used .tile /
+       .tile-value / .tile-label, which are ops.css's -- the v1 sheet, which
+       jobs-live.html does not load -- so every figure on the page rendered at
+       body size in the body face with no tile around it at all. Unpainted
+       classes fail silently and look like a design choice. */
+    function tile(label, value, meta) {
+      var box = S.card('kpi');
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(h('div', { className: 'kpi-label', text: label }));
+      body.appendChild(h('div', { className: 'kpi-val', text: value }));
+      if (meta) body.appendChild(h('div', { className: 'kpi-meta' }, [h('span', { text: meta })]));
+      box.appendChild(body);
+      return box;
+    }
+
+    /* ------------------------------------------------------- what is wrong */
+
+    function attentionBand(attention, jobs, baseline) {
+      /* The multiple the route actually applied, not a 3 written into this
+         sentence. A route that changes the threshold and a pane that keeps
+         saying "three times" is how a page starts lying slowly. */
+      var multiple = baseline && fmt.isNum(baseline.stuckMedianMultiple)
+        ? baseline.stuckMedianMultiple
+        : null;
+      var stuck = list(attention.stuck);
+      var abandoned = list(attention.abandoned);
+      var scope = scopeOf(attention);
+
+      var section = S.band('Not clearing',
+        'Runs the platform has either lost or is taking far longer over than usual');
+      var box = S.card();
+      var body = h('div', { className: 'card-body' });
+
+      function finding(iconName, title, words) {
+        return h('div', { className: 'omit-item' }, [
+          S.icon(iconName),
+          h('div', {}, [
+            h('div', { className: 'omit-title', text: title }),
+            h('div', { className: 'omit-desc', text: words })
+          ])
+        ]);
+      }
+
+      var found = h('div', { className: 'omit' });
+      if (!abandoned.length && !stuck.length) {
+        found.appendChild(finding('check', 'Nothing flagged in what was read',
+          'No run in this read had been given up on or was past the usual duration for its ' +
+          'kind. The scope of that statement is below it.'));
+      }
+      if (abandoned.length) {
+        found.appendChild(finding('warn',
+          fmt.plural(abandoned.length, 'run') + ' given up on',
+          'The worker stopped reporting in long enough ago that the reaper will fail ' +
+          'them on its next sweep. They are not waiting for a person.'));
+      }
+      if (stuck.length) {
+        found.appendChild(finding('clock',
+          fmt.plural(stuck.length, 'run') + ' overdue',
+          'Still reporting in, and past ' +
+          (multiple === null ? 'the multiple of' : fmt.int(multiple) + ' times') +
+          ' the usual duration for their kind of work. The comparison is drawn against ' +
+          'each one in the table below.'));
+      }
+      body.appendChild(found);
+
+      var ids = abandoned.concat(stuck);
+      var named = jobs.filter(function (job) { return ids.indexOf(job.id) !== -1; });
+      if (named.length) {
+        var types = {};
+        named.forEach(function (job) { types[job.jobType] = (types[job.jobType] || 0) + 1; });
+        body.appendChild(h('p', {
+          className: 'tiny muted mt-sm',
+          text: 'Affecting ' + Object.keys(types).sort().map(function (jobType) {
+            return jobTypeLabel(jobType) + ' (' + types[jobType] + ')';
+          }).join(', ') + '.'
+        }));
+      }
+
+      box.appendChild(body);
+
+      /* The scope of the list, stated on the list. An empty or short list read
+         over a truncated queue is a narrower claim than it looks. */
+      var foot = h('div', { className: 'card-foot' });
+      var read = list(jobs).length;
+      foot.appendChild(h('span', {
+        text: scope === 'whole'
+          ? 'Read over the whole queue.'
+          : scope === 'unread'
+            ? 'This read did not say how much of the queue it covered, so the scope of the ' +
+              'line above is unread rather than whole.'
+            : read === 0
+              ? 'This read reached no jobs at all, so the line above covers nothing. It is not a ' +
+                'statement that nothing is wrong.'
+              : 'Read over the first ' + fmt.int(read) + ' jobs only, not the whole queue. ' +
+                'There may be more past that.'
+      }));
+      box.appendChild(foot);
+
+      section.appendChild(box);
       return section;
     }
 
-    /* ------------------------------------------- what the record leaves out */
+    /* ---------------------------------------------------------- the lanes */
 
-    function selectionNotes(capped) {
-      var notes = [];
+    function laneBand(lanes) {
+      var section = S.band('Lanes', 'Work is routed by what it needs, not by who asked');
 
-      if (capped) {
-        notes.push(noteLine('warn',
-          'A full page of open problems came back, worst first. Less severe ones can be ' +
-          'missing from it, so every count below is a floor rather than a total.'));
+      /* The route publishes every lane the platform routes to, holding work or
+         not, so an empty array is the route failing to answer rather than a
+         platform with no lanes. Said out loud; a band head over nothing reads
+         as a section that loaded and found nothing to show. */
+      if (!lanes.length) {
+        var none = S.card();
+        none.appendChild(h('div', { className: 'card-body' }, [
+          h('p', { className: 'tiny muted', text: 'No lane was reported. This read did not say how ' +
+            'work is distributed, which is not the same as work not being distributed.' })
+        ]));
+        section.appendChild(none);
+        return section;
       }
 
-      return notes;
-    }
+      var grid = h('div', { className: 'grid g2' });
 
-    function noteLine(iconName, text) {
-      var note = h('div', { className: 'note' });
-      note.appendChild(icon(iconName));
-      note.appendChild(h('div', { text: text }));
-      return note;
-    }
+      lanes.forEach(function (lane) {
+        var box = S.card();
+        box.appendChild(S.cardHead(LANE_LABEL[lane.lane] || lane.lane, null));
+        var body = h('div', { className: 'card-body' });
 
-    /* --------------------------------------------------------- right now */
+        body.appendChild(h('p', { className: 'tiny muted', text: LANE_NOTE[lane.lane] || '' }));
 
-    function rightNow(open, queues, capped) {
-      var section = S.band('Right now', 'What is being reported this minute');
-      var grid = h('div', { className: 'grid g4' });
+        var counts = h('div', { className: 'row row-wrap gap-sm mt-sm' });
+        ['queued', 'running', 'canceling'].forEach(function (state) {
+          var value = stateCount(lane.byState, state);
+          counts.appendChild(h('span', {
+            className: 'pill' + (value ? ' info' : ''),
+            text: STATE_LABEL[state] + ' ' + (value === null ? fmt.none : fmt.int(value))
+          }));
+        });
+        body.appendChild(counts);
 
-      var needing = model.needingAction(open).length;
-      var takenOn = model.takenOn(open).length;
+        var oldest = lane.oldestQueued || {};
+        var waitText;
+        if (oldest.state === 'known') {
+          waitText = 'Longest wait ' + dur(oldest.ageMs) + '.';
+        } else if (oldest.state === 'unknown') {
+          /* A real queue whose every job fell past the read's bound. Drawn as
+             an unknown age rather than as nothing waiting, which is the one
+             reading that would send an operator away. */
+          waitText = 'Something is waiting and its age is past the end of this read.';
+        } else if (oldest.state === 'none') {
+          waitText = 'Nothing waiting.';
+        } else {
+          /* Not one of the three answers the route publishes, or no answer at
+             all. "Nothing waiting" here would be a confident absence over a
+             field this pane could not read -- the same shape as the truncated
+             `completeness` below, and the one reading the comment at the top
+             of this file rules out for every lane. */
+          waitText = 'This read did not say whether anything is waiting here.';
+        }
+        body.appendChild(h('p', { className: 'tiny muted mt-sm', text: waitText }));
 
-      grid.appendChild(figureCard({
-        label: 'Needs a person',
-        availability: 'ready',
-        text: model.atLeast(fmt.int(needing), capped),
-        note: needing ? 'open, nobody on it yet' : 'nothing open without somebody on it'
-      }));
+        /* `jobTypes` is a sorted array of NAMES -- opsJobsView.ts builds it as
+           `[...new Set(laneCounts.map(row => row.jobType))].sort()`. It carries
+           no counts, so this line says what is in the lane and not how much of
+           each; the counts are in the table below.
 
-      grid.appendChild(figureCard({
-        label: 'Somebody is on it',
-        availability: 'ready',
-        text: model.atLeast(fmt.int(takenOn), capped),
-        note: takenOn ? 'taken on, still not closed' : 'nothing taken on'
-      }));
+           Anything that is not a string is dropped rather than labelled,
+           because `jobTypeLabel` of an object returns a dash and a row of
+           dashes reads as absence rather than as a bug -- the exact failure
+           this pane exists to avoid. If the route ever changes this shape the
+           line goes empty and says so, which is visible, rather than printing
+           dashes, which is not. */
+        var declared = list(lane.jobTypes);
+        var types = declared.filter(function (name) {
+          return typeof name === 'string' && name;
+        });
+        var typesText;
+        if (types.length) {
+          typesText = 'In this lane now: ' + types.map(jobTypeLabel).join(', ') + '.';
+        } else if (declared.length) {
+          /* The route listed something and none of it was readable as a name.
+             That is a shape this pane does not understand, and saying
+             "nothing of any kind" over it would be a confident claim about a
+             lane whose badges above may well say four are waiting. */
+          typesText = 'The kinds of work in this lane were reported in a shape this page ' +
+            'cannot read, so they are unread rather than absent.';
+        } else {
+          typesText = 'Nothing of any kind in this lane right now.';
+        }
+        body.appendChild(h('p', { className: 'tiny muted', text: typesText }));
 
-      grid.appendChild(figureCard(oldestWaitFigure(queues)));
-
-      /* The mock's headline figure. Nothing serves a job list, so it stays on
-         the page as words: an operator who does not know a figure is missing
-         reads its absence as a zero. */
-      grid.appendChild(figureCard({
-        label: 'Jobs running',
-        availability: 'unrecorded',
-        words: 'Not recorded',
-        note: 'no route serves a job list yet'
-      }));
+        box.appendChild(body);
+        grid.appendChild(box);
+      });
 
       section.appendChild(grid);
       return section;
     }
 
-    /* The longest any job is known to have been waiting. Known only while a
-       queue is over the line: the alerting records the oldest job's age when
-       it breaches and at no other time, so below the threshold this is an
-       absence rather than a zero, and it says which. */
-    function oldestWaitFigure(queues) {
-      /* A stopped queue's figure is the age at its last breaching sample, not
-         a wait anybody is doing now, so it cannot be the answer to "what is
-         the longest wait". Excluded here rather than clamped: the tile has an
-         absence to say and it should say it. */
-      var live = queues.filter(function (row) { return row.movement.state !== 'stopped'; });
-      var readable = live.filter(function (row) { return row.movement.oldest !== null; });
-
-      if (!live.length) {
-        return {
-          label: 'Oldest job waiting',
-          availability: 'unrecorded',
-          words: 'Not over the line',
-          /* Queue-scoped, deliberately: this figure is built from the queue
-             rows alone and cannot see the failing or elsewhere groups, so a
-             note about what is "open below" would be false whenever one of
-             those is still going. The hero is the thing that speaks for the
-             whole page. */
-          note: queues.length
-            ? 'no queue is over the line now; the queues below have stopped'
-            : 'the wait is only recorded while a queue is breaching'
-        };
-      }
-
-      if (!readable.length) {
-        return {
-          label: 'Oldest job waiting',
-          availability: 'unrecorded',
-          words: 'Cannot be read',
-          note: 'the observation or its unit did not come back'
-        };
-      }
-
-      var longest = readable.reduce(function (worst, row) {
-        return row.movement.oldest > worst.movement.oldest ? row : worst;
-      });
-
-      return {
-        label: 'Oldest job waiting',
-        availability: 'ready',
-        text: waited(longest.movement.oldest),
-        note: 'in ' + coded(longest.problem.scopeLabel || 'a request type')
-      };
-    }
-
-    /* Whether anything is in a position to notice. On this pane it is
-       structural rather than decorative: everything above is what the rules
-       caught, and a rule that is not answering catches nothing. */
-    function watchingCard(armed) {
-      if (!armed) {
-        return noteLine('warn',
-          'The rules could not be read, so how much of this is actually being watched is ' +
-          'unknown. What is above is what was reported, not necessarily what is happening.');
-      }
-
-      if (!armed.trustworthy) {
-        return noteLine('warn',
-          'None of the ' + armed.total + ' rules reached a verdict the last time they ran, ' +
-          'so nothing here is being watched now. What is above is what was caught before ' +
-          'that.');
-      }
-
-      var lastRun = fmt.utcStamp(armed.lastEvaluatedAt);
-      return noteLine('info',
-        armed.checking + ' of ' + armed.total + ' rules were checking' +
-        (lastRun ? ', last at ' + lastRun : '') +
-        (armed.insufficientData
-          ? '. ' + armed.insufficientData + ' had too little data to judge.'
-          : '.'));
-    }
-
-    /* --------------------------------------------------------- the queues */
-
-    function queueBand(queues, queueRule) {
-      var anyStopped = queues.some(function (row) {
-        return row.movement.state === 'stopped';
-      });
-      var section = S.band('Waiting, and whether it is clearing',
-        'The front of the queue, per request type' + (anyStopped
-          ? '. Rows that have stopped are last.'
-          : ''));
+    /* A working set that returned nothing while reporting itself bounded. */
+    function emptyWorkingSetBand(workingSet) {
+      var section = S.band('The work itself', 'Nothing came back');
       var box = S.card();
-      var body = h('div', { className: 'card-body col' });
-
-      queues.forEach(function (row) { body.appendChild(queueRow(row)); });
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(h('p', {
+        className: 'tiny muted',
+        text: 'This read returned no jobs and still reports itself as bounded at ' +
+          (fmt.isNum(workingSet.limit) ? fmt.int(workingSet.limit) : fmt.none) +
+          ', so it cannot be read as an empty queue. The counts above came from a ' +
+          'separate unbounded read and are the figure to trust.'
+      }));
       box.appendChild(body);
+      section.appendChild(box);
+      return section;
+    }
+
+    /* ----------------------------------------------------------- the work */
+
+    function jobsBand(jobs, workingSet, baseline) {
+      var section = S.band('The work itself', 'Oldest first');
+      var box = S.card();
+
+      var head = h('thead', {}, [
+        h('tr', {}, [
+          h('th', { text: 'Kind' }),
+          h('th', { text: 'Lane' }),
+          h('th', { text: 'State' }),
+          h('th', { text: 'Waiting' }),
+          h('th', { text: 'Running' }),
+          h('th', { text: 'Usually' }),
+          h('th', { text: 'Verdict' })
+        ])
+      ]);
+
+      var body = h('tbody');
+      jobs.forEach(function (job) {
+        var grade = job.progressGrade;
+        var row = h('tr', {}, [
+          h('td', {}, [
+            h('div', { className: 't-main', text: jobTypeLabel(job.jobType) }),
+            h('div', { className: 'tiny muted job-id', text: coded(String(job.id || '')) })
+          ]),
+          h('td', { text: LANE_LABEL[job.lane] || job.lane || fmt.none }),
+          h('td', { text: STATE_LABEL[job.state] || job.state || fmt.none }),
+          h('td', { text: dur(job.queuedMs) }),
+          h('td', { text: dur(job.runningMs) }),
+          h('td', { text: dur(job.baselineMedianMs) }),
+          h('td', {}, [
+            grade
+              ? h('span', {
+                className: 'pill' + (GRADE_TONE[grade] ? ' ' + GRADE_TONE[grade] : ''),
+                text: GRADE_LABEL[grade] || grade
+              })
+              : h('span', { className: 'muted', text: 'Not started' })
+          ])
+        ]);
+        body.appendChild(row);
+      });
+
+      /* The table is wider than a phone and the box around it scrolls, so the
+         columns past the edge have to be reachable without a pointer. Named
+         and focusable for the same reason as the Analytics cohort grid and the
+         Settings tables: a scroll region a keyboard cannot get to fails
+         WCAG 2.1.1, and an unnamed one announces nothing when it is reached. */
+      box.appendChild(h('div', { className: 'card-body' }, [
+        h('div', {
+          className: 'u-scroll',
+          tabindex: '0',
+          role: 'region',
+          'aria-label': 'Jobs in flight, by kind',
+          'data-retain': 'jobs-table'
+        }, [
+          h('table', { className: 'tbl' }, [head, body])
+        ])
+      ]));
 
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(h('span', {
-        text: queueRule && queueRule.thresholdLabel
-          ? 'The line is ' + coded(queueRule.thresholdLabel) + '.'
-          : 'The threshold did not come back, so the line these crossed is not shown.'
+        text: workingSet.truncated
+          ? 'Showing the oldest ' + fmt.int(workingSet.returned) + ' of ' +
+            fmt.int(workingSet.limit) + ' this read will carry. The queue is longer.'
+          : 'This is the whole queue, not a page of it.'
       }));
-      foot.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'Open Problems', 'btn btn-sm sp'));
+      foot.appendChild(h('span', { text: baselineWindowText(baseline) }));
       box.appendChild(foot);
 
       section.appendChild(box);
       return section;
     }
 
-    function queueRow(row) {
-      var problem = row.problem;
-      var verdict = MOVEMENT[row.movement.state];
-
-      var line = h('div', { className: 'queue-row' });
-
-      var words = h('div', { className: 'queue-words' });
-      words.appendChild(h('div', {
-        className: 't-main',
-        text: coded(problem.scopeLabel || 'Every request type')
-      }));
-      words.appendChild(h('div', { className: 't-sub', text: verdict.sentence }));
-      line.appendChild(words);
-
-      /* Past tense for a queue that has stopped, because both figures froze
-         when it did: the engine writes observedValue and lastObservedAt only
-         on a BREACHING observation, so "oldest" is the age at the last sample
-         that was over the line and "over the line" stops growing there. Drawn
-         with a live label they are a measurement of now that nobody took. */
-      var stopped = row.movement.state === 'stopped';
-      var facts = h('div', { className: 'queue-facts' });
-      facts.appendChild(factPill('clock', stopped ? 'oldest when it stopped' : 'oldest',
-        row.movement.oldest === null ? 'not readable' : waited(row.movement.oldest)));
-      facts.appendChild(factPill('history', stopped ? 'was over the line' : 'over the line',
-        row.movement.span === null ? 'not readable' : waited(row.movement.span)));
-      if (stopped) {
-        facts.appendChild(factPill('check', 'stopped', fmt.ago(problem.conditionClearedAt)));
+    /* "Usually" is a median taken over a window of its own, separate from the
+       throughput window below. No figure without the window it covers
+       (Stadiora/Aria#5562), so the period is read off the response and printed
+       beside the table; a response without one says so rather than letting
+       the column borrow the throughput window. */
+    function baselineWindowText(baseline) {
+      var win = (baseline && baseline.window) || {};
+      var from = fmt.utcDay(win.from);
+      var to = fmt.utcDay(win.to);
+      if (!fmt.isNum(win.days) || !from || !to) {
+        return '"Usually" is a median over a window this read did not state.';
       }
-      line.appendChild(facts);
-
-      /* The verdict carries its words as well as its tone: a screen that is
-         read rather than looked at says the same thing. */
-      var state = h('div', { className: 'queue-state' });
-      state.appendChild(h('span', {
-        className: 'pill ' + verdict.tone,
-        text: verdict.label
-      }));
-      if (problem.status === 'acknowledged') {
-        state.appendChild(h('span', { className: 'pill ghost', text: 'somebody is on it' }));
-      }
-      line.appendChild(state);
-
-      return line;
+      return '"Usually" is the median run time for that kind over the ' +
+        fmt.plural(win.days, 'day') + ' from ' + from + ' to ' + to + '.';
     }
 
-    function factPill(iconName, label, value) {
-      var pill = h('span', { className: 'pill ghost' });
-      pill.appendChild(icon(iconName));
-      pill.appendChild(h('span', { text: label + ' ' + value }));
-      return pill;
-    }
+    /* ----------------------------------------------------- what has flowed */
 
-    /* -------------------------------------------------------- failing now */
-
-    function failingBand(failing, failingRule) {
-      var section = S.band('Flowing, and failing', 'Nothing is waiting for these');
+    function throughputBand(throughput, recording) {
+      var section = S.band('What has flowed', 'From the lifecycle record, over a stated window');
       var box = S.card();
-      var body = h('div', { className: 'card-body col' });
+      var body = h('div', { className: 'card-body' });
 
-      failing.forEach(function (problem) {
-        var cleared = clearedAt(problem);
-        var line = h('div', { className: 'queue-row' });
+      /* Absence, not zeros. A recorder that has never written cannot report a
+         calm hour, and four tiles of 0 would say exactly that. */
+      if (!throughput) {
+        body.appendChild(S.stateBlock('info', 'Nothing has been recorded yet', [
+          recording.state === 'never_recorded'
+            ? 'The lifecycle record is empty, so there is no window to count over. ' +
+              'These figures are absent rather than zero.'
+            : 'The lifecycle record has stopped answering. What flowed is unread, not nothing.',
+          'The queue above is unaffected: it is counted from the jobs themselves.'
+        ], 3));
+        box.appendChild(body);
+        section.appendChild(box);
+        return section;
+      }
 
-        var words = h('div', { className: 'queue-words' });
-        words.appendChild(h('div', {
-          className: 't-main',
-          text: coded(problem.scopeLabel || 'Every request type')
+      var window_ = throughput.window || {};
+      var pct = rate(throughput.successRate);
+
+      var tiles = h('div', { className: 'grid g4' });
+      tiles.appendChild(tile('Finished', fmt.int(throughput.finished), null));
+      tiles.appendChild(tile('Completed', fmt.int(throughput.completed), null));
+      tiles.appendChild(tile('Failed', fmt.int(throughput.failed), null));
+      tiles.appendChild(tile(
+        'Got through',
+        pct === null ? fmt.none : pct + '%',
+        /* The ratio's two numbers stay next to the percentage. 1 of 1 and
+           847 of 848 are both 100% and they are not the same evidence. */
+        pct === null
+          ? 'Nothing finished to divide'
+          : fmt.int(throughput.successRate.numerator) + ' of ' +
+            fmt.int(throughput.successRate.denominator)
+      ));
+      body.appendChild(tiles);
+
+      var failedByType = list(throughput.failedByType);
+      if (failedByType.length) {
+        body.appendChild(h('p', {
+          className: 'tiny muted mt',
+          text: 'Failures were ' + failedByType.map(function (entry) {
+            return jobTypeLabel(entry.jobType) + ' (' + fmt.int(entry.jobs) + ')';
+          }).join(', ') + '.'
         }));
-        words.appendChild(h('div', {
-          className: 't-sub',
-          text: cleared === null
-            ? 'Work is being picked up and the answers are coming back wrong. This is not ' +
-              'a queue: nothing is waiting.'
-            : 'The answers were coming back wrong and are not any more. The figure beside ' +
-              'this is from when they were.'
+      }
+
+      if (fmt.isNum(throughput.canceled) && throughput.canceled > 0) {
+        body.appendChild(h('p', {
+          className: 'tiny muted',
+          text: fmt.plural(throughput.canceled, 'run') +
+            ' cancelled, which is a decision rather than a failure and is left out of the ' +
+            'figure above.'
         }));
-        line.appendChild(words);
-
-        var facts = h('div', { className: 'queue-facts' });
-        var observed = failingRule && failingRule.thresholdUnit === 'basis_points' &&
-          fmt.isNum(problem.observedValue) && problem.observedValue >= 0
-          ? fmt.percent(problem.observedValue)
-          : null;
-        facts.appendChild(factPill('check',
-          cleared === null ? 'finishing cleanly' : 'was finishing cleanly',
-          observed === null ? 'not readable' : observed));
-        if (cleared !== null) {
-          facts.appendChild(factPill('history', 'stopped', fmt.ago(problem.conditionClearedAt)));
-        }
-        line.appendChild(facts);
-
-        /* Severity keeps its own tone whether or not the condition has
-           stopped, and the condition is stated separately beside it. That is
-           how the Problems pane draws the same record — a severity pill at
-           pane-alerts.js:1031 and a Condition of "Stopped <ago>" or "Still
-           happening" at :1080 — and how the elsewhere band below draws it.
-           Severity is how bad it is rated, not a claim about the present. */
-        var state = h('div', { className: 'queue-state' });
-        state.appendChild(h('span', {
-          className: 'pill ' + (model.SEVERITY_TONE[problem.severity] === 'crit' ? 'down' : 'warn'),
-          text: model.SEVERITY_LABEL[problem.severity] || 'Unrated'
-        }));
-        if (cleared !== null) {
-          state.appendChild(h('span', { className: 'pill ghost', text: 'Stopped' }));
-        }
-        line.appendChild(state);
-
-        body.appendChild(line);
-      });
+      }
 
       box.appendChild(body);
 
+      /* No figure without the window it covers. */
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(h('span', {
-        text: failingRule && failingRule.thresholdLabel
-          ? 'The line is ' + coded(failingRule.thresholdLabel) + '.'
-          : 'The threshold did not come back, so the line these crossed is not shown.'
+        text: 'Over the ' + (fmt.isNum(window_.minutes) ? window_.minutes + ' minutes' : 'window')
+          + ' ending ' + (window_.to ? fmt.clock(window_.to) : fmt.none) + '.'
       }));
-      foot.appendChild(S.link(S.paneHref('history') || HISTORY_FILE,
-        'Why they failed', 'btn btn-sm sp'));
       box.appendChild(foot);
 
       section.appendChild(box);
       return section;
-    }
-
-    /* ------------------------------------------------------ everything else */
-
-    /* Open problems that are not about this pane. They are listed because an
-       operator standing here should not have to go looking to find out
-       something else is on fire, and each one names the pane that owns it
-       rather than pretending the work happens here. */
-    function elsewhereBand(elsewhere) {
-      var section = S.band('Open elsewhere', 'Not the queue, and not this pane');
-      var box = S.card();
-      var body = h('div', { className: 'card-body col' });
-
-      elsewhere.forEach(function (problem) {
-        var line = h('div', { className: 'queue-row' });
-
-        var words = h('div', { className: 'queue-words' });
-        words.appendChild(h('div', {
-          className: 't-main',
-          text: coded(problem.ruleTitle || problem.ruleKey || 'Unnamed rule')
-        }));
-        words.appendChild(h('div', {
-          className: 't-sub',
-          text: coded(problem.scopeLabel || 'Every request type')
-        }));
-        line.appendChild(words);
-
-        var facts = h('div', { className: 'queue-facts' });
-        facts.appendChild(h('span', {
-          className: 'pill ' + (model.SEVERITY_TONE[problem.severity] === 'crit' ? 'down' : 'warn'),
-          text: model.SEVERITY_LABEL[problem.severity] || 'Unrated'
-        }));
-        if (clearedAt(problem) !== null) {
-          facts.appendChild(factPill('check', 'stopped', fmt.ago(problem.conditionClearedAt)));
-        }
-        line.appendChild(facts);
-
-        var state = h('div', { className: 'queue-state' });
-        var file = model.PANE_FILE[problem.workPane];
-        if (file && problem.workPane !== 'jobs-live') {
-          state.appendChild(S.link(S.paneHref(paneKey(problem.workPane)) || file,
-            problem.workPaneLabel || 'Where the work is', 'btn btn-sm'));
-        } else {
-          state.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'Open Problems', 'btn btn-sm'));
-        }
-        line.appendChild(state);
-
-        body.appendChild(line);
-      });
-
-      box.appendChild(body);
-      section.appendChild(box);
-      return section;
-    }
-
-    /* The server names panes in its own words. This is the one place the two
-       vocabularies meet. */
-    var PANE_KEY = {
-      overview: 'overview',
-      'jobs-live': 'jobs',
-      'run-history': 'history',
-      spend: 'spend',
-      releases: 'releases'
-    };
-
-    function paneKey(workPane) {
-      return PANE_KEY[workPane] || null;
     }
 
     /* ------------------------------------------------- what is not here */
 
-    /* Named rather than drawn as an empty figure, and named as the thing that
-       is missing rather than as a feature that is coming. */
-    function missingBand() {
+    /* Shorter than it was, and still named rather than drawn as an empty
+       figure. Each entry says what is missing and why, not what is coming. */
+    function missingBand(capacity) {
       var section = S.band('What this pane cannot answer yet',
         'Named rather than drawn as an empty figure');
       var box = S.card();
       var body = h('div', { className: 'card-body omit' });
 
-      [
-        ['The jobs themselves',
-          'No route lists jobs, so there is no per-job table, no lane, no age per job and ' +
-            'no retry count. What is above is what a rule reported, which is a narrower thing.'],
-        ['How many are running or queued',
-          'Nothing serves a count of either. A tile reading zero and a tile with nothing ' +
-            'behind it look identical, so neither is drawn.'],
+      var entries = [
+        ['How busy the workers are',
+          /* Already a sentence when it arrives -- opsJobsView.ts:393 writes
+             "Nothing records how many workers exist or how many jobs each may
+             hold, so in-flight work has no denominator to be drawn against."
+             Printed as sent. Mapping it through a lookup keyed on codes the
+             route does not emit is how every live read ends up on the
+             fallback branch while a deleted field reads correctly. */
+          (capacity && typeof capacity.reason === 'string' && capacity.reason)
+            ? capacity.reason
+            : 'Nothing records how many workers exist, so in-flight work has no denominator.'],
+        ['Which attempt this is',
+          'A retry after a failure creates a new job rather than incrementing a counter, so ' +
+            'no row knows it is the second try. "Attempt 2 of 3" is absent from the platform, ' +
+            'not just from this page.'],
+        ['How far along a run is',
+          'Each job carries a progress number with no history behind it, and a job that has ' +
+            'reported nothing carries the same zero as one that has genuinely done nothing. ' +
+            'Drawn nowhere rather than drawn as a bar that might be lying.'],
+        ['Streaming',
+          'The approved design draws a third lane for chat replies. Chat streaming creates no ' +
+            'job at all, so a Streaming lane built from this read would report zero forever — ' +
+            'which is the one reading that would be worse than leaving it out.'],
         ['Cancel, retry and export',
-          'The approved design offers all three. Nothing serves a route behind any of them, ' +
-            'and a control that cannot succeed says the thing is within reach.']
-      ].forEach(function (entry) {
+          'The approved design offers all three. #5562 is read-only by decision and nothing ' +
+            'serves a route behind them, and a control that cannot succeed says the thing is ' +
+            'within reach.']
+      ];
+
+      entries.forEach(function (entry) {
         var item = h('div', { className: 'omit-item' });
         item.appendChild(icon('layers'));
         var words = h('div');
@@ -958,15 +1029,22 @@
       box.appendChild(body);
 
       var foot = h('div', { className: 'card-foot' });
-      foot.appendChild(h('span', {
-        text: 'This page does not refresh itself. What is above is a reading, not a feed.'
-      }));
+      /* Rebuilt on every refresh like everything else here, so each carries a
+         retain name or a keyboard operator parked on it loses focus. */
+      var toHistory = S.link(S.paneHref('history') || HISTORY_FILE,
+        'What happened', 'btn btn-sm');
+      toHistory.setAttribute(RETAIN_ATTR, 'jobs-link-history');
+      foot.appendChild(toHistory);
+      var toAlerts = S.link(S.paneHref('alerts') || ALERTS_FILE,
+        'Open Problems', 'btn btn-sm');
+      toAlerts.setAttribute(RETAIN_ATTR, 'jobs-link-alerts');
+      foot.appendChild(toAlerts);
       box.appendChild(foot);
 
       section.appendChild(box);
       return section;
     }
 
-    load();
+    load(true);
   });
 })(window);

@@ -755,7 +755,7 @@
       /* A channel that was never connected is where a problem goes to be
          missed, so it is stated here rather than only on the pane that owns
          it. */
-      var unconfigured = armed.channels.filter(function (c) { return !c.configured; });
+      var unconfigured = armed.channels.filter(function (c) { return c.configured !== true; });
       if (unconfigured.length) {
         row.appendChild(chip('warn', fmt.plural(unconfigured.length, 'route') + ' not set up'));
       }
@@ -864,13 +864,11 @@
        (`severityWords()` there too, Stadiora/Aria#10630), so two panes an
        operator moves between during one incident say one word for one state.
 
-       The two are not byte-identical: this `textOf()` accepts any non-empty
-       string and the Problems pane's TRIMS first, so they differ on every
-       severity carrying surrounding whitespace. Nothing but spaces reads
-       "Unknown" there and as a blank prefix here; `' critical '` reads
-       `critical` there and ` critical ` here. That is a defect of this file,
-       not of the agreement — filed rather than fixed on #10630's PR, which
-       does not own this pane's behaviour: Stadiora/Aria#10799.
+       Both panes' `textOf()` TRIM, which is what makes the agreement hold on
+       every payload rather than on the three #10630 tabulated. Until
+       Stadiora/Aria#10799 this one did not, so a severity of nothing but
+       spaces read "Unknown" on the Problems pane and printed a blank prefix
+       here — #10630's defect 1 surviving on the other pane by another route.
 
        Only a severity that did not arrive at all, or arrived as something
        that is not a word, falls back to "Unknown", because there is nothing
@@ -977,8 +975,36 @@
       return (typeof detail === 'string' && detail) ? detail : fallback;
     }
 
+    /* A string worth showing, or nothing.
+
+       Trimmed, because a severity of three spaces is a non-empty string and
+       would otherwise print as a blank where a word belongs — visible to
+       nobody, and indistinguishable from a row that never had one
+       (Stadiora/Aria#10799). The Problems pane's `textOf()` has always
+       trimmed; this is the two of them agreeing on every payload rather than
+       on the three #10630 happened to tabulate.
+
+       Every caller uses the RESOLVED value rather than testing with this and
+       rendering the raw field, because a predicate that trims over a value
+       that does not is the same defect wearing the fix.
+
+       No count of those callers lives here. Three were written into this
+       comment across three rounds of PR #124's review and all three were
+       wrong; the invariant is checked by
+       `ops-overview-blank-text.test.mjs`'s "padding any string the answer
+       carries changes nothing on the screen", which pads every string the
+       fixture holds and requires the rendered panel to come back
+       byte-identical. Check the render, not this line.
+
+       And note what this function returns for a value that does not
+       resolve: null. `S.h` maps that to an empty string, but a caller that
+       CONCATENATES it prints the four characters `null` — which is how
+       `chartName()` came to say "over the last 7 whole UTC days, null to
+       null" in review round 3. Concatenating callers must guard. */
     function textOf(value) {
-      return (typeof value === 'string' && value) ? value : null;
+      if (typeof value !== 'string') return null;
+      var trimmed = value.trim();
+      return trimmed || null;
     }
 
     /* The window a figure covers, in words, read from the answer rather than
@@ -1082,8 +1108,8 @@
 
       value(card, fmt.int(active));
       meta(card, peopleChange(people, active));
-      why(card, windowLabel(people.window) +
-        (textOf(people.environment) ? ', ' + people.environment : ''));
+      var environment = textOf(people.environment);
+      why(card, windowLabel(people.window) + (environment ? ', ' + environment : ''));
 
       /* The two apps, side by side and never added. The headline above them is
          the platform's own distinct count rather than their sum, so a reader
@@ -1097,7 +1123,7 @@
         pill.appendChild(h('span', {
           className: 'dot ' + seriesTone(app.tone), 'aria-hidden': 'true'
         }));
-        pill.appendChild(h('span', { text: app.label || app.app }));
+        pill.appendChild(h('span', { text: textOf(app.label) || textOf(app.app) || 'Unnamed app' }));
         pill.appendChild(h('span', { className: 'mono', text: fmt.int(app.active) }));
         return pill;
       });
@@ -1308,13 +1334,16 @@
       var rows = h('div', { className: 'kpi-rows' });
       var newest = null;
       platforms.forEach(function (platform) {
+        var code = textOf(platform.versionCode);
         rows.appendChild(h('div', { className: 'kpi-row' }, [
-          h('span', { className: 'kpi-plat', text: textOf(platform.label) || platform.platform }),
+          h('span', {
+            className: 'kpi-plat',
+            text: textOf(platform.label) || textOf(platform.platform) || 'Unnamed platform'
+          }),
           h('div', { className: 'spacer' }),
           h('span', {
             className: 'num',
-            text: platform.versionName +
-              (textOf(platform.versionCode) ? ' (' + platform.versionCode + ')' : '')
+            text: textOf(platform.versionName) + (code ? ' (' + code + ')' : '')
           })
         ]));
         var read = fmt.hoursSince(platform.fetchedAt);
@@ -1347,7 +1376,7 @@
       series.forEach(function (one) {
         var key = h('span', { className: seriesTone(one.color) });
         key.appendChild(h('i', { 'aria-hidden': 'true' }));
-        key.appendChild(h('span', { text: one.label || one.key }));
+        key.appendChild(h('span', { text: textOf(one.label) || textOf(one.key) || 'Unnamed series' }));
         legend.appendChild(key);
       });
 
@@ -1375,9 +1404,9 @@
         body.appendChild(lineChart(series, labels, activity.window));
         if (labels.length) {
           var axis = h('div', { className: 'axis-x', 'aria-hidden': 'true' });
-          axis.appendChild(h('span', { text: labels[0] }));
+          axis.appendChild(h('span', { text: labelAt(labels, 0) }));
           if (labels.length > 1) {
-            axis.appendChild(h('span', { text: labels[labels.length - 1] }));
+            axis.appendChild(h('span', { text: labelAt(labels, labels.length - 1) }));
           }
           body.appendChild(axis);
         }
@@ -1518,11 +1547,29 @@
        and its last reading, because none of that is announced from the <text>
        nodes inside a role="img". A series with no reading at all says so
        rather than being left out of the name. */
+    /* A day label the answer sent, resolved. The chart draws labels in four
+       places -- both ends of the x axis, both ends of the spoken chart name,
+       and the day a series last reported -- and every one of them read the
+       raw array. A label of spaces put its own padding into the axis and into
+       what a screen reader says. */
+    function labelAt(labels, index) {
+      return textOf(list(labels)[index]);
+    }
+
     function chartName(series, labels, win) {
       var head = 'People active each day, one line per app, over ' + windowPhrase(win);
-      if (labels.length) {
-        head += ', ' + labels[0] +
-          (labels.length > 1 ? ' to ' + labels[labels.length - 1] : '');
+      var first = labelAt(labels, 0);
+      var last = labelAt(labels, labels.length - 1);
+      /* Named only when BOTH ends resolve, and this guard is the whole point.
+         `labelAt()` returns null for a label that is blank or not a string,
+         and this is a string concatenation: without the guard the four
+         characters `null` land in the accessible name, which for a
+         role="img" chart is the only thing a screen-reader user gets. Saying
+         nothing costs nothing here -- `windowPhrase(win)` has already said
+         how long the window is. Naming one end and not the other would read
+         as a one-day window, so a half-resolved pair says neither. */
+      if (first && last) {
+        head += ', ' + first + (labels.length > 1 ? ' to ' + last : '');
       }
       return head + '. ' + series.map(function (one) {
         return seriesSentence(one, labels);
@@ -1530,7 +1577,7 @@
     }
 
     function seriesSentence(one, labels) {
-      var name = one.label || one.key;
+      var name = textOf(one.label) || textOf(one.key) || 'Unnamed series';
       var values = list(one.values);
       var reported = [];
       var lastIndex = -1;
@@ -1550,7 +1597,7 @@
         fmt.plural(values.length, 'day') + ' with a reading, ' +
         (lo === high ? 'flat at ' + fmt.int(lo) : 'low ' + fmt.int(lo) + ', high ' + fmt.int(high)) +
         ', ending ' + fmt.int(values[lastIndex]) +
-        (labels[lastIndex] ? ' on ' + labels[lastIndex] : '') + '.';
+        (labelAt(labels, lastIndex) ? ' on ' + labelAt(labels, lastIndex) : '') + '.';
     }
 
     /* One app's line, said in words: how much of the window it has a reading
@@ -1563,7 +1610,7 @@
 
       var row = h('div', { className: 'series-row ' + seriesTone(one.color) }, [
         h('i', { className: 'dot', 'aria-hidden': 'true' }),
-        h('span', { text: one.label || one.key }),
+        h('span', { text: textOf(one.label) || textOf(one.key) || 'Unnamed series' }),
         h('div', { className: 'spacer' })
       ]);
       row.appendChild(h('span', {
@@ -1571,7 +1618,7 @@
         text: lastIndex === -1
           ? 'No reading'
           : fmt.plural(values[lastIndex], 'person', 'people') +
-            (labels[lastIndex] ? ' on ' + labels[lastIndex] : '')
+            (labelAt(labels, lastIndex) ? ' on ' + labelAt(labels, lastIndex) : '')
       }));
       row.appendChild(h('span', {
         className: 'series-cover',
@@ -1593,8 +1640,9 @@
     }
 
     function appendNote(card, note) {
-      if (!textOf(note)) return;
-      card.appendChild(h('div', { className: 'card-foot' }, [h('span', { text: note })]));
+      var words = textOf(note);
+      if (!words) return;
+      card.appendChild(h('div', { className: 'card-foot' }, [h('span', { text: words })]));
     }
 
     /* --------------------------------------------- what is not drawn here */
@@ -1624,7 +1672,7 @@
         glyph.setAttribute('aria-hidden', 'true');
         item.appendChild(glyph);
         item.appendChild(h('div', {}, [
-          h('h4', { className: 'omit-title', text: textOf(entry.title) || entry.key }),
+          h('h4', { className: 'omit-title', text: textOf(entry.title) || textOf(entry.key) }),
           h('p', {
             className: 'omit-desc',
             text: textOf(entry.detail) ||

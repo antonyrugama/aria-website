@@ -92,23 +92,25 @@
       file: 'jobs-live.html', icon: 'live', label: 'Happening now', group: 'Right now',
       railId: 'jobs',
       question: 'What is Aria working on, and is anything stuck?',
-      /* Neither control this pane used to draw could act on its read. The
-         alerting record is kept per request type, so no app narrows it, and
-         the pane said so underneath in a note; the alerting watches production
-         and only production, so staging was refused rather than answered. Two
-         controls and an apology are the same defect as a button with no route
-         behind it: they say the narrowing is within reach. The note below is
-         the whole of what was true about them. */
+      /* The pane now reads GET /api/ops/jobs, and none of the three controls
+         survives the change either. The job lifecycle record is keyed by job
+         type rather than by app, so no app narrows it; it is written by
+         production workers only, so an environment control has one answer; and
+         a range control would contradict the page, which is the present tense
+         and always covers exactly now. A control that cannot reach the read
+         behind it says the narrowing is available when it is not, which is the
+         same defect as a button with no route. The note below is what is
+         actually true about them. */
       wave: 'W2', scope: false, range: false, env: false,
-      filterNote: 'The alerting record is kept per request type and covers production only, ' +
-        'so there is no app or environment filter'
+      filterNote: 'The job lifecycle record is kept per job type and is written by production ' +
+        'workers only, so there is no app or environment filter'
     },
     history: {
       file: 'run-history.html', icon: 'history', label: 'What happened', group: 'Right now',
       railId: 'history',
       question: 'Why did this fail, and is it happening to other people?',
-      /* The window is real: the pane applies it to the problems that came
-         back, and every figure is labelled with it. The app and environment
+      /* The window is real: the route counts and lists over it, and every
+         figure on the pane is labelled with it. The app and environment
          controls were not, for the same two reasons as Happening now above.
          Custom is gone from the window list for the reason it is absent from
          the two panes below: this bar carries a range name and nothing else,
@@ -116,8 +118,14 @@
          could reach was a refusal card. A value whose one answer is a refusal
          is an option in name only. */
       wave: 'W2', scope: false, range: ['24h', '7d', '30d'], rangeDefault: '7d', env: false,
-      filterNote: 'The alerting record is kept per request type and covers production only, ' +
-        'so there is no app or environment filter'
+      /* Reworded when the pane stopped drawing the alerting record and started
+         drawing the runs. The old note described a filter set that is still
+         absent for a different reason: the run record carries no client app
+         and no environment, so there is nothing an app control could narrow.
+         Request type and outcome are on the pane itself, built from what the
+         window actually holds. Stadiora/Aria#5563. */
+      filterNote: 'The run record carries no app or environment, so request type and ' +
+        'outcome are the narrowings — both are on the pane'
     },
     alerts: {
       file: 'alerts.html', icon: 'alerts', label: 'Problems', group: 'Right now',
