@@ -305,7 +305,7 @@ function retentionWindow(overrides) {
     effectiveDays: overrides.effectiveDays,
     minimumDays: Object.prototype.hasOwnProperty.call(overrides, 'minimumDays')
       ? overrides.minimumDays
-      : null,
+      : overrides.configurable ? 30 : null,
     source: overrides.source,
     configurable: overrides.configurable,
     fixedReason: Object.prototype.hasOwnProperty.call(overrides, 'fixedReason')
@@ -820,6 +820,96 @@ test('shortening a retention window requires the server phrase and sends it',
     assert.equal(sent[0].body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
   });
 
+test('shortening with a wrong phrase stays in the dialog and sends no request',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = retentionWindowRow(dom, 'Activity history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    const dialog = dom.doc.querySelector('.modal');
+    assert.ok(dialog, 'shortening did not open a confirmation dialog');
+    dialog.querySelector('.modal-input').value = 'delete rows tonight';
+    dialog.dispatch('submit');
+    await dom.settle();
+
+    assert.deepEqual(dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT'), [], 'a wrong confirmation phrase wrote to the server');
+    assert.ok(dom.doc.querySelector('.modal'), 'the dialog closed after the wrong phrase');
+    assert.match(allText(dom.doc.querySelector('.modal')),
+      /Type "delete rows on the next nightly pass" exactly to continue/);
+  });
+
+test('a server-required shortening confirmation reloads and opens a fresh phrase dialog',
+  async () => {
+    let reads = 0;
+    const first = retentionFixture();
+    const fresh = retentionFixture();
+    fresh.shorteningConfirmation = 'confirm the fresh server phrase';
+    fresh.windows = fresh.windows.map((row) => row.key === 'job_lifecycle_history'
+      ? { ...row, effectiveDays: 365, setting: retentionSetting(22, 365, '2026-09-24T19:00:00.000Z') }
+      : row);
+    const required = Object.assign(new Error('raw confirmation text must not render'), {
+      code: 'ops_retention_shortening_confirmation_required',
+      status: 400,
+    });
+    const dom = await boot({
+      retention: () => (++reads === 1 ? first : fresh),
+      retentionSave: () => required,
+      runTimers: false,
+    });
+    const row = retentionWindowRow(dom, 'Job and run history');
+    retentionControl(row, 'retention-days').value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === RETENTION).length, 2,
+      'the missing-confirmation response did not reload retention settings');
+    const reloaded = retentionWindowRow(dom, 'Job and run history');
+    assert.match(allText(reloaded), /365 days/,
+      'the row did not redraw with the freshly loaded retention length');
+    const dialog = dom.doc.querySelector('.modal');
+    assert.ok(dialog, 'the missing-confirmation response did not open the phrase dialog');
+    assert.equal(dom.doc.activeElement, dialog.querySelector('.modal-input'),
+      'focus did not move into the fresh confirmation phrase input');
+    assert.match(allText(dialog), /confirm the fresh server phrase/);
+    assert.match(allText(dialog), /Rows older than 120 days are deleted on the next nightly pass/);
+    assert.doesNotMatch(allText(dialog), /raw confirmation text|ops_retention_shortening_confirmation_required/);
+  });
+
+test('a successful retention save reloads and reports the server window',
+  async () => {
+    let current = retentionFixture();
+    const dom = await boot({
+      retention: () => current,
+      retentionSave: () => {
+        current = retentionFixture();
+        current.windows = current.windows.map((row) => row.key === 'raw_telemetry'
+          ? { ...row, effectiveDays: 240, setting: retentionSetting(11, 240, '2026-09-24T20:00:00.000Z') }
+          : row);
+        return { window: current.windows[0] };
+      },
+      runTimers: false,
+    });
+    const row = retentionWindowRow(dom, 'Activity history');
+    retentionControl(row, 'retention-days').value = '210';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === RETENTION).length, 2,
+      'a successful save did not reload retention settings');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Saved 240 days for Activity history/);
+    assert.doesNotMatch(toast, /Saved 210 days/,
+      'the success toast used the requested value instead of the server response');
+    const reloaded = retentionWindowRow(dom, 'Activity history');
+    assert.match(allText(reloaded), /240 days/);
+    assert.equal(dom.doc.activeElement, retentionControl(reloaded, 'retention-days'),
+      'focus did not return inside the saved retention row');
+  });
+
 test('a stale retention save reloads the pane with fixed copy and restores focus',
   async () => {
     const stale = Object.assign(new Error('raw stale backend text must not render'), {
@@ -868,7 +958,7 @@ test('retention validation refusals use fixed copy for every server code',
       ['ops_retention_days_invalid', /whole number of days/i],
       ['ops_retention_days_out_of_bounds', /inside the listed bounds/i],
       ['ops_retention_setting_version_invalid', /missing its latest version/i],
-      ['ops_retention_shortening_confirmation_required', /confirmation phrase/i],
+      ['ops_retention_shortening_confirmation_required', /changed somewhere else/i],
       ['ops_role_insufficient', /do not have access/i],
     ];
 

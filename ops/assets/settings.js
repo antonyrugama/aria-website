@@ -1469,21 +1469,16 @@
       return Array.isArray(rows) ? rows : [];
     }
 
-    function retentionSummary(result) {
-      if (result && result.error) return 'Could not be read';
-      var rows = retentionRows(result);
-      if (!rows.length) return 'No windows came back';
-      var configurable = rows.filter(function (row) { return row && row.configurable; }).length;
-      return fmt.plural(rows.length, 'window') + ' · ' +
-        fmt.plural(configurable, 'configurable');
-    }
-
     function daysWords(days) {
       return fmt.plural(days, 'day');
     }
 
+    function retentionUnswept(row) {
+      return row && row.fixedReason === 'not yet swept';
+    }
+
     function retentionLength(row) {
-      if (row && row.key === 'prompt_output' && row.fixedReason === 'not yet swept') {
+      if (retentionUnswept(row)) {
         return 'Not yet swept';
       }
       if (!row || row.effectiveDays === null || row.effectiveDays === undefined) {
@@ -1534,21 +1529,37 @@
       return String(row && row.key ? row.key : '');
     }
 
-    function retentionRestoreAfterReload(row) {
+    function retentionRestoreAfterReload(row, action) {
       retentionFocusAfterLoad = { key: retentionFocusKey(row) };
+      if (action && action.confirmDays !== undefined) {
+        retentionFocusAfterLoad.confirmDays = action.confirmDays;
+      }
       load();
     }
 
     function restoreRetentionFocus(stack) {
       if (!retentionFocusAfterLoad) return;
+      var pending = retentionFocusAfterLoad;
       var target = stack.querySelector('[data-role="retention-days"][data-retention-key="' +
-        retentionFocusAfterLoad.key + '"]');
+        pending.key + '"]');
       if (!target) {
         var card = stack.querySelector('[data-endpoint="' + RETENTION + '"]');
         target = card && card.querySelector('.card-title');
         if (target && !target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
       }
       retentionFocusAfterLoad = null;
+      if (target && pending.confirmDays !== undefined) {
+        target.value = String(pending.confirmDays);
+        var effective = Number(target.getAttribute('data-retention-effective-days'));
+        if (Number.isFinite(effective) && pending.confirmDays < effective) {
+          var row = target.closest && target.closest('.ret-row');
+          var save = row && row.querySelector('[data-role="retention-save"]');
+          if (save.dispatch) save.dispatch('click');
+          else if (save.click) save.click();
+          else save.dispatchEvent(new Event('click', { bubbles: true }));
+          return;
+        }
+      }
       if (target && target.focus) target.focus();
     }
 
@@ -1600,6 +1611,9 @@
         'aria-label': 'Days to keep ' + row.label
       });
       input.value = String(row.effectiveDays);
+      if (row.effectiveDays !== null && row.effectiveDays !== undefined) {
+        input.setAttribute('data-retention-effective-days', String(row.effectiveDays));
+      }
       if (bounds.min !== null && isFinite(bounds.min)) input.setAttribute('min', String(bounds.min));
       if (bounds.max !== null && isFinite(bounds.max)) input.setAttribute('max', String(bounds.max));
       return h('div', { className: 'ret-field' }, [label, input]);
@@ -1628,7 +1642,6 @@
         className: 'ret-status', role: 'status', 'aria-live': 'polite',
         text: retentionBoundsText(row)
       });
-      var busy = false;
 
       function value() {
         var n = Number(input.value);
@@ -1636,7 +1649,6 @@
       }
 
       function lock(on, word) {
-        busy = on;
         save.disabled = on;
         save.textContent = on ? word : 'Save';
       }
@@ -1659,8 +1671,13 @@
         session.call(RETENTION + '/' + encodeURIComponent(row.key), {
           method: 'PUT',
           body: body
-        }).then(function () {
-          var message = 'Saved ' + daysWords(days) + ' for ' + row.label + '.';
+        }).then(function (payload) {
+          var saved = payload && payload.data && payload.data.window;
+          var savedDays = saved && saved.effectiveDays !== null && saved.effectiveDays !== undefined
+            ? Number(saved.effectiveDays)
+            : days;
+          var savedLabel = saved && saved.label ? saved.label : row.label;
+          var message = 'Saved ' + daysWords(savedDays) + ' for ' + savedLabel + '.';
           if (dialog) dialog.close();
           S.toast('check', message);
           S.announce(message);
@@ -1673,6 +1690,13 @@
             S.toast('warn', stale);
             S.announce(stale);
             retentionRestoreAfterReload(row);
+            return;
+          }
+          if (!dialog && err && err.code === 'ops_retention_shortening_confirmation_required') {
+            var refresh = 'That retention window changed somewhere else. The pane is reloading.';
+            S.toast('warn', refresh);
+            S.announce(refresh);
+            retentionRestoreAfterReload(row, { confirmDays: days });
             return;
           }
           var message = retentionWriteMessage(err);
@@ -1738,7 +1762,7 @@
       if (!row.configurable && row.fixedReason) {
         main.appendChild(h('div', {
           className: 't-sub',
-          text: row.fixedReason === 'not yet swept'
+          text: retentionUnswept(row)
             ? 'No sweep owns this content yet.'
             : row.fixedReason
         }));

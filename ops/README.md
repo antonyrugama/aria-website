@@ -1117,8 +1117,12 @@ refused sign in.
 - The mock's band is called *Audit log*; here it is the **Access record**, which is what
   `pane-users.js` and the rest of this README already call the same thing. One name for one
   record.
-- The mock's audit band note reads `kept 7 years`. Nothing reports that window, so it is not
-  printed. The retention card says so instead.
+- The mock's audit band note reads `kept 7 years`. The retention route reports that as
+  `at least 2,555 days`, so the pane prints the floor rather than the mock's rounded prose.
+- The mock's Data retention card prints `7 years`, `Life of account`, an `Applied nightly at
+  03:00` chip and an `Aggregated rollups` row. The live route reports no schedule and no rollup
+  window, so the pane prints only the windows it received and uses `Kept permanently` for
+  account-life rows.
 - The mock's twelve-row role matrix is not built. It is an unverifiable claim about server
   behaviour rendered as a table that looks like data, which is the failure the source chips exist
   to prevent; the three roles it described are stated once, under the table whose Role column they
