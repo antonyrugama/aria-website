@@ -772,6 +772,8 @@ test('a delivery time the pane cannot read is not reported as never delivered',
       assert.match(note, /cannot be read/,
         `the note reads "${note}" -- a stamp the pane cannot read is a thing it cannot `
         + 'tell, and saying so is the only honest answer available');
+      assert.doesNotMatch(note, /No destination is set/,
+        `the note reads "${note}" even though the destination is configured`);
 
       assert.equal(rows.length, 2, `"${stamp}" drew ${rows.length} routing rows`);
       for (const row of rows) {
@@ -863,7 +865,7 @@ test('a delivery status no map knows does not draw the word undefined', async ()
 
   for (const status of ['constructor', 'toString', '__proto__', 'valueOf']) {
     for (const row of await render(status)) {
-      assert.equal(row.chip, 'Nothing sent yet',
+      assert.equal(row.chip, 'Not recognised',
         `a delivery status of "${status}" drew the chip "${row.chip}" -- an unrecognised `
         + 'status is a status the pane does not know, and it has a word for that');
       assert.doesNotMatch(row.text, /\[native code\]|function \w*\(/,
@@ -871,6 +873,64 @@ test('a delivery status no map knows does not draw the word undefined', async ()
     }
   }
 });
+
+test('a live configured destination with stale unconfigured status is not labelled unconfigured',
+  async () => {
+    const channels = prodChannels().map((c) => Object.assign(c, {
+      configured: true,
+      lastDeliveryStatus: 'unconfigured',
+      lastAttemptAt: null,
+      lastSuccessAt: null,
+    }));
+    const rows = routeRows(await boot({ rules: { rules: prodRules(), channels } }));
+
+    assert.ok(rows.length >= 2, 'no destination rows were drawn, so this test reads nothing');
+    for (const row of rows) {
+      assert.match(row.text, /Set up, nothing sent through it yet/,
+        `the row for ${row.name} did not use the live configured flag: ${row.text}`);
+      assert.equal(row.chip, 'Nothing sent yet',
+        `the row for ${row.name} trusted the stale stored status instead: ${row.chip}`);
+      assert.doesNotMatch(row.text, /Not configured/,
+        `the row for ${row.name} still contradicted itself: ${row.text}`);
+    }
+  });
+
+test('a live configured destination with stale unconfigured status and a delivery never says nothing was sent',
+  async () => {
+    const render = async (lastSuccessAt) => {
+      const channels = prodChannels().map((c) => Object.assign(c, {
+        configured: true,
+        lastDeliveryStatus: 'unconfigured',
+        lastAttemptAt: at(5 * MINUTE),
+        lastSuccessAt,
+      }));
+      return routeRows(await boot({ rules: { rules: prodRules(), channels } }));
+    };
+
+    const delivered = await render(at(5 * MINUTE));
+    assert.ok(delivered.length >= 2, 'no destination rows were drawn, so this test reads nothing');
+    for (const row of delivered) {
+      assert.match(row.text, /Last delivered \w/,
+        `the row for ${row.name} did not report the delivery stamp: ${row.text}`);
+      assert.equal(row.chip, 'Delivered',
+        `the row for ${row.name} claimed no delivery beside a delivery stamp: ${row.chip}`);
+      assert.doesNotMatch(row.text, /Nothing sent yet|Not configured/,
+        `the row for ${row.name} contradicted the delivery stamp: ${row.text}`);
+    }
+
+    for (const stamp of UNREADABLE) {
+      const rows = await render(stamp);
+      assert.equal(rows.length, 2, `"${stamp}" drew ${rows.length} routing rows`);
+      for (const row of rows) {
+        assert.match(row.text, /Delivered, at a time that cannot be read/,
+          `the row for ${row.name} did not report the unreadable delivery stamp: ${row.text}`);
+        assert.equal(row.chip, 'Delivered',
+          `the row for ${row.name} claimed no delivery beside an unreadable delivery stamp: ${row.chip}`);
+        assert.doesNotMatch(row.text, /Nothing sent yet|Not configured/,
+          `the row for ${row.name} contradicted the unreadable delivery stamp: ${row.text}`);
+      }
+    }
+  });
 
 test('a destination label made of spaces is not a label', async () => {
   /* #10799 on the row this PR rewrote, in both of its shapes.
