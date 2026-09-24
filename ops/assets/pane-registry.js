@@ -16,8 +16,8 @@
    ops/ so that a missing tag is caught here rather than in production.
 
    Public surface: window.OpsPaneRegistry = { PANES, GROUPS, WAVES, RANGES,
-   SCOPES, ENVS }. Everything on it is read-only by convention; nothing mutates
-   it. */
+   SCOPES, ENVS, maskContactDetails }. Everything on it is read-only by
+   convention; nothing mutates it. */
 (function (global) {
   'use strict';
 
@@ -212,12 +212,24 @@
     { v: 'staging', l: 'Staging' }
   ];
 
+  /* Anything that looks like a contact detail, replaced before it reaches the
+     DOM. The replacement names the kind of thing it hid, because an operator
+     reading a sentence with a hole in it needs to know a hole is what they are
+     looking at. */
+  var CONTACT_DETAIL = /[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+/g;
+
+  function maskContactDetails(text) {
+    if (typeof text !== 'string' || !text) return '';
+    return text.replace(CONTACT_DETAIL, '[hidden contact detail]');
+  }
+
   global.OpsPaneRegistry = {
     PANES: PANES,
     GROUPS: GROUPS,
     WAVES: WAVES,
     RANGES: RANGES,
     SCOPES: SCOPES,
-    ENVS: ENVS
+    ENVS: ENVS,
+    maskContactDetails: maskContactDetails
   };
 })(window);

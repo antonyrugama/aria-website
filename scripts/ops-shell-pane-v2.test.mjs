@@ -950,6 +950,40 @@ test('a formatter handed nothing prints the same placeholder on both systems', a
   }
 });
 
+test('shared failure messages preserve API copy and mask contact details', async () => {
+  const { shell } = await bootPane('overview', { definePane: () => {} });
+  const { operate } = v1Formatters();
+  const raw = {
+    code: 'ops_unknown_upstream',
+    message: 'database host leaked admin@example.invalid from upstream',
+  };
+
+  for (const [name, failureMessage] of [
+    ['v2 shell', shell.failureMessage],
+    ['v1 operate helper', operate.failureMessage],
+  ]) {
+    const unknown = failureMessage(raw);
+    assert.equal(unknown, 'database host leaked [hidden contact detail] from upstream',
+      name + ' did not preserve the API message with contact details masked');
+
+    assert.equal(
+      failureMessage({ code: 'ops_unreachable', message: 'raw network address admin@example.invalid' }),
+      'raw network address [hidden contact detail]',
+      name + ' stopped preserving API copy when a code is also present'
+    );
+    assert.equal(
+      failureMessage({ code: 'ops_role_insufficient' }),
+      'Your role does not allow this. Ask an owner if you need it.',
+      name + ' stopped mapping ops_role_insufficient to fixed copy when no API copy is present'
+    );
+  }
+
+  assert.equal(shell.failureMessage({}), 'The operations API did not answer.',
+    'v2 shell stopped using its declared fallback copy');
+  assert.equal(operate.failureMessage({}), 'Something went wrong loading this.',
+    'v1 operate helper stopped using its declared fallback copy');
+});
+
 /* ============================== the fixture hook ======================= */
 
 test('the local fixture hook is off anywhere that is not this machine', async () => {

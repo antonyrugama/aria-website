@@ -2592,7 +2592,7 @@ ops/assets/pane-registry.js "Custom is deliberately not offered, for the same re
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
-ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
+ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 114
 ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 634
 ```
 

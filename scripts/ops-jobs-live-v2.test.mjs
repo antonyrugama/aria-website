@@ -921,9 +921,9 @@ test('address-shaped text is masked before it reaches the screen', async () => {
     'an address the route sent was drawn in the clear');
   /* Counted per source rather than in total, because one masked call site
      would otherwise let the other leak. */
-  assert.match(text, /In this lane now: video \[address hidden\]/,
+  assert.match(text, /In this lane now: video \[hidden contact detail\]/,
     'an address inside a lane job type was not replaced by a named hole');
-  assert.match(text, /plan \[address hidden\]/,
+  assert.match(text, /plan \[hidden contact detail\]/,
     'an address inside a table job type was not replaced by a named hole');
 });
 
