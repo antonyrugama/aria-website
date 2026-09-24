@@ -114,6 +114,7 @@
   var h = S.h;
   var icon = S.icon;
   var fmt = S.fmt;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var RUNS_ENDPOINT = '/api/ops/runs';
   var PAGE = 50;
@@ -185,11 +186,8 @@
      The replacement names the kind of thing it hid rather than deleting it
      silently, because an operator reading a sentence with a hole in it needs
      to know a hole is what they are looking at. */
-  var EMAIL = /[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+/g;
-
   function coded(text) {
-    if (typeof text !== 'string' || !text) return '';
-    return text.replace(EMAIL, '[hidden contact detail]');
+    return maskContactDetails(text);
   }
 
   /* --------------------------------------------------------- the figures */
@@ -294,6 +292,8 @@
     /* The last window payload, kept so opening and closing a run can redraw
        without re-reading the window it sits in. */
     var lastWindow = null;
+
+    global.addEventListener('resize', updateTableScrollerRegions);
 
     /* The shell fires ops:filters with the starting selection once it is in
        the document, so the first read is that event rather than a call from
@@ -440,7 +440,24 @@
        return wherever it likes. */
     function render(data, selection) {
       draw(data, selection);
+      updateTableScrollerRegions();
       settleFocus();
+    }
+
+    function updateTableScrollerRegions() {
+      var wraps = content.querySelectorAll('.tbl-wrap');
+      for (var i = 0; i < wraps.length; i += 1) {
+        var wrap = wraps[i];
+        if (wrap.scrollWidth > wrap.clientWidth) {
+          wrap.setAttribute('tabindex', '0');
+          wrap.setAttribute('role', 'region');
+          wrap.setAttribute('aria-label', wrap.getAttribute('data-scroll-label') || 'Scrollable table');
+        } else {
+          wrap.removeAttribute('tabindex');
+          wrap.removeAttribute('role');
+          wrap.removeAttribute('aria-label');
+        }
+      }
     }
 
     function draw(data, selection) {
@@ -1057,7 +1074,10 @@
     function failureBand(data, selection) {
       var section = S.band('Why things failed', 'Most runs first, then most recent');
       var box = S.card();
-      var wrap = h('div', { className: 'tbl-wrap' });
+      var wrap = h('div', {
+        className: 'tbl-wrap',
+        'data-scroll-label': 'Why things failed'
+      });
       var table = h('table', { className: 'tbl' });
 
       var head = h('thead');
@@ -1149,7 +1169,10 @@
     function runsBand(data, selection) {
       var section = S.band('The runs', 'Newest first');
       var box = S.card();
-      var wrap = h('div', { className: 'tbl-wrap' });
+      var wrap = h('div', {
+        className: 'tbl-wrap',
+        'data-scroll-label': 'The runs'
+      });
       var table = h('table', { className: 'tbl' });
 
       var head = h('thead');

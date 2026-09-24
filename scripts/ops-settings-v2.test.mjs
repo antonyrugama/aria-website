@@ -1419,6 +1419,8 @@ test('a revoke with no reason never reaches the server', async () => {
 
 test('a refusal from the server is shown in the dialog that asked for it', async () => {
   const refusal = new Error('That session belongs to an account you may not change.');
+  refusal.code = 'ops_role_insufficient';
+  refusal.status = 403;
   const dom = await boot({ revoke: () => refusal });
   const accounts = cardByTitle(dom, 'Accounts');
   buttonsIn(accounts).filter((b) => /revoke/i.test(allText(b)))[0].dispatch('click');

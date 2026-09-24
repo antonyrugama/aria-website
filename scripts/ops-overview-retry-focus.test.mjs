@@ -3,9 +3,8 @@
    Stadiora/Aria#10771 — the rules read was the one read with no way to ask
    again. Its failure was reported honestly (the ribbon says `rules unread`,
    the queue card says whether the checks are running could not be read) and
-   then the operator was stranded: nothing to press, and not even the error
-   the request came back with. Reloading the page was the only way to retry,
-   which also re-runs the two reads that had already worked.
+   then the operator was stranded: nothing to press. Reloading the page was the
+   only way to retry, which also re-runs the two reads that had already worked.
 
    Stadiora/Aria#10784 — pressing any Try again re-renders the panel, which
    destroys the button that was pressed. Focus fell back to the document: the
@@ -340,9 +339,12 @@ test('the retry sits with the rules failure in every state that can draw one', a
      the problems failure when both reads are down — and the operator has to be
      offered the same control in all three. */
   const states = [
-    ['a queue with rows', { rules: boom('rules') }],
-    ['an empty queue', { rules: boom('rules'), problems: { problems: [] } }],
-    ['the problems read down too', { rules: boom('rules'), problems: boom('problems') }],
+    ['a queue with rows', { rules: boom('rules for admin@example.invalid') }],
+    ['an empty queue', { rules: boom('rules for admin@example.invalid'), problems: { problems: [] } }],
+    ['the problems read down too', {
+      rules: boom('rules for admin@example.invalid'),
+      problems: boom('problems for owner@example.invalid'),
+    }],
   ];
   for (const [what, options] of states) {
     const dom = await boot(options);
@@ -351,8 +353,10 @@ test('the retry sits with the rules failure in every state that can draw one', a
       .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE);
     assert.equal(mine.length, 1,
       `with ${what} the rules failure drew ${mine.length} retries, not one`);
-    assert.ok(allText(panel).indexOf('rules is down') !== -1,
-      `with ${what} the operator is not told what the rules read came back with`);
+    assert.ok(allText(panel).indexOf('rules for [hidden contact detail] is down') !== -1,
+      `with ${what} the operator is not shown the masked rules failure copy`);
+    assert.ok(allText(panel).indexOf('@example.invalid') === -1,
+      `with ${what} a raw address reached the pane`);
   }
 });
 

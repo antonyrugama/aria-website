@@ -33,6 +33,7 @@
 /* A table wider than its card scrolls rather than pushing the page wide.
    scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
 .tbl-wrap { overflow-x: auto; }
+.tbl-wrap:focus-visible { outline-offset: -2px; }
 
 /* Both tables put the thing being named in the first column — a failure
    reason, or the time a run finished — and that is the one cell that has to

@@ -31,6 +31,7 @@
   var shell = global.OpsShell;
   var h = shell.h;
   var icon = shell.icon;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -706,21 +707,26 @@
     return wrap;
   }
 
+  var FAILURE_FALLBACK = 'Something went wrong loading this.';
+  var FAILURE_MESSAGES = {
+    ops_unreachable: 'Could not reach the operations API. Check your connection and try again.',
+    ops_role_insufficient: 'Your role does not allow this. Ask an owner if you need it.',
+    ops_route_missing: 'This part of the dashboard is not answering yet.',
+    ops_bad_response: 'The operations API answered with something this page could not read.'
+  };
+
   /* Turns any failure into the sentence an operator should read. The API's own
      message is used where there is one, because it is written for this screen;
-     the fallbacks cover the cases where there is not. */
+     contact details are masked before it reaches the DOM. */
   function failureMessage(err) {
-    if (!err) return 'Something went wrong loading this.';
-    if (err.code === 'ops_unreachable') {
-      return 'Could not reach the operations API. Check your connection and try again.';
+    var code = err && err.code;
+    if (err && typeof err.message === 'string' && err.message) {
+      return maskContactDetails(err.message);
     }
-    if (err.code === 'ops_role_insufficient') {
-      return 'Your role does not allow this. Ask an owner if you need it.';
+    if (Object.prototype.hasOwnProperty.call(FAILURE_MESSAGES, code)) {
+      return FAILURE_MESSAGES[code];
     }
-    if (err.code === 'ops_route_missing') {
-      return 'This part of the dashboard is not answering yet.';
-    }
-    return err.message || 'Something went wrong loading this.';
+    return FAILURE_FALLBACK;
   }
 
   /* ---------------------------------------------------------------- pieces */
