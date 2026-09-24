@@ -14,10 +14,9 @@
    nothing here reads anything until definePane's callback runs.
 
    SECOND, IT SAYS WHICH HALF OF ITSELF IS REAL. Six areas are on screen and
-   four of them are read from an API: administrators, active sessions, the
-   access record and outside connections. Retention windows and the
-   cost-category mapping have no endpoint to read or write, so they print no
-   figure at all.
+   five of them are read from an API: administrators, active sessions, the
+   access record, data retention and outside connections. The cost-category
+   mapping has no endpoint to read or write, so it prints no figure at all.
    They say what is missing and which of "not built" and "not reported"
    applies. Rendering the remaining static cards as populated tables would be the worst outcome
    available, because a number nobody can check is indistinguishable from one
@@ -56,6 +55,7 @@
   var SESSIONS = '/api/ops/sessions';
   var AUDIT = '/api/ops/audit';
   var INTEGRATIONS = '/api/ops/integrations';
+  var RETENTION = '/api/ops/settings/retention';
   var OPS_SOURCE_PARTS = ['', 'api', 'ops'];
   var AUDIT_PAGE = 50;
 
@@ -77,7 +77,8 @@
     'admin.session_revoke_failed': 'Revoke refused',
     'admin.refresh_failed': 'Sign in refresh failed',
     'admin.refresh_reuse_detected': 'Session token reused',
-    'admin.refresh_grace_used': 'Two tabs refreshed at once'
+    'admin.refresh_grace_used': 'Two tabs refreshed at once',
+    'settings.retention_window_update': 'Changed a retention window'
   };
 
   /* What kind of thing an action was done to, said the way the rest of the
@@ -85,7 +86,8 @@
      reason an unrecognised action is. */
   var TARGET_LABELS = {
     ops_admin_session: 'sign in session',
-    ops_admin_account: 'administrator account'
+    ops_admin_account: 'administrator account',
+    ops_retention_setting: 'retention setting'
   };
 
   var INTEGRATION_FAILURE_LABELS = {
@@ -99,6 +101,20 @@
     untrusted_next_link: 'The service returned an unsafe next-page link'
   };
   var INTEGRATION_UNKNOWN_FAILURE = 'An unrecognised failure reason was reported';
+  var RETENTION_READ_ERRORS = {
+    ops_role_insufficient: 'You do not have access to data retention settings.',
+    ops_auth_required: 'Sign in again to read data retention settings.'
+  };
+  var RETENTION_WRITE_ERRORS = {
+    ops_retention_window_unknown: 'That retention window is no longer known. Reload and try again.',
+    ops_retention_window_fixed: 'That retention window is fixed by policy and cannot be changed here.',
+    ops_retention_days_invalid: 'Enter a whole number of days.',
+    ops_retention_days_out_of_bounds: 'Enter a value inside the listed bounds.',
+    ops_retention_setting_version_invalid: 'This window is missing its latest version. Reload and try again.',
+    ops_retention_shortening_confirmation_required: 'Type the confirmation phrase before shortening this window.',
+    ops_reauth_required: 'Confirm your password to change data retention settings.',
+    ops_role_insufficient: 'You do not have access to change data retention settings.'
+  };
 
   /* ------------------------------------------------------------ formatting */
 
@@ -332,7 +348,8 @@
     form.appendChild(reason);
     form.appendChild(h('p', {
       className: 'modal-hint',
-      text: 'Recorded against your name. It cannot be edited or removed afterwards.'
+      text: opts.inputHint ||
+        'Recorded against your name. It cannot be edited or removed afterwards.'
     }));
 
     var row = h('div', { className: 'row mt' });
@@ -451,7 +468,11 @@
          round trip. It is not the check that matters: that one is the
          server's, and it still runs. */
       if (!text) {
-        controller.fail('Give a reason. It is recorded with this action.');
+        controller.fail(opts.emptyMessage || 'Give a reason. It is recorded with this action.');
+        return;
+      }
+      if (opts.expectedValue && text !== opts.expectedValue) {
+        controller.fail('Type "' + opts.expectedValue + '" exactly to continue.');
         return;
       }
       reason.removeAttribute('aria-invalid');
@@ -485,6 +506,7 @@
       host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: null,
       token: 0
     };
+    var retentionFocusAfterLoad = null;
 
     /* ---------------------------------------------------------------- reads */
 
@@ -547,17 +569,18 @@
         readAdmins(),
         soft(session.call(SESSIONS)),
         soft(session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: 0 } })),
+        softObject(session.call(RETENTION)),
         softObject(session.call(INTEGRATIONS))
       ]).then(function (results) {
         if (token !== loadToken) return;
-        render(results[0], results[1], results[2], results[3]);
+        render(results[0], results[1], results[2], results[3], results[4]);
       }, function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
       });
     }
 
-    function render(adminRows, sessionResult, recordResult, integrationResult) {
+    function render(adminRows, sessionResult, recordResult, retentionResult, integrationResult) {
       var admins = Array.isArray(adminRows) ? adminRows : [];
 
       /* Empty is a real state with a real trigger, and here it is a narrow
@@ -572,18 +595,20 @@
       }
 
       var sessions = sessionResult.rows || [];
-      var degraded = !!(sessionResult.error || recordResult.error || integrationResult.error);
+      var degraded = !!(sessionResult.error || recordResult.error ||
+        retentionResult.error || integrationResult.error);
 
       var stack = h('div', { className: 'stack' });
       stack.appendChild(hero(admins, sessions, sessionResult.error));
       stack.appendChild(administratorsBand(admins, sessions, sessionResult));
       stack.appendChild(sessionsBand(admins, sessions, sessionResult));
       stack.appendChild(recordBand(recordResult));
-      stack.appendChild(keepBand());
+      stack.appendChild(keepBand(retentionResult));
       stack.appendChild(integrationsBand(integrationResult));
 
       if (degraded) region.degraded(stack);
       else region.show(stack);
+      restoreRetentionFocus(stack);
     }
 
     function nothingBehindIt() {
@@ -1433,6 +1458,341 @@
       return err && (err.code === 'ops_role_insufficient' || err.status === 403);
     }
 
+    /* ------------------------------------------------------- data retention */
+
+    function retentionData(result) {
+      return result && result.data ? result.data : {};
+    }
+
+    function retentionRows(result) {
+      var rows = retentionData(result).windows;
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function retentionSummary(result) {
+      if (result && result.error) return 'Could not be read';
+      var rows = retentionRows(result);
+      if (!rows.length) return 'No windows came back';
+      var configurable = rows.filter(function (row) { return row && row.configurable; }).length;
+      return fmt.plural(rows.length, 'window') + ' · ' +
+        fmt.plural(configurable, 'configurable');
+    }
+
+    function daysWords(days) {
+      return fmt.plural(days, 'day');
+    }
+
+    function retentionLength(row) {
+      if (row && row.key === 'prompt_output' && row.fixedReason === 'not yet swept') {
+        return 'Not yet swept';
+      }
+      if (!row || row.effectiveDays === null || row.effectiveDays === undefined) {
+        return 'Kept permanently';
+      }
+      return daysWords(row.effectiveDays);
+    }
+
+    function retentionMinimum(row) {
+      if (!row || row.minimumDays === null || row.minimumDays === undefined) return null;
+      return 'at least ' + daysWords(row.minimumDays);
+    }
+
+    function retentionSourceLabel(row) {
+      if (!row) return 'Source not reported';
+      if (row.source === 'setting') return 'Your setting';
+      if (row.source === 'environment_default') return 'Default';
+      if (row.source === 'policy') return 'Fixed by policy';
+      return 'Source not reported';
+    }
+
+    function retentionWriteMessage(err) {
+      if (err && RETENTION_WRITE_ERRORS[err.code]) return RETENTION_WRITE_ERRORS[err.code];
+      return 'The retention window could not be saved. Reload and try again.';
+    }
+
+    function retentionReadMessage(err) {
+      if (err && RETENTION_READ_ERRORS[err.code]) return RETENTION_READ_ERRORS[err.code];
+      if (err && (err.status === 403 || err.code === 'ops_role_insufficient')) {
+        return RETENTION_READ_ERRORS.ops_role_insufficient;
+      }
+      return 'The data retention settings could not be read. Try again.';
+    }
+
+    function retentionSettingVersion(row) {
+      return row && row.setting ? row.setting.updatedAt || null : null;
+    }
+
+    function retentionBounds(row) {
+      var bounds = row && row.bounds ? row.bounds : {};
+      return {
+        min: bounds.minDays === null || bounds.minDays === undefined ? null : Number(bounds.minDays),
+        max: bounds.maxDays === null || bounds.maxDays === undefined ? null : Number(bounds.maxDays)
+      };
+    }
+
+    function retentionFocusKey(row) {
+      return String(row && row.key ? row.key : '');
+    }
+
+    function retentionRestoreAfterReload(row) {
+      retentionFocusAfterLoad = { key: retentionFocusKey(row) };
+      load();
+    }
+
+    function restoreRetentionFocus(stack) {
+      if (!retentionFocusAfterLoad) return;
+      var target = stack.querySelector('[data-role="retention-days"][data-retention-key="' +
+        retentionFocusAfterLoad.key + '"]');
+      if (!target) {
+        var card = stack.querySelector('[data-endpoint="' + RETENTION + '"]');
+        target = card && card.querySelector('.card-title');
+        if (target && !target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      }
+      retentionFocusAfterLoad = null;
+      if (target && target.focus) target.focus();
+    }
+
+    function retentionFailureBody(err, retry) {
+      var body = h('div', { className: 'card-body' });
+      var block = S.stateBlock('warn', 'Data retention could not be read', [
+        retentionReadMessage(err),
+        'Nothing here is a zero. These windows are unread, not absent.'
+      ], 4);
+      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
+      again.addEventListener('click', retry);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      body.appendChild(block);
+      return body;
+    }
+
+    function retentionDeniedBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('lock', 'You do not have access to data retention', [
+        'Retention settings are limited to the owner role.',
+        'No retention window is changed from this page.'
+      ], 4));
+      return body;
+    }
+
+    function noRetentionBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('empty', 'No retention windows came back', [
+        'The route answered, but it did not name any windows.',
+        'Nothing here is zero-filled, and no retention length is invented.'
+      ], 4));
+      return body;
+    }
+
+    function retentionDeniedError(err) {
+      return err && (err.code === 'ops_role_insufficient' || err.status === 403);
+    }
+
+    function retentionInput(row, index) {
+      var bounds = retentionBounds(row);
+      var id = 'retentionDays-' + index;
+      var label = h('label', {
+        className: 'ret-field-label', 'for': id, text: 'Days to keep'
+      });
+      var input = h('input', {
+        className: 'ret-input', id: id, type: 'number', step: '1',
+        'data-role': 'retention-days',
+        'data-retention-key': retentionFocusKey(row),
+        'aria-label': 'Days to keep ' + row.label
+      });
+      input.value = String(row.effectiveDays);
+      if (bounds.min !== null && isFinite(bounds.min)) input.setAttribute('min', String(bounds.min));
+      if (bounds.max !== null && isFinite(bounds.max)) input.setAttribute('max', String(bounds.max));
+      return h('div', { className: 'ret-field' }, [label, input]);
+    }
+
+    function retentionBoundsText(row) {
+      var bounds = retentionBounds(row);
+      if (bounds.min !== null && bounds.max !== null) {
+        return 'Allowed range: ' + daysWords(bounds.min) + ' to ' + daysWords(bounds.max) + '.';
+      }
+      if (bounds.min !== null) return 'Minimum: ' + daysWords(bounds.min) + '.';
+      if (bounds.max !== null) return 'Maximum: ' + daysWords(bounds.max) + '.';
+      return 'No editable bounds were reported.';
+    }
+
+    function retentionAction(row, phrase, index) {
+      var form = h('div', { className: 'ret-editor' });
+      var field = retentionInput(row, index);
+      var input = field.querySelector('[data-role="retention-days"]');
+      var save = h('button', {
+        className: 'btn btn-sm btn-primary', type: 'button', text: 'Save',
+        'data-role': 'retention-save',
+        'aria-label': 'Save retention window for ' + row.label
+      });
+      var status = h('div', {
+        className: 'ret-status', role: 'status', 'aria-live': 'polite',
+        text: retentionBoundsText(row)
+      });
+      var busy = false;
+
+      function value() {
+        var n = Number(input.value);
+        return Number.isInteger(n) ? n : null;
+      }
+
+      function lock(on, word) {
+        busy = on;
+        save.disabled = on;
+        save.textContent = on ? word : 'Save';
+      }
+
+      function refuse(message) {
+        status.textContent = message;
+        input.setAttribute('aria-invalid', 'true');
+        S.toast('warn', message);
+        S.announce(message);
+      }
+
+      function send(days, confirmation, dialog) {
+        lock(true, 'Saving');
+        input.removeAttribute('aria-invalid');
+        var body = {
+          retentionDays: days,
+          expectedUpdatedAt: retentionSettingVersion(row)
+        };
+        if (confirmation !== undefined) body.confirmation = confirmation;
+        session.call(RETENTION + '/' + encodeURIComponent(row.key), {
+          method: 'PUT',
+          body: body
+        }).then(function () {
+          var message = 'Saved ' + daysWords(days) + ' for ' + row.label + '.';
+          if (dialog) dialog.close();
+          S.toast('check', message);
+          S.announce(message);
+          retentionRestoreAfterReload(row);
+        }, function (err) {
+          lock(false);
+          if (err && err.code === 'ops_retention_setting_stale') {
+            var stale = 'That retention window changed somewhere else. The pane is reloading.';
+            if (dialog) dialog.close();
+            S.toast('warn', stale);
+            S.announce(stale);
+            retentionRestoreAfterReload(row);
+            return;
+          }
+          var message = retentionWriteMessage(err);
+          status.textContent = message;
+          if (dialog) {
+            dialog.fail(message);
+            return;
+          }
+          S.toast('warn', message);
+          S.announce(message);
+        });
+      }
+
+      save.addEventListener('click', function () {
+        var days = value();
+        var bounds = retentionBounds(row);
+        if (days === null) {
+          refuse('Enter a whole number of days.');
+          return;
+        }
+        if ((bounds.min !== null && days < bounds.min) ||
+          (bounds.max !== null && days > bounds.max)) {
+          refuse('Enter a value inside the listed bounds.');
+          return;
+        }
+        if (row.effectiveDays !== null && row.effectiveDays !== undefined &&
+          days < row.effectiveDays) {
+          confirmAction({
+            title: 'Shorten ' + row.label,
+            lines: [
+              'Rows older than ' + daysWords(days) + ' are deleted on the next nightly pass.',
+              'This changes what the sweep is allowed to delete. It is not a filter on what is read back.'
+            ],
+            reasonLabel: 'Type "' + phrase + '"',
+            inputHint: 'Type the phrase exactly. The server checks it before saving.',
+            emptyMessage: 'Type the confirmation phrase before shortening this window.',
+            expectedValue: phrase,
+            confirmLabel: 'Shorten window',
+            focusOnClose: function () { return input; },
+            onConfirm: function (text, dialog) {
+              send(days, text, dialog);
+            }
+          });
+          return;
+        }
+        send(days, undefined);
+      });
+
+      form.appendChild(field);
+      form.appendChild(h('div', { className: 'ret-actions' }, [save]));
+      form.appendChild(status);
+      return form;
+    }
+
+    function retentionRow(row, phrase, index) {
+      var item = h('div', { className: 'ret-row' });
+      var main = h('div', { className: 'ret-main' });
+      main.appendChild(h('div', { className: 't-main', text: row.label || row.key || 'Unnamed window' }));
+      main.appendChild(h('div', {
+        className: 't-sub',
+        text: row.description || 'No description was reported.'
+      }));
+      if (!row.configurable && row.fixedReason) {
+        main.appendChild(h('div', {
+          className: 't-sub',
+          text: row.fixedReason === 'not yet swept'
+            ? 'No sweep owns this content yet.'
+            : row.fixedReason
+        }));
+      }
+
+      var meta = h('div', { className: 'ret-meta' });
+      var length = h('div', { className: 'num strong', text: retentionLength(row) });
+      var minimum = retentionMinimum(row);
+      if (minimum) length.appendChild(h('span', { className: 't-sub', text: minimum }));
+      meta.appendChild(length);
+      meta.appendChild(pill(row.configurable ? 'acc' : 'vio',
+        row.configurable ? 'gear' : 'lock',
+        row.configurable ? 'Configurable' : 'Locked'));
+      meta.appendChild(pill('ghost', null, retentionSourceLabel(row)));
+
+      item.appendChild(main);
+      item.appendChild(meta);
+      if (row.configurable) item.appendChild(retentionAction(row, phrase, index));
+      return item;
+    }
+
+    function retentionList(result) {
+      var data = retentionData(result);
+      var phrase = data.shorteningConfirmation || 'delete rows on the next nightly pass';
+      var rows = retentionRows(result);
+      var body = h('div', { className: 'card-body' });
+      var list = h('div', { className: 'ret-list' });
+      rows.forEach(function (row, index) {
+        list.appendChild(retentionRow(row, phrase, index));
+      });
+      body.appendChild(list);
+      return body;
+    }
+
+    function retentionCard(result) {
+      var host = liveCard('settings/retention', 'Data retention',
+        'Windows, and which of them are fixed');
+      var rows = retentionRows(result);
+      if (result && retentionDeniedError(result.error)) {
+        host.appendChild(retentionDeniedBody());
+      } else if (result && result.error) {
+        host.appendChild(retentionFailureBody(result.error, load));
+      } else if (!rows.length) {
+        host.appendChild(noRetentionBody());
+      } else {
+        host.appendChild(retentionList(result));
+        host.appendChild(cardFoot(
+          'Shortening a configurable window deletes rows on the next nightly pass. ' +
+            'It is not a filter on what is read back.',
+          'info'));
+      }
+      return host;
+    }
+
     /* --------------------------------------------- what nothing serves yet
 
        Every static string below is written without a digit in it, on purpose. See the
@@ -1440,20 +1800,11 @@
        prints no numeral, so that no figure on this pane can be read as
        measured when it was typed. */
 
-    function keepBand() {
+    function keepBand(retentionResult) {
       var band = S.band('What we keep, and for how long');
       var grid = h('div', { className: 'grid g2' });
 
-      grid.appendChild(staticCard(
-        'Data retention', 'Windows, and which of them are fixed',
-        ['No API reports the windows in force, so a length printed here would be invented.'],
-        [
-          'Some windows are configurable. The access record and the reveal record are ' +
-            'fixed by policy, because they record who looked at an athlete.',
-          'Shortening a configurable window deletes rows on the next nightly pass. It is ' +
-            'not a filter on what is read back.'
-        ]
-      ));
+      grid.appendChild(retentionCard(retentionResult));
 
       grid.appendChild(staticCard(
         'Cost categories', 'Which Azure service counts as what',

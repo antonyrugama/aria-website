@@ -307,6 +307,101 @@ const INTEGRATIONS = {
   ]
 };
 
+const RETENTION = {
+  shorteningConfirmation: 'delete rows on the next nightly pass',
+  windows: [
+    {
+      key: 'raw_telemetry',
+      label: 'Activity history',
+      description: 'Raw telemetry events used for usage rollups.',
+      effectiveDays: 180,
+      minimumDays: null,
+      source: 'setting',
+      configurable: true,
+      fixedReason: null,
+      environmentVariable: 'OPS_TELEMETRY_RETENTION_DAYS',
+      sweepKey: 'telemetry_events',
+      bounds: { minDays: 30, maxDays: 730 },
+      setting: {
+        id: 11,
+        retentionDays: 180,
+        createdAt: ago(2 * DAY),
+        updatedAt: ago(12 * HOUR)
+      }
+    },
+    {
+      key: 'job_lifecycle_history',
+      label: 'Job and run history',
+      description: 'Job lifecycle events behind the operations run history.',
+      effectiveDays: 90,
+      minimumDays: null,
+      source: 'environment_default',
+      configurable: true,
+      fixedReason: null,
+      environmentVariable: 'OPS_JOB_LIFECYCLE_RETENTION_DAYS',
+      sweepKey: 'job_lifecycle_events',
+      bounds: { minDays: 30, maxDays: 730 },
+      setting: null
+    },
+    {
+      key: 'prompt_output',
+      label: 'Prompt and output content',
+      description: 'Generation input and output payloads.',
+      effectiveDays: null,
+      minimumDays: null,
+      source: 'policy',
+      configurable: false,
+      fixedReason: 'not yet swept',
+      environmentVariable: null,
+      sweepKey: null,
+      bounds: { minDays: null, maxDays: null },
+      setting: null
+    },
+    {
+      key: 'access_record',
+      label: 'Access record',
+      description: 'Who looked at privileged operations data.',
+      effectiveDays: null,
+      minimumDays: 90,
+      source: 'policy',
+      configurable: false,
+      fixedReason: '90-day floor enforced by the server.',
+      environmentVariable: null,
+      sweepKey: null,
+      bounds: { minDays: null, maxDays: null },
+      setting: null
+    },
+    {
+      key: 'audit_log',
+      label: 'Audit log',
+      description: 'Append-only owner and operator actions.',
+      effectiveDays: null,
+      minimumDays: 2555,
+      source: 'policy',
+      configurable: false,
+      fixedReason: 'Append-only audit policy keeps these records for seven years.',
+      environmentVariable: null,
+      sweepKey: null,
+      bounds: { minDays: null, maxDays: null },
+      setting: null
+    },
+    {
+      key: 'reveal_records',
+      label: 'Reveal records',
+      description: 'Athlete-visible records of personal-field reveals.',
+      effectiveDays: null,
+      minimumDays: null,
+      source: 'policy',
+      configurable: false,
+      fixedReason: 'Kept for the life of the account.',
+      environmentVariable: null,
+      sweepKey: null,
+      bounds: { minDays: null, maxDays: null },
+      setting: null
+    }
+  ]
+};
+
 /* Cloud costs, in the state a period that has not published yet produces.
    Both generations of this pane read `availability.state` first and print
    `availability.detail` verbatim into the card they draw for it, so the detail
@@ -453,7 +548,7 @@ const PROOF = {
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
-  settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label]
+  settings: [ADMINS[0].email, AUDIT[0].reason, RETENTION.windows[0].label]
 };
 
 
@@ -513,6 +608,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
+  if (pathname === '/api/ops/settings/retention') return { data: RETENTION };
   if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
   return { data: {} };
 }
@@ -520,5 +616,5 @@ function stub(pathname) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, INTEGRATIONS, COSTS, PROBLEM, RUNS, PROOF, stub
+  ADMINS, SESSIONS, AUDIT, INTEGRATIONS, RETENTION, COSTS, PROBLEM, RUNS, PROOF, stub
 };
