@@ -32,6 +32,8 @@
    never both. Panes move across one at a time.
    ========================================================================= */
 
+[hidden] { display: none !important; }
+
 /* ------------------------------------------------------------------ faces */
 /* Geist, self-hosted. The stack below names it first, and before these rules
    existed nothing served it, so every pane fell through to the system font
