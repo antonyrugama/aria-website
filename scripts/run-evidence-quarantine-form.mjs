@@ -44,6 +44,9 @@ function element(tag, opts = {}, children = []) {
     setAttribute(name, value) {
       this.attributes[name] = String(value);
     },
+    removeAttribute(name) {
+      delete this.attributes[name];
+    },
     appendChild(child) {
       this.children.push(child);
       return child;
@@ -138,6 +141,11 @@ async function main() {
     btoa(value) {
       return Buffer.from(value, 'binary').toString('base64');
     },
+    matchMedia: () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }),
     OpsPaneShell: {
       h: element,
       icon: () => element('svg'),
@@ -227,6 +235,38 @@ async function main() {
     assert.ok(error && result && input, 'dataset form controls did not render');
     input.value = readFileSync(required('CIEL_PARITY_DATASET_INPUT_PATH'), 'utf8');
     await form.dispatch('submit');
+    report(error, result);
+    return;
+  }
+  if (operationId === 'ciel.artifact.admit') {
+    const form = byId('admission-form');
+    const error = findNode(form, node => node.className === 'field-error');
+    const result = byId('admission-result');
+    const submit = findNode(form, node => node.tag === 'button');
+    assert.ok(form && error && result && submit, 'admission form did not render');
+    byId('admission-artifact-id').value = required('CIEL_PARITY_ADMISSION_ARTIFACT_ID');
+    byId('admission-expected-revision').value =
+      required('CIEL_PARITY_ADMISSION_EXPECTED_REVISION');
+    byId('admission-source-digest').value = required('CIEL_PARITY_ADMISSION_SOURCE_DIGEST');
+    byId('admission-retained-digest').value =
+      required('CIEL_PARITY_ADMISSION_RETAINED_DIGEST');
+    byId('admission-profile').value = required('CIEL_PARITY_ADMISSION_CONTENT_PROFILE');
+    byId('admission-type').value = required('CIEL_PARITY_ADMISSION_MEDIA_TYPE');
+    byId('admission-purpose').value = required('CIEL_PARITY_ADMISSION_PURPOSE');
+    byId('admission-expiry').value = required('CIEL_PARITY_ADMISSION_RETENTION_EXPIRES_AT');
+    byId('admission-policy-revision').value =
+      required('CIEL_PARITY_ADMISSION_POLICY_REVISION');
+    byId('admission-approval-id').value = required('CIEL_PARITY_ADMISSION_APPROVAL_ID');
+    byId('admission-key').value = required('CIEL_PARITY_IDEMPOTENCY_KEY');
+    byId('admission-necessary').value =
+      process.env.CIEL_PARITY_ADMISSION_NECESSARY_CATEGORIES || 'none';
+    byId('admission-removed').value =
+      process.env.CIEL_PARITY_ADMISSION_REMOVED_CATEGORIES || 'none';
+    form.dispatch('submit');
+    await waitFor(
+      () => transactions.length === 1 && !submit.disabled,
+      'dashboard admission did not complete',
+    );
     report(error, result);
     return;
   }

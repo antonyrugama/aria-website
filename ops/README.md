@@ -237,7 +237,7 @@ ops/
   alerts.html           Problems
   analytics.html        People and usage
   spend.html            Cloud costs
-  evaluations.html      Aria quality: dataset declarations, quarantine and approval handoffs
+  evaluations.html      Aria quality: dataset declarations, quarantine, approval and admission
   releases.html         App releases
   users.html            Look up a user
   settings.html         Settings (owner only)
@@ -264,7 +264,7 @@ ops/
                         loads it; likewise
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
-    pane-evaluations.js dataset validation, private quarantine import and approval handoffs
+    pane-evaluations.js dataset validation, private quarantine import, approval handoffs and admission
     pane-releases.js    App releases
     pane-users.js       Look up a user
     settings.js         Settings
@@ -638,6 +638,12 @@ each auto-filled decision request id or revision value from the invalidated resu
 unless that field was manually edited. Edited decision fields are operator-owned and are
 preserved. Starting an approval request or decision also clears any older shared result;
 a later successful lookup, request, or decision displays its current result.
+
+Owners can submit the admission form for synthetic evidence only. It binds the exact artifact
+revision, source and retained digests, policy, approval request, retention and minimization
+metadata. A success renders receipt metadata only; a denial or stale binding keeps the backend
+wording visible and returns no raw content, storage URL, evaluator access, training permission,
+export grant or provider-transfer permission.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,
@@ -1128,13 +1134,14 @@ refused sign in.
 `pane-evaluations-v2.css`. It is the one pane where **most of what is on screen is a drawing**,
 and everything about how it is built follows from that.
 
-**All five Ciel forms submit to the backend, and the scoring half does not exist.**
+**All six Ciel forms submit to the backend, and the scoring half does not exist.**
 Dataset declaration validation calls the shared Ciel operation using supplied inputs.
-Evidence quarantine and the three approval forms also submit to the shared operation route;
-the backend decides whether each request is available and allowed. The pane tells operators
-before submit that quarantine answers only when storage and authority settings are configured,
-and that ADR 0040 keeps approval actions closed until an external qualification issuer exists.
-If the backend refuses, submitting changes nothing and the pane shows the refusal. Below those
+Evidence quarantine, the three approval forms and the admission form also submit to the shared
+operation route; the backend decides whether each request is available and allowed. The pane
+tells operators before submit that quarantine answers only when storage and authority settings
+are configured, that ADR 0040 keeps approval actions closed until an external qualification
+issuer exists, and that admission is an owner-only receipt-producing state transition. If the
+backend refuses, submitting changes nothing and the pane shows the refusal. Below those
 forms is a design for a scoring harness that has no code, no endpoint and no stored score. The
 numbers in it were invented to draw the layout.
 
@@ -1170,7 +1177,7 @@ a placeholder shown until the operator types, and text a screen reader substitut
 element's own, like an `aria-label` — a figure in the second is worse than one in the live region,
 because it suppresses the real words underneath it as well. The two states are the booted page and
 the page after the dataset and quarantine forms have been submitted and answered. This sweep
-does not cover post-submission approval states or error branches.
+does not cover post-submission approval or admission states or error branches.
 
 Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
 inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in
@@ -1195,8 +1202,11 @@ operator access, rather than being shown a gap where a form was.
 
 Approval lookup, request and decision forms also stay enabled. Their pre-submit copy names the
 recorded decision: under ADR 0040, approval actions stay closed until an external qualification
-issuer exists. The page cannot grant qualification or admit evidence; it submits and renders the
-backend response.
+issuer exists. The page cannot grant qualification; it submits and renders the backend response.
+
+Owners also see the admission form. It submits only synthetic admission metadata and approval
+identity, never raw bytes or a caller-supplied target digest. The success state says receipt only
+and no access granted; denial and stale-binding errors keep the backend's reason visible.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,

@@ -3,10 +3,12 @@
    Dataset validation checks supplied declarations without reading referenced
    files or storing a dataset. Evidence import places bytes behind the server's
    private, immutable quarantine boundary when the backend accepts the request.
-   Neither successful operation is admission, evaluation consent, training
-   consent, export permission, provider-transfer permission, or proof of
-   de-identification. Approval handoffs expose metadata only and leave
-   qualification checks and operation availability to the server.
+   Neither successful quarantine or approval operation is admission, evaluation
+   consent, training consent, export permission, provider-transfer permission,
+   or proof of de-identification. Admission changes only the artifact state and
+   receipt metadata; it does not read, reveal, export or grant evaluator access.
+   Approval handoffs expose metadata only and leave qualification checks and
+   operation availability to the server.
 
    The selected file exists only in this page's memory until the operator
    submits it. The page displays file metadata before submission and the
@@ -350,6 +352,96 @@
     request.expectedRevision = draft.expectedRevision;
     request.idempotencyKey =
       draft.idempotencyKey || 'dashboard-approval-decision-' + requestId;
+    return request;
+  }
+
+  function requireDigest(value, label) {
+    var trimmed = String(value || '').trim();
+    if (!/^[a-f0-9]{64}$/.test(trimmed)) {
+      throw new Error(label + ' must be a lowercase SHA-256 digest.');
+    }
+    return trimmed;
+  }
+
+  function requireUuid(value, label) {
+    var trimmed = String(value || '').trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(trimmed)) {
+      throw new Error(label + ' must be a UUID.');
+    }
+    return trimmed;
+  }
+
+  function requirePositiveInteger(value, label) {
+    var number = Number(value);
+    if (!Number.isInteger(number) || number < 1) {
+      throw new Error(label + ' must be a positive integer.');
+    }
+    return number;
+  }
+
+  function admissionErrorText(caught) {
+    var message = caught && caught.message
+      ? caught.message
+      : 'Evidence could not be admitted. Check the documented binding and try again.';
+    if (caught && caught.code === 'revision_conflict') return 'Stale binding: ' + message;
+    if (caught && (caught.code === 'approval_required' || caught.code === 'permission_denied')) {
+      return 'Admission denied: ' + message;
+    }
+    return message;
+  }
+
+  function buildAdmissionRequest(draft, requestId) {
+    var resolvedRequestId = requestId || global.crypto.randomUUID();
+    var profile = String(draft.contentProfile || '').trim();
+    var mediaType = String(draft.mediaType || '').trim();
+    if (['trace', 'media'].indexOf(profile) === -1) throw new Error('Choose a supported content profile.');
+    var traceType = ['application/json', 'text/plain'].indexOf(mediaType) !== -1;
+    var mediaFileType = [
+      'image/jpeg', 'image/png', 'audio/mpeg', 'audio/wav', 'video/mp4', 'video/quicktime'
+    ].indexOf(mediaType) !== -1;
+    if ((profile === 'trace' && !traceType) || (profile === 'media' && !mediaFileType)) {
+      throw new Error('The media type does not match the selected content profile.');
+    }
+    if (['regression_evaluation', 'incident_reproduction', 'quality_review'].indexOf(draft.purpose) === -1) {
+      throw new Error('Choose a documented admission purpose.');
+    }
+    var expiresAt = new Date(draft.expiresAt);
+    if (!Number.isFinite(expiresAt.getTime())) {
+      throw new Error('Retention expiry must be a valid date and time.');
+    }
+    var policyRevision = requireReference(draft.policyRevision, 'Policy revision');
+    var request = approvalEnvelope('ciel.artifact.admit', resolvedRequestId, {
+      artifact: {
+        artifactId: requireUuid(draft.artifactId, 'Artifact ID'),
+        sourceDigest: requireDigest(draft.sourceDigest, 'Source SHA-256'),
+        retainedDigest: requireDigest(draft.retainedDigest, 'Retained SHA-256'),
+        sourceKind: 'synthetic',
+        contentProfile: profile,
+        mediaType: mediaType,
+        purpose: draft.purpose,
+        authority: { kind: 'synthetic' },
+        minimization: {
+          necessaryCategories: categories(draft.necessaryCategories || 'none', 'Necessary categories'),
+          removedCategories: categories(
+            draft.removedCategories === undefined ? 'none' : draft.removedCategories,
+            'Removed categories',
+            true
+          )
+        },
+        retention: {
+          expiresAt: expiresAt.toISOString()
+        },
+        providerHandling: { status: 'no_transfer' }
+      },
+      policyRevision: policyRevision
+    });
+    request.expectedRevision = requirePositiveInteger(draft.expectedRevision, 'Expected artifact revision');
+    request.approval = {
+      approvalRequestId: requireUuid(draft.approvalRequestId, 'Approval request ID')
+    };
+    request.idempotencyKey = draft.idempotencyKey
+      ? requireReference(draft.idempotencyKey, 'Idempotency key')
+      : 'dashboard-admit-' + resolvedRequestId;
     return request;
   }
   /* ------------------------------------------------------------ the stamps */
@@ -1239,6 +1331,196 @@
     return section;
   }
 
+  function admissionSection() {
+    var built = workingBand('Admit synthetic evidence', 'Owner only; state change and receipt, not evidence access');
+    var section = built.section;
+    var bandBody = built.body;
+    bandBody.appendChild(h('div', { className: 'callout' }, [
+      icon('lock'),
+      h('div', {}, [
+        h('strong', { text: 'Admission is not access to evidence.' }),
+        h('p', {
+          text: 'The backend admits only exact synthetic bytes already approved for this artifact binding. Success records a receipt; it does not read, display, export, feed evaluators, train models or permit provider transfer.'
+        })
+      ])
+    ]));
+
+    if (!session.hasRole(['owner'])) {
+      var denied = shell.card('admission-unavailable');
+      denied.appendChild(shell.cardHead('Admission needs owner access', 'Owners only'));
+      denied.appendChild(h('div', { className: 'card-body' }, [
+        h('p', {
+          className: 'field-hint',
+          text: 'Operators can prepare quarantine and approval handoffs. Admitting evidence is an owner action, and the backend still checks approval, freshness and exact bytes.'
+        })
+      ]));
+      bandBody.appendChild(denied);
+      return section;
+    }
+
+    var artifactId = input('text');
+    var expectedRevision = input('number', '1');
+    var sourceDigest = input('text');
+    var retainedDigest = input('text');
+    var contentProfile = select([option('trace', 'Trace or transcript'), option('media', 'Media')]);
+    var mediaType = select([
+      option('application/json', 'JSON'),
+      option('text/plain', 'Plain text'),
+      option('image/jpeg', 'JPEG image'),
+      option('image/png', 'PNG image'),
+      option('audio/mpeg', 'MP3 audio'),
+      option('audio/wav', 'WAV audio'),
+      option('video/mp4', 'MP4 video'),
+      option('video/quicktime', 'QuickTime video')
+    ]);
+    var purpose = select([
+      option('regression_evaluation', 'Regression evaluation'),
+      option('incident_reproduction', 'Incident reproduction'),
+      option('quality_review', 'Quality review')
+    ]);
+    var retentionExpiry = input('datetime-local');
+    var defaultExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    retentionExpiry.value = new Date(defaultExpiry.getTime() -
+      defaultExpiry.getTimezoneOffset() * 60 * 1000).toISOString().slice(0, 16);
+    var necessary = input('text', 'none');
+    var removed = input('text', 'none');
+    var policyRevision = input('text', 'ciel-evidence-admission.v1');
+    var approvalRequestId = input('text');
+    var idempotencyKey = input('text');
+    var error = h('div', { className: 'field-error', role: 'alert' });
+    var result = h('div', { className: 'admission-result', role: 'status' });
+    result.setAttribute('id', 'admission-result');
+    var submit = h('button', {
+      className: 'btn btn-primary',
+      type: 'submit',
+      text: 'Admit evidence'
+    });
+    var availability = h('p', {
+      className: 'field-hint',
+      text: 'Synthetic evidence only. The backend recomputes the approved admission digest, verifies retained bytes and denies stale artifact, approval, policy or qualification bindings.'
+    });
+    availability.setAttribute('id', 'admission-availability-note');
+    appendDescription(submit, 'admission-availability-note');
+
+    contentProfile.addEventListener('change', function () {
+      mediaType.value = contentProfile.value === 'trace' ? 'application/json' : 'image/jpeg';
+    });
+
+    var form = h('form', { className: 'card admission-form' }, [
+      shell.cardHead('Admit an approved synthetic artifact', 'Exact-byte transition only'),
+      h('div', { className: 'card-body' }, [
+        h('div', { className: 'grid g2 evidence-form-grid' }, [
+          field('admission-artifact-id', 'Artifact ID', artifactId),
+          field('admission-expected-revision', 'Expected artifact revision', expectedRevision),
+          field('admission-source-digest', 'Source SHA-256', sourceDigest),
+          field('admission-retained-digest', 'Retained SHA-256', retainedDigest),
+          field('admission-profile', 'Content profile', contentProfile),
+          field('admission-type', 'Media type', mediaType),
+          field('admission-purpose', 'Purpose', purpose),
+          field('admission-expiry', 'Retention expires at', retentionExpiry,
+            'Must match the quarantined artifact binding; sent as UTC.'),
+          field('admission-policy-revision', 'Policy revision', policyRevision),
+          field('admission-approval-id', 'Approval request ID', approvalRequestId),
+          field('admission-key', 'Idempotency key', idempotencyKey,
+            'Optional. Reuse only for the same artifact, approval and policy binding.')
+        ]),
+        h('div', { className: 'q-grid' }, [
+          field('admission-necessary', 'Necessary privacy categories', necessary,
+            'Comma-separated contract categories, or none.'),
+          field('admission-removed', 'Categories removed before import', removed,
+            'Comma-separated contract categories; leave blank when none were removed.')
+        ]),
+        availability,
+        error
+      ]),
+      h('div', { className: 'card-foot evidence-actions' }, [submit])
+    ]);
+    form.setAttribute('id', 'admission-form');
+    form.setAttribute('novalidate', '');
+
+    function showAdmissionResult(response) {
+      if (!response || response.status !== 'success' || !response.resource || !response.resource.value) {
+        var operationError = response && response.error;
+        throw new Error(operationError && operationError.message
+          ? operationError.message
+          : 'The admission operation did not return a completed receipt.');
+      }
+      var value = response.resource.value;
+      result.textContent = '';
+      result.appendChild(h('div', { className: 'card' }, [
+        shell.cardHead('Admitted, no access granted', null, [
+          stamp('u-tag works', 'lock', 'Receipt only')
+        ]),
+        h('dl', { className: 'card-body evidence-meta' }, [
+          metadataRow('Receipt', String(value.admissionReceiptId || response.resource.id)),
+          metadataRow('Artifact', String(value.artifactId || '')),
+          metadataRow('State', String(value.state || 'admitted')),
+          metadataRow('Revision', String(value.revision || response.resource.revision)),
+          metadataRow('Approval', String(value.approvalRequestId || '')),
+          metadataRow('Source SHA-256', String(value.sourceDigest || '')),
+          metadataRow('Retained SHA-256', String(value.retainedDigest || '')),
+          metadataRow('Purpose', String(value.purpose || '')),
+          metadataRow('Policy', String(value.policyRevision || '')),
+          metadataRow('Admission request SHA-256', String(value.targetRequestDigest || ''))
+        ]),
+        h('div', {
+          className: 'card-foot',
+          text: 'This receipt changes only the artifact state. Raw content, storage locations, evaluator access, training permission and export grants are intentionally not returned.'
+        })
+      ]));
+    }
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      error.textContent = '';
+      result.textContent = '';
+      submit.disabled = true;
+      submit.textContent = 'Admitting…';
+      var request;
+      try {
+        request = buildAdmissionRequest({
+          artifactId: artifactId.value,
+          expectedRevision: expectedRevision.value,
+          sourceDigest: sourceDigest.value,
+          retainedDigest: retainedDigest.value,
+          contentProfile: contentProfile.value,
+          mediaType: mediaType.value,
+          purpose: purpose.value,
+          expiresAt: retentionExpiry.value,
+          necessaryCategories: necessary.value,
+          removedCategories: removed.value,
+          policyRevision: policyRevision.value,
+          approvalRequestId: approvalRequestId.value,
+          idempotencyKey: idempotencyKey.value.trim()
+        }, global.crypto.randomUUID());
+      } catch (caught) {
+        error.textContent = caught && caught.message
+          ? caught.message
+          : 'The admission request is invalid.';
+        submit.disabled = false;
+        submit.textContent = 'Admit evidence';
+        return;
+      }
+      session.call('/api/ops/ciel/operations', {
+        method: 'POST',
+        body: request
+      }).then(function (response) {
+        showAdmissionResult(response);
+        shell.announce('Evidence admitted. No access grant was created.');
+      }).catch(function (caught) {
+        error.textContent = admissionErrorText(caught);
+        shell.announce('Evidence admission failed.');
+      }).finally(function () {
+        submit.disabled = false;
+        submit.textContent = 'Admit evidence';
+      });
+    });
+
+    bandBody.appendChild(form);
+    bandBody.appendChild(result);
+    return section;
+  }
+
   /* ---------------------------------------------------- the deferred half */
 
   function soonBanner() {
@@ -1494,6 +1776,7 @@
       datasetValidationSection(),
       evidenceQuarantineSection(),
       approvalSection(),
+      admissionSection(),
       soonBanner(),
       scoringPreview()
     ]);
