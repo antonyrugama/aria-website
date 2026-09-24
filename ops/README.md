@@ -286,6 +286,7 @@ ops/
     pane-run-history-v2.css  What happened's own shapes
     pane-jobs-live-v2.js     Happening now
     pane-jobs-live-v2.css    Happening now's own shapes
+    job-actions-v2.js        Shared cancel and retry confirmations
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
     pane-spend-v2.css     Cloud costs' own shapes
@@ -304,6 +305,7 @@ api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.ht
 aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 icons.js = login.html, setup.html
+job-actions-v2.js = jobs-live.html, run-history.html
 login.js = login.html
 operate.js = (no page)
 ops.css = login.html, setup.html
@@ -1033,14 +1035,15 @@ problems, People reveals a masked field, and Aria quality posts an evaluation. D
 than asserted, from the HTTP method each file spells:
 
 ```claims id=write-capable-assets
-ops assets naming a write method = login.js, pane-alerts.js, pane-evaluations.js, pane-users.js, session.js, settings.js, setup.js
+ops assets naming a write method = job-actions-v2.js, login.js, pane-alerts.js, pane-evaluations.js, pane-users.js, session.js, settings.js, setup.js
 of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-users.js
 ```
 
-`settings.js` is the v1 script and `session.js` is the transport every one of them calls through;
-`login.js` and `setup.js` are the two pages outside the shell. The line is per file and not per
-call site — it reads the HTTP method a call site spells, so a file keeps its place until its last
-write method goes, and says nothing about whether any of those calls is reachable or authorised. What is true of Settings is
+`settings.js` is the v1 script, `job-actions-v2.js` is the shared cancel/retry helper, and
+`session.js` is the transport every one of them calls through; `login.js` and `setup.js` are the
+two pages outside the shell. The line is per file and not per call site — it reads the HTTP method
+a call site spells, so a file keeps its place until its last write method goes, and says nothing
+about whether any of those calls is reachable or authorised. What is true of Settings is
 narrower and worth being exact about: It runs on the v2 shell: `settings.html` loads `aria.css`,
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
@@ -1671,7 +1674,11 @@ is not a complete diff: it names the departures that carry a decision.
    pane recorded rather than off anything a file says about itself.
 5. **No trend chart.** The mock draws one. A chart needs a series and this read answers one
    window, so a line over time would have to invent the missing part of it.
-6. **No timer.** The mock implies a live page. This one is the past tense: it reads once per
+6. **Retry and cancel links are row capabilities, not history writes.** The run rows and the
+   open-run card can show the same cancel or retry controls as Happening now, but the POST still
+   goes to `/api/ops/jobs`. The history pane refreshes after a committed action or a stale race;
+   it does not mutate the historical row in place.
+7. **No timer.** The mock implies a live page. This one is the past tense: it reads once per
    selection, stamps when it read, and offers "Read again". Nothing is started, so nothing has
    to be stopped when the operator leaves — which is the strongest available answer to the
    polling-leak class of defect, and the opposite of the choice Happening now correctly makes.
@@ -1717,23 +1724,24 @@ departures that carry a decision.
    control and the table's horizontal scroll position are carried across the swap by `data-retain`
    name and put back. Without it the pane would drop focus to the document and rewind the table
    to column one four times a minute, which on a 375px screen hides most of the table.
-5. **Cancel, retry and export are absent.** The mock offers all three. Stadiora/Aria#5562 is
-   read-only by decision — the record now supports listing work but nothing serves an action
-   against it, and a control that cannot succeed says the thing is within reach, so the pane
-   names the three rather than drawing them disabled.
+5. **Cancel and retry come only from the API's capability block.** Owners and operators see a
+   button only when the row says the action can commit, and every false action prints the
+   server's reason as quiet text. The typed confirmation uses the row's short reference and posts
+   to `/api/ops/jobs/:id/cancel` or `/retry`. A stale job refreshes the list and never reports a
+   success. Viewers receive reasons and no buttons.
 6. **The app control and the environment control are not drawn at all.** The route keeps no
    per-app split and there is no staging record, so production figures under a staging label
    would be worse than a refusal. A filter that narrows nothing is a control that cannot succeed
    in a different widget. The registry declares neither, and a `filterNote` says why.
    `scripts/ops-registry-filters.test.mjs` holds the registry to it, keyed off the call each
    pane recorded rather than off anything a file says about itself.
-7. **Four things the mock draws have no record behind them, and are named rather than drawn.**
+7. **Five things the mock draws have no record behind them, and are named rather than drawn.**
    Worker load has no denominator, because nothing records how many workers exist. "Attempt 2 of
    3" does not exist on the platform: a retry creates a new job rather than incrementing a
    counter. A per-run progress bar would be drawing a number with no history behind it, where a
    job that has reported nothing carries the same zero as one that has done nothing. And the
    mock's third lane, Streaming, creates no job at all, so it would report zero forever — the one
-   reading worse than leaving it out. All four sit in a band called "What this pane cannot answer
+   reading worse than leaving it out. Export still has no route. All five sit in a band called "What this pane cannot answer
    yet", and the worker-load sentence is printed as the route sent it rather than mapped through
    a lookup, so a live read and a deleted field cannot end up on the same fallback branch.
 
@@ -2131,20 +2139,20 @@ Which of these classes any page can still draw is therefore derived rather than 
 .masked = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .nav-count = declared in ops.css; drawn by (no page)
-.btn-danger = declared in ops.css, pane-settings-v2.css; drawn by settings.html; painted where drawn
+.btn-danger = declared in ops.css, pane-settings-v2.css, shell-pane-v2.css; drawn by jobs-live.html, run-history.html, settings.html; painted where drawn
 .field-error = declared in ops.css, pane-evaluations-v2.css, pane-users-v2.css; drawn by evaluations.html, login.html, setup.html, users.html; painted where drawn
 ```
 
 Three lines in that block are worth reading twice:
 
 - **`.btn-danger` is drawn, and painted.** Settings writes it on the revoke controls and on the
-  confirmation's submit, and `pane-settings-v2.css` declares it. This section used to file it
-  under "drawn by nothing built so far", and said in as many words that Settings draws none. The
-  4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
-  paints it now. No figure in this file describes what does. `check-ops-contrast.mjs` is **not**
-  that oracle either: `scripts/check-ops-contrast.mjs` fixes its page to `/ops/shell-v2.html`
-  and never opens `settings.html`, so the live pairing is unmeasured by
-  anything in the tree. That is a gap, stated as one rather than closed with a pointer at a guard
+  confirmation's submit; Happening now and What happened write it through `job-actions-v2.js`.
+  `pane-settings-v2.css` and `shell-pane-v2.css` declare it for the pages that draw it. The 4.49
+  and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what paints it
+  now. No figure in this file describes the v2 pairing. `check-ops-contrast.mjs` is **not** that
+  oracle either: it fixes its page to `/ops/shell-v2.html` and never opens these panes, so the
+  live pairing is unmeasured by anything in the tree. That is a gap, stated as one rather than
+  closed with a pointer at a guard
   that does not look.
 - **Two classes were written with nothing behind them, and are not any more.** `.masked` and
   `.callout-warn` were both tokens whose rule stayed in `ops.css` when their pane moved to v2,
