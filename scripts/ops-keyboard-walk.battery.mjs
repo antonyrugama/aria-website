@@ -185,32 +185,14 @@ const EXPERIMENTS = [
   /* --- fixed filed findings: removing the fixes makes them return ----- */
   { id: 'M1a', kind: 'mutation', expect: 'kill', scope: 'history', vp: '375px', signal: 'historyScrollers',
     file: 'ops/assets/pane-run-history-v2.js',
-    anchor: `      var section = S.band('Why things failed', 'Most runs first, then most recent');
-      var box = S.card();
-      var wrap = h('div', {
-        className: 'tbl-wrap',
-        tabindex: '0',
-        role: 'region',
-        'aria-label': 'Why things failed'
-      });`,
-    payload: `      var section = S.band('Why things failed', 'Most runs first, then most recent');
-      var box = S.card();
-      var wrap = h('div', { className: 'tbl-wrap' });`,
+    anchor: "          wrap.setAttribute('tabindex', '0');",
+    payload: "          if ((wrap.getAttribute('data-scroll-label') || '') !== 'Why things failed') wrap.setAttribute('tabindex', '0');",
     what: 'The failure table loses its named focusable region. The audit must report an undeclared scroller again.' },
 
   { id: 'M1b', kind: 'mutation', expect: 'kill', scope: 'history', vp: '375px', signal: 'historyScrollers',
     file: 'ops/assets/pane-run-history-v2.js',
-    anchor: `      var section = S.band('The runs', 'Newest first');
-      var box = S.card();
-      var wrap = h('div', {
-        className: 'tbl-wrap',
-        tabindex: '0',
-        role: 'region',
-        'aria-label': 'The runs'
-      });`,
-    payload: `      var section = S.band('The runs', 'Newest first');
-      var box = S.card();
-      var wrap = h('div', { className: 'tbl-wrap' });`,
+    anchor: "          wrap.setAttribute('tabindex', '0');",
+    payload: "          if ((wrap.getAttribute('data-scroll-label') || '') !== 'The runs') wrap.setAttribute('tabindex', '0');",
     what: 'The runs table loses its named focusable region. The audit must report an undeclared scroller again.' },
 
   { id: 'M2', kind: 'mutation', expect: 'kill', scope: 'evals', signal: 'evalsHidden',
@@ -367,6 +349,49 @@ const EXPERIMENTS = [
     anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label",
     payload: "      className: 'tbl-wrap', tabindex: '', role: 'region', 'aria-label': label",
     what: 'The other half of the same finding, and the worse half. Number("") is 0, so an empty tabindex read as DECLARED -- it did not merely hide the container, it INFLATED the declared tally that the F1 body cites as evidence that every other pane gets this right. h() in shell-pane-v2.js calls setAttribute unconditionally, so an empty string does land as an attribute.' },
+
+  { id: 'M25', kind: 'mutation', expect: 'kill', scope: 'history,settings', vp: '375px',
+    signal: 'docAttrContradiction',
+    edits: [
+      { file: 'ops/assets/settings.js', anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label", payload: "      className: 'tbl-wrap', tabindex: '-1', role: 'region', 'aria-label': label" },
+      { file: TOOL, anchor: "      `horizontally and has ${x.why}` +\n      `. It carries ${x.role ? `\\`role=\"${x.role}\"\\`` : 'no `role`'} and ` +\n      `${x.ariaLabel ? `\\`aria-label=\"${x.ariaLabel}\"\\`` : (x.ariaLabelledby\n        ? `\\`aria-labelledby=\"${x.ariaLabelledby}\"\\`` : 'neither `aria-label` nor `aria-labelledby`')}.`,", payload: "      `horizontally and carries no \\`tabindex\\`, no \\`role\\` and no accessible name.`," }
+    ],
+    what: 'Round two, first blocking finding, attribute half. The finding body used to ASSERT "carries no tabindex, no role and no accessible name" beside a derived count. Edit one puts tabindex="-1" role="region" aria-label="Administrator accounts" on three containers; edit two reverts the clause to the asserted prose. The signal is neither a document signal nor a record signal: it asks whether the published SENTENCE contradicts the row it was generated from, which is the only way to see a defect where the record was right all along.' },
+
+  { id: 'M25b', kind: 'isolation-control', expect: 'survive', scope: 'history,settings', vp: '375px',
+    signal: 'docAttrContradiction', file: 'ops/assets/settings.js',
+    anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label", payload: "      className: 'tbl-wrap', tabindex: '-1', role: 'region', 'aria-label': label",
+    what: 'M25 edit ONE, alone. An isolation control: it proves the injected page defect does not by itself produce the false sentence, so the reverted clause in M25 is the only variable. A tolerance control asks whether an edit at the same address moves the signal; this asks whether the OTHER edit of a pair does. Scoring one against the other rule gives a broken instrument that looks like a working one.' },
+
+  { id: 'M26', kind: 'mutation', expect: 'kill', scope: 'history,settings', vp: '375px',
+    signal: 'docReachSentinel',
+    edits: [
+      { file: 'ops/assets/settings.js', anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label", payload: "      className: 'tbl-wrap', tabindex: '-1', role: 'region', 'aria-label': label" },
+      { file: TOOL, anchor: "      x.reachedByWalk\n        ? `The walk **did** reach it (stop ${w.stopList.findIndex((s) => s.key === x.key) + 1} of ` +\n          `${w.stops}), but only because Chrome 127+ makes a scroll container focusable on its own. ` +\n          'Safari and Firefox do not, and neither does any Chrome older than that. It announces as ' +\n          `a bare \\`${x.tag}\\`.`\n        : 'The walk **never reached it**: it is out of the tab order in the browser that ran this ' +\n          'sweep, which is the browser most willing to volunteer focus to a scroll container. Its ' +\n          'clipped content is unreachable from the keyboard here, in Safari and in Firefox alike.',", payload: "      `The walk **did** reach it (stop ${w.stopList.findIndex((s) => s.key === x.key)} of ${w.stops}), ` +\n      'but only because Chrome 127+ makes a scroll container focusable on its own. Safari and Firefox ' +\n      'do not, and neither does any Chrome older than that. It announces as a bare `div`.'," }
+    ],
+    what: 'Round two, first blocking finding, reachability half -- and the sharpest form of it. The body asserted "The walk **did** reach it (stop N of M)" unconditionally, so on a container the walk did NOT reach it printed the not-found sentinel as its own evidence: "the walk did reach it (stop -1 of 10)". The sentinel IS the signal. The unreached case is the worse finding of the two -- unreachable in every browser rather than a Chrome-version footnote -- so a default that prints the milder one is the unsafe direction.' },
+
+  { id: 'M26b', kind: 'isolation-control', expect: 'survive', scope: 'history,settings', vp: '375px',
+    signal: 'docReachSentinel', file: 'ops/assets/settings.js',
+    anchor: "      className: 'tbl-wrap', tabindex: '0', role: 'region', 'aria-label': label", payload: "      className: 'tbl-wrap', tabindex: '-1', role: 'region', 'aria-label': label",
+    what: 'M26 edit ONE, alone: three containers out of the tab order and the fixed generator. No sentinel appears, because the unreached branch says so in words. The variable in M26 is the reverted clause and nothing else.' },
+
+  { id: 'M27', kind: 'mutation', expect: 'kill', scope: 'evals', vp: 'desktop',
+    signal: 'docDisabledContradiction',
+    edits: [
+      { file: 'ops/assets/aria.css', anchor: '[hidden] { display: none !important; }\n\n', payload: '' },
+      { file: 'ops/assets/pane-evaluations.js', anchor: "      control.disabled = !production;", payload: "      control.disabled = false;" },
+      { file: TOOL, anchor: "      x.controls\n        ? (x.controlsDisabled === x.controls\n          ? `\\nAll ${x.controls} controls inside are \\`disabled\\`, so a keyboard operator can see ` +\n            `${x.controls} form controls they can neither reach nor operate, with no visible ` +\n            'indication of why.'\n          : (x.controlsDisabled === 0\n            ? `\\nNone of the ${x.controls} controls inside is \\`disabled\\`: they are fully operable ` +\n              'form controls inside an element the code believes is not there.'\n            : `\\n${x.controlsDisabled} of the ${x.controls} controls inside are \\`disabled\\`; the ` +\n              `other ${x.controls - x.controlsDisabled} are fully operable inside an element the ` +\n              'code believes is not there.'))", payload: "      x.controls\n        ? `\\n${x.controlsDisabled} of the ${x.controls} controls inside are \\`disabled\\`, so a ` +\n          `keyboard operator can see ${x.controls} labelled fields they can neither reach nor ` +\n          'operate, with no visible indication of why.'" }
+    ],
+    what: 'Round two, first blocking finding, consequence half. The hidden reset is removed to recreate the painted-fieldset premise; with the controls enabled, the reverted sentence claims visible fields cannot be operated even though the record says they can. The anchor is the deletion site inside updateSourceFields(), original gating untouched.' },
+
+  { id: 'M27b', kind: 'isolation-control', expect: 'survive', scope: 'evals', vp: 'desktop',
+    signal: 'docDisabledContradiction',
+    edits: [
+      { file: 'ops/assets/aria.css', anchor: '[hidden] { display: none !important; }\n\n', payload: '' },
+      { file: 'ops/assets/pane-evaluations.js', anchor: "      control.disabled = !production;", payload: "      control.disabled = false;" }
+    ],
+    what: 'M27 edits one and two, alone. The fieldset is painted and its controls are enabled, but the fixed generator says that directly instead of claiming they are unreachable. The generator revert in M27 is the only variable.' },
 
   { id: 'C1', kind: 'identity-control', expect: 'survive', file: TOOL, anchor: null, payload: null,
     scope: 'settings,history,evals', signal: 'settingsSkipFirst',

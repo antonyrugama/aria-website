@@ -48,6 +48,7 @@ const REGISTRY_SRC = read('assets/pane-registry.js');
 const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
 const PANE_SRC = read('assets/pane-run-history-v2.js');
+const SETTINGS_SRC = read('assets/settings.js');
 const PAGE_SRC = read('run-history.html');
 
 const TOKENS = {
@@ -67,6 +68,120 @@ const DAY = 24 * HOUR;
 /* Timestamps are built relative to now, because the window under test is
    relative to now. A fixed date in a fixture ages into a different test. */
 const at = (msAgo) => new Date(Date.now() - msAgo).toISOString();
+
+function withoutComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+function matchingBrace(src, open) {
+  let depth = 0;
+  for (let i = open; i < src.length; i += 1) {
+    if (src[i] === '{') depth += 1;
+    if (src[i] === '}') {
+      depth -= 1;
+      if (!depth) return i;
+    }
+  }
+  return -1;
+}
+
+function mediaApplies(query, viewportWidth) {
+  const min = query.match(/min-width:\s*(\d+)px/);
+  const max = query.match(/max-width:\s*(\d+)px/);
+  if (min && viewportWidth < Number(min[1])) return false;
+  if (max && viewportWidth > Number(max[1])) return false;
+  return true;
+}
+
+function cssRules(css, viewportWidth = 1280) {
+  const rules = [];
+  let order = 0;
+
+  function collect(src) {
+    let at = 0;
+    while (at < src.length) {
+      while (/\s/.test(src[at] || '')) at += 1;
+      if (at >= src.length) break;
+
+      if (src.startsWith('@media', at)) {
+        const open = src.indexOf('{', at);
+        const close = open < 0 ? -1 : matchingBrace(src, open);
+        if (open < 0 || close < 0) break;
+        const query = src.slice(at + '@media'.length, open).trim();
+        if (mediaApplies(query, viewportWidth)) collect(src.slice(open + 1, close));
+        at = close + 1;
+        continue;
+      }
+
+      if (src[at] === '@') {
+        const semi = src.indexOf(';', at);
+        const open = src.indexOf('{', at);
+        if (open >= 0 && (semi < 0 || open < semi)) {
+          const close = matchingBrace(src, open);
+          at = close < 0 ? src.length : close + 1;
+        } else {
+          at = semi < 0 ? src.length : semi + 1;
+        }
+        continue;
+      }
+
+      const open = src.indexOf('{', at);
+      if (open < 0) break;
+      const close = matchingBrace(src, open);
+      if (close < 0) break;
+      const selector = src.slice(at, open).trim();
+      const declarations = src.slice(open + 1, close).split(';').map((part) => {
+        const colon = part.indexOf(':');
+        if (colon < 0) return null;
+        const prop = part.slice(0, colon).trim();
+        const raw = part.slice(colon + 1).trim();
+        return {
+          prop,
+          value: raw.replace(/\s*!important\s*$/, '').trim(),
+          important: /\s!important\s*$/.test(raw),
+        };
+      }).filter(Boolean);
+      rules.push({ selector, declarations, order: order += 1 });
+      at = close + 1;
+    }
+  }
+
+  collect(withoutComments(css));
+  return rules;
+}
+
+function selectorMatches(selector, el) {
+  return selector.split(',').some((raw) => {
+    let part = raw.trim();
+    if (!part || /[\s>+~]/.test(part)) return false;
+    if (part.includes(':focus-visible')) {
+      if (!el.focusVisible) return false;
+      part = part.replace(':focus-visible', '');
+    }
+    if (part.includes('[hidden]') && !el.hidden) return false;
+    part = part.replace('[hidden]', '');
+
+    const classes = [...part.matchAll(/\.([A-Za-z0-9_-]+)/g)].map((match) => match[1]);
+    if (classes.some((name) => !el.classes.includes(name))) return false;
+    part = part.replace(/\.[A-Za-z0-9_-]+/g, '').trim();
+    return part === '' || part.toLowerCase() === el.tag;
+  });
+}
+
+function cssValue(css, el, prop, viewportWidth = 1280) {
+  let winner = null;
+  for (const rule of cssRules(css, viewportWidth)) {
+    if (!selectorMatches(rule.selector, el)) continue;
+    for (const declaration of rule.declarations) {
+      if (declaration.prop !== prop) continue;
+      if (!winner || Number(declaration.important) > Number(winner.important) ||
+          declaration.important === winner.important && rule.order > winner.order) {
+        winner = { ...declaration, order: rule.order };
+      }
+    }
+  }
+  return winner ? winner.value : null;
+}
 
 /* ------------------------------------------------------------- fixtures */
 
@@ -378,7 +493,7 @@ function shownText(dom) {
   return state === 'empty' ? emptyText(dom) : liveText(dom);
 }
 
-test('both run-history table scrollers are named keyboard regions', async () => {
+test('run-history table scrollers are named keyboard regions only while they overflow', async () => {
   const dom = await boot({});
   const wraps = livePanel(dom).querySelectorAll('.tbl-wrap');
   assert.equal(wraps.length, 2, 'What happened should draw exactly two sideways table scrollers');
@@ -388,19 +503,56 @@ test('both run-history table scrollers are named keyboard regions', async () => 
     role: wrap.getAttribute('role'),
     label: wrap.getAttribute('aria-label'),
   })), [
+    { tabindex: null, role: null, label: null },
+    { tabindex: null, role: null, label: null },
+  ], 'a table that does not overflow should not add a dead tab stop');
+
+  wraps[0].clientWidth = 320;
+  wraps[0].scrollWidth = 640;
+  wraps[1].clientWidth = 320;
+  wraps[1].scrollWidth = 640;
+  dom.window.dispatchEvent({ type: 'resize' });
+
+  assert.deepEqual(wraps.map((wrap) => ({
+    tabindex: wrap.getAttribute('tabindex'),
+    role: wrap.getAttribute('role'),
+    label: wrap.getAttribute('aria-label'),
+  })), [
     { tabindex: '0', role: 'region', label: 'Why things failed' },
     { tabindex: '0', role: 'region', label: 'The runs' },
   ]);
+
+  wraps[0].scrollWidth = 320;
+  wraps[1].scrollWidth = 320;
+  dom.window.dispatchEvent({ type: 'resize' });
+
+  assert.deepEqual(wraps.map((wrap) => ({
+    tabindex: wrap.getAttribute('tabindex'),
+    role: wrap.getAttribute('role'),
+    label: wrap.getAttribute('aria-label'),
+  })), [
+    { tabindex: null, role: null, label: null },
+    { tabindex: null, role: null, label: null },
+  ], 'a scroller that stops clipping should remove its focusable region attributes');
 });
 
 test('run-history scrollers keep their focus ring inside the table box', () => {
   const css = read('assets/pane-run-history-v2.css');
-  assert.match(css, /^\.tbl-wrap:focus-visible \{ outline-offset: -2px; \}$/m);
+  assert.equal(cssValue(css, {
+    tag: 'div',
+    classes: ['tbl-wrap'],
+    focusVisible: true,
+  }, 'outline-offset'), '-2px');
 });
 
-test('aria.css makes hidden win over author display rules', () => {
+test('settings Load more stays hidden when the shared button display rule also matches it', () => {
+  assert.match(SETTINGS_SRC, /className: 'btn btn-sm'[\s\S]+text: 'Load more'/);
   const css = read('assets/aria.css');
-  assert.match(css, /^\[hidden\] \{ display: none !important; \}$/m);
+  assert.equal(cssValue(css, {
+    tag: 'button',
+    classes: ['btn', 'btn-sm'],
+    hidden: true,
+  }, 'display'), 'none');
 });
 
 function stateOf(dom) {
