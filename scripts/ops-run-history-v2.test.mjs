@@ -378,6 +378,31 @@ function shownText(dom) {
   return state === 'empty' ? emptyText(dom) : liveText(dom);
 }
 
+test('both run-history table scrollers are named keyboard regions', async () => {
+  const dom = await boot({});
+  const wraps = livePanel(dom).querySelectorAll('.tbl-wrap');
+  assert.equal(wraps.length, 2, 'What happened should draw exactly two sideways table scrollers');
+
+  assert.deepEqual(wraps.map((wrap) => ({
+    tabindex: wrap.getAttribute('tabindex'),
+    role: wrap.getAttribute('role'),
+    label: wrap.getAttribute('aria-label'),
+  })), [
+    { tabindex: '0', role: 'region', label: 'Why things failed' },
+    { tabindex: '0', role: 'region', label: 'The runs' },
+  ]);
+});
+
+test('run-history scrollers keep their focus ring inside the table box', () => {
+  const css = read('assets/pane-run-history-v2.css');
+  assert.match(css, /^\.tbl-wrap:focus-visible \{ outline-offset: -2px; \}$/m);
+});
+
+test('aria.css makes hidden win over author display rules', () => {
+  const css = read('assets/aria.css');
+  assert.match(css, /^\[hidden\] \{ display: none !important; \}$/m);
+});
+
 function stateOf(dom) {
   return dom.applied[dom.applied.length - 1] || null;
 }

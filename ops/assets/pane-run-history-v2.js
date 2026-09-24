@@ -1057,7 +1057,12 @@
     function failureBand(data, selection) {
       var section = S.band('Why things failed', 'Most runs first, then most recent');
       var box = S.card();
-      var wrap = h('div', { className: 'tbl-wrap' });
+      var wrap = h('div', {
+        className: 'tbl-wrap',
+        tabindex: '0',
+        role: 'region',
+        'aria-label': 'Why things failed'
+      });
       var table = h('table', { className: 'tbl' });
 
       var head = h('thead');
@@ -1149,7 +1154,12 @@
     function runsBand(data, selection) {
       var section = S.band('The runs', 'Newest first');
       var box = S.card();
-      var wrap = h('div', { className: 'tbl-wrap' });
+      var wrap = h('div', {
+        className: 'tbl-wrap',
+        tabindex: '0',
+        role: 'region',
+        'aria-label': 'The runs'
+      });
       var table = h('table', { className: 'tbl' });
 
       var head = h('thead');

@@ -1053,10 +1053,7 @@ const totals = {
    numbers are not prose. Each is keyed to a finding KIND, the generator
    prints it from this map, and a key whose kind the run did not produce
    THROWS rather than printing. A finding with no entry prints as unfiled. */
-const FILED = {
-  'undeclared-scroller': 'Stadiora/Aria#10868',
-  'hidden-painted': 'Stadiora/Aria#10869'
-};
+const FILED = {};
 
 const findings = [];
 

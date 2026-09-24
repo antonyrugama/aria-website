@@ -1811,7 +1811,7 @@ pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-
 pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
 pane-jobs-live-v2.css .u-scroll = outline-offset: -2px
 pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
-pane-run-history-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
+pane-run-history-v2.css .tbl-wrap = outline-offset: -2px
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
 pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-users-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
@@ -2593,7 +2593,7 @@ ops/assets/pane-releases.js "The chip carries the share and nothing else" = line
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 112
-ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 634
+ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 636
 ```
 
 One citation is still spelled in this file, and it is the one just above: the drifted
