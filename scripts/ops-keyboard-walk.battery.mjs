@@ -107,9 +107,11 @@ const S = {
   /* THESE FOUR WERE THE RULE'S OWN EXCEPTION. They were bare
      `.filter().reduce()` and returned 0 over an empty record -- the exact
      shape the paragraph above forbids, indistinguishable from a healthy
-     zero, under five published `survive` rows (T1, T2, T3, M6a, M6b). A
+     zero, under four published `survive` rows (T1, T2, T3, M6a). A
      rule stated in a comment and implemented in one helper is enforced only
-     where the helper is called. */
+     where the helper is called. M6b used to be a fifth survive row; the
+     Settings cost-category selects made it load-bearing because descendant
+     option text is not a control's visible label. */
   historyScrollers: (j) => over(j, 'history', (r) => r.reduce((a, w) => a + w.undeclaredScrollers.length, 0)),
   evalsHidden: (j) => over(j, 'evals', (r) => r.reduce((a, w) => a + w.hiddenPainted.length, 0)),
   settingsHidden: (j) => over(j, 'settings', (r) => r.reduce((a, w) => a + w.hiddenPainted.length, 0)),
@@ -235,12 +237,12 @@ const EXPERIMENTS = [
   { id: 'M6a', kind: 'redundancy-probe', expect: 'survive', scope: 'settings', signal: 'settingsLabels', file: TOOL,
     anchor: "    mismatchedLabels: () => Array.from(document.querySelectorAll('[aria-label]'))\n      .filter((el) => visible(el) && el.matches(CONTROLS))",
     payload: "    mismatchedLabels: () => Array.from(document.querySelectorAll('[aria-label]'))\n      .filter(visible)",
-    what: 'HALF of M6: regions are admitted again but the label is still read from own text nodes. Published BECAUSE it survives -- a region has no direct text of its own, so this half alone changes nothing on today\'s pages. Neither half of M6 is individually load-bearing; together they are. An instrument whose two guards are each redundant is one page away from having neither.' },
+    what: 'HALF of M6: regions are admitted again but the label is still read from own text nodes. Published BECAUSE it survives -- a region has no direct text of its own, so this half alone changes nothing on today\'s pages. M6b is now load-bearing because Settings has selects whose descendant options are not the control label.' },
 
-  { id: 'M6b', kind: 'redundancy-probe', expect: 'survive', scope: 'settings', signal: 'settingsLabels', file: TOOL,
+  { id: 'M6b', kind: 'mutation', expect: 'kill', scope: 'settings', signal: 'settingsLabels', file: TOOL,
     anchor: "        text: Array.from(el.childNodes).filter((n) => n.nodeType === 3)\n          .map((n) => n.textContent).join(' ').replace(/\\\\s+/g, ' ').trim() }))",
     payload: "        text: (el.textContent || '').replace(/\\\\s+/g, ' ').trim() }))",
-    what: 'The OTHER half of M6: textContent is read again but only from controls. Also survives, because the three Revoke buttons have no element children and their textContent equals their own text nodes. Pairs with M6a to show the redundancy runs both ways.' },
+    what: 'The OTHER half of M6: textContent is read again but only from controls. Settings now has cost-category selects, and a select\'s descendant option text is not the visible label named by aria-label, so this half must move the label signal.' },
 
   { id: 'M7', kind: 'mutation', expect: 'kill', scope: 'evals', signal: 'evalsUnreachable', file: TOOL,
     anchor: "      .filter((el) => visible(el) && !window.__kbd.disabled(el)).map(describe),",

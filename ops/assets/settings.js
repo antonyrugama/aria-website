@@ -14,10 +14,9 @@
    nothing here reads anything until definePane's callback runs.
 
    SECOND, IT SAYS WHICH HALF OF ITSELF IS REAL. Six areas are on screen and
-   four of them are read from an API: administrators, active sessions, the
-   access record and outside connections. Retention windows and the
-   cost-category mapping have no endpoint to read or write, so they print no
-   figure at all.
+   five of them are read from an API: administrators, active sessions, the
+   access record, cost categories and outside connections. The retention card
+   has no endpoint to read or write, so it prints no figure at all.
    They say what is missing and which of "not built" and "not reported"
    applies. Rendering the remaining static cards as populated tables would be the worst outcome
    available, because a number nobody can check is indistinguishable from one
@@ -56,6 +55,8 @@
   var SESSIONS = '/api/ops/sessions';
   var AUDIT = '/api/ops/audit';
   var INTEGRATIONS = '/api/ops/integrations';
+  var COST_CATEGORIES = '/api/ops/settings/cost-categories';
+  var COST_CATEGORY_OVERRIDES = '/api/ops/settings/cost-categories/overrides';
   var OPS_SOURCE_PARTS = ['', 'api', 'ops'];
   var AUDIT_PAGE = 50;
 
@@ -77,7 +78,9 @@
     'admin.session_revoke_failed': 'Revoke refused',
     'admin.refresh_failed': 'Sign in refresh failed',
     'admin.refresh_reuse_detected': 'Session token reused',
-    'admin.refresh_grace_used': 'Two tabs refreshed at once'
+    'admin.refresh_grace_used': 'Two tabs refreshed at once',
+    'settings.cost_category_override_upsert': 'Changed a cost category',
+    'settings.cost_category_override_delete': 'Cleared a cost category override'
   };
 
   /* What kind of thing an action was done to, said the way the rest of the
@@ -85,7 +88,8 @@
      reason an unrecognised action is. */
   var TARGET_LABELS = {
     ops_admin_session: 'sign in session',
-    ops_admin_account: 'administrator account'
+    ops_admin_account: 'administrator account',
+    ops_cost_category_override: 'cost category override'
   };
 
   var INTEGRATION_FAILURE_LABELS = {
@@ -99,6 +103,33 @@
     untrusted_next_link: 'The service returned an unsafe next-page link'
   };
   var INTEGRATION_UNKNOWN_FAILURE = 'An unrecognised failure reason was reported';
+
+  var COST_CATEGORY_FALLBACK_LABELS = {
+    ci_and_build: 'CI and build',
+    ai_and_models: 'AI and models',
+    data: 'Data',
+    application_compute: 'Application compute',
+    platform_and_observability: 'Platform and observability'
+  };
+  var COST_SOURCE_LABELS = {
+    seed: 'Default',
+    resource_group_override: 'Your override',
+    service_override: 'Your override',
+    ungrouped: 'No default or override'
+  };
+  var COST_READ_ERRORS = {
+    ops_role_insufficient: 'You do not have access to cost categories.',
+    ops_auth_required: 'Sign in again to read cost categories.'
+  };
+  var COST_WRITE_ERRORS = {
+    ops_cost_category_invalid: 'Choose one of the listed cost categories.',
+    ops_cost_category_scope_invalid: 'Choose whether the change applies here or to the service.',
+    ops_cost_service_invalid: 'Choose the Azure service this change applies to.',
+    ops_cost_resource_group_invalid: 'Choose a resource group for this scoped change.',
+    ops_cost_category_override_version_invalid: 'This row is missing its latest version. Reload and try again.',
+    ops_reauth_required: 'Confirm your password to change cost categories.',
+    ops_role_insufficient: 'You do not have access to change cost categories.'
+  };
 
   /* ------------------------------------------------------------ formatting */
 
@@ -547,17 +578,18 @@
         readAdmins(),
         soft(session.call(SESSIONS)),
         soft(session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: 0 } })),
+        softObject(session.call(COST_CATEGORIES)),
         softObject(session.call(INTEGRATIONS))
       ]).then(function (results) {
         if (token !== loadToken) return;
-        render(results[0], results[1], results[2], results[3]);
+        render(results[0], results[1], results[2], results[3], results[4]);
       }, function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
       });
     }
 
-    function render(adminRows, sessionResult, recordResult, integrationResult) {
+    function render(adminRows, sessionResult, recordResult, costResult, integrationResult) {
       var admins = Array.isArray(adminRows) ? adminRows : [];
 
       /* Empty is a real state with a real trigger, and here it is a narrow
@@ -572,14 +604,15 @@
       }
 
       var sessions = sessionResult.rows || [];
-      var degraded = !!(sessionResult.error || recordResult.error || integrationResult.error);
+      var degraded = !!(sessionResult.error || recordResult.error ||
+        costResult.error || integrationResult.error);
 
       var stack = h('div', { className: 'stack' });
       stack.appendChild(hero(admins, sessions, sessionResult.error));
       stack.appendChild(administratorsBand(admins, sessions, sessionResult));
       stack.appendChild(sessionsBand(admins, sessions, sessionResult));
       stack.appendChild(recordBand(recordResult));
-      stack.appendChild(keepBand());
+      stack.appendChild(keepBand(costResult));
       stack.appendChild(integrationsBand(integrationResult));
 
       if (degraded) region.degraded(stack);
@@ -1433,6 +1466,349 @@
       return err && (err.code === 'ops_role_insufficient' || err.status === 403);
     }
 
+    /* ------------------------------------------------------- cost mapping */
+
+    function costData(result) {
+      return result && result.data ? result.data : {};
+    }
+
+    function costCategories(result) {
+      var rows = costData(result).categories;
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function costLines(result) {
+      var rows = costData(result).lines;
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function costOverrides(result) {
+      var rows = costData(result).overrides;
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function costLabelMap(result) {
+      var labels = {};
+      costCategories(result).forEach(function (category) {
+        if (category && category.key) {
+          labels[category.key] = category.label || COST_CATEGORY_FALLBACK_LABELS[category.key] ||
+            String(category.key);
+        }
+      });
+      Object.keys(COST_CATEGORY_FALLBACK_LABELS).forEach(function (key) {
+        if (!labels[key]) labels[key] = COST_CATEGORY_FALLBACK_LABELS[key];
+      });
+      return labels;
+    }
+
+    function costCategoryLabel(key, labels) {
+      if (key === 'ungrouped') return 'Uncategorised';
+      return labels[key] || String(key || 'Unknown category');
+    }
+
+    function costOverrideKey(scope, serviceKey, resourceGroupKey) {
+      return String(scope || '') + '|' + String(serviceKey || '') + '|' +
+        String(resourceGroupKey || '');
+    }
+
+    function costOverrideIndex(result) {
+      var out = {};
+      costOverrides(result).forEach(function (override) {
+        if (!override) return;
+        out[costOverrideKey(override.scope, override.serviceKey, override.resourceGroupKey)] =
+          override;
+      });
+      return out;
+    }
+
+    function costOverrideFor(line, scope, index) {
+      if (!line) return null;
+      var resourceKey = scope === 'resource_group_service' ? line.resourceGroupKey : '';
+      return index[costOverrideKey(scope, line.serviceKey, resourceKey)] || null;
+    }
+
+    function costSourceLabel(line) {
+      return COST_SOURCE_LABELS[line && line.source] || 'Source not reported';
+    }
+
+    function costScopeDefault(line) {
+      return line && line.resourceGroup ? 'resource_group_service' : 'service';
+    }
+
+    function costReadMessage(err) {
+      if (err && COST_READ_ERRORS[err.code]) return COST_READ_ERRORS[err.code];
+      if (err && (err.status === 403 || err.code === 'ops_role_insufficient')) {
+        return COST_READ_ERRORS.ops_role_insufficient;
+      }
+      return 'The cost category settings could not be read. Try again.';
+    }
+
+    function costWriteMessage(err) {
+      if (err && COST_WRITE_ERRORS[err.code]) return COST_WRITE_ERRORS[err.code];
+      return 'The cost category settings could not be saved. Reload and try again.';
+    }
+
+    function costFailureBody(err, retry) {
+      var body = h('div', { className: 'card-body' });
+      var block = S.stateBlock('warn', 'Cost categories could not be read', [
+        costReadMessage(err),
+        'Nothing here is a zero. These rows are unread, not absent.'
+      ], 4);
+      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
+      again.addEventListener('click', retry);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      body.appendChild(block);
+      return body;
+    }
+
+    function costDeniedBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('lock', 'You do not have access to cost categories', [
+        'The cost-category mapping is limited to the owner role.',
+        'Nothing here is zero-filled, and no category is guessed.'
+      ], 4));
+      return body;
+    }
+
+    function noCostLinesBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('empty', 'No observed cost lines yet', [
+        'The route answered, but it did not return any Azure service lines.',
+        'Nothing has been guessed. A new service stays out of the five categories until the owner maps it.'
+      ], 4));
+      return body;
+    }
+
+    function costScopeSelect(line) {
+      var id = 'costScope-' + String(line.serviceKey || '').replace(/[^a-z0-9]+/gi, '-') +
+        '-' + String(line.resourceGroupKey || '').replace(/[^a-z0-9]+/gi, '-');
+      var label = h('label', {
+        className: 'cost-field-label', 'for': id, text: 'Scope'
+      });
+      var select = h('select', {
+        className: 'cost-select', id: id, 'data-role': 'scope',
+        'aria-label': 'Scope for ' + line.serviceName
+      });
+      if (line.resourceGroup) {
+        select.appendChild(h('option', {
+          value: 'resource_group_service',
+          text: 'This resource group only'
+        }));
+      }
+      select.appendChild(h('option', { value: 'service', text: 'This service everywhere' }));
+      select.value = costScopeDefault(line);
+      return h('div', { className: 'cost-field' }, [label, select]);
+    }
+
+    function costCategorySelect(line, labels, categories) {
+      var id = 'costCategory-' + String(line.serviceKey || '').replace(/[^a-z0-9]+/gi, '-') +
+        '-' + String(line.resourceGroupKey || '').replace(/[^a-z0-9]+/gi, '-');
+      var label = h('label', {
+        className: 'cost-field-label', 'for': id, text: 'Category'
+      });
+      var select = h('select', {
+        className: 'cost-select', id: id, 'data-role': 'category',
+        'aria-label': 'Category for ' + line.serviceName
+      });
+      categories.forEach(function (category) {
+        select.appendChild(h('option', {
+          value: category.key,
+          text: costCategoryLabel(category.key, labels)
+        }));
+      });
+      select.value = line.effectiveCategory === 'ungrouped'
+        ? (categories[0] && categories[0].key) || ''
+        : line.effectiveCategory;
+      return h('div', { className: 'cost-field' }, [label, select]);
+    }
+
+    function costActionCell(host, result, line) {
+      var labels = costLabelMap(result);
+      var categories = costCategories(result);
+      var overrides = costOverrideIndex(result);
+      var cell = h('td', { className: 'cell-wrap' });
+      var form = h('div', { className: 'cost-editor' });
+      var categoryField = costCategorySelect(line, labels, categories);
+      var scopeField = costScopeSelect(line);
+      var category = categoryField.querySelector('[data-role="category"]');
+      var scope = scopeField.querySelector('[data-role="scope"]');
+      var save = h('button', {
+        className: 'btn btn-sm btn-primary', type: 'button', text: 'Save',
+        'data-role': 'save',
+        'aria-label': 'Save category for ' + line.serviceName
+      });
+      var useDefault = h('button', {
+        className: 'btn btn-sm', type: 'button', text: 'Use default',
+        'data-role': 'default',
+        'aria-label': 'Use default category for ' + line.serviceName
+      });
+      if (!line.override) useDefault.disabled = true;
+
+      function selectedScope() {
+        return scope.value === 'service' ? 'service' : 'resource_group_service';
+      }
+
+      function selectedOverride() {
+        return costOverrideFor(line, selectedScope(), overrides);
+      }
+
+      function targetBody(expected) {
+        var s = selectedScope();
+        return {
+          scope: s,
+          serviceName: line.serviceName,
+          resourceGroup: s === 'resource_group_service' ? line.resourceGroup : null,
+          category: category.value,
+          expectedUpdatedAt: expected
+        };
+      }
+
+      function lock(on, word) {
+        save.disabled = on;
+        if (!line.override) useDefault.disabled = true;
+        else useDefault.disabled = on;
+        save.textContent = on ? word : 'Save';
+      }
+
+      save.addEventListener('click', function () {
+        var override = selectedOverride();
+        var expected = override ? override.updatedAt : null;
+        lock(true, 'Saving');
+        session.call(COST_CATEGORY_OVERRIDES, {
+          method: 'PUT',
+          body: targetBody(expected)
+        }).then(function () {
+          var message = 'Saved ' + costCategoryLabel(category.value, labels) + ' for ' +
+            line.serviceName + '.';
+          S.toast('check', message);
+          S.announce(message);
+          load();
+        }, function (err) {
+          lock(false);
+          if (err && err.code === 'ops_cost_category_override_stale') {
+            var stale = 'That cost-category row changed somewhere else. The pane is reloading.';
+            S.toast('warn', stale);
+            S.announce(stale);
+            load();
+            return;
+          }
+          var message = costWriteMessage(err);
+          S.toast('warn', message);
+          S.announce(message);
+        });
+      });
+
+      useDefault.addEventListener('click', function () {
+        var override = line.override;
+        if (!override) return;
+        save.disabled = true;
+        useDefault.disabled = true;
+        useDefault.textContent = 'Clearing';
+        session.call(COST_CATEGORY_OVERRIDES, {
+          method: 'DELETE',
+          body: {
+            scope: override.scope,
+            serviceName: override.serviceName || line.serviceName,
+            resourceGroup: override.scope === 'resource_group_service'
+              ? override.resourceGroup || line.resourceGroup
+              : null,
+            expectedUpdatedAt: override.updatedAt
+          }
+        }).then(function () {
+          var message = 'Using the default for ' + line.serviceName + '.';
+          S.toast('check', message);
+          S.announce(message);
+          load();
+        }, function (err) {
+          save.disabled = false;
+          useDefault.disabled = false;
+          useDefault.textContent = 'Use default';
+          if (err && err.code === 'ops_cost_category_override_stale') {
+            var stale = 'That cost-category row changed somewhere else. The pane is reloading.';
+            S.toast('warn', stale);
+            S.announce(stale);
+            load();
+            return;
+          }
+          var message = costWriteMessage(err);
+          S.toast('warn', message);
+          S.announce(message);
+        });
+      });
+
+      form.appendChild(categoryField);
+      form.appendChild(scopeField);
+      form.appendChild(h('div', { className: 'cost-actions' }, [save, useDefault]));
+      cell.appendChild(form);
+      return cell;
+    }
+
+    function costCategoriesTable(result, host) {
+      var labels = costLabelMap(result);
+      var tbl = table([
+        { label: 'Cost line' }, { label: 'Category' }, { label: 'Source' },
+        { label: 'Edit', right: true }
+      ]);
+      var tbody = bodyOf(tbl);
+      costLines(result).forEach(function (line) {
+        var row = h('tr');
+        var name = h('td');
+        name.appendChild(h('div', {
+          className: 't-main',
+          text: line.serviceName || 'Unnamed Azure service'
+        }));
+        name.appendChild(h('div', {
+          className: 't-sub',
+          text: line.resourceGroup ? 'Resource group ' + line.resourceGroup : 'All resource groups'
+        }));
+        row.appendChild(name);
+        row.appendChild(h('td', {}, [
+          pill(line.effectiveCategory === 'ungrouped' ? 'warn' : '', null,
+            costCategoryLabel(line.effectiveCategory, labels))
+        ]));
+        row.appendChild(h('td', { className: 'cell-wrap' }, [
+          h('div', { className: 't-main', text: costSourceLabel(line) }),
+          h('div', {
+            className: 't-sub',
+            text: line.source === 'ungrouped'
+              ? 'No category is guessed for this line'
+              : line.source === 'seed'
+                ? 'Seed mapping'
+                : line.override && line.override.scope === 'service'
+                  ? 'Service-wide override'
+                  : 'Resource-group override'
+          })
+        ]));
+        row.appendChild(costActionCell(host, result, line));
+        tbody.appendChild(row);
+      });
+      return tableWrap('Cost category mapping', tbl);
+    }
+
+    function costCategoriesCard(result) {
+      var lines = costLines(result);
+      var host = liveCard('settings/cost-categories', 'Cost categories', result && result.error
+        ? 'Could not be read'
+        : lines.length
+          ? fmt.plural(lines.length, 'cost line')
+          : 'No observed cost lines yet');
+
+      if (result && deniedIntegrationError(result.error)) {
+        host.appendChild(costDeniedBody());
+      } else if (result && result.error) {
+        host.appendChild(costFailureBody(result.error, load));
+      } else if (!lines.length) {
+        host.appendChild(noCostLinesBody());
+      } else {
+        host.appendChild(costCategoriesTable(result, host));
+        host.appendChild(cardFoot(
+          'The current mapping applies to every period Cloud costs shows. A new service is not guessed into a category.',
+          'info'));
+      }
+
+      return host;
+    }
+
     /* --------------------------------------------- what nothing serves yet
 
        Every static string below is written without a digit in it, on purpose. See the
@@ -1440,7 +1816,7 @@
        prints no numeral, so that no figure on this pane can be read as
        measured when it was typed. */
 
-    function keepBand() {
+    function keepBand(costResult) {
       var band = S.band('What we keep, and for how long');
       var grid = h('div', { className: 'grid g2' });
 
@@ -1455,17 +1831,7 @@
         ]
       ));
 
-      grid.appendChild(staticCard(
-        'Cost categories', 'Which Azure service counts as what',
-        [
-          'The mapping is held server side and used by Cloud costs. Nothing reads or ' +
-            'writes it from here, and a copy shown here could be out of date.'
-        ],
-        [
-          'A new service starts ungrouped rather than guessed, and appears on Cloud costs ' +
-            'as its own line rather than inside a category it was never put in.'
-        ]
-      ));
+      grid.appendChild(costCategoriesCard(costResult));
 
       band.appendChild(grid);
       return band;
