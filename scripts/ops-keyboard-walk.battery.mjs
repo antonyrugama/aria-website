@@ -237,6 +237,12 @@ const EXPERIMENTS = [
     ],
     what: 'With hidden reset removed, disabled controls are counted as reachability candidates again. The browser is right to skip them and the page gets the blame.' },
 
+  { id: 'M7b', kind: 'isolation-control', expect: 'survive', scope: 'evals', signal: 'evalsUnreachable',
+    file: 'ops/assets/aria.css',
+    anchor: '[hidden] { display: none !important; }\n\n',
+    payload: '',
+    what: 'M7 edit one, alone. Removing the hidden reset paints the Evaluations fieldset, but its controls remain disabled, so the fixed reachability rule does not blame the browser for skipping them. The tool edit in M7 is the variable that moves the signal.' },
+
   { id: 'M8', kind: 'mutation', expect: 'kill', scope: 'settings', signal: 'settingsSkipFirst', file: TOOL,
     anchor: "async function resetFocus(url, viewport) {\n  await load(url, viewport);\n  await helpers();\n}",
     payload: "async function resetFocus(url, viewport) {\n  if (resetFocus.at !== url + viewport.name) {\n    resetFocus.at = url + viewport.name;\n    await load(url, viewport);\n    await helpers();\n    return;\n  }\n  await evalJson('JSON.stringify(!!(document.activeElement && (document.activeElement.blur() || 1)))');\n}",
