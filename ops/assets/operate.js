@@ -31,6 +31,7 @@
   var shell = global.OpsShell;
   var h = shell.h;
   var icon = shell.icon;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -714,11 +715,18 @@
     ops_bad_response: 'The operations API answered with something this page could not read.'
   };
 
-  /* Turns any failure into the sentence an operator should read. API messages
-     can carry server text, so only declared codes get fixed copy. */
+  /* Turns any failure into the sentence an operator should read. The API's own
+     message is used where there is one, because it is written for this screen;
+     contact details are masked before it reaches the DOM. */
   function failureMessage(err) {
     var code = err && err.code;
-    return FAILURE_MESSAGES[code] || FAILURE_FALLBACK;
+    if (Object.prototype.hasOwnProperty.call(FAILURE_MESSAGES, code)) {
+      return FAILURE_MESSAGES[code];
+    }
+    if (err && typeof err.message === 'string' && err.message) {
+      return maskContactDetails(err.message);
+    }
+    return FAILURE_FALLBACK;
   }
 
   /* ---------------------------------------------------------------- pieces */

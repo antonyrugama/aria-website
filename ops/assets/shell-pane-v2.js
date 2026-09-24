@@ -46,7 +46,8 @@
      safeHref(text)          a same-origin, same-scheme href, or null
      isLoopback()            whether this page is being served locally, which
                              is the only place a fixture may be read from
-     failureMessage(error)   what to tell a person about a failed read
+     failureMessage(error)   what to tell a person about a failed read, with
+                             contact details masked
      panes                   the registry, read-only
 
    That list is the whole of it, in both directions: a test boots the page and
@@ -87,6 +88,7 @@
   var SCOPES = registry.SCOPES;
   var ENVS = registry.ENVS;
   var WAVES = registry.WAVES;
+  var maskContactDetails = registry.maskContactDetails;
 
   /* ------------------------------------------------------- DOM shorthand */
 
@@ -701,7 +703,13 @@
 
   function failureMessage(err) {
     var code = err && err.code;
-    return FAILURE_MESSAGES[code] || FAILURE_FALLBACK;
+    if (Object.prototype.hasOwnProperty.call(FAILURE_MESSAGES, code)) {
+      return FAILURE_MESSAGES[code];
+    }
+    if (err && typeof err.message === 'string' && err.message) {
+      return maskContactDetails(err.message);
+    }
+    return FAILURE_FALLBACK;
   }
 
   /* What a pane shows before the wave that builds it has shipped. An empty

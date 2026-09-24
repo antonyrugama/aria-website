@@ -977,6 +977,15 @@ test('a summary read that fails leaves the urgent queue on screen', async () => 
     'an unread figure was drawn as a zero');
 });
 
+test('an Overview failure message preserves the API copy with contact details masked', async () => {
+  const dom = await boot({ summary: new Error('Summary for admin@example.invalid timed out') });
+  const text = allText(dom2state(dom, 'degraded') || livePanel(dom));
+  assert.match(text, /Summary for \[hidden contact detail\] timed out/,
+    'the Overview caller did not show the API message with the address masked');
+  assert.doesNotMatch(text, /admin@example\.invalid/,
+    'the Overview caller rendered the raw address from the API message');
+});
+
 test('the pane asks for exactly the three reads it needs, and no filters', async () => {
   const dom = await boot({});
   const endpoints = dom.calls.map((c) => c.endpoint).sort();
