@@ -3,9 +3,8 @@
    Stadiora/Aria#10771 — the rules read was the one read with no way to ask
    again. Its failure was reported honestly (the ribbon says `rules unread`,
    the queue card says whether the checks are running could not be read) and
-   then the operator was stranded: nothing to press, and not even the error
-   the request came back with. Reloading the page was the only way to retry,
-   which also re-runs the two reads that had already worked.
+   then the operator was stranded: nothing to press. Reloading the page was the
+   only way to retry, which also re-runs the two reads that had already worked.
 
    Stadiora/Aria#10784 — pressing any Try again re-renders the panel, which
    destroys the button that was pressed. Focus fell back to the document: the
@@ -351,8 +350,10 @@ test('the retry sits with the rules failure in every state that can draw one', a
       .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE);
     assert.equal(mine.length, 1,
       `with ${what} the rules failure drew ${mine.length} retries, not one`);
-    assert.ok(allText(panel).indexOf('rules is down') !== -1,
-      `with ${what} the operator is not told what the rules read came back with`);
+    assert.ok(allText(panel).indexOf('The operations API did not answer.') !== -1,
+      `with ${what} the operator is not shown the fixed failure copy`);
+    assert.ok(allText(panel).indexOf('rules is down') === -1,
+      `with ${what} the raw rules read error reached the pane`);
   }
 });
 

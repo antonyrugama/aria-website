@@ -867,7 +867,10 @@ test('each of the four states shows its own content and hides the other three', 
   region.failed(new Error('the read did not land'), null);
   assert.deepEqual(shown(), ['live degraded'],
     'a failed read fell into the empty state, which claims there is nothing here');
-  assert.match(allText(content), /the read did not land/);
+  assert.match(allText(content), /The operations API did not answer\./,
+    'a failed read did not use the declared fallback copy');
+  assert.doesNotMatch(allText(content), /the read did not land/,
+    'a failed read echoed raw API error text');
   assert.match(allText(content), /Nothing here is a zero/);
 });
 
@@ -947,6 +950,39 @@ test('a formatter handed nothing prints the same placeholder on both systems', a
     assert.equal(shell.fmt.money(missing, 'USD'), v1.data.money(missing, 'USD'));
     assert.doesNotMatch(String(shell.fmt.int(missing)), /NaN|undefined/);
     assert.doesNotMatch(String(shell.fmt.money(missing, 'USD')), /NaN|undefined/);
+  }
+});
+
+test('shared failure messages never echo API error text', async () => {
+  const { shell } = await bootPane('overview', { definePane: () => {} });
+  const { operate } = v1Formatters();
+  const raw = {
+    code: 'ops_unknown_upstream',
+    message: 'database host leaked admin@example.invalid from upstream',
+  };
+
+  for (const [name, failureMessage] of [
+    ['v2 shell', shell.failureMessage],
+    ['v1 operate helper', operate.failureMessage],
+  ]) {
+    const unknown = failureMessage(raw);
+    assert.doesNotMatch(unknown, /admin@example\.invalid/,
+      name + ' echoed raw API error text');
+    assert.doesNotMatch(unknown, /database host leaked/,
+      name + ' used upstream wording instead of fixed fallback copy');
+    assert.match(unknown, /operations API|Something went wrong/,
+      name + ' did not use the declared fallback copy');
+
+    assert.equal(
+      failureMessage({ code: 'ops_unreachable', message: 'raw network address admin@example.invalid' }),
+      'Could not reach the operations API. Check your connection and try again.',
+      name + ' stopped mapping ops_unreachable to fixed copy'
+    );
+    assert.equal(
+      failureMessage({ code: 'ops_role_insufficient', message: 'raw user address admin@example.invalid' }),
+      'Your role does not allow this. Ask an owner if you need it.',
+      name + ' stopped mapping ops_role_insufficient to fixed copy'
+    );
   }
 });
 

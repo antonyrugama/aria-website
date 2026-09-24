@@ -706,21 +706,19 @@
     return wrap;
   }
 
-  /* Turns any failure into the sentence an operator should read. The API's own
-     message is used where there is one, because it is written for this screen;
-     the fallbacks cover the cases where there is not. */
+  var FAILURE_FALLBACK = 'Something went wrong loading this.';
+  var FAILURE_MESSAGES = {
+    ops_unreachable: 'Could not reach the operations API. Check your connection and try again.',
+    ops_role_insufficient: 'Your role does not allow this. Ask an owner if you need it.',
+    ops_route_missing: 'This part of the dashboard is not answering yet.',
+    ops_bad_response: 'The operations API answered with something this page could not read.'
+  };
+
+  /* Turns any failure into the sentence an operator should read. API messages
+     can carry server text, so only declared codes get fixed copy. */
   function failureMessage(err) {
-    if (!err) return 'Something went wrong loading this.';
-    if (err.code === 'ops_unreachable') {
-      return 'Could not reach the operations API. Check your connection and try again.';
-    }
-    if (err.code === 'ops_role_insufficient') {
-      return 'Your role does not allow this. Ask an owner if you need it.';
-    }
-    if (err.code === 'ops_route_missing') {
-      return 'This part of the dashboard is not answering yet.';
-    }
-    return err.message || 'Something went wrong loading this.';
+    var code = err && err.code;
+    return FAILURE_MESSAGES[code] || FAILURE_FALLBACK;
   }
 
   /* ---------------------------------------------------------------- pieces */

@@ -407,18 +407,18 @@ test('the failed section says what went wrong and that the gap is not a zero', a
      so the sentence could have left the pane entirely and the suite would have
      agreed. This is the assumption that word-reduction rests on.
 
-     The error string is asserted as the one the READ rejected with, not as a
-     phrase: an error message the pane invents is the same defect as no error
-     message, and a /could not/ predicate cannot tell them apart. */
+     The failure copy is the shared fallback, not the READ's raw message. The
+     backend can send server text there, and this pane must not print it. */
   const down = await boot({ problems: boom('the problems query timed out') });
   const section = nodesWithClass(livePanel(down), 'state-block')
     .find((b) => /The problems could not be read/.test(allText(b)));
   assert.ok(section, 'no failed-section card to read');
 
   const text = allText(section);
-  assert.match(text, /the problems query timed out/,
-    'the section reports that something failed without reporting what, so an operator has '
-    + 'nothing to act on and no way to tell a timeout from a permission error');
+  assert.match(text, /The operations API did not answer\./,
+    'the section did not use the declared fallback copy');
+  assert.doesNotMatch(text, /the problems query timed out/,
+    'the section echoed raw API error text');
   assert.match(text, /not a zero|unread, not empty/,
     'the section does not say the gap is unread rather than empty — the one thing this pane '
     + 'exists to keep straight, and the reason the ribbon was allowed to shed the sentence');

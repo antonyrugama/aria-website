@@ -691,9 +691,17 @@
     return box;
   }
 
+  var FAILURE_FALLBACK = 'The operations API did not answer.';
+  var FAILURE_MESSAGES = {
+    ops_unreachable: 'Could not reach the operations API. Check your connection and try again.',
+    ops_role_insufficient: 'Your role does not allow this. Ask an owner if you need it.',
+    ops_route_missing: 'This part of the dashboard is not answering yet.',
+    ops_bad_response: 'The operations API answered with something this page could not read.'
+  };
+
   function failureMessage(err) {
-    if (err && typeof err.message === 'string' && err.message) return err.message;
-    return 'The operations API did not answer.';
+    var code = err && err.code;
+    return FAILURE_MESSAGES[code] || FAILURE_FALLBACK;
   }
 
   /* What a pane shows before the wave that builds it has shipped. An empty
