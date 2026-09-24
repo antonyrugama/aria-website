@@ -968,17 +968,20 @@ test('shared failure messages preserve API copy and mask contact details', async
 
     assert.equal(
       failureMessage({ code: 'ops_unreachable', message: 'raw network address admin@example.invalid' }),
-      'Could not reach the operations API. Check your connection and try again.',
-      name + ' stopped mapping ops_unreachable to fixed copy'
+      'raw network address [hidden contact detail]',
+      name + ' stopped preserving API copy when a code is also present'
     );
     assert.equal(
-      failureMessage({ code: 'ops_role_insufficient', message: 'raw user address admin@example.invalid' }),
+      failureMessage({ code: 'ops_role_insufficient' }),
       'Your role does not allow this. Ask an owner if you need it.',
-      name + ' stopped mapping ops_role_insufficient to fixed copy'
+      name + ' stopped mapping ops_role_insufficient to fixed copy when no API copy is present'
     );
-    assert.match(failureMessage({}), /operations API|Something went wrong/,
-      name + ' stopped using the declared fallback copy');
   }
+
+  assert.equal(shell.failureMessage({}), 'The operations API did not answer.',
+    'v2 shell stopped using its declared fallback copy');
+  assert.equal(operate.failureMessage({}), 'Something went wrong loading this.',
+    'v1 operate helper stopped using its declared fallback copy');
 });
 
 /* ============================== the fixture hook ======================= */

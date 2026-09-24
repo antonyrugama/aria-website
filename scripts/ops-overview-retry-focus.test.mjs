@@ -339,9 +339,12 @@ test('the retry sits with the rules failure in every state that can draw one', a
      the problems failure when both reads are down — and the operator has to be
      offered the same control in all three. */
   const states = [
-    ['a queue with rows', { rules: boom('rules') }],
-    ['an empty queue', { rules: boom('rules'), problems: { problems: [] } }],
-    ['the problems read down too', { rules: boom('rules'), problems: boom('problems') }],
+    ['a queue with rows', { rules: boom('rules for admin@example.invalid') }],
+    ['an empty queue', { rules: boom('rules for admin@example.invalid'), problems: { problems: [] } }],
+    ['the problems read down too', {
+      rules: boom('rules for admin@example.invalid'),
+      problems: boom('problems for owner@example.invalid'),
+    }],
   ];
   for (const [what, options] of states) {
     const dom = await boot(options);
@@ -350,10 +353,10 @@ test('the retry sits with the rules failure in every state that can draw one', a
       .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE);
     assert.equal(mine.length, 1,
       `with ${what} the rules failure drew ${mine.length} retries, not one`);
-    assert.ok(allText(panel).indexOf('The operations API did not answer.') !== -1,
-      `with ${what} the operator is not shown the fixed failure copy`);
-    assert.ok(allText(panel).indexOf('rules is down') === -1,
-      `with ${what} the raw rules read error reached the pane`);
+    assert.ok(allText(panel).indexOf('rules for [hidden contact detail] is down') !== -1,
+      `with ${what} the operator is not shown the masked rules failure copy`);
+    assert.ok(allText(panel).indexOf('@example.invalid') === -1,
+      `with ${what} a raw address reached the pane`);
   }
 });
 

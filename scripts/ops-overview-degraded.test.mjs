@@ -407,18 +407,18 @@ test('the failed section says what went wrong and that the gap is not a zero', a
      so the sentence could have left the pane entirely and the suite would have
      agreed. This is the assumption that word-reduction rests on.
 
-     The failure copy is the shared fallback, not the READ's raw message. The
-     backend can send server text there, and this pane must not print it. */
-  const down = await boot({ problems: boom('the problems query timed out') });
+     The failure copy is the backend's user-facing message with contact
+     details masked, not dropped. */
+  const down = await boot({ problems: boom('the problems query timed out for admin@example.invalid') });
   const section = nodesWithClass(livePanel(down), 'state-block')
     .find((b) => /The problems could not be read/.test(allText(b)));
   assert.ok(section, 'no failed-section card to read');
 
   const text = allText(section);
-  assert.match(text, /The operations API did not answer\./,
-    'the section did not use the declared fallback copy');
-  assert.doesNotMatch(text, /the problems query timed out/,
-    'the section echoed raw API error text');
+  assert.match(text, /the problems query timed out for \[hidden contact detail\] is down/,
+    'the section did not show the API message with the address masked');
+  assert.doesNotMatch(text, /admin@example\.invalid/,
+    'the section echoed the raw address from the API message');
   assert.match(text, /not a zero|unread, not empty/,
     'the section does not say the gap is unread rather than empty — the one thing this pane '
     + 'exists to keep straight, and the reason the ribbon was allowed to shed the sentence');

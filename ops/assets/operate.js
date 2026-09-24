@@ -720,11 +720,11 @@
      contact details are masked before it reaches the DOM. */
   function failureMessage(err) {
     var code = err && err.code;
-    if (Object.prototype.hasOwnProperty.call(FAILURE_MESSAGES, code)) {
-      return FAILURE_MESSAGES[code];
-    }
     if (err && typeof err.message === 'string' && err.message) {
       return maskContactDetails(err.message);
+    }
+    if (Object.prototype.hasOwnProperty.call(FAILURE_MESSAGES, code)) {
+      return FAILURE_MESSAGES[code];
     }
     return FAILURE_FALLBACK;
   }
