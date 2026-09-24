@@ -368,6 +368,8 @@ async function boot(options) {
   const calls = [];
   const states = [];
   const blobs = [];
+  const signOuts = [];
+  const toLogins = [];
   const role = opts.role || 'owner';
 
   const answers = {
@@ -452,7 +454,11 @@ async function boot(options) {
       if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
       return Promise.resolve({ data: answer });
     },
-    signOut: () => Promise.resolve(),
+    signOut: opts.signOut || (() => { signOuts.push('signOut'); return Promise.resolve(); }),
+    toLogin: opts.toLogin || ((reason) => {
+      toLogins.push(reason);
+      dom.window.location.replace(`login.html?reason=${reason}`);
+    }),
     role: () => role,
     hasRole: (required) => {
       if (!required || !required.length) return true;
@@ -485,6 +491,8 @@ async function boot(options) {
     calls,
     states,
     blobs,
+    signOuts,
+    toLogins,
     settle: async () => { for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r)); },
     content: dom.doc.getElementById('content'),
   };
@@ -716,6 +724,71 @@ test('fallback session settings say defaults are in force and keep editing avail
     assert.ok(sessionWindowsControl(dom, 'session-save'), 'fallback did not render Save');
   });
 
+test('failed session-settings reads show fixed copy without values or an editor',
+  async () => {
+    const err = Object.assign(
+      new Error('ECONNREFUSED ops-db-7: relation "ops_session_settings" does not exist'),
+      { status: 503 }
+    );
+    const dom = await boot({ sessionSettings: err });
+    const card = sessionWindowsCard(dom);
+    const text = allText(card);
+
+    assert.match(text, /Sign-in windows could not be read/);
+    assert.match(text, /The sign-in window settings could not be read\. Try again\./);
+    assert.match(text, /unread, not absent/i);
+    assert.doesNotMatch(text, /ECONNREFUSED|relation "ops_session_settings"|Sessions last up to|Default/,
+      'the failed read leaked backend text or invented a setting');
+    assert.equal(card.querySelector('[data-role="session-days"]'), null,
+      'the failed read still rendered the session-days editor');
+    assert.equal(card.querySelector('[data-role="session-save"]'), null,
+      'the failed read still rendered Save');
+  });
+
+test('role-refused session-settings reads show fixed copy without values or an editor',
+  async () => {
+    const err = Object.assign(
+      new Error('raw ops_role_insufficient backend text must not render'),
+      { code: 'ops_role_insufficient', status: 403 }
+    );
+    const dom = await boot({ sessionSettings: err });
+    const card = sessionWindowsCard(dom);
+    const text = allText(card);
+
+    assert.match(text, /You do not have access to sign-in windows/);
+    assert.match(text, /limited to the owner role/i);
+    assert.doesNotMatch(text, /raw ops_role_insufficient|ops_role_insufficient|Sessions last up to|Default/,
+      'the role-refused read leaked backend text or invented a setting');
+    assert.equal(card.querySelector('[data-role="session-days"]'), null,
+      'the role-refused read still rendered the session-days editor');
+    assert.equal(card.querySelector('[data-role="session-save"]'), null,
+      'the role-refused read still rendered Save');
+  });
+
+test('session-window inputs bind range hints and visible invalid messages',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const card = sessionWindowsCard(dom);
+    const days = sessionWindowsControl(dom, 'session-days');
+    const minutes = sessionWindowsControl(dom, 'reauth-minutes');
+
+    assert.equal(days.getAttribute('aria-describedby'), 'sessionWindowDaysHint');
+    assert.match(allText(card.querySelector('#sessionWindowDaysHint')), /Allowed range: 1 to 30\./);
+    assert.equal(minutes.getAttribute('aria-describedby'), 'sessionWindowReauthHint');
+    assert.match(allText(card.querySelector('#sessionWindowReauthHint')), /Allowed range: 1 to 15\./);
+
+    days.value = '31';
+    minutes.value = '5';
+    sessionWindowsControl(dom, 'session-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(days.getAttribute('aria-invalid'), 'true');
+    assert.equal(days.getAttribute('aria-describedby'), 'sessionWindowDaysHint sessionWindowDaysError');
+    assert.match(allText(card.querySelector('#sessionWindowDaysError')), /Use 1 to 30 days\./);
+    assert.equal(minutes.getAttribute('aria-invalid'), null);
+    assert.equal(allText(card.querySelector('#sessionWindowReauthError')), '');
+  });
+
 test('lengthening session settings sends minutes as seconds without confirmation',
   async () => {
     let confirmed = false;
@@ -817,6 +890,10 @@ test('a session-settings save that ends the current session announces before rou
     assert.match(allText(sessionWindowsCard(dom)), /Opening the sign-in page in a moment/);
     assert.match(allText(sessionWindowsCard(dom)),
       /Saved\. Your own session is older than the new limit, so you'll be signed out\./);
+    assert.deepEqual(dom.signOuts, ['signOut'],
+      'a session-ending save did not clear the local credential before routing');
+    assert.deepEqual(dom.toLogins, ['expired'],
+      'a session-ending save did not route through the shared login helper');
     assert.match(dom.window.location.href, /login\.html\?reason=expired/);
   });
 
@@ -857,6 +934,27 @@ test('session-settings validation refusals use fixed copy for every server code'
       assert.doesNotMatch(toast, new RegExp(`raw ${code}|${code}`),
         `${code} leaked raw backend text or code`);
     }
+  });
+
+test('a refused session-settings write restores focus after Save is re-enabled',
+  async () => {
+    const err = Object.assign(new Error('raw save failure must not render'), {
+      code: 'ops_session_settings_update_failed',
+      status: 500,
+    });
+    const dom = await boot({ sessionSettingsSave: () => err, runTimers: false });
+    const save = sessionWindowsControl(dom, 'session-save');
+    save.focus();
+    sessionWindowsControl(dom, 'session-days').value = '20';
+    save.dispatch('click');
+    dom.doc.activeElement = dom.body;
+    await dom.settle();
+
+    assert.equal(save.disabled, false);
+    assert.equal(dom.doc.activeElement, save,
+      'focus did not return to Save after the failed write');
+    assert.match(allText(sessionWindowsCard(dom)), /could not be saved/i);
+    assert.doesNotMatch(allText(sessionWindowsCard(dom)), /raw save failure|ops_session_settings_update_failed/);
   });
 
 /* ====================================================== outside connections */
@@ -1374,6 +1472,27 @@ test('an unrecognised action is shown as recorded rather than relabelled', async
   assert.match(allText(record), /admin\.something_new/,
     'an action with no wording was given a guess instead of its own name');
 });
+
+test('the access record labels the backend target type for session-window changes',
+  async () => {
+    const dom = await boot({
+      audit: [{
+        id: 'aud_session_windows', occurredAt: back(MINUTE),
+        actorEmail: 'owner@ops.invalid', actorRole: 'owner',
+        action: 'settings.session_windows_update', outcome: 'success',
+        targetType: 'ops_session_settings', targetId: 'global',
+        reason: null, ipAddress: '198.51.100.7',
+      }],
+    });
+    const record = cardByTitle(dom, 'What was done');
+    const text = allText(record);
+
+    assert.match(text, /Changed sign-in windows/);
+    assert.match(text, /sign-in window setting/,
+      'the real backend targetType was not routed through the label map');
+    assert.doesNotMatch(text, /ops_session_settings/,
+      'the raw backend targetType leaked into the access record');
+  });
 
 test('an empty record says that nothing has happened, not that recording is off', async () => {
   const dom = await boot({ audit: [] });

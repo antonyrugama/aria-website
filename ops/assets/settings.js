@@ -88,7 +88,7 @@
   var TARGET_LABELS = {
     ops_admin_session: 'sign in session',
     ops_admin_account: 'administrator account',
-    ops_session_setting: 'sign-in window setting'
+    ops_session_settings: 'sign-in window setting'
   };
 
   var INTEGRATION_FAILURE_LABELS = {
@@ -1539,19 +1539,25 @@
     }
 
     function sessionField(id, label, value, min, max, role) {
+      var hintId = id + 'Hint';
+      var errorId = id + 'Error';
       var field = h('div', { className: 'session-window-field' });
       field.appendChild(h('label', {
         className: 'session-window-label', 'for': id, text: label
       }));
       var input = h('input', {
         className: 'session-window-input', id: id, type: 'number', step: '1',
-        min: String(min), max: String(max), 'data-role': role
+        min: String(min), max: String(max), 'data-role': role,
+        'aria-describedby': hintId
       });
       input.value = String(value);
       field.appendChild(input);
       field.appendChild(h('div', {
-        className: 't-sub',
+        className: 't-sub', id: hintId,
         text: 'Allowed range: ' + min + ' to ' + max + '.'
+      }));
+      field.appendChild(h('div', {
+        className: 'session-window-error', id: errorId, role: 'alert'
       }));
       return field;
     }
@@ -1636,9 +1642,36 @@
         S.announce(message);
       }
 
+      function setFieldError(input, message) {
+        var id = input.getAttribute('id');
+        var hintId = id + 'Hint';
+        var errorId = id + 'Error';
+        var error = body.querySelector('#' + errorId);
+        if (message) {
+          input.setAttribute('aria-invalid', 'true');
+          input.setAttribute('aria-describedby', hintId + ' ' + errorId);
+          if (error) error.textContent = message;
+        } else {
+          input.removeAttribute('aria-invalid');
+          input.setAttribute('aria-describedby', hintId);
+          if (error) error.textContent = '';
+        }
+      }
+
+      var restoreAfterLock = null;
+
       function lock(on) {
+        if (on) {
+          restoreAfterLock = document.activeElement && body.contains(document.activeElement)
+            ? document.activeElement
+            : save;
+        }
         save.disabled = on;
         save.textContent = on ? 'Saving' : 'Save';
+        if (!on && restoreAfterLock && restoreAfterLock.focus) {
+          restoreAfterLock.focus();
+          restoreAfterLock = null;
+        }
       }
 
       save.addEventListener('click', function () {
@@ -1646,23 +1679,24 @@
         var minuteInput = body.querySelector('[data-role="reauth-minutes"]');
         var nextDays = value(dayInput);
         var nextMinutes = value(minuteInput);
-        dayInput.removeAttribute('aria-invalid');
-        minuteInput.removeAttribute('aria-invalid');
+        setFieldError(dayInput, '');
+        setFieldError(minuteInput, '');
 
         if (nextDays === null || nextMinutes === null) {
           refuse('Enter whole numbers for both sign-in windows.');
-          if (nextDays === null) dayInput.setAttribute('aria-invalid', 'true');
-          if (nextMinutes === null) minuteInput.setAttribute('aria-invalid', 'true');
+          if (nextDays === null) setFieldError(dayInput, 'Enter a whole number.');
+          if (nextMinutes === null) setFieldError(minuteInput, 'Enter a whole number.');
           return;
         }
         if (nextDays < bounds.daysMin || nextDays > bounds.daysMax ||
           nextMinutes < bounds.minutesMin || nextMinutes > bounds.minutesMax) {
           refuse('Enter values inside the listed bounds.');
           if (nextDays < bounds.daysMin || nextDays > bounds.daysMax) {
-            dayInput.setAttribute('aria-invalid', 'true');
+            setFieldError(dayInput, 'Use ' + bounds.daysMin + ' to ' + bounds.daysMax + ' days.');
           }
           if (nextMinutes < bounds.minutesMin || nextMinutes > bounds.minutesMax) {
-            minuteInput.setAttribute('aria-invalid', 'true');
+            setFieldError(minuteInput,
+              'Use ' + bounds.minutesMin + ' to ' + bounds.minutesMax + ' minutes.');
           }
           return;
         }
@@ -1693,7 +1727,8 @@
             S.toast('check', ending);
             S.announce(ending + ' Opening the sign-in page in a moment.');
             global.setTimeout(function () {
-              global.location.replace('login.html?reason=expired');
+              var route = function () { session.toLogin('expired'); };
+              session.signOut().then(route, route);
             }, 1400);
             return;
           }

@@ -1074,12 +1074,12 @@ not a fake setting. `Stadiora/Aria#5442` still tracks the remaining static cards
 
 **What the live half does.** Each account's role, status, last sign in and current session expiry;
 every live session with who holds it, when it started, when it was last used and when it ends; the
-access record, newest first, with paging and an export; and outside connection state from
-`GET /api/ops/settings/sessions`, which sets the session ceiling and fresh-auth window; and
-outside connection state from `GET /api/ops/integrations`, including the last successful run and
-its age. Revoking asks first, requires a written reason, sends that reason, and reports what the
-server answered rather than what was asked for. The record is reloaded beside the change, so the
-entry describing it is on screen next to the thing it describes.
+access record, newest first, with paging and an export; sign-in window settings from
+`GET /api/ops/settings/sessions`, which sets the session ceiling and fresh-auth window; and outside
+connection state from `GET /api/ops/integrations`, including the last successful run and its age.
+Revoking asks first, requires a written reason, sends that reason, and reports what the server
+answered rather than what was asked for. The record is reloaded beside the change, so the entry
+describing it is on screen next to the thing it describes.
 
 **Four facts the restyle is not allowed to lose**, because each one is the difference between a
 settings change and an incident:
