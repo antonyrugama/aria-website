@@ -37,6 +37,7 @@
   var RANGES = registry.RANGES;
   var PANES = registry.PANES;
   var GROUPS = registry.GROUPS;
+  var maskContactDetails = registry.maskContactDetails;
 
   /* Pane contents, supplied by the pane's own module.
 
@@ -731,7 +732,7 @@
     var code = err && err.code;
     var card = h('div', { className: 'card' });
     var block = stateBlock('warn', FAILURE_TITLES[code] || 'Could not check your session', [
-      err && err.message ? err.message :
+      err && err.message ? maskContactDetails(err.message) :
         'The operations API did not answer. Your session has not been ended.',
       FAILURE_NOTES[code] || 'Nothing has been signed out. Try again in a moment.'
     ], 1);

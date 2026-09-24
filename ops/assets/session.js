@@ -1158,7 +1158,10 @@
           submit.disabled = false;
           submit.textContent = 'Confirm';
           input.value = '';
-          alert.textContent = (err && err.message) || 'That password did not match.';
+          alert.textContent = err && err.message && global.OpsPaneRegistry &&
+              typeof global.OpsPaneRegistry.maskContactDetails === 'function'
+            ? global.OpsPaneRegistry.maskContactDetails(err.message)
+            : 'That password did not match.';
           input.focus();
         });
       });
