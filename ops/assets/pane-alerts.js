@@ -1909,20 +1909,35 @@
            Object -- which is TRUTHY, so the fallback never fired and the
            chip rendered the literal string `undefined` from `status.label`.
            A falsy-fallback cannot catch a prototype hit (Stadiora/Aria#10630). */
-        var status = channel.configured === true
-          ? (Object.prototype.hasOwnProperty.call(CHANNEL_STATUS, channel.lastDeliveryStatus)
-            ? CHANNEL_STATUS[channel.lastDeliveryStatus]
-            : null)
-          : CHANNEL_STATUS.unconfigured;
-        var tone = !status ? 'ghost'
-          : status.tone === 'ok' ? 'up'
-            : status.tone === 'crit' ? 'down' : 'warn';
-        row.appendChild(chip(tone, null, status ? status.label : 'Nothing sent yet'));
+        var status = channelStatus(channel);
+        var chipState = channelChip(channel, status);
+        var tone = chipState.tone === 'ok' ? 'up'
+          : chipState.tone === 'crit' ? 'down'
+            : chipState.tone === 'ghost' ? 'ghost' : 'warn';
+        row.appendChild(chip(tone, null, chipState.label));
         rows.appendChild(row);
       });
       body.appendChild(rows);
       box.appendChild(body);
       return box;
+    }
+
+    function channelStatus(channel) {
+      if (channel.configured !== true) return CHANNEL_STATUS.unconfigured;
+      if (channel.lastDeliveryStatus === 'unconfigured') return null;
+      if (!channel.lastDeliveryStatus) return null;
+      if (Object.prototype.hasOwnProperty.call(CHANNEL_STATUS, channel.lastDeliveryStatus)) {
+        return CHANNEL_STATUS[channel.lastDeliveryStatus];
+      }
+      return { tone: 'warn', label: 'Not recognised' };
+    }
+
+    function channelChip(channel, status) {
+      if (status) return status;
+      if (channel.configured === true && (time(channel.lastSuccessAt) !== null || channel.lastSuccessAt)) {
+        return { tone: 'ok', label: 'Delivered' };
+      }
+      return { tone: 'ghost', label: 'Nothing sent yet' };
     }
 
     function channelNote(channel) {

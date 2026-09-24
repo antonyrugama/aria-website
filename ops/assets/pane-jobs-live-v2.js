@@ -131,6 +131,7 @@
   var h = S.h;
   var icon = S.icon;
   var fmt = S.fmt;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var JOBS_ENDPOINT = '/api/ops/jobs';
   var HISTORY_FILE = 'run-history.html';
@@ -177,11 +178,8 @@
      today, and this enforces that rather than trusting it. The replacement
      names the kind of thing it hid, because an operator reading a sentence
      with a hole in it needs to know a hole is what they are looking at. */
-  var EMAIL = /[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+/g;
-
   function coded(text) {
-    if (typeof text !== 'string' || !text) return '';
-    return text.replace(EMAIL, '[address hidden]');
+    return maskContactDetails(text);
   }
 
   /* ------------------------------------------------------------ formatting */
