@@ -66,6 +66,7 @@
    declare, so the one this sheet could actually leak into it. An id reaches
    exactly the element that needs the measure and nothing else. */
 .dataset-form,
+.admission-form,
 .dataset-result,
 .evidence-form,
 .evidence-result,
@@ -76,7 +77,8 @@
    at: a digest is 64 unbroken characters and a JSON pointer is one token. Both
    of these carried `overflow-wrap: anywhere` in ops.css and arrived here with
    nothing, so either one runs out of its box rather than wrapping inside it. */
-.dataset-form .field-error { overflow-wrap: anywhere; }
+.dataset-form .field-error,
+.admission-form .field-error { overflow-wrap: anywhere; }
 .dataset-result .evidence-meta-row dt { overflow-wrap: anywhere; }
 
 /* The approval forms' field grid. The pane draws two two-column field grids —
