@@ -192,3 +192,4 @@ The mutation battery exercises the filed finding kinds above and the instrument 
 in its generated table. Some clean rows are only live measurements. Rows with no executed
 killing experiment at all are named under NOT COVERED; the table remains the exact coverage
 record for everything else.
+
