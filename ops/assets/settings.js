@@ -13,11 +13,11 @@
    every other role without ever asking this file for a pane — which is why
    nothing here reads anything until definePane's callback runs.
 
-   SECOND, IT SAYS WHICH HALF OF ITSELF IS REAL. Six areas are on screen and
-   four of them are read from an API: administrators, active sessions, the
-   access record and outside connections. Retention windows and the
-   cost-category mapping have no endpoint to read or write, so they print no
-   figure at all.
+   SECOND, IT SAYS WHICH HALF OF ITSELF IS REAL. Seven areas are on screen and
+   five of them are read from an API: administrators, active sessions, the
+   access record, sign-in windows and outside connections. Retention windows
+   and the cost-category mapping have no endpoint to read or write, so they
+   print no figure at all.
    They say what is missing and which of "not built" and "not reported"
    applies. Rendering the remaining static cards as populated tables would be the worst outcome
    available, because a number nobody can check is indistinguishable from one
@@ -54,6 +54,7 @@
 
   var ADMINS = '/api/ops/admins';
   var SESSIONS = '/api/ops/sessions';
+  var SESSION_SETTINGS = '/api/ops/settings/sessions';
   var AUDIT = '/api/ops/audit';
   var INTEGRATIONS = '/api/ops/integrations';
   var OPS_SOURCE_PARTS = ['', 'api', 'ops'];
@@ -77,7 +78,8 @@
     'admin.session_revoke_failed': 'Revoke refused',
     'admin.refresh_failed': 'Sign in refresh failed',
     'admin.refresh_reuse_detected': 'Session token reused',
-    'admin.refresh_grace_used': 'Two tabs refreshed at once'
+    'admin.refresh_grace_used': 'Two tabs refreshed at once',
+    'settings.session_windows_update': 'Changed sign-in windows'
   };
 
   /* What kind of thing an action was done to, said the way the rest of the
@@ -85,7 +87,8 @@
      reason an unrecognised action is. */
   var TARGET_LABELS = {
     ops_admin_session: 'sign in session',
-    ops_admin_account: 'administrator account'
+    ops_admin_account: 'administrator account',
+    ops_session_setting: 'sign-in window setting'
   };
 
   var INTEGRATION_FAILURE_LABELS = {
@@ -99,6 +102,17 @@
     untrusted_next_link: 'The service returned an unsafe next-page link'
   };
   var INTEGRATION_UNKNOWN_FAILURE = 'An unrecognised failure reason was reported';
+  var SESSION_SETTINGS_READ_ERRORS = {
+    ops_role_insufficient: 'You do not have access to sign-in window settings.',
+    ops_auth_required: 'Sign in again to read sign-in window settings.'
+  };
+  var SESSION_SETTINGS_WRITE_ERRORS = {
+    ops_session_settings_out_of_bounds: 'Enter values inside the listed bounds.',
+    ops_session_settings_version_invalid: 'This setting is missing its latest version. Reload and try again.',
+    ops_reauth_required: 'Confirm your password to change sign-in windows.',
+    ops_role_insufficient: 'You do not have access to change sign-in windows.',
+    ops_session_settings_update_failed: 'The sign-in windows could not be saved. Reload and try again.'
+  };
 
   /* ------------------------------------------------------------ formatting */
 
@@ -485,6 +499,7 @@
       host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: null,
       token: 0
     };
+    var sessionSettingsFocusAfterLoad = false;
 
     /* ---------------------------------------------------------------- reads */
 
@@ -546,18 +561,19 @@
       Promise.all([
         readAdmins(),
         soft(session.call(SESSIONS)),
+        softObject(session.call(SESSION_SETTINGS)),
         soft(session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: 0 } })),
         softObject(session.call(INTEGRATIONS))
       ]).then(function (results) {
         if (token !== loadToken) return;
-        render(results[0], results[1], results[2], results[3]);
+        render(results[0], results[1], results[2], results[3], results[4]);
       }, function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
       });
     }
 
-    function render(adminRows, sessionResult, recordResult, integrationResult) {
+    function render(adminRows, sessionResult, sessionSettingsResult, recordResult, integrationResult) {
       var admins = Array.isArray(adminRows) ? adminRows : [];
 
       /* Empty is a real state with a real trigger, and here it is a narrow
@@ -572,18 +588,20 @@
       }
 
       var sessions = sessionResult.rows || [];
-      var degraded = !!(sessionResult.error || recordResult.error || integrationResult.error);
+      var degraded = !!(sessionResult.error || sessionSettingsResult.error ||
+        recordResult.error || integrationResult.error);
 
       var stack = h('div', { className: 'stack' });
       stack.appendChild(hero(admins, sessions, sessionResult.error));
       stack.appendChild(administratorsBand(admins, sessions, sessionResult));
       stack.appendChild(sessionsBand(admins, sessions, sessionResult));
       stack.appendChild(recordBand(recordResult));
-      stack.appendChild(keepBand());
+      stack.appendChild(keepBand(sessionSettingsResult));
       stack.appendChild(integrationsBand(integrationResult));
 
       if (degraded) region.degraded(stack);
       else region.show(stack);
+      restoreSessionSettingsFocus(stack);
     }
 
     function nothingBehindIt() {
@@ -1433,6 +1451,278 @@
       return err && (err.code === 'ops_role_insufficient' || err.status === 403);
     }
 
+    /* ----------------------------------------------------- sign-in windows */
+
+    function sessionSettingsData(result) {
+      return result && result.data ? result.data : {};
+    }
+
+    function sessionEffective(result) {
+      var data = sessionSettingsData(result);
+      return data.effective || {};
+    }
+
+    function sessionBounds(result) {
+      var bounds = sessionSettingsData(result).bounds || {};
+      var days = bounds.sessionMaxDays || {};
+      var reauth = bounds.reauthWindowSeconds || {};
+      return {
+        daysMin: Number(days.min || 1),
+        daysMax: Number(days.max || 30),
+        minutesMin: Math.ceil(Number(reauth.min || 60) / 60),
+        minutesMax: Math.floor(Number(reauth.max || 900) / 60)
+      };
+    }
+
+    function sessionSettingVersion(result) {
+      var setting = sessionSettingsData(result).setting;
+      return setting ? setting.updatedAt || null : null;
+    }
+
+    function sourceLabel(source) {
+      return source === 'setting' ? 'Your setting' : 'Default';
+    }
+
+    function minutesFromSeconds(seconds) {
+      var n = Number(seconds);
+      if (!isFinite(n) || n <= 0) return 1;
+      return Math.max(1, Math.round(n / 60));
+    }
+
+    function sessionSettingsReadMessage(err) {
+      if (err && SESSION_SETTINGS_READ_ERRORS[err.code]) return SESSION_SETTINGS_READ_ERRORS[err.code];
+      if (err && (err.status === 403 || err.code === 'ops_role_insufficient')) {
+        return SESSION_SETTINGS_READ_ERRORS.ops_role_insufficient;
+      }
+      return 'The sign-in window settings could not be read. Try again.';
+    }
+
+    function sessionSettingsWriteMessage(err) {
+      if (err && SESSION_SETTINGS_WRITE_ERRORS[err.code]) {
+        return SESSION_SETTINGS_WRITE_ERRORS[err.code];
+      }
+      return 'The sign-in windows could not be saved. Reload and try again.';
+    }
+
+    function deniedSessionSettingsError(err) {
+      return err && (err.code === 'ops_role_insufficient' || err.status === 403);
+    }
+
+    function sessionSettingsFailureBody(err, retry) {
+      var body = h('div', { className: 'card-body' });
+      var block = S.stateBlock('warn', 'Sign-in windows could not be read', [
+        sessionSettingsReadMessage(err),
+        'Nothing here is zero-filled. These settings are unread, not absent.'
+      ], 4);
+      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
+      again.addEventListener('click', retry);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      body.appendChild(block);
+      return body;
+    }
+
+    function sessionSettingsDeniedBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('lock', 'You do not have access to sign-in windows', [
+        'Sign-in window settings are limited to the owner role.',
+        'No session length or password-confirmation window is changed from this page.'
+      ], 4));
+      return body;
+    }
+
+    function sessionValueLine(label, value, source) {
+      var row = h('div', { className: 'session-window-value' });
+      row.appendChild(h('div', { className: 'num strong', text: value }));
+      row.appendChild(h('div', { className: 't-sub', text: label }));
+      row.appendChild(pill('ghost', null, sourceLabel(source)));
+      return row;
+    }
+
+    function sessionField(id, label, value, min, max, role) {
+      var field = h('div', { className: 'session-window-field' });
+      field.appendChild(h('label', {
+        className: 'session-window-label', 'for': id, text: label
+      }));
+      var input = h('input', {
+        className: 'session-window-input', id: id, type: 'number', step: '1',
+        min: String(min), max: String(max), 'data-role': role
+      });
+      input.value = String(value);
+      field.appendChild(input);
+      field.appendChild(h('div', {
+        className: 't-sub',
+        text: 'Allowed range: ' + min + ' to ' + max + '.'
+      }));
+      return field;
+    }
+
+    function restoreSessionSettingsFocus(stack) {
+      if (!sessionSettingsFocusAfterLoad) return;
+      sessionSettingsFocusAfterLoad = false;
+      var card = stack.querySelector('[data-endpoint="' + SESSION_SETTINGS + '"]');
+      var target = card && card.querySelector('[data-role="session-days"]');
+      if (!target) {
+        target = card && card.querySelector('.card-title');
+        if (target && !target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      }
+      if (target && target.focus) target.focus();
+    }
+
+    function reloadSessionSettingsCard() {
+      sessionSettingsFocusAfterLoad = true;
+      load();
+    }
+
+    function sessionSettingsCard(result) {
+      var host = liveCard('settings/sessions', 'Sign-in windows',
+        'Session ceiling and password-confirmation window');
+      if (result && deniedSessionSettingsError(result.error)) {
+        host.appendChild(sessionSettingsDeniedBody());
+        return host;
+      }
+      if (result && result.error) {
+        host.appendChild(sessionSettingsFailureBody(result.error, load));
+        return host;
+      }
+
+      var data = sessionSettingsData(result);
+      var effective = sessionEffective(result);
+      var source = data.source || 'default';
+      var bounds = sessionBounds(result);
+      var days = Number(effective.sessionMaxDays || data.defaults && data.defaults.sessionMaxDays || 30);
+      var minutes = minutesFromSeconds(effective.reauthWindowSeconds ||
+        data.defaults && data.defaults.reauthWindowSeconds || 300);
+      var body = h('div', { className: 'card-body' });
+      var status = h('div', {
+        className: 'session-window-status', role: 'status', 'aria-live': 'polite',
+        text: 'Fresh auth stays required for sensitive actions.'
+      });
+
+      if (source === 'fallback') {
+        body.appendChild(S.stateBlock('warn', 'Defaults are in force', [
+          'The settings could not be read, so defaults are in force.',
+          'You can still save new values here; the server will check them before it writes.'
+        ], 4));
+      }
+
+      body.appendChild(h('div', { className: 'session-window-list' }, [
+        sessionValueLine('Session ceiling', 'Sessions last up to ' + fmt.plural(days, 'day'), source),
+        sessionValueLine('Fresh-auth window',
+          'Re-enter your password for sensitive actions after ' + fmt.plural(minutes, 'minute'),
+          source)
+      ]));
+
+      var editor = h('div', { className: 'session-window-editor' });
+      editor.appendChild(sessionField('sessionWindowDays', 'Session length in days',
+        days, bounds.daysMin, bounds.daysMax, 'session-days'));
+      editor.appendChild(sessionField('sessionWindowReauth', 'Password confirmation in minutes',
+        minutes, bounds.minutesMin, bounds.minutesMax, 'reauth-minutes'));
+      var save = h('button', {
+        className: 'btn btn-sm btn-primary', type: 'button', text: 'Save',
+        'data-role': 'session-save'
+      });
+      editor.appendChild(h('div', { className: 'session-window-actions' }, [save]));
+      body.appendChild(editor);
+      body.appendChild(status);
+
+      function value(input) {
+        var n = Number(input.value);
+        return Number.isInteger(n) ? n : null;
+      }
+
+      function refuse(message) {
+        status.textContent = message;
+        S.toast('warn', message);
+        S.announce(message);
+      }
+
+      function lock(on) {
+        save.disabled = on;
+        save.textContent = on ? 'Saving' : 'Save';
+      }
+
+      save.addEventListener('click', function () {
+        var dayInput = body.querySelector('[data-role="session-days"]');
+        var minuteInput = body.querySelector('[data-role="reauth-minutes"]');
+        var nextDays = value(dayInput);
+        var nextMinutes = value(minuteInput);
+        dayInput.removeAttribute('aria-invalid');
+        minuteInput.removeAttribute('aria-invalid');
+
+        if (nextDays === null || nextMinutes === null) {
+          refuse('Enter whole numbers for both sign-in windows.');
+          if (nextDays === null) dayInput.setAttribute('aria-invalid', 'true');
+          if (nextMinutes === null) minuteInput.setAttribute('aria-invalid', 'true');
+          return;
+        }
+        if (nextDays < bounds.daysMin || nextDays > bounds.daysMax ||
+          nextMinutes < bounds.minutesMin || nextMinutes > bounds.minutesMax) {
+          refuse('Enter values inside the listed bounds.');
+          if (nextDays < bounds.daysMin || nextDays > bounds.daysMax) {
+            dayInput.setAttribute('aria-invalid', 'true');
+          }
+          if (nextMinutes < bounds.minutesMin || nextMinutes > bounds.minutesMax) {
+            minuteInput.setAttribute('aria-invalid', 'true');
+          }
+          return;
+        }
+        if (nextDays < days) {
+          var confirmed = global.confirm(
+            'Shortening applies to sessions already signed in: any session older than ' +
+              nextDays + ' days ends now. Lengthening never extends a session that already started.'
+          );
+          if (!confirmed) {
+            status.textContent = 'Not saved.';
+            return;
+          }
+        }
+
+        lock(true);
+        session.call(SESSION_SETTINGS, {
+          method: 'PUT',
+          body: {
+            sessionMaxDays: nextDays,
+            reauthWindowSeconds: nextMinutes * 60,
+            expectedUpdatedAt: sessionSettingVersion(result)
+          }
+        }).then(function (payload) {
+          var saved = payload && payload.data ? payload.data : {};
+          if (saved.currentSessionWillEnd) {
+            var ending = 'Saved. Your own session is older than the new limit, so you\'ll be signed out.';
+            status.textContent = ending + ' Opening the sign-in page in a moment.';
+            S.toast('check', ending);
+            S.announce(ending + ' Opening the sign-in page in a moment.');
+            global.setTimeout(function () {
+              global.location.replace('login.html?reason=expired');
+            }, 1400);
+            return;
+          }
+          S.toast('check', 'Saved');
+          S.announce('Saved');
+          reloadSessionSettingsCard();
+        }, function (err) {
+          lock(false);
+          if (err && err.code === 'ops_session_settings_stale') {
+            var stale = 'Those sign-in windows changed somewhere else. The pane is reloading.';
+            S.toast('warn', stale);
+            S.announce(stale);
+            reloadSessionSettingsCard();
+            return;
+          }
+          var message = sessionSettingsWriteMessage(err);
+          status.textContent = message;
+          S.toast('warn', message);
+          S.announce(message);
+        });
+      });
+
+      host.appendChild(body);
+      host.appendChild(cardFoot(
+        'Fresh auth stays mandatory for every sensitive action. There is no switch to turn it off.',
+        'lock'));
+      return host;
+    }
+
     /* --------------------------------------------- what nothing serves yet
 
        Every static string below is written without a digit in it, on purpose. See the
@@ -1440,9 +1730,11 @@
        prints no numeral, so that no figure on this pane can be read as
        measured when it was typed. */
 
-    function keepBand() {
+    function keepBand(sessionSettingsResult) {
       var band = S.band('What we keep, and for how long');
       var grid = h('div', { className: 'grid g2' });
+
+      grid.appendChild(sessionSettingsCard(sessionSettingsResult));
 
       grid.appendChild(staticCard(
         'Data retention', 'Windows, and which of them are fixed',
