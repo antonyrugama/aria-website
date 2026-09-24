@@ -603,6 +603,10 @@ function costControl(row, role) {
   return control;
 }
 
+function cloneCostCategories() {
+  return JSON.parse(JSON.stringify(costCategoriesFixture()));
+}
+
 /* Every endpoint this boot actually read. DELETE is excluded: a revoke is a
    write, and a card claiming to be filled from one would be claiming
    something it cannot be. */
@@ -762,6 +766,28 @@ test('cost categories shows defaults, overrides and uncategorised lines without 
       'backend identifiers leaked into the card copy');
   });
 
+test('an uncategorised cost line starts with no category selected and cannot save a guess',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = costTableRow(dom, 'Brand New Azure Thing');
+    const category = costControl(row, 'category');
+    const save = costControl(row, 'save');
+
+    assert.equal(category.value, '', 'an uncategorised line was preloaded with a category');
+    assert.equal(allText(category.children[0]), 'Choose a category',
+      'the first option does not tell the owner a category is still required');
+    assert.equal(save.disabled, true, 'Save is enabled before the owner chooses a category');
+
+    save.dispatch('click');
+    await dom.settle();
+
+    assert.equal(dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT').length, 0,
+    'an untouched uncategorised row wrote the first category as a guess');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Choose a category before saving/i);
+  });
+
 test('saving a cost category sends the selected category, scope and optimistic version',
   async () => {
     const dom = await boot({ runTimers: false });
@@ -788,8 +814,58 @@ test('saving a cost category sends the selected category, scope and optimistic v
       'saving did not show a clear confirmation');
   });
 
+test('a cost-category save restores focus to the reloaded row', async () => {
+    const dom = await boot();
+    const row = costTableRow(dom, 'Storage');
+    const save = costControl(row, 'save');
+    costControl(row, 'category').value = 'application_compute';
+    save.focus();
+    save.dispatch('click');
+    await dom.settle();
+
+    const reloaded = costTableRow(dom, 'Storage');
+    assert.equal(dom.doc.activeElement, costControl(reloaded, 'category'),
+      'focus did not return inside the row that was saved');
+    assert.equal(dom.root.contains(save), false,
+      'the test did not exercise a control that was destroyed by reload');
+});
+
+test('a cost-category reload focuses the card title when the edited line disappears',
+    async () => {
+      let data = cloneCostCategories();
+      const dom = await boot({
+        costCategories: () => data,
+        costSave: () => {
+          data = cloneCostCategories();
+          data.lines = data.lines.filter((line) => line.serviceName !== 'Storage');
+          return {
+            override: overrideFixture({
+              id: 23,
+              scope: 'service',
+              serviceKey: 'storage',
+              serviceName: 'Storage',
+              resourceGroupKey: '',
+              resourceGroup: null,
+              category: 'application_compute',
+            }),
+          };
+        },
+      });
+      const row = costTableRow(dom, 'Storage');
+      costControl(row, 'category').value = 'application_compute';
+      costControl(row, 'scope').value = 'service';
+      costControl(row, 'save').dispatch('click');
+      await dom.settle();
+
+      assert.equal(costTableRow(dom, 'Virtual Machines').parentNode.children
+        .some((r) => allText(r).includes('Storage')), false,
+      'the fixture did not remove the saved line');
+      assert.equal(allText(dom.doc.activeElement), 'Cost categories',
+        'focus did not land on the Cost categories card title after the line disappeared');
+});
+
 test('cost-category resource-group edits default to the most specific scope and include the version',
-  async () => {
+    async () => {
     const dom = await boot();
     const row = costTableRow(dom, 'Virtual Machines');
     assert.equal(costControl(row, 'scope').value, 'resource_group_service');
@@ -806,8 +882,27 @@ test('cost-category resource-group edits default to the most specific scope and 
     assert.equal(sent.body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
   });
 
+test('a service-wide save under a resource-group override says the row keeps that override',
+    async () => {
+      const dom = await boot({ runTimers: false });
+      const row = costTableRow(dom, 'Virtual Machines');
+      costControl(row, 'scope').value = 'service';
+      costControl(row, 'category').value = 'data';
+      costControl(row, 'save').dispatch('click');
+      await dom.settle();
+
+      const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+        && c.method === 'PUT')[0];
+      assert.equal(sent.body.scope, 'service');
+      assert.equal(sent.body.expectedUpdatedAt, null);
+      const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+      assert.match(toast, /service-wide default/i);
+      assert.match(toast, /keeps its resource-group override/i);
+      assert.doesNotMatch(toast, /^Saved Data for Virtual Machines\.$/);
+});
+
 test('using the default clears the effective cost-category override', async () => {
-  const dom = await boot({ runTimers: false });
+    const dom = await boot({ runTimers: false });
   const row = costTableRow(dom, 'Virtual Machines');
   costControl(row, 'default').dispatch('click');
   await dom.settle();
@@ -823,6 +918,101 @@ test('using the default clears the effective cost-category override', async () =
   const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
   assert.match(toast, /Using the default for Virtual Machines/,
     'clearing the override did not show a clear confirmation');
+});
+
+test('Use default names and clears a service-wide effective override without scope mismatch',
+  async () => {
+    const data = cloneCostCategories();
+    const serviceOverride = overrideFixture({
+      id: 31,
+      scope: 'service',
+      serviceKey: 'storage',
+      serviceName: 'Storage',
+      resourceGroupKey: '',
+      resourceGroup: null,
+      category: 'application_compute',
+    });
+    data.lines[1] = {
+      ...data.lines[1],
+      effectiveCategory: 'application_compute',
+      source: 'service_override',
+      override: serviceOverride,
+    };
+    data.overrides = [serviceOverride];
+    const dom = await boot({ costCategories: data, runTimers: false });
+    const row = costTableRow(dom, 'Storage');
+    const scope = costControl(row, 'scope');
+    const useDefault = costControl(row, 'default');
+
+    assert.equal(scope.value, 'service',
+      'the row offers to clear a service-wide override while the scope select says resource group');
+    assert.match(allText(useDefault), /all resource groups/i);
+    assert.match(useDefault.getAttribute('aria-label'), /all resource groups/i);
+
+    scope.value = 'resource_group_service';
+    useDefault.dispatch('click');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'DELETE')[0];
+    assert.equal(sent.body.scope, 'service');
+    assert.equal(sent.body.resourceGroup, null);
+    assert.equal(sent.body.serviceName, 'Storage');
+});
+
+test('cost-category control ids stay unique when service and resource keys differ only by punctuation',
+  async () => {
+    const data = cloneCostCategories();
+    data.lines = [
+      {
+        serviceName: 'Punct Dash',
+        serviceKey: 'punct-dash',
+        resourceGroup: 'rg-prod',
+        resourceGroupKey: 'rg-prod',
+        seedCategory: 'data',
+        effectiveCategory: 'data',
+        source: 'seed',
+        override: null,
+      },
+      {
+        serviceName: 'Punct Underscore',
+        serviceKey: 'punct_dash',
+        resourceGroup: 'rg_prod',
+        resourceGroupKey: 'rg_prod',
+        seedCategory: 'data',
+        effectiveCategory: 'data',
+        source: 'seed',
+        override: null,
+      },
+    ];
+    data.overrides = [];
+    const dom = await boot({ costCategories: data });
+    const card = cardByTitle(dom, 'Cost categories');
+    const ids = card.querySelectorAll('[id]').map((node) => node.getAttribute('id'));
+
+    assert.equal(ids.length, new Set(ids).size,
+      `duplicate control ids were rendered: ${ids.join(', ')}`);
+    card.querySelectorAll('label').forEach((label) => {
+      const target = dom.doc.getElementById(label.getAttribute('for'));
+      assert.ok(target, `label target ${label.getAttribute('for')} was not found`);
+      assert.equal(target.parentNode, label.parentNode,
+        'a cost editor label resolved to a control in another row');
+    });
+});
+
+test('a blank cost resource group is reported as missing, not all resource groups',
+  async () => {
+    const data = cloneCostCategories();
+    data.lines[1] = {
+      ...data.lines[1],
+      resourceGroup: '',
+      resourceGroupKey: '',
+    };
+    const dom = await boot({ costCategories: data });
+    const cell = rowCellText(costTableRow(dom, 'Storage'), 0);
+
+    assert.match(cell, /Resource group not reported/);
+    assert.doesNotMatch(cell, /All resource groups/);
 });
 
 test('a stale cost-category save reloads the pane and tells the owner what happened',

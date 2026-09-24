@@ -499,6 +499,7 @@
   S.definePane('settings', function (content) {
     var region = S.region(content);
     var loadToken = 0;
+    var costFocusAfterLoad = null;
 
     /* The access record pages in place, so its rows outlive a redraw of the
        card they sit in and the controls that describe the state of the record
@@ -617,6 +618,7 @@
 
       if (degraded) region.degraded(stack);
       else region.show(stack);
+      restoreCostFocus(stack);
     }
 
     function nothingBehindIt() {
@@ -1532,7 +1534,32 @@
     }
 
     function costScopeDefault(line) {
+      if (line && line.override && line.override.scope) return line.override.scope;
       return line && line.resourceGroup ? 'resource_group_service' : 'service';
+    }
+
+    function costLineFocusKey(line) {
+      if (!line) return '';
+      return String(line.serviceKey || line.serviceName || '') + '|' +
+        String(line.resourceGroupKey || line.resourceGroup || '');
+    }
+
+    function costRestoreAfterReload(line) {
+      costFocusAfterLoad = { key: costLineFocusKey(line) };
+      load();
+    }
+
+    function restoreCostFocus(stack) {
+      if (!costFocusAfterLoad) return;
+      var target = stack.querySelector('[data-role="category"][data-cost-line-key="' +
+        costFocusAfterLoad.key.replace(/"/g, '\\"') + '"]');
+      if (!target) {
+        var card = stack.querySelector('[data-endpoint="' + COST_CATEGORIES + '"]');
+        target = card && card.querySelector('.card-title');
+        if (target && !target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      }
+      costFocusAfterLoad = null;
+      if (target && target.focus) target.focus();
     }
 
     function costReadMessage(err) {
@@ -1579,9 +1606,8 @@
       return body;
     }
 
-    function costScopeSelect(line) {
-      var id = 'costScope-' + String(line.serviceKey || '').replace(/[^a-z0-9]+/gi, '-') +
-        '-' + String(line.resourceGroupKey || '').replace(/[^a-z0-9]+/gi, '-');
+    function costScopeSelect(line, index) {
+      var id = 'costScope-' + index;
       var label = h('label', {
         className: 'cost-field-label', 'for': id, text: 'Scope'
       });
@@ -1600,36 +1626,60 @@
       return h('div', { className: 'cost-field' }, [label, select]);
     }
 
-    function costCategorySelect(line, labels, categories) {
-      var id = 'costCategory-' + String(line.serviceKey || '').replace(/[^a-z0-9]+/gi, '-') +
-        '-' + String(line.resourceGroupKey || '').replace(/[^a-z0-9]+/gi, '-');
+    function costCategorySelect(line, labels, categories, index) {
+      var id = 'costCategory-' + index;
       var label = h('label', {
         className: 'cost-field-label', 'for': id, text: 'Category'
       });
       var select = h('select', {
         className: 'cost-select', id: id, 'data-role': 'category',
-        'aria-label': 'Category for ' + line.serviceName
+        'aria-label': 'Category for ' + line.serviceName,
+        'data-cost-line-key': costLineFocusKey(line)
       });
+      if (line.effectiveCategory === 'ungrouped') {
+        select.appendChild(h('option', { value: '', text: 'Choose a category' }));
+      }
       categories.forEach(function (category) {
         select.appendChild(h('option', {
           value: category.key,
           text: costCategoryLabel(category.key, labels)
         }));
       });
-      select.value = line.effectiveCategory === 'ungrouped'
-        ? (categories[0] && categories[0].key) || ''
-        : line.effectiveCategory;
+      select.value = line.effectiveCategory === 'ungrouped' ? '' : line.effectiveCategory;
       return h('div', { className: 'cost-field' }, [label, select]);
     }
 
-    function costActionCell(host, result, line) {
+    function costClearLabel(override) {
+      if (!override) return 'Use default';
+      return override.scope === 'service'
+        ? 'Use default (removes the override for all resource groups)'
+        : 'Use default (removes the override for this resource group)';
+    }
+
+    function costResourceGroupLabel(line) {
+      return line && line.resourceGroup
+        ? 'Resource group ' + line.resourceGroup
+        : 'Resource group not reported';
+    }
+
+    function costSaveSuccessMessage(line, scopeValue, categoryValue, labels) {
+      var label = costCategoryLabel(categoryValue, labels);
+      if (scopeValue === 'service' && line.override &&
+        line.override.scope === 'resource_group_service') {
+        return 'Saved ' + label + ' as the service-wide default for ' +
+          line.serviceName + '. This line keeps its resource-group override.';
+      }
+      return 'Saved ' + label + ' for ' + line.serviceName + '.';
+    }
+
+    function costActionCell(result, line, index) {
       var labels = costLabelMap(result);
       var categories = costCategories(result);
       var overrides = costOverrideIndex(result);
       var cell = h('td', { className: 'cell-wrap' });
       var form = h('div', { className: 'cost-editor' });
-      var categoryField = costCategorySelect(line, labels, categories);
-      var scopeField = costScopeSelect(line);
+      var categoryField = costCategorySelect(line, labels, categories, index);
+      var scopeField = costScopeSelect(line, index);
       var category = categoryField.querySelector('[data-role="category"]');
       var scope = scopeField.querySelector('[data-role="scope"]');
       var save = h('button', {
@@ -1638,11 +1688,11 @@
         'aria-label': 'Save category for ' + line.serviceName
       });
       var useDefault = h('button', {
-        className: 'btn btn-sm', type: 'button', text: 'Use default',
+        className: 'btn btn-sm', type: 'button', text: costClearLabel(line.override),
         'data-role': 'default',
-        'aria-label': 'Use default category for ' + line.serviceName
+        'aria-label': costClearLabel(line.override) + ' for ' + line.serviceName
       });
-      if (!line.override) useDefault.disabled = true;
+      var busy = false;
 
       function selectedScope() {
         return scope.value === 'service' ? 'service' : 'resource_group_service';
@@ -1663,33 +1713,46 @@
         };
       }
 
+      function updateControlState() {
+        save.disabled = busy || !category.value;
+        useDefault.disabled = busy || !line.override;
+      }
+
       function lock(on, word) {
-        save.disabled = on;
-        if (!line.override) useDefault.disabled = true;
-        else useDefault.disabled = on;
+        busy = on;
+        updateControlState();
         save.textContent = on ? word : 'Save';
       }
 
+      category.addEventListener('change', updateControlState);
+      updateControlState();
+
       save.addEventListener('click', function () {
+        if (!category.value) {
+          var choose = 'Choose a category before saving.';
+          S.toast('warn', choose);
+          S.announce(choose);
+          return;
+        }
         var override = selectedOverride();
         var expected = override ? override.updatedAt : null;
+        var saveScope = selectedScope();
         lock(true, 'Saving');
         session.call(COST_CATEGORY_OVERRIDES, {
           method: 'PUT',
           body: targetBody(expected)
         }).then(function () {
-          var message = 'Saved ' + costCategoryLabel(category.value, labels) + ' for ' +
-            line.serviceName + '.';
+          var message = costSaveSuccessMessage(line, saveScope, category.value, labels);
           S.toast('check', message);
           S.announce(message);
-          load();
+          costRestoreAfterReload(line);
         }, function (err) {
           lock(false);
           if (err && err.code === 'ops_cost_category_override_stale') {
             var stale = 'That cost-category row changed somewhere else. The pane is reloading.';
             S.toast('warn', stale);
             S.announce(stale);
-            load();
+            costRestoreAfterReload(line);
             return;
           }
           var message = costWriteMessage(err);
@@ -1715,10 +1778,12 @@
             expectedUpdatedAt: override.updatedAt
           }
         }).then(function () {
-          var message = 'Using the default for ' + line.serviceName + '.';
+          var message = override.scope === 'service'
+            ? 'Using the default for ' + line.serviceName + ' across all resource groups.'
+            : 'Using the default for ' + line.serviceName + ' in this resource group.';
           S.toast('check', message);
           S.announce(message);
-          load();
+          costRestoreAfterReload(line);
         }, function (err) {
           save.disabled = false;
           useDefault.disabled = false;
@@ -1727,7 +1792,7 @@
             var stale = 'That cost-category row changed somewhere else. The pane is reloading.';
             S.toast('warn', stale);
             S.announce(stale);
-            load();
+            costRestoreAfterReload(line);
             return;
           }
           var message = costWriteMessage(err);
@@ -1743,14 +1808,14 @@
       return cell;
     }
 
-    function costCategoriesTable(result, host) {
+    function costCategoriesTable(result) {
       var labels = costLabelMap(result);
       var tbl = table([
         { label: 'Cost line' }, { label: 'Category' }, { label: 'Source' },
         { label: 'Edit', right: true }
       ]);
       var tbody = bodyOf(tbl);
-      costLines(result).forEach(function (line) {
+      costLines(result).forEach(function (line, index) {
         var row = h('tr');
         var name = h('td');
         name.appendChild(h('div', {
@@ -1759,7 +1824,7 @@
         }));
         name.appendChild(h('div', {
           className: 't-sub',
-          text: line.resourceGroup ? 'Resource group ' + line.resourceGroup : 'All resource groups'
+          text: costResourceGroupLabel(line)
         }));
         row.appendChild(name);
         row.appendChild(h('td', {}, [
@@ -1779,7 +1844,7 @@
                   : 'Resource-group override'
           })
         ]));
-        row.appendChild(costActionCell(host, result, line));
+        row.appendChild(costActionCell(result, line, index));
         tbody.appendChild(row);
       });
       return tableWrap('Cost category mapping', tbl);
@@ -1800,7 +1865,7 @@
       } else if (!lines.length) {
         host.appendChild(noCostLinesBody());
       } else {
-        host.appendChild(costCategoriesTable(result, host));
+        host.appendChild(costCategoriesTable(result));
         host.appendChild(cardFoot(
           'The current mapping applies to every period Cloud costs shows. A new service is not guessed into a category.',
           'info'));
