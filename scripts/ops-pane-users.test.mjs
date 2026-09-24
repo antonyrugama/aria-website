@@ -158,6 +158,15 @@ function loadPane(role) {
     (children || []).forEach((child) => { if (child) el.appendChild(child); });
     return el;
   }
+  const maskContactDetails = (text) => String(text).replace(/[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+/g,
+    '[hidden contact detail]');
+  const failureMessage = (err) => {
+    if (err && typeof err.message === 'string' && err.message) return maskContactDetails(err.message);
+    if (err && err.code === 'ops_role_insufficient') {
+      return 'Your role does not allow this. Ask an owner if you need it.';
+    }
+    return 'The operations API did not answer.';
+  };
 
   const window = {
     location: { href: 'https://runwitharia.com/ops/users.html', origin: 'https://runwitharia.com' },
@@ -173,7 +182,7 @@ function loadPane(role) {
       cardHead: (title) => h('div', { className: 'card-head' }, [h('h3', { className: 'card-title', text: title })]),
       band: (title) => h('section', { className: 'band' }, [h('h2', { className: 'band-title', text: title })]),
       stateBlock: () => h('div', { className: 'state-block' }),
-      failureMessage: (err) => (err && err.message) || 'unreadable',
+      failureMessage,
       region: () => ({
         loading() {}, show() {}, degraded() {}, empty() {}, failed() {}
       }),

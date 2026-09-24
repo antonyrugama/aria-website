@@ -1085,6 +1085,15 @@ function buttonNamed(root, re) {
 
 const numerals = (text) => (text.match(/\d/g) || []).length;
 
+test('an Alerts failure message preserves the API copy with contact details masked', async () => {
+  const dom = await boot({ open: new Error('Problems for admin@example.invalid timed out') });
+  const text = allText(panel(dom, 'live'));
+  assert.match(text, /Problems for \[hidden contact detail\] timed out/,
+    'the Alerts caller did not show the API message with the address masked');
+  assert.doesNotMatch(text, /admin@example\.invalid/,
+    'the Alerts caller rendered the raw address from the API message');
+});
+
 /* What can take a tab stop, as far as the document ITSELF can say.
 
    This helper answered seven cases wrong (Stadiora/Aria#10633) because the
@@ -4624,7 +4633,7 @@ test('every test that reads the document walk asserts the walk refused nothing',
     tests: tests.length,
     readers: readers.length,
   };
-  assert.deepEqual(counts, { walkNames: 8, tests: 77, readers: 4 },
+  assert.deepEqual(counts, { walkNames: 8, tests: 78, readers: 4 },
     'the shape of this file moved under the reader census: ' + JSON.stringify(counts) + '. '
     + 'That is not a failure by itself -- it is this count refusing to be a sentence nobody '
     + 'checks. Read the numbers, and if they are right, write them here');
