@@ -1053,10 +1053,7 @@ const totals = {
    numbers are not prose. Each is keyed to a finding KIND, the generator
    prints it from this map, and a key whose kind the run did not produce
    THROWS rather than printing. A finding with no entry prints as unfiled. */
-const FILED = {
-  'undeclared-scroller': 'Stadiora/Aria#10868',
-  'hidden-painted': 'Stadiora/Aria#10869'
-};
+const FILED = {};
 
 const findings = [];
 
@@ -1461,8 +1458,13 @@ P('- **The rail drawer.** `ops/assets/operate.js` builds a drawer as well as the
   `  dialog, but nothing in the ${totals.panes} panes opens one, so it is unmeasured. The`,
   `  ${totals.dialogs} dialogs in the table above are the only overlays reachable from the`,
   '  keyboard in this dashboard.');
-P('- **Browsers other than the one that ran.** Everything above is Chrome. The one place that',
-  '  matters is called out in the finding that depends on it.');
+if (countKind('undeclared-scroller')) {
+  P('- **Browsers other than the one that ran.** Everything above is Chrome. The place where',
+    '  that matters is called out in the scroll-container finding.');
+} else {
+  P('- **Browsers other than the one that ran.** Everything above is Chrome. No current finding',
+    '  depends on Chrome\'s scroll-container focus exception.');
+}
 P('- **Non-Tab keys.** Enter is pressed on exactly three controls — the skip link, the theme',
   '  toggle and the dialog openers. Space, arrows, Home/End and Escape outside a dialog are not',
   '  exercised.');
@@ -1524,10 +1526,17 @@ READ_INTO.forEach((lines) => {
   P(`- ${lines[0]}`, ...lines.slice(1).map((l) => `  ${l}`));
 });
 P('');
-P('The mutation battery exercises the filed finding kinds above and the instrument rules named',
-  'in its generated table. Some clean rows are only live measurements. Rows with no executed',
-  'killing experiment at all are named under NOT COVERED; the table remains the exact coverage',
-  'record for everything else.', '');
+if (findings.length) {
+  P('The mutation battery exercises the finding kinds above and the instrument rules named',
+    'in its generated table. Some clean rows are only live measurements. Rows with no executed',
+    'killing experiment at all are named under NOT COVERED; the table remains the exact coverage',
+    'record for everything else.', '');
+} else {
+  P('The mutation battery keeps the historical fixes and the instrument rules named in its',
+    'generated table under test. Some clean rows are only live measurements. Rows with no',
+    'executed killing experiment at all are named under NOT COVERED; the table remains the exact',
+    'coverage record for everything else.', '');
+}
 
 fs.writeFileSync(OUT, md.join('\n') + '\n');
 process.stderr.write(`wrote ${OUT}\n`);
