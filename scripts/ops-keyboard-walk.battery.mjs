@@ -126,14 +126,14 @@ const S = {
   docAttrContradiction: (j) => {
     if (j.__doc === null) return 'VACUOUS';
     const rows = j.walks.flatMap((w) => w.undeclaredScrollers);
-    if (!rows.length) return 'VACUOUS';
+    if (!rows.length) return false;
     const claimsNone = /carries no `tabindex`, no `role` and no accessible name/.test(j.__doc);
     return claimsNone && rows.some((r) => r.tabindex !== null || r.role !== null);
   },
   docDisabledContradiction: (j) => {
     if (j.__doc === null) return 'VACUOUS';
     const rows = j.walks.flatMap((w) => w.hiddenPainted).filter((x) => x.controls > 0);
-    if (!rows.length) return 'VACUOUS';
+    if (!rows.length) return false;
     const claimsInert = /neither reach nor operate/.test(j.__doc);
     return claimsInert && rows.some((r) => r.controlsDisabled < r.controls);
   },
