@@ -856,6 +856,65 @@ test('approval operation builders bind exact artifact digests without qualificat
   ]), /qualification|credential|issuer/i);
 });
 
+test('admission builder binds exact synthetic artifact, approval and revision without access claims', () => {
+  const pane = loadPane();
+  const requestId = '83525f56-198f-4c2f-8f83-93c8e4ab7248';
+  const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
+  const sourceDigest = 'a'.repeat(64);
+  const retainedDigest = 'b'.repeat(64);
+
+  const admission = pane.buildAdmissionRequest({
+    artifactId: '4e1d10f7-1f13-4daf-82b6-c9dd43124138',
+    expectedRevision: '1',
+    sourceDigest,
+    retainedDigest,
+    contentProfile: 'trace',
+    mediaType: 'application/json',
+    purpose: 'quality_review',
+    expiresAt: '2026-10-19T00:00:00.000Z',
+    necessaryCategories: 'none',
+    removedCategories: 'tokens,identifiers',
+    policyRevision: 'ciel-evidence-admission.v1',
+    approvalRequestId,
+    idempotencyKey: 'dashboard-admit-1',
+  }, requestId);
+
+  assert.deepEqual(plain(admission), {
+    schemaVersion: 'ciel.operation.request.v1',
+    requestId,
+    operationId: 'ciel.artifact.admit',
+    mode: 'remote',
+    client: {
+      name: 'aria-operations-dashboard',
+      version: '1.0.0',
+      contractVersions: ['ciel.operations.v1'],
+    },
+    input: {
+      artifact: {
+        artifactId: '4e1d10f7-1f13-4daf-82b6-c9dd43124138',
+        sourceDigest,
+        retainedDigest,
+        sourceKind: 'synthetic',
+        contentProfile: 'trace',
+        mediaType: 'application/json',
+        purpose: 'quality_review',
+        authority: { kind: 'synthetic' },
+        minimization: {
+          necessaryCategories: ['none'],
+          removedCategories: ['tokens', 'identifiers'],
+        },
+        retention: { expiresAt: '2026-10-19T00:00:00.000Z' },
+        providerHandling: { status: 'no_transfer' },
+      },
+      policyRevision: 'ciel-evidence-admission.v1',
+    },
+    expectedRevision: 1,
+    approval: { approvalRequestId },
+    idempotencyKey: 'dashboard-admit-1',
+  });
+  assert.doesNotMatch(JSON.stringify(admission), /contentBase64|targetRequestDigest|raw|read|export|evaluator|training|provider_transfer/i);
+});
+
 test('the rendered approval forms submit request, get and decision operations without trust provisioning', async () => {
   const calls = [];
   const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
@@ -926,6 +985,99 @@ test('the rendered approval forms submit request, get and decision operations wi
   ));
   await waitFor(() => /approved/i.test(view.byId('approval-result').textContent),
     'the approval decision answer never reached the region');
+});
+
+test('the rendered admission form submits the exact operation and renders a receipt without access claims', async () => {
+  const calls = [];
+  const receiptId = '7647c458-0114-48d3-9cc8-1687097e7379';
+  const approvalRequestId = '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
+  const view = renderedPane(async (path, options) => {
+    calls.push({ path, options: plain(options) });
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: options.body.requestId,
+      operationId: 'ciel.artifact.admit',
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.artifact-admission',
+        id: receiptId,
+        revision: 2,
+        value: {
+          artifactId: options.body.input.artifact.artifactId,
+          revision: 2,
+          state: 'admitted',
+          admissionReceiptId: receiptId,
+          approvalRequestId,
+          targetRequestDigest: 'c'.repeat(64),
+          sourceDigest: options.body.input.artifact.sourceDigest,
+          retainedDigest: options.body.input.artifact.retainedDigest,
+          purpose: options.body.input.artifact.purpose,
+          policyRevision: options.body.input.policyRevision,
+        },
+      },
+    };
+  }, Date, 'owner');
+
+  fillAdmissionForm(view, { approvalRequestId });
+  view.byId('admission-form').dispatch('submit');
+  const submit = findNode(view.byId('admission-form'), node => node.tag === 'button');
+  await waitFor(() => calls.length === 1 && !submit.disabled, 'admission request did not complete');
+
+  assert.equal(calls[0].path, '/api/ops/ciel/operations');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.body.operationId, 'ciel.artifact.admit');
+  assert.equal(calls[0].options.body.expectedRevision, 1);
+  assert.deepEqual(calls[0].options.body.approval, { approvalRequestId });
+  assert.equal(calls[0].options.body.input.artifact.sourceDigest, 'a'.repeat(64));
+  assert.equal(calls[0].options.body.input.artifact.retainedDigest, 'b'.repeat(64));
+  assert.deepEqual(calls[0].options.body.input.artifact.authority, { kind: 'synthetic' });
+  assert.deepEqual(calls[0].options.body.input.artifact.providerHandling, { status: 'no_transfer' });
+  assert.doesNotMatch(JSON.stringify(calls[0].options.body), /targetRequestDigest|contentBase64/i);
+
+  const resultText = treeText(view.byId('admission-result'));
+  assert.match(resultText, /Admitted, no access granted/);
+  assert.match(resultText, new RegExp(receiptId));
+  assert.match(resultText, /Receipt only/);
+  assert.match(resultText, /Raw content, storage locations, evaluator access, training permission and export grants are intentionally not returned/);
+});
+
+test('admission denial and stale binding errors clear the receipt slot and keep backend wording visible', async () => {
+  const outcomes = [
+    { code: 'approval_required', message: 'The approval is not approved for this artifact.' },
+    { code: 'revision_conflict', message: 'The evidence artifact no longer matches the admission request.' },
+  ];
+  let index = 0;
+  const view = renderedPane(async () => {
+    const outcome = outcomes[index++];
+    const error = new Error(outcome.message);
+    error.code = outcome.code;
+    throw error;
+  }, Date, 'owner');
+  fillAdmissionForm(view);
+  const form = view.byId('admission-form');
+  const submit = findNode(form, node => node.tag === 'button');
+  view.byId('admission-result').appendChild({ textContent: 'stale receipt', children: [] });
+
+  form.dispatch('submit');
+  await waitFor(() => index === 1 && !submit.disabled, 'approval denial did not render');
+  assert.match(findNode(form, node => node.className === 'field-error').textContent,
+    /Admission denied: The approval is not approved/);
+  assert.equal(view.byId('admission-result').children.length, 0);
+
+  form.dispatch('submit');
+  await waitFor(() => index === 2 && !submit.disabled, 'stale binding denial did not render');
+  assert.match(findNode(form, node => node.className === 'field-error').textContent,
+    /Stale binding: The evidence artifact no longer matches/);
+  assert.equal(view.byId('admission-result').children.length, 0);
+});
+
+test('operators are not offered admission controls or access claims', () => {
+  const view = renderedPane(undefined, Date, 'operator');
+  assert.equal(view.byId('admission-form'), null);
+  const text = treeText(view.root);
+  assert.match(text, /Admission needs owner access/);
+  assert.match(text, /does not read, display, export, feed evaluators, train models or permit provider transfer/);
 });
 
 test('blank dashboard idempotency input derives a unique key from the request correlation', async () => {
@@ -1371,6 +1523,23 @@ function approvalLookupResponse(id, state, revision) {
       value: { approvalRequestId: id, state, revision },
     },
   };
+}
+
+function fillAdmissionForm(view, overrides = {}) {
+  const approvalRequestId = overrides.approvalRequestId || '3b61b63d-3e27-47df-91e7-32c4ab857ed5';
+  view.byId('admission-artifact-id').value = overrides.artifactId || '4e1d10f7-1f13-4daf-82b6-c9dd43124138';
+  view.byId('admission-expected-revision').value = overrides.expectedRevision || '1';
+  view.byId('admission-source-digest').value = overrides.sourceDigest || 'a'.repeat(64);
+  view.byId('admission-retained-digest').value = overrides.retainedDigest || 'b'.repeat(64);
+  view.byId('admission-profile').value = overrides.contentProfile || 'trace';
+  view.byId('admission-type').value = overrides.mediaType || 'application/json';
+  view.byId('admission-purpose').value = overrides.purpose || 'quality_review';
+  view.byId('admission-expiry').value = overrides.expiresAt || '2026-10-19T00:00';
+  view.byId('admission-policy-revision').value = overrides.policyRevision || 'ciel-evidence-admission.v1';
+  view.byId('admission-approval-id').value = approvalRequestId;
+  view.byId('admission-key').value = overrides.idempotencyKey || 'dashboard-admit-1';
+  view.byId('admission-necessary').value = overrides.necessaryCategories || 'none';
+  view.byId('admission-removed').value = overrides.removedCategories || 'tokens,identifiers';
 }
 
 function fillApprovalRequestForm(view, suffix = 'one') {
