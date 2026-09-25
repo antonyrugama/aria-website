@@ -409,6 +409,71 @@ const INTEGRATIONS = {
   ]
 };
 
+const COST_CATEGORIES = {
+  categories: [
+    { key: 'ci_and_build', label: 'CI and build' },
+    { key: 'ai_and_models', label: 'AI and models' },
+    { key: 'data', label: 'Data' },
+    { key: 'application_compute', label: 'Application compute' },
+    { key: 'platform_and_observability', label: 'Platform and observability' }
+  ],
+  lines: [
+    {
+      serviceName: 'Brand New Azure Thing',
+      serviceKey: 'brand new azure thing',
+      resourceGroup: 'rg-aria-prod',
+      resourceGroupKey: 'rg-aria-prod',
+      seedCategory: null,
+      effectiveCategory: 'ungrouped',
+      source: 'ungrouped',
+      override: null
+    },
+    {
+      serviceName: 'Storage',
+      serviceKey: 'storage',
+      resourceGroup: 'rg-aria-prod',
+      resourceGroupKey: 'rg-aria-prod',
+      seedCategory: 'data',
+      effectiveCategory: 'data',
+      source: 'seed',
+      override: null
+    },
+    {
+      serviceName: 'Virtual Machines',
+      serviceKey: 'virtual machines',
+      resourceGroup: 'rg-aria-dev',
+      resourceGroupKey: 'rg-aria-dev',
+      seedCategory: 'ci_and_build',
+      effectiveCategory: 'application_compute',
+      source: 'resource_group_override',
+      override: {
+        id: 17,
+        scope: 'resource_group_service',
+        serviceKey: 'virtual machines',
+        serviceName: 'Virtual Machines',
+        resourceGroupKey: 'rg-aria-dev',
+        resourceGroup: 'rg-aria-dev',
+        category: 'application_compute',
+        createdAt: '2026-09-24T17:45:00.000Z',
+        updatedAt: '2026-09-24T18:00:00.000Z'
+      }
+    }
+  ],
+  overrides: [
+    {
+      id: 17,
+      scope: 'resource_group_service',
+      serviceKey: 'virtual machines',
+      serviceName: 'Virtual Machines',
+      resourceGroupKey: 'rg-aria-dev',
+      resourceGroup: 'rg-aria-dev',
+      category: 'application_compute',
+      createdAt: '2026-09-24T17:45:00.000Z',
+      updatedAt: '2026-09-24T18:00:00.000Z'
+    }
+  ]
+};
+
 /* Cloud costs, in the state a period that has not published yet produces.
    Both generations of this pane read `availability.state` first and print
    `availability.detail` verbatim into the card they draw for it, so the detail
@@ -596,7 +661,12 @@ const PROOF = {
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
-  settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label]
+  settings: [
+    ADMINS[0].email,
+    AUDIT[0].reason,
+    INTEGRATIONS.integrations[0].label,
+    COST_CATEGORIES.lines[2].serviceName
+  ]
 };
 
 
@@ -667,6 +737,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
+  if (pathname.startsWith('/api/ops/settings/cost-categories')) return { data: COST_CATEGORIES };
   if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
   if (pathname.startsWith('/api/ops/users/lookup')) return { data: USER_LOOKUP };
   if (pathname.startsWith('/api/ops/users/')) return { data: USER_DETAIL };
@@ -676,5 +747,5 @@ function stub(pathname) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COSTS, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
+  ADMINS, SESSIONS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COST_CATEGORIES, COSTS, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
 };
