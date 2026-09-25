@@ -571,6 +571,16 @@ test('run launch pane sends only code-owned baseline and candidate manifests and
   assert.equal(calls[0].options.body.input.manifest.dataset.datasetId, 'dataset.synthetic.demo');
   assert.equal(calls[0].options.body.input.manifest.repeatDesign.kind, 'single');
   assert.ok(!JSON.stringify(calls[0].options.body).includes('http://'), 'launch request must not carry a free-text endpoint');
+
+  const firstCandidateKey = calls[1].options.body.idempotencyKey;
+  await view.byId('ciel-run-launch-form').dispatch('submit');
+  await waitFor(() => calls.length === 3, 'recovery submit should retry only the unresolved candidate');
+  assert.deepEqual(calls.map(call => call.options.body.input.manifest.promptBundle.bundleId), [
+    'prompt.synthetic.baseline',
+    'prompt.synthetic.candidate',
+    'prompt.synthetic.candidate',
+  ]);
+  assert.equal(calls[2].options.body.idempotencyKey, firstCandidateKey);
 });
 
 test('run inspection pane shows provenance, pending statistics and retry output from shared operations', async () => {
@@ -607,9 +617,7 @@ test('run inspection pane shows provenance, pending statistics and retry output 
           provider: {
             kind: 'azure_openai',
             deployment: 'azure-openai-prod',
-            revision: 'approved-prod-revision',
             replay: false,
-            provenance: 'fresh inference',
           },
           repeatDesign: { kind: 'paired_repeats', repeatsPerConfig: 3, statisticsStatus: 'pending' },
           progress: {
@@ -626,7 +634,13 @@ test('run inspection pane shows provenance, pending statistics and retry output 
             requiredDeltas: [],
           },
           evidence: { redactedEvidenceCleanPass: false, redactedEvidencePresent: true },
-          artifacts: { rawOutput: [], repairedOutput: [], finalOutput: [], tools: [], stateChanges: [] },
+          artifacts: {
+            rawOutput: [{ scenarioId: 'scenario.raw', value: 'raw text' }],
+            repairedOutput: [{ scenarioId: 'scenario.repaired', value: 'repaired text' }],
+            finalOutput: [{ scenarioId: 'scenario.final', value: 'final text' }],
+            tools: [{ name: 'tool.search', status: 'skipped' }],
+            stateChanges: [{ path: '/coach/note', action: 'redacted' }],
+          },
         },
       },
     };
@@ -639,16 +653,36 @@ test('run inspection pane shows provenance, pending statistics and retry output 
 
   view.byId('ciel-run-inspect-id').value = runId;
   view.byId('ciel-run-inspect-form').dispatch('submit');
-  await waitFor(() => /fresh inference/.test(treeText(view.byId('ciel-run-inspection-result'))), 'run inspection did not render');
+  await waitFor(() => /azure_openai/.test(treeText(view.byId('ciel-run-inspection-result'))), 'run inspection did not render');
   const result = view.byId('ciel-run-inspection-result');
   assert.equal(calls[0].options.body.operationId, 'ciel.run.get');
   assert.deepEqual(calls[0].options.body.input, { runId });
   assert.match(treeText(result), /175c \/ 80c/);
+  assert.doesNotMatch(treeText(result), /fresh inference/);
+  assert.doesNotMatch(treeText(result), /approved-prod-revision/);
   assert.match(treeText(result), /scenario\.skipped\.redacted/);
   assert.match(treeText(result), /scenario\.incomplete\.redacted/);
+  assert.match(treeText(result), /Attempt 1 failed: tool_timeout/);
+  assert.match(treeText(result), /raw text/);
+  assert.match(treeText(result), /repaired text/);
+  assert.match(treeText(result), /final text/);
+  assert.match(treeText(result), /tool\.search/);
+  assert.match(treeText(result), /\/coach\/note/);
   assert.match(treeText(result), /inconclusive: repeated-run statistics pending/);
   assert.match(treeText(result), /present; never a clean pass/);
 
+  view.byId('ciel-run-inspect-id').value = '00000000-0000-4000-8000-000000000000';
+  view.byId('ciel-run-inspect-id').dispatch('input');
+  await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Cancel inspected run').dispatch('click');
+  assert.equal(calls.length, 1, 'cancel must not target an edited, uninspected run id');
+  assert.match(treeText(view.root), /Inspect a run before cancelling it/);
+
+  view.byId('ciel-run-inspect-id').value = runId;
+  view.byId('ciel-run-inspect-form').dispatch('submit');
+  await waitFor(
+    () => calls.length === 2 && /Attempt 1 failed/.test(treeText(result)),
+    'replacement inspection was not rendered',
+  );
   await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Retry failed run').dispatch('click');
   await waitFor(() => calls.some(call => call.options.body.operationId === 'ciel.run.retry'), 'retry request was not sent');
   assert.deepEqual(calls[calls.length - 1].options.body.input, {

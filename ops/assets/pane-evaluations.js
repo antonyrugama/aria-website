@@ -1147,23 +1147,54 @@
     var cost = value.cost || {};
     var comparison = value.comparison || {};
     var evidence = value.evidence || {};
+    var artifacts = value.artifacts || {};
+    function compactJson(entry) {
+      if (entry === null || entry === undefined) return 'unavailable';
+      if (typeof entry === 'string') return entry;
+      try {
+        return JSON.stringify(entry).slice(0, 500);
+      } catch (caught) {
+        return 'unavailable';
+      }
+    }
+    function detailsBlock(title, entries, emptyText) {
+      var items = Array.isArray(entries) ? entries : [];
+      return h('details', { className: 'run-detail-disclosure' }, [
+        h('summary', { text: title + ' (' + String(items.length) + ')' }),
+        items.length
+          ? h('ul', {}, items.slice(0, 10).map(function (entry) {
+            return h('li', { text: compactJson(entry) });
+          }))
+          : h('p', { className: 'field-hint', text: emptyText })
+      ]);
+    }
+    var failures = Array.isArray(progress.attemptFailures) ? progress.attemptFailures : [];
     return h('article', { className: 'run-inspection-card' }, [
       shell.cardHead('Run ' + (value.runId || 'unknown'), [
         value.status,
         'revision ' + String(value.revision || resource.revision || 1),
-        provider.provenance || (value.mode === 'fresh_capture' ? 'fresh inference' : 'offline replay')
+        provider.provenance || 'provenance not returned'
       ].filter(Boolean).join(' · ')),
       detailList([
         ['Expected / actual cost', String(cost.expectedCents !== undefined ? cost.expectedCents : value.budget && value.budget.estimatedCostCents || 0) +
           'c / ' + String(cost.actualCents !== undefined ? cost.actualCents : value.budget && value.budget.accountedCostCents || 0) + 'c'],
         ['Provider', [provider.kind, provider.deployment, provider.revision].filter(Boolean).join(' · ') || 'not recorded'],
-        ['Replay vs fresh', provider.replay === false ? 'fresh inference' : 'replay or scoring-only'],
+        ['Replay vs fresh', provider.replay === false ? 'server reported fresh' : provider.replay === true ? 'server reported replay' : 'not recorded'],
         ['Attempts', String(progress.attempts || 0) + ' total, ' + String(progress.failedAttempts || 0) + ' failed'],
         ['Skipped work', (progress.skippedWork || []).join(', ') || 'none recorded'],
         ['Incomplete work', (progress.incompleteWork || []).join(', ') || 'none recorded'],
         ['Comparison', (comparison.status || 'inconclusive') + ': ' + (comparison.reason || 'repeated-run statistics pending')],
         ['Redacted evidence', evidence.redactedEvidencePresent ? 'present; never a clean pass' : 'none reported']
       ]),
+      detailsBlock('Attempt failures', failures.map(function (failure) {
+        return 'Attempt ' + String(failure.attempt || '?') + ' ' +
+          String(failure.status || 'failed') + ': ' + String(failure.outcomeCode || 'outcome unavailable');
+      }), 'No attempt failures returned.'),
+      detailsBlock('Raw output', artifacts.rawOutput, 'Raw output unavailable or redacted.'),
+      detailsBlock('Repaired output', artifacts.repairedOutput, 'Repaired output unavailable or redacted.'),
+      detailsBlock('Final output', artifacts.finalOutput, 'Final output unavailable or redacted.'),
+      detailsBlock('Tools', artifacts.tools, 'Tool trace unavailable or redacted.'),
+      detailsBlock('State changes', artifacts.stateChanges, 'State changes unavailable or redacted.'),
       h('div', { className: 'card-foot' }, [
         h('span', { className: 'pill ghost', text: 'inconclusive: repeated-run statistics pending' }),
         h('span', { className: 'pill ghost', text: 'Critical regressions first when statistics land' })
@@ -1210,6 +1241,8 @@
     var inspectRunId = input('text');
     var inspectError = h('div', { className: 'field-error', role: 'alert' });
     var inspectResult = h('div', { className: 'run-inspection-result', 'aria-live': 'polite' });
+    var launchState = null;
+    var launchInFlight = false;
     var currentRun = null;
 
     function draft() {
@@ -1243,6 +1276,45 @@
     launchResult.setAttribute('id', 'ciel-run-launch-result');
     inspectResult.setAttribute('id', 'ciel-run-inspection-result');
 
+    function launchSignature(dataset, selectedDraft) {
+      return JSON.stringify({
+        datasetId: dataset.id,
+        baseline: baselineSelect.value,
+        candidate: candidateSelect.value,
+        draft: selectedDraft
+      });
+    }
+
+    function currentLaunchState(dataset, selectedDraft) {
+      var signature = launchSignature(dataset, selectedDraft);
+      if (!launchState || launchState.signature !== signature) {
+        launchState = {
+          signature: signature,
+          baselineRequest: runLaunchRequest(dataset, baselineSelect.value, selectedDraft, 'baseline'),
+          candidateRequest: runLaunchRequest(dataset, candidateSelect.value, selectedDraft, 'candidate'),
+          baselineResponse: null,
+          candidateResponse: null
+        };
+      }
+      return launchState;
+    }
+
+    function renderLaunchState(state) {
+      clearNode(launchResult);
+      if (state && state.baselineResponse) {
+        launchResult.appendChild(renderLaunchItem('Baseline', state.baselineResponse));
+      }
+      if (state && state.candidateResponse) {
+        launchResult.appendChild(renderLaunchItem('Candidate', state.candidateResponse));
+      }
+    }
+
+    function resetLaunchState() {
+      launchState = null;
+      clearNode(launchResult);
+      clearNode(launchError);
+    }
+
     var launchForm = h('form', { className: 'card run-launch-form' }, [
       shell.cardHead('Launch baseline and candidate', 'Selections are fixed in code; endpoints and commands are never free text'),
       h('div', { className: 'card-body q-grid browse-filter-grid' }, [
@@ -1268,7 +1340,6 @@
     launchForm.addEventListener('submit', async function (event) {
       event.preventDefault();
       clearNode(launchError);
-      clearNode(launchResult);
       var selectedDataset = RUN_DATASETS.filter(function (entry) { return entry.id === datasetSelect.value; })[0];
       var selectedDraft;
       try {
@@ -1277,22 +1348,33 @@
         launchError.textContent = caught && caught.message ? caught.message : 'Run launch input is invalid.';
         return;
       }
-      var baselineRequest = runLaunchRequest(selectedDataset, baselineSelect.value, selectedDraft, 'baseline');
-      var candidateRequest = runLaunchRequest(selectedDataset, candidateSelect.value, selectedDraft, 'candidate');
-      var baselineResponse = null;
+      var state = currentLaunchState(selectedDataset, selectedDraft);
+      renderLaunchState(state);
+      if (launchInFlight) {
+        launchError.textContent = 'A controlled launch is already in progress.';
+        return;
+      }
+      launchInFlight = true;
       try {
-        baselineResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: baselineRequest });
-        launchResult.appendChild(renderLaunchItem('Baseline', baselineResponse));
-        var candidateResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: candidateRequest });
-        launchResult.appendChild(renderLaunchItem('Candidate', candidateResponse));
+        if (!state.baselineResponse) {
+          state.baselineResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: state.baselineRequest });
+          renderLaunchState(state);
+        }
+        if (!state.candidateResponse) {
+          state.candidateResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: state.candidateRequest });
+          renderLaunchState(state);
+        }
         shell.announce('Controlled Ciel runs launched.');
       } catch (caught) {
-        if (baselineResponse) {
+        renderLaunchState(state);
+        if (state.baselineResponse && !state.candidateResponse) {
           launchError.textContent = 'Candidate launch failed after baseline succeeded: ' + (caught && caught.message ? caught.message : 'try again with a new idempotency key.');
           shell.announce('Candidate launch failed; baseline result remains visible.');
         } else {
           launchError.textContent = caught && caught.message ? caught.message : 'Controlled run launch failed.';
         }
+      } finally {
+        launchInFlight = false;
       }
     });
 
@@ -1314,10 +1396,15 @@
       return requireUuid(inspectRunId.value, 'Run ID');
     }
 
+    function invalidateInspection() {
+      currentRun = null;
+      clearNode(inspectResult);
+    }
+
     inspectForm.addEventListener('submit', async function (event) {
       event.preventDefault();
       clearNode(inspectError);
-      clearNode(inspectResult);
+      invalidateInspection();
       try {
         var request = runEnvelope('ciel.run.get', { runId: runId() });
         var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
@@ -1325,11 +1412,18 @@
         inspectResult.appendChild(renderRunResource(response && response.resource));
         shell.announce('Ciel run inspection loaded.');
       } catch (caught) {
+        currentRun = null;
+        clearNode(inspectResult);
         inspectError.textContent = caught && caught.message ? caught.message : 'Run inspection failed.';
       }
     });
 
     inspectRunId.required = true;
+    inspectRunId.addEventListener('input', invalidateInspection);
+    [datasetSelect, baselineSelect, candidateSelect, modeSelect, providerSelect, repeats, estimate, concurrency, approvalRef, approvedBy].forEach(function (control) {
+      control.addEventListener('change', resetLaunchState);
+      control.addEventListener('input', resetLaunchState);
+    });
     var cancelButton = inspectForm.children[2].children[1];
     var retryButton = inspectForm.children[2].children[2];
     cancelButton.addEventListener('click', async function () {
@@ -1337,7 +1431,7 @@
       try {
         if (!currentRun) throw new Error('Inspect a run before cancelling it.');
         var request = runEnvelope('ciel.run.cancel', {
-          runId: runId(),
+          runId: currentRun.runId,
           reason: 'Cancelled from the Ciel admin dashboard.'
         });
         request.expectedRevision = currentRun.revision;
@@ -1353,8 +1447,9 @@
     retryButton.addEventListener('click', async function () {
       clearNode(inspectError);
       try {
+        if (!currentRun) throw new Error('Inspect a run before retrying it.');
         var request = runEnvelope('ciel.run.retry', {
-          runId: runId(),
+          runId: currentRun.runId,
           reason: 'Retry failed attempts from the Ciel admin dashboard.'
         });
         request.idempotencyKey = 'dashboard-run-retry-' + request.requestId;
