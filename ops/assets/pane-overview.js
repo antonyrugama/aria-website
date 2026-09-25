@@ -1039,7 +1039,7 @@
       if (isHourWindow(win)) {
         var hours = num(win && win.hours);
         if (hours === null) return 'a window the answer did not describe';
-        return 'each hour over the last ' + fmt.plural(hours, 'hour') + ', UTC';
+        return 'the last ' + fmt.plural(hours, 'hour') + ' (UTC)';
       }
       var days = num(win && win.days);
       if (days === null) return 'a window the answer did not describe';
@@ -1433,10 +1433,11 @@
           body.appendChild(axis);
         }
       } else {
-        /* One day with a reading is a point, not a line, and there is nothing
+        /* One reading is a point, not a line, and there is nothing
            to join up. The figures below still say what was counted. */
-        body.appendChild(S.stateBlock('empty', 'Not enough days to draw a line yet',
-          ['Fewer than two days in this window have a stored reading.'], 4));
+        body.appendChild(S.stateBlock('empty',
+          'Not enough ' + unit + 's to draw a line yet',
+          ['Fewer than two ' + unit + 's in this window have a stored reading.'], 4));
       }
 
       /* The chart's own numbers, in text. Nothing on this pane may exist only
@@ -1587,7 +1588,7 @@
     function chartName(series, labels, win, missingRollups) {
       var unit = activityUnit(win);
       var head = unit === 'hour'
-        ? 'People active each hour, one line per app, ' + windowPhrase(win)
+        ? 'People active each hour over ' + windowPhrase(win) + ', one line per app'
         : 'People active each day, one line per app, over ' + windowPhrase(win);
       var first = labelAt(labels, 0);
       var last = labelAt(labels, labels.length - 1);

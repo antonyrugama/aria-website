@@ -87,7 +87,9 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const utcDay = (ms) => new Date(NOW - ms).toISOString().slice(0, 10);
-const utcHourLabel = (ms) => new Date(NOW - ms).toISOString().slice(11, 16);
+const HOUR_FLOOR = Math.floor(NOW / HOUR) * HOUR;
+const utcHourKey = (ms) => new Date(ms).toISOString();
+const utcHourLabel = (ms) => String(new Date(ms).getUTCHours()).padStart(2, '0') + ':00';
 
 const ADMIN = { id: 'adm_1', email: 'owner@example.invalid', name: 'Owner', role: 'owner' };
 const SESSION = { id: 'ses_1', createdAt: ago(10 * MINUTE), lastSeenAt: ago(1000), userAgent: 'check' };
@@ -129,8 +131,11 @@ const RULES = [
    and ops-settings-v2.test.mjs — trimmed to what has to be present for the
    pane to reach its ready state, and moved onto the real clock. */
 
-const SUMMARY_HOURS = Array.from({ length: 24 }, (_, n) => utcHourLabel((23 - n) * HOUR));
-const SUMMARY_HOUR_START = ago(24 * HOUR);
+const SUMMARY_HOUR_START_MS = HOUR_FLOOR - 24 * HOUR;
+const SUMMARY_HOUR_END_MS = HOUR_FLOOR;
+const SUMMARY_HOURS = Array.from({ length: 24 }, (_, n) => utcHourLabel(SUMMARY_HOUR_START_MS + n * HOUR));
+const SUMMARY_HOUR_START = utcHourKey(SUMMARY_HOUR_START_MS);
+const SUMMARY_HOUR_END = utcHourKey(SUMMARY_HOUR_END_MS);
 
 const SUMMARY = {
   generatedAt: ago(5 * MINUTE),
@@ -139,8 +144,8 @@ const SUMMARY = {
     availability: { state: 'ready' },
     platform: { active: 1102, previousActive: 980 },
     apps: [
-      { key: 'aria', label: 'Aria', active: 870, tone: 's1' },
-      { key: 'ariaxii', label: 'Aria XII', active: 412, tone: 's2' }
+      { key: 'mobile', label: 'Mobile', active: 870, tone: 's1' },
+      { key: 'coaches', label: 'Coaches Web', active: 412, tone: 's2' }
     ],
     window: { days: 7 },
     comparison: { days: 7, label: 'the 7 days before' },
@@ -182,7 +187,7 @@ const SUMMARY = {
     hoursMissingRollups: [],
     window: {
       start: SUMMARY_HOUR_START,
-      endExclusive: new Date(NOW).toISOString(),
+      endExclusive: SUMMARY_HOUR_END,
       hours: 24,
       grain: 'hour',
       timezone: 'UTC'

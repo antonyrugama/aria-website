@@ -6,7 +6,7 @@
    screenshot or a headless-Chrome overflow check can see:
 
      - a figure is labelled with the window the answer says it covers, read
-       from window.days rather than written into the pane;
+       from the day-grain or hour-grain window rather than written into the pane;
      - a block whose availability is not `ready` renders words and never a
        numeral, so "not connected" can never look like zero;
      - the two apps are never added together;
@@ -69,6 +69,8 @@ const minutesAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
 
 const DAYS = ['2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16',
   '2026-09-17', '2026-09-18', '2026-09-19'];
+const HOUR_KEYS = Array.from({ length: 24 }, (_, n) =>
+  new Date(Date.UTC(2026, 8, 19, 9 + n)).toISOString());
 const HOURS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00',
   '15:00', '16:00', '17:00', '18:00', '19:00', '20:00',
   '21:00', '22:00', '23:00', '00:00', '01:00', '02:00',
@@ -157,14 +159,14 @@ function hourlyActivity(over) {
         key: 'coaches',
         label: 'Coaches Web',
         color: 's2',
-        values: [83, 80, 78, 76, 73, 71, 69, 66, 64, 61, 58, 56,
+        values: [83, 80, null, 76, 73, null, 69, 66, 64, 61, 58, 56,
           54, 52, 50, 49, 47, 45, 43, 41, 39, 37, 35, 33],
       },
     ],
-    reportingStart: '2026-09-19T09:00:00.000Z',
-    hoursMissingRollups: ['11:00', '14:00'],
+    reportingStart: HOUR_KEYS[0],
+    hoursMissingRollups: [HOUR_KEYS[2], HOUR_KEYS[5]],
     window: {
-      start: '2026-09-19T09:00:00.000Z',
+      start: HOUR_KEYS[0],
       endExclusive: '2026-09-20T09:00:00.000Z',
       hours: 24,
       grain: 'hour',
@@ -405,8 +407,10 @@ test('hour-grain activity says last 24 hours in UTC and reads x-axis labels from
     'the last x-axis label did not come from the activity labels array');
 
   const name = (chartOf(dom) && chartOf(dom).getAttribute('aria-label')) || '';
-  assert.match(name, /each hour over the last 24 hours, UTC/,
-    'the chart spoken description did not say each hour over the last 24 hours, UTC');
+  assert.match(name, /People active each hour over the last 24 hours \(UTC\), one line per app/,
+    'the chart spoken description did not say each hour over the last 24 hours (UTC)');
+  assert.equal((name.match(/each hour/g) || []).length, 1,
+    'the chart spoken description repeated "each hour": ' + name);
   assert.doesNotMatch(name, /each day|whole UTC day/,
     'the chart spoken description still used day-grain copy');
 });
@@ -581,6 +585,44 @@ test('a day with no stored reading breaks the line rather than joining across it
     'the app with a missing day still claims a reading for every day');
   assert.doesNotMatch(text, /\b0 people on 2026-09-15\b/,
     'the gap day was reported as a measured zero');
+});
+
+test('not-enough-data activity copy follows the payload grain', async () => {
+  const day = await boot({
+    summary: summaryFixture((s) => {
+      s.activity.series.forEach((one) => {
+        one.values = one.values.map((v, index) => (index === 0 ? v : null));
+      });
+      s.activity.daysMissingRollups = DAYS.slice(1);
+    }),
+  });
+  const dayText = liveText(day);
+  assert.match(dayText, /People active each day/,
+    'the day-grain not-enough-data case did not render the daily card');
+  assert.match(dayText, /Not enough days to draw a line yet/,
+    'the day-grain not-enough-data branch lost its day heading');
+  assert.match(dayText, /Fewer than two days in this window have a stored reading\./,
+    'the day-grain not-enough-data branch lost its day detail');
+
+  const hour = await boot({
+    summary: summaryFixture((s) => {
+      s.activity = hourlyActivity((a) => {
+        a.series.forEach((one) => {
+          one.values = one.values.map((v, index) => (index === 0 ? 7 : null));
+        });
+        a.hoursMissingRollups = HOUR_KEYS.slice(1);
+      });
+    }),
+  });
+  const hourText = liveText(hour);
+  assert.match(hourText, /People active each hour/,
+    'the hour-grain not-enough-data case did not render the hourly card');
+  assert.match(hourText, /Not enough hours to draw a line yet/,
+    'the hour-grain not-enough-data branch did not use hour heading copy');
+  assert.match(hourText, /Fewer than two hours in this window have a stored reading\./,
+    'the hour-grain not-enough-data branch did not use hour detail copy');
+  assert.doesNotMatch(hourText, /Not enough days to draw a line yet|Fewer than two days/,
+    'the hour-grain not-enough-data branch still used day copy');
 });
 
 test('hour-grain null readings are gaps, reported zeroes stay zero, and apps are not summed', async () => {
