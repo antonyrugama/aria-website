@@ -1026,6 +1026,354 @@
     return section;
   }
 
+  var RUN_DATASETS = [{
+    id: 'dataset.synthetic.demo',
+    label: 'Synthetic demo frozen release',
+    releaseId: '3d11852d-24b9-46ab-9c7e-bd4db48f9d87',
+    releaseDigest: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    caseDigests: [
+      'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+    ]
+  }];
+
+  var RUN_CONFIGS = {
+    'prompt.synthetic.baseline': {
+      label: 'Baseline prompt bundle',
+      version: 'v1',
+      digest: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+    },
+    'prompt.synthetic.candidate': {
+      label: 'Candidate prompt bundle',
+      version: 'v1',
+      digest: '9999999999999999999999999999999999999999999999999999999999999999'
+    }
+  };
+
+  function runEnvelope(operationId, input, requestId) {
+    return {
+      schemaVersion: 'ciel.operation.request.v1',
+      requestId: requestId || global.crypto.randomUUID(),
+      operationId: operationId,
+      mode: 'remote',
+      client: {
+        name: 'aria-operations-dashboard',
+        version: '1.0.0',
+        contractVersions: ['ciel.operations.v1']
+      },
+      input: input
+    };
+  }
+
+  function runManifest(dataset, promptBundleId, draft) {
+    var config = RUN_CONFIGS[promptBundleId];
+    var live = draft.providerKind === 'azure_openai';
+    return {
+      schemaVersion: 'ciel.run.manifest.v1',
+      mode: draft.mode,
+      code: { gitCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      dataset: {
+        datasetId: dataset.id,
+        releaseId: dataset.releaseId,
+        releaseDigest: dataset.releaseDigest,
+        caseDigests: dataset.caseDigests,
+        sourceKind: 'synthetic'
+      },
+      promptBundle: {
+        bundleId: promptBundleId,
+        version: config.version,
+        digest: config.digest
+      },
+      policy: {
+        scenarioVersion: 'scenario.v1',
+        rubricVersion: 'rubric.v1',
+        gatePolicyVersion: 'gate.v1',
+        toolVersion: 'tool.v1',
+        engineVersion: 'engine.v1'
+      },
+      provider: {
+        kind: draft.providerKind,
+        deployment: live ? 'azure-openai-prod' : 'fixture',
+        revision: live ? 'approved-prod-revision' : 'rev1'
+      },
+      sampling: {
+        seed: promptBundleId === 'prompt.synthetic.baseline' ? 101 : 202,
+        temperature: 0,
+        maxOutputTokens: 1024
+      },
+      locale: 'en-US',
+      retrievalSnapshot: {
+        kind: 'synthetic_fixture',
+        digest: 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+      },
+      graders: [{
+        graderId: 'grader.synthetic',
+        version: 'v1',
+        digest: '1111111111111111111111111111111111111111111111111111111111111111'
+      }],
+      runtime: {
+        approvedBy: draft.approvedBy,
+        approvalRef: draft.approvalRef
+      },
+      budget: {
+        estimatedCostCents: draft.estimatedCostCents,
+        maxProviderRequests: live ? 40 : 0,
+        maxPromptTokens: 10000,
+        maxCompletionTokens: 10000,
+        maxWallTimeSeconds: 600,
+        requestedProviderConcurrency: live ? draft.providerConcurrency : 0
+      },
+      repeatDesign: {
+        kind: draft.repeatsPerConfig > 1 ? 'paired_repeats' : 'single',
+        repeatsPerConfig: draft.repeatsPerConfig,
+        statisticsStatus: 'pending'
+      }
+    };
+  }
+
+  function runLaunchRequest(dataset, promptBundleId, draft, idempotencySuffix) {
+    var request = runEnvelope('ciel.run.launch', {
+      manifest: runManifest(dataset, promptBundleId, draft)
+    });
+    request.idempotencyKey = 'dashboard-run-launch-' + idempotencySuffix + '-' + request.requestId;
+    return request;
+  }
+
+  function renderRunResource(resource) {
+    var value = resource && resource.value ? resource.value : resource;
+    if (!value) return h('p', { className: 'field-hint', text: 'No run resource returned.' });
+    var progress = value.progress || {};
+    var provider = value.provider || {};
+    var cost = value.cost || {};
+    var comparison = value.comparison || {};
+    var evidence = value.evidence || {};
+    return h('article', { className: 'run-inspection-card' }, [
+      shell.cardHead('Run ' + (value.runId || 'unknown'), [
+        value.status,
+        'revision ' + String(value.revision || resource.revision || 1),
+        provider.provenance || (value.mode === 'fresh_capture' ? 'fresh inference' : 'offline replay')
+      ].filter(Boolean).join(' · ')),
+      detailList([
+        ['Expected / actual cost', String(cost.expectedCents !== undefined ? cost.expectedCents : value.budget && value.budget.estimatedCostCents || 0) +
+          'c / ' + String(cost.actualCents !== undefined ? cost.actualCents : value.budget && value.budget.accountedCostCents || 0) + 'c'],
+        ['Provider', [provider.kind, provider.deployment, provider.revision].filter(Boolean).join(' · ') || 'not recorded'],
+        ['Replay vs fresh', provider.replay === false ? 'fresh inference' : 'replay or scoring-only'],
+        ['Attempts', String(progress.attempts || 0) + ' total, ' + String(progress.failedAttempts || 0) + ' failed'],
+        ['Skipped work', (progress.skippedWork || []).join(', ') || 'none recorded'],
+        ['Incomplete work', (progress.incompleteWork || []).join(', ') || 'none recorded'],
+        ['Comparison', (comparison.status || 'inconclusive') + ': ' + (comparison.reason || 'repeated-run statistics pending')],
+        ['Redacted evidence', evidence.redactedEvidencePresent ? 'present; never a clean pass' : 'none reported']
+      ]),
+      h('div', { className: 'card-foot' }, [
+        h('span', { className: 'pill ghost', text: 'inconclusive: repeated-run statistics pending' }),
+        h('span', { className: 'pill ghost', text: 'Critical regressions first when statistics land' })
+      ])
+    ]);
+  }
+
+  function runControlSection() {
+    var built = workingBand('Launch and inspect controlled Ciel runs', 'Code-owned configs, D6 cost envelope and shared operations');
+    var section = built.section;
+    var bandBody = built.body;
+    var datasetSelect = select(RUN_DATASETS.map(function (dataset) {
+      return option(dataset.id, dataset.label);
+    }));
+    var baselineSelect = select([option('prompt.synthetic.baseline', RUN_CONFIGS['prompt.synthetic.baseline'].label)]);
+    var candidateSelect = select([option('prompt.synthetic.candidate', RUN_CONFIGS['prompt.synthetic.candidate'].label)]);
+    var modeSelect = select([
+      option('offline_replay', 'Offline replay'),
+      option('fresh_capture', 'Fresh inference'),
+      option('scoring_only', 'Scoring only')
+    ]);
+    var providerSelect = select([
+      option('offline_fixture', 'Offline fixture'),
+      option('azure_openai', 'Azure OpenAI approved deployment')
+    ]);
+    var repeats = input('number', '1');
+    repeats.setAttribute('min', '1');
+    repeats.setAttribute('max', '10');
+    var estimate = input('number', '125');
+    estimate.setAttribute('min', '0');
+    estimate.setAttribute('max', '2500');
+    var concurrency = input('number', '0');
+    concurrency.setAttribute('min', '0');
+    concurrency.setAttribute('max', '4');
+    var approvalRef = input('text', 'runtime/approval/9802');
+    var approvedBy = input('text', '0a2dfb53-f68e-4cb1-a116-76ad64c1404f');
+    datasetSelect.value = RUN_DATASETS[0].id;
+    baselineSelect.value = 'prompt.synthetic.baseline';
+    candidateSelect.value = 'prompt.synthetic.candidate';
+    modeSelect.value = 'offline_replay';
+    providerSelect.value = 'offline_fixture';
+    var launchError = h('div', { className: 'field-error', role: 'alert' });
+    var launchResult = h('div', { className: 'run-launch-result', 'aria-live': 'polite' });
+    var inspectRunId = input('text');
+    var inspectError = h('div', { className: 'field-error', role: 'alert' });
+    var inspectResult = h('div', { className: 'run-inspection-result', 'aria-live': 'polite' });
+    var currentRun = null;
+
+    function draft() {
+      return {
+        mode: modeSelect.value,
+        providerKind: providerSelect.value,
+        repeatsPerConfig: requirePositiveInteger(repeats.value, 'Repeats per config'),
+        estimatedCostCents: requirePositiveInteger(estimate.value, 'Estimated cost cents'),
+        providerConcurrency: Number(concurrency.value || '0'),
+        approvalRef: requireReference(approvalRef.value, 'Approval reference'),
+        approvedBy: requireUuid(approvedBy.value, 'Approving owner')
+      };
+    }
+
+    function renderLaunchItem(label, response) {
+      var value = response && response.resource && response.resource.value;
+      if (value && value.runId) inspectRunId.value = value.runId;
+      return h('article', { className: 'run-launch-item' }, [
+        h('h3', { text: label }),
+        value
+          ? detailList([
+            ['Run', value.runId],
+            ['Status', value.status],
+            ['Budget', String(value.budget && value.budget.estimatedCostCents || 0) + 'c expected'],
+            ['Revision', String(value.revision || 1)]
+          ])
+          : h('p', { className: 'field-hint', text: 'No run resource returned.' })
+      ]);
+    }
+
+    launchResult.setAttribute('id', 'ciel-run-launch-result');
+    inspectResult.setAttribute('id', 'ciel-run-inspection-result');
+
+    var launchForm = h('form', { className: 'card run-launch-form' }, [
+      shell.cardHead('Launch baseline and candidate', 'Selections are fixed in code; endpoints and commands are never free text'),
+      h('div', { className: 'card-body q-grid browse-filter-grid' }, [
+        field('ciel-run-dataset', 'Frozen dataset release', datasetSelect),
+        field('ciel-run-baseline', 'Baseline config', baselineSelect),
+        field('ciel-run-candidate', 'Candidate config', candidateSelect),
+        field('ciel-run-mode', 'Run mode', modeSelect),
+        field('ciel-run-provider', 'Provider', providerSelect),
+        field('ciel-run-repeats', 'Repeats per config', repeats),
+        field('ciel-run-estimate', 'Approved estimate, cents', estimate),
+        field('ciel-run-concurrency', 'Provider concurrency', concurrency),
+        field('ciel-run-approval-ref', 'Approval reference', approvalRef),
+        field('ciel-run-approved-by', 'Approving owner', approvedBy)
+      ]),
+      h('div', { className: 'card-foot evidence-actions' }, [
+        h('p', { className: 'field-hint', text: 'The server enforces D6 caps again. The dashboard only sends the approved spend envelope.' }),
+        h('button', { className: 'btn btn-primary', type: 'submit', text: 'Launch controlled pair' })
+      ]),
+      launchError
+    ]);
+    launchForm.setAttribute('id', 'ciel-run-launch-form');
+
+    launchForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      clearNode(launchError);
+      clearNode(launchResult);
+      var selectedDataset = RUN_DATASETS.filter(function (entry) { return entry.id === datasetSelect.value; })[0];
+      var selectedDraft;
+      try {
+        selectedDraft = draft();
+      } catch (caught) {
+        launchError.textContent = caught && caught.message ? caught.message : 'Run launch input is invalid.';
+        return;
+      }
+      var baselineRequest = runLaunchRequest(selectedDataset, baselineSelect.value, selectedDraft, 'baseline');
+      var candidateRequest = runLaunchRequest(selectedDataset, candidateSelect.value, selectedDraft, 'candidate');
+      var baselineResponse = null;
+      try {
+        baselineResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: baselineRequest });
+        launchResult.appendChild(renderLaunchItem('Baseline', baselineResponse));
+        var candidateResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: candidateRequest });
+        launchResult.appendChild(renderLaunchItem('Candidate', candidateResponse));
+        shell.announce('Controlled Ciel runs launched.');
+      } catch (caught) {
+        if (baselineResponse) {
+          launchError.textContent = 'Candidate launch failed after baseline succeeded: ' + (caught && caught.message ? caught.message : 'try again with a new idempotency key.');
+          shell.announce('Candidate launch failed; baseline result remains visible.');
+        } else {
+          launchError.textContent = caught && caught.message ? caught.message : 'Controlled run launch failed.';
+        }
+      }
+    });
+
+    var inspectForm = h('form', { className: 'card run-inspect-form' }, [
+      shell.cardHead('Inspect, cancel or retry a run', 'Progress, cost, provider provenance and redaction state'),
+      h('div', { className: 'card-body q-grid' }, [
+        field('ciel-run-inspect-id', 'Run ID', inspectRunId, 'Paste a run id returned by launch or by the CLI.')
+      ]),
+      h('div', { className: 'card-foot evidence-actions' }, [
+        h('button', { className: 'btn btn-primary', type: 'submit', text: 'Inspect run' }),
+        h('button', { id: 'ciel-run-cancel', className: 'btn btn-sm', type: 'button', text: 'Cancel inspected run' }),
+        h('button', { id: 'ciel-run-retry', className: 'btn btn-sm', type: 'button', text: 'Retry failed run' })
+      ]),
+      inspectError
+    ]);
+    inspectForm.setAttribute('id', 'ciel-run-inspect-form');
+
+    function runId() {
+      return requireUuid(inspectRunId.value, 'Run ID');
+    }
+
+    inspectForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      clearNode(inspectError);
+      clearNode(inspectResult);
+      try {
+        var request = runEnvelope('ciel.run.get', { runId: runId() });
+        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        currentRun = response && response.resource && response.resource.value;
+        inspectResult.appendChild(renderRunResource(response && response.resource));
+        shell.announce('Ciel run inspection loaded.');
+      } catch (caught) {
+        inspectError.textContent = caught && caught.message ? caught.message : 'Run inspection failed.';
+      }
+    });
+
+    inspectRunId.required = true;
+    var cancelButton = inspectForm.children[2].children[1];
+    var retryButton = inspectForm.children[2].children[2];
+    cancelButton.addEventListener('click', async function () {
+      clearNode(inspectError);
+      try {
+        if (!currentRun) throw new Error('Inspect a run before cancelling it.');
+        var request = runEnvelope('ciel.run.cancel', {
+          runId: runId(),
+          reason: 'Cancelled from the Ciel admin dashboard.'
+        });
+        request.expectedRevision = currentRun.revision;
+        request.idempotencyKey = 'dashboard-run-cancel-' + request.requestId;
+        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        currentRun = response && response.resource && response.resource.value;
+        clearNode(inspectResult);
+        inspectResult.appendChild(renderRunResource(response && response.resource));
+      } catch (caught) {
+        inspectError.textContent = caught && caught.message ? caught.message : 'Cancel failed.';
+      }
+    });
+    retryButton.addEventListener('click', async function () {
+      clearNode(inspectError);
+      try {
+        var request = runEnvelope('ciel.run.retry', {
+          runId: runId(),
+          reason: 'Retry failed attempts from the Ciel admin dashboard.'
+        });
+        request.idempotencyKey = 'dashboard-run-retry-' + request.requestId;
+        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        currentRun = response && response.resource && response.resource.value;
+        clearNode(inspectResult);
+        inspectResult.appendChild(renderRunResource(response && response.resource));
+      } catch (caught) {
+        inspectError.textContent = caught && caught.message ? caught.message : 'Retry failed.';
+      }
+    });
+
+    bandBody.appendChild(launchForm);
+    bandBody.appendChild(launchResult);
+    bandBody.appendChild(inspectForm);
+    bandBody.appendChild(inspectResult);
+    return section;
+  }
+
   function attributeOf(node, name) {
     if (typeof node.getAttribute === 'function') return node.getAttribute(name) || '';
     return node.attributes && node.attributes[name] ? node.attributes[name] : '';
@@ -2193,6 +2541,7 @@
     pending = [];
     var stack = h('div', { className: 'stack' }, [
       browseSection(),
+      runControlSection(),
       datasetValidationSection(),
       evidenceQuarantineSection(),
       approvalSection(),

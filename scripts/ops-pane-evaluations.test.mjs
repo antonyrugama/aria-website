@@ -517,6 +517,146 @@ test('browse pane keeps facet options stable after filtered and empty reads', as
   assert.equal(view.byId('ciel-filter-role').value, 'athlete');
   assert.ok(roleOptions().some(option => option.value === 'coach'), 'coach facet option must remain reachable');
 });
+
+test('run launch pane sends only code-owned baseline and candidate manifests and keeps partial failures recoverable', async () => {
+  const calls = [];
+  const runResponse = (request, status, runId) => ({
+    schemaVersion: 'ciel.operation.response.v1',
+    requestId: request.requestId,
+    operationId: 'ciel.run.launch',
+    status: 'success',
+    exitCode: 0,
+    resource: {
+      type: 'ciel.run',
+      id: runId,
+      revision: 1,
+      value: {
+        runId,
+        revision: 1,
+        status,
+        mode: request.input.manifest.mode,
+        manifestDigest: 'a'.repeat(64),
+        budget: {
+          estimatedCostCents: request.input.manifest.budget.estimatedCostCents,
+          accountedCostCents: 0,
+          monthlyCapCents: 30000,
+          perRunCapCents: 2500,
+          maxProviderConcurrency: 4,
+          reservedProviderConcurrency: 0,
+        },
+        createdAt: '2026-09-19T12:00:00.000Z',
+        updatedAt: '2026-09-19T12:00:00.000Z',
+      },
+    },
+  });
+  const view = renderedPane(async (path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (calls.length === 1) return runResponse(options.body, 'queued', '11111111-1111-4111-8111-111111111111');
+    throw new Error('candidate budget envelope expired');
+  });
+
+  view.byId('ciel-run-launch-form').dispatch('submit');
+  await waitFor(() => calls.length === 2, 'baseline and candidate launch requests were not both attempted');
+  const launch = view.byId('ciel-run-launch-result');
+  assert.match(treeText(launch), /Baseline/);
+  assert.match(treeText(launch), /11111111-1111-4111-8111-111111111111/);
+  assert.match(treeText(view.byId('ciel-run-launch-form')), /server enforces D6 caps again/i);
+  assert.match(treeText(view.root), /Candidate launch failed after baseline succeeded: candidate budget envelope expired/);
+  assert.deepEqual(calls.map(call => call.path), ['/api/ops/ciel/operations', '/api/ops/ciel/operations']);
+  assert.equal(calls[0].options.body.operationId, 'ciel.run.launch');
+  assert.equal(calls[1].options.body.operationId, 'ciel.run.launch');
+  assert.equal(calls[0].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.baseline');
+  assert.equal(calls[1].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.candidate');
+  assert.equal(calls[0].options.body.input.manifest.provider.deployment, 'fixture');
+  assert.equal(calls[0].options.body.input.manifest.dataset.datasetId, 'dataset.synthetic.demo');
+  assert.equal(calls[0].options.body.input.manifest.repeatDesign.kind, 'single');
+  assert.ok(!JSON.stringify(calls[0].options.body).includes('http://'), 'launch request must not carry a free-text endpoint');
+});
+
+test('run inspection pane shows provenance, pending statistics and retry output from shared operations', async () => {
+  const runId = '3d11852d-24b9-46ab-9c7e-bd4db48f9d87';
+  const calls = [];
+  function inspectionResponse(request, status, attempts) {
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: request.requestId,
+      operationId: request.operationId,
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.run',
+        id: runId,
+        revision: status === 'queued' ? 6 : 5,
+        value: {
+          runId,
+          revision: status === 'queued' ? 6 : 5,
+          status,
+          mode: 'fresh_capture',
+          manifestDigest: 'b'.repeat(64),
+          budget: {
+            estimatedCostCents: 175,
+            accountedCostCents: 80,
+            monthlyCapCents: 30000,
+            perRunCapCents: 2500,
+            maxProviderConcurrency: 4,
+            reservedProviderConcurrency: 2,
+          },
+          createdAt: '2026-09-19T12:00:00.000Z',
+          updatedAt: '2026-09-19T12:05:00.000Z',
+          cost: { expectedCents: 175, actualCents: 80 },
+          provider: {
+            kind: 'azure_openai',
+            deployment: 'azure-openai-prod',
+            revision: 'approved-prod-revision',
+            replay: false,
+            provenance: 'fresh inference',
+          },
+          repeatDesign: { kind: 'paired_repeats', repeatsPerConfig: 3, statisticsStatus: 'pending' },
+          progress: {
+            attempts,
+            failedAttempts: 1,
+            incompleteWork: ['scenario.incomplete.redacted'],
+            skippedWork: ['scenario.skipped.redacted'],
+            attemptFailures: [{ attempt: 1, status: 'failed', outcomeCode: 'tool_timeout' }],
+          },
+          comparison: {
+            status: 'inconclusive',
+            reason: 'repeated-run statistics pending',
+            criticalRegressions: [],
+            requiredDeltas: [],
+          },
+          evidence: { redactedEvidenceCleanPass: false, redactedEvidencePresent: true },
+          artifacts: { rawOutput: [], repairedOutput: [], finalOutput: [], tools: [], stateChanges: [] },
+        },
+      },
+    };
+  }
+  const view = renderedPane(async (path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (options.body.operationId === 'ciel.run.retry') return inspectionResponse(options.body, 'queued', 3);
+    return inspectionResponse(options.body, 'running', 2);
+  });
+
+  view.byId('ciel-run-inspect-id').value = runId;
+  view.byId('ciel-run-inspect-form').dispatch('submit');
+  await waitFor(() => /fresh inference/.test(treeText(view.byId('ciel-run-inspection-result'))), 'run inspection did not render');
+  const result = view.byId('ciel-run-inspection-result');
+  assert.equal(calls[0].options.body.operationId, 'ciel.run.get');
+  assert.deepEqual(calls[0].options.body.input, { runId });
+  assert.match(treeText(result), /175c \/ 80c/);
+  assert.match(treeText(result), /scenario\.skipped\.redacted/);
+  assert.match(treeText(result), /scenario\.incomplete\.redacted/);
+  assert.match(treeText(result), /inconclusive: repeated-run statistics pending/);
+  assert.match(treeText(result), /present; never a clean pass/);
+
+  await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Retry failed run').dispatch('click');
+  await waitFor(() => calls.some(call => call.options.body.operationId === 'ciel.run.retry'), 'retry request was not sent');
+  assert.deepEqual(calls[calls.length - 1].options.body.input, {
+    runId,
+    reason: 'Retry failed attempts from the Ciel admin dashboard.',
+  });
+  assert.match(treeText(result), /3 total, 1 failed/);
+});
 test('browse pane renders loading, partial and error states without HTML injection', async () => {
   let resolve;
   const pending = new Promise(done => { resolve = done; });
