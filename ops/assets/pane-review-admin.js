@@ -138,6 +138,8 @@
   function detailCard(detail, onSubmit, onAdjudicate) {
     var card = shell.card('review-card');
     var visible = detail.reviewerState && detail.reviewerState.otherLabelsVisible;
+    var submittedOwnLabel = detail.reviewerState && detail.reviewerState.submittedOwnLabel;
+    var adjudicationMode = detail.adjudication && detail.adjudication.visible && visible && !submittedOwnLabel;
     var labels = visible ? (detail.labels || []) : [];
     card.appendChild(shell.cardHead('Blinded output', [detail.reviewItemId, visible ? 'labels visible' : 'independent label required']));
     card.appendChild(meta([
@@ -150,7 +152,11 @@
       ['Criterion digest', detail.criterionDigest, 'review-digest'],
       ['Other labels', visible ? String(labels.length) : 'Hidden until you submit your own label']
     ]));
-    card.appendChild(labelForm(detail, detail.reviewerState, detail.correction, onSubmit));
+    if (adjudicationMode) {
+      card.appendChild(shell.stateBlock('scale', 'Adjudication mode', ['Other reviewers\' labels are visible, so independent labelling is closed for this item.']));
+    } else {
+      card.appendChild(labelForm(detail, detail.reviewerState, detail.correction, onSubmit));
+    }
     if (detail.adjudication && detail.adjudication.visible && labels.length >= 2) {
       card.appendChild(adjudicationForm(detail, labels, onAdjudicate));
     }
@@ -180,6 +186,18 @@
       }
       var list = h('div', { className: 'review-list' });
       var detail = h('div', { className: 'review-detail' });
+      function populateList(nextItems) {
+        list.textContent = '';
+        nextItems.forEach(function (item) { list.appendChild(itemCard(item, inspect)); });
+      }
+      function retryPartialQueue() {
+        return session.call('/api/ops/ciel/admin/reviews/queue').then(function (retryPayload) {
+          var retryData = retryPayload.data || {};
+          populateList(retryData.items || []);
+        }, function (error) {
+          shell.toast('alerts', shell.failureMessage(error));
+        });
+      }
       function inspect(reviewItemId) {
         detail.textContent = '';
         detail.appendChild(shell.stateBlock('spark', 'Loading blinded output', ['Labels from other reviewers stay hidden until your own label is recorded.']));
@@ -201,7 +219,10 @@
           detail.appendChild(shell.stateBlock('alerts', 'Could not load review item', [shell.failureMessage(error)]));
         });
       }
-      items.forEach(function (item) { list.appendChild(itemCard(item, inspect)); });
+      populateList(items);
+      if (data.partial || (data.omissions && data.omissions.length)) {
+        body.appendChild(retryButton('Reload review queue', retryPartialQueue));
+      }
       body.appendChild(list);
       body.appendChild(detail);
     }, function (error) {

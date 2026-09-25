@@ -191,6 +191,8 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
   await button.dispatch('click');
   await Promise.resolve();
   assert.match(treeText(root), /Adjudicate disputed labels/, 'visible disputed labels must expose adjudication');
+  assert.doesNotMatch(treeText(root), /Submit independent label/, 'adjudicators who have seen labels cannot start an independent label');
+  assert.match(treeText(root), /independent labelling is closed/, 'adjudication mode explains why independent labelling is unavailable');
   assert.match(treeText(root), /Grounded pass rationale/, 'adjudication view renders first label rationale');
   assert.match(treeText(root), /Grounded fail rationale/, 'adjudication view renders second label rationale');
 
@@ -214,6 +216,38 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
     rationale: 'The failing label cites the gating rubric.',
   });
   assert.deepEqual(toasts, ['Adjudication recorded']);
+});
+
+test('review pane retries nonempty partial queues without clearing the active draft', async () => {
+  let queueReads = 0;
+  const { root } = loadPane((path) => {
+    if (path === '/api/ops/ciel/admin/reviews/queue') {
+      queueReads += 1;
+      return Promise.resolve({
+        data: {
+          items: [queueItem],
+          partial: queueReads === 1,
+          omissions: queueReads === 1 ? ['review source timed out'] : [],
+        },
+      });
+    }
+    if (path === '/api/ops/ciel/admin/reviews/items/review-item.demo-training') {
+      return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false }, correction: { activeReviewId: null }, labels: [] } });
+    }
+    throw new Error(`unexpected path ${path}`);
+  });
+  await Promise.resolve();
+  assert.match(treeText(root), /Review queue partially unavailable/, 'nonempty partial queues disclose their partial state');
+  const button = find(root, node => node.tag === 'button' && /Review blinded output/.test(node.textContent));
+  await button.dispatch('click');
+  await Promise.resolve();
+  const rationale = find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'rationale');
+  rationale.value = 'Draft rationale must survive a queue retry.';
+  await find(root, node => node.tag === 'button' && /Reload review queue/.test(node.textContent)).dispatch('click');
+  await Promise.resolve();
+  assert.equal(queueReads, 2, 'partial retry reloads the queue data');
+  assert.equal(rationale.value, 'Draft rationale must survive a queue retry.', 'partial retry preserves the active review draft');
+  assert.match(treeText(root), /Blinded output/, 'partial retry keeps the active detail mounted');
 });
 
 test('review pane renders partial-failure recovery state without browser rendering', async () => {

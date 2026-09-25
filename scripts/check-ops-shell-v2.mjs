@@ -837,8 +837,8 @@ try {
     if (JSON.stringify(shell.groups) !== JSON.stringify(expectGroups)) {
       failures.push(`${SHELL} (${theme}): rail groups are ${JSON.stringify(shell.groups)}`);
     }
-    if (shell.navItems !== 10) {
-      failures.push(`${SHELL} (${theme}): rail drew ${shell.navItems} panes, expected 10`);
+    if (shell.navItems !== 11) {
+      failures.push(`${SHELL} (${theme}): rail drew ${shell.navItems} panes, expected 11`);
     }
     if (!shell.account) {
       failures.push(`${SHELL} (${theme}): the rail has no account footer`);
