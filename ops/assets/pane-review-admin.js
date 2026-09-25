@@ -17,6 +17,12 @@
     }));
   }
 
+  function retryButton(label, onRetry) {
+    var button = h('button', { className: 'btn btn-sm', type: 'button', text: label || 'Retry' });
+    button.addEventListener('click', onRetry);
+    return h('div', { className: 'review-actions' }, [button]);
+  }
+
   function redactionBanner() {
     return shell.band('Blinded review queue', 'Candidate, baseline and model-family identity are omitted until a reviewer records their own label.');
   }
@@ -41,14 +47,16 @@
     return card;
   }
 
-  function labelForm(item, state, onSubmit) {
+  function field(label, child, wide, id) {
+    child.setAttribute('id', id);
+    return h('div', { className: 'review-field' + (wide ? ' review-field-wide' : '') }, [
+      h('label', { for: id, text: label }), child
+    ]);
+  }
+
+  function labelForm(item, state, correction, onSubmit) {
     var form = h('form', { className: 'card-body review-form' });
-    var alert = h('p', { className: 'field-error', role: 'alert', text: '' });
-    function field(label, child, wide) {
-      return h('div', { className: 'review-field' + (wide ? ' review-field-wide' : '') }, [
-        h('label', { text: label }), child
-      ]);
-    }
+    var alert = h('p', { className: 'field-error', id: 'review-label-error', role: 'alert', text: '' });
     var label = h('select', { className: 'review-input', name: 'label' }, [
       h('option', { value: 'pass', text: 'Pass' }), h('option', { value: 'fail', text: 'Fail' }), h('option', { value: 'unknown', text: 'Unknown' })
     ]);
@@ -57,11 +65,12 @@
     ]);
     var rationale = h('textarea', { className: 'review-input', name: 'rationale', required: 'required' });
     var comments = h('textarea', { className: 'review-input', name: 'comments', required: 'required' });
+    [label, uncertainty, rationale, comments].forEach(function (control) { control.setAttribute('aria-describedby', 'review-label-error'); });
     var submit = h('button', { className: 'btn', type: 'submit', text: state && state.submittedOwnLabel ? 'Append correction' : 'Submit independent label' });
-    form.appendChild(field('Label', label, false));
-    form.appendChild(field('Uncertainty', uncertainty, false));
-    form.appendChild(field('Rationale', rationale, true));
-    form.appendChild(field('Comments', comments, true));
+    form.appendChild(field('Label', label, false, 'review-label-value'));
+    form.appendChild(field('Uncertainty', uncertainty, false, 'review-label-uncertainty'));
+    form.appendChild(field('Rationale', rationale, true, 'review-label-rationale'));
+    form.appendChild(field('Comments', comments, true, 'review-label-comments'));
     form.appendChild(alert);
     form.appendChild(h('div', { className: 'review-actions review-field-wide' }, [submit]));
     form.addEventListener('submit', function (event) {
@@ -74,10 +83,10 @@
         criterionDigest: item.criterionDigest,
         label: label.value || 'pass',
         uncertainty: uncertainty.value || 'low',
-        authority: 'expert_reviewed',
         domain: item.rubric.authority.domain,
         rationale: rationale.value,
-        comments: comments.value
+        comments: comments.value,
+        supersedesReviewId: state && state.submittedOwnLabel && correction ? correction.activeReviewId : null
       }).catch(function (error) {
         alert.textContent = shell.failureMessage ? shell.failureMessage(error) : String(error && error.message || error);
       }).finally(function () { submit.disabled = false; });
@@ -87,23 +96,24 @@
 
   function adjudicationForm(item, labels, onAdjudicate) {
     var form = h('form', { className: 'card-body review-form review-adjudication' });
-    var alert = h('p', { className: 'field-error', role: 'alert', text: '' });
-    function field(label, child, wide) {
-      return h('div', { className: 'review-field' + (wide ? ' review-field-wide' : '') }, [
-        h('label', { text: label }), child
-      ]);
-    }
+    var alert = h('p', { className: 'field-error', id: 'review-adjudication-error', role: 'alert', text: '' });
     var decision = h('select', { className: 'review-input', name: 'decision' }, [
       h('option', { value: 'pass', text: 'Pass' }), h('option', { value: 'fail', text: 'Fail' }), h('option', { value: 'unknown', text: 'Unknown' })
     ]);
     var rationale = h('textarea', { className: 'review-input', name: 'rationale', required: 'required' });
+    [decision, rationale].forEach(function (control) { control.setAttribute('aria-describedby', 'review-adjudication-error'); });
     var submit = h('button', { className: 'btn', type: 'submit', text: 'Record adjudication' });
     form.appendChild(shell.cardHead('Adjudicate disputed labels', [String(labels.length) + ' labels bound to this blinded output']));
-    form.appendChild(meta(labels.map(function (label) {
-      return [label.reviewId || 'review', (label.label || 'unknown') + ' / ' + (label.reviewerRef || 'human reviewer'), 'review-digest'];
-    })));
-    form.appendChild(field('Decision', decision, false));
-    form.appendChild(field('Rationale', rationale, true));
+    labels.forEach(function (label) {
+      form.appendChild(meta([
+        [label.reviewId || 'review', (label.label || 'unknown') + ' / ' + (label.reviewerRef || 'human reviewer'), 'review-digest'],
+        ['Uncertainty', label.uncertainty || 'n/a'],
+        ['Rationale', label.rationale || 'No rationale supplied'],
+        ['Comments', label.comments || 'No comments supplied']
+      ]));
+    });
+    form.appendChild(field('Decision', decision, false, 'review-adjudication-decision'));
+    form.appendChild(field('Rationale', rationale, true, 'review-adjudication-rationale'));
     form.appendChild(alert);
     form.appendChild(h('div', { className: 'review-actions review-field-wide' }, [submit]));
     form.addEventListener('submit', function (event) {
@@ -132,13 +142,16 @@
     card.appendChild(shell.cardHead('Blinded output', [detail.reviewItemId, visible ? 'labels visible' : 'independent label required']));
     card.appendChild(meta([
       ['Output', detail.evidence ? detail.evidence.outcomePreview : 'No evidence available'],
+      ['Evidence refs', detail.evidence && detail.evidence.evidenceRefs ? detail.evidence.evidenceRefs.join(', ') : 'No evidence references'],
+      ['Evidence comments', detail.evidence && detail.evidence.comments ? detail.evidence.comments.join(' ') : 'No evidence comments'],
       ['Criterion', detail.rubric ? detail.rubric.statement : 'No rubric'],
+      ['Grading', detail.rubric && detail.rubric.grading ? JSON.stringify(detail.rubric.grading) : 'No grading metadata'],
       ['Outcome digest', detail.outcomeDigest, 'review-digest'],
       ['Criterion digest', detail.criterionDigest, 'review-digest'],
       ['Other labels', visible ? String(labels.length) : 'Hidden until you submit your own label']
     ]));
-    card.appendChild(labelForm(detail, detail.reviewerState, onSubmit));
-    if (visible && labels.length >= 2) {
+    card.appendChild(labelForm(detail, detail.reviewerState, detail.correction, onSubmit));
+    if (detail.adjudication && detail.adjudication.visible && labels.length >= 2) {
       card.appendChild(adjudicationForm(detail, labels, onAdjudicate));
     }
     return card;
@@ -148,12 +161,21 @@
     content.appendChild(redactionBanner());
     var body = h('div', { className: 'review-layout' });
     content.appendChild(body);
-    body.appendChild(shell.stateBlock('spark', 'Loading review queue', ['Only blinded evidence will be shown.']));
-    session.call('/api/ops/ciel/admin/reviews/queue').then(function (payload) {
-      var items = payload.data && payload.data.items || [];
+    function loadQueue() {
       body.textContent = '';
+      body.appendChild(shell.stateBlock('spark', 'Loading review queue', ['Only blinded evidence will be shown.']));
+      session.call('/api/ops/ciel/admin/reviews/queue').then(function (payload) {
+      var data = payload.data || {};
+      var items = data.items || [];
+      body.textContent = '';
+      if (data.partial || (data.omissions && data.omissions.length)) {
+        body.appendChild(shell.band('Review queue partially unavailable', (data.omissions || ['Some review sources could not be read.']).join(' ')));
+      }
       if (!items.length) {
-        body.appendChild(shell.stateBlock('layers', 'No blinded review items', ['There is nothing ready for human review right now.']));
+        body.appendChild(shell.stateBlock('layers', data.partial ? 'Review queue incomplete' : 'No blinded review items', [
+          data.partial ? 'Some review sources could not be read. Try again before concluding the queue is empty.' : 'There is nothing ready for human review right now.'
+        ]));
+        body.appendChild(retryButton('Reload review queue', loadQueue));
         return;
       }
       var list = h('div', { className: 'review-list' });
@@ -185,7 +207,10 @@
     }, function (error) {
       body.textContent = '';
       body.appendChild(shell.stateBlock('alerts', 'Could not load review queue', [shell.failureMessage(error)]));
+      body.appendChild(retryButton('Retry review queue', loadQueue));
     });
+    }
+    loadQueue();
   }
 
   shell.definePane('review', render);

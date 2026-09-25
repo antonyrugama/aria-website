@@ -56,7 +56,7 @@ const STATES = ['live', 'loading', 'empty', 'degraded'];
 const PANES = [
   '/ops/index.html', '/ops/jobs-live.html', '/ops/run-history.html',
   '/ops/alerts.html', '/ops/analytics.html', '/ops/spend.html',
-  '/ops/evaluations.html', '/ops/releases.html', '/ops/users.html',
+  '/ops/evaluations.html', '/ops/review.html', '/ops/releases.html', '/ops/users.html',
   '/ops/settings.html', '/ops/login.html', '/ops/setup.html'
 ];
 

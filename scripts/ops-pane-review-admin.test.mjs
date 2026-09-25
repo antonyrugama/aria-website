@@ -95,8 +95,8 @@ const queueItem = {
   criterionDigest: 'b'.repeat(64),
   resultDigest: 'c'.repeat(64),
   status: 'open',
-  rubric: { statement: 'Judge the rubric only.', authority: { domain: 'training' } },
-  evidence: { outcomePreview: 'Blinded output only.', comments: [] },
+  rubric: { statement: 'Judge the rubric only.', grading: { method: 'qualified_human' }, authority: { domain: 'training' } },
+  evidence: { outcomePreview: 'Blinded output only.', evidenceRefs: ['evidence.demo.output'], comments: ['Evidence comment.'] },
   redactions: ['candidateIdentity', 'baselineIdentity', 'modelFamily', 'modelConfig'],
   labelCounts: { submitted: 0, disputes: 0, adjudications: 0 },
 };
@@ -107,7 +107,7 @@ test('review pane reads a blinded queue and hides labels before independent subm
     calls.push({ path, opts });
     if (path === '/api/ops/ciel/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
     if (path === '/api/ops/ciel/admin/reviews/items/review-item.demo-training') {
-      return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false }, labels: [] } });
+      return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false }, correction: { activeReviewId: null }, labels: [] } });
     }
     if (path === '/api/ops/ciel/admin/reviews/labels') return Promise.resolve({ data: { record: { reviewId: 'review.1' } } });
     throw new Error(`unexpected path ${path}`);
@@ -121,9 +121,13 @@ test('review pane reads a blinded queue and hides labels before independent subm
   await button.dispatch('click');
   await Promise.resolve();
   assert.match(treeText(root), /Hidden until you submit your own label/, 'other labels remain hidden before own label');
+  assert.match(treeText(root), /evidence\.demo\.output/, 'authorized evidence references render with the blinded output');
+  assert.match(treeText(root), /qualified_human/, 'grading metadata renders with the rubric');
 
   const rationale = find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'rationale');
   const comments = find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'comments');
+  assert.equal(rationale.getAttribute('id'), 'review-label-rationale', 'rationale control has a programmatic label target');
+  assert.equal(find(root, node => node.tag === 'label' && node.getAttribute('for') === 'review-label-rationale')?.textContent, 'Rationale');
   rationale.value = 'The blinded output satisfies the rubric.';
   comments.value = 'Independent human comment.';
   const form = find(root, node => node.tag === 'form');
@@ -136,25 +140,48 @@ test('review pane reads a blinded queue and hides labels before independent subm
     criterionDigest: 'b'.repeat(64),
     label: 'pass',
     uncertainty: 'low',
-    authority: 'expert_reviewed',
     domain: 'training',
     rationale: 'The blinded output satisfies the rubric.',
     comments: 'Independent human comment.',
+    supersedesReviewId: null,
   });
   assert.deepEqual(toasts, ['Review label recorded']);
+});
+
+test('review pane sends the active review id for corrections', async () => {
+  const calls = [];
+  const { root } = loadPane((path, opts = {}) => {
+    calls.push({ path, opts });
+    if (path === '/api/ops/ciel/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
+    if (path === '/api/ops/ciel/admin/reviews/items/review-item.demo-training') {
+      return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: true, otherLabelsVisible: true }, correction: { activeReviewId: 'review.current' }, labels: [] } });
+    }
+    if (path === '/api/ops/ciel/admin/reviews/labels') return Promise.resolve({ data: { record: { reviewId: 'review.corrected' } } });
+    throw new Error(`unexpected path ${path}`);
+  });
+  await Promise.resolve();
+  await find(root, node => node.tag === 'button' && /Review blinded output/.test(node.textContent)).dispatch('click');
+  await Promise.resolve();
+  assert.match(treeText(root), /Append correction/, 'existing own labels advertise corrections');
+  find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'rationale').value = 'Correction rationale.';
+  find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'comments').value = 'Correction comment.';
+  await find(root, node => node.tag === 'form').dispatch('submit');
+  await Promise.resolve();
+  const submitted = calls.find(call => call.path === '/api/ops/ciel/admin/reviews/labels');
+  assert.equal(submitted.opts.body.supersedesReviewId, 'review.current', 'correction submits the active review id');
 });
 
 test('review pane adjudicates disputed labels with exact digest bindings', async () => {
   const calls = [];
   const visibleLabels = [
-    { reviewId: 'review.pass', reviewerRef: 'operator@stadioralabs.com', label: 'pass' },
-    { reviewId: 'review.fail', reviewerRef: 'second@stadioralabs.com', label: 'fail' },
+    { reviewId: 'review.pass', reviewerRef: 'operator@stadioralabs.com', label: 'pass', uncertainty: 'low', rationale: 'Grounded pass rationale.', comments: 'Pass evidence comment.' },
+    { reviewId: 'review.fail', reviewerRef: 'second@stadioralabs.com', label: 'fail', uncertainty: 'high', rationale: 'Grounded fail rationale.', comments: 'Fail evidence comment.' },
   ];
   const { root, toasts } = loadPane((path, opts = {}) => {
     calls.push({ path, opts });
     if (path === '/api/ops/ciel/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
     if (path === '/api/ops/ciel/admin/reviews/items/review-item.demo-training') {
-      return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: true, otherLabelsVisible: true }, labels: visibleLabels } });
+      return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: false, otherLabelsVisible: true }, correction: { activeReviewId: null }, adjudication: { visible: true, eligible: true, reason: 'ready' }, labels: visibleLabels } });
     }
     if (path === '/api/ops/ciel/admin/reviews/adjudications') return Promise.resolve({ data: { record: { adjudicationId: 'adjudication.1' } } });
     throw new Error(`unexpected path ${path}`);
@@ -164,10 +191,14 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
   await button.dispatch('click');
   await Promise.resolve();
   assert.match(treeText(root), /Adjudicate disputed labels/, 'visible disputed labels must expose adjudication');
+  assert.match(treeText(root), /Grounded pass rationale/, 'adjudication view renders first label rationale');
+  assert.match(treeText(root), /Grounded fail rationale/, 'adjudication view renders second label rationale');
 
   const form = find(root, node => node.tag === 'form' && /review-adjudication/.test(node.className));
   const decision = find(form, node => node.tag === 'select' && node.getAttribute('name') === 'decision');
   const rationale = find(form, node => node.tag === 'textarea' && node.getAttribute('name') === 'rationale');
+  assert.equal(decision.getAttribute('id'), 'review-adjudication-decision', 'decision control has a programmatic label target');
+  assert.equal(find(form, node => node.tag === 'label' && node.getAttribute('for') === 'review-adjudication-decision')?.textContent, 'Decision');
   decision.value = 'fail';
   rationale.value = 'The failing label cites the gating rubric.';
   await form.dispatch('submit');
@@ -186,10 +217,21 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
 });
 
 test('review pane renders partial-failure recovery state without browser rendering', async () => {
-  const { root } = loadPane(() => Promise.reject(new Error('network unavailable')));
+  let attempts = 0;
+  const { root } = loadPane(() => {
+    attempts += 1;
+    return attempts === 1
+      ? Promise.resolve({ data: { items: [], partial: true, omissions: ['review source timed out'] } })
+      : Promise.reject(new Error('network unavailable'));
+  });
+  await Promise.resolve();
+  assert.match(treeText(root), /Review queue incomplete/, 'partial empty queues are not described as genuinely empty');
+  assert.match(treeText(root), /review source timed out/, 'partial queue omissions are visible');
+  await find(root, node => node.tag === 'button' && /Reload review queue/.test(node.textContent)).dispatch('click');
   await Promise.resolve();
   assert.match(treeText(root), /Could not load review queue/, 'queue read failures need a visible recovery state');
   assert.match(treeText(root), /network unavailable/, 'failure detail should be visible near the failed state');
+  assert.ok(find(root, node => node.tag === 'button' && /Retry review queue/.test(node.textContent)), 'total failures offer retry');
 });
 
 test('review pane markup and CSS are responsive and CSP-safe', () => {
