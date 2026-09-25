@@ -66,6 +66,8 @@
    declare, so the one this sheet could actually leak into it. An id reaches
    exactly the element that needs the measure and nothing else. */
 .dataset-form,
+.browse-form,
+.browse-result,
 .admission-form,
 .dataset-result,
 .evidence-form,
@@ -80,6 +82,69 @@
 .dataset-form .field-error,
 .admission-form .field-error { overflow-wrap: anywhere; }
 .dataset-result .evidence-meta-row dt { overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------------ browse
+   The browse band is a read-only dashboard inside the quality pane. It uses
+   native selects so keyboard and screen-reader users get the platform control,
+   and every long identifier wraps instead of forcing a phone-width document to
+   scroll sideways. */
+.browse-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
+.browse-result { display: flex; flex-direction: column; gap: 13px; }
+.browse-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.browse-metric {
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.browse-metric-k {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.browse-metric-v {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.browse-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: var(--ink-3);
+}
+.browse-flags span { overflow-wrap: anywhere; }
+.browse-scenarios { align-items: start; }
+.browse-scenario .card-title,
+.browse-capability h3 { overflow-wrap: anywhere; }
+.browse-meta .evidence-meta-row dd { overflow-wrap: anywhere; }
+.browse-capabilities {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.browse-capability {
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.browse-capability h3 { margin: 0; font-size: 13px; }
+.browse-capability p {
+  margin: 5px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
 
 /* The approval forms' field grid. The pane draws two two-column field grids —
    .q-grid on the evidence form and this one on the three approval forms — and
@@ -513,6 +578,10 @@ select.field-input { appearance: none; padding-right: 26px; }
      already open. Rotation rather than two glyphs keeps it one element, so
      the state cannot be half-applied. */
   .band-fold[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+  .browse-filter-grid,
+  .browse-metrics,
+  .browse-capabilities { grid-template-columns: 1fr; }
 }
 
 /* A chevron that spins is decoration on a state the attribute already

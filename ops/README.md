@@ -1006,7 +1006,7 @@ every `/api/…` string literal that file spells:
 pane-alerts.js = /api/ops/alerts/problems, /api/ops/alerts/problems/, /api/ops/alerts/rules, /api/ops/alerts/rules/
 pane-analytics.js = /api/ops/usage
 pane-data.js = (no route literal)
-pane-evaluations.js = /api/ops/ciel/operations
+pane-evaluations.js = /api/ops/ciel/admin/datasets/, /api/ops/ciel/admin/overview, /api/ops/ciel/admin/scenarios/, /api/ops/ciel/operations
 pane-jobs-live-v2.js = /api/ops/jobs
 pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
 pane-registry.js = (no route literal)

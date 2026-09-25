@@ -610,6 +610,422 @@
     ]);
   }
 
+  function detailList(rows) {
+    return h('dl', { className: 'card-body evidence-meta browse-meta' }, rows.map(function (row) {
+      return metadataRow(row[0], row[1]);
+    }));
+  }
+
+  function clearNode(node) {
+    node.textContent = '';
+  }
+
+  function appendAll(node, children) {
+    children.forEach(function (child) {
+      if (child) node.appendChild(child);
+    });
+  }
+
+  function titleCase(value) {
+    return String(value || '')
+      .split(/[-_]/)
+      .filter(Boolean)
+      .map(function (part) { return part.charAt(0).toUpperCase() + part.slice(1); })
+      .join(' ') || 'Unknown';
+  }
+
+  function countText(metric) {
+    return String(metric.numerator) + ' / ' + String(metric.denominator) + ' ' + metric.denominatorKind;
+  }
+
+  function unique(values) {
+    var seen = {};
+    return values.filter(function (value) {
+      if (!value || seen[value]) return false;
+      seen[value] = true;
+      return true;
+    }).sort();
+  }
+
+  function metricByKey(coverage, key) {
+    var metrics = coverage && Array.isArray(coverage.metrics) ? coverage.metrics : [];
+    for (var i = 0; i < metrics.length; i++) {
+      if (metrics[i] && metrics[i].key === key) return metrics[i];
+    }
+    return null;
+  }
+
+  function filterField(id, label) {
+    var control = select([option('', 'All')]);
+    return {
+      control: control,
+      field: field(id, label, control)
+    };
+  }
+
+  function syncOptions(control, values) {
+    var current = control.value;
+    clearNode(control);
+    control.appendChild(option('', 'All'));
+    values.forEach(function (value) {
+      control.appendChild(option(value, value));
+    });
+    control.value = values.indexOf(current) === -1 ? '' : current;
+  }
+
+  function scenarioAuthorityLabel(scenario) {
+    if (!scenario || !scenario.review) return 'Unknown review state';
+    if (scenario.review.source === 'scenario-v2') {
+      return scenario.review.status === 'certified' ? 'Certified' : 'Not certified';
+    }
+    return titleCase(scenario.review.status || 'unknown');
+  }
+
+
+  function criterionAuthorityText(authority) {
+    if (!authority) return '';
+    var approvals = Array.isArray(authority.approvals) ? authority.approvals : [];
+    var parts = [
+      authority.schema,
+      authority.tier ? 'tier ' + authority.tier : '',
+      authority.domain ? 'domain ' + authority.domain : '',
+      authority.approvalState ? 'approval ' + authority.approvalState : ''
+    ].filter(Boolean);
+    if (approvals.length) {
+      parts.push('approvals ' + approvals.map(function (approval) {
+        return [
+          approval.kind,
+          approval.reviewerRef,
+          approval.qualificationPresent ? 'qualification reference present' : 'qualification reference missing',
+          approval.domain,
+          approval.scenarioVersion ? 'scenario v' + String(approval.scenarioVersion) : ''
+        ].filter(Boolean).join(' · ');
+      }).join('; '));
+    }
+    return parts.join(' · ');
+  }
+
+  function scenarioCard(scenario) {
+    var counts = scenario.criteriaCounts || {};
+    var risk = scenario.risk || {};
+    var card = shell.card('browse-scenario');
+    var detail = h('div', { className: 'browse-detail' });
+    var inspect = h('button', { className: 'btn btn-sm', text: 'Inspect scenario' });
+    inspect.setAttribute('type', 'button');
+    inspect.addEventListener('click', async function () {
+      clearNode(detail);
+      detail.appendChild(h('p', { className: 'field-hint', text: 'Loading scenario detail…' }));
+      try {
+        var payload = await session.call('/api/ops/ciel/admin/scenarios/' + encodeURIComponent(scenario.scenarioId || ''), {
+          query: { version: String(scenario.version || 1) }
+        });
+        var data = payload && payload.data ? payload.data : payload;
+        var criteria = data.criteria || {};
+        var rows = [];
+        ['critical', 'required', 'expected', 'aspirational'].forEach(function (severity) {
+          (criteria[severity] || []).forEach(function (criterion) {
+            rows.push([
+              titleCase(severity) + ' · ' + (criterion.id || 'criterion'),
+              [
+                criterion.statement,
+                (criterion.evidenceRefs || []).length ? 'Evidence: ' + criterion.evidenceRefs.join(', ') : '',
+                criterion.graderRef ? 'Grader: ' + criterion.graderRef : '',
+                criterionAuthorityText(criterion.authority) ? 'Authority: ' + criterionAuthorityText(criterion.authority) : ''
+              ].filter(Boolean).join(' · ')
+            ]);
+          });
+        });
+        (data.sourceLinks || []).forEach(function (source) {
+          rows.push(['Source evidence', [source.label, source.uri].filter(Boolean).join(' · ')]);
+        });
+        var oracle = data.oracle || {};
+        (oracle.referenceFacts || []).forEach(function (fact) {
+          rows.push(['Oracle reference', [fact.id, fact.sourceRef].filter(Boolean).join(' · ')]);
+        });
+        if (data.redactions && data.redactions.length) rows.push(['Redacted:', data.redactions.join(', ')]);
+        clearNode(detail);
+        detail.appendChild(shell.cardHead('Scenario inspection', 'Version ' + String(data.version || scenario.version || 1)));
+        detail.appendChild(detailList(rows.length ? rows : [['Inspection', 'No criteria metadata is available.']]));
+      } catch (caught) {
+        clearNode(detail);
+        detail.appendChild(h('p', { className: 'field-error', text: caught && caught.message ? caught.message : 'Scenario detail unavailable.' }));
+      }
+    });
+    card.appendChild(shell.cardHead(scenario.scenarioId || 'Unnamed scenario', [
+      'v' + String(scenario.version || 1),
+      scenario.capabilityRef,
+      scenario.locale,
+      risk.level
+    ].filter(Boolean).join(' · '), [
+      h('span', { className: 'pill', text: scenarioAuthorityLabel(scenario) })
+    ]));
+    card.appendChild(h('dl', { className: 'card-body evidence-meta browse-meta' }, [
+      metadataRow('Product', scenario.product || 'Unknown'),
+      metadataRow('Client', scenario.client || 'Unknown'),
+      metadataRow('Role', scenario.role || 'Unknown'),
+      metadataRow('Risk domains', (risk.domains || []).join(', ') || 'None recorded'),
+      metadataRow('Criteria', 'critical ' + (counts.critical || 0) +
+        ', required ' + (counts.required || 0) +
+        ', expected ' + (counts.expected || 0) +
+        ', aspirational ' + (counts.aspirational || 0)),
+      metadataRow('Run state', scenario.pack && scenario.pack.executed
+        ? (scenario.pack.passing ? 'executed, passing' : 'executed, not passing')
+        : scenario.pack && scenario.pack.runnable ? 'runnable, not executed' : 'not runnable')
+    ]));
+    card.appendChild(h('div', { className: 'card-foot evidence-actions' }, [inspect]));
+    card.appendChild(detail);
+    return card;
+  }
+
+  function renderCoverage(coverage) {
+    var metrics = ['inventory', 'authored', 'approved', 'runnable', 'executed', 'passing']
+      .map(function (key) { return metricByKey(coverage, key); })
+      .filter(Boolean);
+    var flags = coverage && coverage.flags ? coverage.flags : {};
+    var card = shell.card('browse-coverage');
+    card.appendChild(shell.cardHead('Honest coverage', 'Each count carries its own denominator'));
+    card.appendChild(h('div', { className: 'card-body browse-metrics' }, metrics.map(function (metric) {
+      return h('div', { className: 'browse-metric' }, [
+        h('span', { className: 'browse-metric-k', text: titleCase(metric.key) }),
+        h('span', { className: 'browse-metric-v', text: countText(metric) })
+      ]);
+    })));
+    card.appendChild(h('div', { className: 'card-foot browse-flags' }, [
+      h('span', { text: 'Uncovered: ' + ((flags.uncoveredCapabilities || []).join(', ') || 'none') }),
+      h('span', { text: 'Not certified: ' + ((flags.notCertifiedCapabilities || []).join(', ') || 'none') }),
+      h('span', { text: 'Unowned: ' + ((flags.unownedCapabilities || []).join(', ') || 'none') }),
+      h('span', { text: 'Disabled/unsupported: ' + ((flags.disabledOrUnsupportedCapabilities || []).map(function (capability) {
+        return [capability.id, capability.status, capability.reason].filter(Boolean).join(' · ');
+      }).join('; ') || 'none') }),
+      h('span', { text: 'Missing cases: ' + ((flags.missingCases || []).map(function (entry) {
+        return [entry.capabilityRef, entry.reason].filter(Boolean).join(' · ');
+      }).join('; ') || 'none') }),
+      h('span', { text: 'Unknown scenario refs: ' + ((flags.unknownCapabilityRefs || []).join(', ') || 'none') })
+    ]));
+    return card;
+  }
+
+  function renderDatasets(datasets) {
+    var entries = datasets && Array.isArray(datasets.datasets) ? datasets.datasets : [];
+    var card = shell.card('browse-datasets');
+    card.appendChild(shell.cardHead('Datasets', entries.length + ' checked-in declaration' + (entries.length === 1 ? '' : 's')));
+    if (datasets && (datasets.partial || (datasets.omissions || []).length)) {
+      card.appendChild(h('div', { className: 'callout compact' }, [
+        icon('warn'),
+        h('div', {}, [
+          h('strong', { text: 'Partial dataset view' }),
+          h('p', { text: (datasets.omissions || []).join(' ') || 'Some dataset metadata is unavailable on this branch.' })
+        ])
+      ]));
+    }
+    if (!entries.length) {
+      card.appendChild(shell.stateBlock('layers', 'No dataset declarations found', [
+        'The backend did not find checked-in ciel.dataset.v1 declarations for this branch.'
+      ]));
+      return card;
+    }
+    card.appendChild(h('div', { className: 'card-body browse-dataset-list' }, entries.map(function (dataset) {
+      var provenance = dataset.provenance || {};
+      var counts = dataset.counts || {};
+      var detail = h('div', { className: 'browse-detail' });
+      var inspect = h('button', { className: 'btn btn-sm', text: 'Inspect dataset' });
+      inspect.setAttribute('type', 'button');
+      inspect.addEventListener('click', async function () {
+        clearNode(detail);
+        detail.appendChild(h('p', { className: 'field-hint', text: 'Loading dataset detail…' }));
+        try {
+          var payload = await session.call('/api/ops/ciel/admin/datasets/' + encodeURIComponent(dataset.datasetId || ''), {
+            query: { revision: String(dataset.revision || 1) }
+          });
+          var data = payload && payload.data ? payload.data : payload;
+          var rows = [];
+          (data.cases || []).forEach(function (entry) {
+            var scenario = entry.scenario || {};
+            rows.push(['Scenario', [scenario.id, 'v' + String(scenario.version || 1), scenario.path].filter(Boolean).join(' · ')]);
+            (entry.rubrics || []).forEach(function (rubric) {
+              rows.push(['Rubric', [rubric.id, 'v' + String(rubric.version || 1), rubric.path].filter(Boolean).join(' · ')]);
+            });
+            if (entry.comparison) rows.push(['Comparison', [entry.comparison.state, entry.comparison.reason].filter(Boolean).join(' · ')]);
+          });
+          clearNode(detail);
+          detail.appendChild(shell.cardHead('Dataset inspection', 'Revision ' + String(data.revision || dataset.revision || 1)));
+          detail.appendChild(detailList(rows.length ? rows : [['Inspection', 'No case metadata is available.']]));
+        } catch (caught) {
+          clearNode(detail);
+          detail.appendChild(h('p', { className: 'field-error', text: caught && caught.message ? caught.message : 'Dataset detail unavailable.' }));
+        }
+      });
+      return h('article', { className: 'browse-dataset' }, [
+        detailList([
+          [dataset.datasetId + ' rev ' + dataset.revision, titleCase(dataset.review && dataset.review.state)],
+          ['Provenance', [provenance.origin, provenance.authorRef, provenance.authoredAt].filter(Boolean).join(' · ')],
+          ['Counts', (counts.cases || 0) + ' cases, ' + (counts.labels || 0) + ' labels'],
+          ['Rubrics', (dataset.cases || []).flatMap(function (entry) {
+            return (entry.rubrics || []).map(function (rubric) { return rubric.id + ' v' + String(rubric.version || 1); });
+          }).join(', ') || 'none recorded'],
+          ['Comparison', (dataset.cases || []).map(function (entry) {
+            return entry.comparison ? [entry.comparison.state, entry.comparison.reason].filter(Boolean).join(' · ') : '';
+          }).filter(Boolean).join('; ') || 'none recorded']
+        ]),
+        h('div', { className: 'card-foot evidence-actions' }, [inspect]),
+        detail
+      ]);
+    })));
+    return card;
+  }
+
+  function renderCatalogue(catalogue) {
+    var capabilities = catalogue && Array.isArray(catalogue.capabilities) ? catalogue.capabilities : [];
+    var card = shell.card('browse-catalogue');
+    card.appendChild(shell.cardHead('Capability catalogue', 'Showing ' + capabilities.length + ' of ' + capabilities.length + ' registered capabilities'));
+    card.appendChild(h('div', { className: 'card-body browse-capabilities' }, capabilities.map(function (capability) {
+      return h('article', { className: 'browse-capability' }, [
+        h('h3', { text: capability.name || capability.id }),
+        h('p', { text: [capability.id, capability.status, capability.owner].filter(Boolean).join(' · ') }),
+        h('p', { text: 'Applies to ' + ((capability.products || []).join(', ') || 'no product recorded') }),
+        h('p', { text: 'Clients: ' + ((capability.clientRefs || []).join(', ') || 'none recorded') })
+      ]);
+    })));
+    return card;
+  }
+
+  function renderBrowseResult(target, payload) {
+    clearNode(target);
+    var data = payload && payload.data ? payload.data : payload;
+    var scenarios = data && Array.isArray(data.scenarios) ? data.scenarios : [];
+    appendAll(target, [
+      renderCoverage(data && data.coverage),
+      scenarios.length
+        ? h('div', { className: 'browse-scenarios grid g2' }, scenarios.map(scenarioCard))
+        : h('div', { className: 'card' }, [
+          shell.stateBlock('layers', 'No scenarios match these filters', [
+            'Clear a filter or add authored scenarios before treating this capability as covered.'
+          ])
+        ]),
+      renderDatasets(data && data.datasets),
+      renderCatalogue(data && data.catalogue)
+    ]);
+  }
+
+  function browseSection() {
+    var built = workingBand('Browse Ciel scenarios and coverage', 'Read-only catalogue, datasets and honest denominators');
+    var section = built.section;
+    var bandBody = built.body;
+    var filterDefs = {
+      product: filterField('ciel-filter-product', 'Product'),
+      client: filterField('ciel-filter-client', 'Client'),
+      role: filterField('ciel-filter-role', 'Role'),
+      capability: filterField('ciel-filter-capability', 'Capability'),
+      risk: filterField('ciel-filter-risk', 'Risk'),
+      locale: filterField('ciel-filter-locale', 'Locale')
+    };
+    var error = h('div', { className: 'field-error', role: 'alert' });
+    var result = h('div', { className: 'browse-result' });
+    var stableFacetOptions = {};
+    result.setAttribute('id', 'ciel-browse-panel');
+    result.setAttribute('aria-live', 'polite');
+    var submit = h('button', { className: 'btn btn-primary', type: 'submit', text: 'Load catalogue' });
+    var form = h('form', { className: 'card browse-form' }, [
+      shell.cardHead('Browse quality evidence', 'No prompt or production content is shown'),
+      h('div', { className: 'card-body q-grid browse-filter-grid' }, [
+        filterDefs.product.field,
+        filterDefs.client.field,
+        filterDefs.role.field,
+        filterDefs.capability.field,
+        filterDefs.risk.field,
+        filterDefs.locale.field
+      ]),
+      h('div', { className: 'card-foot evidence-actions' }, [
+        h('p', {
+          className: 'field-hint',
+          text: 'Filters are pane-local. Coverage denominators are not reused across inventory, authored, approved, runnable, executed and passing counts.'
+        }),
+        submit
+      ]),
+      error
+    ]);
+    form.setAttribute('id', 'ciel-browse-filters');
+
+    function query() {
+      var out = {};
+      Object.keys(filterDefs).forEach(function (key) {
+        var value = filterDefs[key].control.value;
+        if (value) out[key] = value;
+      });
+      return out;
+    }
+
+    function updateFilterOptions(data) {
+      var scenarios = data && Array.isArray(data.scenarios) ? data.scenarios : [];
+      var catalogue = data && data.catalogue ? data.catalogue : {};
+      var capabilities = Array.isArray(catalogue.capabilities) ? catalogue.capabilities : [];
+      var clients = Array.isArray(catalogue.clients) ? catalogue.clients : [];
+      function stable(key, values) {
+        stableFacetOptions[key] = unique((stableFacetOptions[key] || []).concat(values));
+        return stableFacetOptions[key];
+      }
+      syncOptions(filterDefs.product.control, stable('product', unique(capabilities.flatMap(function (capability) {
+        return capability.products || [];
+      }).concat(scenarios.map(function (scenario) { return scenario.product; })))));
+      syncOptions(filterDefs.client.control, stable('client', unique(clients.map(function (client) { return client.id; })
+        .concat(scenarios.map(function (scenario) { return scenario.client; })))));
+      syncOptions(filterDefs.role.control, stable('role', unique(scenarios.map(function (scenario) { return scenario.role; }))));
+      syncOptions(filterDefs.capability.control, stable('capability', unique(capabilities.map(function (capability) { return capability.id; })
+        .concat(scenarios.map(function (scenario) { return scenario.capabilityRef; })))));
+      syncOptions(filterDefs.risk.control, stable('risk', unique(scenarios.flatMap(function (scenario) {
+        return [scenario.risk && scenario.risk.level].concat(scenario.risk && scenario.risk.domains || []);
+      }))));
+      syncOptions(filterDefs.locale.control, stable('locale', unique(scenarios.map(function (scenario) { return scenario.locale; }))));
+    }
+
+    async function load() {
+      clearNode(error);
+      clearNode(result);
+      result.appendChild(h('div', { className: 'card' }, [
+        shell.stateBlock('layers', 'Loading Ciel catalogue', [
+          'Reading checked-in contracts, scenario packs and dataset declarations.'
+        ])
+      ]));
+      submit.disabled = true;
+      try {
+        var payload = await session.call('/api/ops/ciel/admin/overview', { query: query() });
+        var data = payload && payload.data ? payload.data : payload;
+        updateFilterOptions(data);
+        renderBrowseResult(result, data);
+        shell.announce('Ciel catalogue loaded.');
+      } catch (caught) {
+        clearNode(result);
+        result.appendChild(h('div', { className: 'card' }, [
+          shell.stateBlock('warn', 'Ciel catalogue unavailable', [
+            caught && caught.message ? caught.message : 'Try again shortly.'
+          ])
+        ]));
+        error.textContent = caught && caught.message ? caught.message : 'The Ciel browse endpoint could not be read.';
+        shell.announce('Ciel catalogue unavailable.');
+      } finally {
+        submit.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      load();
+    });
+
+    bandBody.appendChild(form);
+    result.appendChild(h('div', { className: 'card' }, [
+      h('div', { className: 'card-body' }, [
+        h('h3', { className: 'card-title', text: 'Load Ciel catalogue' }),
+        h('p', {
+          className: 'field-hint',
+          text: 'Use the pane-local filters above, then load the read-only catalogue, scenario, dataset and coverage summary.'
+        })
+      ])
+    ]));
+    bandBody.appendChild(result);
+    return section;
+  }
+
   function attributeOf(node, name) {
     if (typeof node.getAttribute === 'function') return node.getAttribute(name) || '';
     return node.attributes && node.attributes[name] ? node.attributes[name] : '';
@@ -1776,6 +2192,7 @@
        half way would otherwise leave the next one driving dead bands. */
     pending = [];
     var stack = h('div', { className: 'stack' }, [
+      browseSection(),
       datasetValidationSection(),
       evidenceQuarantineSection(),
       approvalSection(),
