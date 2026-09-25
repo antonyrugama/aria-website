@@ -1653,9 +1653,29 @@
        Rendered from `omissions` rather than from a list in this file, so a
        figure that loses or gains a source moves here by itself rather than
        when somebody remembers to edit the client. */
+    var STATIC_OMISSIONS = [
+      {
+        key: 'what_aria_has_been_doing',
+        title: 'What Aria has been doing',
+        detail: 'No route serves per-request-type requests, reliability, latency and cost yet.'
+      }
+    ];
+
+    function omissionIdentities(entry) {
+      return [textOf(entry && entry.key), textOf(entry && entry.title)]
+        .filter(Boolean)
+        .map(function (value) { return value.toLowerCase(); });
+    }
+
     function omissionsCard(omissions) {
-      var entries = list(omissions).filter(function (entry) {
+      var seen = {};
+      var entries = STATIC_OMISSIONS.concat(list(omissions)).filter(function (entry) {
         return entry && (textOf(entry.title) || textOf(entry.key));
+      }).filter(function (entry) {
+        var identities = omissionIdentities(entry);
+        if (identities.some(function (identity) { return seen[identity]; })) return false;
+        identities.forEach(function (identity) { seen[identity] = true; });
+        return true;
       });
       if (!entries.length) return null;
 

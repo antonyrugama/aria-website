@@ -1109,6 +1109,18 @@ test('a grouping whose rows add up to the bill says so, with the bill beside it'
     'a reconciling grouping must not also report a gap');
 });
 
+test('the approved unusual-costs card is acknowledged as not answerable yet', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /What this pane cannot answer yet/,
+    'the cannot-answer band is not on the pane');
+  assert.match(text, /Anything unusual/,
+    'the approved unusual-costs card is still silent');
+  assert.match(text, /No route serves cost anomalies yet\./,
+    'the unusual-costs cause is missing or too vague');
+});
+
 test('a grouping whose rows do not add up to the bill reports the gap as a figure', async () => {
   const data = payload({ range: 'month', billedThrough: 10 });
   /* One row loses a million micros -- exactly one dollar -- which is what a

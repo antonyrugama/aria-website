@@ -485,6 +485,18 @@ test('the hero refuses "live on both stores" while one store is still holding th
   assert.match(heroText(dom), /Android held at 20% for 6 days/);
 });
 
+test('the approved release-contents band is acknowledged as not answerable yet', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /What this pane cannot answer yet/,
+    'the cannot-answer band is not on the pane');
+  assert.match(text, /What is in 1\.1\.2/,
+    'the approved release-contents band is still silent');
+  assert.match(text, /Nothing records release contents yet\./,
+    'the release-contents cause is missing or too vague');
+});
+
 test('the hero does say live on both stores once both stores have finished', async () => {
   const dom = await boot({
     releases: releasesFixture((data) => {

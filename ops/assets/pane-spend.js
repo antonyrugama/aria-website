@@ -1187,6 +1187,26 @@
 
   /* ---------------------------------------------------------- the render */
 
+  function cannotAnswerBand() {
+    var section = S.band('What this pane cannot answer yet',
+      'Named rather than drawn as an empty figure');
+    var box = S.card();
+    var body = h('div', { className: 'card-body omit' });
+    var item = h('div', { className: 'omit-item' });
+    item.appendChild(S.icon('empty'));
+    var words = h('div');
+    words.appendChild(h('div', { className: 'omit-title', text: 'Anything unusual' }));
+    words.appendChild(h('div', {
+      className: 'omit-desc',
+      text: 'No route serves cost anomalies yet.'
+    }));
+    item.appendChild(words);
+    body.appendChild(item);
+    box.appendChild(body);
+    section.appendChild(box);
+    return section;
+  }
+
   function render(data, summary, viewKey, onPick) {
     var wrap = h('div', { className: 'stack' });
 
@@ -1212,6 +1232,7 @@
       if (services) third.appendChild(services);
       wrap.appendChild(third);
     }
+    wrap.appendChild(cannotAnswerBand());
     return wrap;
   }
 

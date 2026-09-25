@@ -109,7 +109,7 @@ drift, and it points at backend work rather than at the stylesheets.
 
 ## Findings
 
-### 1. Overview lost "What Aria has been doing" with no acknowledgement — the one silent loss
+### 1. Overview lost "What Aria has been doing"; the pane now acknowledges it
 
 The approved Overview ends with three bands. The built pane has two, and the
 band that carries the most information on the dashboard's primary pane is gone:
@@ -128,8 +128,9 @@ band named "Where the money goes"; what is gone is Overview's copy of it.)
 What makes this the notable one is the contrast with its own neighbours. The
 built Overview is one of five pane files carrying acknowledgement machinery: it
 has a card headed **"Not drawn here, and why"**. In the audit's fixture that
-card named one omission, the budget bar. The request-type table is not named
-there, and nothing else on the pane mentions it.
+card named one omission, the budget bar. The request-type table was not named there, and nothing else on the pane mentioned it. The
+built pane now adds a pane-held entry to **"Not drawn here, and why"**: **"What Aria has been
+doing"**, because no route serves per-request-type requests, reliability, latency and cost yet.
 
 Two qualifications, both of which narrow the claim:
 
@@ -224,10 +225,10 @@ Section spines, dark theme at 1280, live state:
 | Happening now | Right now / The three lanes / Every open job | Right now / Waiting, and whether it is clearing / Flowing, and failing / Open elsewhere / **What this pane cannot answer yet** | acknowledged (two of the five bands need data the audit fixture did not supply) |
 | What happened | Why things failed / The runs / Run `run_9f31c2` | What the record shows / Why things failed / What was asked, and what Aria answered / **What this pane cannot answer yet** | acknowledged; "The runs" is **absent**, and named in the cannot-answer band as *"No route lists runs"* |
 | Problems | Open problems / What is being watched | + Closed, and how the watching is doing | **addition** |
-| People and usage | Who is using Aria / Is that growing / Do people come back / Where people are, and what they do | Who is using Aria / Is that growing / Do people come back / **What people do** | the approved band held two cards; **"What people do" ships as its own band**, the "Where people are" region table is absent and unacknowledged |
-| Cloud costs | Where the money goes / The same bill, two other ways / Top services, and anything unusual | What this period cost / Where the money goes / Day by day, and what Azure calls it | reorganised; "Anything unusual" absent |
+| People and usage | Who is using Aria / Is that growing / Do people come back / Where people are, and what they do | Who is using Aria / Is that growing / Do people come back / **What people do** / **What this pane cannot answer yet** | the approved band held two cards; **"What people do" ships as its own band**, and the "Where people are" region table is now acknowledged as unserved |
+| Cloud costs | Where the money goes / The same bill, two other ways / Top services, and anything unusual | What this period cost / Where the money goes / Day by day, and what Azure calls it / **What this pane cannot answer yet** | reorganised; "Anything unusual" is now acknowledged as unserved |
 | Aria quality | How good are the answers / What regressed / Can 1.2.0 ship | + three tool bands above them | **addition** (finding 2) |
-| App releases | Where each app is / Who is on which version / Is the newest one healthy / What is in 1.1.2 | first three only | "What is in 1.1.2" absent |
+| App releases | Where each app is / Who is on which version / Is the newest one healthy / What is in 1.1.2 | first three / **What this pane cannot answer yet** | "What is in 1.1.2" is now acknowledged as unserved |
 | Look up a user | One account / Recent activity / Subscription, support and consent / Danger zone | *not comparable* | all four present as `shell.band(...)` calls, one **renamed** to "Subscription and devices"; two **added** — "Matches" and "Access record" |
 | Settings | Administrators / Active sessions / **Audit log** / What we keep / Integrations | …/ **Access record** / … | one rename, order intact |
 
@@ -281,11 +282,10 @@ Problems is in the second group but files nothing here: its divergence is an
 nothing for it to acknowledge.
 
 **Filed as [Stadiora/Aria#10807](https://github.com/Stadiora/Aria/issues/10807)**
-— the absences with no route and no acknowledgement, on the three panes with no
-machinery: the **"Where people are"** region table (People and usage, *not* the
-whole approved band — its other card, "What people do", ships as a band of its
-own), **"Anything unusual"** (Cloud costs), and **"What is in 1.1.2"** (App
-releases).
+— the absences with no route that now have on-screen acknowledgement: the
+**"Where people are"** region table (People and usage, *not* the whole approved
+band — its other card, "What people do", ships as a band of its own),
+**"Anything unusual"** (Cloud costs), and **"What is in 1.1.2"** (App releases).
 
 ### 5. The preview states are coherent
 

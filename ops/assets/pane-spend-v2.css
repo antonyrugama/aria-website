@@ -29,6 +29,14 @@
 .sp-s6 { --c: var(--rose); }
 .sp-muted { --c: var(--ink-3); }
 
+/* ----------------------------------------------------- cannot-answer list */
+
+.omit { display: flex; flex-direction: column; gap: 10px; }
+.omit-item { display: flex; align-items: flex-start; gap: 9px; }
+.omit-item svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--ink-3); }
+.omit-title { font-size: 12.5px; font-weight: 560; }
+.omit-desc { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+
 /* ------------------------------------------------------------ the bill rows
 
    One grouping of the bill, one row per line of it. Four columns at a desk:

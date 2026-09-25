@@ -1467,8 +1467,14 @@ pane against the mock should read the list as "these are on purpose and here is 
      which is rule 1 of this pane: a figure labelled for a window it does not cover is worse
      than one labelled for the window it does.
 
-Everything the omissions card shows comes **from the answer**, never from a list in the client,
-so a figure that gains a source drops off the card without a code change here.
+The same card also carries one pane-held entry: **What Aria has been doing**. No route serves
+per-request-type requests, reliability, latency and cost yet, and this was the approved band
+that could not be expressed through the route's omissions. API-declared omissions are still
+deduplicated against it, so if the route starts naming the same gap the pane does not print it
+twice.
+
+Everything else the omissions card shows comes **from the answer**, never from a list in the
+client, so a figure that gains a source drops off the card without a code change here.
 
 ### App releases on v2: where the pane departs from the mock
 
@@ -1508,7 +1514,8 @@ would blend them is not drawn.
    contract describes.
 6. **No "What is in 1.1.2" band.** Release notes, build metadata, languages, minimum OS,
    download sizes, the rollback build and the support-ticket reference are none of them stored
-   anywhere in this platform. The whole band is eight fields with no source.
+   anywhere in this platform. The pane names the approved band in **What this pane cannot answer
+   yet** because nothing records release contents yet.
 7. **No Export or Failed runs actions on the health band.** Nothing generates that export, and a
    button that does nothing is the filter problem in another costume.
 8. **The mock's three `why` blocks are not reproduced.** "Merging these into one score would
@@ -1837,7 +1844,9 @@ answer.
 2. **No "Returning after 7 days" headline.** Retention arrives as a grid of signup groups, each
    with its own denominator. Collapsing them into one figure means choosing a group and an
    offset, and the pane would then be publishing a rate the answer never sent.
-3. **No "Where people are" region table.** No region or country field is in the response.
+3. **No "Where people are" region table.** No region or country field is in the response. The
+   pane names that gap in **What this pane cannot answer yet** rather than leaving the approved
+   table silent.
 4. **No per-row ribbon, no `Times` column and no `Week over week` column in the feature table.**
    The response sends a share of people and the group it was measured over, not an event count
    and not a daily series per feature.
@@ -2004,7 +2013,9 @@ decision.
    invented. What survives is the half that is real: the period total, and the forecast to
    period end when the period is open.
 2. **No anomalies card and no unit costs strip.** Same reason, and the same reason the v1 pane
-   was wrong to draw them: `anomalies` and `unitCosts` are not fields the route sends.
+   was wrong to draw them: `anomalies` and `unitCosts` are not fields the route sends. The
+   approved **Anything unusual** card is named in **What this pane cannot answer yet** because no
+   route serves cost anomalies.
 3. **No per-service category column, so the second card is the table and not a switch state.**
    The service view's rows carry no category key, so the mock's `Top services` column would
    have had to be reconstructed by matching a service name against the category view — a join
@@ -2590,7 +2601,7 @@ scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves t
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 144
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
-ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
+ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 199
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 114
 ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 636

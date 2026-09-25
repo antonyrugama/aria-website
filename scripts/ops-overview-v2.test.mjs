@@ -549,6 +549,18 @@ test('the omissions list is rendered from the answer, not from a list in the pan
     'an omission the answer no longer names is still printed by the pane');
 });
 
+test('the approved request-type table is acknowledged beside route omissions', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /Not drawn here, and why/,
+    'the acknowledgement card is not on the pane');
+  assert.match(text, /What Aria has been doing/,
+    'the approved request-type table is still silent');
+  assert.match(text, /No route serves per-request-type requests, reliability, latency and cost yet\./,
+    'the request-type table cause is missing or too vague');
+});
+
 /* ============================== the doorways =========================== */
 
 test('every doorway points at the pane the registry says owns the question', async () => {
