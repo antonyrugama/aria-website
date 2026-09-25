@@ -1071,7 +1071,7 @@
     return {
       schemaVersion: 'ciel.run.manifest.v1',
       mode: draft.mode,
-      code: { gitCommit: '1df3a9a4b0000000000000000000000000000000' },
+      code: { gitCommit: '1df3a9a4db943ad9e7ffc1f5a11e7d065426a92a' },
       dataset: {
         datasetId: dataset.id,
         releaseId: dataset.releaseId,
@@ -1173,13 +1173,13 @@
       shell.cardHead('Run ' + (value.runId || 'unknown'), [
         value.status,
         'revision ' + String(value.revision || resource.revision || 1),
-        provider.provenance || 'provenance not returned'
+        provider.provenance || 'provenance not reported'
       ].filter(Boolean).join(' · ')),
       detailList([
         ['Expected / actual cost', String(cost.expectedCents !== undefined ? cost.expectedCents : value.budget && value.budget.estimatedCostCents || 0) +
           'c / ' + String(cost.actualCents !== undefined ? cost.actualCents : value.budget && value.budget.accountedCostCents || 0) + 'c'],
         ['Provider', [provider.kind, provider.deployment, provider.revision].filter(Boolean).join(' · ') || 'not recorded'],
-        ['Replay vs fresh', provider.replay === false ? 'server reported fresh' : provider.replay === true ? 'server reported replay' : 'not recorded'],
+        ['Replay vs fresh', provider.replay === false ? 'server reported fresh' : provider.replay === true ? 'server reported replay' : 'not reported'],
         ['Attempts', String(progress.attempts || 0) + ' total, ' + String(progress.failedAttempts || 0) + ' failed'],
         ['Skipped work', (progress.skippedWork || []).join(', ') || 'none recorded'],
         ['Incomplete work', (progress.incompleteWork || []).join(', ') || 'none recorded'],
@@ -1244,6 +1244,7 @@
     var launchState = null;
     var launchInFlight = false;
     var currentRun = null;
+    var inspectionGeneration = 0;
 
     function draft() {
       return {
@@ -1397,6 +1398,7 @@
     }
 
     function invalidateInspection() {
+      inspectionGeneration += 1;
       currentRun = null;
       clearNode(inspectResult);
     }
@@ -1405,13 +1407,26 @@
       event.preventDefault();
       clearNode(inspectError);
       invalidateInspection();
+      var acceptedRunId;
       try {
-        var request = runEnvelope('ciel.run.get', { runId: runId() });
+        acceptedRunId = runId();
+      } catch (caught) {
+        inspectError.textContent = caught && caught.message ? caught.message : 'Run inspection failed.';
+        return;
+      }
+      var generation = inspectionGeneration;
+      try {
+        var request = runEnvelope('ciel.run.get', { runId: acceptedRunId });
         var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
-        currentRun = response && response.resource && response.resource.value;
+        var value = response && response.resource && response.resource.value;
+        if (generation !== inspectionGeneration || !value || value.runId !== acceptedRunId || inspectRunId.value !== acceptedRunId) {
+          return;
+        }
+        currentRun = value;
         inspectResult.appendChild(renderRunResource(response && response.resource));
         shell.announce('Ciel run inspection loaded.');
       } catch (caught) {
+        if (generation !== inspectionGeneration) return;
         currentRun = null;
         clearNode(inspectResult);
         inspectError.textContent = caught && caught.message ? caught.message : 'Run inspection failed.';
@@ -1430,6 +1445,7 @@
       clearNode(inspectError);
       try {
         if (!currentRun) throw new Error('Inspect a run before cancelling it.');
+        if (inspectRunId.value !== currentRun.runId) throw new Error('Inspect a run before cancelling it.');
         var request = runEnvelope('ciel.run.cancel', {
           runId: currentRun.runId,
           reason: 'Cancelled from the Ciel admin dashboard.'
@@ -1448,6 +1464,7 @@
       clearNode(inspectError);
       try {
         if (!currentRun) throw new Error('Inspect a run before retrying it.');
+        if (inspectRunId.value !== currentRun.runId) throw new Error('Inspect a run before retrying it.');
         var request = runEnvelope('ciel.run.retry', {
           runId: currentRun.runId,
           reason: 'Retry failed attempts from the Ciel admin dashboard.'

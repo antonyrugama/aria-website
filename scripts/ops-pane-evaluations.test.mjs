@@ -569,7 +569,7 @@ test('run launch pane sends only code-owned baseline and candidate manifests and
   assert.equal(calls[1].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.candidate');
   assert.equal(calls[0].options.body.input.manifest.provider.deployment, 'fixture');
   assert.equal(calls[0].options.body.input.manifest.provider.revision, 'fixture-v1');
-  assert.equal(calls[0].options.body.input.manifest.code.gitCommit, '1df3a9a4b0000000000000000000000000000000');
+  assert.equal(calls[0].options.body.input.manifest.code.gitCommit, '1df3a9a4db943ad9e7ffc1f5a11e7d065426a92a');
   assert.equal(calls[0].options.body.input.manifest.dataset.releaseDigest, 'be3bd66934844fa2025eedfe916a9ebd26c005faa7870e1702927c1dd893c3ac');
   assert.equal(calls[0].options.body.input.manifest.promptBundle.digest, '40c6f72e9d3a3756c01374c89ea63d6ad69e0d0d8cf9050f4d3d3176c22c1a47');
   assert.equal(calls[0].options.body.input.manifest.dataset.datasetId, 'dataset.synthetic.demo');
@@ -662,6 +662,8 @@ test('run inspection pane shows provenance, pending statistics and retry output 
   assert.equal(calls[0].options.body.operationId, 'ciel.run.get');
   assert.deepEqual(calls[0].options.body.input, { runId });
   assert.match(treeText(result), /175c \/ 80c/);
+  assert.match(treeText(result), /provenance not reported/);
+  assert.match(treeText(result), /not reported/);
   assert.doesNotMatch(treeText(result), /fresh inference/);
   assert.doesNotMatch(treeText(result), /approved-prod-revision/);
   assert.match(treeText(result), /scenario\.skipped\.redacted/);
@@ -694,6 +696,77 @@ test('run inspection pane shows provenance, pending statistics and retry output 
     reason: 'Retry failed attempts from the Ciel admin dashboard.',
   });
   assert.match(treeText(result), /3 total, 1 failed/);
+});
+
+test('run inspection ignores stale lookup responses before cancellation', async () => {
+  const runA = '3d11852d-24b9-46ab-9c7e-bd4db48f9d87';
+  const runB = '4b93ba48-3c61-452f-a5f3-7938de7268cc';
+  const calls = [];
+  const pendingGets = [];
+  function inspectionResponse(request, runId) {
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: request.requestId,
+      operationId: request.operationId,
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.run',
+        id: runId,
+        revision: 7,
+        value: {
+          runId,
+          revision: 7,
+          status: 'running',
+          mode: 'offline_replay',
+          manifestDigest: 'c'.repeat(64),
+          budget: {
+            estimatedCostCents: 125,
+            accountedCostCents: 0,
+            monthlyCapCents: 30000,
+            perRunCapCents: 2500,
+            maxProviderConcurrency: 4,
+            reservedProviderConcurrency: 0,
+          },
+          createdAt: '2026-09-19T12:00:00.000Z',
+          updatedAt: '2026-09-19T12:05:00.000Z',
+          provider: { kind: 'offline_fixture', deployment: 'fixture', replay: true },
+          progress: { attempts: 1, failedAttempts: 0, incompleteWork: [], skippedWork: [], attemptFailures: [] },
+          comparison: { status: 'inconclusive', reason: 'repeated-run statistics pending' },
+          evidence: { redactedEvidencePresent: false },
+          artifacts: { rawOutput: [], repairedOutput: [], finalOutput: [], tools: [], stateChanges: [] },
+        },
+      },
+    };
+  }
+  const view = renderedPane((path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (options.body.operationId === 'ciel.run.get') {
+      return new Promise(resolve => pendingGets.push({ request: options.body, resolve }));
+    }
+    return Promise.resolve(inspectionResponse(options.body, options.body.input.runId));
+  });
+
+  view.byId('ciel-run-inspect-id').value = runA;
+  view.byId('ciel-run-inspect-form').dispatch('submit');
+  await waitFor(() => pendingGets.length === 1, 'first lookup did not start');
+  view.byId('ciel-run-inspect-id').value = runB;
+  view.byId('ciel-run-inspect-id').dispatch('input');
+  view.byId('ciel-run-inspect-form').dispatch('submit');
+  await waitFor(() => pendingGets.length === 2, 'second lookup did not start');
+
+  pendingGets[1].resolve(inspectionResponse(pendingGets[1].request, runB));
+  await waitFor(() => /4b93ba48-3c61-452f-a5f3-7938de7268cc/.test(treeText(view.byId('ciel-run-inspection-result'))),
+    'newer lookup did not render');
+  pendingGets[0].resolve(inspectionResponse(pendingGets[0].request, runA));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Cancel inspected run').dispatch('click');
+  assert.equal(calls.length, 3, 'cancel should target only the accepted newer run');
+  assert.equal(calls[2].options.body.operationId, 'ciel.run.cancel');
+  assert.deepEqual(calls[2].options.body.input, {
+    runId: runB,
+    reason: 'Cancelled from the Ciel admin dashboard.',
+  });
 });
 test('browse pane renders loading, partial and error states without HTML injection', async () => {
   let resolve;
