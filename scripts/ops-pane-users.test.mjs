@@ -133,7 +133,7 @@ const BODY = paneBody();
 
 /* A fresh pane per test: module state inside it (revealed fields, pending
    requests, the selected account) must not leak between cases. */
-function loadPane(role) {
+function loadPane(role, call = () => new Promise(() => {})) {
   const document = {
     activeElement: null,
     createElement,
@@ -190,7 +190,7 @@ function loadPane(role) {
     },
     OpsSession: {
       hasRole: (roles) => roles.indexOf(role) !== -1,
-      call: () => new Promise(() => {})
+      call
     }
   };
 
@@ -384,4 +384,24 @@ test("a masked reveal:'allowed' field is revealable by an owner and not by anyon
     assert.equal(placeholder[0].disabled, true, `the control must be dead at role ${role}`);
     assert.match(row.textContent, /Owner action/);
   }
+});
+
+test('a reveal refusal masks contact details from the API message', async () => {
+  const err = new Error('Upstream failed for coach.person@example.com');
+  const pane = loadPane('owner', () => Promise.reject(err));
+  const row = pane.fieldValue('acct_1', {
+    key: 'email',
+    label: 'Email',
+    masked: true,
+    maskedValue: 'c•••@example.com',
+    reveal: 'allowed'
+  });
+
+  withTag(row, 'button').filter((button) => button.textContent === 'Reveal')[0].listeners.click[0]();
+  withTag(row, 'input')[0].value = 'Audit lookup';
+  withTag(row, 'form')[0].listeners.submit[0]({ preventDefault() {} });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(row.textContent, /Upstream failed for \[hidden contact detail\]/);
+  assert.doesNotMatch(row.textContent, /coach\.person@example\.com/);
 });

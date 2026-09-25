@@ -16,6 +16,14 @@
    -ink is the ink for it.
    ========================================================================= */
 
+/* ----------------------------------------------------- cannot-answer list */
+
+.omit { display: flex; flex-direction: column; gap: 10px; }
+.omit-item { display: flex; align-items: flex-start; gap: 9px; }
+.omit-item svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--ink-3); }
+.omit-title { font-size: 12.5px; font-weight: 560; }
+.omit-desc { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+
 /* ------------------------------------------------------- release pipeline
 
    One row per platform: where it is, the four stages, and the verdict. The

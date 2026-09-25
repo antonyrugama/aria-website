@@ -635,7 +635,7 @@
     retry.addEventListener('click', function () { opts.onRetry(); });
 
     return stateCard('warn', 'Could not load these figures', [
-      (err && err.message) || 'The operations API did not answer.',
+      shell.failureMessage(err),
       'Your session has not been ended, and nothing here is a zero. ' +
         'The figures are unread, not absent.'
     ], [retry]);
