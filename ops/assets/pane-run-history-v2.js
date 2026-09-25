@@ -297,7 +297,9 @@
        no timer running, how old they are is the operator's to judge. */
     var readAt = null;
     var actionAnnouncement = null;
+    var actionFailureAnnouncement = null;
     var queuedActionAnnouncement = null;
+    var queuedActionFailureAnnouncement = null;
     var hasQueuedActionAnnouncement = false;
 
     /* The last window payload, kept so opening and closing a run can redraw
@@ -397,13 +399,17 @@
     function bindActionAnnouncement() {
       if (!hasQueuedActionAnnouncement) return;
       actionAnnouncement = queuedActionAnnouncement;
+      actionFailureAnnouncement = queuedActionFailureAnnouncement;
       queuedActionAnnouncement = null;
+      queuedActionFailureAnnouncement = null;
       hasQueuedActionAnnouncement = false;
     }
 
     function clearActionAnnouncement() {
       actionAnnouncement = null;
+      actionFailureAnnouncement = null;
       queuedActionAnnouncement = null;
+      queuedActionFailureAnnouncement = null;
       hasQueuedActionAnnouncement = false;
     }
 
@@ -421,8 +427,9 @@
     }
 
     function announceReadFailure(message) {
+      var failureActionMessage = actionFailureAnnouncement;
       var actionMessage = takeActionAnnouncement();
-      S.announce(actionMessage ? actionMessage + ' ' + message : message);
+      S.announce(actionMessage ? (failureActionMessage || actionMessage) + ' ' + message : message);
     }
 
     /* The shell's retry button, given this pane's focus key so `settleFocus()`
@@ -1447,6 +1454,9 @@
 
     function afterRunAction(result) {
       queuedActionAnnouncement = result && result.deferAnnouncement ? result.message : null;
+      queuedActionFailureAnnouncement = result && result.deferAnnouncement && result.error
+        ? result.messageWhenNotRefreshed
+        : null;
       hasQueuedActionAnnouncement = true;
       moveFocus('rh-read-again', 'rh-state');
       load();

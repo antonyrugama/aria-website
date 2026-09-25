@@ -613,14 +613,40 @@ function retryableRunWindow(failedJobId) {
   });
 }
 
-async function submitRetry(dom) {
-  buttonsIn(livePanel(dom), /^Retry$/)[0].dispatch('click', {});
+function cancelableRunWindow(jobId) {
+  return windowAnswer((base) => {
+    base.runs = [
+      runRow({
+        jobId,
+        outcome: 'running',
+        outcomeLabel: 'Running',
+        failureCode: null,
+        retryable: null,
+        reference: 'job_222222',
+        actions: {
+          canCancel: true,
+          cancelReason: null,
+          canRetry: false,
+          retryReason: 'Only failed jobs can be retried.',
+        },
+      }),
+    ];
+    return base;
+  });
+}
+
+async function submitJobAction(dom, action) {
+  buttonsIn(livePanel(dom), action === 'retry' ? /^Retry$/ : /^Cancel$/)[0].dispatch('click', {});
   await settle();
   const input = dom.body.querySelector('.field-input');
   input.value = 'job_222222';
   input.dispatch('input', {});
-  buttonsIn(dom.body, /^Retry job$/)[0].dispatch('click', {});
+  buttonsIn(dom.body, action === 'retry' ? /^Retry job$/ : /^Cancel job$/)[0].dispatch('click', {});
   await settle();
+}
+
+async function submitRetry(dom) {
+  await submitJobAction(dom, 'retry');
 }
 
 const READ_ERROR_MESSAGE = 'The window could not be read. The figures on screen before this are '
@@ -781,38 +807,78 @@ test('run-history success action followed by a failed reload still announces the
     'the final polite-region text did not include the read failure');
 });
 
-test('run-history stale action followed by a failed reload still announces the stale result once', async () => {
-  const failedJobId = '22222222-2222-4222-8222-222222222222';
-  const stale = new Error('raw backend text must not render');
-  stale.status = 409;
-  stale.code = 'ops_jobs_retry_stale';
-  const staleMessage = 'That job changed state elsewhere. The list was refreshed; nothing was claimed.';
-  let reads = 0;
-  const dom = await boot({
-    runs: () => {
-      reads += 1;
-      return reads === 1 ? retryableRunWindow(failedJobId) : new Error('reload failed');
-    },
-    actionResponses: {
-      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: stale,
-    },
+const REFRESH_ERROR_ACTION_CASES = [
+  { action: 'retry', code: 'ops_jobs_cancel_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_cancel_unavailable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_unavailable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_job_mismatch', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_job_not_retryable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_job_not_found', status: 404,
+    expected: 'That job is no longer in the operations record. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_unknown_refresh', status: 409,
+    expected: 'That did not go through. Nothing changed.' },
+  { action: 'cancel', code: 'ops_jobs_cancel_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_cancel_unavailable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_unavailable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_job_mismatch', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_job_not_retryable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_job_not_found', status: 404,
+    expected: 'That job is no longer in the operations record. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_unknown_refresh', status: 409,
+    expected: 'That did not go through. Nothing changed.' },
+];
+
+for (const refreshCase of REFRESH_ERROR_ACTION_CASES) {
+  test(`run-history ${refreshCase.action} ${refreshCase.code} failed reload does not claim refresh`, async () => {
+    const jobId = '22222222-2222-4222-8222-222222222222';
+    const actionError = new Error('raw backend text must not render');
+    actionError.status = refreshCase.status;
+    actionError.code = refreshCase.code;
+    let reads = 0;
+    const dom = await boot({
+      runs: () => {
+        reads += 1;
+        return reads === 1
+          ? (refreshCase.action === 'retry' ? retryableRunWindow(jobId) : cancelableRunWindow(jobId))
+          : new Error('reload failed');
+      },
+      actionResponses: {
+        ['/api/ops/jobs/' + encodeURIComponent(jobId) + '/' + refreshCase.action]: actionError,
+      },
+    });
+
+    const heard = [];
+    const realAnnounce = dom.window.OpsPaneShell.announce;
+    dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+    await submitJobAction(dom, refreshCase.action);
+
+    assert.ok((lastSaid(dom) || '').includes(refreshCase.expected),
+      'the final polite-region text did not include the action result');
+    assert.equal(heard.filter((message) => message.includes(refreshCase.expected)).length, 1,
+      'the failed-reload action result was not announced exactly once');
+    assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
+      'the failed reload read error was not announced exactly once');
+    assert.doesNotMatch(lastSaid(dom) || '', /refreshed/,
+      'the failed-reload action announcement falsely said the list was refreshed');
+    assert.ok((lastSaid(dom) || '').includes(READ_ERROR_MESSAGE),
+      'the final polite-region text did not include the read failure');
   });
-
-  const heard = [];
-  const realAnnounce = dom.window.OpsPaneShell.announce;
-  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
-
-  await submitRetry(dom);
-
-  assert.equal(heard.filter((message) => message.includes(staleMessage)).length, 1,
-    'the stale retry message was not announced exactly once when the reload failed');
-  assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
-    'the failed reload was not also announced after the stale retry');
-  assert.match(lastSaid(dom) || '', /That job changed state elsewhere/,
-    'the final polite-region text did not include the stale retry message');
-  assert.match(lastSaid(dom) || '', /The window could not be read/,
-    'the final polite-region text did not include the read failure');
-});
+}
 
 test('run-history action message does not leak into the next successful read after reload failure', async () => {
   const failedJobId = '22222222-2222-4222-8222-222222222222';
