@@ -660,6 +660,57 @@ test('run-history retry uses the job action contract and refreshes the window', 
     'the action message was not announced after the reload summary');
 });
 
+test('run-history stale retry leaves the stale message after the reload summary exactly once', async () => {
+  const failedJobId = '22222222-2222-4222-8222-222222222222';
+  const stale = new Error('raw backend text must not render');
+  stale.status = 409;
+  stale.code = 'ops_jobs_retry_stale';
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.runs = [
+        runRow({
+          jobId: failedJobId,
+          outcome: 'failed',
+          outcomeLabel: 'Failed',
+          failureCode: 'model_timeout',
+          retryable: true,
+          reference: 'job_222222',
+          actions: {
+            canCancel: false,
+            cancelReason: 'Only queued or running jobs can be cancelled.',
+            canRetry: true,
+            retryReason: null,
+          },
+        }),
+      ];
+      return base;
+    }),
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: stale,
+    },
+  });
+
+  const staleMessage = 'That job changed state elsewhere. The list was refreshed; nothing was claimed.';
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+  buttonsIn(livePanel(dom), /^Retry$/)[0].dispatch('click', {});
+  await settle();
+  const input = dom.body.querySelector('.field-input');
+  input.value = 'job_222222';
+  input.dispatch('input', {});
+  buttonsIn(dom.body, /^Retry job$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(heard.filter((message) => message === staleMessage).length, 1,
+    'the stale retry message was not announced exactly once around the reload');
+  assert.equal(lastSaid(dom), staleMessage,
+    'the polite region did not end on the stale retry message after the reload announcement');
+  assert.equal(heard.at(-1), staleMessage,
+    'the stale retry message was not announced after the reload summary');
+});
+
 test('owners reveal retained and missing run content after giving a reason', async () => {
   const jobId = '22222222-2222-4222-8222-222222222222';
   const dom = await boot({

@@ -250,8 +250,16 @@
           settling = false;
           modal.close();
           S.toast('warn', message);
-          S.announce(message);
-          if (opts.onStale) opts.onStale({ action: action, row: row, error: err, message: message });
+          if (!opts.deferSuccessAnnounce) S.announce(message);
+          if (opts.onStale) {
+            opts.onStale({
+              action: action,
+              row: row,
+              error: err,
+              message: message,
+              deferAnnouncement: !!opts.deferSuccessAnnounce
+            });
+          }
           return;
         }
         fail(message);
