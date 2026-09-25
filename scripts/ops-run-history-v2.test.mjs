@@ -831,6 +831,38 @@ function revealAnswer(value) {
   };
 }
 
+function twoSectionRevealAnswer(value) {
+  return {
+    jobId: '22222222-2222-4222-8222-222222222222',
+    jobType: 'video_analysis',
+    sections: [
+      {
+        key: 'input',
+        label: 'Stored input',
+        source: 'generation_jobs.input_payload',
+        owner: 'app-backend',
+        status: 'retained',
+        contentType: 'application/json',
+        value: JSON.stringify({ private: value }),
+        characterCount: value.length + 14,
+        notRetainedReason: null,
+      },
+      {
+        key: 'output',
+        label: 'Stored output',
+        source: 'generation_jobs.result_payload',
+        owner: 'app-backend',
+        status: 'not_retained',
+        contentType: 'application/json',
+        value: null,
+        characterCount: null,
+        notRetainedReason: 'The result payload was swept after retention expired.',
+      },
+    ],
+    recorded: { at: at(0), actor: 'owner@example.invalid', reason: 'Review probe reason' },
+  };
+}
+
 async function revealOpenedRun(dom, reason = 'Review probe reason') {
   buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
   await settle();
@@ -978,6 +1010,163 @@ test('review probe: pagehide and bfcache restore purge revealed content and stal
     'review probe bfcache restore cleanup failed: revealed content came back');
 });
 
+test('review probe R4: pagehide bfcache cleanup returns Hide focus to connected Show content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_HIDE_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const hide = buttonsIn(livePanel(dom), /^Hide content$/)[0];
+  assert.ok(hide, 'review probe setup did not find Hide content');
+  hide.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R4 Hide bfcache focus restore failed: focus did not land on the connected Show content button');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R4 Hide bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R6: pagehide bfcache cleanup preserves Close focus outside reveal area', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_CLOSE_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const close = buttonsIn(livePanel(dom), /^Close$/)[0];
+  assert.ok(close, 'review probe setup did not find Close');
+  close.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedClose = buttonsIn(livePanel(dom), /^Close$/)[0];
+  assert.equal(dom.doc.activeElement, connectedClose,
+    'review probe R6 Close bfcache focus preservation failed: focus did not stay on connected Close');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R6 Close bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R6: pagehide bfcache cleanup preserves job-action focus outside reveal area', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_JOB_ACTION_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer((base) => {
+      base.run.reference = 'job_222222';
+      base.run.actions = {
+        canCancel: false,
+        cancelReason: 'Only queued or running jobs can be cancelled.',
+        canRetry: true,
+        retryReason: null,
+      };
+      return base;
+    }),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const retry = buttonsIn(livePanel(dom), /^Retry$/)[0];
+  assert.ok(retry, 'review probe setup did not find the detail Retry job action');
+  retry.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedRetry = buttonsIn(livePanel(dom), /^Retry$/)[0];
+  assert.equal(dom.doc.activeElement, connectedRetry,
+    'review probe R6 job-action bfcache focus preservation failed: focus did not stay on connected Retry');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R6 job-action bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R4: pagehide bfcache cleanup returns content-region focus to connected Show content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_REGION_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const region = livePanel(dom).querySelector('.rh-content-region');
+  assert.ok(region, 'review probe setup did not find the revealed content region');
+  region.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R4 content-region bfcache focus restore failed: focus did not land on the connected Show content button');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R4 content-region bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R5: pagehide bfcache cleanup returns second content-region focus to connected Show content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_SECOND_REGION_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: twoSectionRevealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const regions = livePanel(dom).querySelectorAll('.rh-content-region');
+  assert.equal(regions.length, 2, 'review probe setup did not render the two-section reveal shape');
+  regions[1].focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R5 second content-region bfcache focus restore failed: focus did not land on the connected Show content button');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R5 second content-region bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R6: pagehide bfcache cleanup returns footer Hide focus to connected Show content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_FOOTER_HIDE_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const card = livePanel(dom).querySelector('.rh-content-card');
+  assert.ok(card, 'review probe setup did not render a revealed content card');
+  const footerHide = buttonsIn(card, /^Hide content$/)[0];
+  assert.ok(footerHide, 'review probe setup did not find footer Hide content');
+  footerHide.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R6 footer Hide bfcache focus restore failed: focus did not land on the connected Show content button');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R6 footer Hide bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R4: live state exposes a connected focus fallback target', async () => {
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer('REVIEW_PRIVATE_SENTINEL_STATE_FALLBACK'),
+  });
+  const stateTarget = livePanel(dom).querySelector('[data-rh-focus="rh-state"]');
+  assert.ok(stateTarget,
+    'review probe R4 state fallback failed: live state did not expose an rh-state target');
+  stateTarget.focus();
+
+  assert.equal(dom.doc.activeElement, stateTarget,
+    'review probe R4 state fallback failed: the live rh-state target was not focusable');
+});
+
 test('review probe: pagehide invalidates a late reveal callback before it can repopulate content', async () => {
   const sentinel = 'REVIEW_PRIVATE_SENTINEL_LATE_CALLBACK';
   let resolveReveal;
@@ -1062,6 +1251,9 @@ test('review probe R2: pagehide bfcache cleanup settles a pending reveal dialog 
 
   dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
   dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R3 bfcache focus restore failed: persisted pageshow did not focus the connected Show content button');
   resolveReveal(revealAnswer(sentinel));
   await settle();
 
