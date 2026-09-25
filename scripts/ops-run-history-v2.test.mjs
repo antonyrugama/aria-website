@@ -591,6 +591,41 @@ test('settings Load more stays hidden when the shared button display rule also m
   }, 'display'), 'none');
 });
 
+function retryableRunWindow(failedJobId) {
+  return windowAnswer((base) => {
+    base.runs = [
+      runRow({
+        jobId: failedJobId,
+        outcome: 'failed',
+        outcomeLabel: 'Failed',
+        failureCode: 'model_timeout',
+        retryable: true,
+        reference: 'job_222222',
+        actions: {
+          canCancel: false,
+          cancelReason: 'Only queued or running jobs can be cancelled.',
+          canRetry: true,
+          retryReason: null,
+        },
+      }),
+    ];
+    return base;
+  });
+}
+
+async function submitRetry(dom) {
+  buttonsIn(livePanel(dom), /^Retry$/)[0].dispatch('click', {});
+  await settle();
+  const input = dom.body.querySelector('.field-input');
+  input.value = 'job_222222';
+  input.dispatch('input', {});
+  buttonsIn(dom.body, /^Retry job$/)[0].dispatch('click', {});
+  await settle();
+}
+
+const READ_ERROR_MESSAGE = 'The window could not be read. The figures on screen before this are '
+  + 'unread now, not zero. Try again is the only control left on the pane.';
+
 test('run-history retry uses the job action contract and refreshes the window', async () => {
   const failedJobId = '22222222-2222-4222-8222-222222222222';
   const retryJobId = '33333333-3333-4333-8333-333333333333';
@@ -709,6 +744,117 @@ test('run-history stale retry leaves the stale message after the reload summary 
     'the polite region did not end on the stale retry message after the reload announcement');
   assert.equal(heard.at(-1), staleMessage,
     'the stale retry message was not announced after the reload summary');
+});
+
+test('run-history success action followed by a failed reload still announces the action once', async () => {
+  const failedJobId = '22222222-2222-4222-8222-222222222222';
+  const retryJobId = '33333333-3333-4333-8333-333333333333';
+  const actionMessage = 'Retry created: job_333333.';
+  let reads = 0;
+  const dom = await boot({
+    runs: () => {
+      reads += 1;
+      return reads === 1 ? retryableRunWindow(failedJobId) : new Error('reload failed');
+    },
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: {
+        originalJobId: failedJobId,
+        jobId: retryJobId,
+        status: 'queued',
+      },
+    },
+  });
+
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+  await submitRetry(dom);
+
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
+    'the successful retry message was not announced exactly once when the reload failed');
+  assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
+    'the failed reload was not also announced after the successful retry');
+  assert.match(lastSaid(dom) || '', /Retry created: job_333333\./,
+    'the final polite-region text did not include the successful retry message');
+  assert.match(lastSaid(dom) || '', /The window could not be read/,
+    'the final polite-region text did not include the read failure');
+});
+
+test('run-history stale action followed by a failed reload still announces the stale result once', async () => {
+  const failedJobId = '22222222-2222-4222-8222-222222222222';
+  const stale = new Error('raw backend text must not render');
+  stale.status = 409;
+  stale.code = 'ops_jobs_retry_stale';
+  const staleMessage = 'That job changed state elsewhere. The list was refreshed; nothing was claimed.';
+  let reads = 0;
+  const dom = await boot({
+    runs: () => {
+      reads += 1;
+      return reads === 1 ? retryableRunWindow(failedJobId) : new Error('reload failed');
+    },
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: stale,
+    },
+  });
+
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+  await submitRetry(dom);
+
+  assert.equal(heard.filter((message) => message.includes(staleMessage)).length, 1,
+    'the stale retry message was not announced exactly once when the reload failed');
+  assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
+    'the failed reload was not also announced after the stale retry');
+  assert.match(lastSaid(dom) || '', /That job changed state elsewhere/,
+    'the final polite-region text did not include the stale retry message');
+  assert.match(lastSaid(dom) || '', /The window could not be read/,
+    'the final polite-region text did not include the read failure');
+});
+
+test('run-history action message does not leak into the next successful read after reload failure', async () => {
+  const failedJobId = '22222222-2222-4222-8222-222222222222';
+  const retryJobId = '33333333-3333-4333-8333-333333333333';
+  const actionMessage = 'Retry created: job_333333.';
+  let readMode = 'initial';
+  const dom = await boot({
+    runs: () => {
+      if (readMode === 'initial') return retryableRunWindow(failedJobId);
+      if (readMode === 'fail') return new Error('reload failed');
+      return windowAnswer();
+    },
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: {
+        originalJobId: failedJobId,
+        jobId: retryJobId,
+        status: 'queued',
+      },
+    },
+  });
+
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+  readMode = 'fail';
+  await submitRetry(dom);
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
+    'the successful retry message was not announced exactly once when the reload failed');
+  assert.match(lastSaid(dom) || '', /Retry created: job_333333\./,
+    'the failed-reload polite-region text did not include the successful retry message');
+  assert.match(lastSaid(dom) || '', /The window could not be read/,
+    'the failed-reload polite-region text did not include the read failure');
+
+  readMode = 'success';
+  buttonsIn(livePanel(dom), /^Try again$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.ok(heard.some((message) => /11 runs finished/.test(message)),
+    'the later successful read did not announce its fresh summary');
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
+    'the old successful retry message leaked into a later successful read');
 });
 
 test('owners reveal retained and missing run content after giving a reason', async () => {
