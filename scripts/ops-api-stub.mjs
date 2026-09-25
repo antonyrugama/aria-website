@@ -586,6 +586,43 @@ const RUNS = {
   truncated: false
 };
 
+const RUN_REVEAL = {
+  jobId: '22222222-2222-4222-8222-222222222222',
+  jobType: 'video_analysis',
+  sections: [
+    {
+      key: 'input',
+      label: 'Stored input',
+      source: 'generation_jobs.input_payload',
+      owner: 'app-backend',
+      status: 'retained',
+      contentType: 'application/json',
+      value: JSON.stringify({
+        clip: 'athlete-videos/user-[redacted id]/stride.mp4',
+        note: 'Review start mechanics for [redacted email]',
+      }),
+      characterCount: 114,
+      notRetainedReason: null,
+    },
+    {
+      key: 'output',
+      label: 'Stored output',
+      source: 'generation_jobs.result_payload',
+      owner: 'app-backend',
+      status: 'not_retained',
+      contentType: 'application/json',
+      value: null,
+      characterCount: null,
+      notRetainedReason: 'The result payload was swept after retention expired.',
+    },
+  ],
+  recorded: {
+    at: ago(30_000),
+    actor: 'owner@example.invalid',
+    reason: 'Investigating athlete-visible failure',
+  },
+};
+
 /* ------------------------------------------------- proof the pane drew itself */
 
 /* One thing per pane that only that pane's LOADED state puts on the page.
@@ -710,6 +747,7 @@ function stub(pathname) {
     } };
   }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (/^\/api\/ops\/runs\/[^/]+\/reveal$/.test(pathname)) return { data: RUN_REVEAL };
   if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
@@ -727,5 +765,5 @@ function stub(pathname) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COST_CATEGORIES, COSTS, PROBLEM, RUNS, PROOF, stub
+  ADMINS, SESSIONS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COST_CATEGORIES, COSTS, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
 };
