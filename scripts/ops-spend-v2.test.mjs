@@ -1117,8 +1117,14 @@ test('the approved unusual-costs card is acknowledged as not answerable yet', as
     'the cannot-answer band is not on the pane');
   assert.match(text, /Anything unusual/,
     'the approved unusual-costs card is still silent');
-  assert.match(text, /No route serves cost anomalies yet\./,
-    'the unusual-costs cause is missing or too vague');
+  assert.match(text, /Problems watches unusual service spend with the service_cost_anomaly rule/,
+    'the unusual-costs cause does not point at the live Problems rule');
+  assert.match(text, /This pane draws the cost breakdown, but it does not draw the anomaly list yet\./,
+    'the unusual-costs cause does not state the pane gap');
+
+  const problemsLink = linkNamed(livePanel(dom), 'Problems');
+  assert.ok(problemsLink, 'the unusual-costs cause does not link to the Problems pane');
+  assert.equal(problemsLink.getAttribute('href'), 'alerts.html');
 });
 
 test('a grouping whose rows do not add up to the bill reports the gap as a figure', async () => {

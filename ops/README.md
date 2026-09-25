@@ -1451,7 +1451,7 @@ pane against the mock should read the list as "these are on purpose and here is 
    the pill or the omissions card already says. The mocks encode one fact per slot, and that rule
    is what took the approved set from 7,240 words to 4,842.
 
-7. **Five more things the mock draws are absent, all for reason (2) above — no source.** They
+7. **Five more things the mock draws are absent, all for reason (2) above: no source.** They
    are listed separately because they are structural, not wording, and a reader diffing the pane
    against the mock hits them first:
    - the hero service-health chips (`Main backend 99.98%`, `Aria AI 99.94%`, `Plan builder`,
@@ -1467,11 +1467,13 @@ pane against the mock should read the list as "these are on purpose and here is 
      which is rule 1 of this pane: a figure labelled for a window it does not cover is worse
      than one labelled for the window it does.
 
-The same card also carries one pane-held entry: **What Aria has been doing**. No route serves
-per-request-type requests, reliability, latency and cost yet, and this was the approved band
-that could not be expressed through the route's omissions. API-declared omissions are still
-deduplicated against it, so if the route starts naming the same gap the pane does not print it
-twice.
+The same card also carries two pane-held entries. **What Aria has been doing** has no route
+field for per-request-type requests, reliability, latency and cost; `/api/ops/summary` returns
+platform totals only, so it cannot split the approved table into rows. **Where the money goes**
+is drawn on Cloud costs by category and resource group; Overview has no smaller spend-breakdown
+field to place beside its live operating summary. API-declared omissions are still deduplicated
+against these entries by stable omission key, so if the route starts naming either gap the pane
+does not print it twice.
 
 Everything else the omissions card shows comes **from the answer**, never from a list in the
 client, so a figure that gains a source drops off the card without a code change here.
@@ -1512,10 +1514,11 @@ would blend them is not drawn.
    carries one platform, a current build, a previous build and a list of named signals, and
    nothing stores a per-release history to widen it to. The table drawn is the comparison the
    contract describes.
-6. **No "What is in 1.1.2" band.** Release notes, build metadata, languages, minimum OS,
-   download sizes, the rollback build and the support-ticket reference are none of them stored
-   anywhere in this platform. The pane names the approved band in **What this pane cannot answer
-   yet** because nothing records release contents yet.
+6. **No "What is in 1.1.2" band.** The release snapshots store build numbers and release
+   dates, and the pane already shows them in the rollout ladder and store card. Release notes,
+   languages, minimum OS, download sizes, the rollback build and the support-ticket reference are
+   not recorded. The pane names the approved band in **What this pane cannot answer yet** because
+   nothing records what changed in a release yet.
 7. **No Export or Failed runs actions on the health band.** Nothing generates that export, and a
    button that does nothing is the filter problem in another costume.
 8. **The mock's three `why` blocks are not reproduced.** "Merging these into one score would
@@ -2012,10 +2015,11 @@ decision.
    and none is in the response, so the bar would have been drawn against a number this codebase
    invented. What survives is the half that is real: the period total, and the forecast to
    period end when the period is open.
-2. **No anomalies card and no unit costs strip.** Same reason, and the same reason the v1 pane
-   was wrong to draw them: `anomalies` and `unitCosts` are not fields the route sends. The
-   approved **Anything unusual** card is named in **What this pane cannot answer yet** because no
-   route serves cost anomalies.
+2. **No anomalies card and no unit costs strip.** The Problems pane watches unusual service
+   spend with the live `service_cost_anomaly` rule and links those problems back to Cloud costs.
+   What this pane can draw is the cost breakdown by category, resource group, service and day;
+   it does not draw an anomaly list yet. Unit costs are also absent because `unitCosts` is not a
+   field the route sends.
 3. **No per-service category column, so the second card is the table and not a switch state.**
    The service view's rows carry no category key, so the mock's `Top services` column would
    have had to be reconstructed by matching a service name against the category view — a join

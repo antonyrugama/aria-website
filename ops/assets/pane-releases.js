@@ -1105,7 +1105,7 @@
     words.appendChild(h('div', { className: 'omit-title', text: 'What is in 1.1.2' }));
     words.appendChild(h('div', {
       className: 'omit-desc',
-      text: 'Nothing records release contents yet.'
+      text: 'The store snapshot records build numbers and release dates, which this pane already shows in the rollout ladder and store card. Nothing records what changed in a release yet.'
     }));
     item.appendChild(words);
     body.appendChild(item);

@@ -441,8 +441,14 @@ test('a platform with no usable name of its own is still named', async () => {
 /* ------------------------------------------- omissionsCard()'s entry key */
 
 const omitTitles = (dom) => textsWithClass(dom, 'omit-title');
+const STATIC_OMISSION_KEYS = new Set(['what_aria_has_been_doing', 'where_the_money_goes']);
 const apiOmitTitles = (dom) =>
-  omitTitles(dom).filter((title) => title !== 'What Aria has been doing');
+  findAll(livePanel(dom), (n) => hasClass(n, 'omit-item'))
+    .filter((item) => !STATIC_OMISSION_KEYS.has(item.getAttribute('data-omission-key')))
+    .map((item) => {
+      const title = findAll(item, (n) => hasClass(n, 'omit-title'))[0];
+      return title ? rawText(title) : '';
+    });
 
 function withOmission(entry) {
   const fixture = summaryFixture();

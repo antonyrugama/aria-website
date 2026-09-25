@@ -1657,14 +1657,18 @@
       {
         key: 'what_aria_has_been_doing',
         title: 'What Aria has been doing',
-        detail: 'No route serves per-request-type requests, reliability, latency and cost yet.'
+        detail: 'No route serves per-request-type requests, reliability, latency and cost yet. The summary route returns platform totals only, so this pane cannot split requests into the approved reliability, latency and cost rows.'
+      },
+      {
+        key: 'where_the_money_goes',
+        title: 'Where the money goes',
+        detail: 'Cloud costs draws the spend breakdown by category and resource group. Overview has no smaller spend-breakdown field to draw beside the live operating summary.'
       }
     ];
 
-    function omissionIdentities(entry) {
-      return [textOf(entry && entry.key), textOf(entry && entry.title)]
-        .filter(Boolean)
-        .map(function (value) { return value.toLowerCase(); });
+    function omissionIdentityKey(entry) {
+      var key = textOf(entry && entry.key);
+      return key ? key.toLowerCase() : null;
     }
 
     function omissionsCard(omissions) {
@@ -1672,9 +1676,9 @@
       var entries = STATIC_OMISSIONS.concat(list(omissions)).filter(function (entry) {
         return entry && (textOf(entry.title) || textOf(entry.key));
       }).filter(function (entry) {
-        var identities = omissionIdentities(entry);
-        if (identities.some(function (identity) { return seen[identity]; })) return false;
-        identities.forEach(function (identity) { seen[identity] = true; });
+        var identity = omissionIdentityKey(entry);
+        if (identity && seen[identity]) return false;
+        if (identity) seen[identity] = true;
         return true;
       });
       if (!entries.length) return null;
@@ -1690,6 +1694,8 @@
         var item = h('div', { className: 'omit-item' });
         var glyph = icon('clock');
         glyph.setAttribute('aria-hidden', 'true');
+        var identity = omissionIdentityKey(entry);
+        if (identity) item.setAttribute('data-omission-key', identity);
         item.appendChild(glyph);
         item.appendChild(h('div', {}, [
           h('h4', { className: 'omit-title', text: textOf(entry.title) || textOf(entry.key) }),
