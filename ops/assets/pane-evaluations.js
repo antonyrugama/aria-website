@@ -1419,7 +1419,13 @@
         var request = runEnvelope('ciel.run.get', { runId: acceptedRunId });
         var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
         var value = response && response.resource && response.resource.value;
-        if (generation !== inspectionGeneration || !value || value.runId !== acceptedRunId || inspectRunId.value !== acceptedRunId) {
+        var currentInputRunId;
+        try {
+          currentInputRunId = runId();
+        } catch (caught) {
+          return;
+        }
+        if (generation !== inspectionGeneration || !value || value.runId !== acceptedRunId || currentInputRunId !== acceptedRunId) {
           return;
         }
         currentRun = value;
@@ -1445,7 +1451,7 @@
       clearNode(inspectError);
       try {
         if (!currentRun) throw new Error('Inspect a run before cancelling it.');
-        if (inspectRunId.value !== currentRun.runId) throw new Error('Inspect a run before cancelling it.');
+        if (runId() !== currentRun.runId) throw new Error('Inspect a run before cancelling it.');
         var request = runEnvelope('ciel.run.cancel', {
           runId: currentRun.runId,
           reason: 'Cancelled from the Ciel admin dashboard.'
@@ -1464,7 +1470,7 @@
       clearNode(inspectError);
       try {
         if (!currentRun) throw new Error('Inspect a run before retrying it.');
-        if (inspectRunId.value !== currentRun.runId) throw new Error('Inspect a run before retrying it.');
+        if (runId() !== currentRun.runId) throw new Error('Inspect a run before retrying it.');
         var request = runEnvelope('ciel.run.retry', {
           runId: currentRun.runId,
           reason: 'Retry failed attempts from the Ciel admin dashboard.'

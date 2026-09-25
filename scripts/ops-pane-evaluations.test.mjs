@@ -655,7 +655,7 @@ test('run inspection pane shows provenance, pending statistics and retry output 
     return inspectionResponse(options.body, 'running', 2);
   });
 
-  view.byId('ciel-run-inspect-id').value = runId;
+  view.byId('ciel-run-inspect-id').value = ` ${runId} `;
   view.byId('ciel-run-inspect-form').dispatch('submit');
   await waitFor(() => /azure_openai/.test(treeText(view.byId('ciel-run-inspection-result'))), 'run inspection did not render');
   const result = view.byId('ciel-run-inspection-result');
@@ -683,7 +683,7 @@ test('run inspection pane shows provenance, pending statistics and retry output 
   assert.equal(calls.length, 1, 'cancel must not target an edited, uninspected run id');
   assert.match(treeText(view.root), /Inspect a run before cancelling it/);
 
-  view.byId('ciel-run-inspect-id').value = runId;
+  view.byId('ciel-run-inspect-id').value = ` ${runId} `;
   view.byId('ciel-run-inspect-form').dispatch('submit');
   await waitFor(
     () => calls.length === 2 && /Attempt 1 failed/.test(treeText(result)),
@@ -750,7 +750,7 @@ test('run inspection ignores stale lookup responses before cancellation', async 
   view.byId('ciel-run-inspect-id').value = runA;
   view.byId('ciel-run-inspect-form').dispatch('submit');
   await waitFor(() => pendingGets.length === 1, 'first lookup did not start');
-  view.byId('ciel-run-inspect-id').value = runB;
+  view.byId('ciel-run-inspect-id').value = ` ${runB} `;
   view.byId('ciel-run-inspect-id').dispatch('input');
   view.byId('ciel-run-inspect-form').dispatch('submit');
   await waitFor(() => pendingGets.length === 2, 'second lookup did not start');
