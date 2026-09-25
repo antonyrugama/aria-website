@@ -394,6 +394,27 @@ async function boot(options) {
     call: (endpoint, o) => {
       calls.push({ endpoint, query: o && o.query, method: o && o.method, body: o && o.body });
       if (o && o.method === 'POST') {
+        if (/^\/api\/ops\/runs\/[^/]+\/reveal$/.test(endpoint)) {
+          const answer = opts.revealResponses && opts.revealResponses.shift
+            ? opts.revealResponses.shift()
+            : opts.revealResponse;
+          if (answer instanceof Error) {
+            if (answer.code === 'ops_reauth_required' && !opts.skipPromptReauth) {
+              return dom.window.OpsSession.promptReauth(answer.maxAgeSeconds).then((confirmed) => {
+                if (!confirmed) return Promise.reject(answer);
+                calls.push({ endpoint, query: o && o.query, method: o && o.method, body: o && o.body });
+                const retry = opts.revealResponses && opts.revealResponses.shift
+                  ? opts.revealResponses.shift()
+                  : opts.revealResponse;
+                if (retry instanceof Error) return Promise.reject(retry);
+                return Promise.resolve({ data: retry });
+              });
+            }
+            return Promise.reject(answer);
+          }
+          if (answer === undefined) return Promise.reject(new Error('no reveal stub for ' + endpoint));
+          return Promise.resolve({ data: answer });
+        }
         const action = opts.actionResponses && opts.actionResponses[endpoint];
         if (action instanceof Error) return Promise.reject(action);
         if (action === undefined) return Promise.reject(new Error('no action stub for ' + endpoint));
@@ -417,6 +438,10 @@ async function boot(options) {
       return Promise.resolve({ data: answer });
     },
     signOut: () => Promise.resolve(),
+    promptReauth: () => {
+      calls.push({ endpoint: '/api/ops/auth/reauth', method: 'PROMPT' });
+      return Promise.resolve(true);
+    },
     role: () => role,
     hasRole: (roles) => (roles || []).indexOf(role) !== -1,
     daysLeft: () => 12,
@@ -620,6 +645,156 @@ test('run-history retry uses the job action contract and refreshes the window', 
     'retry did not send the typed confirmation body');
   assert.match(allText(dom.body), /Retry created: job_333333/,
     'the success announcement did not make the replacement job findable');
+});
+
+test('owners reveal retained and missing run content after giving a reason', async () => {
+  const jobId = '22222222-2222-4222-8222-222222222222';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: {
+      jobId,
+      jobType: 'nutrition_plan',
+      sections: [
+        {
+          key: 'input',
+          label: 'Stored input',
+          source: 'generation_jobs.input_payload',
+          owner: 'app-backend',
+          status: 'retained',
+          contentType: 'application/json',
+          value: '{"prompt":"Build plan","nested":{"email":"[redacted email]"}}',
+          characterCount: 58,
+          notRetainedReason: null,
+        },
+        {
+          key: 'output',
+          label: 'Stored output',
+          source: 'generation_jobs.result_payload',
+          owner: 'app-backend',
+          status: 'not_retained',
+          contentType: 'application/json',
+          value: null,
+          characterCount: null,
+          notRetainedReason: 'The result payload was swept after retention expired.',
+        },
+      ],
+      recorded: {
+        at: at(0),
+        actor: 'owner@example.invalid',
+        reason: 'Investigating failed generation',
+      },
+    },
+  });
+
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.ok(show, 'an opened run did not offer the owner a reveal action');
+  show.dispatch('click', {});
+  await settle();
+
+  const textarea = dom.body.querySelector('textarea');
+  assert.ok(textarea, 'the reveal dialog did not ask for a written reason');
+  assert.equal(textarea.getAttribute('aria-describedby').split(/\s+/).length >= 2, true,
+    'the reason field is not bound to both hint and validation text');
+  textarea.value = 'short';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+  assert.equal(textarea.getAttribute('aria-invalid'), 'true',
+    'a too-short reason did not mark the field invalid');
+  assert.match(allText(dom.body), /Use 10 to 500 characters/,
+    'the reason error was not visible beside the field');
+
+  textarea.value = 'Investigating failed generation';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(JSON.stringify(dom.calls.filter((c) => c.method === 'POST').map((c) => [c.endpoint, c.body])),
+    JSON.stringify([['/api/ops/runs/' + jobId + '/reveal', { reason: 'Investigating failed generation' }]]),
+    'the reveal route was not called once with the written reason');
+
+  const content = sectionWithHeading(dom, /Stored content/);
+  assert.ok(content, 'successful reveal did not render the stored content band');
+  const regions = findAll(content, (n) => n.getAttribute('role') === 'region');
+  assert.deepEqual(regions.map((n) => ({
+    label: n.getAttribute('aria-label'),
+    tab: n.getAttribute('tabindex'),
+  })), [
+    { label: 'Stored input content', tab: '0' },
+    { label: 'Stored output content', tab: '0' },
+  ], 'revealed sections were not keyboard-readable regions');
+  assert.match(allText(regions[0]), /"prompt": "Build plan"/,
+    'retained JSON was not pretty-printed as readable text');
+  assert.match(allText(regions[1]), /Not kept: The result payload was swept after retention expired\./,
+    'not-retained content did not show the server reason');
+  buttonsIn(content, /^Hide content$/)[0].dispatch('click', {});
+  await settle();
+  assert.doesNotMatch(liveText(dom), /"prompt": "Build plan"/,
+    'Hide content left revealed text in the DOM');
+});
+
+test('a stale fresh-auth gate retries reveal without retyping the reason', async () => {
+  const jobId = '22222222-2222-4222-8222-222222222222';
+  const stale = new Error('fresh auth required');
+  stale.status = 403;
+  stale.code = 'ops_reauth_required';
+  stale.maxAgeSeconds = 300;
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponses: [
+      stale,
+      {
+        jobId,
+        jobType: 'nutrition_plan',
+        sections: [
+          {
+            key: 'input',
+            label: 'Stored input',
+            source: 'generation_jobs.input_payload',
+            owner: 'app-backend',
+            status: 'retained',
+            contentType: 'application/json',
+            value: '{"ok":true}',
+            characterCount: 11,
+            notRetainedReason: null,
+          },
+        ],
+        recorded: { at: at(0), actor: 'owner@example.invalid', reason: 'Auditing customer report' },
+      },
+    ],
+  });
+
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  buttonsIn(livePanel(dom), /^Show content$/)[0].dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = 'Auditing customer report';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(JSON.stringify(dom.calls.filter((c) => c.method === 'POST').map((c) => c.body)),
+    JSON.stringify([
+      { reason: 'Auditing customer report' },
+      { reason: 'Auditing customer report' },
+    ]), 'fresh-auth retry did not preserve the typed reason across re-authentication');
+  assert.deepEqual(dom.calls.filter((c) => c.method === 'PROMPT').map((c) => c.endpoint),
+    ['/api/ops/auth/reauth'], 'the stale reveal did not use the shared re-auth prompt');
+  assert.match(liveText(dom), /"ok": true/,
+    'the reveal result did not render after the fresh-auth retry');
+});
+
+test('operators get no run-content reveal control or owner-only hint', async () => {
+  const dom = await boot({ role: 'operator', detail: detailAnswer() });
+
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+
+  assert.doesNotMatch(liveText(dom), /Show content|Only an owner can reveal|owner action/,
+    'operators were shown a content-reveal affordance or hint');
 });
 
 function stateOf(dom) {
@@ -2284,11 +2459,10 @@ test('the guarantees are on screen as sentences, not as properties of the code',
   const text = liveText(dom);
   for (const claim of [
     /sends no account identity at all/,
-    /hidden for every role, the owner included/,
-    /needs a written reason/,
+    /stay out of the run table/,
     /recorded by field name and never by content/,
     /athlete can see that a reveal happened/,
-    /outlive the reveal/,
+    /outlive the view/,
   ]) {
     assert.match(text, claim, 'a guarantee is in the code but not on the page');
   }

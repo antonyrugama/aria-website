@@ -290,6 +290,7 @@
 
   global.OpsJobActions = {
     controls: controls,
+    openModal: openModal,
     referenceFromId: referenceFromId,
     fixedError: fixedError
   };
