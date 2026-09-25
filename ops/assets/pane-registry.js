@@ -171,6 +171,13 @@
       wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer'],
       filterNote: 'Browse has pane-local filters; the mutation tools use supplied declarations or evidence, not app, date or environment filters'
     },
+    review: {
+      file: 'review.html', icon: 'person', label: 'SEVAL review', group: 'How we are doing',
+      railId: 'review',
+      question: 'Which blinded SEVAL outputs need human labels or adjudication?',
+      wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer'],
+      filterNote: 'Review filters are pane-local because labels are bound to exact outcome and criterion digests, not app-wide windows'
+    },
     releases: {
       file: 'releases.html', icon: 'release', label: 'App releases', group: 'Apps and people',
       railId: 'releases',
