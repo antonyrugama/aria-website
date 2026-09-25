@@ -808,16 +808,38 @@ test('run-history success action followed by a failed reload still announces the
 });
 
 const REFRESH_ERROR_ACTION_CASES = [
-  { action: 'retry', code: 'ops_jobs_retry_stale', status: 409 },
-  { action: 'retry', code: 'ops_jobs_retry_unavailable', status: 409 },
-  { action: 'retry', code: 'ops_jobs_retry_job_mismatch', status: 409 },
-  { action: 'retry', code: 'ops_jobs_retry_job_not_retryable', status: 409 },
-  { action: 'retry', code: 'ops_jobs_job_not_found', status: 404 },
-  { action: 'retry', code: 'ops_jobs_unknown_refresh', status: 409 },
-  { action: 'cancel', code: 'ops_jobs_cancel_stale', status: 409 },
-  { action: 'cancel', code: 'ops_jobs_cancel_unavailable', status: 409 },
-  { action: 'cancel', code: 'ops_jobs_job_not_found', status: 404 },
-  { action: 'cancel', code: 'ops_jobs_unknown_refresh', status: 409 },
+  { action: 'retry', code: 'ops_jobs_cancel_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_cancel_unavailable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_unavailable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_job_mismatch', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_job_not_retryable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_job_not_found', status: 404,
+    expected: 'That job is no longer in the operations record. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_unknown_refresh', status: 409,
+    expected: 'That did not go through. Nothing changed.' },
+  { action: 'cancel', code: 'ops_jobs_cancel_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_cancel_unavailable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_unavailable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_job_mismatch', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_job_not_retryable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_job_not_found', status: 404,
+    expected: 'That job is no longer in the operations record. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_unknown_refresh', status: 409,
+    expected: 'That did not go through. Nothing changed.' },
 ];
 
 for (const refreshCase of REFRESH_ERROR_ACTION_CASES) {
@@ -839,8 +861,18 @@ for (const refreshCase of REFRESH_ERROR_ACTION_CASES) {
       },
     });
 
+    const heard = [];
+    const realAnnounce = dom.window.OpsPaneShell.announce;
+    dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
     await submitJobAction(dom, refreshCase.action);
 
+    assert.ok((lastSaid(dom) || '').includes(refreshCase.expected),
+      'the final polite-region text did not include the action result');
+    assert.equal(heard.filter((message) => message.includes(refreshCase.expected)).length, 1,
+      'the failed-reload action result was not announced exactly once');
+    assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
+      'the failed reload read error was not announced exactly once');
     assert.doesNotMatch(lastSaid(dom) || '', /refreshed/,
       'the failed-reload action announcement falsely said the list was refreshed');
     assert.ok((lastSaid(dom) || '').includes(READ_ERROR_MESSAGE),
