@@ -1600,7 +1600,7 @@
         data.defaults && data.defaults.reauthWindowSeconds || 300);
       var body = h('div', { className: 'card-body' });
       var status = h('div', {
-        className: 'session-window-status',
+        className: 'session-window-status', role: 'status', 'aria-live': 'polite',
         text: 'Fresh auth stays required for sensitive actions.'
       });
 
@@ -1638,7 +1638,6 @@
 
       function refuse(message) {
         status.textContent = message;
-        S.toast('warn', message);
       }
 
       function setFieldError(input, message) {

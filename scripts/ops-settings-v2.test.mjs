@@ -928,6 +928,20 @@ test('a session-settings save that ends the current session announces before rou
     assert.match(dom.window.location.href, /login\.html\?reason=expired/);
   });
 
+
+test('cancelled session shortening announces Not saved exactly once', async () => {
+  const dom = await boot({
+    confirm: () => false,
+    runTimers: false,
+  });
+  sessionWindowsControl(dom, 'session-days').value = '7';
+  sessionWindowsControl(dom, 'session-save').dispatch('click');
+  await dom.settle();
+
+  assert.deepEqual(sessionWindowLiveMessages(dom, [/Not saved\./]), ['Not saved.'],
+    'a cancelled session shortening did not announce Not saved exactly once');
+});
+
 test('session-settings validation refusals update one live region', async () => {
   const dom = await boot({ runTimers: false });
   sessionWindowsControl(dom, 'session-days').value = '31';

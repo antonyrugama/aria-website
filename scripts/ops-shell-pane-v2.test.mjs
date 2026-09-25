@@ -1099,15 +1099,34 @@ test('the docblock and the README name exactly what the module exports', async (
 });
 
 
-test('session signOut can clear credentials without navigating', async () => {
+async function bootRealSession(options) {
+  const opts = options || {};
+  const calls = [];
   const dom = makeDom({ href: 'https://ops.example.invalid/ops/settings.html' });
   dom.window.OpsApi = {
     OpsApiError: function OpsApiError(message) { this.message = message; },
-    call: () => Promise.resolve({ data: {} }),
+    request: (path, requestOptions) => {
+      calls.push({ path, method: requestOptions && requestOptions.method, body: requestOptions && requestOptions.body });
+      return Promise.resolve({ data: {
+        accessToken: 'access-token',
+        accessExpiresAt: Date.now() + 60000,
+        refreshToken: 'refresh-token',
+        admin: { id: 'adm_owner', email: 'owner@example.invalid', role: 'owner' },
+        session: { expiresAt: Date.now() + 60000 },
+      } });
+    },
+    call: (path, requestOptions) => {
+      calls.push({ path, method: requestOptions && requestOptions.method, body: requestOptions && requestOptions.body });
+      return opts.logoutRejects && path === '/api/ops/auth/logout'
+        ? Promise.reject(new Error('logout failed'))
+        : Promise.resolve({ data: {} });
+    },
   };
   vm.createContext(dom.window);
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
   vm.runInContext(SESSION_SRC, dom.window, { filename: 'session.js' });
+  await dom.window.OpsSession.signIn('owner@example.invalid', 'password', false);
+  assert.ok(dom.window.OpsSession.readRefreshToken(), 'test setup did not seed a real refresh credential');
 
   const replacements = [];
   const realReplace = dom.window.location.replace;
@@ -1115,11 +1134,29 @@ test('session signOut can clear credentials without navigating', async () => {
     replacements.push(next);
     realReplace.call(dom.window.location, next);
   };
+  return { dom, calls, replacements };
+}
+
+test('session signOut can clear credentials without navigating', async () => {
+  const { dom, replacements } = await bootRealSession();
 
   await dom.window.OpsSession.signOut({ noNavigate: true });
 
+  assert.equal(dom.window.OpsSession.readRefreshToken(), null,
+    'signOut({ noNavigate: true }) left the refresh credential stored');
   assert.deepEqual(replacements, [],
     'signOut({ noNavigate: true }) still navigated away from the current route');
+});
+
+test('session signOut clears credentials and routes to the signed-out login by default', async () => {
+  const { dom, replacements } = await bootRealSession();
+
+  await dom.window.OpsSession.signOut();
+
+  assert.equal(dom.window.OpsSession.readRefreshToken(), null,
+    'signOut() left the refresh credential stored');
+  assert.deepEqual(replacements, ['login.html?reason=signedout'],
+    'signOut() did not route to the signed-out login by default');
 });
 
 /* ================= the re-authentication dialog, on a v2 pane =========== */
