@@ -815,7 +815,8 @@ test('job action controls come only from the capability block and false actions 
 });
 
 test('cancelling a job requires the typed reference, posts it, refreshes, and restores focus', async () => {
-  const jobId = '9f1c2d00-1111-4111-8111-111111111111';
+  const jobId = 'job_9f1c2d00-\"quoted';
+  const encodedJobId = encodeURIComponent(jobId);
   const dom = await boot({
     answers: [
       viewFixture({
@@ -858,23 +859,130 @@ test('cancelling a job requires the typed reference, posts it, refreshes, and re
   input.value = 'JOB_9F1C2D';
   input.dispatch('input', {});
   assert.equal(go.disabled, true, 'the destructive button accepted a differently cased reference');
-  input.value = 'job_9f1c2d';
+  input.value = ' job_9f1c2d ';
   input.dispatch('input', {});
-  assert.equal(go.disabled, false, 'the destructive button did not enable for the exact reference');
+  assert.equal(go.disabled, false, 'the destructive button did not enable for the trimmed reference');
   go.dispatch('click', {});
   await settle();
 
   assert.deepEqual(dom.calls.map((c) => [c.method || 'GET', c.endpoint]), [
     ['GET', ENDPOINT],
-    ['POST', '/api/ops/jobs/' + jobId + '/cancel'],
+    ['POST', '/api/ops/jobs/' + encodedJobId + '/cancel'],
     ['GET', ENDPOINT],
   ], 'a successful cancellation should post once and refresh the list once');
   assert.equal(JSON.stringify(dom.calls[1].body), JSON.stringify({ confirmation: 'job_9f1c2d' }),
-    'the cancellation did not send the typed confirmation body');
+    'the cancellation did not send the trimmed confirmation body');
   assert.match(allText(dom.body), /Cancelled job_9f1c2d/,
     'the success announcement did not use the committed action response');
   assert.equal(allText(dom.doc.activeElement).trim(), 'Read now',
     'focus did not land on the surviving read control after the cancelled row disappeared');
+});
+
+
+
+test('post-action focus matches a wire id by attribute value instead of selector text', async () => {
+  const jobId = 'job_selector_"quoted';
+  const stillQueued = jobFixture({
+    id: jobId,
+    reference: 'job_9f1c2d',
+    state: 'queued',
+    actions: {
+      canCancel: true,
+      cancelReason: null,
+      canRetry: false,
+      retryReason: 'Only failed jobs can be retried.',
+    },
+  });
+  const dom = await boot({
+    answers: [
+      viewFixture({ workingSet: { returned: 1, truncated: false, jobs: [stillQueued] } }),
+      viewFixture({ workingSet: { returned: 1, truncated: false, jobs: [stillQueued] } }),
+    ],
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(jobId) + '/cancel']: { jobId, status: 'canceling' },
+    },
+  });
+
+  buttonNamed(dom, 'Cancel').dispatch('click', {});
+  await settle();
+  const input = dom.body.querySelector('.field-input');
+  input.value = 'job_9f1c2d';
+  input.dispatch('input', {});
+  buttonNamed({ content: dom.body }, 'Cancel job').dispatch('click', {});
+  await settle();
+
+  assert.equal(dom.doc.activeElement.getAttribute('data-retain'), 'jobs-row-' + jobId,
+    'post-action focus did not return to the same row when the wire id would break a selector');
+});
+
+test('a job action refresh queued during an in-flight read lands after that read settles', async () => {
+  const jobId = '9f1c2d00-1111-4111-8111-111111111111';
+  let releaseInFlight;
+  const inFlight = new Promise((resolve) => { releaseInFlight = resolve; });
+  const beforeAction = viewFixture({
+    workingSet: {
+      returned: 1,
+      truncated: false,
+      jobs: [jobFixture({
+        id: jobId,
+        reference: 'job_9f1c2d',
+        state: 'queued',
+        actions: {
+          canCancel: true,
+          cancelReason: null,
+          canRetry: false,
+          retryReason: 'Only failed jobs can be retried.',
+        },
+      })],
+    },
+  });
+  const afterAction = viewFixture({ workingSet: { returned: 0, truncated: false, jobs: [] } });
+  const dom = await boot({
+    view: beforeAction,
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(jobId) + '/cancel']: { jobId, status: 'canceled' },
+    },
+  });
+
+  let heldRead = true;
+  const realCall = dom.window.OpsSession.call;
+  dom.window.OpsSession.call = (endpoint, o) => {
+    if (!o || o.method !== 'POST') {
+      dom.calls.push({ endpoint, query: o && o.query, method: o && o.method, body: o && o.body });
+      if (heldRead) {
+        heldRead = false;
+        return inFlight.then(() => ({ data: beforeAction }));
+      }
+      return Promise.resolve({ data: afterAction });
+    }
+    return realCall(endpoint, o);
+  };
+
+  buttonNamed(dom, 'Read now').dispatch('click', {});
+  await settle();
+  buttonNamed(dom, 'Cancel').dispatch('click', {});
+  await settle();
+  const input = dom.body.querySelector('.field-input');
+  input.value = 'job_9f1c2d';
+  input.dispatch('input', {});
+  buttonNamed({ content: dom.body }, 'Cancel job').dispatch('click', {});
+  await settle();
+  assert.equal(dom.calls.filter((c) => c.method !== 'POST').length, 2,
+    'the action refreshed before the in-flight read settled instead of queuing behind it');
+
+  releaseInFlight();
+  await settle();
+
+  assert.deepEqual(dom.calls.map((c) => [c.method || 'GET', c.endpoint]), [
+    ['GET', ENDPOINT],
+    ['GET', ENDPOINT],
+    ['POST', '/api/ops/jobs/' + jobId + '/cancel'],
+    ['GET', ENDPOINT],
+  ], 'the action refresh was not replayed once the in-flight read settled');
+  assert.doesNotMatch(liveText(dom), /job_9f1c2d/,
+    'the row still showed the pre-action state after the queued refresh settled');
+  assert.equal(allText(dom.doc.activeElement).trim(), 'Read now',
+    'focus did not land on the surviving read control after the queued refresh removed the actioned row');
 });
 
 test('a stale cancellation reloads the list and never claims the action happened', async () => {
