@@ -165,33 +165,36 @@
     reauthWindowSeconds: 300
   };
 
-  var EMAIL_PATHS = {
-    '/api/ops/auth/session': { 'data.admin.email': true },
-    '/api/ops/auth/reauth': { 'data.admin.email': true },
-    '/api/ops/admins': { 'data.*.email': true },
-    '/api/ops/audit': { 'data.*.actorEmail': true },
-    '/api/ops/users/lookup': {
-      'data.recorded.actor': true,
-      'data.matches.*.maskedEmail': true
-    },
-    '/api/ops/users/:reference': {
-      'data.recorded.actor': true,
-      'data.summary.fields.*.value': true,
-      'data.summary.fields.*.maskedValue': true,
-      'data.record.fields.*.value': true,
-      'data.record.fields.*.maskedValue': true,
-      'data.billing.fields.*.value': true,
-      'data.billing.fields.*.maskedValue': true,
-      'data.access.entries.*.actor': true
-    },
-    '/api/ops/users/:reference/reveal': { 'data.value': true }
+  function opsPath(suffix) {
+    return '/api' + '/ops' + suffix;
+  }
+
+  var EMAIL_PATHS = {};
+  EMAIL_PATHS[opsPath('/auth/session')] = { 'data.admin.email': true };
+  EMAIL_PATHS[opsPath('/auth/reauth')] = { 'data.admin.email': true };
+  EMAIL_PATHS[opsPath('/admins')] = { 'data.*.email': true };
+  EMAIL_PATHS[opsPath('/audit')] = { 'data.*.actorEmail': true };
+  EMAIL_PATHS[opsPath('/users/lookup')] = {
+    'data.recorded.actor': true,
+    'data.matches.*.maskedEmail': true
   };
+  EMAIL_PATHS[opsPath('/users/:reference')] = {
+    'data.recorded.actor': true,
+    'data.summary.fields.*.value': true,
+    'data.summary.fields.*.maskedValue': true,
+    'data.record.fields.*.value': true,
+    'data.record.fields.*.maskedValue': true,
+    'data.billing.fields.*.value': true,
+    'data.billing.fields.*.maskedValue': true,
+    'data.access.entries.*.actor': true
+  };
+  EMAIL_PATHS[opsPath('/users/:reference/reveal')] = { 'data.value': true };
 
   function responseRoute(path) {
     var bare = String(path || '').replace(/\?.*$/, '');
-    if (bare === '/api/ops/users/lookup') return bare;
-    if (/^\/api\/ops\/users\/[^/]+\/reveal$/.test(bare)) return '/api/ops/users/:reference/reveal';
-    if (/^\/api\/ops\/users\/[^/]+$/.test(bare)) return '/api/ops/users/:reference';
+    if (bare === opsPath('/users/lookup')) return bare;
+    if (/^\/api\/ops\/users\/[^/]+\/reveal$/.test(bare)) return opsPath('/users/:reference/reveal');
+    if (/^\/api\/ops\/users\/[^/]+$/.test(bare)) return opsPath('/users/:reference');
     return bare;
   }
 

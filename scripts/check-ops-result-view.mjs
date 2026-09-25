@@ -760,16 +760,16 @@ function stub(pathname, body) {
      refuses a response whose requestId or operationId is not the one it
      asked about, which is the check that stops a stale answer painting over
      a newer question. */
-  if (pathname.startsWith('/api/ops/ciel/operations')) {
+  if (pathname.startsWith('/api/ops/seval/operations')) {
     const req = body || {};
     return {
-      schemaVersion: 'ciel.operation.response.v1',
+      schemaVersion: 'seval.operation.response.v1',
       requestId: req.requestId,
       operationId: req.operationId,
       status: 'success',
       exitCode: 0,
       resource: {
-        type: 'ciel.dataset-validation',
+        type: 'seval.dataset-validation',
         id: req.requestId,
         revision: 1,
         value: {
@@ -834,7 +834,7 @@ const DRIVE = {
     const input = document.getElementById('dataset-input');
     if (!input) return 'no dataset form on the page';
     input.value = JSON.stringify({
-      schemaVersion: 'ciel.dataset.v1',
+      schemaVersion: 'seval.dataset.v1',
       datasets: [{ datasetId: 'dataset.example', revision: 1, cases: [] }],
       fixtureDigests: []
     });

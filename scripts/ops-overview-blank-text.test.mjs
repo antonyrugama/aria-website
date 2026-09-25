@@ -85,6 +85,17 @@ const TOKENS = {
 };
 
 const hoursAgo = (n) => new Date(Date.now() - n * 3600000).toISOString();
+const SWEEP_NOW = Date.parse('2026-09-25T08:20:00.000Z');
+
+async function withSweepClock(fn) {
+  const originalNow = Date.now;
+  Date.now = () => SWEEP_NOW;
+  try {
+    return await fn();
+  } finally {
+    Date.now = originalNow;
+  }
+}
 
 /* ------------------------------------------------------------- fixtures */
 
@@ -816,7 +827,7 @@ async function sweep(make, extraLookups, expectSwept, extraReached = []) {
 }
 
 test('padding any string the answer carries changes nothing on the screen', async () => {
-  await sweep(summaryFixture, new Set(), 27);
+  await withSweepClock(() => sweep(summaryFixture, new Set(), 27));
 });
 
 test('padding any string changes nothing on the screen with the chart drawn too',
@@ -825,7 +836,7 @@ test('padding any string changes nothing on the screen with the chart drawn too'
        `summaryFixture()` carries no days on purpose -- it needs
        `activityCard()`'s no-line branch to get to `appendNote()` -- and the
        legend and the spoken sentence live on the other side of it. */
-    await sweep(chartedFixture, new Set([
+    await withSweepClock(() => sweep(chartedFixture, new Set([
       'activity.availability.state',
-    ]), 39, ['14 Sep to 20 Sep', 'Aria XII']);
+    ]), 39, ['14 Sep to 20 Sep', 'Aria XII']));
   });

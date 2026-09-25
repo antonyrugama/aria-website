@@ -628,7 +628,7 @@ result. Validation stores no dataset, inspects no referenced bytes, verifies no 
 and grants no evidence access or release approval.
 
 Owners and operators can also submit a local synthetic
-or exactly authorised production-derived file to the shared Ciel operation. The page sends no
+or exactly authorised production-derived file to the shared SEVAL operation. The page sends no
 credential or endpoint in request data, renders no raw evidence or storage location, and never
 describes quarantine or approval as admission, evaluation consent, training consent, access,
 export permission, or proof of de-identification.
@@ -1006,7 +1006,7 @@ every `/api/…` string literal that file spells:
 pane-alerts.js = /api/ops/alerts/problems, /api/ops/alerts/problems/, /api/ops/alerts/rules, /api/ops/alerts/rules/
 pane-analytics.js = /api/ops/usage
 pane-data.js = (no route literal)
-pane-evaluations.js = /api/ops/ciel/operations
+pane-evaluations.js = /api/ops/seval/operations
 pane-jobs-live-v2.js = /api/ops/jobs
 pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
 pane-registry.js = (no route literal)
@@ -1145,8 +1145,8 @@ refused sign in.
 `pane-evaluations-v2.css`. It is the one pane where **most of what is on screen is a drawing**,
 and everything about how it is built follows from that.
 
-**All six Ciel forms submit to the backend, and the scoring half does not exist.**
-Dataset declaration validation calls the shared Ciel operation using supplied inputs.
+**All six SEVAL forms submit to the backend, and the scoring half does not exist.**
+Dataset declaration validation calls the shared SEVAL operation using supplied inputs.
 Evidence quarantine, the three approval forms and the admission form also submit to the shared
 operation route; the backend decides whether each request is available and allowed. The pane
 tells operators before submit that quarantine answers only when storage and authority settings
@@ -1230,7 +1230,7 @@ and the future-date and 90-day retention bounds are unchanged.
 **Where the pane departs from `docs/mocks/ops-dashboard-v2/evaluations.html`:**
 
 - **The operation bands come first, then the banner, then the drawing.** The mock opens with the
-  banner, because the mock is a drawing of a pane where nothing is built. Here the Ciel operation forms submit to the backend, so a page that opens by saying it is not built
+  banner, because the mock is a drawing of a pane where nothing is built. Here the SEVAL operation forms submit to the backend, so a page that opens by saying it is not built
   would be false. The banner sits directly above the
   half it describes and its claim is scoped to that half.
 - **The drawn half is not faded.** The mock sets `opacity: .55` over it, which multiplies every

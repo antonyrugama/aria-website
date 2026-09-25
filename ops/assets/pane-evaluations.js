@@ -256,20 +256,20 @@
     var digest = await sha256(draft.bytes);
     var production = draft.sourceKind === 'production_derived';
     return {
-      schemaVersion: 'ciel.operation.request.v1',
+      schemaVersion: 'seval.operation.request.v1',
       requestId: resolvedRequestId,
-      operationId: 'ciel.artifact.quarantine',
+      operationId: 'seval.artifact.quarantine',
       mode: 'remote',
       client: {
         name: 'aria-operations-dashboard',
         version: '1.0.0',
-        contractVersions: ['ciel.operations.v1']
+        contractVersions: ['seval.operations.v1']
       },
       input: {
         sourceDigest: digest,
         purpose: draft.purpose,
         manifest: {
-          schemaVersion: 'ciel.artifact.quarantine-manifest.v1',
+          schemaVersion: 'seval.artifact.quarantine-manifest.v1',
           sourceKind: draft.sourceKind,
           contentProfile: draft.contentProfile,
           mediaType: draft.mediaType,
@@ -306,22 +306,22 @@
 
   function approvalEnvelope(operationId, requestId, input) {
     return {
-      schemaVersion: 'ciel.operation.request.v1',
+      schemaVersion: 'seval.operation.request.v1',
       requestId: requestId,
       operationId: operationId,
       mode: 'remote',
       client: {
         name: 'aria-operations-dashboard',
         version: '1.0.0',
-        contractVersions: ['ciel.operations.v1']
+        contractVersions: ['seval.operations.v1']
       },
       input: input
     };
   }
 
   function buildApprovalRequest(draft, requestId) {
-    var request = approvalEnvelope('ciel.approval.request', requestId, {
-      targetOperationId: 'ciel.artifact.admit',
+    var request = approvalEnvelope('seval.approval.request', requestId, {
+      targetOperationId: 'seval.artifact.admit',
       targetRequestDigest: draft.targetRequestDigest,
       artifact: {
         artifactId: draft.artifactId,
@@ -339,13 +339,13 @@
   }
 
   function buildApprovalGet(draft, requestId) {
-    return approvalEnvelope('ciel.approval.get', requestId, {
+    return approvalEnvelope('seval.approval.get', requestId, {
       approvalRequestId: draft.approvalRequestId
     });
   }
 
   function buildApprovalDecision(draft, requestId) {
-    var request = approvalEnvelope('ciel.approval.decide', requestId, {
+    var request = approvalEnvelope('seval.approval.decide', requestId, {
       approvalRequestId: draft.approvalRequestId,
       decision: draft.decision,
       reason: draft.reason
@@ -411,7 +411,7 @@
       throw new Error('Retention expiry must be a valid date and time.');
     }
     var policyRevision = requireReference(draft.policyRevision, 'Policy revision');
-    var request = approvalEnvelope('ciel.artifact.admit', resolvedRequestId, {
+    var request = approvalEnvelope('seval.artifact.admit', resolvedRequestId, {
       artifact: {
         artifactId: requireUuid(draft.artifactId, 'Artifact ID'),
         sourceDigest: requireDigest(draft.sourceDigest, 'Source SHA-256'),
@@ -690,17 +690,17 @@
       submit.textContent = 'Validating...';
       try {
         var requestId = global.crypto.randomUUID();
-        var response = await session.call('/api/ops/ciel/operations', {
+        var response = await session.call('/api/ops/seval/operations', {
           method: 'POST',
           body: {
-            schemaVersion: 'ciel.operation.request.v1',
+            schemaVersion: 'seval.operation.request.v1',
             requestId: requestId,
-            operationId: 'ciel.dataset.validate',
+            operationId: 'seval.dataset.validate',
             mode: 'remote',
             client: {
               name: 'aria-operations-dashboard',
               version: '1.0.0',
-              contractVersions: ['ciel.operations.v1']
+              contractVersions: ['seval.operations.v1']
             },
             input: inputValue
           }
@@ -708,10 +708,10 @@
         if (submittedGeneration !== generation) return;
         var resource = response && response.resource;
         var value = resource && resource.value;
-        if (!response || response.schemaVersion !== 'ciel.operation.response.v1' ||
-            response.requestId !== requestId || response.operationId !== 'ciel.dataset.validate' ||
+        if (!response || response.schemaVersion !== 'seval.operation.response.v1' ||
+            response.requestId !== requestId || response.operationId !== 'seval.dataset.validate' ||
             response.status !== 'success' || response.exitCode !== 0 ||
-            !resource || resource.type !== 'ciel.dataset-validation' ||
+            !resource || resource.type !== 'seval.dataset-validation' ||
             !value || value.valid !== true || !Array.isArray(value.digests) ||
             !value.digests.length || value.digests.some(function (entry) {
               return !entry || typeof entry.datasetId !== 'string' ||
@@ -940,7 +940,7 @@
           providerApprovalRef: providerApproval.value
         });
       }).then(function (request) {
-        return session.call('/api/ops/ciel/operations', {
+        return session.call('/api/ops/seval/operations', {
           method: 'POST',
           body: request
         });
@@ -1218,7 +1218,7 @@
         return;
       }
       invalidateApprovalResult(true);
-      session.call('/api/ops/ciel/operations', {
+      session.call('/api/ops/seval/operations', {
         method: 'POST',
         body: request
       }).then(function (response) {
@@ -1244,7 +1244,7 @@
       invalidateApprovalResult(true);
       approvalGetSubmit.disabled = true;
       approvalGetSubmit.textContent = 'Loading…';
-      session.call('/api/ops/ciel/operations', {
+      session.call('/api/ops/seval/operations', {
         method: 'POST',
         body: buildApprovalGet({
           approvalRequestId: approvalGetId.value.trim()
@@ -1267,7 +1267,7 @@
       invalidateApprovalResult(false);
       approvalDecisionSubmit.disabled = true;
       approvalDecisionSubmit.textContent = 'Recording…';
-      session.call('/api/ops/ciel/operations', {
+      session.call('/api/ops/seval/operations', {
         method: 'POST',
         body: buildApprovalDecision({
           approvalRequestId: approvalDecisionId.value.trim(),
@@ -1387,7 +1387,7 @@
       defaultExpiry.getTimezoneOffset() * 60 * 1000).toISOString().slice(0, 16);
     var necessary = input('text', 'none');
     var removed = input('text', 'none');
-    var policyRevision = input('text', 'ciel-evidence-admission.v1');
+    var policyRevision = input('text', 'seval-evidence-admission.v1');
     var approvalRequestId = input('text');
     var idempotencyKey = input('text');
     var error = h('div', { className: 'field-error', role: 'alert' });
@@ -1504,7 +1504,7 @@
         submit.textContent = 'Admit evidence';
         return;
       }
-      session.call('/api/ops/ciel/operations', {
+      session.call('/api/ops/seval/operations', {
         method: 'POST',
         body: request
       }).then(function (response) {
