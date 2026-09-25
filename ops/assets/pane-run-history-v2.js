@@ -1454,19 +1454,12 @@
 
     function afterRunAction(result) {
       queuedActionAnnouncement = result && result.deferAnnouncement ? result.message : null;
-      queuedActionFailureAnnouncement = failedReloadActionMessage(result);
+      queuedActionFailureAnnouncement = result && result.deferAnnouncement && result.error
+        ? result.messageWhenNotRefreshed
+        : null;
       hasQueuedActionAnnouncement = true;
       moveFocus('rh-read-again', 'rh-state');
       load();
-    }
-
-    function failedReloadActionMessage(result) {
-      if (!result || !result.deferAnnouncement || !result.error) return null;
-      var code = result.error.code;
-      if (code === 'ops_jobs_cancel_stale' || code === 'ops_jobs_retry_stale') {
-        return 'Nothing was claimed because that run had already changed.';
-      }
-      return null;
     }
 
     function runFacts(run) {

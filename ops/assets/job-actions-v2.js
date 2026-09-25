@@ -51,34 +51,54 @@
     return 'Cancelled ' + (actionRef(row) || 'that job') + '.';
   }
 
-  function fixedError(err, action) {
+  function actionError(message, messageWhenNotRefreshed) {
+    return {
+      message: message,
+      messageWhenNotRefreshed: messageWhenNotRefreshed || message,
+    };
+  }
+
+  function refreshedActionError(prefix) {
+    return actionError(
+      prefix + ' The list was refreshed; nothing was claimed.',
+      prefix + ' Nothing was claimed.'
+    );
+  }
+
+  function fixedErrorDetails(err, action) {
     var code = err && err.code;
     if (code === 'ops_jobs_confirmation_mismatch' || code === 'ops_jobs_reference_invalid') {
-      return 'Type the job reference exactly as shown. Nothing changed.';
+      return actionError('Type the job reference exactly as shown. Nothing changed.');
     }
     if (code === 'ops_jobs_cancel_stale' || code === 'ops_jobs_retry_stale') {
-      return 'That job changed state elsewhere. The list was refreshed; nothing was claimed.';
+      return refreshedActionError('That job changed state elsewhere.');
     }
     if (code === 'ops_jobs_cancel_unavailable' || code === 'ops_jobs_retry_unavailable' ||
         code === 'ops_jobs_retry_job_mismatch' || code === 'ops_jobs_retry_job_not_retryable') {
-      return action === 'retry'
-        ? 'Retry is no longer available for that job. The list was refreshed; nothing was claimed.'
-        : 'Cancellation is no longer available for that job. The list was refreshed; nothing was claimed.';
+      return refreshedActionError(action === 'retry'
+        ? 'Retry is no longer available for that job.'
+        : 'Cancellation is no longer available for that job.');
     }
     if (code === 'ops_jobs_retry_enqueue_failed') {
-      return 'Retry did not happen because the new job could not be queued. Nothing changed.';
+      return actionError('Retry did not happen because the new job could not be queued. Nothing changed.');
     }
     if (code === 'ops_jobs_job_not_found') {
-      return 'That job is no longer in the operations record. The list was refreshed; nothing was claimed.';
+      return refreshedActionError('That job is no longer in the operations record.');
     }
-    if (err && err.status === 403) return 'Your role can view jobs but cannot change them. Nothing changed.';
-    if (err && err.status === 503) return action === 'retry'
+    if (err && err.status === 403) {
+      return actionError('Your role can view jobs but cannot change them. Nothing changed.');
+    }
+    if (err && err.status === 503) return actionError(action === 'retry'
       ? 'Retry did not happen because the operations API could not commit it. Try again shortly.'
-      : 'Cancellation did not happen because the operations API could not commit it. Try again shortly.';
+      : 'Cancellation did not happen because the operations API could not commit it. Try again shortly.');
     if (code === 'ops_unreachable' || (err && err.status === 0)) {
-      return 'The operations API could not be reached. Nothing changed.';
+      return actionError('The operations API could not be reached. Nothing changed.');
     }
-    return 'That did not go through. Nothing changed.';
+    return actionError('That did not go through. Nothing changed.');
+  }
+
+  function fixedError(err, action) {
+    return fixedErrorDetails(err, action).message;
   }
 
   function isRefreshError(err) {
@@ -245,7 +265,8 @@
           });
         }
       }).catch(function (err) {
-        var message = fixedError(err, action);
+        var details = fixedErrorDetails(err, action);
+        var message = details.message;
         if (isRefreshError(err)) {
           settling = false;
           modal.close();
@@ -257,6 +278,7 @@
               row: row,
               error: err,
               message: message,
+              messageWhenNotRefreshed: details.messageWhenNotRefreshed,
               deferAnnouncement: !!opts.deferSuccessAnnounce
             });
           }
