@@ -14,6 +14,26 @@
 .review-meta dt { color: var(--ink-3); }
 .review-meta dd { margin: 0; overflow-wrap: anywhere; }
 .review-banner { max-width: 920px; }
+.review-detail {
+  display: grid;
+  gap: 13px;
+  min-width: 0;
+  max-width: 920px;
+}
+.review-detail .evidence-meta-row {
+  display: grid;
+  grid-template-columns: minmax(112px, max-content) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: baseline;
+}
+.review-detail .evidence-meta-row dt {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.review-detail .evidence-meta-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .review-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
 .review-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; max-width: 920px; }
 .review-form .review-field-wide { grid-column: 1 / -1; }
@@ -21,5 +41,5 @@
 .field-error { color: var(--danger); margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .review-toolbar, .review-list, .review-form { grid-template-columns: 1fr; }
-  .review-meta { grid-template-columns: 1fr; }
+  .review-meta, .review-detail .evidence-meta-row { grid-template-columns: 1fr; }
 }

@@ -18,6 +18,12 @@ function paneBody() {
   return source.slice(start + WRAPPER_OPEN.length, end);
 }
 
+test('review detail result classes are painted by the loaded pane stylesheet', () => {
+  const css = readFileSync(CSS, 'utf8');
+  assert.match(css, /\.review-detail\s*\{/, 'review detail result container has a loaded style rule');
+  assert.match(css, /\.review-detail\s+\.evidence-meta-row\s*\{[^}]*display:\s*grid/s, 'review evidence metadata rows have a loaded style rule');
+});
+
 function element(tag, opts = {}, children = []) {
   let text = opts.text || '';
   const node = {
