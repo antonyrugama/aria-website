@@ -509,6 +509,8 @@
       }
 
       var wrap = h('div', { className: 'stack' });
+      wrap.setAttribute('data-rh-focus', 'rh-state');
+      wrap.setAttribute('tabindex', '-1');
       wrap.appendChild(controls(data, selection));
       partialNote(coverage, wrap);
       if (data.truncated) {
@@ -568,8 +570,9 @@
          not survive the read they just asked for. Narrowing from a populated
          window into an empty one destroys the pickers and draws none, so
          `rh-type` resolves to nothing and the request is held forever with
-         focus sitting at <body>. Every state this pane can draw carries
-         `rh-state` on its heading precisely so this fallback always lands. */
+         focus sitting at <body>. Empty states put `rh-state` on their heading;
+         the live state puts it on the pane stack, so this fallback always
+         lands on a connected focus target. */
       moveFocus(focusKeyNow(), 'rh-state');
     }
 
@@ -1459,10 +1462,18 @@
       for (var i = 0; i < nodes.length; i += 1) nodes[i].remove();
     }
 
+    function revealFocusKey(key) {
+      return key === 'rh-reveal-hide'
+        || key === 'rh-reveal-hide-footer'
+        || key === 'rh-content-first';
+    }
+
     function clearOnPageExit() {
       if (activeRevealDialog) {
         activeRevealDialog.closeForCleanup();
         activeRevealDialog = null;
+        forceFocus('rh-reveal-show', 'rh-state');
+      } else if (reveal && revealFocusKey(focusKeyNow())) {
         forceFocus('rh-reveal-show', 'rh-state');
       } else {
         keepFocus();
