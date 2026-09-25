@@ -184,7 +184,7 @@ function datasetInput() {
   const reference = (id, path) => ({ id, version: 1, path, sha256: 'a'.repeat(64) });
   return {
     datasets: [{
-      schemaVersion: 'ciel.dataset.v1',
+      schemaVersion: 'seval.dataset.v1',
       datasetId: 'dataset.example',
       revision: 1,
       provenance: {
@@ -200,7 +200,7 @@ function datasetInput() {
         schemas: [reference('schema.example', 'schema.json')],
         rubrics: [reference('rubric.example', 'rubric.json')],
         product: 'product.example',
-        capabilityRef: 'ciel.g01.athlete-chat',
+        capabilityRef: 'seval.g01.athlete-chat',
         locale: 'en',
         risk: { level: 'low', domains: ['training'] },
         split: 'development',
@@ -219,13 +219,13 @@ function datasetInput() {
 
 function datasetResponse(requestId) {
   return {
-    schemaVersion: 'ciel.operation.response.v1',
+    schemaVersion: 'seval.operation.response.v1',
     requestId,
-    operationId: 'ciel.dataset.validate',
+    operationId: 'seval.dataset.validate',
     status: 'success',
     exitCode: 0,
     resource: {
-      type: 'ciel.dataset-validation',
+      type: 'seval.dataset-validation',
       id: requestId,
       revision: 1,
       value: {
@@ -249,17 +249,17 @@ test('dataset form sends declarations and clears its result when the input chang
   view.byId('dataset-input').value = JSON.stringify(input);
   await form.dispatch('submit');
 
-  assert.equal(observed.path, '/api/ops/ciel/operations');
+  assert.equal(observed.path, '/api/ops/seval/operations');
   assert.equal(observed.options.method, 'POST');
   assert.deepEqual(Object.keys(observed.options.body).sort(),
     ['schemaVersion', 'requestId', 'operationId', 'mode', 'client', 'input'].sort());
-  assert.equal(observed.options.body.schemaVersion, 'ciel.operation.request.v1');
-  assert.equal(observed.options.body.operationId, 'ciel.dataset.validate');
+  assert.equal(observed.options.body.schemaVersion, 'seval.operation.request.v1');
+  assert.equal(observed.options.body.operationId, 'seval.dataset.validate');
   assert.equal(observed.options.body.mode, 'remote');
   assert.deepEqual(observed.options.body.client, {
     name: 'aria-operations-dashboard',
     version: '1.0.0',
-    contractVersions: ['ciel.operations.v1'],
+    contractVersions: ['seval.operations.v1'],
   });
   assert.deepEqual(observed.options.body.input, input);
   const result = findNode(view.root, node => node.className === 'dataset-result');
@@ -377,13 +377,13 @@ test('a viewer requester can submit approval lookup without mutation controls', 
   const view = renderedPane(async (path, options) => {
     calls.push({ path, options: plain(options) });
     return {
-      schemaVersion: 'ciel.operation.response.v1',
+      schemaVersion: 'seval.operation.response.v1',
       requestId: options.body.requestId,
-      operationId: 'ciel.approval.get',
+      operationId: 'seval.approval.get',
       status: 'success',
       exitCode: 0,
       resource: {
-        type: 'ciel.approval-request',
+        type: 'seval.approval-request',
         id: approvalRequestId,
         revision: 1,
         value: {
@@ -405,9 +405,9 @@ test('a viewer requester can submit approval lookup without mutation controls', 
   await form.dispatch('submit');
   await waitFor(() => calls.length === 1, 'viewer approval lookup did not complete');
 
-  assert.equal(calls[0].path, '/api/ops/ciel/operations');
+  assert.equal(calls[0].path, '/api/ops/seval/operations');
   assert.deepEqual(calls[0].options.body.input, { approvalRequestId });
-  assert.equal(calls[0].options.body.operationId, 'ciel.approval.get');
+  assert.equal(calls[0].options.body.operationId, 'seval.approval.get');
   /* Awaited, not read: the answer lands a task after the region is revealed,
      and this still fails if it never lands. */
   await waitFor(() => /pending/i.test(view.byId('approval-result').textContent),
@@ -468,7 +468,7 @@ test('dataset form rejects mismatched or malformed success responses', async () 
     const view = renderedPane(async (path, options) => {
       const response = datasetResponse(options.body.requestId);
       if (invalid === 'request') response.requestId = 'another-request';
-      if (invalid === 'operation') response.operationId = 'ciel.artifact.quarantine';
+      if (invalid === 'operation') response.operationId = 'seval.artifact.quarantine';
       if (invalid === 'digest') response.resource.value.digests[0].sha256 = 'invalid-digest';
       return response;
     });
@@ -557,9 +557,9 @@ async function waitFor(predicate, message) {
 
 function operationError(requestId, code, message, exitCode) {
   return {
-    schemaVersion: 'ciel.operation.response.v1',
+    schemaVersion: 'seval.operation.response.v1',
     requestId,
-    operationId: 'ciel.artifact.quarantine',
+    operationId: 'seval.artifact.quarantine',
     status: 'error',
     exitCode,
     error: {
@@ -590,7 +590,7 @@ async function operationServer() {
       body,
     });
     response.setHeader('Content-Type', 'application/json');
-    if (request.url !== '/api/ops/ciel/operations' || request.method !== 'POST') {
+    if (request.url !== '/api/ops/seval/operations' || request.method !== 'POST') {
       response.statusCode = 404;
       response.end(JSON.stringify({ error: { code: 'not_found', message: 'Not found.' } }));
       return;
@@ -610,8 +610,8 @@ async function operationServer() {
       ? Buffer.from(manifest.contentBase64, 'base64')
       : Buffer.alloc(0);
     const digest = createHash('sha256').update(source).digest('hex');
-    const valid = body.schemaVersion === 'ciel.operation.request.v1'
-      && body.operationId === 'ciel.artifact.quarantine'
+    const valid = body.schemaVersion === 'seval.operation.request.v1'
+      && body.operationId === 'seval.artifact.quarantine'
       && body.mode === 'remote'
       && body.input?.sourceDigest === digest
       && Array.isArray(manifest?.minimization?.removedCategories);
@@ -640,13 +640,13 @@ async function operationServer() {
     completed.set(body.idempotencyKey, artifactId);
     response.statusCode = 200;
     response.end(JSON.stringify({
-      schemaVersion: 'ciel.operation.response.v1',
+      schemaVersion: 'seval.operation.response.v1',
       requestId: body.requestId,
-      operationId: 'ciel.artifact.quarantine',
+      operationId: 'seval.artifact.quarantine',
       status: 'success',
       exitCode: 0,
       resource: {
-        type: 'ciel.evidence-artifact',
+        type: 'seval.evidence-artifact',
         id: artifactId,
         revision: 1,
         value: {
@@ -701,8 +701,8 @@ test('synthetic evidence builds the shared quarantine request without authority 
     idempotencyKey: 'dashboard-synthetic-1',
   }, '83525f56-198f-4c2f-8f83-93c8e4ab7248');
 
-  assert.equal(request.schemaVersion, 'ciel.operation.request.v1');
-  assert.equal(request.operationId, 'ciel.artifact.quarantine');
+  assert.equal(request.schemaVersion, 'seval.operation.request.v1');
+  assert.equal(request.operationId, 'seval.artifact.quarantine');
   assert.equal(request.mode, 'remote');
   assert.deepEqual(plain(request.input.manifest.authority), { kind: 'synthetic' });
   assert.deepEqual(plain(request.input.manifest.providerHandling), { status: 'no_transfer' });
@@ -785,7 +785,7 @@ test('approval operation builders bind exact artifact digests without qualificat
     retainedDigest,
     targetRequestDigest,
     purpose: 'quality_review',
-    policyRevision: 'ciel-evidence-admission.v1',
+    policyRevision: 'seval-evidence-admission.v1',
     expiresAt: '2026-10-19T00:00:00.000Z',
     idempotencyKey: 'dashboard-approval-request-1',
   }, requestId);
@@ -801,17 +801,17 @@ test('approval operation builders bind exact artifact digests without qualificat
   }, requestId);
 
   assert.deepEqual(plain(approvalRequest), {
-    schemaVersion: 'ciel.operation.request.v1',
+    schemaVersion: 'seval.operation.request.v1',
     requestId,
-    operationId: 'ciel.approval.request',
+    operationId: 'seval.approval.request',
     mode: 'remote',
     client: {
       name: 'aria-operations-dashboard',
       version: '1.0.0',
-      contractVersions: ['ciel.operations.v1'],
+      contractVersions: ['seval.operations.v1'],
     },
     input: {
-      targetOperationId: 'ciel.artifact.admit',
+      targetOperationId: 'seval.artifact.admit',
       targetRequestDigest,
       artifact: {
         artifactId: '4e1d10f7-1f13-4daf-82b6-c9dd43124138',
@@ -820,32 +820,32 @@ test('approval operation builders bind exact artifact digests without qualificat
         retainedDigest,
       },
       purpose: 'quality_review',
-      policyRevision: 'ciel-evidence-admission.v1',
+      policyRevision: 'seval-evidence-admission.v1',
       expiresAt: '2026-10-19T00:00:00.000Z',
     },
     idempotencyKey: 'dashboard-approval-request-1',
   });
   assert.deepEqual(plain(approvalGet), {
-    schemaVersion: 'ciel.operation.request.v1',
+    schemaVersion: 'seval.operation.request.v1',
     requestId,
-    operationId: 'ciel.approval.get',
+    operationId: 'seval.approval.get',
     mode: 'remote',
     client: {
       name: 'aria-operations-dashboard',
       version: '1.0.0',
-      contractVersions: ['ciel.operations.v1'],
+      contractVersions: ['seval.operations.v1'],
     },
     input: { approvalRequestId },
   });
   assert.deepEqual(plain(approvalDecision), {
-    schemaVersion: 'ciel.operation.request.v1',
+    schemaVersion: 'seval.operation.request.v1',
     requestId,
-    operationId: 'ciel.approval.decide',
+    operationId: 'seval.approval.decide',
     mode: 'remote',
     client: {
       name: 'aria-operations-dashboard',
       version: '1.0.0',
-      contractVersions: ['ciel.operations.v1'],
+      contractVersions: ['seval.operations.v1'],
     },
     input: {
       approvalRequestId,
@@ -880,20 +880,20 @@ test('admission builder binds exact synthetic artifact, approval and revision wi
     expiresAt: '2026-10-19T00:00:00.000Z',
     necessaryCategories: 'none',
     removedCategories: 'tokens,identifiers',
-    policyRevision: 'ciel-evidence-admission.v1',
+    policyRevision: 'seval-evidence-admission.v1',
     approvalRequestId,
     idempotencyKey: 'dashboard-admit-1',
   }, requestId);
 
   assert.deepEqual(plain(admission), {
-    schemaVersion: 'ciel.operation.request.v1',
+    schemaVersion: 'seval.operation.request.v1',
     requestId,
-    operationId: 'ciel.artifact.admit',
+    operationId: 'seval.artifact.admit',
     mode: 'remote',
     client: {
       name: 'aria-operations-dashboard',
       version: '1.0.0',
-      contractVersions: ['ciel.operations.v1'],
+      contractVersions: ['seval.operations.v1'],
     },
     input: {
       artifact: {
@@ -912,7 +912,7 @@ test('admission builder binds exact synthetic artifact, approval and revision wi
         retention: { expiresAt: '2026-10-19T00:00:00.000Z' },
         providerHandling: { status: 'no_transfer' },
       },
-      policyRevision: 'ciel-evidence-admission.v1',
+      policyRevision: 'seval-evidence-admission.v1',
     },
     expectedRevision: 1,
     approval: { approvalRequestId },
@@ -927,15 +927,15 @@ test('the rendered approval forms submit request, get and decision operations wi
   const view = renderedPane(async (path, options) => {
     calls.push({ path, options: plain(options) });
     const operationId = options.body.operationId;
-    const state = operationId === 'ciel.approval.decide' ? 'approved' : 'pending';
+    const state = operationId === 'seval.approval.decide' ? 'approved' : 'pending';
     return {
-      schemaVersion: 'ciel.operation.response.v1',
+      schemaVersion: 'seval.operation.response.v1',
       requestId: options.body.requestId,
       operationId,
       status: 'success',
       exitCode: 0,
       resource: {
-        type: 'ciel.approval-request',
+        type: 'seval.approval-request',
         id: approvalRequestId,
         revision: state === 'approved' ? 2 : 1,
         value: {
@@ -954,7 +954,7 @@ test('the rendered approval forms submit request, get and decision operations wi
   view.byId('approval-retained-digest').value = 'b'.repeat(64);
   view.byId('approval-target-digest').value = 'c'.repeat(64);
   view.byId('approval-purpose').value = 'quality_review';
-  view.byId('approval-policy-revision').value = 'ciel-evidence-admission.v1';
+  view.byId('approval-policy-revision').value = 'seval-evidence-admission.v1';
   view.byId('approval-expiry').value = '2026-10-19T00:00';
   view.byId('approval-request-key').value = 'dashboard-approval-request-1';
   view.byId('approval-request-form').dispatch('submit');
@@ -973,14 +973,14 @@ test('the rendered approval forms submit request, get and decision operations wi
   await waitFor(() => calls.length === 3, 'approval decision did not complete');
 
   assert.deepEqual(calls.map(call => call.path), [
-    '/api/ops/ciel/operations',
-    '/api/ops/ciel/operations',
-    '/api/ops/ciel/operations',
+    '/api/ops/seval/operations',
+    '/api/ops/seval/operations',
+    '/api/ops/seval/operations',
   ]);
   assert.deepEqual(calls.map(call => call.options.body.operationId), [
-    'ciel.approval.request',
-    'ciel.approval.get',
-    'ciel.approval.decide',
+    'seval.approval.request',
+    'seval.approval.get',
+    'seval.approval.decide',
   ]);
   assert.equal(calls[1].options.body.idempotencyKey, undefined);
   assert.equal(calls[2].options.body.expectedRevision, 1);
@@ -1000,13 +1000,13 @@ test('the rendered admission form submits the exact operation and renders a rece
   const view = renderedPane(async (path, options) => {
     calls.push({ path, options: plain(options) });
     return {
-      schemaVersion: 'ciel.operation.response.v1',
+      schemaVersion: 'seval.operation.response.v1',
       requestId: options.body.requestId,
-      operationId: 'ciel.artifact.admit',
+      operationId: 'seval.artifact.admit',
       status: 'success',
       exitCode: 0,
       resource: {
-        type: 'ciel.artifact-admission',
+        type: 'seval.artifact-admission',
         id: receiptId,
         revision: 2,
         value: {
@@ -1030,9 +1030,9 @@ test('the rendered admission form submits the exact operation and renders a rece
   const submit = findNode(view.byId('admission-form'), node => node.tag === 'button');
   await waitFor(() => calls.length === 1 && !submit.disabled, 'admission request did not complete');
 
-  assert.equal(calls[0].path, '/api/ops/ciel/operations');
+  assert.equal(calls[0].path, '/api/ops/seval/operations');
   assert.equal(calls[0].options.method, 'POST');
-  assert.equal(calls[0].options.body.operationId, 'ciel.artifact.admit');
+  assert.equal(calls[0].options.body.operationId, 'seval.artifact.admit');
   assert.equal(calls[0].options.body.expectedRevision, 1);
   assert.deepEqual(calls[0].options.body.approval, { approvalRequestId });
   assert.equal(calls[0].options.body.input.artifact.sourceDigest, 'a'.repeat(64));
@@ -1130,7 +1130,7 @@ test('the rendered form submits an authorized empty-removal request over the rea
     );
     assert.equal(view.error.textContent, '');
     assert.equal(view.result.children.length, 1);
-    assert.equal(server.requests[0].url, '/api/ops/ciel/operations');
+    assert.equal(server.requests[0].url, '/api/ops/seval/operations');
     assert.equal(server.requests[0].authorization, 'Bearer dashboard-test-token');
     assert.deepEqual(
       server.requests[0].body.input.manifest.minimization.removedCategories,
@@ -1143,7 +1143,7 @@ test('the rendered form submits an authorized empty-removal request over the rea
       'the replayed dashboard quarantine request did not complete',
     );
     assert.equal(server.requests[1].body.idempotencyKey, 'dashboard-production-1');
-    assert.equal(server.requests[1].url, '/api/ops/ciel/operations');
+    assert.equal(server.requests[1].url, '/api/ops/seval/operations');
     assert.equal(view.error.textContent, '');
   } finally {
     await server.close();
@@ -1161,7 +1161,7 @@ test('the rendered form surfaces authorization denial from the real operation ro
       () => server.requests.length === 1 && !view.submit.disabled,
       'the denied dashboard quarantine request did not complete',
     );
-    assert.equal(server.requests[0].url, '/api/ops/ciel/operations');
+    assert.equal(server.requests[0].url, '/api/ops/seval/operations');
     assert.match(view.error.textContent, /authorization does not match/i);
     assert.equal(view.result.children.length, 0);
   } finally {
@@ -1219,7 +1219,7 @@ function retentionView(t, timeZone, now) {
   }
   const requests = [];
   const view = renderedPane(async (path, options) => {
-    assert.equal(path, '/api/ops/ciel/operations');
+    assert.equal(path, '/api/ops/seval/operations');
     assert.equal(options.method, 'POST');
     requests.push(plain(options.body));
     return { status: 'success', resource: { value: { artifactId: 'example', state: 'quarantined' } } };
@@ -1523,7 +1523,7 @@ async function bootPane(options = {}) {
 function approvalLookupResponse(id, state, revision) {
   return {
     resource: {
-      type: 'ciel.approval-request',
+      type: 'seval.approval-request',
       id,
       revision,
       value: { approvalRequestId: id, state, revision },
@@ -1541,7 +1541,7 @@ function fillAdmissionForm(view, overrides = {}) {
   view.byId('admission-type').value = overrides.mediaType || 'application/json';
   view.byId('admission-purpose').value = overrides.purpose || 'quality_review';
   view.byId('admission-expiry').value = overrides.expiresAt || '2026-10-19T00:00';
-  view.byId('admission-policy-revision').value = overrides.policyRevision || 'ciel-evidence-admission.v1';
+  view.byId('admission-policy-revision').value = overrides.policyRevision || 'seval-evidence-admission.v1';
   view.byId('admission-approval-id').value = approvalRequestId;
   view.byId('admission-key').value = overrides.idempotencyKey || 'dashboard-admit-1';
   view.byId('admission-necessary').value = overrides.necessaryCategories || 'none';
@@ -1555,7 +1555,7 @@ function fillApprovalRequestForm(view, suffix = 'one') {
   view.doc.getElementById('approval-retained-digest').value = 'b'.repeat(64);
   view.doc.getElementById('approval-target-digest').value = 'c'.repeat(64);
   view.doc.getElementById('approval-purpose').value = 'quality_review';
-  view.doc.getElementById('approval-policy-revision').value = 'ciel-evidence-admission.v1';
+  view.doc.getElementById('approval-policy-revision').value = 'seval-evidence-admission.v1';
   view.doc.getElementById('approval-expiry').value = '2026-10-19T00:00';
   view.doc.getElementById('approval-request-key').value = `dashboard-approval-request-${suffix}`;
 }
@@ -2267,15 +2267,15 @@ async function bootPaneWithReceipts() {
     call: (endpoint, o) => {
       const body = o && o.body;
       const requestId = (body && body.requestId) || 'req_1';
-      if (body && body.operationId === 'ciel.dataset.validate') {
+      if (body && body.operationId === 'seval.dataset.validate') {
         return Promise.resolve({
-          schemaVersion: 'ciel.operation.response.v1',
+          schemaVersion: 'seval.operation.response.v1',
           requestId,
-          operationId: 'ciel.dataset.validate',
+          operationId: 'seval.dataset.validate',
           status: 'success',
           exitCode: 0,
           resource: {
-            type: 'ciel.dataset-validation',
+            type: 'seval.dataset-validation',
             id: requestId,
             revision: 1,
             value: {
@@ -2287,13 +2287,13 @@ async function bootPaneWithReceipts() {
         });
       }
       return Promise.resolve({
-        schemaVersion: 'ciel.operation.response.v1',
+        schemaVersion: 'seval.operation.response.v1',
         requestId,
-        operationId: 'ciel.evidence.quarantine',
+        operationId: 'seval.evidence.quarantine',
         status: 'success',
         exitCode: 0,
         resource: {
-          type: 'ciel.evidence',
+          type: 'seval.evidence',
           id: 'evd_1',
           revision: 2,
           value: { artifactId: 'evd_1', state: 'quarantined', revision: 2 },
@@ -2305,7 +2305,7 @@ async function bootPaneWithReceipts() {
   const input = dom.doc.getElementById('dataset-input');
   assert.ok(input, 'the dataset input is gone');
   input.value = JSON.stringify({
-    schemaVersion: 'ciel.dataset.declaration.v1',
+    schemaVersion: 'seval.dataset.declaration.v1',
     datasets: [{
       datasetId: 'dataset.example',
       revision: 1,
