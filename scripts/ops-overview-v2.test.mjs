@@ -159,12 +159,12 @@ function hourlyActivity(over) {
         key: 'coaches',
         label: 'Coaches Web',
         color: 's2',
-        values: [83, 80, null, 76, 73, null, 69, 66, 64, 61, 58, 56,
+        values: [83, 80, null, 76, 73, 71, 69, null, 64, 61, 58, 56,
           54, 52, 50, 49, 47, 45, 43, 41, 39, 37, 35, 33],
       },
     ],
     reportingStart: HOUR_KEYS[0],
-    hoursMissingRollups: [HOUR_KEYS[2], HOUR_KEYS[5]],
+    hoursMissingRollups: [HOUR_KEYS[2]],
     window: {
       start: HOUR_KEYS[0],
       endExclusive: '2026-09-20T09:00:00.000Z',
@@ -647,12 +647,12 @@ test('hour-grain null readings are gaps, reported zeroes stay zero, and apps are
   }
 
   const text = liveText(dom);
-  assert.match(text, /2 hours did not report/,
+  assert.match(text, /1 hour did not report/,
     'the hour-grain chart did not say how many hours did not report');
   assert.match(text, /22 of 24 hours/,
     'the mobile series did not count hourly nulls as gaps');
   const name = svg.getAttribute('aria-label') || '';
-  assert.match(name, /2 hours did not report/,
+  assert.match(name, /1 hour did not report/,
     'the chart spoken description did not say how many hours did not report');
   assert.match(name, /low 0, high 74/,
     'a reported zero was not kept as a measured hourly value');
