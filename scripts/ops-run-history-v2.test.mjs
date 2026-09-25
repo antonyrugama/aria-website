@@ -623,6 +623,9 @@ async function submitRetry(dom) {
   await settle();
 }
 
+const READ_ERROR_MESSAGE = 'The window could not be read. The figures on screen before this are '
+  + 'unread now, not zero. Try again is the only control left on the pane.';
+
 test('run-history retry uses the job action contract and refreshes the window', async () => {
   const failedJobId = '22222222-2222-4222-8222-222222222222';
   const retryJobId = '33333333-3333-4333-8333-333333333333';
@@ -768,10 +771,14 @@ test('run-history success action followed by a failed reload still announces the
 
   await submitRetry(dom);
 
-  assert.equal(heard.filter((message) => message === actionMessage).length, 1,
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
     'the successful retry message was not announced exactly once when the reload failed');
-  assert.ok(heard.some((message) => /could not be read/.test(message)),
+  assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
     'the failed reload was not also announced after the successful retry');
+  assert.match(lastSaid(dom) || '', /Retry created: job_333333\./,
+    'the final polite-region text did not include the successful retry message');
+  assert.match(lastSaid(dom) || '', /The window could not be read/,
+    'the final polite-region text did not include the read failure');
 });
 
 test('run-history stale action followed by a failed reload still announces the stale result once', async () => {
@@ -797,10 +804,14 @@ test('run-history stale action followed by a failed reload still announces the s
 
   await submitRetry(dom);
 
-  assert.equal(heard.filter((message) => message === staleMessage).length, 1,
+  assert.equal(heard.filter((message) => message.includes(staleMessage)).length, 1,
     'the stale retry message was not announced exactly once when the reload failed');
-  assert.ok(heard.some((message) => /could not be read/.test(message)),
+  assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
     'the failed reload was not also announced after the stale retry');
+  assert.match(lastSaid(dom) || '', /That job changed state elsewhere/,
+    'the final polite-region text did not include the stale retry message');
+  assert.match(lastSaid(dom) || '', /The window could not be read/,
+    'the final polite-region text did not include the read failure');
 });
 
 test('run-history action message does not leak into the next successful read after reload failure', async () => {
@@ -829,8 +840,12 @@ test('run-history action message does not leak into the next successful read aft
 
   readMode = 'fail';
   await submitRetry(dom);
-  assert.equal(heard.filter((message) => message === actionMessage).length, 1,
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
     'the successful retry message was not announced exactly once when the reload failed');
+  assert.match(lastSaid(dom) || '', /Retry created: job_333333\./,
+    'the failed-reload polite-region text did not include the successful retry message');
+  assert.match(lastSaid(dom) || '', /The window could not be read/,
+    'the failed-reload polite-region text did not include the read failure');
 
   readMode = 'success';
   buttonsIn(livePanel(dom), /^Try again$/)[0].dispatch('click', {});
@@ -838,7 +853,7 @@ test('run-history action message does not leak into the next successful read aft
 
   assert.ok(heard.some((message) => /11 runs finished/.test(message)),
     'the later successful read did not announce its fresh summary');
-  assert.equal(heard.filter((message) => message === actionMessage).length, 1,
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
     'the old successful retry message leaked into a later successful read');
 });
 

@@ -389,9 +389,8 @@
         /* Said as well as drawn. Without this the live region still holds the
            figures from the last successful read, so a screen reader is left
            standing behind numbers the pane has just stopped standing behind. */
-        S.announce('The window could not be read. The figures on screen before this are ' +
+        announceReadFailure('The window could not be read. The figures on screen before this are ' +
           'unread now, not zero. Try again is the only control left on the pane.');
-        flushActionAnnouncement();
       });
     }
 
@@ -408,11 +407,22 @@
       hasQueuedActionAnnouncement = false;
     }
 
-    function flushActionAnnouncement() {
+    function takeActionAnnouncement() {
       if (!actionAnnouncement) return;
       var message = actionAnnouncement;
       clearActionAnnouncement();
+      return message;
+    }
+
+    function flushActionAnnouncement() {
+      var message = takeActionAnnouncement();
+      if (!message) return;
       S.announce(message);
+    }
+
+    function announceReadFailure(message) {
+      var actionMessage = takeActionAnnouncement();
+      S.announce(actionMessage ? actionMessage + ' ' + message : message);
     }
 
     /* The shell's retry button, given this pane's focus key so `settleFocus()`
