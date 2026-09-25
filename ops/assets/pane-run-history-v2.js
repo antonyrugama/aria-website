@@ -290,6 +290,8 @@
        detail is there to make and answers it wrongly. */
     var detail = null;
     var reveal = null;
+    var revealGeneration = 0;
+    var activeRevealDialog = null;
 
     /* When the figures on screen were read. Printed rather than implied: with
        no timer running, how old they are is the operator's to judge. */
@@ -301,6 +303,13 @@
     var lastWindow = null;
 
     global.addEventListener('resize', updateTableScrollerRegions);
+    global.addEventListener('pagehide', clearOnPageExit);
+    global.addEventListener('pageshow', function (event) {
+      if (event && event.persisted) clearOnPageExit();
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') clearOnPageExit();
+    });
 
     /* The shell fires ops:filters with the starting selection once it is in
        the document, so the first read is that event rather than a call from
@@ -334,7 +343,7 @@
          trigger that happened to null it. One place, so there is no seventh
          trigger to forget. */
       detail = null;
-      reveal = null;
+         clearRevealed();
       /* Captured here, before anything is drawn, because after `region.failed()`
          the box is hidden and Chrome has already blurred to <body> -- the
          information cannot be reconstructed from the other side of the read.
@@ -421,7 +430,7 @@
        a pane whose other figures are still true. */
     function openRun(jobId, selection) {
       detail = { jobId: jobId, loading: true, data: null, error: null };
-      reveal = null;
+      clearRevealed();
       render(lastWindow, selection);
       S.announce('Opening one run.');
 
@@ -602,6 +611,11 @@
     /** Ask for focus somewhere else, but only if it is here to begin with. */
     function moveFocus(key, fallback) {
       if (!focusKeyNow()) return;
+      wanted = key || null;
+      wantedFallback = fallback || null;
+    }
+
+    function forceFocus(key, fallback) {
       wanted = key || null;
       wantedFallback = fallback || null;
     }
@@ -1378,7 +1392,7 @@
            that row is no longer listed. */
         moveFocus(back, 'rh-read-again');
         detail = null;
-        reveal = null;
+        clearRevealed();
         render(lastWindow, current);
         S.announce('Closed the run.');
       });
@@ -1425,19 +1439,41 @@
 
       if (reveal && reveal.jobId === run.jobId && reveal.data) {
         var hide = h('button', { className: 'btn btn-sm', type: 'button', text: 'Hide content' });
-        hide.addEventListener('click', function () {
-          reveal = null;
-          render(lastWindow, current);
-          S.announce('Stored content is hidden.');
-        });
+        hide.setAttribute('data-rh-focus', 'rh-reveal-hide');
+        hide.addEventListener('click', hideRevealedContent);
         wrap.appendChild(hide);
         return wrap;
       }
 
       var show = h('button', { className: 'btn btn-sm btn-primary', type: 'button', text: 'Show content' });
+      show.setAttribute('data-rh-focus', 'rh-reveal-show');
       show.addEventListener('click', function () { openRevealDialog(run); });
       wrap.appendChild(show);
       return wrap;
+    }
+
+    function clearRevealed() {
+      revealGeneration += 1;
+      reveal = null;
+      var nodes = content.querySelectorAll('.rh-content-card');
+      for (var i = 0; i < nodes.length; i += 1) nodes[i].remove();
+    }
+
+    function clearOnPageExit() {
+      if (activeRevealDialog) {
+        activeRevealDialog.closeForCleanup();
+        activeRevealDialog = null;
+        forceFocus('rh-reveal-show', 'rh-state');
+      }
+      clearRevealed();
+      if (lastWindow) render(lastWindow, current);
+    }
+
+    function hideRevealedContent() {
+      moveFocus('rh-reveal-show', 'rh-state');
+      clearRevealed();
+      render(lastWindow, current);
+      S.announce('Stored content is hidden.');
     }
 
     function revealPath(run) {
@@ -1537,23 +1573,46 @@
         cancel.disabled = true;
         show.disabled = true;
         show.textContent = 'Showing';
+        var generation = revealGeneration;
         session.call(revealPath(run), {
           method: 'POST',
           body: { reason: value }
         }).then(function (payload) {
+          if (generation !== revealGeneration) return;
           reveal = { jobId: run.jobId, data: payload.data };
           busy = false;
+          activeRevealDialog = null;
           modal.close();
+          moveFocus('rh-content-first', 'rh-content-first');
           render(lastWindow, current);
           S.announce('Stored content is shown.');
         }, function (err) {
+          if (generation !== revealGeneration) return;
           fail(revealError(err));
         });
       }
 
       reason.addEventListener('input', sync);
-      var modal = jobActions.openModal(node, function () { return reason; }, function () { return !busy; });
-      cancel.addEventListener('click', function () { if (!busy) modal.close(); });
+      var modal = jobActions.openModal(node, function () { return reason; }, function () {
+        if (busy) return false;
+        activeRevealDialog = null;
+        return true;
+      });
+      activeRevealDialog = {
+        closeForCleanup: function () {
+          busy = false;
+          cancel.disabled = false;
+          show.disabled = false;
+          show.textContent = 'Show content';
+          modal.close();
+        }
+      };
+      cancel.addEventListener('click', function () {
+        if (!busy) {
+          activeRevealDialog = null;
+          modal.close();
+        }
+      });
       show.addEventListener('click', function () { submit(modal); });
       sync();
     }
@@ -1564,28 +1623,25 @@
     }
 
     function revealedContentCard(data) {
-      var box = S.card('accent acc-vio');
+      var box = S.card('accent acc-vio rh-content-card');
       box.appendChild(S.cardHead('Stored content', 'Masked by the server and recorded before it was returned'));
       var body = h('div', { className: 'card-body col' });
-      (data.sections || []).forEach(function (section) {
-        body.appendChild(revealSection(section));
+      (data.sections || []).forEach(function (section, at) {
+        body.appendChild(revealSection(section, at === 0));
       });
       box.appendChild(body);
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(icon('lock'));
       foot.appendChild(h('span', { text: 'This content is not stored by the page. Hide it before leaving this run.' }));
       var hide = h('button', { className: 'btn btn-sm sp', type: 'button', text: 'Hide content' });
-      hide.addEventListener('click', function () {
-        reveal = null;
-        render(lastWindow, current);
-        S.announce('Stored content is hidden.');
-      });
+      hide.setAttribute('data-rh-focus', 'rh-reveal-hide-footer');
+      hide.addEventListener('click', hideRevealedContent);
       foot.appendChild(hide);
       box.appendChild(foot);
       return box;
     }
 
-    function revealSection(section) {
+    function revealSection(section, first) {
       var label = section && section.label ? coded(section.label) : 'Stored content';
       var region = h('div', {
         className: 'rh-content-region',
@@ -1593,6 +1649,7 @@
         'aria-label': label + ' content',
         tabindex: '0'
       });
+      if (first) region.setAttribute('data-rh-focus', 'rh-content-first');
       region.appendChild(h('h4', { className: 'card-title', text: label }));
       if (section.status === 'retained') {
         region.appendChild(h('pre', { className: 'rh-content-pre', text: pretty(section.value) }));

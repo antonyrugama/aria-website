@@ -413,6 +413,9 @@ async function boot(options) {
             return Promise.reject(answer);
           }
           if (answer === undefined) return Promise.reject(new Error('no reveal stub for ' + endpoint));
+          if (answer && typeof answer.then === 'function') {
+            return answer.then((data) => ({ data }));
+          }
           return Promise.resolve({ data: answer });
         }
         const action = opts.actionResponses && opts.actionResponses[endpoint];
@@ -795,6 +798,353 @@ test('operators get no run-content reveal control or owner-only hint', async () 
 
   assert.doesNotMatch(liveText(dom), /Show content|Only an owner can reveal|owner action/,
     'operators were shown a content-reveal affordance or hint');
+});
+
+function revealAnswer(value) {
+  return {
+    jobId: '22222222-2222-4222-8222-222222222222',
+    jobType: 'nutrition_plan',
+    sections: [
+      {
+        key: 'input',
+        label: 'Stored input',
+        source: 'generation_jobs.input_payload',
+        owner: 'app-backend',
+        status: 'retained',
+        contentType: 'application/json',
+        value: JSON.stringify({ private: value }),
+        characterCount: value.length + 14,
+        notRetainedReason: null,
+      },
+    ],
+    recorded: { at: at(0), actor: 'owner@example.invalid', reason: 'Review probe reason' },
+  };
+}
+
+async function revealOpenedRun(dom, reason = 'Review probe reason') {
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.ok(show, 'review probe setup did not find Show content');
+  show.focus();
+  show.dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = reason;
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+  assert.match(allText(dom.body), /Stored content/, 'review probe setup did not reveal content');
+}
+
+test('review probe: reload removes revealed content while the next window is still loading', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_LOADING';
+  let resolveNext;
+  let calls = 0;
+  const dom = await boot({
+    runs: () => {
+      calls += 1;
+      if (calls === 1) return windowAnswer();
+      return new Promise((resolve) => { resolveNext = resolve; });
+    },
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click');
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe loading cleanup failed: revealed content survived in a hidden panel');
+  resolveNext(windowAnswer());
+  await settle();
+});
+
+test('review probe: an empty reread removes revealed content from the whole document', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_EMPTY';
+  let empty = false;
+  const dom = await boot({
+    runs: () => (empty ? emptyWindow() : windowAnswer()),
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  empty = true;
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click');
+  await settle();
+
+  assert.equal(stateOf(dom), 'empty', 'review probe did not reach the empty state');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe empty cleanup failed: revealed content survived outside the live panel');
+});
+
+test('review probe: an error reread removes revealed content from the whole document', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_ERROR';
+  let broken = false;
+  const dom = await boot({
+    runs: () => (broken ? new Error('review probe read failed') : windowAnswer()),
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  broken = true;
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(stateOf(dom), 'degraded', 'review probe did not reach the degraded failure state');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe error cleanup failed: revealed content survived outside the live panel');
+});
+
+test('review probe: opening another run removes previously revealed content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_RUN_CHANGE';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  buttonsIn(livePanel(dom), /^Open$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe run-change cleanup failed: revealed content survived opening another run');
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe run-change cleanup failed: reopening the original run reused revealed content');
+});
+
+test('review probe: closing the pane detail removes revealed content from the whole document', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PANE_LEAVE';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+  const card = dom.body.querySelector('.rh-content-card');
+  assert.ok(card, 'review probe setup did not find the revealed content card');
+  let removals = 0;
+  const realRemove = card.remove;
+  card.remove = function () {
+    removals += 1;
+    return realRemove.apply(card, arguments);
+  };
+
+  buttonsIn(livePanel(dom), /^Close$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(removals, 1,
+    'review probe pane-leave cleanup failed: Close did not remove the revealed card directly');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe pane-leave cleanup failed: revealed content survived closing the detail pane');
+});
+
+test('review probe: pagehide and bfcache restore purge revealed content and stale callbacks', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PAGEHIDE';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe pagehide cleanup failed: revealed content remained in the DOM');
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe bfcache restore cleanup failed: revealed content came back');
+});
+
+test('review probe: pagehide invalidates a late reveal callback before it can repopulate content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_LATE_CALLBACK';
+  let resolveReveal;
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: new Promise((resolve) => { resolveReveal = resolve; }),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  show.focus();
+  show.dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = 'Review probe reason';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  resolveReveal(revealAnswer(sentinel));
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe late callback cleanup failed: reveal content was repopulated after pagehide');
+});
+
+test('review probe R2: hidden visibility settles a pending reveal dialog before the late response lands', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PENDING_VISIBILITY';
+  let resolveReveal;
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: new Promise((resolve) => { resolveReveal = resolve; }),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  show.focus();
+  show.dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = 'Review probe reason';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+  assert.ok(dom.body.querySelector('.modal'), 'review probe setup did not leave the reveal dialog open');
+
+  dom.doc.visibilityState = 'hidden';
+  dom.doc.dispatch('visibilitychange', {});
+  dom.doc.visibilityState = 'visible';
+  dom.doc.dispatch('visibilitychange', {});
+  resolveReveal(revealAnswer(sentinel));
+  await settle();
+
+  assert.equal(dom.body.querySelector('.modal'), null,
+    'review probe R2 pending visibility cleanup failed: the busy reveal dialog remained mounted');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R2 pending visibility cleanup failed: late reveal content rendered after cleanup');
+  assert.equal(dom.doc.activeElement && dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-reveal-show',
+    'review probe R2 pending visibility cleanup failed: focus did not return to Show content');
+});
+
+test('review probe R2: pagehide bfcache cleanup settles a pending reveal dialog before the late response lands', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PENDING_PAGEHIDE';
+  let resolveReveal;
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: new Promise((resolve) => { resolveReveal = resolve; }),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  show.focus();
+  show.dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = 'Review probe reason';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+  assert.ok(dom.body.querySelector('.modal'), 'review probe setup did not leave the reveal dialog open');
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  resolveReveal(revealAnswer(sentinel));
+  await settle();
+
+  assert.equal(dom.body.querySelector('.modal'), null,
+    'review probe R2 pending pagehide cleanup failed: the busy reveal dialog remained mounted');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R2 pending pagehide cleanup failed: late reveal content rendered after cleanup');
+  assert.equal(dom.doc.activeElement && dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-reveal-show',
+    'review probe R2 pending pagehide cleanup failed: focus did not return to Show content');
+});
+
+test('review probe: persisted pageshow alone purges revealed content on bfcache restore', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PAGESHOW';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe pageshow cleanup failed: a bfcache restore kept revealed content');
+});
+
+test('review probe: hidden visibility purges revealed content before the pane is backgrounded', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_VISIBILITY';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  dom.doc.visibilityState = 'hidden';
+  dom.doc.dispatch('visibilitychange', {});
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe visibility cleanup failed: revealed content survived backgrounding');
+});
+
+test('review probe: Show and Hide keep focus on connected reveal controls', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+
+  await revealOpenedRun(dom);
+
+  assert.ok(dom.body.contains(dom.doc.activeElement),
+    'review probe Show focus failed: focus stayed on a detached control after reveal');
+  assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-content-first',
+    'review probe Show focus failed: focus did not land on the revealed content region');
+
+  const hide = buttonsIn(livePanel(dom), /^Hide content$/)[0];
+  hide.focus();
+  hide.dispatch('click', {});
+  await settle();
+
+  assert.ok(dom.body.contains(dom.doc.activeElement),
+    'review probe Hide focus failed: focus stayed on a detached Hide button');
+  assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-reveal-show',
+    'review probe Hide focus failed: focus did not return to Show content');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe Hide cleanup failed: revealed content survived Hide');
+});
+
+test('review probe R2: footer Hide keeps focus on the connected Show content button', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_FOOTER_HIDE';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+
+  await revealOpenedRun(dom);
+  const card = dom.body.querySelector('.rh-content-card');
+  assert.ok(card, 'review probe setup did not render a revealed content card');
+  const footerHide = buttonsIn(card, /^Hide content$/)[0];
+  assert.ok(footerHide, 'review probe setup did not find the footer Hide button');
+  footerHide.focus();
+  footerHide.dispatch('click', {});
+  await settle();
+
+  assert.ok(dom.body.contains(dom.doc.activeElement),
+    'review probe R2 footer Hide focus failed: focus stayed on a detached footer Hide button');
+  assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-reveal-show',
+    'review probe R2 footer Hide focus failed: focus did not return to Show content');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R2 footer Hide cleanup failed: revealed content survived footer Hide');
 });
 
 function stateOf(dom) {
