@@ -55,8 +55,11 @@ const IDENTITY_PATHS = {
   '/api/ops/users/:reference': new Set([
     'data.recorded.actor',
     'data.summary.fields.*.value',
+    'data.summary.fields.*.maskedValue',
     'data.record.fields.*.value',
+    'data.record.fields.*.maskedValue',
     'data.billing.fields.*.value',
+    'data.billing.fields.*.maskedValue',
     'data.access.entries.*.actor',
   ]),
   '/api/ops/users/:reference/reveal': new Set(['data.value']),
@@ -417,6 +420,8 @@ test('allowlisted identity paths still render intended email values', async () =
   assert.match(peopleSurface, new RegExp(BILLING_EMAIL.replaceAll('.', '\\.')),
     'billing email value was masked');
   assert.match(peopleSurface, /access\.actor@example\.invalid/, 'detail access actor was masked');
+  assert.match(peopleSurface, /b•••@example\.invalid/,
+    'API-masked account email value was masked again');
 
   const reveal = [...people.doc.querySelectorAll('button')]
     .find((button) => {
