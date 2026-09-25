@@ -232,6 +232,72 @@ const AUDIT = [
     targetType: null, targetId: null, reason: null, ipAddress: '203.0.113.4' }
 ];
 
+const USER_LOOKUP = {
+  recorded: {
+    at: ago(2 * MINUTE),
+    actor: ADMIN.email,
+    fields: 'identifier',
+    reason: 'support request'
+  },
+  matchCount: 1,
+  matches: [
+    {
+      reference: 'ath_123',
+      maskedEmail: 'ath*****@example.invalid',
+      state: { key: 'active', label: 'Active', tone: 'ok' },
+      tier: { key: 'pro', label: 'Pro', brand: 'Aria' },
+      platforms: ['iOS'],
+      lastActiveAt: ago(3 * HOUR),
+      flags: []
+    }
+  ]
+};
+
+const USER_DETAIL = {
+  reference: 'ath_123',
+  kind: 'athlete',
+  state: { key: 'active', label: 'Active', tone: 'ok' },
+  tier: { key: 'pro', label: 'Pro', brand: 'Aria' },
+  memberSince: ago(180 * DAY),
+  recorded: {
+    at: ago(MINUTE),
+    actor: ADMIN.email,
+    fields: 'summary',
+    reason: 'opening this account'
+  },
+  summary: {
+    fields: [
+      { key: 'contactEmail', label: 'Contact email', masked: false,
+        value: 'athlete.identity@example.invalid', reveal: 'unavailable' },
+      { key: 'birthDate', label: 'Birth date', masked: true, maskedValue: 'Hidden',
+        reveal: 'never', neverShownNote: 'Never shown here.' },
+      { key: 'phone', label: 'Phone', masked: true, maskedValue: 'Hidden',
+        reveal: 'unavailable', unavailableNote: 'No source can reveal this yet.' }
+    ]
+  },
+  record: {
+    fields: [
+      { key: 'contactEmail', label: 'Contact email', masked: false,
+        value: 'athlete.identity@example.invalid', reveal: 'unavailable' },
+      { key: 'birthDate', label: 'Birth date', masked: true, maskedValue: 'Hidden',
+        reveal: 'never', neverShownNote: 'Never shown here.' },
+      { key: 'phone', label: 'Phone', masked: true, maskedValue: 'Hidden',
+        reveal: 'unavailable', unavailableNote: 'No source can reveal this yet.' }
+    ],
+    note: 'Only operational support fields are shown.'
+  },
+  activity: { windowDays: 30, events: [] },
+  devices: [],
+  billing: {
+    fields: [
+      { key: 'billingEmail', label: 'Billing email', masked: false,
+        value: 'billing.identity@example.invalid', reveal: 'unavailable' }
+    ]
+  },
+  access: { windowDays: 30, entries: [] },
+  supportActions: { available: [] }
+};
+
 const INTEGRATIONS = {
   generatedAt: ago(MINUTE),
   integrations: [
@@ -585,11 +651,14 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
   if (pathname.startsWith('/api/ops/settings/cost-categories')) return { data: COST_CATEGORIES };
   if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
+  if (pathname.startsWith('/api/ops/users/lookup')) return { data: USER_LOOKUP };
+  if (pathname.startsWith('/api/ops/users/')) return { data: USER_DETAIL };
   return { data: {} };
 }
 
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
-  ADMIN, SESSION, NARROW_BADGE, RULES, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, INTEGRATIONS, COST_CATEGORIES, COSTS, PROBLEM, RUNS, PROOF, stub
+  ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
+  ADMINS, SESSIONS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COST_CATEGORIES, COSTS,
+  PROBLEM, RUNS, PROOF, stub
 };

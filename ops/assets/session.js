@@ -79,6 +79,7 @@
   'use strict';
 
   var api = global.OpsApi;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var REFRESH_KEY = 'ops-refresh';
   var ACCESS_KEY = 'ops-access';
@@ -163,6 +164,61 @@
     freshAuth: false,
     reauthWindowSeconds: 300
   };
+
+  var EMAIL_PATHS = {
+    '/api/ops/auth/session': { 'data.admin.email': true },
+    '/api/ops/auth/reauth': { 'data.admin.email': true },
+    '/api/ops/admins': { 'data.*.email': true },
+    '/api/ops/audit': { 'data.*.actorEmail': true },
+    '/api/ops/users/lookup': {
+      'data.recorded.actor': true,
+      'data.matches.*.maskedEmail': true
+    },
+    '/api/ops/users/:reference': {
+      'data.recorded.actor': true,
+      'data.summary.fields.*.value': true,
+      'data.summary.fields.*.maskedValue': true,
+      'data.record.fields.*.value': true,
+      'data.record.fields.*.maskedValue': true,
+      'data.billing.fields.*.value': true,
+      'data.billing.fields.*.maskedValue': true,
+      'data.access.entries.*.actor': true
+    },
+    '/api/ops/users/:reference/reveal': { 'data.value': true }
+  };
+
+  function responseRoute(path) {
+    var bare = String(path || '').replace(/\?.*$/, '');
+    if (bare === '/api/ops/users/lookup') return bare;
+    if (/^\/api\/ops\/users\/[^/]+\/reveal$/.test(bare)) return '/api/ops/users/:reference/reveal';
+    if (/^\/api\/ops\/users\/[^/]+$/.test(bare)) return '/api/ops/users/:reference';
+    return bare;
+  }
+
+  function allowedEmailPath(route, path) {
+    var paths = EMAIL_PATHS[responseRoute(route)];
+    return !!(paths && paths[path.join('.')]);
+  }
+
+  function maskResponseStrings(route, value, path) {
+    path = path || [];
+    if (typeof value === 'string') {
+      return allowedEmailPath(route, path) ? value : maskContactDetails(value);
+    }
+    if (Array.isArray(value)) {
+      return value.map(function (entry) {
+        return maskResponseStrings(route, entry, path.concat('*'));
+      });
+    }
+    if (value && typeof value === 'object') {
+      var out = {};
+      Object.keys(value).forEach(function (childKey) {
+        out[childKey] = maskResponseStrings(route, value[childKey], path.concat(childKey));
+      });
+      return out;
+    }
+    return value;
+  }
 
   /* ------------------------------------------------------------- storage */
 
@@ -797,7 +853,9 @@
         var o = {};
         Object.keys(opts).forEach(function (k) { o[k] = opts[k]; });
         o.token = token;
-        return api.request(path, o);
+        return api.request(path, o).then(function (payload) {
+          return maskResponseStrings(path, payload);
+        });
       }).catch(function (err) {
         if (!(err instanceof api.OpsApiError)) throw err;
 
@@ -1158,7 +1216,10 @@
           submit.disabled = false;
           submit.textContent = 'Confirm';
           input.value = '';
-          alert.textContent = (err && err.message) || 'That password did not match.';
+          alert.textContent = err && err.message && global.OpsPaneRegistry &&
+              typeof global.OpsPaneRegistry.maskContactDetails === 'function'
+            ? global.OpsPaneRegistry.maskContactDetails(err.message)
+            : 'That password did not match.';
           input.focus();
         });
       });

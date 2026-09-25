@@ -610,8 +610,9 @@
           sending.textContent = '';
           cancel.disabled = false;
           sync();
-          error.textContent = (err && err.message) ||
-            'That did not go through. Nothing has changed.';
+          error.textContent = err
+            ? failureMessage(err)
+            : 'That did not go through. Nothing has changed.';
         });
     });
 

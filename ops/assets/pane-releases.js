@@ -99,6 +99,7 @@
   var h = S.h;
   var icon = S.icon;
   var fmt = S.fmt;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var ENDPOINT = '/api/ops/releases';
 
@@ -216,6 +217,11 @@
     if (typeof v !== 'string') return null;
     var t = v.trim();
     return t === '' ? null : t;
+  }
+
+  function diagnostic(v) {
+    var text = str(v);
+    return text ? maskContactDetails(text) : null;
   }
 
   function pct(basisPoints, decimals) {
@@ -1071,7 +1077,7 @@
       body.appendChild(h('div', {}, [
         h('b', { text: (str(entry.title) || entry.key) + '. ' }),
         h('span', {
-          text: str(entry.detail) ||
+          text: diagnostic(entry.detail) ||
             'The operations API named this as unavailable and gave no reason.'
         })
       ]));
@@ -1093,6 +1099,26 @@
   }
 
   /* ------------------------------------------------------ is it healthy */
+
+  function cannotAnswerBand() {
+    var section = S.band('What this pane cannot answer yet',
+      'Named rather than drawn as an empty figure');
+    var box = S.card();
+    var body = h('div', { className: 'card-body omit' });
+    var item = h('div', { className: 'omit-item' });
+    item.appendChild(icon('empty'));
+    var words = h('div');
+    words.appendChild(h('div', { className: 'omit-title', text: 'What is in 1.1.2' }));
+    words.appendChild(h('div', {
+      className: 'omit-desc',
+      text: 'The store snapshot records build numbers and release dates, which this pane already shows in the rollout ladder and store card. Nothing records what changed in a release yet.'
+    }));
+    item.appendChild(words);
+    body.appendChild(item);
+    box.appendChild(body);
+    section.appendChild(box);
+    return section;
+  }
 
   function healthCard(data) {
     var card = S.card();
@@ -1433,6 +1459,8 @@
       var healthy = S.band('Is the newest one healthy', healthWindow(data));
       healthy.appendChild(healthCard(data));
       wrap.appendChild(healthy);
+
+      wrap.appendChild(cannotAnswerBand());
 
       if (data.generatedAt && fmt.ago(data.generatedAt) !== fmt.none) {
         wrap.appendChild(h('p', {

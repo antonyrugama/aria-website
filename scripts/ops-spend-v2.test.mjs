@@ -53,7 +53,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -1107,6 +1107,29 @@ test('a grouping whose rows add up to the bill says so, with the bill beside it'
     'the billed total is beside the rows it is the sum of');
   assert.equal(runCount(grouping, /short of the bill|more than the bill/), 0,
     'a reconciling grouping must not also report a gap');
+});
+
+test('the approved unusual-costs card is acknowledged as not answerable yet', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /What this pane cannot answer yet/,
+    'the cannot-answer band is not on the pane');
+  assert.match(text, /Anything unusual/,
+    'the approved unusual-costs card is still silent');
+  assert.match(text, /Problems watches unusual service spend with the service_cost_anomaly rule/,
+    'the unusual-costs cause does not point at the live Problems rule');
+  const ruleToken = byClass(livePanel(dom), 'code')
+    .filter((node) => allText(node) === 'service_cost_anomaly')[0];
+  assert.ok(ruleToken, 'the alert rule identifier is not set as code');
+  assert.match(text, /This pane draws the cost breakdown, but it does not draw the anomaly list yet\./,
+    'the unusual-costs cause does not state the pane gap');
+
+  const problemsLink = linkNamed(livePanel(dom), 'Problems');
+  assert.ok(problemsLink, 'the unusual-costs cause does not link to the Problems pane');
+  assert.equal(problemsLink.getAttribute('href'), 'alerts.html');
+  assert.ok(hasClass(problemsLink, 'btn') && hasClass(problemsLink, 'btn-sm'),
+    'the Problems link is not built with the shared v2 link helper class');
 });
 
 test('a grouping whose rows do not add up to the bill reports the gap as a figure', async () => {
@@ -2470,6 +2493,21 @@ test('an availability state the pane does not know is not read as one of the fou
   assert.doesNotMatch(words, /switched off|not set up|Nothing published/);
 });
 
+test('cost availability diagnostics mask contact details before the DOM sees them', async () => {
+  const data = payload({ range: 'month', billedThrough: 10 });
+  data.availability = {
+    state: 'quarantined',
+    detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
+  };
+
+  const dom = await boot({ costs: data });
+  const surface = allDomTextAndAttrs(panel(dom, 'empty'));
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the cost availability detail reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
+});
+
 test('a read that fails is the degraded state, and says the figures are unread', async () => {
   const dom = await boot({ costs: new Error('gateway timeout') });
   const words = allText(livePanel(dom));
@@ -2718,6 +2756,19 @@ test('a target the route refused is the refusal in words, with no track under it
       'the route\'s own sentence, because it is the only thing that knows which of the '
       + 'seven refusals applies');
     assert.match(ownText(budget), /No target to draw against/);
+  });
+
+test('budget refusal diagnostics mask contact details before the DOM sees them',
+  async () => {
+    const summary = summaryPayload({
+      refusal: 'Contact Coach.Person+run@eu.example.com for this failure.',
+    });
+    const dom = await boot({ summary });
+    const surface = allDomTextAndAttrs(budgetCardOf(dom));
+    assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+      'the budget refusal reached DOM text or attributes with an address in it');
+    assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+      'the route diagnostic was not drawn with its contact detail masked');
   });
 
 test('a target stating no currency is not drawn in the one the bill happens to be in',

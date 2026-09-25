@@ -33,7 +33,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -547,6 +547,79 @@ test('the omissions list is rendered from the answer, not from a list in the pan
   const gained = await boot({ summary: summaryFixture((s) => { s.omissions = []; return s; }) });
   assert.doesNotMatch(liveText(gained), /No budget bar|budget/i,
     'an omission the answer no longer names is still printed by the pane');
+});
+
+test('overview omission diagnostics mask contact details before the DOM sees them', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => {
+      s.omissions = [{
+        key: 'budget',
+        title: 'No budget bar',
+        detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
+      }];
+      return s;
+    }),
+  });
+  const surface = allDomTextAndAttrs(livePanel(dom));
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the overview omission detail reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
+});
+
+test('the static overview omissions are deduplicated by route keys', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => {
+      s.omissions = [
+        {
+          key: 'what_aria_has_been_doing',
+          title: 'Route copy for request types',
+          detail: 'The route should not make a second row for the same missing approved band.'
+        },
+        {
+          key: 'where_the_money_goes',
+          title: 'Route copy for money card',
+          detail: 'The route should not make a second row for the same missing approved card.'
+        }
+      ];
+      return s;
+    }),
+  });
+  const titles = Array.from(livePanel(dom).querySelectorAll('.omit-title'))
+    .map((node) => allText(node));
+
+  assert.equal(titles.filter((title) => title === 'What Aria has been doing').length, 1,
+    'the request-type static omission duplicated when the route used the same stable key');
+  assert.equal(titles.filter((title) => title === 'Where the money goes').length, 1,
+    'the money static omission duplicated when the route used the same stable key');
+  assert.equal(titles.some((title) => /Route copy/.test(title)), false,
+    'a route duplicate with the same key reached the screen');
+});
+
+test('the approved request-type table is acknowledged beside route omissions', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /Not drawn here, and why/,
+    'the acknowledgement card is not on the pane');
+  assert.match(text, /What Aria has been doing/,
+    'the approved request-type table is still silent');
+  assert.match(text, /No route serves per-request-type requests, reliability, latency and cost yet\./,
+    'the request-type table cause is missing or too vague');
+  assert.match(text, /summary route returns platform totals only/,
+    'the request-type table cause does not explain why the route cannot draw the rows');
+});
+
+test('the approved overview money card points at the Cloud costs pane', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /Where the money goes/,
+    'the approved overview money card is still silent');
+  assert.match(text, /Cloud costs draws the spend breakdown by category and resource group/,
+    'the overview money-card cause does not point at the pane that draws the breakdown');
+  assert.match(text, /Overview has no smaller spend-breakdown field/,
+    'the overview money-card cause does not state this pane gap');
 });
 
 /* ============================== the doorways =========================== */
