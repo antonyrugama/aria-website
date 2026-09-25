@@ -1052,6 +1052,9 @@ test('review probe R2: pagehide bfcache cleanup settles a pending reveal dialog 
 
   dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
   dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R3 bfcache focus restore failed: persisted pageshow did not focus the connected Show content button');
   resolveReveal(revealAnswer(sentinel));
   await settle();
 

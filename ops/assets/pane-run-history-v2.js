@@ -1464,6 +1464,8 @@
         activeRevealDialog.closeForCleanup();
         activeRevealDialog = null;
         forceFocus('rh-reveal-show', 'rh-state');
+      } else {
+        keepFocus();
       }
       clearRevealed();
       if (lastWindow) render(lastWindow, current);
