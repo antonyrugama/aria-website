@@ -56,7 +56,7 @@ const STATES = ['live', 'loading', 'empty', 'degraded'];
 const PANES = [
   '/ops/index.html', '/ops/jobs-live.html', '/ops/run-history.html',
   '/ops/alerts.html', '/ops/analytics.html', '/ops/spend.html',
-  '/ops/evaluations.html', '/ops/releases.html', '/ops/users.html',
+  '/ops/evaluations.html', '/ops/review.html', '/ops/releases.html', '/ops/users.html',
   '/ops/settings.html', '/ops/login.html', '/ops/setup.html'
 ];
 
@@ -837,8 +837,8 @@ try {
     if (JSON.stringify(shell.groups) !== JSON.stringify(expectGroups)) {
       failures.push(`${SHELL} (${theme}): rail groups are ${JSON.stringify(shell.groups)}`);
     }
-    if (shell.navItems !== 10) {
-      failures.push(`${SHELL} (${theme}): rail drew ${shell.navItems} panes, expected 10`);
+    if (shell.navItems !== 11) {
+      failures.push(`${SHELL} (${theme}): rail drew ${shell.navItems} panes, expected 11`);
     }
     if (!shell.account) {
       failures.push(`${SHELL} (${theme}): the rail has no account footer`);

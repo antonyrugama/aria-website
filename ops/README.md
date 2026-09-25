@@ -155,7 +155,7 @@ font-src = 'self'
 connect-src = 'self' https://api.runwitharia.com
 base-uri = 'none'
 form-action = 'none'
-pages carrying this exact policy = 13
+pages carrying this exact policy = 14
 ```
 
 What follows from wanting it this strict:
@@ -167,9 +167,9 @@ What follows from wanting it this strict:
   from the markup, is counted rather than remembered:
 
   ```claims id=csp-pages
-  pages in ops/ = 13
-  pages declaring the policy in a <meta> = 13
-  pages loading assets/theme.js = 13
+  pages in ops/ = 14
+  pages declaring the policy in a <meta> = 14
+  pages loading assets/theme.js = 14
   pages with an inline <script> = 0
   pages with a style attribute in markup = 0
   ```
@@ -301,9 +301,9 @@ something, or a file that is deleted, is a red test rather than a stale sentence
 
 ```claims id=assets-by-page
 alerts-model.js = alerts.html, index.html
-api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
-aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
-aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, users.html
+aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 icons.js = login.html, setup.html
 job-actions-v2.js = jobs-live.html, run-history.html
 login.js = login.html
@@ -320,9 +320,11 @@ pane-jobs-live-v2.css = jobs-live.html
 pane-jobs-live-v2.js = jobs-live.html
 pane-overview-v2.css = index.html
 pane-overview.js = index.html
-pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
+pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, users.html
 pane-releases-v2.css = releases.html
 pane-releases.js = releases.html
+pane-review-admin.css = review.html
+pane-review-admin.js = review.html
 pane-run-history-v2.css = run-history.html
 pane-run-history-v2.js = run-history.html
 pane-settings-v2.css = settings.html
@@ -330,14 +332,14 @@ pane-spend-v2.css = spend.html
 pane-spend.js = spend.html
 pane-users-v2.css = users.html
 pane-users.js = users.html
-session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, spend.html, users.html
+session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
 settings.js = settings.html
 setup.js = setup.html
-shell-pane-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
-shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+shell-pane-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
+shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
 shell-v2.js = shell-v2.html
 shell.js = (no page)
-theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
 ```
 
 A file no page loads is not automatically dead: some are kept alive by the tests, which load
@@ -458,6 +460,7 @@ alerts = alerts.html, shell-pane-v2.js, pane-alerts-v2.css
 analytics = analytics.html, shell-pane-v2.js, pane-analytics-v2.css
 spend = spend.html, shell-pane-v2.js, pane-spend-v2.css
 evals = evaluations.html, shell-pane-v2.js, pane-evaluations-v2.css
+review = review.html, shell-pane-v2.js, pane-review-admin.css
 releases = releases.html, shell-pane-v2.js, pane-releases-v2.css
 users = users.html, shell-pane-v2.js, pane-users-v2.css
 settings = settings.html, shell-pane-v2.js, pane-settings-v2.css
@@ -1009,6 +1012,7 @@ pane-jobs-live-v2.js = /api/ops/jobs
 pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
 pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
+pane-review-admin.js = /api/ops/ciel/admin/reviews/adjudications, /api/ops/ciel/admin/reviews/items/, /api/ops/ciel/admin/reviews/labels, /api/ops/ciel/admin/reviews/queue
 pane-run-history-v2.js = /api/ops/runs
 pane-spend.js = /api/ops/costs, /api/ops/summary
 pane-users.js = /api/ops/users/, /api/ops/users/lookup
@@ -1035,8 +1039,8 @@ problems, People reveals a masked field, and Aria quality posts an evaluation. D
 than asserted, from the HTTP method each file spells:
 
 ```claims id=write-capable-assets
-ops assets naming a write method = job-actions-v2.js, login.js, pane-alerts.js, pane-evaluations.js, pane-users.js, session.js, settings.js, setup.js
-of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-users.js
+ops assets naming a write method = job-actions-v2.js, login.js, pane-alerts.js, pane-evaluations.js, pane-review-admin.js, pane-users.js, session.js, settings.js, setup.js
+of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-review-admin.js, pane-users.js
 ```
 
 `settings.js` is the v1 script, `job-actions-v2.js` is the shared cancel/retry helper, and
@@ -2161,7 +2165,7 @@ Which of these classes any page can still draw is therefore derived rather than 
 .reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .nav-count = declared in ops.css; drawn by (no page)
 .btn-danger = declared in ops.css, pane-settings-v2.css, shell-pane-v2.css; drawn by jobs-live.html, run-history.html, settings.html; painted where drawn
-.field-error = declared in ops.css, pane-evaluations-v2.css, pane-users-v2.css; drawn by evaluations.html, login.html, setup.html, users.html; painted where drawn
+.field-error = declared in ops.css, pane-evaluations-v2.css, pane-review-admin.css, pane-users-v2.css; drawn by evaluations.html, login.html, review.html, setup.html, users.html; painted where drawn
 ```
 
 Three lines in that block are worth reading twice:

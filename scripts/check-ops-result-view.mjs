@@ -712,6 +712,26 @@ const RUNS = {
   truncated: false
 };
 
+const REVIEW_ITEM = {
+  reviewItemId: 'review-item.browser-training',
+  outcomeDigest: 'a'.repeat(64),
+  criterionDigest: 'b'.repeat(64),
+  resultDigest: 'c'.repeat(64),
+  status: 'open',
+  rubric: {
+    statement: 'Judge the rubric only.',
+    grading: { method: 'qualified_human' },
+    authority: { domain: 'training' }
+  },
+  evidence: {
+    outcomePreview: 'sha256:' + 'a'.repeat(64),
+    evidenceRefs: ['synthetic.browser.review'],
+    comments: ['Synthetic browser review fixture.']
+  },
+  redactions: ['candidateIdentity', 'baselineIdentity', 'modelFamily', 'modelConfig'],
+  labelCounts: { submitted: 0, disputes: 0, adjudications: 0 }
+};
+
 function stub(pathname, body) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
@@ -747,6 +767,19 @@ function stub(pathname, body) {
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/usage')) return { data: USAGE };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
+  if (pathname.startsWith('/api/ops/ciel/admin/reviews/items/')) {
+    return { data: {
+      ...REVIEW_ITEM,
+      reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false },
+      correction: { activeReviewId: null },
+      adjudication: { visible: false, eligible: false, reason: 'not_disputed' },
+      labels: [],
+      adjudications: []
+    } };
+  }
+  if (pathname.startsWith('/api/ops/ciel/admin/reviews/queue')) {
+    return { data: { items: [REVIEW_ITEM], partial: false, omissions: [] } };
+  }
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
@@ -842,6 +875,17 @@ const DRIVE = {
     input.closest('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await new Promise((r) => setTimeout(r, ${STEP_MS}));
     return 'validated a dataset declaration';
+  })()`,
+  review: `(async () => {
+    const deadline = Date.now() + ${STEP_MS} * 8;
+    while (!Array.from(document.querySelectorAll('button')).some((button) => /Review blinded output/.test(button.textContent || '')) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const button = Array.from(document.querySelectorAll('button')).find((candidate) => /Review blinded output/.test(candidate.textContent || ''));
+    if (!button) return 'the review queue drew no review button';
+    button.click();
+    await new Promise((r) => setTimeout(r, ${STEP_MS}));
+    return 'opened a blinded review item';
   })()`
 };
 
@@ -876,6 +920,7 @@ const RESULT_PROOF = {
   /* Only the answered validation draws these: the digest the stub sent back
      and the sentence the pane writes for a valid declaration. */
   evals: ['Declarations valid', 'b'.repeat(64)],
+  review: [REVIEW_ITEM.evidence.evidenceRefs[0], REVIEW_ITEM.evidence.outcomePreview],
   releases: [RELEASES.sources[0].label, RELEASES.adoption.buckets[0].label],
   /* Nothing here is on the page until a lookup has answered AND a match has
      been picked: the masked address comes off the account record the pick
@@ -968,6 +1013,7 @@ const EXPECTED_PAIRS = {
   /* The picked row's aria-current against the unpicked row, and the pick
      control's aria-pressed against the other row's control. */
   users: 2,
+  review: 0,
   settings: 0
 };
 
