@@ -1048,9 +1048,9 @@ narrower and worth being exact about: It runs on the v2 shell: `settings.html` l
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
 
-**Six areas, and four of them are read from anywhere.** Administrators, active sessions,
-the access record and outside connections come from the API. Retention windows and the
-cost-category mapping have no endpoint to read or write. Both halves are on the same pane, so the pane has to say
+**Six areas, and five of them are read from the API.** Administrators, active sessions,
+the access record, cost categories and outside connections come from the API. The Retention windows
+card has no endpoint to read or write. Both halves are on the same pane, so the pane has to say
 which is which, and it says so three times over, never once in colour alone:
 
 1. **The word.** Every card head carries a source chip reading either `Live` or `No API yet`.
@@ -1071,15 +1071,21 @@ card across the boundary fails the suite.
 
 `Stadiora/Aria#11214` is the issue that moved Outside connections across that line. Until the
 matching backend deploys, that card shows a degraded "could not be read" state, not a fake empty
-table. `Stadiora/Aria#5442` still tracks the remaining static cards.
+table. `Stadiora/Aria#11513` moves Cost categories across the same line. It reads
+`GET /api/ops/settings/cost-categories`, writes `PUT` and `DELETE` on
+`/api/ops/settings/cost-categories/overrides`, and shows fixed error copy instead of backend
+error text. `Stadiora/Aria#5442` still tracks the remaining static card.
 
 **What the live half does.** Each account's role, status, last sign in and current session expiry;
 every live session with who holds it, when it started, when it was last used and when it ends; the
-access record, newest first, with paging and an export; and outside connection state from
-`GET /api/ops/integrations`, including the last successful run and its age. Revoking asks first, requires a
-written reason, sends that reason, and reports what the server answered rather than what was asked
-for. The record is reloaded beside the change, so the entry describing it is on screen next to the
-thing it describes.
+access record, newest first, with paging and an export; the cost-category mapping that Cloud costs
+uses; and outside connection state from `GET /api/ops/integrations`, including the last successful
+run and its age. Cost-category edits choose one of the five server-reported categories and either
+the resource-group service line or the service everywhere. Saving sends the row version the pane
+read, and a stale answer reloads the card instead of reporting success. Revoking asks first,
+requires a written reason, sends that reason, and reports what the server answered rather than what
+was asked for. The record is reloaded beside the change, so the entry describing it is on screen
+next to the thing it describes.
 
 **Four facts the restyle is not allowed to lose**, because each one is the difference between a
 settings change and an incident:
