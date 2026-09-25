@@ -4,8 +4,8 @@
    Two of the rules this pane has to hold are the kind that pass a badly built
    test by construction, so they are written here first and deliberately:
 
-   THE LIVE-AGAINST-STATIC PARTITION. Four of the six areas on this pane are
-   read from an API and two are not, and the whole point of the remodel is
+   THE LIVE-AGAINST-STATIC PARTITION. Five of the six areas on this pane are
+   read from an API and one is not, and the whole point of the remodel is
    that a reader can tell which is which. Asserting that a marker element
    EXISTS is the classic false green: it stays green when the marker is on
    every card, on none, or on the wrong ones. So the assertion here is the
@@ -83,6 +83,7 @@ const ADMINS = '/api/ops/admins';
 const SESSIONS = '/api/ops/sessions';
 const AUDIT = '/api/ops/audit';
 const INTEGRATIONS = '/api/ops/integrations';
+const RETENTION = '/api/ops/settings/retention';
 const ROUTE_FAILURE_REASONS = [
   'auth',
   'timeout',
@@ -296,6 +297,107 @@ function integrationsFixture() {
   };
 }
 
+function retentionWindow(overrides) {
+  return {
+    key: overrides.key,
+    label: overrides.label,
+    description: overrides.description,
+    effectiveDays: overrides.effectiveDays,
+    minimumDays: Object.prototype.hasOwnProperty.call(overrides, 'minimumDays')
+      ? overrides.minimumDays
+      : overrides.configurable ? 30 : null,
+    source: overrides.source,
+    configurable: overrides.configurable,
+    fixedReason: Object.prototype.hasOwnProperty.call(overrides, 'fixedReason')
+      ? overrides.fixedReason
+      : null,
+    environmentVariable: overrides.environmentVariable || null,
+    sweepKey: overrides.sweepKey || null,
+    bounds: overrides.bounds || { minDays: null, maxDays: null },
+    setting: Object.prototype.hasOwnProperty.call(overrides, 'setting')
+      ? overrides.setting
+      : null,
+  };
+}
+
+function retentionSetting(id, retentionDays, updatedAt = '2026-09-24T18:00:00.000Z') {
+  return {
+    id,
+    retentionDays,
+    createdAt: '2026-09-24T17:00:00.000Z',
+    updatedAt,
+  };
+}
+
+function retentionFixture() {
+  return {
+    shorteningConfirmation: 'delete rows on the next nightly pass',
+    windows: [
+      retentionWindow({
+        key: 'raw_telemetry',
+        label: 'Activity history',
+        description: 'Raw telemetry events used for usage rollups.',
+        effectiveDays: 180,
+        source: 'setting',
+        configurable: true,
+        environmentVariable: 'OPS_TELEMETRY_RETENTION_DAYS',
+        sweepKey: 'telemetry_events',
+        bounds: { minDays: 30, maxDays: 730 },
+        setting: retentionSetting(11, 180),
+      }),
+      retentionWindow({
+        key: 'job_lifecycle_history',
+        label: 'Job and run history',
+        description: 'Job lifecycle events behind the operations run history.',
+        effectiveDays: 90,
+        source: 'environment_default',
+        configurable: true,
+        environmentVariable: 'OPS_JOB_LIFECYCLE_RETENTION_DAYS',
+        sweepKey: 'job_lifecycle_events',
+        bounds: { minDays: 30, maxDays: 730 },
+      }),
+      retentionWindow({
+        key: 'prompt_output',
+        label: 'Prompt and output content',
+        description: 'Generation input and output payloads.',
+        effectiveDays: null,
+        source: 'policy',
+        configurable: false,
+        fixedReason: 'not yet swept',
+      }),
+      retentionWindow({
+        key: 'access_record',
+        label: 'Access record',
+        description: 'Who looked at privileged operations data.',
+        effectiveDays: null,
+        minimumDays: 90,
+        source: 'policy',
+        configurable: false,
+        fixedReason: '90-day floor enforced by the server.',
+      }),
+      retentionWindow({
+        key: 'audit_log',
+        label: 'Audit log',
+        description: 'Append-only owner and operator actions.',
+        effectiveDays: null,
+        minimumDays: 2555,
+        source: 'policy',
+        configurable: false,
+        fixedReason: 'Append-only audit policy keeps these records for seven years.',
+      }),
+      retentionWindow({
+        key: 'reveal_records',
+        label: 'Reveal records',
+        description: 'Athlete-visible records of personal-field reveals.',
+        effectiveDays: null,
+        source: 'policy',
+        configurable: false,
+        fixedReason: 'Kept for the life of the account.',
+      }),
+    ],
+  };
+}
+
 /* ---------------------------------------------------------------- the page */
 
 function buildPage(dom, body) {
@@ -331,6 +433,7 @@ async function boot(options) {
     [ADMINS]: opts.admins === undefined ? adminsFixture() : opts.admins,
     [SESSIONS]: opts.sessions === undefined ? sessionsFixture() : opts.sessions,
     [AUDIT]: opts.audit === undefined ? auditFixture() : opts.audit,
+    [RETENTION]: opts.retention === undefined ? retentionFixture() : opts.retention,
     [INTEGRATIONS]: opts.integrations === undefined ? integrationsFixture() : opts.integrations,
   };
 
@@ -381,6 +484,13 @@ async function boot(options) {
       if (endpoint.indexOf(SESSIONS + '/') === 0) {
         const revoke = opts.revoke || (() => ({}));
         const answer = revoke(endpoint.slice((SESSIONS + '/').length), o);
+        return answer instanceof Error
+          ? Promise.reject(answer)
+          : Promise.resolve({ data: answer });
+      }
+      if (endpoint.indexOf(RETENTION + '/') === 0) {
+        const save = opts.retentionSave || (() => ({ window: retentionFixture().windows[0] }));
+        const answer = save(endpoint.slice((RETENTION + '/').length), o);
         return answer instanceof Error
           ? Promise.reject(answer)
           : Promise.resolve({ data: answer });
@@ -483,6 +593,20 @@ function integrationBandNoteText(dom) {
   const note = heading.parentNode.querySelector('.band-note');
   assert.ok(note, 'the Integrations band note is missing');
   return allText(note);
+}
+
+function retentionWindowRow(dom, label) {
+  const card = cardByTitle(dom, 'Data retention');
+  const rows = findAll(card, (n) => n.className === 'ret-row');
+  const row = rows.find((r) => allText(r).includes(label));
+  assert.ok(row, `data retention has no row for ${label}`);
+  return row;
+}
+
+function retentionControl(row, role) {
+  const control = row.querySelector(`[data-role="${role}"]`);
+  assert.ok(control, `retention row has no ${role} control`);
+  return control;
 }
 
 /* Every endpoint this boot actually read. DELETE is excluded: a revoke is a
@@ -589,9 +713,10 @@ test('the remaining unwired areas Stadiora/Aria#5442 tracks are the static ones'
   const dom = await boot();
   const titles = (source) => cards(dom, source)
     .map((c) => allText(find(c, (n) => n.className === 'card-title'))).sort();
-  assert.deepEqual(titles('static'), ['Cost categories', 'Data retention']);
+  assert.deepEqual(titles('static'), ['Cost categories']);
   assert.deepEqual(titles('live'), [
     'Accounts',
+    'Data retention',
     'Outside connections',
     'Signed in now',
     'What was done',
@@ -608,6 +733,289 @@ test('outside connections is a live card filled from the integrations route', as
   assert.equal(card.getAttribute('data-endpoint'), INTEGRATIONS);
   assert.ok(readEndpoints(dom).indexOf(INTEGRATIONS) !== -1,
     'the card claims the integrations route without reading it');
+});
+
+/* =========================================================== data retention */
+
+test('data retention is a live card filled from the retention settings route',
+  async () => {
+    const dom = await boot();
+    const card = cardByTitle(dom, 'Data retention');
+
+    assert.equal(card.getAttribute('data-source'), 'live');
+    assert.equal(card.getAttribute('data-endpoint'), RETENTION);
+    assert.ok(readEndpoints(dom).indexOf(RETENTION) !== -1,
+      'the card claims the retention settings route without reading it');
+  });
+
+test('data retention lists configurable, fixed and unswept windows without inventing lengths',
+  async () => {
+    const dom = await boot();
+    const cardText = allText(cardByTitle(dom, 'Data retention'));
+    const activity = retentionWindowRow(dom, 'Activity history');
+    const prompt = retentionWindowRow(dom, 'Prompt and output content');
+    const audit = retentionWindowRow(dom, 'Audit log');
+    const reveal = retentionWindowRow(dom, 'Reveal records');
+
+    assert.match(allText(activity), /180 days/);
+    assert.match(allText(activity), /Your setting/);
+    assert.match(allText(activity), /Configurable/);
+    assert.match(allText(prompt), /Not yet swept/);
+    assert.doesNotMatch(allText(prompt), /\b[0-9]+ days\b/,
+      'prompt/output invented a retention length');
+    assert.match(allText(audit), /Kept permanently/);
+    assert.match(allText(audit), /at least 2,555 days/);
+    assert.match(allText(audit), /Fixed by policy/);
+    assert.match(allText(reveal), /life of the account/i);
+    assert.doesNotMatch(cardText,
+      /raw_telemetry|job_lifecycle_history|prompt_output|environment_default/,
+      'backend retention identifiers leaked into the card copy');
+  });
+
+test('lengthening a retention window sends the new days and optimistic version without confirmation',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = retentionWindowRow(dom, 'Activity history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '210';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT');
+    assert.equal(sent.length, 1, 'saving did not call the retention route once');
+    assert.deepEqual(Object.keys(sent[0].body).sort(), [
+      'expectedUpdatedAt', 'retentionDays',
+    ].sort());
+    assert.equal(sent[0].body.retentionDays, 210);
+    assert.equal(sent[0].body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
+    assert.ok(!dom.doc.querySelector('.modal'), 'lengthening opened a confirmation dialog');
+  });
+
+test('shortening a retention window requires the server phrase and sends it',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = retentionWindowRow(dom, 'Activity history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.deepEqual(dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT'), [], 'shortening wrote before typed confirmation');
+    const dialog = dom.doc.querySelector('.modal');
+    assert.ok(dialog, 'shortening did not open a confirmation dialog');
+    assert.match(allText(dialog), /Rows older than 120 days are deleted on the next nightly pass/);
+    assert.match(allText(dialog), /delete rows on the next nightly pass/);
+
+    dialog.querySelector('.modal-input').value = 'delete rows on the next nightly pass';
+    dialog.dispatch('submit');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT');
+    assert.equal(sent.length, 1, 'confirmed shortening did not call the retention route once');
+    assert.equal(sent[0].body.retentionDays, 120);
+    assert.equal(sent[0].body.confirmation, 'delete rows on the next nightly pass');
+    assert.equal(sent[0].body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
+  });
+
+test('shortening with a wrong phrase stays in the dialog and sends no request',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = retentionWindowRow(dom, 'Activity history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    const dialog = dom.doc.querySelector('.modal');
+    assert.ok(dialog, 'shortening did not open a confirmation dialog');
+    dialog.querySelector('.modal-input').value = 'delete rows tonight';
+    dialog.dispatch('submit');
+    await dom.settle();
+
+    assert.deepEqual(dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT'), [], 'a wrong confirmation phrase wrote to the server');
+    assert.ok(dom.doc.querySelector('.modal'), 'the dialog closed after the wrong phrase');
+    assert.match(allText(dom.doc.querySelector('.modal')),
+      /Type "delete rows on the next nightly pass" exactly to continue/);
+  });
+
+test('a server-required shortening confirmation reloads and opens a fresh phrase dialog',
+  async () => {
+    let reads = 0;
+    const first = retentionFixture();
+    const fresh = retentionFixture();
+    fresh.shorteningConfirmation = 'confirm the fresh server phrase';
+    fresh.windows = fresh.windows.map((row) => row.key === 'job_lifecycle_history'
+      ? { ...row, effectiveDays: 365, setting: retentionSetting(22, 365, '2026-09-24T19:00:00.000Z') }
+      : row);
+    const required = Object.assign(new Error('raw confirmation text must not render'), {
+      code: 'ops_retention_shortening_confirmation_required',
+      status: 400,
+    });
+    const dom = await boot({
+      retention: () => (++reads === 1 ? first : fresh),
+      retentionSave: () => required,
+      runTimers: false,
+    });
+    const row = retentionWindowRow(dom, 'Job and run history');
+    retentionControl(row, 'retention-days').value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === RETENTION).length, 2,
+      'the missing-confirmation response did not reload retention settings');
+    const reloaded = retentionWindowRow(dom, 'Job and run history');
+    assert.match(allText(reloaded), /365 days/,
+      'the row did not redraw with the freshly loaded retention length');
+    const dialog = dom.doc.querySelector('.modal');
+    assert.ok(dialog, 'the missing-confirmation response did not open the phrase dialog');
+    assert.equal(dom.doc.activeElement, dialog.querySelector('.modal-input'),
+      'focus did not move into the fresh confirmation phrase input');
+    assert.match(allText(dialog), /confirm the fresh server phrase/);
+    assert.match(allText(dialog), /Rows older than 120 days are deleted on the next nightly pass/);
+    assert.doesNotMatch(allText(dialog), /raw confirmation text|ops_retention_shortening_confirmation_required/);
+  });
+
+test('a successful retention save reloads and reports the server window',
+  async () => {
+    let current = retentionFixture();
+    const dom = await boot({
+      retention: () => current,
+      retentionSave: () => {
+        current = retentionFixture();
+        current.windows = current.windows.map((row) => row.key === 'raw_telemetry'
+          ? { ...row, effectiveDays: 240, setting: retentionSetting(11, 240, '2026-09-24T20:00:00.000Z') }
+          : row);
+        return { window: current.windows[0] };
+      },
+      runTimers: false,
+    });
+    const row = retentionWindowRow(dom, 'Activity history');
+    retentionControl(row, 'retention-days').value = '210';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === RETENTION).length, 2,
+      'a successful save did not reload retention settings');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Saved 240 days for Activity history/);
+    assert.doesNotMatch(toast, /Saved 210 days/,
+      'the success toast used the requested value instead of the server response');
+    const reloaded = retentionWindowRow(dom, 'Activity history');
+    assert.match(allText(reloaded), /240 days/);
+    assert.equal(dom.doc.activeElement, retentionControl(reloaded, 'retention-days'),
+      'focus did not return inside the saved retention row');
+  });
+
+test('a stale retention save reloads the pane with fixed copy and restores focus',
+  async () => {
+    const stale = Object.assign(new Error('raw stale backend text must not render'), {
+      code: 'ops_retention_setting_stale',
+      status: 409,
+    });
+    const dom = await boot({ retentionSave: () => stale, runTimers: false });
+    const row = retentionWindowRow(dom, 'Job and run history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === RETENTION).length, 2,
+      'a stale write did not reload the latest retention settings');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /changed somewhere else/i);
+    assert.doesNotMatch(toast, /raw stale backend text|ops_retention_setting_stale/);
+    const reloaded = retentionWindowRow(dom, 'Job and run history');
+    assert.equal(dom.doc.activeElement, retentionControl(reloaded, 'retention-days'),
+      'focus did not return inside the retention row that was reloaded');
+  });
+
+test('a retention write fresh-auth refusal gets fixed copy, not the raw API text',
+  async () => {
+    const refused = Object.assign(new Error('raw auth backend text must not render'), {
+      code: 'ops_reauth_required',
+      status: 401,
+    });
+    const dom = await boot({ retentionSave: () => refused, runTimers: false });
+    const row = retentionWindowRow(dom, 'Job and run history');
+    retentionControl(row, 'retention-days').value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Confirm your password to change data retention settings/);
+    assert.doesNotMatch(toast, /raw auth backend text|ops_reauth_required/);
+  });
+
+test('retention validation refusals use fixed copy for every server code',
+  async () => {
+    const cases = [
+      ['ops_retention_window_unknown', /no longer known/i],
+      ['ops_retention_window_fixed', /fixed by policy/i],
+      ['ops_retention_days_invalid', /whole number of days/i],
+      ['ops_retention_days_out_of_bounds', /inside the listed bounds/i],
+      ['ops_retention_setting_version_invalid', /missing its latest version/i],
+      ['ops_retention_shortening_confirmation_required', /changed somewhere else/i],
+      ['ops_role_insufficient', /do not have access/i],
+    ];
+
+    for (const [code, copy] of cases) {
+      const err = Object.assign(new Error(`raw ${code} backend text must not render`), {
+        code,
+        status: code === 'ops_role_insufficient' ? 403 : 400,
+      });
+      const dom = await boot({ retentionSave: () => err, runTimers: false });
+      const row = retentionWindowRow(dom, 'Job and run history');
+      retentionControl(row, 'retention-days').value = '120';
+      retentionControl(row, 'retention-save').dispatch('click');
+      await dom.settle();
+
+      const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+      assert.match(toast, copy, `${code} did not render fixed copy`);
+      assert.doesNotMatch(toast, new RegExp(`raw ${code}|${code}`),
+        `${code} leaked raw backend text or code`);
+    }
+  });
+
+test('a retention read failure stays inside that card with fixed copy', async () => {
+  const refused = Object.assign(new Error('raw read backend text must not render'), {
+    code: 'ops_auth_required',
+    status: 401,
+  });
+  const dom = await boot({ retention: refused });
+  const text = allText(cardByTitle(dom, 'Data retention'));
+
+  assert.match(text, /Data retention could not be read/);
+  assert.match(text, /Sign in again to read data retention settings/);
+  assert.doesNotMatch(text, /raw read backend text|ops_auth_required/);
+  assert.match(liveText(dom), /owner@ops\.invalid/,
+    'the account list went away because the retention read failed');
+});
+
+test('a retention role refusal is shown as a denied card, not a raw backend error',
+  async () => {
+    const refused = Object.assign(new Error('raw role backend text must not render'), {
+      code: 'ops_role_insufficient',
+      status: 403,
+    });
+    const dom = await boot({ retention: refused });
+    const text = allText(cardByTitle(dom, 'Data retention'));
+
+    assert.match(text, /do not have access to data retention/i);
+    assert.match(text, /owner role/i);
+    assert.doesNotMatch(text, /raw role backend text|ops_role_insufficient|0 windows/i);
+  });
+
+test('an empty retention read says there are no windows yet', async () => {
+  const dom = await boot({ retention: { shorteningConfirmation: 'delete rows on the next nightly pass', windows: [] } });
+  const text = allText(cardByTitle(dom, 'Data retention'));
+
+  assert.match(text, /No retention windows came back/);
+  assert.match(text, /no retention length is invented/i);
+  assert.doesNotMatch(text, /0 windows/);
 });
 
 test('each integration connection state renders as distinct text on its own pill',
@@ -937,12 +1345,12 @@ test('the retention card keeps the difference between a shorter window and delet
   async () => {
     const dom = await boot();
     const retention = cardByTitle(dom, 'Data retention');
-    assert.equal(retention.getAttribute('data-source'), 'static');
+    assert.equal(retention.getAttribute('data-source'), 'live');
     const text = allText(retention);
     assert.match(text, /deletes rows on the next nightly pass/i);
     assert.match(text, /not a filter on what is read back/i);
     assert.match(text, /fixed by policy/i);
-    assert.match(text, /who looked at an athlete/i,
+    assert.match(text, /who looked at privileged operations data/i,
       'the locked windows do not say why they are locked');
   });
 

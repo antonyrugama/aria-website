@@ -1045,9 +1045,9 @@ narrower and worth being exact about: It runs on the v2 shell: `settings.html` l
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
 
-**Six areas, and four of them are read from anywhere.** Administrators, active sessions,
-the access record and outside connections come from the API. Retention windows and the
-cost-category mapping have no endpoint to read or write. Both halves are on the same pane, so the pane has to say
+**Six areas, and five of them are read from the API.** Administrators, active sessions,
+the access record, data retention and outside connections come from the API. The cost-category
+mapping has no endpoint to read or write. Both halves are on the same pane, so the pane has to say
 which is which, and it says so three times over, never once in colour alone:
 
 1. **The word.** Every card head carries a source chip reading either `Live` or `No API yet`.
@@ -1068,15 +1068,20 @@ card across the boundary fails the suite.
 
 `Stadiora/Aria#11214` is the issue that moved Outside connections across that line. Until the
 matching backend deploys, that card shows a degraded "could not be read" state, not a fake empty
-table. `Stadiora/Aria#5442` still tracks the remaining static cards.
+table. `Stadiora/Aria#11521` moves Data retention across the same line. It reads
+`GET /api/ops/settings/retention`, writes `PUT /api/ops/settings/retention/:windowKey`, and uses
+fixed error copy instead of backend error text. `Stadiora/Aria#5442` still tracks the remaining
+static card.
 
 **What the live half does.** Each account's role, status, last sign in and current session expiry;
 every live session with who holds it, when it started, when it was last used and when it ends; the
-access record, newest first, with paging and an export; and outside connection state from
-`GET /api/ops/integrations`, including the last successful run and its age. Revoking asks first, requires a
-written reason, sends that reason, and reports what the server answered rather than what was asked
-for. The record is reloaded beside the change, so the entry describing it is on screen next to the
-thing it describes.
+access record, newest first, with paging and an export; data-retention windows with fixed windows
+locked and configurable windows editable; and outside connection state from
+`GET /api/ops/integrations`, including the last successful run and its age. Shortening a retention
+window requires the server's typed phrase and says the next nightly pass deletes older rows.
+Revoking asks first, requires a written reason, sends that reason, and reports what the server
+answered rather than what was asked for. The record is reloaded beside the change, so the entry
+describing it is on screen next to the thing it describes.
 
 **Four facts the restyle is not allowed to lose**, because each one is the difference between a
 settings change and an incident:
@@ -1112,8 +1117,12 @@ refused sign in.
 - The mock's band is called *Audit log*; here it is the **Access record**, which is what
   `pane-users.js` and the rest of this README already call the same thing. One name for one
   record.
-- The mock's audit band note reads `kept 7 years`. Nothing reports that window, so it is not
-  printed. The retention card says so instead.
+- The mock's audit band note reads `kept 7 years`. The retention route reports that as
+  `at least 2,555 days`, so the pane prints the floor rather than the mock's rounded prose.
+- The mock's Data retention card prints `7 years`, `Life of account`, an `Applied nightly at
+  03:00` chip and an `Aggregated rollups` row. The live route reports no schedule and no rollup
+  window, so the pane prints only the windows it received and uses `Kept permanently` for
+  account-life rows.
 - The mock's twelve-row role matrix is not built. It is an unverifiable claim about server
   behaviour rendered as a table that looks like data, which is the failure the source chips exist
   to prevent; the three roles it described are stated once, under the table whose Role column they
