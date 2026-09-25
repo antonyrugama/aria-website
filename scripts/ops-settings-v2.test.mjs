@@ -853,6 +853,62 @@ test('a cost-category save announces the category the server saved, not a later 
     assert.doesNotMatch(toast + ' ' + allText(live), /CI and build|Application compute/);
   });
 
+test('a cost-category save without a response override announces the category sent',
+  async () => {
+    const dom = await boot({
+      costSave: () => ({}),
+      runTimers: false,
+    });
+    const row = costTableRow(dom, 'Storage');
+    const category = costControl(row, 'category');
+    category.value = 'application_compute';
+    costControl(row, 'scope').value = 'service';
+    costControl(row, 'save').dispatch('click');
+    category.value = 'ci_and_build';
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT')[0];
+    assert.equal(sent.body.category, 'application_compute',
+      'the fallback test did not send a different category than the later select value');
+    const message = /Saved Application compute for Storage/;
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    const live = dom.doc.querySelector('[aria-live]');
+    assert.match(toast, message,
+      'the toast fallback announced the select value instead of the sent category');
+    assert.match(allText(live), message,
+      'the live fallback announced the select value instead of the sent category');
+    assert.doesNotMatch(toast, /CI and build/);
+    assert.doesNotMatch(allText(live), /CI and build/);
+  });
+
+test('a cost-category save announces the scope sent, not a later scope selection',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = costTableRow(dom, 'Virtual Machines');
+    const scope = costControl(row, 'scope');
+    costControl(row, 'category').value = 'data';
+    scope.value = 'service';
+    costControl(row, 'save').dispatch('click');
+    scope.value = 'resource_group_service';
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT')[0];
+    assert.equal(sent.body.scope, 'service',
+      'the scope test did not send a different scope than the later select value');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    const live = dom.doc.querySelector('[aria-live]');
+    assert.match(toast, /service-wide default/i,
+      'the toast announced the later scope instead of the sent service-wide scope');
+    assert.match(toast, /keeps its resource-group override/i,
+      'the toast omitted the resource-group override wording for the sent scope');
+    assert.match(allText(live), /service-wide default/i,
+      'the live region announced the later scope instead of the sent service-wide scope');
+    assert.match(allText(live), /keeps its resource-group override/i,
+      'the live region omitted the resource-group override wording for the sent scope');
+  });
+
 test('a cost-category save restores focus to the reloaded row', async () => {
     const dom = await boot();
     const row = costTableRow(dom, 'Storage');
