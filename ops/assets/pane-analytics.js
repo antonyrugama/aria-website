@@ -1142,6 +1142,26 @@
 
   /* ------------------------------------------------------------- assembly */
 
+  function cannotAnswerBand() {
+    var section = S.band('What this pane cannot answer yet',
+      'Named rather than drawn as an empty figure');
+    var box = S.card();
+    var body = h('div', { className: 'card-body omit' });
+    var item = h('div', { className: 'omit-item' });
+    item.appendChild(S.icon('empty'));
+    var words = h('div');
+    words.appendChild(h('div', { className: 'omit-title', text: 'Where people are' }));
+    words.appendChild(h('div', {
+      className: 'omit-desc',
+      text: 'No route serves per-region usage yet.'
+    }));
+    item.appendChild(words);
+    body.appendChild(item);
+    box.appendChild(body);
+    section.appendChild(box);
+    return section;
+  }
+
   function render(data) {
     var sent = num(data.reportingFloor);
     floor = sent !== null && sent > 0 ? sent : REPORTING_FLOOR;
@@ -1190,6 +1210,8 @@
       }
       wrap.appendChild(doing);
     }
+
+    wrap.appendChild(cannotAnswerBand());
 
     return wrap;
   }

@@ -1086,6 +1086,18 @@ test('a feature row over too small a group shows no share', async () => {
     'the fixture wrote a share its own counts do not make: ' + withheld[0].basisPoints);
 });
 
+test('the approved region table is acknowledged as not answerable yet', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /What this pane cannot answer yet/,
+    'the cannot-answer band is not on the pane');
+  assert.match(text, /Where people are/,
+    'the approved region table is still silent');
+  assert.match(text, /No route serves per-region usage yet\./,
+    'the region-table cause is missing or too vague');
+});
+
 test('a signup group under the floor is withheld as a whole row, never cell by cell', async () => {
   const dom = await boot({});
   const cohort = card(dom, /Who comes back/);

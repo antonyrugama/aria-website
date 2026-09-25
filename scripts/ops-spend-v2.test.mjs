@@ -1109,6 +1109,29 @@ test('a grouping whose rows add up to the bill says so, with the bill beside it'
     'a reconciling grouping must not also report a gap');
 });
 
+test('the approved unusual-costs card is acknowledged as not answerable yet', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /What this pane cannot answer yet/,
+    'the cannot-answer band is not on the pane');
+  assert.match(text, /Anything unusual/,
+    'the approved unusual-costs card is still silent');
+  assert.match(text, /Problems watches unusual service spend with the service_cost_anomaly rule/,
+    'the unusual-costs cause does not point at the live Problems rule');
+  const ruleToken = byClass(livePanel(dom), 'code')
+    .filter((node) => allText(node) === 'service_cost_anomaly')[0];
+  assert.ok(ruleToken, 'the alert rule identifier is not set as code');
+  assert.match(text, /This pane draws the cost breakdown, but it does not draw the anomaly list yet\./,
+    'the unusual-costs cause does not state the pane gap');
+
+  const problemsLink = linkNamed(livePanel(dom), 'Problems');
+  assert.ok(problemsLink, 'the unusual-costs cause does not link to the Problems pane');
+  assert.equal(problemsLink.getAttribute('href'), 'alerts.html');
+  assert.ok(hasClass(problemsLink, 'btn') && hasClass(problemsLink, 'btn-sm'),
+    'the Problems link is not built with the shared v2 link helper class');
+});
+
 test('a grouping whose rows do not add up to the bill reports the gap as a figure', async () => {
   const data = payload({ range: 'month', billedThrough: 10 });
   /* One row loses a million micros -- exactly one dollar -- which is what a
