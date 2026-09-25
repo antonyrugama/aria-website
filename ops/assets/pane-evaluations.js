@@ -1030,10 +1030,10 @@
     id: 'dataset.synthetic.demo',
     label: 'Synthetic demo frozen release',
     releaseId: '3d11852d-24b9-46ab-9c7e-bd4db48f9d87',
-    releaseDigest: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    releaseDigest: 'be3bd66934844fa2025eedfe916a9ebd26c005faa7870e1702927c1dd893c3ac',
     caseDigests: [
-      'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-      'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+      '2ad0f58eb67e4c5a5279753e92f434057ae0a1d170b46dde6749afbde5bf1a22',
+      '6e40883c88da4d5c9486a5e8b6afaf18f0c5148a5937c589ee74a8c898408c9b'
     ]
   }];
 
@@ -1041,12 +1041,12 @@
     'prompt.synthetic.baseline': {
       label: 'Baseline prompt bundle',
       version: 'v1',
-      digest: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+      digest: '40c6f72e9d3a3756c01374c89ea63d6ad69e0d0d8cf9050f4d3d3176c22c1a47'
     },
     'prompt.synthetic.candidate': {
       label: 'Candidate prompt bundle',
       version: 'v1',
-      digest: '9999999999999999999999999999999999999999999999999999999999999999'
+      digest: '9e1f7cf69326df1f47828a71f52d0d3ad4dc2aeb3c11e0f79c0668a253ef3eb9'
     }
   };
 
@@ -1071,7 +1071,7 @@
     return {
       schemaVersion: 'ciel.run.manifest.v1',
       mode: draft.mode,
-      code: { gitCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      code: { gitCommit: '1df3a9a4b0000000000000000000000000000000' },
       dataset: {
         datasetId: dataset.id,
         releaseId: dataset.releaseId,
@@ -1085,16 +1085,16 @@
         digest: config.digest
       },
       policy: {
-        scenarioVersion: 'scenario.v1',
-        rubricVersion: 'rubric.v1',
-        gatePolicyVersion: 'gate.v1',
-        toolVersion: 'tool.v1',
-        engineVersion: 'engine.v1'
+        scenarioVersion: 'scenario.demo.secret-prompt:v2',
+        rubricVersion: 'rubric.demo.no-retrieval.criteria:v1',
+        gatePolicyVersion: 'ciel-gate-policy:v1',
+        toolVersion: 'aria-eval:v1',
+        engineVersion: 'ciel-engine:v1'
       },
       provider: {
         kind: draft.providerKind,
         deployment: live ? 'azure-openai-prod' : 'fixture',
-        revision: live ? 'approved-prod-revision' : 'rev1'
+        revision: live ? 'd6-owner-approved' : 'fixture-v1'
       },
       sampling: {
         seed: promptBundleId === 'prompt.synthetic.baseline' ? 101 : 202,
@@ -1104,12 +1104,12 @@
       locale: 'en-US',
       retrievalSnapshot: {
         kind: 'synthetic_fixture',
-        digest: 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+        digest: '4ec353ddbe7778ee30f038bbd6aef26d87a1fe3a3ab8ecbdf5b6ec903a7f3eb1'
       },
       graders: [{
         graderId: 'grader.synthetic',
         version: 'v1',
-        digest: '1111111111111111111111111111111111111111111111111111111111111111'
+        digest: '75fb07e67b0171df77bd66d8118f985ee533ec8cd67f2e596d5d4150d5c39ba8'
       }],
       runtime: {
         approvedBy: draft.approvedBy,

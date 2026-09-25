@@ -568,6 +568,10 @@ test('run launch pane sends only code-owned baseline and candidate manifests and
   assert.equal(calls[0].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.baseline');
   assert.equal(calls[1].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.candidate');
   assert.equal(calls[0].options.body.input.manifest.provider.deployment, 'fixture');
+  assert.equal(calls[0].options.body.input.manifest.provider.revision, 'fixture-v1');
+  assert.equal(calls[0].options.body.input.manifest.code.gitCommit, '1df3a9a4b0000000000000000000000000000000');
+  assert.equal(calls[0].options.body.input.manifest.dataset.releaseDigest, 'be3bd66934844fa2025eedfe916a9ebd26c005faa7870e1702927c1dd893c3ac');
+  assert.equal(calls[0].options.body.input.manifest.promptBundle.digest, '40c6f72e9d3a3756c01374c89ea63d6ad69e0d0d8cf9050f4d3d3176c22c1a47');
   assert.equal(calls[0].options.body.input.manifest.dataset.datasetId, 'dataset.synthetic.demo');
   assert.equal(calls[0].options.body.input.manifest.repeatDesign.kind, 'single');
   assert.ok(!JSON.stringify(calls[0].options.body).includes('http://'), 'launch request must not carry a free-text endpoint');
