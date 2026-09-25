@@ -1,0 +1,36 @@
+name: Third-party embeds
+
+on:
+  pull_request:
+    paths:
+      - '*.html'
+      - '**/*.html'
+      - 'scripts/check-third-party-embeds.sh'
+      - 'scripts/check-third-party-embeds.mjs'
+      - 'scripts/check-third-party-embeds.test.mjs'
+      - '.github/workflows/third-party-embeds.yml'
+  push:
+    branches: [main]
+    paths:
+      - '*.html'
+      - '**/*.html'
+      - 'scripts/check-third-party-embeds.sh'
+      - 'scripts/check-third-party-embeds.mjs'
+      - 'scripts/check-third-party-embeds.test.mjs'
+      - '.github/workflows/third-party-embeds.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify no third-party embeds
+        run: bash scripts/check-third-party-embeds.sh
+      - name: Test third-party embed checker
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: node --test --test-concurrency=1 scripts/check-third-party-embeds.test.mjs
