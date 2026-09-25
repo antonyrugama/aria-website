@@ -165,30 +165,52 @@
     reauthWindowSeconds: 300
   };
 
-  var DIAGNOSTIC_KEYS = {
-    detail: true,
-    note: true,
-    reason: true,
-    message: true,
-    explanation: true
+  var EMAIL_PATHS = {
+    '/api/ops/auth/session': { 'data.admin.email': true },
+    '/api/ops/auth/reauth': { 'data.admin.email': true },
+    '/api/ops/admins': { 'data.*.email': true },
+    '/api/ops/audit': { 'data.*.actorEmail': true },
+    '/api/ops/users/lookup': {
+      'data.recorded.actor': true,
+      'data.matches.*.maskedEmail': true
+    },
+    '/api/ops/users/:reference': {
+      'data.recorded.actor': true,
+      'data.summary.fields.*.value': true,
+      'data.record.fields.*.value': true,
+      'data.billing.fields.*.value': true,
+      'data.access.entries.*.actor': true
+    },
+    '/api/ops/users/:reference/reveal': { 'data.value': true }
   };
 
-  function isDiagnosticKey(key) {
-    if (Object.prototype.hasOwnProperty.call(DIAGNOSTIC_KEYS, key)) return true;
-    return /(?:Reason|Note|Detail)$/.test(key);
+  function responseRoute(path) {
+    var bare = String(path || '').replace(/\?.*$/, '');
+    if (bare === '/api/ops/users/lookup') return bare;
+    if (/^\/api\/ops\/users\/[^/]+\/reveal$/.test(bare)) return '/api/ops/users/:reference/reveal';
+    if (/^\/api\/ops\/users\/[^/]+$/.test(bare)) return '/api/ops/users/:reference';
+    return bare;
   }
 
-  function maskDiagnosticStrings(value, key) {
+  function allowedEmailPath(route, path) {
+    var paths = EMAIL_PATHS[responseRoute(route)];
+    return !!(paths && paths[path.join('.')]);
+  }
+
+  function maskResponseStrings(route, value, path) {
+    path = path || [];
     if (typeof value === 'string') {
-      return key && isDiagnosticKey(key) ? maskContactDetails(value) : value;
+      return allowedEmailPath(route, path) ? value : maskContactDetails(value);
     }
     if (Array.isArray(value)) {
-      return value.map(function (entry) { return maskDiagnosticStrings(entry, null); });
+      return value.map(function (entry) {
+        return maskResponseStrings(route, entry, path.concat('*'));
+      });
     }
     if (value && typeof value === 'object') {
       var out = {};
       Object.keys(value).forEach(function (childKey) {
-        out[childKey] = maskDiagnosticStrings(value[childKey], childKey);
+        out[childKey] = maskResponseStrings(route, value[childKey], path.concat(childKey));
       });
       return out;
     }
@@ -829,7 +851,7 @@
         Object.keys(opts).forEach(function (k) { o[k] = opts[k]; });
         o.token = token;
         return api.request(path, o).then(function (payload) {
-          return maskDiagnosticStrings(payload, null);
+          return maskResponseStrings(path, payload);
         });
       }).catch(function (err) {
         if (!(err instanceof api.OpsApiError)) throw err;

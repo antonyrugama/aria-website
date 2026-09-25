@@ -36,23 +36,56 @@ const TOKENS = {
 };
 
 const DIAGNOSTIC = 'Contact Coach.Person+run@eu.example.com for this failure.';
+const MASKED_TEXT = 'Contact [hidden contact detail] for this failure.';
 const RAW_ADDRESS = /Coach\.Person\+run@eu\.example\.com/;
 const MASKED_DIAGNOSTIC = /Contact \[hidden contact detail\] for this failure\./;
+const OWNER_EMAIL = 'owner@example.invalid';
+const ATHLETE_EMAIL = 'athlete.identity@example.invalid';
+const BILLING_EMAIL = 'billing.identity@example.invalid';
+const REVEALED_EMAIL = 'revealed.identity@example.invalid';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
-function diagnosticKey(key) {
-  return ['detail', 'note', 'reason', 'message', 'explanation'].includes(key)
-    || /(?:Reason|Note|Detail)$/.test(key);
+const IDENTITY_PATHS = {
+  '/api/ops/auth/session': new Set(['data.admin.email']),
+  '/api/ops/auth/reauth': new Set(['data.admin.email']),
+  '/api/ops/admins': new Set(['data.*.email']),
+  '/api/ops/audit': new Set(['data.*.actorEmail']),
+  '/api/ops/users/lookup': new Set(['data.recorded.actor', 'data.matches.*.maskedEmail']),
+  '/api/ops/users/:reference': new Set([
+    'data.recorded.actor',
+    'data.summary.fields.*.value',
+    'data.record.fields.*.value',
+    'data.billing.fields.*.value',
+    'data.access.entries.*.actor',
+  ]),
+  '/api/ops/users/:reference/reveal': new Set(['data.value']),
+};
+
+function routeKey(route) {
+  const bare = String(route || '').replace(/\?.*$/, '');
+  if (bare === '/api/ops/users/lookup') return bare;
+  if (/^\/api\/ops\/users\/[^/]+\/reveal$/.test(bare)) return '/api/ops/users/:reference/reveal';
+  if (/^\/api\/ops\/users\/[^/]+$/.test(bare)) return '/api/ops/users/:reference';
+  return bare;
 }
 
-function injectDiagnostics(value, key = null) {
-  if (typeof value === 'string') return key && diagnosticKey(key) ? DIAGNOSTIC : value;
-  if (Array.isArray(value)) return value.map((entry) => injectDiagnostics(entry));
+function identityPath(route, path) {
+  const paths = IDENTITY_PATHS[routeKey(route)];
+  return !!(paths && paths.has(path.join('.')));
+}
+
+function injectEveryString(route, value, path = []) {
+  if (typeof value === 'string') return identityPath(route, path) ? value : DIAGNOSTIC;
+  if (Array.isArray(value)) return value.map((entry) => injectEveryString(route, entry, path.concat('*')));
   if (value && typeof value === 'object') {
-    for (const child of Object.keys(value)) value[child] = injectDiagnostics(value[child], child);
+    for (const child of Object.keys(value)) value[child] = injectEveryString(route, value[child], path.concat(child));
   }
   return value;
+}
+
+function injected(route, payload) {
+  return injectEveryString(route, clone(payload));
 }
 
 function overviewPayload() {
@@ -62,7 +95,7 @@ function overviewPayload() {
     data[key].note = DIAGNOSTIC;
   }
   data.consent = { basis: 'operational', detail: DIAGNOSTIC };
-  return injectDiagnostics(data);
+  return data;
 }
 
 function releasesPayload() {
@@ -76,11 +109,11 @@ function releasesPayload() {
     checkLabel: 'Preflight',
     checkValue: 'blocked',
   };
-  return injectDiagnostics(data);
+  return data;
 }
 
 function spendPayload() {
-  return injectDiagnostics({
+  return {
     availability: { state: 'ready' },
     range: 'month',
     currency: 'USD',
@@ -90,16 +123,28 @@ function spendPayload() {
     billedThrough: '2026-09-07',
     daily: {
       label: 'Daily spend',
+      hint: DIAGNOSTIC,
       labels: ['2026-09-01', '2026-09-02'],
       series: [{ label: 'Current', color: 's1', values: [500_000, 700_000] }],
       note: DIAGNOSTIC,
     },
-    views: {},
-  });
+    views: {
+      resourceGroup: {
+        label: 'By resource group',
+        hint: DIAGNOSTIC,
+        rows: [{
+          label: 'rg-aria-prod',
+          description: DIAGNOSTIC,
+          micros: 1_200_000,
+          shareBasisPoints: 10_000,
+        }],
+      },
+    },
+  };
 }
 
 function usagePayload() {
-  return injectDiagnostics({
+  return {
     availability: { state: 'ready' },
     reportingFloor: 10,
     window: { days: 7 },
@@ -137,11 +182,15 @@ function usagePayload() {
           note: DIAGNOSTIC },
       ],
     },
-  });
+    features: {
+      hint: DIAGNOSTIC,
+      rows: [{ label: 'Chat', appLabel: 'Aria', basisPoints: 6400 }],
+    },
+  };
 }
 
 function usersLookupPayload() {
-  return injectDiagnostics(clone(USER_LOOKUP));
+  return clone(USER_LOOKUP);
 }
 
 function usersDetailPayload() {
@@ -150,7 +199,7 @@ function usersDetailPayload() {
   data.summary.fields[2].unavailableNote = DIAGNOSTIC;
   data.record.fields[1].neverShownNote = DIAGNOSTIC;
   data.record.fields[2].unavailableNote = DIAGNOSTIC;
-  return injectDiagnostics(data);
+  return data;
 }
 
 function alertsRulesPayload() {
@@ -164,34 +213,36 @@ function alertsRulesPayload() {
   rules[1].enabled = true;
   rules[1].lastEvaluationStatus = 'insufficient_data';
   rules[1].lastInsufficientReason = DIAGNOSTIC;
-  return injectDiagnostics({
+  return {
     rules,
     channels: [
       { channel: 'teams', label: 'Microsoft Teams', configured: true,
         lastDeliveryStatus: 'ok', lastFailureReason: null, consecutiveFailures: 0,
         lastAttemptAt: ago(5 * 60_000), lastSuccessAt: ago(5 * 60_000) },
     ],
-  });
+  };
 }
 
 function diagnosticResponses() {
-  return {
+  const responses = {
     '/api/ops/auth/session': clone(stub('/api/ops/auth/session')),
     '/api/ops/summary': { data: overviewPayload() },
-    '/api/ops/alerts/problems': { data: injectDiagnostics({ problems: [clone(PROBLEM)] }) },
+    '/api/ops/alerts/problems': { data: { problems: [clone(PROBLEM)] } },
     '/api/ops/alerts/rules': { data: alertsRulesPayload() },
-    '/api/ops/jobs': { data: injectDiagnostics(clone(JOBS)) },
-    '/api/ops/runs': { data: injectDiagnostics(clone(RUNS)) },
+    '/api/ops/jobs': { data: clone(JOBS) },
+    '/api/ops/runs': { data: clone(RUNS) },
     '/api/ops/costs': { data: spendPayload() },
     '/api/ops/releases': { data: releasesPayload() },
     '/api/ops/usage': { data: usagePayload() },
     '/api/ops/users/lookup': { data: usersLookupPayload() },
     '/api/ops/users/ath_123': { data: usersDetailPayload() },
-    '/api/ops/admins': { data: injectDiagnostics(clone(ADMINS)) },
-    '/api/ops/sessions': { data: injectDiagnostics(clone(SESSIONS)) },
-    '/api/ops/audit': { data: injectDiagnostics(clone(AUDIT)) },
-    '/api/ops/integrations': { data: injectDiagnostics(clone(INTEGRATIONS)) },
+    '/api/ops/admins': { data: clone(ADMINS) },
+    '/api/ops/sessions': { data: clone(SESSIONS) },
+    '/api/ops/audit': { data: clone(AUDIT) },
+    '/api/ops/integrations': { data: clone(INTEGRATIONS) },
   };
+  for (const [route, payload] of Object.entries(responses)) responses[route] = injected(route, payload);
+  return responses;
 }
 
 function buildPage(dom, body, pane) {
@@ -230,7 +281,7 @@ async function bootPane(pane, paneSources, options = {}) {
   dom.window.sessionStorage.setItem('ops-access', JSON.stringify({
     token: 'stub-access',
     expiresAt: Date.now() + DAY,
-    s: ADMIN.id,
+    s: options.subject || (options.responses ? ADMIN.id : MASKED_TEXT),
   }));
   dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
   dom.window.OpsApi = {
@@ -241,7 +292,13 @@ async function bootPane(pane, paneSources, options = {}) {
     },
     request(path) {
       calls.push(path);
-      const answer = responses[path] || responses[path.replace(/\?.*$/, '')];
+      const bare = path.replace(/\?.*$/, '');
+      const answer = responses[path] || responses[bare] ||
+        (/^\/api\/ops\/users\/[^/]+\/reveal$/.test(bare)
+          ? responses['/api/ops/users/ath_123/reveal']
+          : /^\/api\/ops\/users\/[^/]+$/.test(bare)
+            ? responses['/api/ops/users/ath_123']
+            : null);
       if (!answer) return Promise.resolve({ data: {} });
       return Promise.resolve(clone(answer));
     },
@@ -280,21 +337,110 @@ const PANES = [
   ['settings', ['settings'], 'settings.html'],
 ];
 
-test('diagnostic prose keys are masked at the ops data boundary for every loaded pane', async () => {
+test('every non-identity string is masked at the ops data boundary for every loaded pane', async () => {
   for (const [pane, sources, file] of PANES) {
     const dom = await bootPane(pane, sources, { file });
     assertNoRawAddress(dom, pane);
   }
 });
 
-test('People masks diagnostic notes but leaves intended email values alone', async () => {
-  const dom = await bootPane('users', ['users'], { file: 'users.html' });
+function cleanResponses() {
+  return {
+    '/api/ops/auth/session': clone(stub('/api/ops/auth/session')),
+    '/api/ops/summary': { data: clone(SUMMARY) },
+    '/api/ops/alerts/problems': { data: { problems: [clone(PROBLEM)] } },
+    '/api/ops/alerts/rules': clone(stub('/api/ops/alerts/rules')),
+    '/api/ops/jobs': { data: clone(JOBS) },
+    '/api/ops/runs': { data: clone(RUNS) },
+    '/api/ops/costs': { data: spendPayload() },
+    '/api/ops/releases': { data: clone(RELEASES) },
+    '/api/ops/usage': { data: usagePayload() },
+    '/api/ops/users/lookup': { data: clone(USER_LOOKUP) },
+    '/api/ops/users/ath_123': { data: clone(USER_DETAIL) },
+    '/api/ops/users/ath_123/reveal': {
+      data: { field: 'backupEmail', value: REVEALED_EMAIL, expiresAt: ago(-60_000), recorded: true },
+    },
+    '/api/ops/admins': { data: clone(ADMINS) },
+    '/api/ops/sessions': { data: clone(SESSIONS) },
+    '/api/ops/audit': { data: clone(AUDIT) },
+    '/api/ops/integrations': { data: clone(INTEGRATIONS) },
+  };
+}
+
+async function lookUpUser(dom) {
   const identifier = dom.doc.getElementById('lookupIdentifier');
   const reason = dom.doc.getElementById('lookupReason');
   identifier.value = 'ath_123';
   reason.value = 'support';
   dom.doc.querySelector('form').dispatch('submit');
   await settle();
+}
+
+test('allowlisted identity paths still render intended email values', async () => {
+  const settings = await bootPane('settings', ['settings'], {
+    file: 'settings.html',
+    responses: cleanResponses(),
+  });
+  const settingsSurface = allDomTextAndAttrs(settings.body);
+  assert.match(settingsSurface, new RegExp(OWNER_EMAIL.replace('.', '\\.')),
+    'session administrator email was masked');
+  assert.match(settingsSurface, /owner@ops\.invalid/, 'administrator email was masked');
+  assert.match(settingsSurface, /operator@ops\.invalid/, 'second administrator email was masked');
+  assert.match(settingsSurface, /nobody@ops\.invalid/, 'audit actor email was masked');
+
+  const responses = cleanResponses();
+  const detail = clone(USER_DETAIL);
+  detail.record.fields.push({
+    key: 'backupEmail',
+    label: 'Backup email',
+    masked: true,
+    maskedValue: 'b•••@example.invalid',
+    reveal: 'allowed',
+  });
+  detail.access.entries = [{
+    occurredAt: ago(30_000),
+    actor: 'access.actor@example.invalid',
+    fields: 'contactEmail',
+    reason: 'support',
+    revealed: true,
+  }];
+  responses['/api/ops/users/ath_123'] = { data: detail };
+  const people = await bootPane('users', ['users'], { file: 'users.html', responses });
+  await lookUpUser(people);
+
+  let peopleSurface = allDomTextAndAttrs(people.body);
+  assert.match(peopleSurface, /ath\*{5}@example\.invalid/, 'lookup masked email was masked again');
+  assert.match(peopleSurface, new RegExp(OWNER_EMAIL.replace('.', '\\.')),
+    'lookup or account access-record actor was masked');
+  assert.match(peopleSurface, new RegExp(ATHLETE_EMAIL.replaceAll('.', '\\.')),
+    'summary or record email value was masked');
+  assert.match(peopleSurface, new RegExp(BILLING_EMAIL.replaceAll('.', '\\.')),
+    'billing email value was masked');
+  assert.match(peopleSurface, /access\.actor@example\.invalid/, 'detail access actor was masked');
+
+  const reveal = [...people.doc.querySelectorAll('button')]
+    .find((button) => {
+      const text = allDomTextAndAttrs(button);
+      return text.includes('Reveal') && !text.includes('Hide again') &&
+        !button.disabled && !button.classList.contains('hidden');
+    });
+  assert.ok(reveal, 'expected a live reveal button for the allowlisted reveal value');
+  reveal.dispatch('click');
+  const reason = [...people.doc.querySelectorAll('input')]
+    .find((input) => input.getAttribute('placeholder') === 'Reason, recorded by field name');
+  assert.ok(reason, 'expected the reveal reason input');
+  reason.value = 'support';
+  reason.closest('form').dispatch('submit');
+  await settle();
+
+  peopleSurface = allDomTextAndAttrs(people.body);
+  assert.match(peopleSurface, new RegExp(REVEALED_EMAIL.replaceAll('.', '\\.')),
+    'owner-authorized reveal value was masked');
+});
+
+test('People masks diagnostic notes but leaves intended email values alone', async () => {
+  const dom = await bootPane('users', ['users'], { file: 'users.html' });
+  await lookUpUser(dom);
 
   const surface = allDomTextAndAttrs(dom.body);
   assert.doesNotMatch(surface, RAW_ADDRESS,
@@ -309,22 +455,80 @@ test('People masks diagnostic notes but leaves intended email values alone', asy
 
 test('round-2 reviewed diagnostic rows are covered by the boundary sweep', async () => {
   const cases = [
-    ['Overview availability detail', 'overview', ['alertsModel', 'overview'], 'index.html'],
-    ['Overview block and consent notes', 'overview', ['alertsModel', 'overview'], 'index.html'],
-    ['Releases source failure and candidate reason', 'releases', ['releases'], 'releases.html'],
-    ['Spend daily note', 'spend', ['spend'], 'spend.html'],
-    ['Analytics cohort and coverage notes', 'analytics', ['analytics'], 'analytics.html'],
-    ['Problems insufficient-data reason', 'alerts', ['alertsModel', 'alerts'], 'alerts.html'],
+    ['Overview availability detail', 'overview', ['alertsModel', 'overview'], 'index.html',
+      { '/api/ops/summary': { data: overviewPayload() } }],
+    ['Overview block and consent notes', 'overview', ['alertsModel', 'overview'], 'index.html',
+      { '/api/ops/summary': { data: overviewPayload() } }],
+    ['Releases source failure and candidate reason', 'releases', ['releases'], 'releases.html',
+      { '/api/ops/releases': { data: releasesPayload() } }],
+    ['Spend daily note', 'spend', ['spend'], 'spend.html',
+      { '/api/ops/costs': { data: spendPayload() } }],
+    ['Analytics cohort and coverage notes', 'analytics', ['analytics'], 'analytics.html',
+      { '/api/ops/usage': { data: usagePayload() } }],
+    ['Problems insufficient-data reason', 'alerts', ['alertsModel', 'alerts'], 'alerts.html',
+      { '/api/ops/alerts/rules': { data: alertsRulesPayload() } }],
   ];
-  for (const [name, pane, sources, file] of cases) {
-    const dom = await bootPane(pane, sources, { file });
+  for (const [name, pane, sources, file, overrides] of cases) {
+    const dom = await bootPane(pane, sources, {
+      file,
+      responses: { ...cleanResponses(), ...overrides },
+    });
     assertNoRawDiagnostic(dom, name);
   }
 
   const users = await bootPane('users', ['users'], { file: 'users.html' });
-  users.doc.getElementById('lookupIdentifier').value = 'ath_123';
-  users.doc.getElementById('lookupReason').value = 'support';
-  users.doc.querySelector('form').dispatch('submit');
-  await settle();
+  await lookUpUser(users);
   assertNoRawDiagnostic(users, 'People neverShownNote and unavailableNote');
+});
+
+test('round-3 summary hint and description rows are covered by named cases', async () => {
+  const overviewResponses = cleanResponses();
+  const overviewProblem = clone(PROBLEM);
+  overviewProblem.summary = DIAGNOSTIC;
+  overviewResponses['/api/ops/alerts/problems'] = { data: { problems: [overviewProblem] } };
+  assertNoRawDiagnostic(
+    await bootPane('overview', ['alertsModel', 'overview'], {
+      file: 'index.html',
+      responses: overviewResponses,
+    }),
+    'Overview problem summary'
+  );
+
+  const problemResponses = cleanResponses();
+  const problem = clone(PROBLEM);
+  problem.summary = DIAGNOSTIC;
+  problemResponses['/api/ops/alerts/problems'] = { data: { problems: [problem] } };
+  assertNoRawDiagnostic(
+    await bootPane('alerts', ['alertsModel', 'alerts'], {
+      file: 'alerts.html',
+      responses: problemResponses,
+    }),
+    'Problems summary'
+  );
+
+  const spendResponses = cleanResponses();
+  const spend = spendPayload();
+  spend.daily.hint = DIAGNOSTIC;
+  spend.views.resourceGroup.hint = DIAGNOSTIC;
+  spend.views.resourceGroup.rows[0].description = DIAGNOSTIC;
+  spendResponses['/api/ops/costs'] = { data: spend };
+  assertNoRawDiagnostic(
+    await bootPane('spend', ['spend'], {
+      file: 'spend.html',
+      responses: spendResponses,
+    }),
+    'Spend hint and description'
+  );
+
+  const analyticsResponses = cleanResponses();
+  const usage = usagePayload();
+  usage.features.hint = DIAGNOSTIC;
+  analyticsResponses['/api/ops/usage'] = { data: usage };
+  assertNoRawDiagnostic(
+    await bootPane('analytics', ['analytics'], {
+      file: 'analytics.html',
+      responses: analyticsResponses,
+    }),
+    'Analytics features hint'
+  );
 });
