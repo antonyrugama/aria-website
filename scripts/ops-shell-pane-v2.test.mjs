@@ -1106,6 +1106,7 @@ test('session signOut can clear credentials without navigating', async () => {
     call: () => Promise.resolve({ data: {} }),
   };
   vm.createContext(dom.window);
+  vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
   vm.runInContext(SESSION_SRC, dom.window, { filename: 'session.js' });
 
   const replacements = [];
