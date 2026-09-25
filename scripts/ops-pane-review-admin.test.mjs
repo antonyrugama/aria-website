@@ -114,6 +114,7 @@ test('review pane reads a blinded queue and hides labels before independent subm
   });
   await Promise.resolve();
   assert.match(treeText(root), /Blinded review queue/, 'review pane must announce blinded queue');
+  assert.match(treeText(root), /evidence\.demo\.output/, 'queue cards render authorized evidence references before opening detail');
   assert.doesNotMatch(treeText(root), /gpt|claude|candidate model|baseline model/i, 'queue must not reveal model or treatment identity');
 
   const button = find(root, node => node.tag === 'button' && /Review blinded output/.test(node.textContent));
