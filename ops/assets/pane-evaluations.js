@@ -696,7 +696,7 @@
         return [
           approval.kind,
           approval.reviewerRef,
-          approval.qualificationPresent ? 'qualified' : 'qualification missing',
+          approval.qualificationPresent ? 'qualification reference present' : 'qualification reference missing',
           approval.domain,
           approval.scenarioVersion ? 'scenario v' + String(approval.scenarioVersion) : ''
         ].filter(Boolean).join(' · ');

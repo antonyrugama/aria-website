@@ -430,7 +430,26 @@ test('browse pane loads version-bound scenario and dataset inspection details', 
               authority: { schema: 'v2-authority', tier: 'B', domain: 'training', approvalState: 'none', approvals: [] },
             }],
             required: [],
-            expected: [],
+            expected: [{
+              id: 'criterion.expected.helpful',
+              statement: 'Mentions planned work.',
+              evidenceRefs: ['source.public'],
+              graderRef: 'grader.planned',
+              grading: { method: 'contains', gating: false },
+              authority: {
+                schema: 'v2-authority',
+                tier: 'B',
+                domain: 'training',
+                approvalState: 'approved',
+                approvals: [{
+                  kind: 'expert_reviewed',
+                  reviewerRef: 'reviewer.training',
+                  qualificationPresent: true,
+                  domain: 'training',
+                  scenarioVersion: 2,
+                }],
+              },
+            }],
             aspirational: [],
           },
           oracle: { expectedOutcomeKind: 'text', referenceFacts: [{ id: 'fact.public', sourceRef: 'source.public' }] },
@@ -462,6 +481,8 @@ test('browse pane loads version-bound scenario and dataset inspection details', 
   assert.match(treeText(scenarioDetail), /Public coaching source/);
   assert.match(treeText(scenarioDetail), /https:\/\/example\.test\/source/);
   assert.match(treeText(scenarioDetail), /Authority: v2-authority · tier B · domain training · approval none/);
+  assert.match(treeText(scenarioDetail), /qualification reference present/);
+  assert.doesNotMatch(treeText(scenarioDetail), /\bqualified\b/);
   assert.match(treeText(scenarioDetail), /Redacted: history, prompt/);
 
   findNode(browse, node => node.tag === 'button' && node.textContent === 'Inspect dataset').dispatch('click');
