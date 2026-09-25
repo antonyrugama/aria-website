@@ -1187,6 +1187,29 @@
 
   /* ---------------------------------------------------------- the render */
 
+  function cannotAnswerBand() {
+    var section = S.band('What this pane cannot answer yet',
+      'Named rather than drawn as an empty figure');
+    var box = S.card();
+    var body = h('div', { className: 'card-body omit' });
+    var item = h('div', { className: 'omit-item' });
+    item.appendChild(S.icon('empty'));
+    var words = h('div');
+    words.appendChild(h('div', { className: 'omit-title', text: 'Anything unusual' }));
+    words.appendChild(h('div', { className: 'omit-desc' }, [
+      h('span', { text: 'Problems watches unusual service spend with the ' }),
+      h('span', { className: 'code', text: 'service_cost_anomaly' }),
+      h('span', { text: ' rule and links those problems here. This pane draws the cost breakdown, but it does not draw the anomaly list yet. Open ' }),
+      S.link(S.paneHref('alerts') || 'alerts.html', 'Problems'),
+      h('span', { text: ' for the live cost-anomaly rule.' })
+    ]));
+    item.appendChild(words);
+    body.appendChild(item);
+    box.appendChild(body);
+    section.appendChild(box);
+    return section;
+  }
+
   function render(data, summary, viewKey, onPick) {
     var wrap = h('div', { className: 'stack' });
 
@@ -1212,6 +1235,7 @@
       if (services) third.appendChild(services);
       wrap.appendChild(third);
     }
+    wrap.appendChild(cannotAnswerBand());
     return wrap;
   }
 
