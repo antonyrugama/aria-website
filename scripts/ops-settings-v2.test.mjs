@@ -4,7 +4,7 @@
    Two of the rules this pane has to hold are the kind that pass a badly built
    test by construction, so they are written here first and deliberately:
 
-   THE LIVE-AGAINST-STATIC PARTITION. Four of the six areas on this pane are
+   THE LIVE-AGAINST-STATIC PARTITION. Five of the seven areas on this pane are
    read from an API and two are not, and the whole point of the remodel is
    that a reader can tell which is which. Asserting that a marker element
    EXISTS is the classic false green: it stays green when the marker is on
@@ -81,6 +81,7 @@ const TOKENS = {
 
 const ADMINS = '/api/ops/admins';
 const SESSIONS = '/api/ops/sessions';
+const SESSION_SETTINGS = '/api/ops/settings/sessions';
 const AUDIT = '/api/ops/audit';
 const INTEGRATIONS = '/api/ops/integrations';
 const ROUTE_FAILURE_REASONS = [
@@ -103,6 +104,14 @@ const FAILURE_REASON_COPY = {
   malformed: 'The service returned data this dashboard cannot read',
   config: 'Configuration is invalid',
   untrusted_next_link: 'The service returned an unsafe next-page link',
+};
+
+const SESSION_SETTINGS_WRITE_COPY = {
+  ops_session_settings_out_of_bounds: /inside the listed bounds/i,
+  ops_session_settings_version_invalid: /missing its latest version/i,
+  ops_reauth_required: /Confirm your password to change sign-in windows/i,
+  ops_role_insufficient: /do not have access/i,
+  ops_session_settings_update_failed: /could not be saved/i,
 };
 
 /* -------------------------------------------------------------- fixtures
@@ -296,6 +305,40 @@ function integrationsFixture() {
   };
 }
 
+function sessionSettingsSetting(sessionMaxDays, reauthWindowSeconds, updatedAt = '2026-09-24T18:00:00.000Z') {
+  return {
+    id: 1,
+    sessionMaxDays,
+    reauthWindowSeconds,
+    createdAt: '2026-09-24T17:00:00.000Z',
+    updatedAt,
+  };
+}
+
+function sessionSettingsFixture(overrides = {}) {
+  const sessionMaxDays = Object.prototype.hasOwnProperty.call(overrides, 'sessionMaxDays')
+    ? overrides.sessionMaxDays
+    : 14;
+  const reauthWindowSeconds = Object.prototype.hasOwnProperty.call(overrides, 'reauthWindowSeconds')
+    ? overrides.reauthWindowSeconds
+    : 300;
+  const source = overrides.source || 'setting';
+  return {
+    effective: { sessionMaxDays, reauthWindowSeconds },
+    source,
+    defaults: { sessionMaxDays: 30, reauthWindowSeconds: 300 },
+    bounds: {
+      sessionMaxDays: { min: 1, max: 30 },
+      reauthWindowSeconds: { min: 60, max: 900 },
+    },
+    setting: Object.prototype.hasOwnProperty.call(overrides, 'setting')
+      ? overrides.setting
+      : source === 'setting'
+        ? sessionSettingsSetting(sessionMaxDays, reauthWindowSeconds, overrides.updatedAt)
+        : null,
+  };
+}
+
 /* ---------------------------------------------------------------- the page */
 
 function buildPage(dom, body) {
@@ -325,11 +368,16 @@ async function boot(options) {
   const calls = [];
   const states = [];
   const blobs = [];
+  const signOuts = [];
+  const toLogins = [];
   const role = opts.role || 'owner';
 
   const answers = {
     [ADMINS]: opts.admins === undefined ? adminsFixture() : opts.admins,
     [SESSIONS]: opts.sessions === undefined ? sessionsFixture() : opts.sessions,
+    [SESSION_SETTINGS]: opts.sessionSettings === undefined
+      ? sessionSettingsFixture()
+      : opts.sessionSettings,
     [AUDIT]: opts.audit === undefined ? auditFixture() : opts.audit,
     [INTEGRATIONS]: opts.integrations === undefined ? integrationsFixture() : opts.integrations,
   };
@@ -366,6 +414,7 @@ async function boot(options) {
     this.parts = parts;
     this.type = o && o.type;
   };
+  dom.window.confirm = opts.confirm || (() => true);
 
   dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
   dom.window.OpsSession = {
@@ -385,6 +434,19 @@ async function boot(options) {
           ? Promise.reject(answer)
           : Promise.resolve({ data: answer });
       }
+      if (endpoint === SESSION_SETTINGS && o && o.method === 'PUT') {
+        const save = opts.sessionSettingsSave || (() => ({
+          ...sessionSettingsFixture({
+            sessionMaxDays: o.body.sessionMaxDays,
+            reauthWindowSeconds: o.body.reauthWindowSeconds,
+          }),
+          currentSessionWillEnd: false,
+        }));
+        const answer = save(o);
+        return answer instanceof Error
+          ? Promise.reject(answer)
+          : Promise.resolve({ data: answer });
+      }
       let answer = answers[endpoint];
       if (typeof answer === 'function') answer = answer(o);
       if (answer instanceof Error) return Promise.reject(answer);
@@ -392,7 +454,11 @@ async function boot(options) {
       if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
       return Promise.resolve({ data: answer });
     },
-    signOut: () => Promise.resolve(),
+    signOut: opts.signOut || (() => { signOuts.push('signOut'); return Promise.resolve(); }),
+    toLogin: opts.toLogin || ((reason) => {
+      toLogins.push(reason);
+      dom.window.location.replace(`login.html?reason=${reason}`);
+    }),
     role: () => role,
     hasRole: (required) => {
       if (!required || !required.length) return true;
@@ -425,6 +491,8 @@ async function boot(options) {
     calls,
     states,
     blobs,
+    signOuts,
+    toLogins,
     settle: async () => { for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r)); },
     content: dom.doc.getElementById('content'),
   };
@@ -483,6 +551,30 @@ function integrationBandNoteText(dom) {
   const note = heading.parentNode.querySelector('.band-note');
   assert.ok(note, 'the Integrations band note is missing');
   return allText(note);
+}
+
+function sessionWindowsCard(dom) {
+  const card = cardByTitle(dom, 'Sign-in windows');
+  assert.ok(card, 'Sign-in windows card is missing');
+  return card;
+}
+
+function sessionWindowsControl(dom, role) {
+  const control = sessionWindowsCard(dom).querySelector(`[data-role="${role}"]`);
+  assert.ok(control, `Sign-in windows has no ${role} control`);
+  return control;
+}
+
+function sessionWindowLiveMessages(dom, fragments) {
+  const needles = fragments.map((one) => one instanceof RegExp ? one : new RegExp(one));
+  return findAll(dom.body, (node) => {
+    if (!node.tagName) return false;
+    const role = node.getAttribute('role');
+    const live = node.hasAttribute('aria-live');
+    if (role !== 'status' && role !== 'alert' && !live) return false;
+    const text = allText(node);
+    return text && needles.some((needle) => needle.test(text));
+  }).map((node) => allText(node));
 }
 
 /* Every endpoint this boot actually read. DELETE is excluded: a revoke is a
@@ -593,10 +685,335 @@ test('the remaining unwired areas Stadiora/Aria#5442 tracks are the static ones'
   assert.deepEqual(titles('live'), [
     'Accounts',
     'Outside connections',
+    'Sign-in windows',
     'Signed in now',
     'What was done',
   ]);
 });
+
+/* ========================================================= sign-in windows */
+
+test('sign-in windows is a live card filled from the session settings route',
+  async () => {
+    const dom = await boot();
+    const card = sessionWindowsCard(dom);
+
+    assert.equal(card.getAttribute('data-source'), 'live');
+    assert.equal(card.getAttribute('data-endpoint'), SESSION_SETTINGS);
+    assert.ok(readEndpoints(dom).indexOf(SESSION_SETTINGS) !== -1,
+      'the card claims the session settings route without reading it');
+  });
+
+test('sign-in windows show days and minutes with setting source labels, never raw seconds',
+  async () => {
+    const dom = await boot();
+    const text = allText(sessionWindowsCard(dom));
+
+    assert.match(text, /Sessions last up to 14 days/);
+    assert.match(text, /Re-enter your password for sensitive actions after 5 minutes/);
+    assert.match(text, /Your setting/);
+    assert.doesNotMatch(text, /\b300\b|seconds/,
+      'the owner-facing card leaked the raw re-auth seconds value');
+  });
+
+test('fallback session settings say defaults are in force and keep editing available',
+  async () => {
+    const dom = await boot({
+      sessionSettings: sessionSettingsFixture({
+        source: 'fallback',
+        sessionMaxDays: 30,
+        reauthWindowSeconds: 300,
+        setting: null,
+      }),
+    });
+    const card = sessionWindowsCard(dom);
+    const text = allText(card);
+
+    assert.match(text, /settings could not be read, so defaults are in force/i);
+    assert.match(text, /Default/);
+    assert.equal(sessionWindowsControl(dom, 'session-days').value, '30');
+    assert.equal(sessionWindowsControl(dom, 'reauth-minutes').value, '5');
+    assert.ok(sessionWindowsControl(dom, 'session-save'), 'fallback did not render Save');
+  });
+
+test('failed session-settings reads show fixed copy without values or an editor',
+  async () => {
+    const err = Object.assign(
+      new Error('ECONNREFUSED ops-db-7: relation "ops_session_settings" does not exist'),
+      { status: 503 }
+    );
+    const dom = await boot({ sessionSettings: err });
+    const card = sessionWindowsCard(dom);
+    const text = allText(card);
+
+    assert.match(text, /Sign-in windows could not be read/);
+    assert.match(text, /The sign-in window settings could not be read\. Try again\./);
+    assert.match(text, /unread, not absent/i);
+    assert.doesNotMatch(text, /ECONNREFUSED|relation "ops_session_settings"|Sessions last up to|Default/,
+      'the failed read leaked backend text or invented a setting');
+    assert.equal(card.querySelector('[data-role="session-days"]'), null,
+      'the failed read still rendered the session-days editor');
+    assert.equal(card.querySelector('[data-role="session-save"]'), null,
+      'the failed read still rendered Save');
+  });
+
+test('role-refused session-settings reads show fixed copy without values or an editor',
+  async () => {
+    const err = Object.assign(
+      new Error('raw ops_role_insufficient backend text must not render'),
+      { code: 'ops_role_insufficient', status: 403 }
+    );
+    const dom = await boot({ sessionSettings: err });
+    const card = sessionWindowsCard(dom);
+    const text = allText(card);
+
+    assert.match(text, /You do not have access to sign-in windows/);
+    assert.match(text, /limited to the owner role/i);
+    assert.doesNotMatch(text, /raw ops_role_insufficient|ops_role_insufficient|Sessions last up to|Default/,
+      'the role-refused read leaked backend text or invented a setting');
+    assert.equal(card.querySelector('[data-role="session-days"]'), null,
+      'the role-refused read still rendered the session-days editor');
+    assert.equal(card.querySelector('[data-role="session-save"]'), null,
+      'the role-refused read still rendered Save');
+  });
+
+test('session-window inputs bind range hints and visible invalid messages',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const card = sessionWindowsCard(dom);
+    const days = sessionWindowsControl(dom, 'session-days');
+    const minutes = sessionWindowsControl(dom, 'reauth-minutes');
+
+    assert.equal(days.getAttribute('aria-describedby'), 'sessionWindowDaysHint');
+    assert.match(allText(card.querySelector('#sessionWindowDaysHint')), /Allowed range: 1 to 30\./);
+    assert.equal(minutes.getAttribute('aria-describedby'), 'sessionWindowReauthHint');
+    assert.match(allText(card.querySelector('#sessionWindowReauthHint')), /Allowed range: 1 to 15\./);
+
+    days.value = '31';
+    minutes.value = '5';
+    sessionWindowsControl(dom, 'session-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(days.getAttribute('aria-invalid'), 'true');
+    assert.equal(days.getAttribute('aria-describedby'), 'sessionWindowDaysHint sessionWindowDaysError');
+    assert.match(allText(card.querySelector('#sessionWindowDaysError')), /Use 1 to 30 days\./);
+    assert.equal(minutes.getAttribute('aria-invalid'), null);
+    assert.equal(allText(card.querySelector('#sessionWindowReauthError')), '');
+  });
+
+test('lengthening session settings sends minutes as seconds without confirmation',
+  async () => {
+    let confirmed = false;
+    const dom = await boot({
+      confirm: () => { confirmed = true; return true; },
+      runTimers: false,
+    });
+    sessionWindowsControl(dom, 'session-days').value = '20';
+    sessionWindowsControl(dom, 'reauth-minutes').value = '7';
+    sessionWindowsControl(dom, 'session-save').dispatch('click');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === SESSION_SETTINGS && c.method === 'PUT');
+    assert.equal(sent.length, 1, 'saving did not call the session settings route once');
+    assert.equal(confirmed, false, 'lengthening opened the shortening confirmation');
+    assert.equal(sent[0].body.sessionMaxDays, 20);
+    assert.equal(sent[0].body.reauthWindowSeconds, 420);
+    assert.equal(sent[0].body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
+  });
+
+test('shortening session length confirms live-session impact before saving',
+  async () => {
+    let prompt = null;
+    const dom = await boot({
+      confirm: (text) => { prompt = text; return true; },
+      runTimers: false,
+    });
+    sessionWindowsControl(dom, 'session-days').value = '7';
+    sessionWindowsControl(dom, 'reauth-minutes').value = '5';
+    sessionWindowsControl(dom, 'session-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(prompt,
+      'Shortening applies to sessions already signed in: any session older than 7 days ends now. Lengthening never extends a session that already started.');
+    const sent = dom.calls.filter((c) => c.endpoint === SESSION_SETTINGS && c.method === 'PUT');
+    assert.equal(sent.length, 1, 'confirmed shortening did not call the session settings route once');
+    assert.equal(sent[0].body.sessionMaxDays, 7);
+    assert.equal(sent[0].body.reauthWindowSeconds, 300);
+  });
+
+test('cancelled session shortening sends no request', async () => {
+  const dom = await boot({
+    confirm: () => false,
+    runTimers: false,
+  });
+  sessionWindowsControl(dom, 'session-days').value = '7';
+  sessionWindowsControl(dom, 'session-save').dispatch('click');
+  await dom.settle();
+
+  assert.deepEqual(dom.calls.filter((c) => c.endpoint === SESSION_SETTINGS && c.method === 'PUT'), [],
+    'cancelled shortening still wrote to the server');
+});
+
+test('a successful session-settings save reloads and restores focus',
+  async () => {
+    let current = sessionSettingsFixture();
+    const dom = await boot({
+      sessionSettings: () => current,
+      sessionSettingsSave: (o) => {
+        current = sessionSettingsFixture({
+          sessionMaxDays: o.body.sessionMaxDays,
+          reauthWindowSeconds: o.body.reauthWindowSeconds,
+          updatedAt: '2026-09-24T20:00:00.000Z',
+        });
+        return { ...current, currentSessionWillEnd: false };
+      },
+      runTimers: false,
+    });
+    const days = sessionWindowsControl(dom, 'session-days');
+    days.value = '20';
+    sessionWindowsControl(dom, 'session-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === SESSION_SETTINGS).length, 2,
+      'a successful save did not reload session settings');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /^Saved$/);
+    const reloaded = sessionWindowsCard(dom);
+    assert.match(allText(reloaded), /Sessions last up to 20 days/);
+    assert.equal(dom.doc.activeElement, sessionWindowsControl(dom, 'session-days'),
+      'focus did not return inside the saved sign-in windows card');
+  });
+
+test('a session-settings save that ends the current session announces before routing to sign-in',
+  async () => {
+    let dom;
+    const replacements = [];
+    dom = await boot({
+      sessionSettingsSave: (o) => ({
+        ...sessionSettingsFixture({
+          sessionMaxDays: o.body.sessionMaxDays,
+          reauthWindowSeconds: o.body.reauthWindowSeconds,
+        }),
+        currentSessionWillEnd: true,
+      }),
+      signOut: (options) => {
+        dom.signOuts.push(options || null);
+        if (!options || options.noNavigate !== true) {
+          dom.window.location.replace('login.html?reason=signedout');
+        }
+        return Promise.resolve();
+      },
+    });
+    const realReplace = dom.window.location.replace;
+    dom.window.location.replace = (next) => {
+      replacements.push(next);
+      realReplace.call(dom.window.location, next);
+    };
+
+    sessionWindowsControl(dom, 'session-days').value = '7';
+    sessionWindowsControl(dom, 'session-save').dispatch('click');
+    await dom.settle();
+
+    assert.match(allText(sessionWindowsCard(dom)), /Opening the sign-in page in a moment/);
+    assert.match(allText(sessionWindowsCard(dom)),
+      /Saved\. Your own session is older than the new limit, so you'll be signed out\./);
+    assert.equal(dom.signOuts.length, 1,
+      'a session-ending save cleared the local credential more than once');
+    assert.equal(dom.signOuts[0] && dom.signOuts[0].noNavigate, true,
+      'a session-ending save did not clear the local credential without navigating');
+    assert.deepEqual(dom.toLogins, ['expired'],
+      'a session-ending save did not route through the shared login helper');
+    assert.deepEqual(replacements, ['login.html?reason=expired'],
+      'a session-ending save raced more than one sign-in navigation');
+    assert.match(dom.window.location.href, /login\.html\?reason=expired/);
+  });
+
+
+test('cancelled session shortening announces Not saved exactly once', async () => {
+  const dom = await boot({
+    confirm: () => false,
+    runTimers: false,
+  });
+  sessionWindowsControl(dom, 'session-days').value = '7';
+  sessionWindowsControl(dom, 'session-save').dispatch('click');
+  await dom.settle();
+
+  assert.deepEqual(sessionWindowLiveMessages(dom, [/Not saved\./]), ['Not saved.'],
+    'a cancelled session shortening did not announce Not saved exactly once');
+});
+
+test('session-settings validation refusals update one live region', async () => {
+  const dom = await boot({ runTimers: false });
+  sessionWindowsControl(dom, 'session-days').value = '31';
+  sessionWindowsControl(dom, 'session-save').dispatch('click');
+  await dom.settle();
+
+  assert.deepEqual(sessionWindowLiveMessages(dom, [
+    /Enter values inside the listed bounds\./,
+    /Use 1 to 30 days\./,
+  ]), ['Enter values inside the listed bounds.'],
+  'a bounds refusal produced more than one live-region update');
+});
+
+test('a stale session-settings save reloads with fixed copy and restored focus',
+  async () => {
+    const stale = Object.assign(new Error('raw stale backend text must not render'), {
+      code: 'ops_session_settings_stale',
+      status: 409,
+    });
+    const dom = await boot({ sessionSettingsSave: () => stale, runTimers: false });
+    sessionWindowsControl(dom, 'session-days').value = '20';
+    sessionWindowsControl(dom, 'session-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === SESSION_SETTINGS).length, 2,
+      'a stale write did not reload the latest session settings');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /changed somewhere else/i);
+    assert.doesNotMatch(toast, /raw stale backend text|ops_session_settings_stale/);
+    assert.equal(dom.doc.activeElement, sessionWindowsControl(dom, 'session-days'),
+      'focus did not return inside the reloaded sign-in windows card');
+  });
+
+test('session-settings validation refusals use fixed copy for every server code',
+  async () => {
+    for (const [code, copy] of Object.entries(SESSION_SETTINGS_WRITE_COPY)) {
+      const err = Object.assign(new Error(`raw ${code} backend text must not render`), {
+        code,
+        status: code === 'ops_role_insufficient' || code === 'ops_reauth_required' ? 403 : 400,
+      });
+      const dom = await boot({ sessionSettingsSave: () => err, runTimers: false });
+      sessionWindowsControl(dom, 'session-days').value = '20';
+      sessionWindowsControl(dom, 'session-save').dispatch('click');
+      await dom.settle();
+
+      const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+      assert.match(toast, copy, `${code} did not render fixed copy`);
+      assert.doesNotMatch(toast, new RegExp(`raw ${code}|${code}`),
+        `${code} leaked raw backend text or code`);
+    }
+  });
+
+test('a refused session-settings write restores focus after Save is re-enabled',
+  async () => {
+    const err = Object.assign(new Error('raw save failure must not render'), {
+      code: 'ops_session_settings_update_failed',
+      status: 500,
+    });
+    const dom = await boot({ sessionSettingsSave: () => err, runTimers: false });
+    const save = sessionWindowsControl(dom, 'session-save');
+    save.focus();
+    sessionWindowsControl(dom, 'session-days').value = '20';
+    save.dispatch('click');
+    dom.doc.activeElement = dom.body;
+    await dom.settle();
+
+    assert.equal(save.disabled, false);
+    assert.equal(dom.doc.activeElement, save,
+      'focus did not return to Save after the failed write');
+    assert.match(allText(sessionWindowsCard(dom)), /could not be saved/i);
+    assert.doesNotMatch(allText(sessionWindowsCard(dom)), /raw save failure|ops_session_settings_update_failed/);
+  });
 
 /* ====================================================== outside connections */
 
@@ -1113,6 +1530,27 @@ test('an unrecognised action is shown as recorded rather than relabelled', async
   assert.match(allText(record), /admin\.something_new/,
     'an action with no wording was given a guess instead of its own name');
 });
+
+test('the access record labels the backend target type for session-window changes',
+  async () => {
+    const dom = await boot({
+      audit: [{
+        id: 'aud_session_windows', occurredAt: back(MINUTE),
+        actorEmail: 'owner@ops.invalid', actorRole: 'owner',
+        action: 'settings.session_windows_update', outcome: 'success',
+        targetType: 'ops_session_settings', targetId: 'global',
+        reason: null, ipAddress: '198.51.100.7',
+      }],
+    });
+    const record = cardByTitle(dom, 'What was done');
+    const text = allText(record);
+
+    assert.match(text, /Changed sign-in windows/);
+    assert.match(text, /sign-in window setting/,
+      'the real backend targetType was not routed through the label map');
+    assert.doesNotMatch(text, /ops_session_settings/,
+      'the raw backend targetType leaked into the access record');
+  });
 
 test('an empty record says that nothing has happened, not that recording is off', async () => {
   const dom = await boot({ audit: [] });
