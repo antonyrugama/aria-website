@@ -79,6 +79,7 @@
   'use strict';
 
   var api = global.OpsApi;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var REFRESH_KEY = 'ops-refresh';
   var ACCESS_KEY = 'ops-access';
@@ -163,6 +164,36 @@
     freshAuth: false,
     reauthWindowSeconds: 300
   };
+
+  var DIAGNOSTIC_KEYS = {
+    detail: true,
+    note: true,
+    reason: true,
+    message: true,
+    explanation: true
+  };
+
+  function isDiagnosticKey(key) {
+    if (Object.prototype.hasOwnProperty.call(DIAGNOSTIC_KEYS, key)) return true;
+    return /(?:Reason|Note|Detail)$/.test(key);
+  }
+
+  function maskDiagnosticStrings(value, key) {
+    if (typeof value === 'string') {
+      return key && isDiagnosticKey(key) ? maskContactDetails(value) : value;
+    }
+    if (Array.isArray(value)) {
+      return value.map(function (entry) { return maskDiagnosticStrings(entry, null); });
+    }
+    if (value && typeof value === 'object') {
+      var out = {};
+      Object.keys(value).forEach(function (childKey) {
+        out[childKey] = maskDiagnosticStrings(value[childKey], childKey);
+      });
+      return out;
+    }
+    return value;
+  }
 
   /* ------------------------------------------------------------- storage */
 
@@ -797,7 +828,9 @@
         var o = {};
         Object.keys(opts).forEach(function (k) { o[k] = opts[k]; });
         o.token = token;
-        return api.request(path, o);
+        return api.request(path, o).then(function (payload) {
+          return maskDiagnosticStrings(payload, null);
+        });
       }).catch(function (err) {
         if (!(err instanceof api.OpsApiError)) throw err;
 
