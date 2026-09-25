@@ -441,6 +441,14 @@ test('a platform with no usable name of its own is still named', async () => {
 /* ------------------------------------------- omissionsCard()'s entry key */
 
 const omitTitles = (dom) => textsWithClass(dom, 'omit-title');
+const STATIC_OMISSION_KEYS = new Set(['what_aria_has_been_doing', 'where_the_money_goes']);
+const apiOmitTitles = (dom) =>
+  findAll(livePanel(dom), (n) => hasClass(n, 'omit-item'))
+    .filter((item) => !STATIC_OMISSION_KEYS.has(item.getAttribute('data-omission-key')))
+    .map((item) => {
+      const title = findAll(item, (n) => hasClass(n, 'omit-title'))[0];
+      return title ? rawText(title) : '';
+    });
 
 function withOmission(entry) {
   const fixture = summaryFixture();
@@ -450,13 +458,13 @@ function withOmission(entry) {
 
 test('an omission named only by a padded key prints the key without its padding',
   async () => {
-    const named = omitTitles(await boot(withOmission({ key: 'spend_budget' })));
+    const named = apiOmitTitles(await boot(withOmission({ key: 'spend_budget' })));
     assert.deepEqual(named, ['spend_budget'],
       'the healthy render does not draw the key as the omission title, so the padding '
       + 'assertion below is reading the wrong element');
 
     const padded = withOmission({ title: '  ', key: '  spend_budget  ' });
-    const texts = omitTitles(await boot(padded));
+    const texts = apiOmitTitles(await boot(padded));
 
     assert.deepEqual(texts, ['spend_budget'],
       `the padded key drew as ${JSON.stringify(texts)} -- omissionsCard() decided with `
@@ -464,11 +472,11 @@ test('an omission named only by a padded key prints the key without its padding'
   });
 
 test('an omission with nothing usable to name it is not drawn at all', async () => {
-  assert.deepEqual(omitTitles(await boot(withOmission({ key: 'spend_budget' }))),
+  assert.deepEqual(apiOmitTitles(await boot(withOmission({ key: 'spend_budget' }))),
     ['spend_budget'], 'the finder does not see an omission that IS drawn');
 
   const blank = withOmission({ title: '   ', key: '   ' });
-  assert.deepEqual(omitTitles(await boot(blank)), [],
+  assert.deepEqual(apiOmitTitles(await boot(blank)), [],
     'an omission with no words in either field drew a heading holding nothing');
 });
 
