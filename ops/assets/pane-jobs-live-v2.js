@@ -256,6 +256,7 @@
     var drawnOnce = false;
     var focusAfterAction = null;
     var highlightJobId = null;
+    var actionRefreshQueued = false;
 
     /* No ops:filters listener. This pane declares no filter in the registry,
        so the shell pins every one of them and the event can never carry a
@@ -331,6 +332,7 @@
         drawnOnce = true;
         render(result.data || {});
         scheduleTick();
+        replayActionRefresh();
       }, function (err) {
         inFlight = false;
         if (token !== loadToken) return;
@@ -349,7 +351,22 @@
         }
         redrawFooter();
         scheduleTick();
+        replayActionRefresh();
       });
+    }
+
+    function actionRefresh() {
+      if (inFlight) {
+        actionRefreshQueued = true;
+        return;
+      }
+      load(false);
+    }
+
+    function replayActionRefresh() {
+      if (!actionRefreshQueued) return;
+      actionRefreshQueued = false;
+      load(false);
     }
 
     /* ------------------------------------------------------------- footer */
@@ -551,6 +568,7 @@
 
     function settleActionFocus(root) {
       if (!focusAfterAction || !root) return;
+      if (actionRefreshQueued) return;
       var target = null;
       var keys = [
         focusAfterAction.preferred,
@@ -559,7 +577,10 @@
       ];
       for (var i = 0; i < keys.length && !target; i += 1) {
         if (!keys[i]) continue;
-        target = root.querySelector('[' + RETAIN_ATTR + '="' + keys[i] + '"]');
+        var all = root.querySelectorAll('[' + RETAIN_ATTR + ']');
+        for (var j = 0; j < all.length && !target; j += 1) {
+          if (all[j].getAttribute(RETAIN_ATTR) === keys[i]) target = all[j];
+        }
       }
       if (!target) target = content;
       if (target && target.focus) {
@@ -578,7 +599,7 @@
         preferred: next ? 'jobs-row-' + next : null,
         sameRow: 'jobs-row-' + String(result.row.id || '')
       };
-      load(false);
+      actionRefresh();
     }
 
     /* ----------------------------------------------------------- the hero */
