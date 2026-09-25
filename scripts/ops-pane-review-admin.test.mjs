@@ -248,6 +248,7 @@ test('review pane retries nonempty partial queues without clearing the active dr
   assert.equal(queueReads, 2, 'partial retry reloads the queue data');
   assert.equal(rationale.value, 'Draft rationale must survive a queue retry.', 'partial retry preserves the active review draft');
   assert.match(treeText(root), /Blinded output/, 'partial retry keeps the active detail mounted');
+  assert.doesNotMatch(treeText(root), /Review queue partially unavailable/, 'partial retry clears stale partial metadata after a complete queue response');
 });
 
 test('review pane renders partial-failure recovery state without browser rendering', async () => {

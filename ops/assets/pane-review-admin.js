@@ -37,6 +37,7 @@
       ['Outcome digest', shortDigest(item.outcomeDigest), 'review-digest'],
       ['Criterion digest', shortDigest(item.criterionDigest), 'review-digest'],
       ['Rubric', item.rubric ? item.rubric.statement : 'No rubric'],
+      ['Evidence refs', item.evidence && item.evidence.evidenceRefs ? item.evidence.evidenceRefs.join(', ') : 'none'],
       ['Redactions', (item.redactions || []).join(', ') || 'none']
     ]));
     var actions = h('div', { className: 'card-foot review-actions' });
@@ -174,8 +175,22 @@
       var data = payload.data || {};
       var items = data.items || [];
       body.textContent = '';
+      var partialBand = null;
+      function syncPartialBand(nextData) {
+        var omissions = nextData.omissions || [];
+        if (nextData.partial || omissions.length) {
+          if (!partialBand) {
+            partialBand = shell.band('Review queue partially unavailable', omissions.length ? omissions.join(' ') : 'Some review sources could not be read.');
+            body.appendChild(partialBand);
+          } else {
+            partialBand.textContent = 'Review queue partially unavailable ' + (omissions.length ? omissions.join(' ') : 'Some review sources could not be read.');
+          }
+        } else if (partialBand) {
+          partialBand.textContent = '';
+        }
+      }
       if (data.partial || (data.omissions && data.omissions.length)) {
-        body.appendChild(shell.band('Review queue partially unavailable', (data.omissions || ['Some review sources could not be read.']).join(' ')));
+        syncPartialBand(data);
       }
       if (!items.length) {
         body.appendChild(shell.stateBlock('layers', data.partial ? 'Review queue incomplete' : 'No blinded review items', [
@@ -193,6 +208,7 @@
       function retryPartialQueue() {
         return session.call('/api/ops/ciel/admin/reviews/queue').then(function (retryPayload) {
           var retryData = retryPayload.data || {};
+          syncPartialBand(retryData);
           populateList(retryData.items || []);
         }, function (error) {
           shell.toast('alerts', shell.failureMessage(error));

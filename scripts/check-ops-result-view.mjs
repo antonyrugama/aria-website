@@ -1013,6 +1013,7 @@ const EXPECTED_PAIRS = {
   /* The picked row's aria-current against the unpicked row, and the pick
      control's aria-pressed against the other row's control. */
   users: 2,
+  review: 0,
   settings: 0
 };
 
