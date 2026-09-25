@@ -2051,6 +2051,23 @@ test('the dialog reserves no box while its alert is empty, and stays in the docu
   }
 });
 
+test('the re-authentication dialog masks contact details from API failure messages', async () => {
+  const view = await openReauth();
+  view.window.sessionStorage.setItem('ops-access', JSON.stringify({
+    token: 'access-token',
+    expiresAt: Date.now() + 60_000
+  }));
+  view.window.OpsApi.request = () => Promise.reject(new Error('Password check failed for coach.person@example.com'));
+
+  view.input.value = 'correct horse battery staple';
+  view.card.dispatch('submit');
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(view.alert.textContent, /Password check failed for \[hidden contact detail\]/);
+  assert.doesNotMatch(view.alert.textContent, /coach\.person@example\.com/);
+});
+
 test('the dialog outranks every pane sheet that declares a field class of its own, in both themes', async () => {
   const { modal, scrim } = await openReauth();
   const nodes = [scrim, modal, ...dialogTree([modal])];

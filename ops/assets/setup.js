@@ -33,6 +33,7 @@
 
   var api = global.OpsApi;
   var icons = global.OpsIcons;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var MIN_PASSWORD_LENGTH = 12;
   /* Same sentence the API answers with, so a length the client catches and a
@@ -281,7 +282,7 @@
         /* The server checks the password before it looks at the link, so this
            answer says nothing about the link and the operator can simply try
            again with a longer one. */
-        setFieldError('newPassword', err.message || TOO_SHORT);
+        setFieldError('newPassword', maskContactDetails(err.message || TOO_SHORT));
         el('newPassword').focus();
         return;
       }
@@ -299,7 +300,7 @@
       }
       if (err.code === 'ops_setup_invalid') {
         showRecovery('Open the setup link from your email and choose a password there.');
-        setAlert(err.message, '', true);
+        setAlert(maskContactDetails(err.message), '', true);
         return;
       }
       if (err.status >= 500 || err.code === 'ops_route_missing') {
@@ -321,7 +322,7 @@
       }
       /* ops_unreachable and anything else: nothing here knows the link has
          been spent, so the form stays where it is and the operator can retry. */
-      setAlert(err.message, '', true);
+      setAlert(maskContactDetails(err.message), '', true);
     });
   });
 

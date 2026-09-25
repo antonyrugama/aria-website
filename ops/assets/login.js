@@ -12,6 +12,7 @@
   var api = global.OpsApi;
   var session = global.OpsSession;
   var icons = global.OpsIcons;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var el = function (id) { return document.getElementById(id); };
 
@@ -269,17 +270,17 @@
         return;
       }
       if (err.code === 'ops_login_invalid') {
-        setAlert(err.message, '', true);
+        setAlert(maskContactDetails(err.message), '', true);
         return;
       }
       if (err.code === 'ops_unreachable') {
-        setAlert(err.message, '', true);
+        setAlert(maskContactDetails(err.message), '', true);
         return;
       }
       /* ops_login_failed is deliberately the same answer for an unknown
          address, a wrong password, and a disabled account. Repeating the
          server's wording keeps the client from implying more than it knows. */
-      setAlert(err.message, '', true);
+      setAlert(maskContactDetails(err.message), '', true);
       el('password').focus();
     });
   });
@@ -331,17 +332,17 @@
         return;
       }
       if (err.code === 'ops_password_rejected') {
-        setFieldError('currentPassword', err.message);
+        setFieldError('currentPassword', maskContactDetails(err.message));
         el('currentPassword').value = '';
         el('currentPassword').focus();
         return;
       }
       if (err.code === 'ops_password_too_short' || err.code === 'ops_password_unchanged') {
-        setFieldError('newPassword', err.message);
+        setFieldError('newPassword', maskContactDetails(err.message));
         el('newPassword').focus();
         return;
       }
-      setAlert(err.message, '', true);
+      setAlert(maskContactDetails(err.message), '', true);
     });
   });
 
@@ -397,7 +398,7 @@
          and rewording it here is how a client hands back the distinction the
          API spent a timing-equalised code path refusing to give. */
       var message = payload && payload.data && typeof payload.data.message === 'string'
-        ? payload.data.message
+        ? maskContactDetails(payload.data.message)
         : '';
       setupResult.textContent = message || 'Your request was accepted.';
     }, function (err) {
@@ -406,7 +407,7 @@
          failure here is the request not arriving rather than anything about
          the address. */
       setAlert(err instanceof api.OpsApiError
-        ? err.message
+        ? maskContactDetails(err.message)
         : 'Something went wrong asking for a setup link. Try again.', '', true);
     });
   });

@@ -943,7 +943,7 @@
         confirm.disabled = false;
         problem.textContent = err && err.code === 'ops_role_insufficient'
           ? 'Revealing a field is an owner action.'
-          : (err && err.message) || 'The operations API refused that.';
+          : shell.failureMessage(err);
         reasonBox.focus();
       });
     });
