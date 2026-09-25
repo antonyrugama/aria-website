@@ -47,6 +47,7 @@ const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
 const REGISTRY_SRC = read('assets/pane-registry.js');
 const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
+const JOB_ACTIONS_SRC = read('assets/job-actions-v2.js');
 const PANE_SRC = read('assets/pane-run-history-v2.js');
 const SETTINGS_SRC = read('assets/settings.js');
 const PAGE_SRC = read('run-history.html');
@@ -391,7 +392,13 @@ async function boot(options) {
     state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role } },
     boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
     call: (endpoint, o) => {
-      calls.push({ endpoint, query: o && o.query });
+      calls.push({ endpoint, query: o && o.query, method: o && o.method, body: o && o.body });
+      if (o && o.method === 'POST') {
+        const action = opts.actionResponses && opts.actionResponses[endpoint];
+        if (action instanceof Error) return Promise.reject(action);
+        if (action === undefined) return Promise.reject(new Error('no action stub for ' + endpoint));
+        return Promise.resolve({ data: action });
+      }
       /* An answer may be a function of the query rather than a fixed payload.
          Keying answers by path alone made a whole class of state unreachable
          from a test: narrowing re-reads the same path, so a narrowed read
@@ -447,6 +454,7 @@ async function boot(options) {
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
+  vm.runInContext(JOB_ACTIONS_SRC, dom.window, { filename: 'job-actions-v2.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-run-history-v2.js' });
 
   /* Which of the four states the pane asked for, in order. The live and
@@ -553,6 +561,75 @@ test('settings Load more stays hidden when the shared button display rule also m
     classes: ['btn', 'btn-sm'],
     hidden: true,
   }, 'display'), 'none');
+});
+
+test('run-history retry uses the job action contract and refreshes the window', async () => {
+  const failedJobId = '22222222-2222-4222-8222-222222222222';
+  const retryJobId = '33333333-3333-4333-8333-333333333333';
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.runs = [
+        runRow({
+          jobId: failedJobId,
+          outcome: 'failed',
+          outcomeLabel: 'Failed',
+          failureCode: 'model_timeout',
+          retryable: true,
+          reference: 'job_222222',
+          actions: {
+            canCancel: false,
+            cancelReason: 'Only queued or running jobs can be cancelled.',
+            canRetry: true,
+            retryReason: null,
+          },
+        }),
+      ];
+      return base;
+    }),
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: {
+        originalJobId: failedJobId,
+        jobId: retryJobId,
+        status: 'queued',
+      },
+    },
+  });
+
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+  const retry = buttonsIn(livePanel(dom), /^Retry$/)[0];
+  assert.ok(retry, 'the failed run did not draw a Retry button from its capability block');
+  assert.match(liveText(dom), /Cancel: Only queued or running jobs can be cancelled\./,
+    'a false cancel capability on a run-history row did not print the server reason');
+  retry.focus();
+  retry.dispatch('click', {});
+  await settle();
+
+  assert.match(allText(dom.body), /Retry: creates a new job linked to this one; the failed run stays in history\./,
+    'the retry confirmation did not say what retrying does');
+  const input = dom.body.querySelector('.field-input');
+  input.value = 'job_222222';
+  input.dispatch('input', {});
+  buttonsIn(dom.body, /^Retry job$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.deepEqual(dom.calls.map((c) => [c.method || 'GET', c.endpoint]), [
+    ['GET', '/api/ops/runs'],
+    ['POST', '/api/ops/jobs/' + failedJobId + '/retry'],
+    ['GET', '/api/ops/runs'],
+  ], 'retry should post once to the jobs route and refresh the run window once');
+  assert.equal(JSON.stringify(dom.calls[1].body), JSON.stringify({ confirmation: 'job_222222' }),
+    'retry did not send the typed confirmation body');
+  assert.ok(heard.some((message) => /Retry created: job_333333/.test(message)),
+    'the success announcement did not make the replacement job findable');
+  assert.equal(heard.filter((message) => /Retry created: job_333333/.test(message)).length, 1,
+    'the action message was announced more than once around the reload');
+  assert.match(lastSaid(dom) || '', /Retry created: job_333333/,
+    'the polite region did not end on the action message after the reload announcement');
+  assert.match(heard.at(-1) || '', /Retry created: job_333333/,
+    'the action message was not announced after the reload summary');
 });
 
 function stateOf(dom) {

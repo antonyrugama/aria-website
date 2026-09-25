@@ -115,6 +115,7 @@
   var icon = S.icon;
   var fmt = S.fmt;
   var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
+  var jobActions = global.OpsJobActions || { controls: emptyJobActionControls };
 
   var RUNS_ENDPOINT = '/api/ops/runs';
   var PAGE = 50;
@@ -129,6 +130,10 @@
   var USERS_FILE = 'users.html';
   var JOBS_FILE = 'jobs-live.html';
   var ALERTS_FILE = 'alerts.html';
+
+  function emptyJobActionControls() {
+    return h('div', { className: 'job-action-stack' });
+  }
 
   /* ------------------------------------------------------------- privacy */
 
@@ -288,6 +293,7 @@
     /* When the figures on screen were read. Printed rather than implied: with
        no timer running, how old they are is the operator's to judge. */
     var readAt = null;
+    var actionAnnouncement = null;
 
     /* The last window payload, kept so opening and closing a run can redraw
        without re-reading the window it sits in. */
@@ -345,6 +351,10 @@
         readAt = new Date().toISOString();
         render(result, selection);
         announceRead(result, selection);
+        if (actionAnnouncement) {
+          S.announce(actionAnnouncement);
+          actionAnnouncement = null;
+        }
       }, function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
@@ -1177,7 +1187,7 @@
 
       var head = h('thead');
       var headRow = h('tr');
-      ['Finished', 'Request type', 'Outcome', 'Took', 'Waited', 'Model', ''].forEach(function (label, at) {
+      ['Finished', 'Request type', 'Outcome', 'Took', 'Waited', 'Model', 'Actions', ''].forEach(function (label, at) {
         headRow.appendChild(h('th', {
           className: (at === 3 || at === 4) ? 'r' : '',
           text: label,
@@ -1236,6 +1246,15 @@
       row.appendChild(h('td', { className: 'r num', text: msOrNone(run.durationMs) }));
       row.appendChild(h('td', { className: 'r num', text: msOrNone(run.queuedMs) }));
       row.appendChild(h('td', { text: run.modelUsed ? coded(run.modelUsed) : fmt.none }));
+      row.appendChild(h('td', { className: 'r' }, [
+        jobActions.controls(run, {
+          onSuccess: afterRunAction,
+          onStale: afterRunAction,
+          deferSuccessAnnounce: true,
+          focusAttr: 'data-rh-focus',
+          focusPrefix: 'rh-job-action'
+        })
+      ]));
 
       var end = h('td', { className: 'r' });
       var open = h('button', {
@@ -1322,6 +1341,13 @@
 
       var body = h('div', { className: 'card-body col' });
       body.appendChild(runFacts(data.run));
+      body.appendChild(jobActions.controls(data.run, {
+        onSuccess: afterRunAction,
+        onStale: afterRunAction,
+        deferSuccessAnnounce: true,
+        focusAttr: 'data-rh-focus',
+        focusPrefix: 'rh-job-action-detail'
+      }));
       body.appendChild(stageList(data));
       box.appendChild(body);
       section.appendChild(box);
@@ -1351,6 +1377,12 @@
         S.announce('Closed the run.');
       });
       return close;
+    }
+
+    function afterRunAction(result) {
+      actionAnnouncement = result && result.deferAnnouncement ? result.message : null;
+      moveFocus('rh-read-again', 'rh-state');
+      load();
     }
 
     function runFacts(run) {
