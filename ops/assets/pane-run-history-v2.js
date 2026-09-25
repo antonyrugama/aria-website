@@ -297,6 +297,9 @@
        no timer running, how old they are is the operator's to judge. */
     var readAt = null;
     var actionAnnouncement = null;
+    var actionAnnouncementToken = null;
+    var queuedActionAnnouncement = null;
+    var hasQueuedActionAnnouncement = false;
 
     /* The last window payload, kept so opening and closing a run can redraw
        without re-reading the window it sits in. */
@@ -328,6 +331,7 @@
 
     function load() {
       var token = ++loadToken;
+      bindActionAnnouncement(token);
       var selection = current;
       /* Every window read discards any open run, here rather than at each
          call site. Four of the six triggers nulled it themselves and two did
@@ -362,10 +366,7 @@
         readAt = new Date().toISOString();
         render(result, selection);
         announceRead(result, selection);
-        if (actionAnnouncement) {
-          S.announce(actionAnnouncement);
-          actionAnnouncement = null;
-        }
+        flushActionAnnouncement(token);
       }, function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
@@ -384,7 +385,28 @@
            standing behind numbers the pane has just stopped standing behind. */
         S.announce('The window could not be read. The figures on screen before this are ' +
           'unread now, not zero. Try again is the only control left on the pane.');
+        flushActionAnnouncement(token);
       });
+    }
+
+    function bindActionAnnouncement(token) {
+      if (!hasQueuedActionAnnouncement) {
+        actionAnnouncement = null;
+        actionAnnouncementToken = null;
+        return;
+      }
+      actionAnnouncement = queuedActionAnnouncement;
+      actionAnnouncementToken = actionAnnouncement ? token : null;
+      queuedActionAnnouncement = null;
+      hasQueuedActionAnnouncement = false;
+    }
+
+    function flushActionAnnouncement(token) {
+      if (!actionAnnouncement || actionAnnouncementToken !== token) return;
+      var message = actionAnnouncement;
+      actionAnnouncement = null;
+      actionAnnouncementToken = null;
+      S.announce(message);
     }
 
     /* The shell's retry button, given this pane's focus key so `settleFocus()`
@@ -1408,7 +1430,8 @@
     }
 
     function afterRunAction(result) {
-      actionAnnouncement = result && result.deferAnnouncement ? result.message : null;
+      queuedActionAnnouncement = result && result.deferAnnouncement ? result.message : null;
+      hasQueuedActionAnnouncement = true;
       moveFocus('rh-read-again', 'rh-state');
       load();
     }
