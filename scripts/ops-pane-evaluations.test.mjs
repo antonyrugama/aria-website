@@ -427,7 +427,7 @@ test('browse pane loads version-bound scenario and dataset inspection details', 
               evidenceRefs: ['source.public'],
               graderRef: 'grader.no-completion',
               grading: { method: 'not_contains', gating: true },
-              authority: { approvalState: 'none', approvals: [] },
+              authority: { schema: 'v2-authority', tier: 'B', domain: 'training', approvalState: 'none', approvals: [] },
             }],
             required: [],
             expected: [],
@@ -439,7 +439,14 @@ test('browse pane loads version-bound scenario and dataset inspection details', 
       };
     }
     if (path === '/api/ops/ciel/admin/datasets/dataset.demo.development') {
-      return { data: browsePayload().datasets.datasets[0] };
+      return { data: {
+        ...browsePayload().datasets.datasets[0],
+        cases: [{
+          scenario: { id: 'scenario.detail.only', version: 7, path: 'evals/detail-only/scenarios.json', sha256: 'c'.repeat(64) },
+          rubrics: [{ id: 'rubric.detail.only', version: 3, path: 'evals/detail-only/rubric.json', sha256: 'd'.repeat(64) }],
+          comparison: { state: 'unavailable', reason: 'Detail-only comparison metadata is recorded.' },
+        }],
+      } };
     }
     return browsePayload();
   });
@@ -448,15 +455,23 @@ test('browse pane loads version-bound scenario and dataset inspection details', 
   const browse = view.byId('ciel-browse-panel');
   await waitFor(() => /Inspect scenario/.test(treeText(browse)), 'scenario inspect action did not render');
   findNode(browse, node => node.tag === 'button' && node.textContent === 'Inspect scenario').dispatch('click');
-  await waitFor(() => /Does not invent a completed workout/.test(treeText(browse)), 'scenario detail did not render');
+  await waitFor(() => findNode(browse, node => node.className === 'browse-detail' && /Does not invent a completed workout/.test(treeText(node))), 'scenario detail did not render');
+  const scenarioDetail = findNode(browse, node => node.className === 'browse-detail' && /Does not invent a completed workout/.test(treeText(node)));
   assert.deepEqual(calls.find(call => call.path.includes('/scenarios/')).options.query, { version: '2' });
-  assert.match(treeText(browse), /source\.public/);
-  assert.match(treeText(browse), /Redacted: history, prompt/);
+  assert.match(treeText(scenarioDetail), /source\.public/);
+  assert.match(treeText(scenarioDetail), /Public coaching source/);
+  assert.match(treeText(scenarioDetail), /https:\/\/example\.test\/source/);
+  assert.match(treeText(scenarioDetail), /Authority: v2-authority · tier B · domain training · approval none/);
+  assert.match(treeText(scenarioDetail), /Redacted: history, prompt/);
 
   findNode(browse, node => node.tag === 'button' && node.textContent === 'Inspect dataset').dispatch('click');
-  await waitFor(() => /rubric\.demo\.no-retrieval\.criteria/.test(treeText(browse)), 'dataset detail did not render');
+  const datasetArticle = findNode(browse, node => node.className === 'browse-dataset' && /dataset\.demo\.development/.test(treeText(node)));
+  await waitFor(() => findNode(datasetArticle, node => node.className === 'browse-detail' && /scenario\.detail\.only/.test(treeText(node))), 'dataset detail did not render');
+  const datasetDetail = findNode(datasetArticle, node => node.className === 'browse-detail' && /scenario\.detail\.only/.test(treeText(node)));
   assert.deepEqual(calls.find(call => call.path.includes('/datasets/')).options.query, { revision: '1' });
-  assert.match(treeText(browse), /No comparison validity metadata is recorded/);
+  assert.match(treeText(datasetDetail), /evals\/detail-only\/scenarios\.json/);
+  assert.match(treeText(datasetDetail), /rubric\.detail\.only/);
+  assert.match(treeText(datasetDetail), /Detail-only comparison metadata is recorded/);
 });
 
 test('browse pane keeps facet options stable after filtered and empty reads', async () => {

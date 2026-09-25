@@ -681,6 +681,30 @@
     return titleCase(scenario.review.status || 'unknown');
   }
 
+
+  function criterionAuthorityText(authority) {
+    if (!authority) return '';
+    var approvals = Array.isArray(authority.approvals) ? authority.approvals : [];
+    var parts = [
+      authority.schema,
+      authority.tier ? 'tier ' + authority.tier : '',
+      authority.domain ? 'domain ' + authority.domain : '',
+      authority.approvalState ? 'approval ' + authority.approvalState : ''
+    ].filter(Boolean);
+    if (approvals.length) {
+      parts.push('approvals ' + approvals.map(function (approval) {
+        return [
+          approval.kind,
+          approval.reviewerRef,
+          approval.qualificationPresent ? 'qualified' : 'qualification missing',
+          approval.domain,
+          approval.scenarioVersion ? 'scenario v' + String(approval.scenarioVersion) : ''
+        ].filter(Boolean).join(' · ');
+      }).join('; '));
+    }
+    return parts.join(' · ');
+  }
+
   function scenarioCard(scenario) {
     var counts = scenario.criteriaCounts || {};
     var risk = scenario.risk || {};
@@ -705,10 +729,14 @@
               [
                 criterion.statement,
                 (criterion.evidenceRefs || []).length ? 'Evidence: ' + criterion.evidenceRefs.join(', ') : '',
-                criterion.graderRef ? 'Grader: ' + criterion.graderRef : ''
+                criterion.graderRef ? 'Grader: ' + criterion.graderRef : '',
+                criterionAuthorityText(criterion.authority) ? 'Authority: ' + criterionAuthorityText(criterion.authority) : ''
               ].filter(Boolean).join(' · ')
             ]);
           });
+        });
+        (data.sourceLinks || []).forEach(function (source) {
+          rows.push(['Source evidence', [source.label, source.uri].filter(Boolean).join(' · ')]);
         });
         var oracle = data.oracle || {};
         (oracle.referenceFacts || []).forEach(function (fact) {
