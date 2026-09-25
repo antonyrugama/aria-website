@@ -595,6 +595,10 @@ test('run-history retry uses the job action contract and refreshes the window', 
     },
   });
 
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
   const retry = buttonsIn(livePanel(dom), /^Retry$/)[0];
   assert.ok(retry, 'the failed run did not draw a Retry button from its capability block');
   assert.match(liveText(dom), /Cancel: Only queued or running jobs can be cancelled\./,
@@ -618,8 +622,14 @@ test('run-history retry uses the job action contract and refreshes the window', 
   ], 'retry should post once to the jobs route and refresh the run window once');
   assert.equal(JSON.stringify(dom.calls[1].body), JSON.stringify({ confirmation: 'job_222222' }),
     'retry did not send the typed confirmation body');
-  assert.match(allText(dom.body), /Retry created: job_333333/,
+  assert.ok(heard.some((message) => /Retry created: job_333333/.test(message)),
     'the success announcement did not make the replacement job findable');
+  assert.equal(heard.filter((message) => /Retry created: job_333333/.test(message)).length, 1,
+    'the action message was announced more than once around the reload');
+  assert.match(lastSaid(dom) || '', /Retry created: job_333333/,
+    'the polite region did not end on the action message after the reload announcement');
+  assert.match(heard.at(-1) || '', /Retry created: job_333333/,
+    'the action message was not announced after the reload summary');
 });
 
 function stateOf(dom) {

@@ -1250,6 +1250,7 @@
         jobActions.controls(run, {
           onSuccess: afterRunAction,
           onStale: afterRunAction,
+          deferSuccessAnnounce: true,
           focusAttr: 'data-rh-focus',
           focusPrefix: 'rh-job-action'
         })
@@ -1343,6 +1344,7 @@
       body.appendChild(jobActions.controls(data.run, {
         onSuccess: afterRunAction,
         onStale: afterRunAction,
+        deferSuccessAnnounce: true,
         focusAttr: 'data-rh-focus',
         focusPrefix: 'rh-job-action-detail'
       }));
@@ -1378,7 +1380,7 @@
     }
 
     function afterRunAction(result) {
-      actionAnnouncement = result && result.message ? result.message : null;
+      actionAnnouncement = result && result.deferAnnouncement ? result.message : null;
       moveFocus('rh-read-again', 'rh-state');
       load();
     }

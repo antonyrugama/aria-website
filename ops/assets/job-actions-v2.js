@@ -200,7 +200,8 @@
       className: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1'
     }, [card]);
 
-    function sync() { go.disabled = settling || typed.value !== ref; }
+    function typedReference() { return typed.value.trim(); }
+    function sync() { go.disabled = settling || typedReference() !== ref; }
     function fail(message) {
       error.textContent = '';
       error.appendChild(icon('warn'));
@@ -217,7 +218,7 @@
     var modal = openModal(node, function () { return typed; }, function () { return !settling; });
     cancel.addEventListener('click', function () { if (!settling) modal.close(); });
     go.addEventListener('click', function () {
-      if (settling || typed.value !== ref) return;
+      if (settling || typedReference() !== ref) return;
       settling = true;
       typed.removeAttribute('aria-invalid');
       error.textContent = '';
@@ -226,15 +227,23 @@
       go.textContent = 'Sending';
       session.call(actionPath(row, action), {
         method: 'POST',
-        body: { confirmation: typed.value }
+        body: { confirmation: typedReference() }
       }).then(function (payload) {
         var data = payload && payload.data;
         var message = successMessage(action, row, data || {});
         settling = false;
         modal.close();
         S.toast('check', message);
-        S.announce(message);
-        if (opts.onSuccess) opts.onSuccess({ action: action, row: row, data: data || {}, message: message });
+        if (!opts.deferSuccessAnnounce) S.announce(message);
+        if (opts.onSuccess) {
+          opts.onSuccess({
+            action: action,
+            row: row,
+            data: data || {},
+            message: message,
+            deferAnnouncement: !!opts.deferSuccessAnnounce
+          });
+        }
       }).catch(function (err) {
         var message = fixedError(err, action);
         if (isRefreshError(err)) {
