@@ -53,7 +53,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -2493,6 +2493,21 @@ test('an availability state the pane does not know is not read as one of the fou
   assert.doesNotMatch(words, /switched off|not set up|Nothing published/);
 });
 
+test('cost availability diagnostics mask contact details before the DOM sees them', async () => {
+  const data = payload({ range: 'month', billedThrough: 10 });
+  data.availability = {
+    state: 'quarantined',
+    detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
+  };
+
+  const dom = await boot({ costs: data });
+  const surface = allDomTextAndAttrs(panel(dom, 'empty'));
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the cost availability detail reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
+});
+
 test('a read that fails is the degraded state, and says the figures are unread', async () => {
   const dom = await boot({ costs: new Error('gateway timeout') });
   const words = allText(livePanel(dom));
@@ -2741,6 +2756,19 @@ test('a target the route refused is the refusal in words, with no track under it
       'the route\'s own sentence, because it is the only thing that knows which of the '
       + 'seven refusals applies');
     assert.match(ownText(budget), /No target to draw against/);
+  });
+
+test('budget refusal diagnostics mask contact details before the DOM sees them',
+  async () => {
+    const summary = summaryPayload({
+      refusal: 'Contact Coach.Person+run@eu.example.com for this failure.',
+    });
+    const dom = await boot({ summary });
+    const surface = allDomTextAndAttrs(budgetCardOf(dom));
+    assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+      'the budget refusal reached DOM text or attributes with an address in it');
+    assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+      'the route diagnostic was not drawn with its contact detail masked');
   });
 
 test('a target stating no currency is not drawn in the one the bill happens to be in',

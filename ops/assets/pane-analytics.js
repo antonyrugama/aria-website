@@ -47,6 +47,7 @@
   var S = global.OpsPaneShell;
   var h = S.h;
   var fmt = S.fmt;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var PANE_ID = 'analytics';
   var ENDPOINT = '/api/ops/usage';
@@ -1229,7 +1230,7 @@
   function notReady(data, region) {
     var availability = data.availability || {};
     var detail = typeof availability.detail === 'string' && availability.detail
-      ? availability.detail
+      ? maskContactDetails(availability.detail)
       : null;
 
     if (availability.state === 'insufficient') {

@@ -99,6 +99,7 @@
   var h = S.h;
   var icon = S.icon;
   var fmt = S.fmt;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   var ENDPOINT = '/api/ops/releases';
 
@@ -216,6 +217,11 @@
     if (typeof v !== 'string') return null;
     var t = v.trim();
     return t === '' ? null : t;
+  }
+
+  function diagnostic(v) {
+    var text = str(v);
+    return text ? maskContactDetails(text) : null;
   }
 
   function pct(basisPoints, decimals) {
@@ -1071,7 +1077,7 @@
       body.appendChild(h('div', {}, [
         h('b', { text: (str(entry.title) || entry.key) + '. ' }),
         h('span', {
-          text: str(entry.detail) ||
+          text: diagnostic(entry.detail) ||
             'The operations API named this as unavailable and gave no reason.'
         })
       ]));

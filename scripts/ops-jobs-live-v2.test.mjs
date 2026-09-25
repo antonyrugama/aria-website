@@ -44,7 +44,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -895,6 +895,16 @@ test('the capacity gap is printed in the route own words', async () => {
     'the pane drew its own fallback wording over a reason the route did publish');
 });
 
+test('a capacity diagnostic masks contact details before the DOM sees it', async () => {
+  const reason = 'Contact Coach.Person+run@eu.example.com for this failure.';
+  const dom = await boot({ view: viewFixture({ capacity: { slots: null, reason } }) });
+  const surface = allDomTextAndAttrs(dom.content);
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the capacity reason reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
+});
+
 test('a capacity gap with no wording still names the gap', async () => {
   const dom = await boot({
     view: viewFixture({ capacity: { slots: null, reason: undefined } }),
@@ -904,6 +914,14 @@ test('a capacity gap with no wording still names the gap', async () => {
 });
 
 /* =========================== masking, still ============================ */
+
+test('the diagnostic leak surface includes attributes as well as visible text', () => {
+  const dom = makeDom();
+  const node = dom.element('div');
+  node.setAttribute('title', 'Contact Coach.Person+run@eu.example.com for this failure.');
+  assert.match(allDomTextAndAttrs(node), /Coach\.Person\+run@eu\.example\.com/,
+    'a DOM leak check that ignores attributes can pass while an accessible copy leaks');
+});
 
 test('address-shaped text is masked before it reaches the screen', async () => {
   const dom = await boot({

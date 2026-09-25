@@ -33,7 +33,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 import { stub } from './ops-api-stub.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
@@ -1164,6 +1164,23 @@ test('an answer that is not ready draws words and never a figure', async () => {
   assert.match(text, /No app has reported since 3 Sep\./,
     'the pane replaced the reason the route gave with one of its own');
   assert.equal(liveText(dom), '', 'the live panel was filled from an answer that is not ready');
+});
+
+test('usage availability diagnostics mask contact details before the DOM sees them', async () => {
+  const dom = await boot({
+    usage: {
+      availability: {
+        state: 'not_reporting',
+        detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
+      },
+      asOf: hoursAgo(5),
+    },
+  });
+  const surface = allDomTextAndAttrs(panel(dom, 'empty'));
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the usage availability detail reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
 });
 
 test('too little data offers the widest window, and stops offering it there', async () => {

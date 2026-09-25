@@ -1011,7 +1011,7 @@
     var code = err && err.code;
     var box = card();
     var block = stateBlock('warn', FAILURE_TITLES[code] || 'Could not check your session', [
-      err && err.message ? err.message :
+      err && err.message ? failureMessage(err) :
         'The operations API did not answer. Your session has not been ended.',
       FAILURE_NOTES[code] || 'Nothing has been signed out. Try again in a moment.'
     ], 1);
