@@ -565,6 +565,18 @@ function sessionWindowsControl(dom, role) {
   return control;
 }
 
+function sessionWindowLiveMessages(dom, fragments) {
+  const needles = fragments.map((one) => one instanceof RegExp ? one : new RegExp(one));
+  return findAll(dom.body, (node) => {
+    if (!node.tagName) return false;
+    const role = node.getAttribute('role');
+    const live = node.hasAttribute('aria-live');
+    if (role !== 'status' && role !== 'alert' && !live) return false;
+    const text = allText(node);
+    return text && needles.some((needle) => needle.test(text));
+  }).map((node) => allText(node));
+}
+
 /* Every endpoint this boot actually read. DELETE is excluded: a revoke is a
    write, and a card claiming to be filled from one would be claiming
    something it cannot be. */
@@ -874,7 +886,9 @@ test('a successful session-settings save reloads and restores focus',
 
 test('a session-settings save that ends the current session announces before routing to sign-in',
   async () => {
-    const dom = await boot({
+    let dom;
+    const replacements = [];
+    dom = await boot({
       sessionSettingsSave: (o) => ({
         ...sessionSettingsFixture({
           sessionMaxDays: o.body.sessionMaxDays,
@@ -882,7 +896,20 @@ test('a session-settings save that ends the current session announces before rou
         }),
         currentSessionWillEnd: true,
       }),
+      signOut: (options) => {
+        dom.signOuts.push(options || null);
+        if (!options || options.noNavigate !== true) {
+          dom.window.location.replace('login.html?reason=signedout');
+        }
+        return Promise.resolve();
+      },
     });
+    const realReplace = dom.window.location.replace;
+    dom.window.location.replace = (next) => {
+      replacements.push(next);
+      realReplace.call(dom.window.location, next);
+    };
+
     sessionWindowsControl(dom, 'session-days').value = '7';
     sessionWindowsControl(dom, 'session-save').dispatch('click');
     await dom.settle();
@@ -890,12 +917,29 @@ test('a session-settings save that ends the current session announces before rou
     assert.match(allText(sessionWindowsCard(dom)), /Opening the sign-in page in a moment/);
     assert.match(allText(sessionWindowsCard(dom)),
       /Saved\. Your own session is older than the new limit, so you'll be signed out\./);
-    assert.deepEqual(dom.signOuts, ['signOut'],
-      'a session-ending save did not clear the local credential before routing');
+    assert.equal(dom.signOuts.length, 1,
+      'a session-ending save cleared the local credential more than once');
+    assert.equal(dom.signOuts[0] && dom.signOuts[0].noNavigate, true,
+      'a session-ending save did not clear the local credential without navigating');
     assert.deepEqual(dom.toLogins, ['expired'],
       'a session-ending save did not route through the shared login helper');
+    assert.deepEqual(replacements, ['login.html?reason=expired'],
+      'a session-ending save raced more than one sign-in navigation');
     assert.match(dom.window.location.href, /login\.html\?reason=expired/);
   });
+
+test('session-settings validation refusals update one live region', async () => {
+  const dom = await boot({ runTimers: false });
+  sessionWindowsControl(dom, 'session-days').value = '31';
+  sessionWindowsControl(dom, 'session-save').dispatch('click');
+  await dom.settle();
+
+  assert.deepEqual(sessionWindowLiveMessages(dom, [
+    /Enter values inside the listed bounds\./,
+    /Use 1 to 30 days\./,
+  ]), ['Enter values inside the listed bounds.'],
+  'a bounds refusal produced more than one live-region update');
+});
 
 test('a stale session-settings save reloads with fixed copy and restored focus',
   async () => {

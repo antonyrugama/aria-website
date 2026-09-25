@@ -1098,6 +1098,29 @@ test('the docblock and the README name exactly what the module exports', async (
   }
 });
 
+
+test('session signOut can clear credentials without navigating', async () => {
+  const dom = makeDom({ href: 'https://ops.example.invalid/ops/settings.html' });
+  dom.window.OpsApi = {
+    OpsApiError: function OpsApiError(message) { this.message = message; },
+    call: () => Promise.resolve({ data: {} }),
+  };
+  vm.createContext(dom.window);
+  vm.runInContext(SESSION_SRC, dom.window, { filename: 'session.js' });
+
+  const replacements = [];
+  const realReplace = dom.window.location.replace;
+  dom.window.location.replace = (next) => {
+    replacements.push(next);
+    realReplace.call(dom.window.location, next);
+  };
+
+  await dom.window.OpsSession.signOut({ noNavigate: true });
+
+  assert.deepEqual(replacements, [],
+    'signOut({ noNavigate: true }) still navigated away from the current route');
+});
+
 /* ================= the re-authentication dialog, on a v2 pane =========== */
 
 /* assets/session.js raises one dialog over whatever page is open, asking for
