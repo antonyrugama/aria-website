@@ -913,8 +913,9 @@
           'rows in it, so none is drawn.'
       ])));
       var row = h('div', { className: 'row mt-sm' });
-      row.appendChild(S.link(S.paneHref('jobs') || JOBS_FILE, 'What is running now'));
-      row.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'What the watchers caught', 'btn btn-sm sp'));
+      row.appendChild(doorwayLink('jobs', JOBS_FILE, 'What is running now', 'rh-doorway-empty-jobs'));
+      row.appendChild(doorwayLink('alerts', ALERTS_FILE, 'What the watchers caught',
+        'rh-doorway-empty-alerts', 'btn btn-sm sp'));
       box.appendChild(row);
       if (data && data.window) box.appendChild(windowFoot(data.window));
       return box;
@@ -988,7 +989,8 @@
         });
         row.appendChild(clear);
       }
-      row.appendChild(S.link(S.paneHref('jobs') || JOBS_FILE, 'What is running now', 'btn btn-sm sp'));
+      row.appendChild(doorwayLink('jobs', JOBS_FILE, 'What is running now',
+        'rh-doorway-empty-jobs', 'btn btn-sm sp'));
       box.appendChild(row);
       box.appendChild(windowFoot(data.window, coverage));
       return box;
@@ -1134,7 +1136,8 @@
         text: 'Grouped by the label the worker recorded. Every failed run in ' +
           coveredWords(data.coverage, selection) + ' is in exactly one of these rows.'
       }));
-      foot.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'What the watchers caught', 'btn btn-sm sp'));
+      foot.appendChild(doorwayLink('alerts', ALERTS_FILE, 'What the watchers caught',
+        'rh-doorway-live-alerts', 'btn btn-sm sp'));
       box.appendChild(foot);
 
       section.appendChild(box);
@@ -1867,11 +1870,18 @@
       foot.appendChild(h('span', {
         text: 'Access records are kept with the account: '
       }));
-      foot.appendChild(S.link(S.paneHref('users') || USERS_FILE, 'Look up a user', 'btn btn-sm sp'));
+      foot.appendChild(doorwayLink('users', USERS_FILE, 'Look up a user',
+        'rh-doorway-live-users', 'btn btn-sm sp'));
       box.appendChild(foot);
 
       section.appendChild(box);
       return section;
+    }
+
+    function doorwayLink(pane, fallbackFile, label, focusKey, className) {
+      var link = S.link(S.paneHref(pane) || fallbackFile, label, className);
+      link.setAttribute('data-rh-focus', focusKey);
+      return link;
     }
 
     /* One field name and the fact that it is hidden. There is no value node in

@@ -1384,6 +1384,11 @@ function selectsIn(dom) {
   return findAll(livePanel(dom), (n) => n.tagName === 'SELECT');
 }
 
+function linksIn(node, label) {
+  return findAll(node, (n) => n.tagName === 'A')
+    .filter((n) => label.test(allText(n)));
+}
+
 const runCalls = (dom) => dom.calls.filter((c) => c.endpoint === '/api/ops/runs');
 
 /* The shell's own absence marker, read from the shell rather than restated
@@ -1742,6 +1747,94 @@ test('Read again keeps focus on Read again', async () => {
 
   assert.equal(focusKey(dom), 'rh-read-again',
     'focus fell to ' + (focusKey(dom) || 'nowhere in this pane') + ' after a fresh reading');
+});
+
+test('live doorway links keep focus on their connected equivalents across cleanup redraws', async () => {
+  const dom = await boot({});
+  for (const [label, expectedKey] of [
+    [/^What the watchers caught$/, 'rh-doorway-live-alerts'],
+    [/^Look up a user$/, 'rh-doorway-live-users'],
+  ]) {
+    const link = linksIn(livePanel(dom), label)[0];
+    assert.ok(link, 'the live pane did not draw the doorway link named ' + label);
+    link.focus();
+    assert.equal(focusKey(dom), expectedKey, 'the doorway link carries no stable focus key');
+
+    dom.window.dispatchEvent({ type: 'pagehide' });
+    await settle();
+
+    const connected = linksIn(livePanel(dom), label)[0];
+    assert.ok(connected && dom.body.contains(connected) && shown(dom, connected),
+      'the redraw did not leave a connected equivalent link');
+    assert.notEqual(connected, link, 'the cleanup redraw did not replace the doorway link');
+    assert.equal(dom.doc.activeElement, connected,
+      'focus did not reconnect to the equivalent ' + allText(connected).trim() + ' doorway');
+    assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), expectedKey,
+      'focus landed on the wrong keyed doorway after redraw');
+  }
+});
+
+test('empty doorway links keep focus on their connected equivalents across cleanup redraws', async () => {
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.coverage = {
+        state: 'never_recorded', recordingSince: null, lastRecordedAt: null, coversWindow: false,
+      };
+      base.runs = [];
+      base.failures = [];
+    }),
+  });
+  for (const [label, expectedKey] of [
+    [/^What is running now$/, 'rh-doorway-empty-jobs'],
+    [/^What the watchers caught$/, 'rh-doorway-empty-alerts'],
+  ]) {
+    const link = linksIn(emptyPanel(dom), label)[0];
+    assert.ok(link, 'the empty pane did not draw the doorway link named ' + label);
+    link.focus();
+    assert.equal(focusKey(dom), expectedKey, 'the empty doorway link carries no stable focus key');
+
+    dom.window.dispatchEvent({ type: 'pagehide' });
+    await settle();
+
+    const connected = linksIn(emptyPanel(dom), label)[0];
+    assert.ok(connected && dom.body.contains(connected) && shown(dom, connected),
+      'the redraw did not leave a connected empty doorway link');
+    assert.notEqual(connected, link, 'the cleanup redraw did not replace the empty doorway link');
+    assert.equal(dom.doc.activeElement, connected,
+      'focus did not reconnect to the equivalent ' + allText(connected).trim() + ' empty doorway');
+    assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), expectedKey,
+      'focus landed on the wrong empty doorway key after redraw');
+  }
+});
+
+test('a doorway link that disappears on reread falls back to the live state target', async () => {
+  let noFailures = false;
+  const dom = await boot({
+    runs: () => windowAnswer((base) => {
+      if (noFailures) {
+        base.summary.failed = 0;
+        base.failures = [];
+      }
+      return base;
+    }),
+  });
+  const link = linksIn(livePanel(dom), /^What the watchers caught$/)[0];
+  assert.ok(link, 'the live pane did not draw the doorway that can disappear');
+  link.focus();
+  assert.equal(focusKey(dom), 'rh-doorway-live-alerts',
+    'the disappearing doorway link carries no stable focus key');
+
+  noFailures = true;
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click');
+  await settle();
+
+  assert.equal(linksIn(livePanel(dom), /^What the watchers caught$/).length, 0,
+    'the reread still drew the doorway link, so this test did not exercise the fallback');
+  assert.equal(dom.doc.activeElement && dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-state',
+    'focus did not fall back to the live state target after the doorway disappeared');
+  assert.ok(dom.doc.activeElement && dom.body.contains(dom.doc.activeElement)
+      && shown(dom, dom.doc.activeElement),
+    'focus landed on a disconnected node after the doorway disappeared');
 });
 
 test('opening a run moves focus into the run, and Close puts it back on the row', async () => {
