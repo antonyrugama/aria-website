@@ -724,6 +724,12 @@
       'It is this browser that cannot keep hold of it.'
   };
 
+  function failureMessage(err) {
+    var code = err && err.code;
+    if (err && err.message) return maskContactDetails(err.message);
+    return FAILURE_TITLES[code] || 'The operations API did not answer.';
+  }
+
   function renderFailure(err) {
     var host = document.getElementById('gateFailed');
     if (!host) return;
@@ -732,8 +738,7 @@
     var code = err && err.code;
     var card = h('div', { className: 'card' });
     var block = stateBlock('warn', FAILURE_TITLES[code] || 'Could not check your session', [
-      err && err.message ? maskContactDetails(err.message) :
-        'The operations API did not answer. Your session has not been ended.',
+      failureMessage(err),
       FAILURE_NOTES[code] || 'Nothing has been signed out. Try again in a moment.'
     ], 1);
 
@@ -831,6 +836,7 @@
     h: h,
     icon: icon,
     toast: toast,
+    failureMessage: failureMessage,
     announce: announce,
     stateBlock: stateBlock,
     wireTabs: wireTabs

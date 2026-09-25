@@ -78,7 +78,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -1221,6 +1221,21 @@ test('an answer with no omissions field draws no note and does not fail', async 
   const withOne = await boot({ releases: data });
   assert.equal(findAll(panel(withOne, 'live'),
     (n) => (n.className || '').split(/\s+/).includes('is-note')).length, 1);
+});
+
+test('an omission diagnostic masks contact details before the DOM sees it', async () => {
+  const data = releasesFixture();
+  data.omissions = [{
+    key: 'ios_rollout_share',
+    title: 'Share unavailable',
+    detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
+  }];
+  const dom = await boot({ releases: data });
+  const surface = allDomTextAndAttrs(panel(dom, 'live'));
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the omission detail reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
 });
 
 /* The configuration this pane will actually be in most often, and the one the

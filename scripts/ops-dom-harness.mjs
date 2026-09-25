@@ -351,6 +351,16 @@ export function allText(node) {
   return (own + ' ' + kids).replace(/\s+/g, ' ').trim();
 }
 
+export function allDomTextAndAttrs(node) {
+  if (!node) return '';
+  const attrs = (node.attributeNames || [])
+    .map((name) => node.getAttribute(name))
+    .filter((value) => value !== null && value !== undefined)
+    .join(' ');
+  const kids = (node.childNodes || []).map(allDomTextAndAttrs).join(' ');
+  return ((node.textContent || '') + ' ' + attrs + ' ' + kids).replace(/\s+/g, ' ').trim();
+}
+
 export function find(node, predicate) {
   if (!node) return null;
   for (const child of node.childNodes || []) {

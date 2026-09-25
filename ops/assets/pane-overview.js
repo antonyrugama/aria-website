@@ -62,6 +62,7 @@
   var h = S.h;
   var icon = S.icon;
   var fmt = S.fmt;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
 
   /* How many problems the needs-attention queue shows before it stops and
      sends the operator to the pane that owns them. Overview is a doorway, not
@@ -1675,7 +1676,7 @@
           h('h4', { className: 'omit-title', text: textOf(entry.title) || textOf(entry.key) }),
           h('p', {
             className: 'omit-desc',
-            text: textOf(entry.detail) ||
+            text: (textOf(entry.detail) ? maskContactDetails(textOf(entry.detail)) : null) ||
               'The answer named this as unavailable and gave no reason.'
           })
         ]));

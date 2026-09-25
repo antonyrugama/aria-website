@@ -33,7 +33,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -547,6 +547,24 @@ test('the omissions list is rendered from the answer, not from a list in the pan
   const gained = await boot({ summary: summaryFixture((s) => { s.omissions = []; return s; }) });
   assert.doesNotMatch(liveText(gained), /No budget bar|budget/i,
     'an omission the answer no longer names is still printed by the pane');
+});
+
+test('overview omission diagnostics mask contact details before the DOM sees them', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => {
+      s.omissions = [{
+        key: 'budget',
+        title: 'No budget bar',
+        detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
+      }];
+      return s;
+    }),
+  });
+  const surface = allDomTextAndAttrs(livePanel(dom));
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the overview omission detail reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
 });
 
 /* ============================== the doorways =========================== */
