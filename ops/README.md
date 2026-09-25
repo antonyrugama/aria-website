@@ -125,7 +125,7 @@ as evidence of a previous one.
 | Token | Lifetime | Where |
 |---|---|---|
 | Access token | 15 minutes | `sessionStorage`, with the administrator it belongs to |
-| Refresh token | up to 30 days | `localStorage` when "Remember this device" is on, `sessionStorage` when off, with the administrator it belongs to |
+| Refresh token | up to the configured session ceiling, 30 days maximum | `localStorage` when "Remember this device" is on, `sessionStorage` when off, with the administrator it belongs to |
 | Presented-token ledger | last 1000 exchanges | `localStorage`, SHA-256 hashes, timestamps and the page that presented each, never tokens |
 
 The access token is cached rather than held in memory only. Memory only forces an exchange on
@@ -1045,9 +1045,9 @@ narrower and worth being exact about: It runs on the v2 shell: `settings.html` l
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
 
-**Six areas, and four of them are read from anywhere.** Administrators, active sessions,
-the access record and outside connections come from the API. Retention windows and the
-cost-category mapping have no endpoint to read or write. Both halves are on the same pane, so the pane has to say
+**Seven areas, and five of them are read from anywhere.** Administrators, active sessions,
+the access record, sign-in windows and outside connections come from the API. Retention windows
+and the cost-category mapping have no endpoint to read or write. Both halves are on the same pane, so the pane has to say
 which is which, and it says so three times over, never once in colour alone:
 
 1. **The word.** Every card head carries a source chip reading either `Live` or `No API yet`.
@@ -1066,17 +1066,20 @@ A live card also carries `data-endpoint` naming the path it was filled from, and
 `data-source="static"` names none and contains no digit, and **neither set is empty**. Moving one
 card across the boundary fails the suite.
 
-`Stadiora/Aria#11214` is the issue that moved Outside connections across that line. Until the
-matching backend deploys, that card shows a degraded "could not be read" state, not a fake empty
-table. `Stadiora/Aria#5442` still tracks the remaining static cards.
+`Stadiora/Aria#11214` is the issue that moved Outside connections across that line.
+`Stadiora/Aria#11601` moves Sign-in windows across it: the card reads
+`GET /api/ops/settings/sessions`, writes `PUT` to the same route, and maps server errors to fixed
+copy. Until the matching backend deploys, the card shows a degraded "could not be read" state,
+not a fake setting. `Stadiora/Aria#5442` still tracks the remaining static cards.
 
 **What the live half does.** Each account's role, status, last sign in and current session expiry;
 every live session with who holds it, when it started, when it was last used and when it ends; the
-access record, newest first, with paging and an export; and outside connection state from
-`GET /api/ops/integrations`, including the last successful run and its age. Revoking asks first, requires a
-written reason, sends that reason, and reports what the server answered rather than what was asked
-for. The record is reloaded beside the change, so the entry describing it is on screen next to the
-thing it describes.
+access record, newest first, with paging and an export; sign-in window settings from
+`GET /api/ops/settings/sessions`, which sets the session ceiling and fresh-auth window; and outside
+connection state from `GET /api/ops/integrations`, including the last successful run and its age.
+Revoking asks first, requires a written reason, sends that reason, and reports what the server
+answered rather than what was asked for. The record is reloaded beside the change, so the entry
+describing it is on screen next to the thing it describes.
 
 **Four facts the restyle is not allowed to lose**, because each one is the difference between a
 settings change and an incident:
@@ -1084,9 +1087,9 @@ settings change and an incident:
 - The access record is **append only**. Nothing on the pane can edit or delete an entry, including
   an owner. Export is the only write path and it writes a copy.
 - Sessions end at a **hard ceiling, not an idle timeout**. Revoking signs that browser out on its
-  next request. The ceiling is **measured** from the widest live session rather than printed from
-  a constant, so a pane that has nothing to measure says nothing instead of repeating a number the
-  server may have changed.
+  next request. The Sign-in windows card reads the owner setting and default, never the raw seconds
+  behind the re-auth window. Shortening the session ceiling asks first, because sessions older
+  than the new limit end on their next request. Lengthening does not extend sessions already live.
 - Retention windows split into **configurable** and **fixed by policy**, and the fixed ones say
   why they are locked: they record who looked at an athlete. **Shortening a configurable window
   deletes rows on the next nightly pass** — it is not a filter on what is read back.
@@ -1114,6 +1117,9 @@ refused sign in.
   record.
 - The mock's audit band note reads `kept 7 years`. Nothing reports that window, so it is not
   printed. The retention card says so instead.
+- The mock has only a `Sessions expire in 30d` pill. Here session length and the password
+  confirmation window are a live card, because the owner can change both. A fallback answer says
+  defaults are in force rather than inventing a saved setting.
 - The mock's twelve-row role matrix is not built. It is an unverifiable claim about server
   behaviour rendered as a table that looks like data, which is the failure the source chips exist
   to prevent; the three roles it described are stated once, under the table whose Role column they

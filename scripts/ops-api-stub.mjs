@@ -373,6 +373,23 @@ const INTEGRATIONS = {
   ]
 };
 
+const SESSION_SETTINGS = {
+  effective: { sessionMaxDays: 14, reauthWindowSeconds: 300 },
+  source: 'setting',
+  defaults: { sessionMaxDays: 30, reauthWindowSeconds: 300 },
+  bounds: {
+    sessionMaxDays: { min: 1, max: 30 },
+    reauthWindowSeconds: { min: 60, max: 900 }
+  },
+  setting: {
+    id: 1,
+    sessionMaxDays: 14,
+    reauthWindowSeconds: 300,
+    createdAt: ago(2 * DAY),
+    updatedAt: ago(12 * HOUR)
+  }
+};
+
 /* Cloud costs, in the state a period that has not published yet produces.
    Both generations of this pane read `availability.state` first and print
    `availability.detail` verbatim into the card they draw for it, so the detail
@@ -519,7 +536,8 @@ const PROOF = {
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
-  settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label]
+  settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label,
+    'Sessions last up to 14 days']
 };
 
 
@@ -577,6 +595,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
+  if (pathname === '/api/ops/settings/sessions') return { data: SESSION_SETTINGS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
   if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
@@ -588,5 +607,5 @@ function stub(pathname) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COSTS, PROBLEM, RUNS, PROOF, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COSTS, PROBLEM, RUNS, PROOF, stub
 };
