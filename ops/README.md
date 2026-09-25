@@ -531,14 +531,14 @@ it reads the live problems and alert rules, takes a problem on, closes it with a
 rule where the role allows it, and states whether the alerting is armed and where what it finds
 is sent. **Overview** answers both of its questions from live reads. The status ribbon and the
 needs-attention queue come from the problems API, and every entry opens the pane that owns the
-work; the four headline figures, the day-grain activity line, and the list of what is
+work; the four headline figures, the activity line, and the list of what is
 deliberately not drawn come from `GET /api/ops/summary`, which composes them server side.
 
 Three things about that pane are rules rather than styling, and each one is a rule about not
 drawing something. Every figure is labelled with the window the answer says it covers, read from
-`window.days`: the approved design asks for active people over 24 hours, nothing behind it is
-aggregated more finely than a day, and a tile labelled 24 hours that means seven days is worse
-than one labelled seven days. Every block carries an `availability` state and its figures are
+the payload's `window`: the activity line accepts both the day-grain answer already in production
+and the hour-grain answer that restores the approved last-24-hours chart, so the site and API can
+deploy in either order without inventing a window. Every block carries an `availability` state and its figures are
 absent from the payload unless that state is `ready`, so a tile that is not ready renders words
 and never a numeral. And the two apps are never added together: the activity line is one series
 per app, and the headline people figure is the platform's own distinct count rather than the sum
@@ -1450,7 +1450,7 @@ pane against the mock should read the list as "these are on purpose and here is 
    omission with its reason. An empty track reads as a budget with nothing spent against it and
    a full one as a budget already gone.
 3. **No month-end forecast**, for the same reason: only billed usage to date is stored.
-4. **No sparkline in the tiles.** The daily series exists for active people only. A sparkline on
+4. **No sparkline in the tiles.** The activity series exists for active people only. A sparkline on
    three tiles out of four, with one of them drawn from a different shape, invites a comparison
    between lines that are not comparable.
 5. **No severity stack bar in the ribbon.** The chips beside it already carry each count with its
@@ -1472,9 +1472,6 @@ pane against the mock should read the list as "these are on purpose and here is 
      meter drawn against a denominator nothing stores is the budget-bar problem again.
    - `Auto refresh · 60s`. Nothing here polls, and a label claiming a refresh that does not
      happen is worse than a page you know is a snapshot.
-   - the **hourly** grain on the activity chart. Nothing behind it aggregates finer than a day,
-     which is rule 1 of this pane: a figure labelled for a window it does not cover is worse
-     than one labelled for the window it does.
 
 The same card also carries two pane-held entries. **What Aria has been doing** has no route
 field for per-request-type requests, reliability, latency and cost; `/api/ops/summary` returns

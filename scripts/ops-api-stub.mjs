@@ -87,6 +87,7 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const utcDay = (ms) => new Date(NOW - ms).toISOString().slice(0, 10);
+const utcHourLabel = (ms) => new Date(NOW - ms).toISOString().slice(11, 16);
 
 const ADMIN = { id: 'adm_1', email: 'owner@example.invalid', name: 'Owner', role: 'owner' };
 const SESSION = { id: 'ses_1', createdAt: ago(10 * MINUTE), lastSeenAt: ago(1000), userAgent: 'check' };
@@ -128,7 +129,8 @@ const RULES = [
    and ops-settings-v2.test.mjs — trimmed to what has to be present for the
    pane to reach its ready state, and moved onto the real clock. */
 
-const SUMMARY_DAYS = [6, 5, 4, 3, 2, 1, 0].map((n) => utcDay(n * DAY));
+const SUMMARY_HOURS = Array.from({ length: 24 }, (_, n) => utcHourLabel((23 - n) * HOUR));
+const SUMMARY_HOUR_START = ago(24 * HOUR);
 
 const SUMMARY = {
   generatedAt: ago(5 * MINUTE),
@@ -167,13 +169,24 @@ const SUMMARY = {
   },
   activity: {
     availability: { state: 'ready' },
-    labels: SUMMARY_DAYS,
+    labels: SUMMARY_HOURS,
     series: [
-      { key: 'aria', label: 'Aria', color: 's1', values: [910, 940, 1001, 980, 1040, 1077, 1102] },
-      { key: 'ariaxii', label: 'Aria XII', color: 's2', values: [380, 402, 396, 410, 421, 404, 412] }
+      { key: 'mobile', label: 'Mobile', color: 's1',
+        values: [91, 94, 100, 98, 104, 108, 110, 107, 105, 101, 99, 96,
+          93, 90, 88, 84, 80, 76, 72, 70, 68, 67, 66, 65] },
+      { key: 'coaches', label: 'Coaches Web', color: 's2',
+        values: [38, 40, 39, 41, 42, 40, 41, 43, 44, 42, 40, 39,
+          37, 36, 34, 33, 31, 30, 29, 28, 27, 26, 25, 24] }
     ],
-    daysMissingRollups: [],
-    window: { days: 7 }
+    reportingStart: SUMMARY_HOUR_START,
+    hoursMissingRollups: [],
+    window: {
+      start: SUMMARY_HOUR_START,
+      endExclusive: new Date(NOW).toISOString(),
+      hours: 24,
+      grain: 'hour',
+      timezone: 'UTC'
+    }
   },
   omissions: [
     { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' }
