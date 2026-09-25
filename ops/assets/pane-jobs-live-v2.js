@@ -1055,7 +1055,7 @@
              route does not emit is how every live read ends up on the
              fallback branch while a deleted field reads correctly. */
           (capacity && typeof capacity.reason === 'string' && capacity.reason)
-            ? capacity.reason
+            ? coded(capacity.reason)
             : 'Nothing records how many workers exist, so in-flight work has no denominator.'],
         ['Which attempt this is',
           'A retry after a failure creates a new job rather than incrementing a counter, so ' +
