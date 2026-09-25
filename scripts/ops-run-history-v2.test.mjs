@@ -786,7 +786,7 @@ test('run-history stale action followed by a failed reload still announces the s
   const stale = new Error('raw backend text must not render');
   stale.status = 409;
   stale.code = 'ops_jobs_retry_stale';
-  const staleMessage = 'That job changed state elsewhere. The list was refreshed; nothing was claimed.';
+  const staleMeaning = 'Nothing was claimed because that run had already changed.';
   let reads = 0;
   const dom = await boot({
     runs: () => {
@@ -804,12 +804,14 @@ test('run-history stale action followed by a failed reload still announces the s
 
   await submitRetry(dom);
 
-  assert.equal(heard.filter((message) => message.includes(staleMessage)).length, 1,
+  assert.equal(heard.filter((message) => message.includes(staleMeaning)).length, 1,
     'the stale retry message was not announced exactly once when the reload failed');
   assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
     'the failed reload was not also announced after the stale retry');
-  assert.match(lastSaid(dom) || '', /That job changed state elsewhere/,
+  assert.match(lastSaid(dom) || '', /Nothing was claimed/,
     'the final polite-region text did not include the stale retry message');
+  assert.doesNotMatch(lastSaid(dom) || '', /refreshed/,
+    'the stale retry failed-reload announcement falsely said the list was refreshed');
   assert.match(lastSaid(dom) || '', /The window could not be read/,
     'the final polite-region text did not include the read failure');
 });
