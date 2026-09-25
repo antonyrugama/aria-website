@@ -286,6 +286,7 @@ ops/
     pane-run-history-v2.css  What happened's own shapes
     pane-jobs-live-v2.js     Happening now
     pane-jobs-live-v2.css    Happening now's own shapes
+    job-actions-v2.js        Shared cancel and retry confirmations
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
     pane-spend-v2.css     Cloud costs' own shapes
@@ -304,6 +305,7 @@ api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.ht
 aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 icons.js = login.html, setup.html
+job-actions-v2.js = jobs-live.html, run-history.html
 login.js = login.html
 operate.js = (no page)
 ops.css = login.html, setup.html
@@ -318,7 +320,7 @@ pane-jobs-live-v2.css = jobs-live.html
 pane-jobs-live-v2.js = jobs-live.html
 pane-overview-v2.css = index.html
 pane-overview.js = index.html
-pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
 pane-releases-v2.css = releases.html
 pane-releases.js = releases.html
 pane-run-history-v2.css = run-history.html
@@ -1033,14 +1035,15 @@ problems, People reveals a masked field, and Aria quality posts an evaluation. D
 than asserted, from the HTTP method each file spells:
 
 ```claims id=write-capable-assets
-ops assets naming a write method = login.js, pane-alerts.js, pane-evaluations.js, pane-users.js, session.js, settings.js, setup.js
+ops assets naming a write method = job-actions-v2.js, login.js, pane-alerts.js, pane-evaluations.js, pane-users.js, session.js, settings.js, setup.js
 of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-users.js
 ```
 
-`settings.js` is the v1 script and `session.js` is the transport every one of them calls through;
-`login.js` and `setup.js` are the two pages outside the shell. The line is per file and not per
-call site — it reads the HTTP method a call site spells, so a file keeps its place until its last
-write method goes, and says nothing about whether any of those calls is reachable or authorised. What is true of Settings is
+`settings.js` is the v1 script, `job-actions-v2.js` is the shared cancel/retry helper, and
+`session.js` is the transport every one of them calls through; `login.js` and `setup.js` are the
+two pages outside the shell. The line is per file and not per call site — it reads the HTTP method
+a call site spells, so a file keeps its place until its last write method goes, and says nothing
+about whether any of those calls is reachable or authorised. What is true of Settings is
 narrower and worth being exact about: It runs on the v2 shell: `settings.html` loads `aria.css`,
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
@@ -1473,8 +1476,16 @@ pane against the mock should read the list as "these are on purpose and here is 
      which is rule 1 of this pane: a figure labelled for a window it does not cover is worse
      than one labelled for the window it does.
 
-Everything the omissions card shows comes **from the answer**, never from a list in the client,
-so a figure that gains a source drops off the card without a code change here.
+The same card also carries two pane-held entries. **What Aria has been doing** has no route
+field for per-request-type requests, reliability, latency and cost; `/api/ops/summary` returns
+platform totals only, so it cannot split the approved table into rows. **Where the money goes**
+is drawn on Cloud costs by category and resource group; Overview has no smaller spend-breakdown
+field to place beside its live operating summary. API-declared omissions are still deduplicated
+against these entries by stable omission key, so if the route starts naming either gap the pane
+does not print it twice.
+
+Everything else the omissions card shows comes **from the answer**, never from a list in the
+client, so a figure that gains a source drops off the card without a code change here.
 
 ### App releases on v2: where the pane departs from the mock
 
@@ -1512,9 +1523,11 @@ would blend them is not drawn.
    carries one platform, a current build, a previous build and a list of named signals, and
    nothing stores a per-release history to widen it to. The table drawn is the comparison the
    contract describes.
-6. **No "What is in 1.1.2" band.** Release notes, build metadata, languages, minimum OS,
-   download sizes, the rollback build and the support-ticket reference are none of them stored
-   anywhere in this platform. The whole band is eight fields with no source.
+6. **No "What is in 1.1.2" band.** The release snapshots store build numbers and release
+   dates, and the pane already shows them in the rollout ladder and store card. Release notes,
+   languages, minimum OS, download sizes, the rollback build and the support-ticket reference are
+   not recorded. The pane names the approved band in **What this pane cannot answer yet** because
+   nothing records what changed in a release yet.
 7. **No Export or Failed runs actions on the health band.** Nothing generates that export, and a
    button that does nothing is the filter problem in another costume.
 8. **The mock's three `why` blocks are not reproduced.** "Merging these into one score would
@@ -1677,7 +1690,11 @@ is not a complete diff: it names the departures that carry a decision.
    pane recorded rather than off anything a file says about itself.
 5. **No trend chart.** The mock draws one. A chart needs a series and this read answers one
    window, so a line over time would have to invent the missing part of it.
-6. **No timer.** The mock implies a live page. This one is the past tense: it reads once per
+6. **Retry and cancel links are row capabilities, not history writes.** The run rows and the
+   open-run card can show the same cancel or retry controls as Happening now, but the POST still
+   goes to `/api/ops/jobs`. The history pane refreshes after a committed action or a stale race;
+   it does not mutate the historical row in place.
+7. **No timer.** The mock implies a live page. This one is the past tense: it reads once per
    selection, stamps when it read, and offers "Read again". Nothing is started, so nothing has
    to be stopped when the operator leaves — which is the strongest available answer to the
    polling-leak class of defect, and the opposite of the choice Happening now correctly makes.
@@ -1723,23 +1740,24 @@ departures that carry a decision.
    control and the table's horizontal scroll position are carried across the swap by `data-retain`
    name and put back. Without it the pane would drop focus to the document and rewind the table
    to column one four times a minute, which on a 375px screen hides most of the table.
-5. **Cancel, retry and export are absent.** The mock offers all three. Stadiora/Aria#5562 is
-   read-only by decision — the record now supports listing work but nothing serves an action
-   against it, and a control that cannot succeed says the thing is within reach, so the pane
-   names the three rather than drawing them disabled.
+5. **Cancel and retry come only from the API's capability block.** Owners and operators see a
+   button only when the row says the action can commit, and every false action prints the
+   server's reason as quiet text. The typed confirmation uses the row's short reference and posts
+   to `/api/ops/jobs/:id/cancel` or `/retry`. A stale job refreshes the list and never reports a
+   success. Viewers receive reasons and no buttons.
 6. **The app control and the environment control are not drawn at all.** The route keeps no
    per-app split and there is no staging record, so production figures under a staging label
    would be worse than a refusal. A filter that narrows nothing is a control that cannot succeed
    in a different widget. The registry declares neither, and a `filterNote` says why.
    `scripts/ops-registry-filters.test.mjs` holds the registry to it, keyed off the call each
    pane recorded rather than off anything a file says about itself.
-7. **Four things the mock draws have no record behind them, and are named rather than drawn.**
+7. **Five things the mock draws have no record behind them, and are named rather than drawn.**
    Worker load has no denominator, because nothing records how many workers exist. "Attempt 2 of
    3" does not exist on the platform: a retry creates a new job rather than incrementing a
    counter. A per-run progress bar would be drawing a number with no history behind it, where a
    job that has reported nothing carries the same zero as one that has done nothing. And the
    mock's third lane, Streaming, creates no job at all, so it would report zero forever — the one
-   reading worse than leaving it out. All four sit in a band called "What this pane cannot answer
+   reading worse than leaving it out. Export still has no route. All five sit in a band called "What this pane cannot answer
    yet", and the worker-load sentence is printed as the route sent it rather than mapped through
    a lookup, so a live read and a deleted field cannot end up on the same fallback branch.
 
@@ -1843,7 +1861,9 @@ answer.
 2. **No "Returning after 7 days" headline.** Retention arrives as a grid of signup groups, each
    with its own denominator. Collapsing them into one figure means choosing a group and an
    offset, and the pane would then be publishing a rate the answer never sent.
-3. **No "Where people are" region table.** No region or country field is in the response.
+3. **No "Where people are" region table.** No region or country field is in the response. The
+   pane names that gap in **What this pane cannot answer yet** rather than leaving the approved
+   table silent.
 4. **No per-row ribbon, no `Times` column and no `Week over week` column in the feature table.**
    The response sends a share of people and the group it was measured over, not an event count
    and not a daily series per feature.
@@ -2009,8 +2029,11 @@ decision.
    and none is in the response, so the bar would have been drawn against a number this codebase
    invented. What survives is the half that is real: the period total, and the forecast to
    period end when the period is open.
-2. **No anomalies card and no unit costs strip.** Same reason, and the same reason the v1 pane
-   was wrong to draw them: `anomalies` and `unitCosts` are not fields the route sends.
+2. **No anomalies card and no unit costs strip.** The Problems pane watches unusual service
+   spend with the live `service_cost_anomaly` rule and links those problems back to Cloud costs.
+   What this pane can draw is the cost breakdown by category, resource group, service and day;
+   it does not draw an anomaly list yet. Unit costs are also absent because `unitCosts` is not a
+   field the route sends.
 3. **No per-service category column, so the second card is the table and not a switch state.**
    The service view's rows carry no category key, so the mock's `Top services` column would
    have had to be reconstructed by matching a service name against the category view — a join
@@ -2137,20 +2160,20 @@ Which of these classes any page can still draw is therefore derived rather than 
 .masked = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .nav-count = declared in ops.css; drawn by (no page)
-.btn-danger = declared in ops.css, pane-settings-v2.css; drawn by settings.html; painted where drawn
+.btn-danger = declared in ops.css, pane-settings-v2.css, shell-pane-v2.css; drawn by jobs-live.html, run-history.html, settings.html; painted where drawn
 .field-error = declared in ops.css, pane-evaluations-v2.css, pane-users-v2.css; drawn by evaluations.html, login.html, setup.html, users.html; painted where drawn
 ```
 
 Three lines in that block are worth reading twice:
 
 - **`.btn-danger` is drawn, and painted.** Settings writes it on the revoke controls and on the
-  confirmation's submit, and `pane-settings-v2.css` declares it. This section used to file it
-  under "drawn by nothing built so far", and said in as many words that Settings draws none. The
-  4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
-  paints it now. No figure in this file describes what does. `check-ops-contrast.mjs` is **not**
-  that oracle either: `scripts/check-ops-contrast.mjs` fixes its page to `/ops/shell-v2.html`
-  and never opens `settings.html`, so the live pairing is unmeasured by
-  anything in the tree. That is a gap, stated as one rather than closed with a pointer at a guard
+  confirmation's submit; Happening now and What happened write it through `job-actions-v2.js`.
+  `pane-settings-v2.css` and `shell-pane-v2.css` declare it for the pages that draw it. The 4.49
+  and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what paints it
+  now. No figure in this file describes the v2 pairing. `check-ops-contrast.mjs` is **not** that
+  oracle either: it fixes its page to `/ops/shell-v2.html` and never opens these panes, so the
+  live pairing is unmeasured by anything in the tree. That is a gap, stated as one rather than
+  closed with a pointer at a guard
   that does not look.
 - **Two classes were written with nothing behind them, and are not any more.** `.masked` and
   `.callout-warn` were both tokens whose rule stayed in `ops.css` when their pane moved to v2,
@@ -2593,10 +2616,10 @@ lines short — which is why none of them are typed any more.
 ```claims id=source-anchors
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
-ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1058
+ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1059
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 144
-ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 178
-ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 191
+ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
+ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 199
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 114
 ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 636

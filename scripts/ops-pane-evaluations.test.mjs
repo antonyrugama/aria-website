@@ -22,6 +22,8 @@ function paneBody() {
 }
 
 function loadPane(call = () => Promise.reject(new Error('unexpected request')), Clock = Date, role = 'operator') {
+  const maskContactDetails = (text) => String(text).replace(/[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+/g,
+    '[hidden contact detail]');
   function element(tag, opts = {}, children = []) {
     let text = opts.text || '';
     const node = {
@@ -131,6 +133,9 @@ function loadPane(call = () => Promise.reject(new Error('unexpected request')), 
       ]),
       link: (href, label, className) => element('a', { className: className || 'btn btn-sm', href, text: label }),
       paneHref: paneId => `${paneId}.html`,
+    },
+    OpsPaneRegistry: {
+      maskContactDetails,
     },
     OpsSession: {
       call,
@@ -277,10 +282,10 @@ test('dataset form shows field errors received through the operations API transp
           return JSON.stringify({
             error: {
               code: 'validation_failed',
-              message: 'Dataset declarations are invalid.',
+              message: 'Dataset declarations are invalid for coach.person@example.com.',
               details: [{
-                path: '/input/datasets/0/revision',
-                reason: 'positive_integer',
+                path: '/input/datasets/0/coach.person@example.com/revision',
+                reason: 'positive_integer for reviewer@example.com',
               }],
             },
           });
@@ -300,9 +305,10 @@ test('dataset form shows field errors received through the operations API transp
   await form.dispatch('submit');
   const error = findNode(form, node => node.className === 'field-error');
   const text = node => [node.textContent || '', ...(node.children || []).map(text)].join(' ');
-  assert.match(text(error), /Dataset declarations are invalid/);
-  assert.match(text(error), /\/input\/datasets\/0\/revision/);
-  assert.match(text(error), /positive_integer/);
+  assert.match(text(error), /Dataset declarations are invalid for \[hidden contact detail\]/);
+  assert.match(text(error), /\[hidden contact detail\]: positive_integer for \[hidden contact detail\]/);
+  assert.match(text(error), /positive_integer for \[hidden contact detail\]/);
+  assert.doesNotMatch(text(error), /coach\.person@example\.com|reviewer@example\.com/);
   assert.equal(findNode(view.root, node => node.className === 'dataset-result').children.length, 0);
 });
 

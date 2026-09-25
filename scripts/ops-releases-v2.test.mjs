@@ -78,7 +78,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -483,6 +483,22 @@ test('the hero refuses "live on both stores" while one store is still holding th
   /* And the fact it refuses to flatten is still on screen, in the one line
      under the title. */
   assert.match(heroText(dom), /Android held at 20% for 6 days/);
+});
+
+test('the approved release-contents band is acknowledged as not answerable yet', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /What this pane cannot answer yet/,
+    'the cannot-answer band is not on the pane');
+  assert.match(text, /What is in 1\.1\.2/,
+    'the approved release-contents band is still silent');
+  assert.match(text, /The store snapshot records build numbers and release dates/,
+    'the release-contents cause does not say which facts are already recorded');
+  assert.match(text, /this pane already shows in the rollout ladder and store card/,
+    'the release-contents cause does not say where recorded facts are drawn');
+  assert.match(text, /Nothing records what changed in a release yet\./,
+    'the release-contents cause does not state the remaining gap');
 });
 
 test('the hero does say live on both stores once both stores have finished', async () => {
@@ -1221,6 +1237,21 @@ test('an answer with no omissions field draws no note and does not fail', async 
   const withOne = await boot({ releases: data });
   assert.equal(findAll(panel(withOne, 'live'),
     (n) => (n.className || '').split(/\s+/).includes('is-note')).length, 1);
+});
+
+test('an omission diagnostic masks contact details before the DOM sees it', async () => {
+  const data = releasesFixture();
+  data.omissions = [{
+    key: 'ios_rollout_share',
+    title: 'Share unavailable',
+    detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
+  }];
+  const dom = await boot({ releases: data });
+  const surface = allDomTextAndAttrs(panel(dom, 'live'));
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the omission detail reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
 });
 
 /* The configuration this pane will actually be in most often, and the one the

@@ -44,7 +44,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -52,6 +52,7 @@ const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
 const REGISTRY_SRC = read('assets/pane-registry.js');
 const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
+const JOB_ACTIONS_SRC = read('assets/job-actions-v2.js');
 const PANE_SRC = read('assets/pane-jobs-live-v2.js');
 const PAGE_SRC = read('jobs-live.html');
 
@@ -191,8 +192,15 @@ async function boot(options) {
     state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role } },
     boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
     call: (endpoint, o) => {
-      calls.push({ endpoint, query: o && o.query });
-      const answer = answers[Math.min(calls.length - 1, answers.length - 1)];
+      calls.push({ endpoint, query: o && o.query, method: o && o.method, body: o && o.body });
+      if (o && o.method === 'POST') {
+        const action = opts.actionResponses && opts.actionResponses[endpoint];
+        if (action instanceof Error) return Promise.reject(action);
+        if (action === undefined) return Promise.reject(new Error('no action stub for ' + endpoint));
+        return Promise.resolve({ data: action });
+      }
+      const readIndex = calls.filter((call) => call.method !== 'POST').length - 1;
+      const answer = answers[Math.min(readIndex, answers.length - 1)];
       if (answer instanceof Error) return Promise.reject(answer);
       if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
       return Promise.resolve({ data: answer });
@@ -207,6 +215,7 @@ async function boot(options) {
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
+  vm.runInContext(JOB_ACTIONS_SRC, dom.window, { filename: 'job-actions-v2.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-jobs-live-v2.js' });
 
   const applied = [];
@@ -748,6 +757,171 @@ test('a complete table says it is the whole queue', async () => {
     'a complete table did not say so, so it reads as a page');
 });
 
+test('job action controls come only from the capability block and false actions are reasons', async () => {
+  const dom = await boot({
+    view: viewFixture({
+      workingSet: {
+        returned: 3,
+        truncated: false,
+        jobs: [
+          jobFixture({
+            id: '9f1c2d00-1111-4111-8111-111111111111',
+            reference: 'job_9f1c2d',
+            state: 'queued',
+            actions: {
+              canCancel: true,
+              cancelReason: null,
+              canRetry: false,
+              retryReason: 'Only failed jobs can be retried.',
+            },
+          }),
+          jobFixture({
+            id: 'aa2c2d00-1111-4111-8111-111111111111',
+            state: 'running',
+            actions: {
+              canCancel: false,
+              cancelReason: "This job type can't be stopped once it has started.",
+              canRetry: false,
+              retryReason: 'Only failed jobs can be retried.',
+            },
+          }),
+          jobFixture({
+            id: 'bb3c2d00-1111-4111-8111-111111111111',
+            state: 'running',
+            actions: {
+              canCancel: false,
+              cancelReason: 'Your role can view jobs but cannot change them.',
+              canRetry: false,
+              retryReason: 'Your role can view jobs but cannot change them.',
+            },
+          }),
+        ],
+      },
+    }),
+  });
+
+  const buttons = findAll(livePanel(dom), (n) => n.tagName === 'BUTTON').map((b) => allText(b).trim());
+  assert.equal(buttons.filter((label) => label === 'Cancel').length, 1,
+    'Cancel was drawn for a row whose capability block did not allow it, or omitted for one that did');
+  assert.equal(buttons.filter((label) => label === 'Retry').length, 0,
+    'Retry was drawn without a row whose capability block allows retry');
+  const text = liveText(dom);
+  assert.match(text, /Cancel: This job type can't be stopped once it has started\./,
+    'a false cancel capability did not print the server reason');
+  assert.match(text, /Retry: Only failed jobs can be retried\./,
+    'a false retry capability did not print the server reason');
+  assert.match(text, /Your role can view jobs but cannot change them\./,
+    'a viewer capability block was hidden instead of explaining why there is no button');
+});
+
+test('cancelling a job requires the typed reference, posts it, refreshes, and restores focus', async () => {
+  const jobId = '9f1c2d00-1111-4111-8111-111111111111';
+  const dom = await boot({
+    answers: [
+      viewFixture({
+        workingSet: {
+          returned: 1,
+          truncated: false,
+          jobs: [jobFixture({
+            id: jobId,
+            reference: 'job_9f1c2d',
+            state: 'queued',
+            actions: {
+              canCancel: true,
+              cancelReason: null,
+              canRetry: false,
+              retryReason: 'Only failed jobs can be retried.',
+            },
+          })],
+        },
+      }),
+      viewFixture({ workingSet: { returned: 0, truncated: false, jobs: [] } }),
+    ],
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(jobId) + '/cancel']: { jobId, status: 'canceled' },
+    },
+  });
+
+  const cancel = buttonNamed(dom, 'Cancel');
+  assert.ok(cancel, 'the actionable row did not draw a Cancel button');
+  cancel.focus();
+  cancel.dispatch('click', {});
+  await settle();
+
+  assert.match(allText(dom.body), /Cancel this queued job/,
+    'the confirmation dialog did not say what cancelling a queued job does');
+  assert.match(allText(dom.body), /Reference: job_9f1c2d/,
+    'the confirmation dialog did not show the typed reference');
+  const input = dom.doc.getElementById(dom.body.querySelector('.field-input').getAttribute('id'));
+  const go = buttonNamed({ content: dom.body }, 'Cancel job');
+  assert.equal(go.disabled, true, 'the destructive button enabled before the exact reference was typed');
+  input.value = 'JOB_9F1C2D';
+  input.dispatch('input', {});
+  assert.equal(go.disabled, true, 'the destructive button accepted a differently cased reference');
+  input.value = 'job_9f1c2d';
+  input.dispatch('input', {});
+  assert.equal(go.disabled, false, 'the destructive button did not enable for the exact reference');
+  go.dispatch('click', {});
+  await settle();
+
+  assert.deepEqual(dom.calls.map((c) => [c.method || 'GET', c.endpoint]), [
+    ['GET', ENDPOINT],
+    ['POST', '/api/ops/jobs/' + jobId + '/cancel'],
+    ['GET', ENDPOINT],
+  ], 'a successful cancellation should post once and refresh the list once');
+  assert.equal(JSON.stringify(dom.calls[1].body), JSON.stringify({ confirmation: 'job_9f1c2d' }),
+    'the cancellation did not send the typed confirmation body');
+  assert.match(allText(dom.body), /Cancelled job_9f1c2d/,
+    'the success announcement did not use the committed action response');
+  assert.equal(allText(dom.doc.activeElement).trim(), 'Read now',
+    'focus did not land on the surviving read control after the cancelled row disappeared');
+});
+
+test('a stale cancellation reloads the list and never claims the action happened', async () => {
+  const jobId = '9f1c2d00-1111-4111-8111-111111111111';
+  const stale = new Error('raw backend text must not render');
+  stale.status = 409;
+  stale.code = 'ops_jobs_cancel_stale';
+  const dom = await boot({
+    answers: [
+      viewFixture({
+        workingSet: {
+          returned: 1,
+          truncated: false,
+          jobs: [jobFixture({
+            id: jobId,
+            reference: 'job_9f1c2d',
+            state: 'queued',
+            actions: { canCancel: true, cancelReason: null, canRetry: false, retryReason: 'Only failed jobs can be retried.' },
+          })],
+        },
+      }),
+      viewFixture({ workingSet: { returned: 0, truncated: false, jobs: [] } }),
+    ],
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(jobId) + '/cancel']: stale,
+    },
+  });
+
+  buttonNamed(dom, 'Cancel').dispatch('click', {});
+  await settle();
+  const input = dom.body.querySelector('.field-input');
+  input.value = 'job_9f1c2d';
+  input.dispatch('input', {});
+  buttonNamed({ content: dom.body }, 'Cancel job').dispatch('click', {});
+  await settle();
+
+  assert.equal(dom.calls.filter((c) => c.method !== 'POST').length, 2,
+    'a stale action did not refresh the list');
+  const text = allText(dom.body);
+  assert.match(text, /changed state elsewhere/,
+    'a stale action did not use the fixed stale-state copy');
+  assert.doesNotMatch(text, /raw backend text/,
+    'raw API text reached the UI for a stale action');
+  assert.doesNotMatch(text, /Cancelled job_9f1c2d/,
+    'a stale action was announced as though it committed');
+});
+
 /* ============================== throughput ============================= */
 
 test('a ratio travels with both of its numbers', async () => {
@@ -895,6 +1069,16 @@ test('the capacity gap is printed in the route own words', async () => {
     'the pane drew its own fallback wording over a reason the route did publish');
 });
 
+test('a capacity diagnostic masks contact details before the DOM sees it', async () => {
+  const reason = 'Contact Coach.Person+run@eu.example.com for this failure.';
+  const dom = await boot({ view: viewFixture({ capacity: { slots: null, reason } }) });
+  const surface = allDomTextAndAttrs(dom.content);
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the capacity reason reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
+});
+
 test('a capacity gap with no wording still names the gap', async () => {
   const dom = await boot({
     view: viewFixture({ capacity: { slots: null, reason: undefined } }),
@@ -904,6 +1088,14 @@ test('a capacity gap with no wording still names the gap', async () => {
 });
 
 /* =========================== masking, still ============================ */
+
+test('the diagnostic leak surface includes attributes as well as visible text', () => {
+  const dom = makeDom();
+  const node = dom.element('div');
+  node.setAttribute('title', 'Contact Coach.Person+run@eu.example.com for this failure.');
+  assert.match(allDomTextAndAttrs(node), /Coach\.Person\+run@eu\.example\.com/,
+    'a DOM leak check that ignores attributes can pass while an accessible copy leaks');
+});
 
 test('address-shaped text is masked before it reaches the screen', async () => {
   const dom = await boot({
@@ -1342,7 +1534,8 @@ test('the page loads one design system, not two', () => {
 
 test('the scripts load in the order the bootstrap needs', () => {
   const order = ['assets/theme.js', 'assets/pane-registry.js', 'assets/api.js', 'assets/session.js',
-    'assets/aria.js', 'assets/shell-pane-v2.js', 'assets/pane-jobs-live-v2.js'];
+    'assets/aria.js', 'assets/shell-pane-v2.js', 'assets/job-actions-v2.js',
+    'assets/pane-jobs-live-v2.js'];
   let last = -1;
   for (const src of order) {
     const at = PAGE_SRC.indexOf(src);

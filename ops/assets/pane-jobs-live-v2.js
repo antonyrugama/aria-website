@@ -109,11 +109,11 @@
 
    ROLES
 
-   Read-only, so every role that can open the pane can see all of it. Cancel
-   and requeue are explicitly out of scope for #5562 and nothing serves a route
-   behind them, so they are named in the band of what this pane cannot do yet
-   rather than drawn as buttons. NO CONTROL THAT CANNOT SUCCEED (PR #58): a
-   control an operator cannot complete says the thing is within reach.
+   Every role that can open the pane can see the queue, but job writes come
+   only from the action capabilities the API sends on each row. A button drawn
+   from anything else would be a guess. A denied action is a quiet reason, not
+   a disabled control, because a control that cannot succeed says the thing is
+   within reach.
 
    EVENTS, NEVER CONTENT
 
@@ -132,10 +132,15 @@
   var icon = S.icon;
   var fmt = S.fmt;
   var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
+  var jobActions = global.OpsJobActions || { controls: emptyJobActionControls };
 
   var JOBS_ENDPOINT = '/api/ops/jobs';
   var HISTORY_FILE = 'run-history.html';
   var ALERTS_FILE = 'alerts.html';
+
+  function emptyJobActionControls() {
+    return h('div', { className: 'job-action-stack' });
+  }
 
   /* Fast enough that a queue moving under an operator's eyes looks like it is
      moving, slow enough that a page left open all afternoon is not a load.
@@ -249,6 +254,8 @@
        stale as they were a moment before. */
     var lastError = null;
     var drawnOnce = false;
+    var focusAfterAction = null;
+    var highlightJobId = null;
 
     /* No ops:filters listener. This pane declares no filter in the registry,
        so the shell pins every one of them and the event can never carry a
@@ -490,6 +497,7 @@
 
       region.show(wrap);
       restoreRetained(held, wrap);
+      settleActionFocus(wrap);
       shownRoot = wrap;
     }
 
@@ -539,6 +547,38 @@
           node.focus({ preventScroll: true });
         }
       }
+    }
+
+    function settleActionFocus(root) {
+      if (!focusAfterAction || !root) return;
+      var target = null;
+      var keys = [
+        focusAfterAction.preferred,
+        focusAfterAction.sameRow,
+        'jobs-read-now'
+      ];
+      for (var i = 0; i < keys.length && !target; i += 1) {
+        if (!keys[i]) continue;
+        target = root.querySelector('[' + RETAIN_ATTR + '="' + keys[i] + '"]');
+      }
+      if (!target) target = content;
+      if (target && target.focus) {
+        if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+      }
+      focusAfterAction = null;
+    }
+
+    function afterAction(result) {
+      var next = result.action === 'retry' && result.data && result.data.jobId
+        ? result.data.jobId
+        : null;
+      highlightJobId = next;
+      focusAfterAction = {
+        preferred: next ? 'jobs-row-' + next : null,
+        sameRow: 'jobs-row-' + String(result.row.id || '')
+      };
+      load(false);
     }
 
     /* ----------------------------------------------------------- the hero */
@@ -825,7 +865,8 @@
           h('th', { text: 'Waiting' }),
           h('th', { text: 'Running' }),
           h('th', { text: 'Usually' }),
-          h('th', { text: 'Verdict' })
+          h('th', { text: 'Verdict' }),
+          h('th', { className: 'r', text: 'Actions' })
         ])
       ]);
 
@@ -849,8 +890,20 @@
                 text: GRADE_LABEL[grade] || grade
               })
               : h('span', { className: 'muted', text: 'Not started' })
+          ]),
+          h('td', { className: 'r' }, [
+            jobActions.controls(job, {
+              onSuccess: afterAction,
+              onStale: afterAction,
+              focusAttr: RETAIN_ATTR,
+              focusPrefix: 'jobs-action'
+            })
           ])
         ]);
+        row.setAttribute(RETAIN_ATTR, 'jobs-row-' + String(job.id || ''));
+        if (highlightJobId && job.id === highlightJobId) {
+          row.className = 'job-row-highlight';
+        }
         body.appendChild(row);
       });
 
@@ -879,6 +932,14 @@
           : 'This is the whole queue, not a page of it.'
       }));
       foot.appendChild(h('span', { text: baselineWindowText(baseline) }));
+      if (highlightJobId) {
+        foot.appendChild(h('span', {
+          text: body.querySelector('.job-row-highlight')
+            ? 'The newly created retry is highlighted in this table.'
+            : 'The retry was created as ' + (jobActions.referenceFromId(highlightJobId) || highlightJobId) +
+              ', but it is not in this read.'
+        }));
+      }
       box.appendChild(foot);
 
       section.appendChild(box);
@@ -994,7 +1055,7 @@
              route does not emit is how every live read ends up on the
              fallback branch while a deleted field reads correctly. */
           (capacity && typeof capacity.reason === 'string' && capacity.reason)
-            ? capacity.reason
+            ? coded(capacity.reason)
             : 'Nothing records how many workers exist, so in-flight work has no denominator.'],
         ['Which attempt this is',
           'A retry after a failure creates a new job rather than incrementing a counter, so ' +
@@ -1008,10 +1069,9 @@
           'The approved design draws a third lane for chat replies. Chat streaming creates no ' +
             'job at all, so a Streaming lane built from this read would report zero forever — ' +
             'which is the one reading that would be worse than leaving it out.'],
-        ['Cancel, retry and export',
-          'The approved design offers all three. #5562 is read-only by decision and nothing ' +
-            'serves a route behind them, and a control that cannot succeed says the thing is ' +
-            'within reach.']
+        ['Export',
+          'The approved design offers an export. No route serves an export yet, so the pane ' +
+            'does not draw a control that cannot succeed.']
       ];
 
       entries.forEach(function (entry) {

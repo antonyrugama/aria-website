@@ -45,6 +45,42 @@ const JOBS = JSON.parse(fsJobs.readFileSync(
   'utf8'
 ));
 
+/* Action rows in the shape Stadiora/Aria#11610 publishes: one row can be
+   cancelled, one row explains why it cannot be changed, and one row carries
+   the viewer denial. The fixture this starts from predates job actions, so the
+   action fields are layered here for the hosted browser checks. */
+if (JOBS.workingSet && Array.isArray(JOBS.workingSet.jobs)) {
+  const rows = JOBS.workingSet.jobs;
+  if (rows[0]) Object.assign(rows[0], {
+    id: '9f1c2d00-1111-4111-8111-111111111111',
+    reference: 'job_9f1c2d',
+    actions: {
+      canCancel: true,
+      cancelReason: null,
+      canRetry: false,
+      retryReason: 'Only failed jobs can be retried.',
+    },
+  });
+  if (rows[1]) Object.assign(rows[1], {
+    id: 'aa2c2d00-1111-4111-8111-111111111111',
+    actions: {
+      canCancel: false,
+      cancelReason: "This job type can't be stopped once it has started.",
+      canRetry: false,
+      retryReason: 'Only failed jobs can be retried.',
+    },
+  });
+  if (rows[2]) Object.assign(rows[2], {
+    id: 'bb3c2d00-1111-4111-8111-111111111111',
+    actions: {
+      canCancel: false,
+      cancelReason: 'Your role can view jobs but cannot change them.',
+      canRetry: false,
+      retryReason: 'Your role can view jobs but cannot change them.',
+    },
+  });
+}
+
 const ago = (ms) => new Date(NOW - ms).toISOString();
 const ahead = (ms) => new Date(NOW + ms).toISOString();
 const MINUTE = 60_000;
@@ -231,6 +267,72 @@ const AUDIT = [
     actorRole: null, action: 'admin.login_failed', outcome: 'refused',
     targetType: null, targetId: null, reason: null, ipAddress: '203.0.113.4' }
 ];
+
+const USER_LOOKUP = {
+  recorded: {
+    at: ago(2 * MINUTE),
+    actor: ADMIN.email,
+    fields: 'identifier',
+    reason: 'support request'
+  },
+  matchCount: 1,
+  matches: [
+    {
+      reference: 'ath_123',
+      maskedEmail: 'ath*****@example.invalid',
+      state: { key: 'active', label: 'Active', tone: 'ok' },
+      tier: { key: 'pro', label: 'Pro', brand: 'Aria' },
+      platforms: ['iOS'],
+      lastActiveAt: ago(3 * HOUR),
+      flags: []
+    }
+  ]
+};
+
+const USER_DETAIL = {
+  reference: 'ath_123',
+  kind: 'athlete',
+  state: { key: 'active', label: 'Active', tone: 'ok' },
+  tier: { key: 'pro', label: 'Pro', brand: 'Aria' },
+  memberSince: ago(180 * DAY),
+  recorded: {
+    at: ago(MINUTE),
+    actor: ADMIN.email,
+    fields: 'summary',
+    reason: 'opening this account'
+  },
+  summary: {
+    fields: [
+      { key: 'contactEmail', label: 'Contact email', masked: false,
+        value: 'athlete.identity@example.invalid', reveal: 'unavailable' },
+      { key: 'birthDate', label: 'Birth date', masked: true, maskedValue: 'Hidden',
+        reveal: 'never', neverShownNote: 'Never shown here.' },
+      { key: 'phone', label: 'Phone', masked: true, maskedValue: 'Hidden',
+        reveal: 'unavailable', unavailableNote: 'No source can reveal this yet.' }
+    ]
+  },
+  record: {
+    fields: [
+      { key: 'contactEmail', label: 'Contact email', masked: false,
+        value: 'athlete.identity@example.invalid', reveal: 'unavailable' },
+      { key: 'birthDate', label: 'Birth date', masked: true, maskedValue: 'Hidden',
+        reveal: 'never', neverShownNote: 'Never shown here.' },
+      { key: 'phone', label: 'Phone', masked: true, maskedValue: 'Hidden',
+        reveal: 'unavailable', unavailableNote: 'No source can reveal this yet.' }
+    ],
+    note: 'Only operational support fields are shown.'
+  },
+  activity: { windowDays: 30, events: [] },
+  devices: [],
+  billing: {
+    fields: [
+      { key: 'billingEmail', label: 'Billing email', masked: false,
+        value: 'billing.identity@example.invalid', reveal: 'unavailable' }
+    ]
+  },
+  access: { windowDays: 30, entries: [] },
+  supportActions: { available: [] }
+};
 
 const INTEGRATIONS = {
   generatedAt: ago(MINUTE),
@@ -453,11 +555,15 @@ const RUNS = {
       type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
       outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout',
       retryable: true, modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 60000,
-      finishedAt: ago(2 * HOUR) },
+      finishedAt: ago(2 * HOUR), reference: 'job_111111',
+      actions: { canCancel: false, cancelReason: 'Only queued or running jobs can be cancelled.',
+        canRetry: true, retryReason: null } },
     { jobId: '22222222-2222-4222-8222-222222222222',
       type: { value: 'video_analysis', label: 'Sprint video analysis', labelled: true },
       outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
-      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR) }
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR),
+      actions: { canCancel: false, cancelReason: 'Only queued or running jobs can be cancelled.',
+        canRetry: false, retryReason: 'Only failed jobs can be retried.' } }
   ],
   truncated: false
 };
@@ -575,6 +681,16 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/alerts/problems')) {
     return { data: { problems: [PROBLEM] } };
   }
+  if (/^\/api\/ops\/jobs\/[^/]+\/cancel$/.test(pathname)) {
+    return { data: { jobId: pathname.split('/')[4], status: 'canceled' } };
+  }
+  if (/^\/api\/ops\/jobs\/[^/]+\/retry$/.test(pathname)) {
+    return { data: {
+      originalJobId: pathname.split('/')[4],
+      jobId: '33333333-3333-4333-8333-333333333333',
+      status: 'queued',
+    } };
+  }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
@@ -585,11 +701,13 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
   if (pathname.startsWith('/api/ops/settings/cost-categories')) return { data: COST_CATEGORIES };
   if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
+  if (pathname.startsWith('/api/ops/users/lookup')) return { data: USER_LOOKUP };
+  if (pathname.startsWith('/api/ops/users/')) return { data: USER_DETAIL };
   return { data: {} };
 }
 
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
-  ADMIN, SESSION, NARROW_BADGE, RULES, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, INTEGRATIONS, COST_CATEGORIES, COSTS, PROBLEM, RUNS, PROOF, stub
+  ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
+  ADMINS, SESSIONS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COST_CATEGORIES, COSTS, PROBLEM, RUNS, PROOF, stub
 };
