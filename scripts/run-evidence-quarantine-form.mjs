@@ -171,6 +171,11 @@ async function main() {
       link: (href, label, className) => element('a', { href, className, text: label }),
       paneHref: paneId => `${paneId}.html`,
     },
+    OpsPaneRegistry: {
+      maskContactDetails(value) {
+        return String(value || '');
+      },
+    },
     OpsSession: {
       hasRole(roles) {
         return roles.includes(process.env.SEVAL_PARITY_ADMIN_ROLE || 'operator');
