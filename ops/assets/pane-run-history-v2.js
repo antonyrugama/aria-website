@@ -1465,8 +1465,9 @@
     function clearOnPageExit() {
       var live = document.activeElement;
       var revealCard = content.querySelector('.rh-content-card');
-      var revealRoot = revealCard && revealCard.parentNode;
-      var revealFocused = revealRoot && live && revealRoot.contains(live);
+      var revealActions = content.querySelector('.rh-reveal-actions');
+      var revealFocused = live && ((revealCard && revealCard.contains(live))
+        || (revealActions && revealActions.contains(live)));
       if (activeRevealDialog) {
         activeRevealDialog.closeForCleanup();
         activeRevealDialog = null;
