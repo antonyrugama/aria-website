@@ -45,6 +45,42 @@ const JOBS = JSON.parse(fsJobs.readFileSync(
   'utf8'
 ));
 
+/* Action rows in the shape Stadiora/Aria#11610 publishes: one row can be
+   cancelled, one row explains why it cannot be changed, and one row carries
+   the viewer denial. The fixture this starts from predates job actions, so the
+   action fields are layered here for the hosted browser checks. */
+if (JOBS.workingSet && Array.isArray(JOBS.workingSet.jobs)) {
+  const rows = JOBS.workingSet.jobs;
+  if (rows[0]) Object.assign(rows[0], {
+    id: '9f1c2d00-1111-4111-8111-111111111111',
+    reference: 'job_9f1c2d',
+    actions: {
+      canCancel: true,
+      cancelReason: null,
+      canRetry: false,
+      retryReason: 'Only failed jobs can be retried.',
+    },
+  });
+  if (rows[1]) Object.assign(rows[1], {
+    id: 'aa2c2d00-1111-4111-8111-111111111111',
+    actions: {
+      canCancel: false,
+      cancelReason: "This job type can't be stopped once it has started.",
+      canRetry: false,
+      retryReason: 'Only failed jobs can be retried.',
+    },
+  });
+  if (rows[2]) Object.assign(rows[2], {
+    id: 'bb3c2d00-1111-4111-8111-111111111111',
+    actions: {
+      canCancel: false,
+      cancelReason: 'Your role can view jobs but cannot change them.',
+      canRetry: false,
+      retryReason: 'Your role can view jobs but cannot change them.',
+    },
+  });
+}
+
 const ago = (ms) => new Date(NOW - ms).toISOString();
 const ahead = (ms) => new Date(NOW + ms).toISOString();
 const MINUTE = 60_000;
@@ -454,11 +490,15 @@ const RUNS = {
       type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
       outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout',
       retryable: true, modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 60000,
-      finishedAt: ago(2 * HOUR) },
+      finishedAt: ago(2 * HOUR), reference: 'job_111111',
+      actions: { canCancel: false, cancelReason: 'Only queued or running jobs can be cancelled.',
+        canRetry: true, retryReason: null } },
     { jobId: '22222222-2222-4222-8222-222222222222',
       type: { value: 'video_analysis', label: 'Sprint video analysis', labelled: true },
       outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
-      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR) }
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR),
+      actions: { canCancel: false, cancelReason: 'Only queued or running jobs can be cancelled.',
+        canRetry: false, retryReason: 'Only failed jobs can be retried.' } }
   ],
   truncated: false
 };
@@ -570,6 +610,16 @@ function stub(pathname) {
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) {
     return { data: { problems: [PROBLEM] } };
+  }
+  if (/^\/api\/ops\/jobs\/[^/]+\/cancel$/.test(pathname)) {
+    return { data: { jobId: pathname.split('/')[4], status: 'canceled' } };
+  }
+  if (/^\/api\/ops\/jobs\/[^/]+\/retry$/.test(pathname)) {
+    return { data: {
+      originalJobId: pathname.split('/')[4],
+      jobId: '33333333-3333-4333-8333-333333333333',
+      status: 'queued',
+    } };
   }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (pathname === '/api/ops/runs') return { data: RUNS };
