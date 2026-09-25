@@ -1736,13 +1736,17 @@
         }
         var override = selectedOverride();
         var expected = override ? override.updatedAt : null;
-        var saveScope = selectedScope();
+        var body = targetBody(expected);
+        var saveScope = body.scope;
         lock(true, 'Saving');
         session.call(COST_CATEGORY_OVERRIDES, {
           method: 'PUT',
-          body: targetBody(expected)
-        }).then(function () {
-          var message = costSaveSuccessMessage(line, saveScope, category.value, labels);
+          body: body
+        }).then(function (payload) {
+          var saved = payload && payload.data && payload.data.override
+            ? payload.data.override.category
+            : body.category;
+          var message = costSaveSuccessMessage(line, saveScope, saved, labels);
           S.toast('check', message);
           S.announce(message);
           costRestoreAfterReload(line);
