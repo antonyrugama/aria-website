@@ -33,7 +33,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
 import { stub } from './ops-api-stub.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
@@ -1086,6 +1086,18 @@ test('a feature row over too small a group shows no share', async () => {
     'the fixture wrote a share its own counts do not make: ' + withheld[0].basisPoints);
 });
 
+test('the approved region table is acknowledged as not answerable yet', async () => {
+  const dom = await boot({});
+  const text = liveText(dom);
+
+  assert.match(text, /What this pane cannot answer yet/,
+    'the cannot-answer band is not on the pane');
+  assert.match(text, /Where people are/,
+    'the approved region table is still silent');
+  assert.match(text, /No route serves per-region usage yet\./,
+    'the region-table cause is missing or too vague');
+});
+
 test('a signup group under the floor is withheld as a whole row, never cell by cell', async () => {
   const dom = await boot({});
   const cohort = card(dom, /Who comes back/);
@@ -1152,6 +1164,23 @@ test('an answer that is not ready draws words and never a figure', async () => {
   assert.match(text, /No app has reported since 3 Sep\./,
     'the pane replaced the reason the route gave with one of its own');
   assert.equal(liveText(dom), '', 'the live panel was filled from an answer that is not ready');
+});
+
+test('usage availability diagnostics mask contact details before the DOM sees them', async () => {
+  const dom = await boot({
+    usage: {
+      availability: {
+        state: 'not_reporting',
+        detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
+      },
+      asOf: hoursAgo(5),
+    },
+  });
+  const surface = allDomTextAndAttrs(panel(dom, 'empty'));
+  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
+    'the usage availability detail reached DOM text or attributes with an address in it');
+  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
+    'the route diagnostic was not drawn with its contact detail masked');
 });
 
 test('too little data offers the widest window, and stops offering it there', async () => {

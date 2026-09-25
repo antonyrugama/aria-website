@@ -76,6 +76,7 @@
 
   var shell = global.OpsPaneShell;
   var session = global.OpsSession;
+  var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
   var h = shell.h;
   var icon = shell.icon;
   var MAX_BYTES = 5 * 1024 * 1024;
@@ -381,7 +382,7 @@
 
   function admissionErrorText(caught) {
     var message = caught && caught.message
-      ? caught.message
+      ? maskContactDetails(caught.message)
       : 'Evidence could not be admitted. Check the documented binding and try again.';
     if (caught && caught.code === 'revision_conflict') return 'Stale binding: ' + message;
     if (caught && (caught.code === 'approval_required' || caught.code === 'permission_denied')) {
@@ -735,11 +736,13 @@
       } catch (caught) {
         if (submittedGeneration !== generation) return;
         error.textContent = caught && caught.message
-          ? caught.message
+          ? maskContactDetails(caught.message)
           : 'Dataset declarations could not be validated.';
         if (caught && Array.isArray(caught.details) && caught.details.length) {
           error.appendChild(h('ul', { className: 'dataset-issues' }, caught.details.map(function (entry) {
-            return h('li', { text: entry.path + ': ' + entry.reason });
+            var path = entry && entry.path !== undefined ? maskContactDetails(String(entry.path)) : '';
+            var reason = entry && entry.reason !== undefined ? maskContactDetails(String(entry.reason)) : '';
+            return h('li', { text: path + ': ' + reason });
           })));
         }
         if (caught && (caught.code === 'validation_failed' || caught.code === 'invalid_request')) {
@@ -968,7 +971,7 @@
         selected.textContent = 'No file selected. The page never displays raw evidence.';
       }).catch(function (caught) {
         error.textContent = caught && caught.message
-          ? caught.message
+          ? maskContactDetails(caught.message)
           : 'Evidence could not be quarantined. Check the documented fields and try again.';
         shell.announce('Evidence quarantine failed.');
       }).finally(function () {
@@ -1208,7 +1211,7 @@
         }, global.crypto.randomUUID());
       } catch (caught) {
         approvalRequestError.textContent = caught && caught.message
-          ? caught.message
+          ? maskContactDetails(caught.message)
           : 'The approval request is invalid.';
         approvalRequestSubmit.disabled = false;
         approvalRequestSubmit.textContent = 'Create pending request';
@@ -1223,7 +1226,7 @@
         shell.announce('Approval request created.');
       }).catch(function (caught) {
         approvalRequestError.textContent = caught && caught.message
-          ? caught.message
+          ? maskContactDetails(caught.message)
           : 'The approval request failed.';
       }).finally(function () {
         approvalRequestSubmit.disabled = false;
@@ -1250,7 +1253,7 @@
         showApprovalResult(response);
       }).catch(function (caught) {
         approvalGetError.textContent = caught && caught.message
-          ? caught.message
+          ? maskContactDetails(caught.message)
           : 'The approval request could not be loaded.';
       }).finally(function () {
         approvalGetSubmit.disabled = false;
@@ -1278,7 +1281,7 @@
         shell.announce('Approval decision recorded.');
       }).catch(function (caught) {
         approvalDecisionError.textContent = caught && caught.message
-          ? caught.message
+          ? maskContactDetails(caught.message)
           : 'The approval decision failed.';
       }).finally(function () {
         approvalDecisionSubmit.disabled = false;
@@ -1495,7 +1498,7 @@
         }, global.crypto.randomUUID());
       } catch (caught) {
         error.textContent = caught && caught.message
-          ? caught.message
+          ? maskContactDetails(caught.message)
           : 'The admission request is invalid.';
         submit.disabled = false;
         submit.textContent = 'Admit evidence';
