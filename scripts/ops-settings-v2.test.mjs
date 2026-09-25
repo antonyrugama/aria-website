@@ -814,6 +814,45 @@ test('saving a cost category sends the selected category, scope and optimistic v
       'saving did not show a clear confirmation');
   });
 
+test('a cost-category save announces the category the server saved, not a later selection',
+  async () => {
+    const dom = await boot({
+      costSave: (request) => ({
+        override: overrideFixture({
+          id: 24,
+          scope: request.body.scope,
+          serviceKey: 'storage',
+          serviceName: 'Storage',
+          resourceGroupKey: '',
+          resourceGroup: null,
+          category: 'data',
+          updatedAt: '2026-09-24T18:45:00.000Z',
+        }),
+      }),
+      runTimers: false,
+    });
+    const row = costTableRow(dom, 'Storage');
+    const category = costControl(row, 'category');
+    category.value = 'application_compute';
+    costControl(row, 'scope').value = 'service';
+    costControl(row, 'save').dispatch('click');
+    category.value = 'ci_and_build';
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT')[0];
+    assert.equal(sent.body.category, 'application_compute',
+      'the test did not send a different category than the later select value');
+    const message = /Saved Data for Storage/;
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    const live = dom.doc.querySelector('[aria-live]');
+    assert.match(toast, message,
+      'the toast announced the select value instead of the saved category');
+    assert.match(allText(live), message,
+      'the live region announced the select value instead of the saved category');
+    assert.doesNotMatch(toast + ' ' + allText(live), /CI and build|Application compute/);
+  });
+
 test('a cost-category save restores focus to the reloaded row', async () => {
     const dom = await boot();
     const row = costTableRow(dom, 'Storage');
