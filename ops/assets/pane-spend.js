@@ -1197,8 +1197,10 @@
     var words = h('div');
     words.appendChild(h('div', { className: 'omit-title', text: 'Anything unusual' }));
     words.appendChild(h('div', { className: 'omit-desc' }, [
-      h('span', { text: 'Problems watches unusual service spend with the service_cost_anomaly rule and links those problems here. This pane draws the cost breakdown, but it does not draw the anomaly list yet. Open ' }),
-      h('a', { href: S.paneHref('alerts') || 'alerts.html', text: 'Problems' }),
+      h('span', { text: 'Problems watches unusual service spend with the ' }),
+      h('span', { className: 'code', text: 'service_cost_anomaly' }),
+      h('span', { text: ' rule and links those problems here. This pane draws the cost breakdown, but it does not draw the anomaly list yet. Open ' }),
+      S.link(S.paneHref('alerts') || 'alerts.html', 'Problems'),
       h('span', { text: ' for the live cost-anomaly rule.' })
     ]));
     item.appendChild(words);

@@ -224,7 +224,7 @@ Section spines, dark theme at 1280, live state:
 
 | pane | approved | built | verdict |
 |---|---|---|---|
-| Overview | Today at a glance / What is happening / What Aria has been doing | What needs a person / How things are going / **Not drawn here, and why** | renamed + the request-type and money-card losses are acknowledged |
+| Overview | Today at a glance / What is happening / What Aria has been doing | What needs a person / How things are going | renamed + request-type and money-card losses are acknowledged in **Not drawn here, and why** |
 | Happening now | Right now / The three lanes / Every open job | Right now / Waiting, and whether it is clearing / Flowing, and failing / Open elsewhere / **What this pane cannot answer yet** | acknowledged (two of the five bands need data the audit fixture did not supply) |
 | What happened | Why things failed / The runs / Run `run_9f31c2` | What the record shows / Why things failed / What was asked, and what Aria answered / **What this pane cannot answer yet** | acknowledged; "The runs" is **absent**, and named in the cannot-answer band as *"No route lists runs"* |
 | Problems | Open problems / What is being watched | + Closed, and how the watching is doing | **addition** |

@@ -1451,7 +1451,7 @@ pane against the mock should read the list as "these are on purpose and here is 
    the pill or the omissions card already says. The mocks encode one fact per slot, and that rule
    is what took the approved set from 7,240 words to 4,842.
 
-7. **Five more things the mock draws are absent, all for reason (2) above: no source.** They
+7. **Five more things the mock draws are absent, all for reason (2) above — no source.** They
    are listed separately because they are structural, not wording, and a reader diffing the pane
    against the mock hits them first:
    - the hero service-health chips (`Main backend 99.98%`, `Aria AI 99.94%`, `Plan builder`,
