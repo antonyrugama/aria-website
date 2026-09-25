@@ -297,7 +297,6 @@
        no timer running, how old they are is the operator's to judge. */
     var readAt = null;
     var actionAnnouncement = null;
-    var actionAnnouncementToken = null;
     var queuedActionAnnouncement = null;
     var hasQueuedActionAnnouncement = false;
 
@@ -326,12 +325,13 @@
       current = next;
       if (!changed) return;
       booted = true;
+      clearActionAnnouncement();
       load();
     });
 
     function load() {
       var token = ++loadToken;
-      bindActionAnnouncement(token);
+      bindActionAnnouncement();
       var selection = current;
       /* Every window read discards any open run, here rather than at each
          call site. Four of the six triggers nulled it themselves and two did
@@ -362,13 +362,19 @@
       region.loading(SKELETON);
 
       window_(selection).then(function (result) {
-        if (token !== loadToken) return;
+        if (token !== loadToken) {
+          clearActionAnnouncement();
+          return;
+        }
         readAt = new Date().toISOString();
         render(result, selection);
         announceRead(result, selection);
-        flushActionAnnouncement(token);
+        flushActionAnnouncement();
       }, function (err) {
-        if (token !== loadToken) return;
+        if (token !== loadToken) {
+          clearActionAnnouncement();
+          return;
+        }
         region.failed(err, load);
         S.setBadge('history', null);
         /* The shell draws Try again, and it is the only control left on the
@@ -385,27 +391,27 @@
            standing behind numbers the pane has just stopped standing behind. */
         S.announce('The window could not be read. The figures on screen before this are ' +
           'unread now, not zero. Try again is the only control left on the pane.');
-        flushActionAnnouncement(token);
+        flushActionAnnouncement();
       });
     }
 
-    function bindActionAnnouncement(token) {
-      if (!hasQueuedActionAnnouncement) {
-        actionAnnouncement = null;
-        actionAnnouncementToken = null;
-        return;
-      }
+    function bindActionAnnouncement() {
+      if (!hasQueuedActionAnnouncement) return;
       actionAnnouncement = queuedActionAnnouncement;
-      actionAnnouncementToken = actionAnnouncement ? token : null;
       queuedActionAnnouncement = null;
       hasQueuedActionAnnouncement = false;
     }
 
-    function flushActionAnnouncement(token) {
-      if (!actionAnnouncement || actionAnnouncementToken !== token) return;
-      var message = actionAnnouncement;
+    function clearActionAnnouncement() {
       actionAnnouncement = null;
-      actionAnnouncementToken = null;
+      queuedActionAnnouncement = null;
+      hasQueuedActionAnnouncement = false;
+    }
+
+    function flushActionAnnouncement() {
+      if (!actionAnnouncement) return;
+      var message = actionAnnouncement;
+      clearActionAnnouncement();
       S.announce(message);
     }
 
