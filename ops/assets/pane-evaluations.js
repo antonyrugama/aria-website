@@ -610,6 +610,12 @@
     ]);
   }
 
+  function detailList(rows) {
+    return h('dl', { className: 'card-body evidence-meta browse-meta' }, rows.map(function (row) {
+      return metadataRow(row[0], row[1]);
+    }));
+  }
+
   function clearNode(node) {
     node.textContent = '';
   }
@@ -679,7 +685,46 @@
     var counts = scenario.criteriaCounts || {};
     var risk = scenario.risk || {};
     var card = shell.card('browse-scenario');
+    var detail = h('div', { className: 'browse-detail' });
+    var inspect = h('button', { className: 'btn btn-sm', text: 'Inspect scenario' });
+    inspect.setAttribute('type', 'button');
+    inspect.addEventListener('click', async function () {
+      clearNode(detail);
+      detail.appendChild(h('p', { className: 'field-hint', text: 'Loading scenario detail…' }));
+      try {
+        var payload = await session.call('/api/ops/ciel/admin/scenarios/' + encodeURIComponent(scenario.scenarioId || ''), {
+          query: { version: String(scenario.version || 1) }
+        });
+        var data = payload && payload.data ? payload.data : payload;
+        var criteria = data.criteria || {};
+        var rows = [];
+        ['critical', 'required', 'expected', 'aspirational'].forEach(function (severity) {
+          (criteria[severity] || []).forEach(function (criterion) {
+            rows.push([
+              titleCase(severity) + ' · ' + (criterion.id || 'criterion'),
+              [
+                criterion.statement,
+                (criterion.evidenceRefs || []).length ? 'Evidence: ' + criterion.evidenceRefs.join(', ') : '',
+                criterion.graderRef ? 'Grader: ' + criterion.graderRef : ''
+              ].filter(Boolean).join(' · ')
+            ]);
+          });
+        });
+        var oracle = data.oracle || {};
+        (oracle.referenceFacts || []).forEach(function (fact) {
+          rows.push(['Oracle reference', [fact.id, fact.sourceRef].filter(Boolean).join(' · ')]);
+        });
+        if (data.redactions && data.redactions.length) rows.push(['Redacted:', data.redactions.join(', ')]);
+        clearNode(detail);
+        detail.appendChild(shell.cardHead('Scenario inspection', 'Version ' + String(data.version || scenario.version || 1)));
+        detail.appendChild(detailList(rows.length ? rows : [['Inspection', 'No criteria metadata is available.']]));
+      } catch (caught) {
+        clearNode(detail);
+        detail.appendChild(h('p', { className: 'field-error', text: caught && caught.message ? caught.message : 'Scenario detail unavailable.' }));
+      }
+    });
     card.appendChild(shell.cardHead(scenario.scenarioId || 'Unnamed scenario', [
+      'v' + String(scenario.version || 1),
       scenario.capabilityRef,
       scenario.locale,
       risk.level
@@ -699,6 +744,8 @@
         ? (scenario.pack.passing ? 'executed, passing' : 'executed, not passing')
         : scenario.pack && scenario.pack.runnable ? 'runnable, not executed' : 'not runnable')
     ]));
+    card.appendChild(h('div', { className: 'card-foot evidence-actions' }, [inspect]));
+    card.appendChild(detail);
     return card;
   }
 
@@ -718,7 +765,14 @@
     card.appendChild(h('div', { className: 'card-foot browse-flags' }, [
       h('span', { text: 'Uncovered: ' + ((flags.uncoveredCapabilities || []).join(', ') || 'none') }),
       h('span', { text: 'Not certified: ' + ((flags.notCertifiedCapabilities || []).join(', ') || 'none') }),
-      h('span', { text: 'Unowned: ' + ((flags.unownedCapabilities || []).join(', ') || 'none') })
+      h('span', { text: 'Unowned: ' + ((flags.unownedCapabilities || []).join(', ') || 'none') }),
+      h('span', { text: 'Disabled/unsupported: ' + ((flags.disabledOrUnsupportedCapabilities || []).map(function (capability) {
+        return [capability.id, capability.status, capability.reason].filter(Boolean).join(' · ');
+      }).join('; ') || 'none') }),
+      h('span', { text: 'Missing cases: ' + ((flags.missingCases || []).map(function (entry) {
+        return [entry.capabilityRef, entry.reason].filter(Boolean).join(' · ');
+      }).join('; ') || 'none') }),
+      h('span', { text: 'Unknown scenario refs: ' + ((flags.unknownCapabilityRefs || []).join(', ') || 'none') })
     ]));
     return card;
   }
@@ -727,7 +781,7 @@
     var entries = datasets && Array.isArray(datasets.datasets) ? datasets.datasets : [];
     var card = shell.card('browse-datasets');
     card.appendChild(shell.cardHead('Datasets', entries.length + ' checked-in declaration' + (entries.length === 1 ? '' : 's')));
-    if (datasets && datasets.partial) {
+    if (datasets && (datasets.partial || (datasets.omissions || []).length)) {
       card.appendChild(h('div', { className: 'callout compact' }, [
         icon('warn'),
         h('div', {}, [
@@ -742,14 +796,52 @@
       ]));
       return card;
     }
-    card.appendChild(h('dl', { className: 'card-body evidence-meta browse-meta' }, entries.flatMap(function (dataset) {
+    card.appendChild(h('div', { className: 'card-body browse-dataset-list' }, entries.map(function (dataset) {
       var provenance = dataset.provenance || {};
       var counts = dataset.counts || {};
-      return [
-        metadataRow(dataset.datasetId + ' rev ' + dataset.revision, titleCase(dataset.review && dataset.review.state)),
-        metadataRow('Provenance', [provenance.origin, provenance.authorRef, provenance.authoredAt].filter(Boolean).join(' · ')),
-        metadataRow('Counts', (counts.cases || 0) + ' cases, ' + (counts.labels || 0) + ' labels')
-      ];
+      var detail = h('div', { className: 'browse-detail' });
+      var inspect = h('button', { className: 'btn btn-sm', text: 'Inspect dataset' });
+      inspect.setAttribute('type', 'button');
+      inspect.addEventListener('click', async function () {
+        clearNode(detail);
+        detail.appendChild(h('p', { className: 'field-hint', text: 'Loading dataset detail…' }));
+        try {
+          var payload = await session.call('/api/ops/ciel/admin/datasets/' + encodeURIComponent(dataset.datasetId || ''), {
+            query: { revision: String(dataset.revision || 1) }
+          });
+          var data = payload && payload.data ? payload.data : payload;
+          var rows = [];
+          (data.cases || []).forEach(function (entry) {
+            var scenario = entry.scenario || {};
+            rows.push(['Scenario', [scenario.id, 'v' + String(scenario.version || 1), scenario.path].filter(Boolean).join(' · ')]);
+            (entry.rubrics || []).forEach(function (rubric) {
+              rows.push(['Rubric', [rubric.id, 'v' + String(rubric.version || 1), rubric.path].filter(Boolean).join(' · ')]);
+            });
+            if (entry.comparison) rows.push(['Comparison', [entry.comparison.state, entry.comparison.reason].filter(Boolean).join(' · ')]);
+          });
+          clearNode(detail);
+          detail.appendChild(shell.cardHead('Dataset inspection', 'Revision ' + String(data.revision || dataset.revision || 1)));
+          detail.appendChild(detailList(rows.length ? rows : [['Inspection', 'No case metadata is available.']]));
+        } catch (caught) {
+          clearNode(detail);
+          detail.appendChild(h('p', { className: 'field-error', text: caught && caught.message ? caught.message : 'Dataset detail unavailable.' }));
+        }
+      });
+      return h('article', { className: 'browse-dataset' }, [
+        detailList([
+          [dataset.datasetId + ' rev ' + dataset.revision, titleCase(dataset.review && dataset.review.state)],
+          ['Provenance', [provenance.origin, provenance.authorRef, provenance.authoredAt].filter(Boolean).join(' · ')],
+          ['Counts', (counts.cases || 0) + ' cases, ' + (counts.labels || 0) + ' labels'],
+          ['Rubrics', (dataset.cases || []).flatMap(function (entry) {
+            return (entry.rubrics || []).map(function (rubric) { return rubric.id + ' v' + String(rubric.version || 1); });
+          }).join(', ') || 'none recorded'],
+          ['Comparison', (dataset.cases || []).map(function (entry) {
+            return entry.comparison ? [entry.comparison.state, entry.comparison.reason].filter(Boolean).join(' · ') : '';
+          }).filter(Boolean).join('; ') || 'none recorded']
+        ]),
+        h('div', { className: 'card-foot evidence-actions' }, [inspect]),
+        detail
+      ]);
     })));
     return card;
   }
@@ -757,12 +849,13 @@
   function renderCatalogue(catalogue) {
     var capabilities = catalogue && Array.isArray(catalogue.capabilities) ? catalogue.capabilities : [];
     var card = shell.card('browse-catalogue');
-    card.appendChild(shell.cardHead('Capability catalogue', capabilities.length + ' registered capabilities'));
-    card.appendChild(h('div', { className: 'card-body browse-capabilities' }, capabilities.slice(0, 6).map(function (capability) {
+    card.appendChild(shell.cardHead('Capability catalogue', 'Showing ' + capabilities.length + ' of ' + capabilities.length + ' registered capabilities'));
+    card.appendChild(h('div', { className: 'card-body browse-capabilities' }, capabilities.map(function (capability) {
       return h('article', { className: 'browse-capability' }, [
         h('h3', { text: capability.name || capability.id }),
         h('p', { text: [capability.id, capability.status, capability.owner].filter(Boolean).join(' · ') }),
-        h('p', { text: 'Applies to ' + ((capability.products || []).join(', ') || 'no product recorded') })
+        h('p', { text: 'Applies to ' + ((capability.products || []).join(', ') || 'no product recorded') }),
+        h('p', { text: 'Clients: ' + ((capability.clientRefs || []).join(', ') || 'none recorded') })
       ]);
     })));
     return card;
@@ -800,6 +893,7 @@
     };
     var error = h('div', { className: 'field-error', role: 'alert' });
     var result = h('div', { className: 'browse-result' });
+    var stableFacetOptions = {};
     result.setAttribute('id', 'ciel-browse-panel');
     result.setAttribute('aria-live', 'polite');
     var submit = h('button', { className: 'btn btn-primary', type: 'submit', text: 'Load catalogue' });
@@ -838,18 +932,22 @@
       var catalogue = data && data.catalogue ? data.catalogue : {};
       var capabilities = Array.isArray(catalogue.capabilities) ? catalogue.capabilities : [];
       var clients = Array.isArray(catalogue.clients) ? catalogue.clients : [];
-      syncOptions(filterDefs.product.control, unique(capabilities.flatMap(function (capability) {
+      function stable(key, values) {
+        stableFacetOptions[key] = unique((stableFacetOptions[key] || []).concat(values));
+        return stableFacetOptions[key];
+      }
+      syncOptions(filterDefs.product.control, stable('product', unique(capabilities.flatMap(function (capability) {
         return capability.products || [];
-      }).concat(scenarios.map(function (scenario) { return scenario.product; }))));
-      syncOptions(filterDefs.client.control, unique(clients.map(function (client) { return client.id; })
-        .concat(scenarios.map(function (scenario) { return scenario.client; }))));
-      syncOptions(filterDefs.role.control, unique(scenarios.map(function (scenario) { return scenario.role; })));
-      syncOptions(filterDefs.capability.control, unique(capabilities.map(function (capability) { return capability.id; })
-        .concat(scenarios.map(function (scenario) { return scenario.capabilityRef; }))));
-      syncOptions(filterDefs.risk.control, unique(scenarios.flatMap(function (scenario) {
+      }).concat(scenarios.map(function (scenario) { return scenario.product; })))));
+      syncOptions(filterDefs.client.control, stable('client', unique(clients.map(function (client) { return client.id; })
+        .concat(scenarios.map(function (scenario) { return scenario.client; })))));
+      syncOptions(filterDefs.role.control, stable('role', unique(scenarios.map(function (scenario) { return scenario.role; }))));
+      syncOptions(filterDefs.capability.control, stable('capability', unique(capabilities.map(function (capability) { return capability.id; })
+        .concat(scenarios.map(function (scenario) { return scenario.capabilityRef; })))));
+      syncOptions(filterDefs.risk.control, stable('risk', unique(scenarios.flatMap(function (scenario) {
         return [scenario.risk && scenario.risk.level].concat(scenario.risk && scenario.risk.domains || []);
-      })));
-      syncOptions(filterDefs.locale.control, unique(scenarios.map(function (scenario) { return scenario.locale; })));
+      }))));
+      syncOptions(filterDefs.locale.control, stable('locale', unique(scenarios.map(function (scenario) { return scenario.locale; }))));
     }
 
     async function load() {
