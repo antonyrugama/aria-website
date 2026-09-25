@@ -1462,18 +1462,16 @@
       for (var i = 0; i < nodes.length; i += 1) nodes[i].remove();
     }
 
-    function revealFocusKey(key) {
-      return key === 'rh-reveal-hide'
-        || key === 'rh-reveal-hide-footer'
-        || key === 'rh-content-first';
-    }
-
     function clearOnPageExit() {
+      var live = document.activeElement;
+      var revealCard = content.querySelector('.rh-content-card');
+      var revealRoot = revealCard && revealCard.parentNode;
+      var revealFocused = revealRoot && live && revealRoot.contains(live);
       if (activeRevealDialog) {
         activeRevealDialog.closeForCleanup();
         activeRevealDialog = null;
         forceFocus('rh-reveal-show', 'rh-state');
-      } else if (reveal && revealFocusKey(focusKeyNow())) {
+      } else if (reveal && revealFocused) {
         forceFocus('rh-reveal-show', 'rh-state');
       } else {
         keepFocus();
