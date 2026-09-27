@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#09090B">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <title>Soporte de FitMG</title>
+    <meta name="description" content="Ayuda para FitMG, la app de gimnasio y culturismo de Stadiora Labs con Aria como tu coach de IA: contacta a soporte, gestiona tu suscripción y elimina tu cuenta.">
+    <meta name="robots" content="index,follow">
+    <link rel="canonical" href="https://runwitharia.com/es/fitmg/support">
+    <link rel="alternate" hreflang="en" href="https://runwitharia.com/fitmg/support">
+    <link rel="alternate" hreflang="es" href="https://runwitharia.com/es/fitmg/support">
+    <link rel="alternate" hreflang="x-default" href="https://runwitharia.com/fitmg/support">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://runwitharia.com/es/fitmg/support">
+    <meta property="og:title" content="Soporte de FitMG">
+    <meta property="og:description" content="Contacta a soporte, gestiona tu suscripción y elimina tu cuenta de FitMG.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        html{-webkit-font-smoothing:antialiased}
+        body{font-family:'Space Grotesk',sans-serif;background:#09090B;color:#D4D4D8;line-height:1.6;overflow-x:hidden}
+        a{color:inherit;text-decoration:none}
+        ul,ol{list-style:none}
+
+        /* Palette shared with privacy.html */
+        :root{
+            --cyan:#00E5FF;
+            --cyan-10:rgba(0,229,255,.1);
+            --cyan-20:rgba(0,229,255,.2);
+            --bg:#09090B;
+            --card:#111113;
+            --border:rgba(255,255,255,.06);
+            --border-h:rgba(255,255,255,.12);
+            --t1:#FAFAFA;
+            --t2:#A1A1AA;
+            --t3:#71717A;
+            --prose:820px;
+        }
+
+        .skip{position:absolute;left:-9999px;top:0;background:var(--cyan);color:#000;padding:10px 16px;border-radius:8px;font-weight:700;z-index:10}
+        .skip:focus{left:16px;top:16px}
+        a:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:4px}
+
+        /* Header */
+        .top{border-bottom:1px solid var(--border)}
+        .top-in{max-width:var(--prose);margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+        .brand{display:flex;align-items:baseline;gap:10px}
+        .brand b{font-family:'Outfit',sans-serif;font-size:24px;font-weight:900;letter-spacing:-.03em;color:var(--t1)}
+        .brand span{font-size:12px;color:var(--t3);letter-spacing:.04em}
+        .top-links{display:flex;align-items:center;gap:20px;font-size:14px;font-weight:500}
+        .top-links a{color:var(--t2);transition:color .2s}
+        .top-links a:hover{color:var(--t1)}
+        .top-links .lang{color:var(--cyan);font-weight:700}
+
+        /* Hero */
+        .hero{padding:72px 0 48px;border-bottom:1px solid var(--border);position:relative;overflow:hidden}
+        .hero::after{content:'';position:absolute;top:-140px;right:-200px;width:520px;height:520px;background:radial-gradient(circle,rgba(0,229,255,.07) 0%,transparent 72%);pointer-events:none}
+        .hero-in{max-width:var(--prose);margin:0 auto;padding:0 24px;position:relative;z-index:1}
+        .label{font-size:11px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--cyan);margin-bottom:14px}
+        .hero h1{font-family:'Outfit',sans-serif;font-size:clamp(36px,5.2vw,56px);font-weight:900;letter-spacing:-.04em;line-height:1.04;color:var(--t1);margin-bottom:20px}
+        .hero p{font-size:17px;color:var(--t2);line-height:1.75;max-width:640px}
+
+        /* Content */
+        main{max-width:var(--prose);margin:0 auto;padding:56px 24px 96px}
+        section{margin-bottom:56px;scroll-margin-top:24px}
+        h2{font-family:'Outfit',sans-serif;font-size:clamp(24px,3.2vw,30px);font-weight:800;letter-spacing:-.03em;line-height:1.15;color:var(--t1);margin-bottom:16px}
+        h3{font-family:'Outfit',sans-serif;font-size:18px;font-weight:700;color:var(--t1);margin-bottom:10px}
+        p{font-size:16px;color:var(--t2);line-height:1.8;margin-bottom:14px}
+        strong{color:var(--t1);font-weight:600}
+        main a{color:var(--cyan);border-bottom:1px solid var(--cyan-20);transition:border-color .2s;overflow-wrap:anywhere}
+        main a:hover{border-bottom-color:var(--cyan)}
+
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0 16px}
+        .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px 24px}
+        .card p:last-child{margin-bottom:0}
+        .card .mail{display:inline-block;font-size:17px;font-weight:600;margin:2px 0 10px}
+        .card.accent{border-left:3px solid var(--cyan)}
+
+        .path{display:inline;color:var(--t1);font-weight:600}
+        .path i{font-style:normal;color:var(--cyan);padding:0 6px}
+
+        ol.steps{counter-reset:s;margin:4px 0 14px}
+        ol.steps li{counter-increment:s;position:relative;padding-left:38px;margin-bottom:12px;font-size:16px;color:var(--t2);line-height:1.7}
+        ol.steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:50%;background:var(--cyan-10);border:1px solid var(--cyan-20);color:var(--cyan);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+        .note{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:12px;padding:16px 20px;margin-top:8px}
+        .note p{font-size:15px;margin-bottom:0}
+        .note p + p{margin-top:8px}
+
+        ul.links{display:flex;flex-direction:column;gap:10px}
+        ul.links li{font-size:16px}
+
+        footer{border-top:1px solid var(--border)}
+        .foot-in{max-width:var(--prose);margin:0 auto;padding:28px 24px 40px}
+        footer p{font-size:13px;color:var(--t3);margin-bottom:6px;line-height:1.7}
+
+        @media(max-width:640px){
+            .grid{grid-template-columns:1fr}
+            .hero{padding:48px 0 36px}
+            main{padding:40px 20px 72px}
+            .hero-in,.top-in,.foot-in{padding-left:20px;padding-right:20px}
+            .top-links{gap:16px}
+        }
+    </style>
+</head>
+<body>
+<a class="skip" href="#content">Saltar al contenido</a>
+
+<header class="top">
+    <div class="top-in">
+        <a href="/es/fitmg/support" class="brand" aria-label="Inicio de Soporte de FitMG"><b>FitMG</b><span>de Stadiora Labs</span></a>
+        <nav class="top-links" aria-label="Enlaces de FitMG">
+            <a href="/privacy" hreflang="en">Privacidad</a>
+            <a href="https://api.runwitharia.com/terms" hreflang="en">Términos</a>
+            <a href="/fitmg/support" class="lang" hreflang="en" lang="en" aria-label="View in English">EN</a>
+        </nav>
+    </div>
+</header>
+
+<section class="hero" aria-labelledby="title">
+    <div class="hero-in">
+        <div class="label">Soporte de FitMG</div>
+        <h1 id="title">¿Cómo podemos ayudarte?</h1>
+        <p>FitMG es una app de gimnasio y culturismo de Stadiora Labs, con Aria como tu coach de IA. Aquí puedes contactar a nuestro equipo, gestionar tu suscripción y eliminar tu cuenta.</p>
+    </div>
+</section>
+
+<main id="content">
+
+    <section id="contact" aria-labelledby="contact-h">
+        <h2 id="contact-h">Contáctanos</h2>
+        <div class="grid">
+            <div class="card accent">
+                <h3>Ayuda con la app</h3>
+                <a class="mail" href="mailto:support@ariacoaching.app?subject=Soporte%20FitMG">support@ariacoaching.app</a>
+                <p>Preguntas sobre entrenamientos, tu coach de IA, inicio de sesión o pagos. Indícanos tu dispositivo (iPhone o Android) y la versión de la app, que aparece al final de Ajustes en la app.</p>
+            </div>
+            <div class="card">
+                <h3>Privacidad y tus datos</h3>
+                <a class="mail" href="mailto:privacy@ariacoach.app?subject=Solicitud%20de%20privacidad%20FitMG">privacy@ariacoach.app</a>
+                <p>Solicitudes de acceso, exportación y eliminación. Escríbenos desde el correo de tu cuenta para que podamos confirmar que es tuya.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="subscriptions" aria-labelledby="subs-h">
+        <h2 id="subs-h">Gestiona o cancela tu suscripción</h2>
+        <p>Apple o Google cobran las suscripciones de FitMG, así que las gestionas y cancelas desde tu cuenta de la tienda.</p>
+        <div class="grid">
+            <div class="card">
+                <h3>iPhone o iPad (App Store)</h3>
+                <ol class="steps">
+                    <li>Abre la app <strong>Ajustes</strong> del dispositivo.</li>
+                    <li>Ve a <span class="path">tu nombre (Cuenta de Apple)<i aria-hidden="true">&rsaquo;</i>Suscripciones</span>.</li>
+                    <li>Elige <strong>FitMG</strong> y toca <strong>Cancelar suscripción</strong>.</li>
+                </ol>
+            </div>
+            <div class="card">
+                <h3>Android (Google Play)</h3>
+                <ol class="steps">
+                    <li>Abre la app <strong>Play Store</strong> y toca tu foto de perfil.</li>
+                    <li>Ve a <span class="path">Pagos y suscripciones<i aria-hidden="true">&rsaquo;</i>Suscripciones</span>.</li>
+                    <li>Elige <strong>FitMG</strong> y toca <strong>Cancelar suscripción</strong>.</li>
+                </ol>
+            </div>
+        </div>
+        <div class="note">
+            <p>Eliminar la app o tu cuenta no cancela una suscripción de la tienda. Cancélala primero en tu cuenta de la tienda.</p>
+            <p>Apple y Google gestionan los reembolsos de las compras hechas en sus tiendas: <a href="https://reportaproblem.apple.com">reportaproblem.apple.com</a> para App Store y <a href="https://support.google.com/googleplay/answer/2479637?hl=es">reembolsos de Google Play</a> para Android.</p>
+        </div>
+    </section>
+
+    <section id="delete-account" aria-labelledby="delete-h">
+        <h2 id="delete-h">Elimina tu cuenta</h2>
+        <p>FitMG y Aria comparten la misma cuenta, así que al eliminarla se elimina de ambas apps.</p>
+        <div class="grid">
+            <div class="card">
+                <h3>En la app</h3>
+                <ol class="steps">
+                    <li>Abre <strong>Ajustes</strong>.</li>
+                    <li>Toca <span class="path">Eliminación de cuenta<i aria-hidden="true">&rsaquo;</i>Solicitar eliminación de cuenta</span>.</li>
+                </ol>
+                <p>En esa misma pantalla puedes pedir una copia de tus datos.</p>
+            </div>
+            <div class="card">
+                <h3>Sin la app</h3>
+                <p>Sigue los pasos en <a href="https://api.runwitharia.com/account/delete" hreflang="en">api.runwitharia.com/account/delete</a> o escribe a <a href="mailto:privacy@ariacoach.app?subject=Solicitud%20de%20eliminaci%C3%B3n%20de%20cuenta">privacy@ariacoach.app</a> desde el correo de tu cuenta.</p>
+            </div>
+        </div>
+        <p>Cuando confirmemos que la cuenta es tuya, intentamos acusar recibo en un plazo de 7 días hábiles y eliminar o desidentificar los datos ordinarios de la cuenta en un plazo de 30 días. La <a href="/privacy#controls" hreflang="en">Política de Privacidad</a> (en inglés) explica qué se elimina y qué debemos conservar.</p>
+    </section>
+
+    <section id="legal" aria-labelledby="legal-h">
+        <h2 id="legal-h">Privacidad y términos</h2>
+        <ul class="links">
+            <li><a href="/privacy" hreflang="en">Política de Privacidad</a> (en inglés; cubre FitMG y Aria)</li>
+            <li><a href="https://api.runwitharia.com/terms" hreflang="en">Términos del Servicio</a> (en inglés)</li>
+        </ul>
+    </section>
+
+    <section id="health" aria-labelledby="health-h">
+        <h2 id="health-h">Una nota sobre la salud</h2>
+        <p>FitMG y Aria ofrecen orientación de entrenamiento, no consejo médico. Si tienes una lesión, dolor o una condición de salud, consulta a un profesional calificado antes de entrenar.</p>
+    </section>
+
+</main>
+
+<footer>
+    <div class="foot-in">
+        <p>FitMG es operada por Stadiora Labs. Aria es su coach de IA.</p>
+        <p>&copy; 2026 Stadiora Labs. Todos los derechos reservados.</p>
+    </div>
+</footer>
+
+</body>
+</html>
