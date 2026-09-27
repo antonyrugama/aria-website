@@ -427,6 +427,24 @@ const INTEGRATIONS = {
   ]
 };
 
+const SESSION_SETTINGS = {
+  effective: { sessionMaxDays: 14, reauthWindowSeconds: 300 },
+  source: 'setting',
+  defaults: { sessionMaxDays: 30, reauthWindowSeconds: 300 },
+  bounds: {
+    sessionMaxDays: { min: 1, max: 30 },
+    reauthWindowSeconds: { min: 60, max: 900 }
+  },
+  setting: {
+    id: 1,
+    sessionMaxDays: 14,
+    reauthWindowSeconds: 300,
+    createdAt: ago(2 * DAY),
+    updatedAt: ago(12 * HOUR)
+  }
+};
+
+
 const RETENTION = {
   shorteningConfirmation: 'delete rows on the next nightly pass',
   windows: [
@@ -777,6 +795,7 @@ const PROOF = {
   settings: [
     ADMINS[0].email,
     AUDIT[0].reason,
+    'Sessions last up to 14 days',
     RETENTION.windows[0].label,
     INTEGRATIONS.integrations[0].label,
     COST_CATEGORIES.lines[2].serviceName
@@ -849,6 +868,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
+  if (pathname === '/api/ops/settings/sessions') return { data: SESSION_SETTINGS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
   if (pathname === '/api/ops/settings/retention') return { data: RETENTION };
@@ -862,5 +882,5 @@ function stub(pathname) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
 };
