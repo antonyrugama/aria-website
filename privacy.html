@@ -285,7 +285,7 @@
     <div class="p-hero-in">
         <div class="p-label">Legal</div>
         <h1>Privacy Policy</h1>
-        <p>This Policy explains how Aria collects, uses, stores, and protects personal information, health and fitness data, media, AI coaching content, and account data. It covers the Aria (Run with Aria) and FitMG apps.</p>
+        <p>This Policy explains how Aria collects, uses, stores, and protects personal information, health and fitness data, media, AI coaching content, and account data. It covers the Aria (Run with Aria) and FitMG apps, and Aria XII.</p>
         <!--
             VERSION STAMP — load-bearing.
             The human-readable revision is Version 3. The backend consent token uses the
@@ -311,6 +311,7 @@
             <li><a href="#sharing">How we share information</a></li>
             <li><a href="#retention">Storage, security, and retention</a></li>
             <li><a href="#controls">Account deletion, export, and controls</a></li>
+            <li><a href="#aria-xii">Aria XII</a></li>
             <li><a href="#children">Children's privacy</a></li>
             <li><a href="#changes">Changes to this policy</a></li>
             <li><a href="#contact">Contact</a></li>
@@ -318,7 +319,7 @@
     </nav>
 
     <p>Aria ("Aria," "the App," "we," or "us") is an AI-assisted performance coaching app. This Privacy Policy explains how Aria collects, uses, stores, and protects personal information, health and fitness data, media, AI coaching content, and account data.</p>
-    <p>This Privacy Policy covers Aria (also called Run with Aria) and FitMG, a gym and bodybuilding app with Aria as its AI coach. Both apps are operated by Stadiora Labs and share the same accounts and backend services, so this Policy applies to both. Where this Policy refers to "Aria" or "the App," that includes FitMG unless a section names a specific app.</p>
+    <p>This Privacy Policy covers Aria (also called Run with Aria) and FitMG, a gym and bodybuilding app with Aria as its AI coach. Both apps are operated by Stadiora Labs and share the same accounts and backend services, so this Policy applies to both. Where this Policy refers to "Aria" or "the App," that includes FitMG unless a section names a specific app. <a href="#aria-xii">Section 7</a> describes Aria XII, Aria's soccer product, which uses the same accounts and backend services.</p>
     <p>Aria is designed for performance coaching and training support. It is not a medical, diagnostic, treatment, emergency, or therapy service.</p>
 
     <h2 id="information">1. Information We Collect</h2>
@@ -405,9 +406,8 @@
     <h3>Coach Notes In Aria For Coaches</h3>
     <p>Aria for Coaches includes a private notebook. Notes you write there are visible only to you. They are not visible to your athletes, to other staff in your organization, or to organization administrators, and they are never included in an athlete's AI coaching context.</p>
     <p>The notebook offers an optional feature that reports recurring themes across your own notes. It runs only when you request it. When you do, the text of your recent notes is sent to an AI processing service such as Azure OpenAI in order to generate that summary. Only your own note text is sent for this feature: no athlete records, training data, or roster information are included. The resulting summary is stored so that repeating the request on the same day does not regenerate it, and it is deleted with your account.</p>
-    <h3>Weekly Team Reports In Aria For Coaches</h3>
-    <p>In the soccer workspace of Aria for Coaches (Aria XII), a coach can create a weekly report for a team they work with. Every fact in the report comes straight from Aria's records: the team's fixtures, results, and standings, and the planned training totals in the organization's calendar.</p>
-    <p>When a coach creates a weekly team report, Aria sends facts about the team's fixtures, results, standings, and planned training totals to an AI processing service such as Azure OpenAI to write a short summary. It does not send the names of teams, competitions, or players, any dates, or any health, readiness, or other athlete data. A report and its summary are visible only to the coach who created it. Reports are kept for up to 365 days and are deleted with the coach's account.</p>
+    <h3>Weekly Team Reports In Aria XII</h3>
+    <p>Aria XII can write a short AI summary for a coach's weekly team report. <a href="#aria-xii-weekly-reports">Section 7</a> describes what Aria sends to write it and how long reports are kept.</p>
 
     <div class="callout">
         <p>AI systems should not be used for medical advice, diagnosis, treatment, emergency guidance, therapy, medication instructions, supplement dosing, or return-to-play clearance.</p>
@@ -464,13 +464,57 @@
         <li>Request access or export of account data where available and legally permitted.</li>
     </ul>
 
-    <h2 id="children">7. Children's Privacy</h2>
-    <p>Aria is not intended for children under 13. We do not knowingly collect personal information from children under 13. If you believe a child under 13 has provided personal information to Aria, contact <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a>.</p>
+    <h2 id="aria-xii">7. Aria XII</h2>
+    <p>Aria XII is Aria's soccer product: the Aria XII app for players, and the soccer workspace in Aria for Coaches that clubs use for their teams and staff. It uses the same accounts and backend services as Aria, so the rest of this Policy applies to it. This section describes the information that is specific to Aria XII. Here, a "club" is the organization a team belongs to in Aria for Coaches.</p>
 
-    <h2 id="changes">8. Changes To This Policy</h2>
+    <h3 id="aria-xii-guardians">Parents And Guardians Of Players Under 18</h3>
+    <p>A club can link a player under 18 on one of its teams to a parent or legal guardian who has their own adult Aria account. A club administrator records the relationship (mother, father, legal guardian, or other), notes the evidence the club checked in its own records, and sends the guardian a one-time invitation. The guardian then uses Aria for Coaches to see the permissions the club asks for, in the club's own words, and to grant or withdraw each one: data processing, image rights, medical data, and travel.</p>
+    <ul>
+        <li>Aria stores the link and who created, confirmed, or ended it; the club's reference to the evidence it checked; the permissions the club offers and its wording for each; and every grant or withdrawal, with the exact wording, version, and language the guardian saw and the time. It stores account identifiers, not copies of names or email addresses.</li>
+        <li>For a player linked this way, club staff can see the information the player shares with staff only while the guardian's data processing permission is in force. Clinical nutrition information also needs the guardian's medical data permission.</li>
+        <li>The guardian sees the names of their linked players and clubs, the club's wording, and which permissions are in force, and can file a request to export, delete, or correct the player's account data. A club administrator sees the club's players under 18 with each guardian's name, invitation status, and permissions in force. The player does not see these records, and other staff cannot see them.</li>
+        <li>Aria sends each guardian one invitation email, through Azure Communication Services, with the club's name and a one-time link. The email never includes the player's name. The link and the club's one-time code are stored only in a protected hashed form, and an invitation expires after 72 hours. Aria does not send guardian records to any AI service, federation, or other third party.</li>
+        <li>Aria keeps these records after a link ends, including past grants and withdrawals, as a record of the permissions given. They do not yet have a fixed retention period, and deleting a linked player's or guardian's account does not yet remove them automatically. A request a guardian files is recorded for Aria's support team to follow up, and Aria does not yet export or delete data automatically in response. To ask about these records or their deletion, contact <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a>.</li>
+    </ul>
+
+    <h3 id="aria-xii-federation-ids">Federation And Member Association Identifiers</h3>
+    <p>An adult player can add their FIFA Connect ID or their FEDEFUTBOL member number to their account in the Aria XII app and ask their club to confirm it. An administrator of the club then enters the number again from the club's own records, and Aria links it to the player's account only if the two match. A confirmed link is the club's statement that the number belongs to the player. Aria does not check numbers with FIFA, FEDEFUTBOL, or any other federation.</p>
+    <ul>
+        <li>Only players 18 or older can add a number. Aria refuses a player under 18, or a player with no date of birth on file, so it stores no number for a minor.</li>
+        <li>The player sees their own requests and links, including the numbers, in the Aria XII app. In Aria for Coaches, only an administrator of the club with staff access to the player's team can see them, and only while the player is an adult member of that team who shares the Training &amp; plans category with staff. The administrator sees pending requests without the number, and confirmed links with the number and the name of the administrator who confirmed it. Other coaches and staff cannot see them.</li>
+        <li>Aria does not send these numbers to FIFA, any federation, any AI service, or any other third party. They are included in the player's account data export.</li>
+        <li>Aria keeps a number only while its request is pending or its link is active. A request that is not confirmed within 30 days expires. When a request or link ends for any reason, Aria erases the number and keeps a record without it: the kind of identifier, its status and dates, the team and club, and which administrator confirmed or ended it. Aria's audit records of these events never contain the number. When the player's account is deleted, Aria deletes these records and removes the player's identity from the related audit records.</li>
+    </ul>
+
+    <h3 id="aria-xii-maturation">Biological Maturation Estimates</h3>
+    <p>Club staff with clinical nutrition access can record a young player's standing height, sitting height, and body mass in Aria for Coaches. Aria stores those measurements with the player's date of birth, sex, and age on the measurement date, and uses them to compute a biological maturation estimate with the Mirwald 2002 method: how many years the player is from their peak height velocity, the estimated age at that peak, and a band of early, on time, or late.</p>
+    <ul>
+        <li>Aria computes estimates only for players aged 8 to 17 on the measurement date. Staff can record or see an estimate only while the player shares the Nutrition &amp; fueling category with staff and, while the player is under 18, their parent or guardian has authorized it for that club.</li>
+        <li>Only those staff can see an estimate, and Aria records every access in an audit log. The player and their parent or guardian do not see estimates in the app. Estimates are included in the player's account data export.</li>
+        <li>Aria does not send estimates to any AI service or other third party. The measurements are also saved with the player's other body measurements in Aria, which are handled like the other health information in this Policy.</li>
+        <li>Aria keeps estimates until the player's account is deleted. A correction keeps the replaced estimate, marked as replaced. Deleting the player's account, or the club, deletes them. A player leaving the team or club does not delete them, but staff access then follows the rules above.</li>
+    </ul>
+
+    <h3 id="aria-xii-return-to-training">Return-To-Training Restrictions</h3>
+    <p>A club's athletic trainers can record a player's return-to-training restrictions in Aria for Coaches: the training the player can take part in (no training, individual work only, modified team training, or full team training), whether contact in training is allowed, whether the player can be selected for matches and any limit on their minutes, the next review date, and the reason for each entry, such as a planned or unplanned review. Aria also records who recorded, corrected, or voided each entry, with their role and the time.</p>
+    <ul>
+        <li>These records contain no diagnosis, body part, or free-text notes.</li>
+        <li>Only the club's athletic trainers can record them. Staff of the player's team can see them only while the player shares both the Readiness &amp; recovery and the Rehab &amp; injury history categories with staff.</li>
+        <li>Aria does not send these records to any AI service or other third party.</li>
+        <li>The player does not see these records in the app, and they are included in the player's account data export. Aria keeps them, including ended and voided entries, with no fixed retention period, until the player's account or the club is deleted. If staff void an entry because it was recorded for the wrong player, Aria erases its restriction details.</li>
+    </ul>
+
+    <h3 id="aria-xii-weekly-reports">AI-Written Weekly Team Reports</h3>
+    <p>A coach can create a weekly report for a team they work with in Aria for Coaches. Every fact in the report comes straight from Aria's records: the team's fixtures, results, and standings, and the planned training totals in the club's calendar.</p>
+    <p>When a coach creates a report, Aria sends facts about the team's fixtures, results, standings, and planned training totals to an AI processing service such as Azure OpenAI to write a short summary. It does not send the names of teams, competitions, or players, any dates, or any health, readiness, or other athlete data. A report and its summary are visible only to the coach who created it. Reports are kept for up to 365 days and are deleted with the coach's account.</p>
+
+    <h2 id="children">8. Children's Privacy</h2>
+    <p>Run with Aria and FitMG are not intended for children under 13, and we do not knowingly collect personal information from children under 13 through those apps. Aria XII is different: soccer clubs use it for their players, who can include children, and club staff can record information about players under 18. <a href="#aria-xii">Section 7</a> describes that information and the parent or guardian authorization Aria XII relies on. If you believe a child under 13 has provided personal information to Aria without that authorization, contact <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a>.</p>
+
+    <h2 id="changes">9. Changes To This Policy</h2>
     <p>We may update this Privacy Policy from time to time. When changes are material, we may notify you in the app, by email, or by requiring acceptance of the updated policy before continued use.</p>
 
-    <h2 id="contact">9. Contact Us</h2>
+    <h2 id="contact">10. Contact Us</h2>
     <p>For privacy questions, access requests, export requests, or deletion requests, contact:</p>
     <p><strong>Email:</strong> <a href="mailto:privacy@ariacoach.app">privacy@ariacoach.app</a></p>
 
