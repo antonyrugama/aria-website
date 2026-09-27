@@ -139,6 +139,10 @@ function connect(url) {
    carries the long version of this note and the .gitignore entry that covers
    the run interrupted before it gets here. */
 const KILL_GRACE_MS = 5000;
+const STARTUP_TRIES = 300;
+const STARTUP_POLL_MS = 100;
+const PROFILE_RM_TRIES = 50;
+const PROFILE_RM_DELAY_MS = 200;
 
 function exitsWithin(child, ms) {
   return new Promise((resolve) => {
@@ -160,6 +164,21 @@ async function stopBrowser(child) {
   return (await killed) || gone();
 }
 
+async function removeProfile(dir) {
+  let last = null;
+  for (let i = 0; i < PROFILE_RM_TRIES; i += 1) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      return true;
+    } catch (err) {
+      last = err;
+      await new Promise((r) => setTimeout(r, PROFILE_RM_DELAY_MS));
+    }
+  }
+  if (last && last.code !== 'ENOENT') throw last;
+  return true;
+}
+
 async function launch() {
   const port = 9400 + Math.floor(Math.random() * 400);
   const dir = fs.mkdtempSync(path.join(ROOT, '.ops-dialog-hit-'));
@@ -171,8 +190,8 @@ async function launch() {
     '--window-size=1280,900', 'about:blank',
   ], { stdio: 'ignore' });
 
-  for (let i = 0; i < 100; i += 1) {
-    await new Promise((r) => setTimeout(r, 100));
+  for (let i = 0; i < STARTUP_TRIES; i += 1) {
+    await new Promise((r) => setTimeout(r, STARTUP_POLL_MS));
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json/version`);
       const info = await res.json();
@@ -180,7 +199,7 @@ async function launch() {
     } catch (e) { /* not listening yet */ }
   }
   await stopBrowser(child);
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await removeProfile(dir);
   throw new Error('Chrome did not start');
 }
 
@@ -489,7 +508,7 @@ try {
 } finally {
   const stopped = await stopBrowser(chrome.child);
   try {
-    fs.rmSync(chrome.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await removeProfile(chrome.dir);
   } catch {
     if (!stopped) console.warn(`warn  Chrome did not exit, so ${chrome.dir} may survive.`);
   }

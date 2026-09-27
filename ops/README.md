@@ -286,6 +286,7 @@ ops/
     pane-run-history-v2.css  What happened's own shapes
     pane-jobs-live-v2.js     Happening now
     pane-jobs-live-v2.css    Happening now's own shapes
+    job-actions-v2.js        Shared cancel and retry confirmations
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
     pane-spend-v2.css     Cloud costs' own shapes
@@ -304,6 +305,7 @@ api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.ht
 aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 icons.js = login.html, setup.html
+job-actions-v2.js = jobs-live.html, run-history.html
 login.js = login.html
 operate.js = (no page)
 ops.css = login.html, setup.html
@@ -529,14 +531,14 @@ it reads the live problems and alert rules, takes a problem on, closes it with a
 rule where the role allows it, and states whether the alerting is armed and where what it finds
 is sent. **Overview** answers both of its questions from live reads. The status ribbon and the
 needs-attention queue come from the problems API, and every entry opens the pane that owns the
-work; the four headline figures, the day-grain activity line, and the list of what is
+work; the four headline figures, the activity line, and the list of what is
 deliberately not drawn come from `GET /api/ops/summary`, which composes them server side.
 
 Three things about that pane are rules rather than styling, and each one is a rule about not
 drawing something. Every figure is labelled with the window the answer says it covers, read from
-`window.days`: the approved design asks for active people over 24 hours, nothing behind it is
-aggregated more finely than a day, and a tile labelled 24 hours that means seven days is worse
-than one labelled seven days. Every block carries an `availability` state and its figures are
+the payload's `window`: the activity line accepts both the day-grain answer already in production
+and the hour-grain answer that restores the approved last-24-hours chart, so the site and API can
+deploy in either order without inventing a window. Every block carries an `availability` state and its figures are
 absent from the payload unless that state is `ready`, so a tile that is not ready renders words
 and never a numeral. And the two apps are never added together: the activity line is one series
 per app, and the headline people figure is the platform's own distinct count rather than the sum
@@ -597,10 +599,12 @@ holds nothing at all says the pipeline may never have been connected and draws n
 it; a record that starts inside the window says from when, above figures that are real but
 partial; and a window a readable record says was quiet is a genuine zero. A count of finished
 runs is never zero-filled, and a median nobody could measure prints "Not measured" rather than a
-numeral, always beside the number of runs it was taken over. What was asked and what Aria
-answered are not on the page at any role, the owner included, and no account identity is sent to
-it at all: the privacy band names the three fields, says where a reveal is recorded, and offers
-no control here.
+numeral, always beside the number of runs it was taken over. No account identity is sent to the
+page at all. What was asked and what Aria answered stay out of the table, and an owner can reveal
+the retained content only from an opened run, with a 10-500 character reason and a fresh
+authentication retry handled by the session layer. Operators see no reveal control. Revealed
+sections are text-only, keyboard-focusable scroll regions; a section the server did not retain
+says why, and Hide content removes the text from the DOM.
 
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
@@ -1033,22 +1037,23 @@ problems, People reveals a masked field, and Aria quality posts an evaluation. D
 than asserted, from the HTTP method each file spells:
 
 ```claims id=write-capable-assets
-ops assets naming a write method = login.js, pane-alerts.js, pane-evaluations.js, pane-users.js, session.js, settings.js, setup.js
-of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-users.js
+ops assets naming a write method = job-actions-v2.js, login.js, pane-alerts.js, pane-evaluations.js, pane-run-history-v2.js, pane-users.js, session.js, settings.js, setup.js
+of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-run-history-v2.js, pane-users.js
 ```
 
-`settings.js` is the v1 script and `session.js` is the transport every one of them calls through;
-`login.js` and `setup.js` are the two pages outside the shell. The line is per file and not per
-call site — it reads the HTTP method a call site spells, so a file keeps its place until its last
-write method goes, and says nothing about whether any of those calls is reachable or authorised. What is true of Settings is
+`settings.js` is the v1 script, `job-actions-v2.js` is the shared cancel/retry helper, and
+`session.js` is the transport every one of them calls through; `login.js` and `setup.js` are the
+two pages outside the shell. The line is per file and not per call site — it reads the HTTP method
+a call site spells, so a file keeps its place until its last write method goes, and says nothing
+about whether any of those calls is reachable or authorised. What is true of Settings is
 narrower and worth being exact about: It runs on the v2 shell: `settings.html` loads `aria.css`,
 `shell-pane-v2.css` and `pane-settings-v2.css`, and registers through `definePane`. The v1
 `settings.css` is gone with it.
 
-**Seven areas, and five of them are read from anywhere.** Administrators, active sessions,
-the access record, sign-in windows and outside connections come from the API. Retention windows
-and the cost-category mapping have no endpoint to read or write. Both halves are on the same pane, so the pane has to say
-which is which, and it says so three times over, never once in colour alone:
+**Seven areas, and all seven are read from the API.** Administrators, active sessions,
+the access record, sign-in windows, data retention, cost categories and outside connections come
+from the API. If a future card has no endpoint to read or write, the pane still has to say which is
+which, and it says so three times over, never once in colour alone:
 
 1. **The word.** Every card head carries a source chip reading either `Live` or `No API yet`.
    Both chips are the same neutral ghost pill, so the distinction survives a reader who cannot
@@ -1063,23 +1068,34 @@ which is which, and it says so three times over, never once in colour alone:
 A live card also carries `data-endpoint` naming the path it was filled from, and
 `scripts/ops-settings-v2.test.mjs` holds the partition in both directions: every card marked
 `data-source="live"` names an endpoint the pane actually requested on that boot, every card marked
-`data-source="static"` names none and contains no digit, and **neither set is empty**. Moving one
-card across the boundary fails the suite.
+`data-source="static"` names none and contains no digit. Moving one card across the boundary fails
+the suite.
 
-`Stadiora/Aria#11214` is the issue that moved Outside connections across that line.
-`Stadiora/Aria#11601` moves Sign-in windows across it: the card reads
+`Stadiora/Aria#11214` is the issue that moved Outside connections across that line. Until the
+matching backend deploys, that card shows a degraded "could not be read" state, not a fake empty
+table. `Stadiora/Aria#11601` moves Sign-in windows across it: the card reads
 `GET /api/ops/settings/sessions`, writes `PUT` to the same route, and maps server errors to fixed
-copy. Until the matching backend deploys, the card shows a degraded "could not be read" state,
-not a fake setting. `Stadiora/Aria#5442` still tracks the remaining static cards.
+copy. `Stadiora/Aria#11513` moves Cost categories across the same line. It reads
+`GET /api/ops/settings/cost-categories`, writes `PUT` and `DELETE` on
+`/api/ops/settings/cost-categories/overrides`, and shows fixed error copy instead of backend
+error text. `Stadiora/Aria#11521` moves Data retention across the same line. It reads
+`GET /api/ops/settings/retention`, writes `PUT /api/ops/settings/retention/:windowKey`, and uses
+fixed error copy instead of backend error text.
 
 **What the live half does.** Each account's role, status, last sign in and current session expiry;
 every live session with who holds it, when it started, when it was last used and when it ends; the
 access record, newest first, with paging and an export; sign-in window settings from
-`GET /api/ops/settings/sessions`, which sets the session ceiling and fresh-auth window; and outside
-connection state from `GET /api/ops/integrations`, including the last successful run and its age.
-Revoking asks first, requires a written reason, sends that reason, and reports what the server
-answered rather than what was asked for. The record is reloaded beside the change, so the entry
-describing it is on screen next to the thing it describes.
+`GET /api/ops/settings/sessions`, which set the session ceiling and fresh-auth window;
+data-retention windows with fixed windows locked and configurable windows editable; the
+cost-category mapping that Cloud costs uses; and outside connection state from
+`GET /api/ops/integrations`, including the last successful run and its age. Shortening a retention
+window requires the server's typed phrase and says the next nightly pass deletes older rows.
+Cost-category edits choose one of the five server-reported categories and either the resource-group
+service line or the service everywhere. Saving sends the row version the pane read, and a stale
+answer reloads the card instead of reporting success. Revoking asks first, requires a written
+reason, sends that reason, and reports what the server answered rather than what was asked for. The
+record is reloaded beside the change, so the entry describing it is on screen next to the thing it
+describes.
 
 **Four facts the restyle is not allowed to lose**, because each one is the difference between a
 settings change and an incident:
@@ -1115,11 +1131,15 @@ refused sign in.
 - The mock's band is called *Audit log*; here it is the **Access record**, which is what
   `pane-users.js` and the rest of this README already call the same thing. One name for one
   record.
-- The mock's audit band note reads `kept 7 years`. Nothing reports that window, so it is not
-  printed. The retention card says so instead.
+- The mock's audit band note reads `kept 7 years`. The retention route reports that as
+  `at least 2,555 days`, so the pane prints the floor rather than the mock's rounded prose.
 - The mock has only a `Sessions expire in 30d` pill. Here session length and the password
   confirmation window are a live card, because the owner can change both. A fallback answer says
   defaults are in force rather than inventing a saved setting.
+- The mock's Data retention card prints `7 years`, `Life of account`, an `Applied nightly at
+  03:00` chip and an `Aggregated rollups` row. The live route reports no schedule and no rollup
+  window, so the pane prints only the windows it received and uses `Kept permanently` for
+  account-life rows.
 - The mock's twelve-row role matrix is not built. It is an unverifiable claim about server
   behaviour rendered as a table that looks like data, which is the failure the source chips exist
   to prevent; the three roles it described are stated once, under the table whose Role column they
@@ -1372,6 +1392,7 @@ those panes now.
     pane-evaluations-v2.css .tbl-wrap = position: relative
     pane-jobs-live-v2.css .u-scroll = position: relative
     pane-releases-v2.css .tbl-scroll = position: relative
+    pane-run-history-v2.css .rh-content-region = position: static (the sheet sets none)
     pane-run-history-v2.css .tbl-wrap = position: static (the sheet sets none)
     pane-settings-v2.css .tbl-wrap = position: relative
     pane-spend-v2.css .sp-scroll = position: static (the sheet sets none)
@@ -1447,7 +1468,7 @@ pane against the mock should read the list as "these are on purpose and here is 
    omission with its reason. An empty track reads as a budget with nothing spent against it and
    a full one as a budget already gone.
 3. **No month-end forecast**, for the same reason: only billed usage to date is stored.
-4. **No sparkline in the tiles.** The daily series exists for active people only. A sparkline on
+4. **No sparkline in the tiles.** The activity series exists for active people only. A sparkline on
    three tiles out of four, with one of them drawn from a different shape, invites a comparison
    between lines that are not comparable.
 5. **No severity stack bar in the ribbon.** The chips beside it already carry each count with its
@@ -1469,9 +1490,6 @@ pane against the mock should read the list as "these are on purpose and here is 
      meter drawn against a denominator nothing stores is the budget-bar problem again.
    - `Auto refresh · 60s`. Nothing here polls, and a label claiming a refresh that does not
      happen is worse than a page you know is a snapshot.
-   - the **hourly** grain on the activity chart. Nothing behind it aggregates finer than a day,
-     which is rule 1 of this pane: a figure labelled for a window it does not cover is worse
-     than one labelled for the window it does.
 
 The same card also carries two pane-held entries. **What Aria has been doing** has no route
 field for per-request-type requests, reliability, latency and cost; `/api/ops/summary` returns
@@ -1658,7 +1676,7 @@ half of that changes, the block above is a red run rather than a stale sentence.
 
 `docs/mocks/ops-dashboard-v2/run-history.html` in the Aria monorepo is the approved design. The
 pane follows the shape its README calls normative — the summary strip, the failure table read
-worst-first, the privacy band that locks content rather than offering to unlock it — and departs
+worst-first, the owner reveal flow on an opened run — and departs
 where nothing behind the page can answer what the mock draws. As with the sections above, this
 is not a complete diff: it names the departures that carry a decision.
 
@@ -1687,7 +1705,11 @@ is not a complete diff: it names the departures that carry a decision.
    pane recorded rather than off anything a file says about itself.
 5. **No trend chart.** The mock draws one. A chart needs a series and this read answers one
    window, so a line over time would have to invent the missing part of it.
-6. **No timer.** The mock implies a live page. This one is the past tense: it reads once per
+6. **Retry and cancel links are row capabilities, not history writes.** The run rows and the
+   open-run card can show the same cancel or retry controls as Happening now, but the POST still
+   goes to `/api/ops/jobs`. The history pane refreshes after a committed action or a stale race;
+   it does not mutate the historical row in place.
+7. **No timer.** The mock implies a live page. This one is the past tense: it reads once per
    selection, stamps when it read, and offers "Read again". Nothing is started, so nothing has
    to be stopped when the operator leaves — which is the strongest available answer to the
    polling-leak class of defect, and the opposite of the choice Happening now correctly makes.
@@ -1733,23 +1755,24 @@ departures that carry a decision.
    control and the table's horizontal scroll position are carried across the swap by `data-retain`
    name and put back. Without it the pane would drop focus to the document and rewind the table
    to column one four times a minute, which on a 375px screen hides most of the table.
-5. **Cancel, retry and export are absent.** The mock offers all three. Stadiora/Aria#5562 is
-   read-only by decision — the record now supports listing work but nothing serves an action
-   against it, and a control that cannot succeed says the thing is within reach, so the pane
-   names the three rather than drawing them disabled.
+5. **Cancel and retry come only from the API's capability block.** Owners and operators see a
+   button only when the row says the action can commit, and every false action prints the
+   server's reason as quiet text. The typed confirmation uses the row's short reference and posts
+   to `/api/ops/jobs/:id/cancel` or `/retry`. A stale job refreshes the list and never reports a
+   success. Viewers receive reasons and no buttons.
 6. **The app control and the environment control are not drawn at all.** The route keeps no
    per-app split and there is no staging record, so production figures under a staging label
    would be worse than a refusal. A filter that narrows nothing is a control that cannot succeed
    in a different widget. The registry declares neither, and a `filterNote` says why.
    `scripts/ops-registry-filters.test.mjs` holds the registry to it, keyed off the call each
    pane recorded rather than off anything a file says about itself.
-7. **Four things the mock draws have no record behind them, and are named rather than drawn.**
+7. **Five things the mock draws have no record behind them, and are named rather than drawn.**
    Worker load has no denominator, because nothing records how many workers exist. "Attempt 2 of
    3" does not exist on the platform: a retry creates a new job rather than incrementing a
    counter. A per-run progress bar would be drawing a number with no history behind it, where a
    job that has reported nothing carries the same zero as one that has done nothing. And the
    mock's third lane, Streaming, creates no job at all, so it would report zero forever — the one
-   reading worse than leaving it out. All four sit in a band called "What this pane cannot answer
+   reading worse than leaving it out. Export still has no route. All five sit in a band called "What this pane cannot answer
    yet", and the worker-load sentence is printed as the route sent it rather than mapped through
    a lookup, so a live read and a deleted field cannot end up on the same fallback branch.
 
@@ -1827,6 +1850,7 @@ pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-
 pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
 pane-jobs-live-v2.css .u-scroll = outline-offset: -2px
 pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
+pane-run-history-v2.css .rh-content-region = outline-offset: -2px
 pane-run-history-v2.css .tbl-wrap = outline-offset: -2px
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
 pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
@@ -2152,20 +2176,20 @@ Which of these classes any page can still draw is therefore derived rather than 
 .masked = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .nav-count = declared in ops.css; drawn by (no page)
-.btn-danger = declared in ops.css, pane-settings-v2.css; drawn by settings.html; painted where drawn
+.btn-danger = declared in ops.css, pane-settings-v2.css, shell-pane-v2.css; drawn by jobs-live.html, run-history.html, settings.html; painted where drawn
 .field-error = declared in ops.css, pane-evaluations-v2.css, pane-users-v2.css; drawn by evaluations.html, login.html, setup.html, users.html; painted where drawn
 ```
 
 Three lines in that block are worth reading twice:
 
 - **`.btn-danger` is drawn, and painted.** Settings writes it on the revoke controls and on the
-  confirmation's submit, and `pane-settings-v2.css` declares it. This section used to file it
-  under "drawn by nothing built so far", and said in as many words that Settings draws none. The
-  4.49 and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what
-  paints it now. No figure in this file describes what does. `check-ops-contrast.mjs` is **not**
-  that oracle either: `scripts/check-ops-contrast.mjs` fixes its page to `/ops/shell-v2.html`
-  and never opens `settings.html`, so the live pairing is unmeasured by
-  anything in the tree. That is a gap, stated as one rather than closed with a pointer at a guard
+  confirmation's submit; Happening now and What happened write it through `job-actions-v2.js`.
+  `pane-settings-v2.css` and `shell-pane-v2.css` declare it for the pages that draw it. The 4.49
+  and 3.79 figures below are `ops.css`'s inks over `ops.css`'s tint, which is not what paints it
+  now. No figure in this file describes the v2 pairing. `check-ops-contrast.mjs` is **not** that
+  oracle either: it fixes its page to `/ops/shell-v2.html` and never opens these panes, so the
+  live pairing is unmeasured by anything in the tree. That is a gap, stated as one rather than
+  closed with a pointer at a guard
   that does not look.
 - **Two classes were written with nothing behind them, and are not any more.** `.masked` and
   `.callout-warn` were both tokens whose rule stayed in `ops.css` when their pane moved to v2,
@@ -2351,7 +2375,7 @@ stored reading — which on this pane is most of them.
 | `scripts/ops-shell-pane-v2.test.mjs` | That the rail cannot drift from the registry, that a pane is offered exactly the filters it declared and never one more, that a role without access gets a named refusal rather than a blank pane, that the three gates stay mutually exclusive, and that the v2 formatters still agree with the v1 ones they were ported from. |
 | `scripts/ops-overview-v2.test.mjs` | That every figure's window label comes from the answer, that a block which is not `ready` prints words and never a numeral, that the two apps are never added together, that a day with no stored reading breaks the line instead of joining across it, that the omissions card is drawn from the answer, that a change pill's chevron follows the figure's own sign rather than its tone, that each app keys the same colour in the tile as in the chart legend, and that every doorway points at the pane the registry says owns it. |
 | `scripts/ops-registry-filters.test.mjs` | That every filter the registry declares is one the pane behind it can act on — for every pane on the v2 bootstrap, Cloud costs excepted, where only the declaration is held: the value the operator picked either reaches that pane's own read in a field of the same name, or narrows what the page draws, proved from the call the pane recorded and the DOM it wrote rather than from anything a file says about itself. It locks its own coverage as well, so a pane that gains a filter is red here until somebody writes down how that filter is acted on. |
-| `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that the bar draws a window control and nothing else and says why the other two are gone, that a custom window asked for in the URL is clamped back to the window the pane starts on, that run content is locked at every role including owner with a field name and no value node at all, that the six guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
+| `scripts/ops-run-history-v2.test.mjs` | That the operator's window reaches the answer rather than the request, that a problem still open from before the window stays inside it, that a full page reads as a floor and says why, that the same rule in two request types is two reasons and in one is a count, that the bar draws a window control and nothing else and says why the other two are gone, that a custom window asked for in the URL is clamped back to the window the pane starts on, that run content is locked until an owner opens a run and gives a reason, that the reveal retry preserves that reason across fresh authentication, that not-retained sections say why and Hide content removes retained text from the DOM, that operators see no reveal control or hint, that the privacy guarantees are on screen as sentences, and that the read carries its querystring as well as its path. |
 | `scripts/ops-jobs-live-v2.test.mjs` | That the pane reads `/api/ops/jobs` and nothing else, carrying no querystring because it declares no filter; that a count the route could not produce is drawn as absent rather than as zero, that an idle queue says which of the two it is, and that a queue scope the route leaves unstated reads unread rather than complete; that a run whose worker stopped reporting in reads given up on and one still reporting in but past its kind’s usual duration reads overdue, each counted and flagged in its own right so neither half of that band rests on the other being non-empty, with the multiple printed from the response rather than from the sentence; that a lane whose contents cannot be read is not drawn as an empty one; that a truncated working set says so; that a rate travels as its own numerator and denominator and a period figure publishes its window; that the refresh chain arms exactly one timer, never overlaps two reads, cancels when the tab is hidden or the page is left, arms nothing when a read lands after the operator paused as well as after they left, re-arms on return, and gives up after five failures with a way back; that a refresh keeps the operator’s focus and the table’s scroll position rather than rewinding either; that a failed refresh leaves the last reading on screen and says how stale it is, while a failed first read takes the pane; that the job table’s scroll box is named, focusable and reachable; that no class the pane draws is one only the retired v1 sheet defines — read off the DOM the pane actually builds across six states, one of them driven to a stopped chain by interaction rather than by a fixture, rather than parsed out of its source, because three successive parsers were each green over a delivery shape nobody had taught them, and a sweep of what was built has no shapes left to miss; the source parse is kept, pointed the other way, so a class literal the sweep never saw names a branch no state boots, which narrows the remaining state axis without closing it — it reaches such a branch only when no other node in the swept panel carries that class, **including nodes the shell wrote**, which is how `btn-primary` looked reached while the pane's own branch was not; and a literal DELETED from the source is outside it entirely, which is why the way back from a stopped chain asserts its own primary class; it matches selector text, so the resolved proof against the rules reaching each node stays `scripts/check-ops-result-view.mjs`; that a job id which looks like an address is masked; and that the pane loads neither the retired awaiting-data module nor the alerting model it used to fall back to. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
