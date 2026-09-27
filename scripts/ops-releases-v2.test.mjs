@@ -1220,6 +1220,23 @@ test('an omission that names nothing is dropped, not drawn blank', async () => {
     'an omission carrying only a key falls back to the key');
 });
 
+/* The filter above decides on the trimmed key, so the print has to draw the
+   trimmed key too, or a padded key passes the filter and reads
+   "  ios_rollout_share  . " with a stray space before the full stop
+   (Stadiora/Aria#10882). Read off the <b> node's own textContent, because
+   allText() collapses runs of whitespace and would hide the padding. */
+test('an omission named only by a padded key prints the key trimmed', async () => {
+  const data = releasesFixture();
+  data.omissions = [{ key: '  ios_rollout_share  ', title: '', detail: 'orphan' }];
+  const dom = await boot({ releases: data });
+  const notes = findAll(panel(dom, 'live'),
+    (n) => (n.className || '').split(/\s+/).includes('is-note'));
+  assert.equal(notes.length, 1, 'the padded key did not reach the note at all');
+  const names = findAll(notes[0], (n) => n.tagName === 'B');
+  assert.deepEqual(names.map((n) => n.textContent), ['ios_rollout_share. '],
+    'the note printed the key with its padding');
+});
+
 /* The route publishes `omissions` conditionally, so every older answer still
    in flight has no such field. */
 test('an answer with no omissions field draws no note and does not fail', async () => {

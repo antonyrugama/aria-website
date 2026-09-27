@@ -1075,7 +1075,7 @@
     var body = h('div', { className: 'omit-list' });
     entries.forEach(function (entry) {
       body.appendChild(h('div', {}, [
-        h('b', { text: (str(entry.title) || entry.key) + '. ' }),
+        h('b', { text: (str(entry.title) || str(entry.key)) + '. ' }),
         h('span', {
           text: diagnostic(entry.detail) ||
             'The operations API named this as unavailable and gave no reason.'
