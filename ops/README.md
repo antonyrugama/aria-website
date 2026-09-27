@@ -856,7 +856,11 @@ the window is. That was invisible while the pane had no endpoint and would have 
 over a twelve month bill the day it got one.
 
 **People and usage** expects `asOf`, `window`, `coverage`, `apps`, `cohorts` and `features`.
-`availability.state` is `ready`, `insufficient`, or `not_reporting`. There is no `funnel`:
+`availability.state` is `ready`, `insufficient`, or `not_reporting`. `notReporting` names each
+selected app that has no reading in the window, and those apps get no column. When the split
+card or the empty card has an app missing for that reason, it prints the route's `detail` for
+that app as sent, instead of calling it outside the selection. When the list is absent or empty,
+the older copy stands. There is no `funnel`:
 `OpsUsagePayload` has never carried one, and departure 9 below says why the pane stopped
 drawing one.
 
@@ -2632,7 +2636,7 @@ lines short — which is why none of them are typed any more.
 ```claims id=source-anchors
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
-ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1059
+ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1077
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 144
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 199
