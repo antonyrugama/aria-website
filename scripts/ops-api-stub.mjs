@@ -522,18 +522,6 @@ const RETENTION = {
   ]
 };
 
-/* Cloud costs, in the state a period that has not published yet produces.
-   Both generations of this pane read `availability.state` first and print
-   `availability.detail` verbatim into the card they draw for it, so the detail
-   line below is a fixture value on the page rather than pane prose — which is
-   what makes it usable as a marker across a remodel.
-
-   An explicit branch rather than the fall-through it used to take. Falling
-   through sent `{}`, which today's pane reads as "no billed total" and the v2
-   remodel on antonyrugama/aria-website#65 reads as a state outside its
-   vocabulary: the same payload, two different cards, and a marker that works
-   on one head and not the next. A state both generations name is the payload
-   this fixture should have been sending all along. */
 const COST_CATEGORIES = {
   categories: [
     { key: 'ci_and_build', label: 'CI and build' },
