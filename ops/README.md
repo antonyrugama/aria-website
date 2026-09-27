@@ -3284,8 +3284,9 @@ pins in `check-ops-shell-v2.mjs` answer the second, and the three are complement
 Sites that are below AA on the page today are frozen one at a time in `KNOWN_BELOW_AA`, keyed
 per site — theme, state, selector and the words — with the issue that tracks each. The freeze is
 asserted in both directions: an entry that stops reproducing, matches more than one site, or
-moves by more than 0.15 fails the run, so an exemption cannot outlive what it exempts. There is
-one entry today, [Stadiora/Aria#10366](https://github.com/Stadiora/Aria/issues/10366).
+moves by more than 0.15 fails the run, so an exemption cannot outlive what it exempts. There are
+no entries today. The last one, the budget bar's forecast text at 4.49:1 on its hatch, was fixed by
+lightening the stripe from 22% to 16% amber ([Stadiora/Aria#10366](https://github.com/Stadiora/Aria/issues/10366)).
 
 The pre-paint half of the shell check is the part worth keeping. A theme default written in two
 places that disagree produces a page that paints one theme and switches to the other a moment

@@ -1659,7 +1659,7 @@ async function measureSites(targets, where) {
 
        Averaging a two-tone backdrop invents a colour painted nowhere, and
        judging the widest lets a minority surface hide a failure: the hatch
-       behind .fore is 22% amber every 6px, and a letter crossing a stripe is
+       behind .fore is 16% amber every 6px, and a letter crossing a stripe is
        read at the stripe's ratio whatever the rest of the run does. This is
        the ink-role direction of the per-role rule — for an INK the unsafe
        assumption is the flattering one, so the worst surface decides.

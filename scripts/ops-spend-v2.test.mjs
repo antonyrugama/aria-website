@@ -2885,7 +2885,7 @@ test('the budget track is hidden from a reader, and carries no text of its own',
       + 'naming it would announce each of them twice');
     assert.equal(runs(track).length, 0,
       'and no text sits on it. Text over a hatch is measured against the worst stripe, '
-      + 'and that pair is already one contrast failure on this design system (#10366)');
+      + 'and that pair has already been one contrast failure on this design system (#10366)');
 
     /* The half that makes hiding it safe: each of the four facts is in text. */
     const words = ownText(budgetCardOf(dom));
