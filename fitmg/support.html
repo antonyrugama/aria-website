@@ -83,7 +83,8 @@
         .card.accent{border-left:3px solid var(--cyan)}
 
         .path{display:inline;color:var(--t1);font-weight:600}
-        .path i{font-style:normal;color:var(--cyan);padding:0 6px}
+        .path i{font-style:normal;color:var(--cyan);padding:0 2px}
+        .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
         ol.steps{counter-reset:s;margin:4px 0 14px}
         ol.steps li{counter-increment:s;position:relative;padding-left:38px;margin-bottom:12px;font-size:16px;color:var(--t2);line-height:1.7}
@@ -157,7 +158,7 @@
                 <h3>iPhone or iPad (App Store)</h3>
                 <ol class="steps">
                     <li>Open the <strong>Settings</strong> app.</li>
-                    <li>Go to <span class="path">your name (Apple Account)<i aria-hidden="true">&rsaquo;</i>Subscriptions</span>.</li>
+                    <li>Go to <span class="path">your name (Apple Account) <i aria-hidden="true">&rsaquo;</i><span class="sr-only">, then</span> Subscriptions</span>.</li>
                     <li>Choose <strong>FitMG</strong>, then tap <strong>Cancel Subscription</strong>.</li>
                 </ol>
             </div>
@@ -165,7 +166,7 @@
                 <h3>Android (Google Play)</h3>
                 <ol class="steps">
                     <li>Open the <strong>Play Store</strong> app and tap your profile icon.</li>
-                    <li>Go to <span class="path">Payments &amp; subscriptions<i aria-hidden="true">&rsaquo;</i>Subscriptions</span>.</li>
+                    <li>Go to <span class="path">Payments &amp; subscriptions <i aria-hidden="true">&rsaquo;</i><span class="sr-only">, then</span> Subscriptions</span>.</li>
                     <li>Choose <strong>FitMG</strong>, then tap <strong>Cancel subscription</strong>.</li>
                 </ol>
             </div>
@@ -184,9 +185,9 @@
                 <h3>In the app</h3>
                 <ol class="steps">
                     <li>Open <strong>Settings</strong>.</li>
-                    <li>Tap <span class="path">Account deletion<i aria-hidden="true">&rsaquo;</i>Request account deletion</span>.</li>
+                    <li>Tap <span class="path">Account deletion <i aria-hidden="true">&rsaquo;</i><span class="sr-only">, then</span> Request account deletion</span>.</li>
                 </ol>
-                <p>The same screen lets you request a copy of your data.</p>
+                <p>To get a copy of your data, email <a href="mailto:privacy@ariacoach.app?subject=FitMG%20data%20copy%20request">privacy@ariacoach.app</a> from the email address on your account.</p>
             </div>
             <div class="card">
                 <h3>Without the app</h3>
