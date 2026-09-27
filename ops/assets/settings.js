@@ -1617,7 +1617,7 @@
         text: 'Allowed range: ' + min + ' to ' + max + '.'
       }));
       field.appendChild(h('div', {
-        className: 'session-window-error', id: errorId, role: 'alert'
+        className: 'session-window-error', id: errorId
       }));
       return field;
     }
@@ -1698,8 +1698,6 @@
 
       function refuse(message) {
         status.textContent = message;
-        S.toast('warn', message);
-        S.announce(message);
       }
 
       function setFieldError(input, message) {
@@ -1788,7 +1786,7 @@
             S.announce(ending + ' Opening the sign-in page in a moment.');
             global.setTimeout(function () {
               var route = function () { session.toLogin('expired'); };
-              session.signOut().then(route, route);
+              session.signOut({ noNavigate: true }).then(route, route);
             }, 1400);
             return;
           }
