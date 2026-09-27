@@ -18,9 +18,8 @@
 /* ------------------------------------------------- live against not wired
 
    The one thing this pane must never do is make a card with an API behind it
-   and a card with nothing behind it look the same. Six areas are on screen and
-   only three of them are read from anywhere, so the distinction is drawn three
-   times over and never once in colour alone:
+   and a card with nothing behind it look the same. The distinction is drawn
+   three times over and never once in colour alone:
 
      1. the source chip in every card head says the word, "Live" or "No API yet";
      2. a card with no source behind it is hatched rather than lit — no top
@@ -186,6 +185,38 @@
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--ink-3);
+}
+
+/* ------------------------------------------------------- cost categories */
+
+.cost-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+}
+.cost-field {
+  display: grid;
+  gap: 5px;
+}
+.cost-field-label {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.cost-select {
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--r);
+  padding: 7px 9px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.cost-select:focus-visible { outline-offset: -2px; }
+.cost-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 /* A row's actions sit at the right edge, under a right-aligned header. */

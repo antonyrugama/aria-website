@@ -13,11 +13,10 @@
    something:
 
      1. **Every figure is labelled with the window it actually covers**, read
-        from `window.days` rather than written into this file. The approved
-        design asks for active people over 24 hours; there is no hourly grain
-        anywhere in this pipeline, so the answer covers seven whole UTC days
-        and the tile says seven. A figure labelled 24 hours that means seven
-        days is worse than one labelled seven days.
+        from the answer rather than written into this file. Production may send
+        either the older day-grain activity window or the newer hour-grain
+        window; the pane labels the grain it receives so the website can deploy
+        before or after the API.
      2. **Empty never means zero.** Every block carries an `availability`
         state, and the figures are absent from the payload when it is not
         `ready`. A tile reading 0 active people and a tile whose pipeline is
@@ -1011,14 +1010,25 @@
     /* The window a figure covers, in words, read from the answer rather than
        written here.
 
-       The approved design labels the active-people tile "last 24 hours". There
-       is no hourly grain anywhere behind it, so the route answers over seven
-       whole UTC days and publishes the window beside every figure precisely so
-       that a wrong one moves a label on screen. Reading `days` is what makes
-       that check real; hardcoding seven would put this file back in the
-       business of asserting a window it did not measure. A window the answer
-       did not describe says so rather than guessing. */
+       Day-grain production answers carry `days`; hour-grain answers carry
+       `hours` and `grain: "hour"`. Reading both is what lets the website and
+       API deploy in either order without a label that claims a window the
+       payload did not measure. A window the answer did not describe says so
+       rather than guessing. */
+    function isHourWindow(win) {
+      return !!(win && (textOf(win.grain) === 'hour' || num(win.hours) !== null));
+    }
+
+    function activityUnit(win) {
+      return isHourWindow(win) ? 'hour' : 'day';
+    }
+
     function windowLabel(win) {
+      if (isHourWindow(win)) {
+        var hours = num(win && win.hours);
+        if (hours === null) return 'Window not reported';
+        return 'Last ' + fmt.plural(hours, 'hour') + ' (UTC)';
+      }
       var days = num(win && win.days);
       if (days === null) return 'Window not reported';
       return 'Last ' + fmt.plural(days, 'whole UTC day');
@@ -1026,6 +1036,11 @@
 
     /* The same window mid-sentence, for the chart's spoken description. */
     function windowPhrase(win) {
+      if (isHourWindow(win)) {
+        var hours = num(win && win.hours);
+        if (hours === null) return 'a window the answer did not describe';
+        return 'the last ' + fmt.plural(hours, 'hour') + ' (UTC)';
+      }
       var days = num(win && win.days);
       if (days === null) return 'a window the answer did not describe';
       return 'the last ' + fmt.plural(days, 'whole UTC day');
@@ -1371,6 +1386,7 @@
 
     function activityCard(activity) {
       var series = list(activity && activity.series);
+      var unit = activityUnit(activity && activity.window);
       var card = S.card();
 
       var legend = h('div', { className: 'legend' });
@@ -1381,7 +1397,7 @@
         legend.appendChild(key);
       });
 
-      card.appendChild(S.cardHead('People active each day',
+      card.appendChild(S.cardHead('People active each ' + unit,
         windowLabel(activity && activity.window),
         series.length ? [legend] : null));
 
@@ -1392,17 +1408,22 @@
            as a measured flat zero, which is the one thing a window with no
            stored reading must not look like. */
         body.appendChild(S.stateBlock('empty', 'There is no line to draw for this window',
-          [detailOf(activity, 'The answer carried no daily figures for this window.')], 4));
+          [detailOf(activity, unit === 'hour'
+            ? 'The answer carried no hourly figures for this window.'
+            : 'The answer carried no daily figures for this window.')], 4));
         card.appendChild(body);
         appendNote(card, activity && activity.note);
         return card;
       }
 
       var labels = list(activity.labels).slice();
+      var missing = list(isHourWindow(activity && activity.window)
+        ? activity.hoursMissingRollups : activity.daysMissingRollups)
+        .filter(function (gap) { return typeof gap === 'string'; });
       var drawable = series.filter(function (one) { return finiteCount(one.values) > 1; });
 
       if (drawable.length) {
-        body.appendChild(lineChart(series, labels, activity.window));
+        body.appendChild(lineChart(series, labels, activity.window, missing));
         if (labels.length) {
           var axis = h('div', { className: 'axis-x', 'aria-hidden': 'true' });
           axis.appendChild(h('span', { text: labelAt(labels, 0) }));
@@ -1412,25 +1433,32 @@
           body.appendChild(axis);
         }
       } else {
-        /* One day with a reading is a point, not a line, and there is nothing
+        /* One reading is a point, not a line, and there is nothing
            to join up. The figures below still say what was counted. */
-        body.appendChild(S.stateBlock('empty', 'Not enough days to draw a line yet',
-          ['Fewer than two days in this window have a stored reading.'], 4));
+        body.appendChild(S.stateBlock('empty',
+          'Not enough ' + unit + 's to draw a line yet',
+          ['Fewer than two ' + unit + 's in this window have a stored reading.'], 4));
       }
 
       /* The chart's own numbers, in text. Nothing on this pane may exist only
          inside a picture, and a reader who cannot see the line still has to be
          able to tell a reported zero from a day with no reading. */
       var rows = h('div', { className: 'series-rows' });
-      series.forEach(function (one) { rows.appendChild(seriesRow(one, labels)); });
+      series.forEach(function (one) {
+        rows.appendChild(seriesRow(one, labels, activity.window));
+      });
       body.appendChild(rows);
 
       card.appendChild(body);
 
-      var missing = list(activity.daysMissingRollups).filter(function (day) {
-        return typeof day === 'string';
-      });
-      if (missing.length) {
+      if (missing.length && isHourWindow(activity && activity.window)) {
+        card.appendChild(h('div', { className: 'card-foot' }, [
+          icon('info'),
+          h('span', {
+            text: fmt.plural(missing.length, 'hour') + ' did not report. Drawn as breaks, not zeroes.'
+          })
+        ]));
+      } else if (missing.length) {
         card.appendChild(h('div', { className: 'card-foot' }, [
           icon('info'),
           h('span', {
@@ -1458,7 +1486,7 @@
     var CHART_H = 210;
     var PAD_L = 44, PAD_R = 10, PAD_T = 10, PAD_B = 16;
 
-    function lineChart(series, labels, win) {
+    function lineChart(series, labels, win, missingRollups) {
       var iw = CHART_W - PAD_L - PAD_R;
       var ih = CHART_H - PAD_T - PAD_B;
 
@@ -1478,7 +1506,7 @@
         'class': 'chart',
         viewBox: '0 0 ' + CHART_W + ' ' + CHART_H,
         role: 'img',
-        'aria-label': chartName(series, labels, win)
+        'aria-label': chartName(series, labels, win, missingRollups)
       });
 
       var ticks = 4;
@@ -1557,8 +1585,11 @@
       return textOf(list(labels)[index]);
     }
 
-    function chartName(series, labels, win) {
-      var head = 'People active each day, one line per app, over ' + windowPhrase(win);
+    function chartName(series, labels, win, missingRollups) {
+      var unit = activityUnit(win);
+      var head = unit === 'hour'
+        ? 'People active each hour over ' + windowPhrase(win) + ', one line per app'
+        : 'People active each day, one line per app, over ' + windowPhrase(win);
       var first = labelAt(labels, 0);
       var last = labelAt(labels, labels.length - 1);
       /* Named only when BOTH ends resolve, and this guard is the whole point.
@@ -1572,14 +1603,19 @@
       if (first && last) {
         head += ', ' + first + (labels.length > 1 ? ' to ' + last : '');
       }
+      var missing = list(missingRollups);
+      if (unit === 'hour' && missing.length) {
+        head += ', ' + fmt.plural(missing.length, 'hour') + ' did not report';
+      }
       return head + '. ' + series.map(function (one) {
-        return seriesSentence(one, labels);
+        return seriesSentence(one, labels, win);
       }).join(' ');
     }
 
-    function seriesSentence(one, labels) {
+    function seriesSentence(one, labels, win) {
       var name = textOf(one.label) || textOf(one.key) || 'Unnamed series';
       var values = list(one.values);
+      var unit = activityUnit(win);
       var reported = [];
       var lastIndex = -1;
       values.forEach(function (v, index) {
@@ -1590,23 +1626,24 @@
       });
 
       if (!reported.length) {
-        return name + ': no reading on any of ' + fmt.plural(values.length, 'day') + '.';
+        return name + ': no reading on any of ' + fmt.plural(values.length, unit) + '.';
       }
       var lo = Math.min.apply(null, reported);
       var high = Math.max.apply(null, reported);
       return name + ': ' + fmt.int(reported.length) + ' of ' +
-        fmt.plural(values.length, 'day') + ' with a reading, ' +
+        fmt.plural(values.length, unit) + ' with a reading, ' +
         (lo === high ? 'flat at ' + fmt.int(lo) : 'low ' + fmt.int(lo) + ', high ' + fmt.int(high)) +
         ', ending ' + fmt.int(values[lastIndex]) +
         (labelAt(labels, lastIndex) ? ' on ' + labelAt(labels, lastIndex) : '') + '.';
     }
 
     /* One app's line, said in words: how much of the window it has a reading
-       for, and its last reading with the day it was taken. */
-    function seriesRow(one, labels) {
+       for, and its last reading with the day or hour it was taken. */
+    function seriesRow(one, labels, win) {
       var values = list(one.values);
       var reported = finiteCount(values);
       var lastIndex = -1;
+      var unit = activityUnit(win);
       values.forEach(function (v, index) { if (num(v) !== null) lastIndex = index; });
 
       var row = h('div', { className: 'series-row ' + seriesTone(one.color) }, [
@@ -1623,7 +1660,7 @@
       }));
       row.appendChild(h('span', {
         className: 'series-cover',
-        text: fmt.int(reported) + ' of ' + fmt.plural(values.length, 'day')
+        text: fmt.int(reported) + ' of ' + fmt.plural(values.length, unit)
       }));
       return row;
     }

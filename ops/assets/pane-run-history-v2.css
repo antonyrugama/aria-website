@@ -140,6 +140,29 @@
 }
 .rh-fact-val { font-size: 12.5px; font-weight: 520; color: var(--ink); text-align: right; }
 
+.rh-reveal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rh-reveal-card { max-width: min(620px, calc(100vw - 28px)); }
+.rh-reveal-reason {
+  min-height: 112px;
+  resize: vertical;
+}
+.rh-content-region {
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+}
+.rh-content-region:focus-visible { outline-offset: -2px; }
+.rh-content-pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.55 var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  color: var(--ink);
+}
+
 /* ---------------------------------------------------------- the stages
 
    Every transition the recorder won, in order. An <ol> because the order is
