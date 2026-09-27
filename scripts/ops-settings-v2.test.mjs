@@ -4,16 +4,16 @@
    Two of the rules this pane has to hold are the kind that pass a badly built
    test by construction, so they are written here first and deliberately:
 
-   THE LIVE-AGAINST-STATIC PARTITION. Five of the seven areas on this pane are
-   read from an API and two are not, and the whole point of the remodel is
-   that a reader can tell which is which. Asserting that a marker element
+   THE LIVE-AGAINST-STATIC PARTITION. All seven areas on this pane are now read
+   from an API, and the point of the source marker is still that a reader can
+   tell which is which. Asserting that a marker element
    EXISTS is the classic false green: it stays green when the marker is on
    every card, on none, or on the wrong ones. So the assertion here is the
    PARTITION. Every card the pane marks as read names an endpoint the pane
    actually requested on that boot and prints at least one numeral; every card
-   it marks as static names no endpoint and prints none; every card in the
-   panel is marked as one or the other; and neither set is empty. Moving one
-   card across the line fails it in both directions.
+   it marks as static names no endpoint and prints none; and every card in the
+   panel is marked as one or the other. Moving one card across the line fails
+   it in both directions.
 
    OWNER-ONLY GATING. A test that only checks an operator is refused stays
    green if refusal is hard-coded for everybody, which would take the pane away
@@ -84,6 +84,9 @@ const SESSIONS = '/api/ops/sessions';
 const SESSION_SETTINGS = '/api/ops/settings/sessions';
 const AUDIT = '/api/ops/audit';
 const INTEGRATIONS = '/api/ops/integrations';
+const RETENTION = '/api/ops/settings/retention';
+const COST_CATEGORIES = '/api/ops/settings/cost-categories';
+const COST_CATEGORY_OVERRIDES = '/api/ops/settings/cost-categories/overrides';
 const ROUTE_FAILURE_REASONS = [
   'auth',
   'timeout',
@@ -112,6 +115,14 @@ const SESSION_SETTINGS_WRITE_COPY = {
   ops_reauth_required: /Confirm your password to change sign-in windows/i,
   ops_role_insufficient: /do not have access/i,
   ops_session_settings_update_failed: /could not be saved/i,
+};
+
+const CATEGORY_LABELS = {
+  ci_and_build: 'CI and build',
+  ai_and_models: 'AI and models',
+  data: 'Data',
+  application_compute: 'Application compute',
+  platform_and_observability: 'Platform and observability',
 };
 
 /* -------------------------------------------------------------- fixtures
@@ -339,6 +350,169 @@ function sessionSettingsFixture(overrides = {}) {
   };
 }
 
+function retentionWindow(overrides) {
+  return {
+    key: overrides.key,
+    label: overrides.label,
+    description: overrides.description,
+    effectiveDays: overrides.effectiveDays,
+    minimumDays: Object.prototype.hasOwnProperty.call(overrides, 'minimumDays')
+      ? overrides.minimumDays
+      : overrides.configurable ? 30 : null,
+    source: overrides.source,
+    configurable: overrides.configurable,
+    fixedReason: Object.prototype.hasOwnProperty.call(overrides, 'fixedReason')
+      ? overrides.fixedReason
+      : null,
+    environmentVariable: overrides.environmentVariable || null,
+    sweepKey: overrides.sweepKey || null,
+    bounds: overrides.bounds || { minDays: null, maxDays: null },
+    setting: Object.prototype.hasOwnProperty.call(overrides, 'setting')
+      ? overrides.setting
+      : null,
+  };
+}
+
+function retentionSetting(id, retentionDays, updatedAt = '2026-09-24T18:00:00.000Z') {
+  return {
+    id,
+    retentionDays,
+    createdAt: '2026-09-24T17:00:00.000Z',
+    updatedAt,
+  };
+}
+
+function retentionFixture() {
+  return {
+    shorteningConfirmation: 'delete rows on the next nightly pass',
+    windows: [
+      retentionWindow({
+        key: 'raw_telemetry',
+        label: 'Activity history',
+        description: 'Raw telemetry events used for usage rollups.',
+        effectiveDays: 180,
+        source: 'setting',
+        configurable: true,
+        environmentVariable: 'OPS_TELEMETRY_RETENTION_DAYS',
+        sweepKey: 'telemetry_events',
+        bounds: { minDays: 30, maxDays: 730 },
+        setting: retentionSetting(11, 180),
+      }),
+      retentionWindow({
+        key: 'job_lifecycle_history',
+        label: 'Job and run history',
+        description: 'Job lifecycle events behind the operations run history.',
+        effectiveDays: 90,
+        source: 'environment_default',
+        configurable: true,
+        environmentVariable: 'OPS_JOB_LIFECYCLE_RETENTION_DAYS',
+        sweepKey: 'job_lifecycle_events',
+        bounds: { minDays: 30, maxDays: 730 },
+      }),
+      retentionWindow({
+        key: 'prompt_output',
+        label: 'Prompt and output content',
+        description: 'Generation input and output payloads.',
+        effectiveDays: null,
+        source: 'policy',
+        configurable: false,
+        fixedReason: 'not yet swept',
+      }),
+      retentionWindow({
+        key: 'access_record',
+        label: 'Access record',
+        description: 'Who looked at privileged operations data.',
+        effectiveDays: null,
+        minimumDays: 90,
+        source: 'policy',
+        configurable: false,
+        fixedReason: '90-day floor enforced by the server.',
+      }),
+      retentionWindow({
+        key: 'audit_log',
+        label: 'Audit log',
+        description: 'Append-only owner and operator actions.',
+        effectiveDays: null,
+        minimumDays: 2555,
+        source: 'policy',
+        configurable: false,
+        fixedReason: 'Append-only audit policy keeps these records for seven years.',
+      }),
+      retentionWindow({
+        key: 'reveal_records',
+        label: 'Reveal records',
+        description: 'Athlete-visible records of personal-field reveals.',
+        effectiveDays: null,
+        source: 'policy',
+        configurable: false,
+        fixedReason: 'Kept for the life of the account.',
+      }),
+    ],
+  };
+}
+
+function overrideFixture(overrides) {
+  return {
+    id: overrides.id,
+    scope: overrides.scope,
+    serviceKey: overrides.serviceKey,
+    serviceName: overrides.serviceName,
+    resourceGroupKey: overrides.resourceGroupKey,
+    resourceGroup: overrides.resourceGroup,
+    category: overrides.category,
+    createdAt: overrides.createdAt || '2026-09-24T17:45:00.000Z',
+    updatedAt: overrides.updatedAt || '2026-09-24T18:00:00.000Z',
+  };
+}
+
+function costCategoriesFixture() {
+  const vmOverride = overrideFixture({
+    id: 17,
+    scope: 'resource_group_service',
+    serviceKey: 'virtual machines',
+    serviceName: 'Virtual Machines',
+    resourceGroupKey: 'rg-aria-dev',
+    resourceGroup: 'rg-aria-dev',
+    category: 'application_compute',
+  });
+  return {
+    categories: Object.keys(CATEGORY_LABELS).map((key) => ({ key, label: CATEGORY_LABELS[key] })),
+    lines: [
+      {
+        serviceName: 'Brand New Azure Thing',
+        serviceKey: 'brand new azure thing',
+        resourceGroup: 'rg-aria-prod',
+        resourceGroupKey: 'rg-aria-prod',
+        seedCategory: null,
+        effectiveCategory: 'ungrouped',
+        source: 'ungrouped',
+        override: null,
+      },
+      {
+        serviceName: 'Storage',
+        serviceKey: 'storage',
+        resourceGroup: 'rg-aria-prod',
+        resourceGroupKey: 'rg-aria-prod',
+        seedCategory: 'data',
+        effectiveCategory: 'data',
+        source: 'seed',
+        override: null,
+      },
+      {
+        serviceName: 'Virtual Machines',
+        serviceKey: 'virtual machines',
+        resourceGroup: 'rg-aria-dev',
+        resourceGroupKey: 'rg-aria-dev',
+        seedCategory: 'ci_and_build',
+        effectiveCategory: 'application_compute',
+        source: 'resource_group_override',
+        override: vmOverride,
+      },
+    ],
+    overrides: [vmOverride],
+  };
+}
+
 /* ---------------------------------------------------------------- the page */
 
 function buildPage(dom, body) {
@@ -379,7 +553,11 @@ async function boot(options) {
       ? sessionSettingsFixture()
       : opts.sessionSettings,
     [AUDIT]: opts.audit === undefined ? auditFixture() : opts.audit,
+    [RETENTION]: opts.retention === undefined ? retentionFixture() : opts.retention,
     [INTEGRATIONS]: opts.integrations === undefined ? integrationsFixture() : opts.integrations,
+    [COST_CATEGORIES]: opts.costCategories === undefined
+      ? costCategoriesFixture()
+      : opts.costCategories,
   };
 
   const dom = makeDom({
@@ -443,6 +621,41 @@ async function boot(options) {
           currentSessionWillEnd: false,
         }));
         const answer = save(o);
+        return answer instanceof Error
+          ? Promise.reject(answer)
+          : Promise.resolve({ data: answer });
+      }
+      if (endpoint.indexOf(RETENTION + '/') === 0) {
+        const save = opts.retentionSave || (() => ({ window: retentionFixture().windows[0] }));
+        const answer = save(endpoint.slice((RETENTION + '/').length), o);
+        return answer instanceof Error
+          ? Promise.reject(answer)
+          : Promise.resolve({ data: answer });
+      }
+      if (endpoint === COST_CATEGORY_OVERRIDES && o && o.method === 'PUT') {
+        const save = opts.costSave || (() => ({
+          override: overrideFixture({
+            id: 22,
+            scope: o.body.scope,
+            serviceKey: String(o.body.serviceName || '').toLowerCase(),
+            serviceName: o.body.serviceName,
+            resourceGroupKey: o.body.resourceGroup || '',
+            resourceGroup: o.body.resourceGroup || null,
+            category: o.body.category,
+            updatedAt: '2026-09-24T18:30:00.000Z',
+          }),
+        }));
+        const answer = save(o);
+        return answer instanceof Error
+          ? Promise.reject(answer)
+          : Promise.resolve({ data: answer });
+      }
+      if (endpoint === COST_CATEGORY_OVERRIDES && o && o.method === 'DELETE') {
+        const clear = opts.costClear || (() => ({
+          deleted: costCategoriesFixture().overrides[0],
+          effective: { category: 'ci_and_build', source: 'seed' },
+        }));
+        const answer = clear(o);
         return answer instanceof Error
           ? Promise.reject(answer)
           : Promise.resolve({ data: answer });
@@ -565,6 +778,39 @@ function sessionWindowsControl(dom, role) {
   return control;
 }
 
+function retentionWindowRow(dom, label) {
+  const card = cardByTitle(dom, 'Data retention');
+  const rows = findAll(card, (n) => n.className === 'ret-row');
+  const row = rows.find((r) => allText(r).includes(label));
+  assert.ok(row, `data retention has no row for ${label}`);
+  return row;
+}
+
+function retentionControl(row, role) {
+  const control = row.querySelector(`[data-role="${role}"]`);
+  assert.ok(control, `retention row has no ${role} control`);
+  return control;
+}
+
+function costTableRow(dom, service) {
+  const card = cardByTitle(dom, 'Cost categories');
+  const body = card.querySelectorAll('tbody')[0];
+  assert.ok(body, 'cost categories has no table body');
+  const row = body.children.find((r) => allText(r).includes(service));
+  assert.ok(row, `cost categories has no row for ${service}`);
+  return row;
+}
+
+function costControl(row, role) {
+  const control = find(row, (n) => n.getAttribute && n.getAttribute('data-role') === role);
+  assert.ok(control, `cost row has no ${role} control`);
+  return control;
+}
+
+function cloneCostCategories() {
+  return JSON.parse(JSON.stringify(costCategoriesFixture()));
+}
+
 /* Every endpoint this boot actually read. DELETE is excluded: a revoke is a
    write, and a card claiming to be filled from one would be claiming
    something it cannot be. */
@@ -580,6 +826,10 @@ function buttonLabels(node) {
   return buttonsIn(node).map((b) => allText(b));
 }
 
+function liveRegionText(dom) {
+  return dom.doc.querySelectorAll('[aria-live]').map((n) => allText(n)).join(' ');
+}
+
 /* ============================================================ the partition */
 
 test('every card says whether it is read from an API, and no card says nothing',
@@ -593,16 +843,12 @@ test('every card says whether it is read from an API, and no card says nothing',
       'a card carrying neither treatment is a card a reader cannot place');
   });
 
-test('the live half and the static half are both real, and the split is not a marker '
-  + 'sprayed on everything', async () => {
+test('the live source marker is real, and any static card is not unmarked', async () => {
   const dom = await boot();
   const live = cards(dom, 'live');
   const still = cards(dom, 'static');
 
-  /* Either set being empty is the failure mode a presence check cannot see:
-     mark every card live and a presence check still passes. */
   assert.ok(live.length > 0, 'no card is marked as read from an API');
-  assert.ok(still.length > 0, 'no card is marked as having no API behind it');
   assert.equal(live.length + still.length, cards(dom).length);
 });
 
@@ -643,35 +889,35 @@ test('a card with no API behind it names no endpoint and prints no numeral at al
     }
   });
 
-test('the source chips differ in their word, not in their colour', async () => {
+test('source chips carry their status in words, not only in colour', async () => {
   const dom = await boot();
   const chipOf = (card) => find(card, (n) => n.className && n.className.indexOf('src-chip') !== -1);
 
   const liveChips = cards(dom, 'live').map(chipOf);
   const staticChips = cards(dom, 'static').map(chipOf);
-  assert.ok(liveChips.length && staticChips.length);
+  assert.ok(liveChips.length);
   assert.ok(liveChips.every(Boolean), 'a live card has no source chip');
   assert.ok(staticChips.every(Boolean), 'a static card has no source chip');
 
-  /* Same classes, so the tone carries none of the distinction and a reader who
-     cannot separate two tints still gets the answer. */
   const classes = new Set(liveChips.concat(staticChips).map((c) => c.className));
   assert.equal(classes.size, 1,
-    `the two chips are styled differently (${[...classes].join(' | ')}), so the split `
+    `source chips are styled differently (${[...classes].join(' | ')}), so the split `
     + 'is being carried by something other than the word');
 
   const words = (chips) => new Set(chips.map((c) => allText(c)));
   assert.deepEqual([...words(liveChips)], ['Live']);
-  assert.deepEqual([...words(staticChips)], ['No API yet']);
+  assert.deepEqual([...words(staticChips)], staticChips.length ? ['No API yet'] : []);
 });
 
-test('the remaining unwired areas Stadiora/Aria#5442 tracks are the static ones', async () => {
+test('the settings cards with deployed routes are all live', async () => {
   const dom = await boot();
   const titles = (source) => cards(dom, source)
     .map((c) => allText(find(c, (n) => n.className === 'card-title'))).sort();
-  assert.deepEqual(titles('static'), ['Cost categories', 'Data retention']);
+  assert.deepEqual(titles('static'), []);
   assert.deepEqual(titles('live'), [
     'Accounts',
+    'Cost categories',
+    'Data retention',
     'Outside connections',
     'Sign-in windows',
     'Signed in now',
@@ -968,6 +1214,760 @@ test('outside connections is a live card filled from the integrations route', as
   assert.ok(readEndpoints(dom).indexOf(INTEGRATIONS) !== -1,
     'the card claims the integrations route without reading it');
 });
+
+/* =========================================================== data retention */
+
+test('data retention is a live card filled from the retention settings route',
+  async () => {
+    const dom = await boot();
+    const card = cardByTitle(dom, 'Data retention');
+
+    assert.equal(card.getAttribute('data-source'), 'live');
+    assert.equal(card.getAttribute('data-endpoint'), RETENTION);
+    assert.ok(readEndpoints(dom).indexOf(RETENTION) !== -1,
+      'the card claims the retention settings route without reading it');
+  });
+
+test('data retention lists configurable, fixed and unswept windows without inventing lengths',
+  async () => {
+    const dom = await boot();
+    const cardText = allText(cardByTitle(dom, 'Data retention'));
+    const activity = retentionWindowRow(dom, 'Activity history');
+    const prompt = retentionWindowRow(dom, 'Prompt and output content');
+    const audit = retentionWindowRow(dom, 'Audit log');
+    const reveal = retentionWindowRow(dom, 'Reveal records');
+
+    assert.match(allText(activity), /180 days/);
+    assert.match(allText(activity), /Your setting/);
+    assert.match(allText(activity), /Configurable/);
+    assert.match(allText(prompt), /Not yet swept/);
+    assert.doesNotMatch(allText(prompt), /\b[0-9]+ days\b/,
+      'prompt/output invented a retention length');
+    assert.match(allText(audit), /Kept permanently/);
+    assert.match(allText(audit), /at least 2,555 days/);
+    assert.match(allText(audit), /Fixed by policy/);
+    assert.match(allText(reveal), /life of the account/i);
+    assert.doesNotMatch(cardText,
+      /raw_telemetry|job_lifecycle_history|prompt_output|environment_default/,
+      'backend retention identifiers leaked into the card copy');
+  });
+
+test('lengthening a retention window sends the new days and optimistic version without confirmation',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = retentionWindowRow(dom, 'Activity history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '210';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT');
+    assert.equal(sent.length, 1, 'saving did not call the retention route once');
+    assert.deepEqual(Object.keys(sent[0].body).sort(), [
+      'expectedUpdatedAt', 'retentionDays',
+    ].sort());
+    assert.equal(sent[0].body.retentionDays, 210);
+    assert.equal(sent[0].body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
+    assert.ok(!dom.doc.querySelector('.modal'), 'lengthening opened a confirmation dialog');
+  });
+
+test('shortening a retention window requires the server phrase and sends it',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = retentionWindowRow(dom, 'Activity history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.deepEqual(dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT'), [], 'shortening wrote before typed confirmation');
+    const dialog = dom.doc.querySelector('.modal');
+    assert.ok(dialog, 'shortening did not open a confirmation dialog');
+    assert.match(allText(dialog), /Rows older than 120 days are deleted on the next nightly pass/);
+    assert.match(allText(dialog), /delete rows on the next nightly pass/);
+
+    dialog.querySelector('.modal-input').value = 'delete rows on the next nightly pass';
+    dialog.dispatch('submit');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT');
+    assert.equal(sent.length, 1, 'confirmed shortening did not call the retention route once');
+    assert.equal(sent[0].body.retentionDays, 120);
+    assert.equal(sent[0].body.confirmation, 'delete rows on the next nightly pass');
+    assert.equal(sent[0].body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
+  });
+
+test('shortening with a wrong phrase stays in the dialog and sends no request',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = retentionWindowRow(dom, 'Activity history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    const dialog = dom.doc.querySelector('.modal');
+    assert.ok(dialog, 'shortening did not open a confirmation dialog');
+    dialog.querySelector('.modal-input').value = 'delete rows tonight';
+    dialog.dispatch('submit');
+    await dom.settle();
+
+    assert.deepEqual(dom.calls.filter((c) => c.endpoint === `${RETENTION}/raw_telemetry`
+      && c.method === 'PUT'), [], 'a wrong confirmation phrase wrote to the server');
+    assert.ok(dom.doc.querySelector('.modal'), 'the dialog closed after the wrong phrase');
+    assert.match(allText(dom.doc.querySelector('.modal')),
+      /Type "delete rows on the next nightly pass" exactly to continue/);
+  });
+
+test('a server-required shortening confirmation reloads and opens a fresh phrase dialog',
+  async () => {
+    let reads = 0;
+    const first = retentionFixture();
+    const fresh = retentionFixture();
+    fresh.shorteningConfirmation = 'confirm the fresh server phrase';
+    fresh.windows = fresh.windows.map((row) => row.key === 'job_lifecycle_history'
+      ? { ...row, effectiveDays: 365, setting: retentionSetting(22, 365, '2026-09-24T19:00:00.000Z') }
+      : row);
+    const required = Object.assign(new Error('raw confirmation text must not render'), {
+      code: 'ops_retention_shortening_confirmation_required',
+      status: 400,
+    });
+    const dom = await boot({
+      retention: () => (++reads === 1 ? first : fresh),
+      retentionSave: () => required,
+      runTimers: false,
+    });
+    const row = retentionWindowRow(dom, 'Job and run history');
+    retentionControl(row, 'retention-days').value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === RETENTION).length, 2,
+      'the missing-confirmation response did not reload retention settings');
+    const reloaded = retentionWindowRow(dom, 'Job and run history');
+    assert.match(allText(reloaded), /365 days/,
+      'the row did not redraw with the freshly loaded retention length');
+    const dialog = dom.doc.querySelector('.modal');
+    assert.ok(dialog, 'the missing-confirmation response did not open the phrase dialog');
+    assert.equal(dom.doc.activeElement, dialog.querySelector('.modal-input'),
+      'focus did not move into the fresh confirmation phrase input');
+    assert.match(allText(dialog), /confirm the fresh server phrase/);
+    assert.match(allText(dialog), /Rows older than 120 days are deleted on the next nightly pass/);
+    assert.doesNotMatch(allText(dialog), /raw confirmation text|ops_retention_shortening_confirmation_required/);
+  });
+
+test('a successful retention save reloads and reports the server window',
+  async () => {
+    let current = retentionFixture();
+    const dom = await boot({
+      retention: () => current,
+      retentionSave: () => {
+        current = retentionFixture();
+        current.windows = current.windows.map((row) => row.key === 'raw_telemetry'
+          ? { ...row, effectiveDays: 240, setting: retentionSetting(11, 240, '2026-09-24T20:00:00.000Z') }
+          : row);
+        return { window: current.windows[0] };
+      },
+      runTimers: false,
+    });
+    const row = retentionWindowRow(dom, 'Activity history');
+    retentionControl(row, 'retention-days').value = '210';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === RETENTION).length, 2,
+      'a successful save did not reload retention settings');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Saved 240 days for Activity history/);
+    assert.doesNotMatch(toast, /Saved 210 days/,
+      'the success toast used the requested value instead of the server response');
+    const reloaded = retentionWindowRow(dom, 'Activity history');
+    assert.match(allText(reloaded), /240 days/);
+    assert.equal(dom.doc.activeElement, retentionControl(reloaded, 'retention-days'),
+      'focus did not return inside the saved retention row');
+  });
+
+test('a stale retention save reloads the pane with fixed copy and restores focus',
+  async () => {
+    const stale = Object.assign(new Error('raw stale backend text must not render'), {
+      code: 'ops_retention_setting_stale',
+      status: 409,
+    });
+    const dom = await boot({ retentionSave: () => stale, runTimers: false });
+    const row = retentionWindowRow(dom, 'Job and run history');
+    const input = retentionControl(row, 'retention-days');
+    input.value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === RETENTION).length, 2,
+      'a stale write did not reload the latest retention settings');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /changed somewhere else/i);
+    assert.doesNotMatch(toast, /raw stale backend text|ops_retention_setting_stale/);
+    const reloaded = retentionWindowRow(dom, 'Job and run history');
+    assert.equal(dom.doc.activeElement, retentionControl(reloaded, 'retention-days'),
+      'focus did not return inside the retention row that was reloaded');
+  });
+
+test('a retention write fresh-auth refusal gets fixed copy, not the raw API text',
+  async () => {
+    const refused = Object.assign(new Error('raw auth backend text must not render'), {
+      code: 'ops_reauth_required',
+      status: 401,
+    });
+    const dom = await boot({ retentionSave: () => refused, runTimers: false });
+    const row = retentionWindowRow(dom, 'Job and run history');
+    retentionControl(row, 'retention-days').value = '120';
+    retentionControl(row, 'retention-save').dispatch('click');
+    await dom.settle();
+
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Confirm your password to change data retention settings/);
+    assert.doesNotMatch(toast, /raw auth backend text|ops_reauth_required/);
+  });
+
+test('retention validation refusals use fixed copy for every server code',
+  async () => {
+    const cases = [
+      ['ops_retention_window_unknown', /no longer known/i],
+      ['ops_retention_window_fixed', /fixed by policy/i],
+      ['ops_retention_days_invalid', /whole number of days/i],
+      ['ops_retention_days_out_of_bounds', /inside the listed bounds/i],
+      ['ops_retention_setting_version_invalid', /missing its latest version/i],
+      ['ops_retention_shortening_confirmation_required', /changed somewhere else/i],
+      ['ops_role_insufficient', /do not have access/i],
+    ];
+
+    for (const [code, copy] of cases) {
+      const err = Object.assign(new Error(`raw ${code} backend text must not render`), {
+        code,
+        status: code === 'ops_role_insufficient' ? 403 : 400,
+      });
+      const dom = await boot({ retentionSave: () => err, runTimers: false });
+      const row = retentionWindowRow(dom, 'Job and run history');
+      retentionControl(row, 'retention-days').value = '120';
+      retentionControl(row, 'retention-save').dispatch('click');
+      await dom.settle();
+
+      const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+      assert.match(toast, copy, `${code} did not render fixed copy`);
+      assert.doesNotMatch(toast, new RegExp(`raw ${code}|${code}`),
+        `${code} leaked raw backend text or code`);
+    }
+  });
+
+test('a retention read failure stays inside that card with fixed copy', async () => {
+  const refused = Object.assign(new Error('raw read backend text must not render'), {
+    code: 'ops_auth_required',
+    status: 401,
+  });
+  const dom = await boot({ retention: refused });
+  const text = allText(cardByTitle(dom, 'Data retention'));
+
+  assert.match(text, /Data retention could not be read/);
+  assert.match(text, /Sign in again to read data retention settings/);
+  assert.doesNotMatch(text, /raw read backend text|ops_auth_required/);
+  assert.match(liveText(dom), /owner@ops\.invalid/,
+    'the account list went away because the retention read failed');
+});
+
+test('a retention role refusal is shown as a denied card, not a raw backend error',
+  async () => {
+    const refused = Object.assign(new Error('raw role backend text must not render'), {
+      code: 'ops_role_insufficient',
+      status: 403,
+    });
+    const dom = await boot({ retention: refused });
+    const text = allText(cardByTitle(dom, 'Data retention'));
+
+    assert.match(text, /do not have access to data retention/i);
+    assert.match(text, /owner role/i);
+    assert.doesNotMatch(text, /raw role backend text|ops_role_insufficient|0 windows/i);
+  });
+
+test('an empty retention read says there are no windows yet', async () => {
+  const dom = await boot({ retention: { shorteningConfirmation: 'delete rows on the next nightly pass', windows: [] } });
+  const text = allText(cardByTitle(dom, 'Data retention'));
+
+  assert.match(text, /No retention windows came back/);
+  assert.match(text, /no retention length is invented/i);
+  assert.doesNotMatch(text, /0 windows/);
+});
+
+/* ========================================================== cost categories */
+
+test('cost categories is a live card filled from the cost-category settings route',
+  async () => {
+    const dom = await boot();
+    const card = cardByTitle(dom, 'Cost categories');
+
+    assert.equal(card.getAttribute('data-source'), 'live');
+    assert.equal(card.getAttribute('data-endpoint'), COST_CATEGORIES);
+    assert.ok(readEndpoints(dom).indexOf(COST_CATEGORIES) !== -1,
+      'the card claims the cost-category settings route without reading it');
+  });
+
+test('cost categories shows defaults, overrides and uncategorised lines without raw codes',
+  async () => {
+    const dom = await boot();
+    const cardText = allText(cardByTitle(dom, 'Cost categories'));
+    const storage = costTableRow(dom, 'Storage');
+    const vm = costTableRow(dom, 'Virtual Machines');
+    const newThing = costTableRow(dom, 'Brand New Azure Thing');
+
+    assert.match(rowCellText(storage, 1), /Data/);
+    assert.match(rowCellText(storage, 2), /Default/);
+    assert.match(rowCellText(vm, 1), /Application compute/);
+    assert.match(rowCellText(vm, 2), /Your override/);
+    assert.match(rowCellText(vm, 0), /rg-aria-dev/);
+    assert.match(rowCellText(newThing, 1), /Uncategorised/);
+    assert.match(rowCellText(newThing, 2), /No default or override/);
+    assert.doesNotMatch(cardText,
+      /resource_group_override|service_override|ci_and_build|application_compute|ungrouped/,
+      'backend identifiers leaked into the card copy');
+  });
+
+test('an uncategorised cost line starts with no category selected and cannot save a guess',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = costTableRow(dom, 'Brand New Azure Thing');
+    const category = costControl(row, 'category');
+    const save = costControl(row, 'save');
+
+    assert.equal(category.value, '', 'an uncategorised line was preloaded with a category');
+    assert.equal(allText(category.children[0]), 'Choose a category',
+      'the first option does not tell the owner a category is still required');
+    assert.equal(save.disabled, true, 'Save is enabled before the owner chooses a category');
+
+    save.dispatch('click');
+    await dom.settle();
+
+    assert.equal(dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT').length, 0,
+    'an untouched uncategorised row wrote the first category as a guess');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Choose a category before saving/i);
+  });
+
+test('saving a cost category sends the selected category, scope and optimistic version',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = costTableRow(dom, 'Storage');
+    costControl(row, 'category').value = 'application_compute';
+    costControl(row, 'scope').value = 'service';
+    costControl(row, 'save').dispatch('click');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT');
+    assert.equal(sent.length, 1, 'saving did not call the override upsert route once');
+    assert.deepEqual(Object.keys(sent[0].body).sort(), [
+      'category', 'expectedUpdatedAt', 'resourceGroup', 'scope', 'serviceName',
+    ].sort());
+    assert.equal(sent[0].body.serviceName, 'Storage');
+    assert.equal(sent[0].body.scope, 'service');
+    assert.equal(sent[0].body.resourceGroup, null);
+    assert.equal(sent[0].body.category, 'application_compute');
+    assert.equal(sent[0].body.expectedUpdatedAt, null);
+
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Saved Application compute for Storage/,
+      'saving did not show a clear confirmation');
+  });
+
+test('a cost-category save announces the category the server saved, not a later selection',
+  async () => {
+    const dom = await boot({
+      costSave: (request) => ({
+        override: overrideFixture({
+          id: 24,
+          scope: request.body.scope,
+          serviceKey: 'storage',
+          serviceName: 'Storage',
+          resourceGroupKey: '',
+          resourceGroup: null,
+          category: 'data',
+          updatedAt: '2026-09-24T18:45:00.000Z',
+        }),
+      }),
+      runTimers: false,
+    });
+    const row = costTableRow(dom, 'Storage');
+    const category = costControl(row, 'category');
+    category.value = 'application_compute';
+    costControl(row, 'scope').value = 'service';
+    costControl(row, 'save').dispatch('click');
+    category.value = 'ci_and_build';
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT')[0];
+    assert.equal(sent.body.category, 'application_compute',
+      'the test did not send a different category than the later select value');
+    const message = /Saved Data for Storage/;
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, message,
+      'the toast announced the select value instead of the saved category');
+    assert.match(liveRegionText(dom), message,
+      'the live region announced the select value instead of the saved category');
+    assert.doesNotMatch(toast + ' ' + liveRegionText(dom), /CI and build|Application compute/);
+  });
+
+test('a cost-category save without a response override announces the category sent',
+  async () => {
+    const dom = await boot({
+      costSave: () => ({}),
+      runTimers: false,
+    });
+    const row = costTableRow(dom, 'Storage');
+    const category = costControl(row, 'category');
+    category.value = 'application_compute';
+    costControl(row, 'scope').value = 'service';
+    costControl(row, 'save').dispatch('click');
+    category.value = 'ci_and_build';
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT')[0];
+    assert.equal(sent.body.category, 'application_compute',
+      'the fallback test did not send a different category than the later select value');
+    const message = /Saved Application compute for Storage/;
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, message,
+      'the toast fallback announced the select value instead of the sent category');
+    assert.match(liveRegionText(dom), message,
+      'the live fallback announced the select value instead of the sent category');
+    assert.doesNotMatch(toast, /CI and build/);
+    assert.doesNotMatch(liveRegionText(dom), /CI and build/);
+  });
+
+test('a cost-category save announces the scope sent, not a later scope selection',
+  async () => {
+    const dom = await boot({ runTimers: false });
+    const row = costTableRow(dom, 'Virtual Machines');
+    const scope = costControl(row, 'scope');
+    costControl(row, 'category').value = 'data';
+    scope.value = 'service';
+    costControl(row, 'save').dispatch('click');
+    scope.value = 'resource_group_service';
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT')[0];
+    assert.equal(sent.body.scope, 'service',
+      'the scope test did not send a different scope than the later select value');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /service-wide default/i,
+      'the toast announced the later scope instead of the sent service-wide scope');
+    assert.match(toast, /keeps its resource-group override/i,
+      'the toast omitted the resource-group override wording for the sent scope');
+    assert.match(liveRegionText(dom), /service-wide default/i,
+      'the live region announced the later scope instead of the sent service-wide scope');
+    assert.match(liveRegionText(dom), /keeps its resource-group override/i,
+      'the live region omitted the resource-group override wording for the sent scope');
+  });
+
+test('a cost-category save restores focus to the reloaded row', async () => {
+    const dom = await boot();
+    const row = costTableRow(dom, 'Storage');
+    const save = costControl(row, 'save');
+    costControl(row, 'category').value = 'application_compute';
+    save.focus();
+    save.dispatch('click');
+    await dom.settle();
+
+    const reloaded = costTableRow(dom, 'Storage');
+    assert.equal(dom.doc.activeElement, costControl(reloaded, 'category'),
+      'focus did not return inside the row that was saved');
+    assert.equal(dom.root.contains(save), false,
+      'the test did not exercise a control that was destroyed by reload');
+});
+
+test('a cost-category reload focuses the card title when the edited line disappears',
+    async () => {
+      let data = cloneCostCategories();
+      const dom = await boot({
+        costCategories: () => data,
+        costSave: () => {
+          data = cloneCostCategories();
+          data.lines = data.lines.filter((line) => line.serviceName !== 'Storage');
+          return {
+            override: overrideFixture({
+              id: 23,
+              scope: 'service',
+              serviceKey: 'storage',
+              serviceName: 'Storage',
+              resourceGroupKey: '',
+              resourceGroup: null,
+              category: 'application_compute',
+            }),
+          };
+        },
+      });
+      const row = costTableRow(dom, 'Storage');
+      costControl(row, 'category').value = 'application_compute';
+      costControl(row, 'scope').value = 'service';
+      costControl(row, 'save').dispatch('click');
+      await dom.settle();
+
+      assert.equal(costTableRow(dom, 'Virtual Machines').parentNode.children
+        .some((r) => allText(r).includes('Storage')), false,
+      'the fixture did not remove the saved line');
+      assert.equal(allText(dom.doc.activeElement), 'Cost categories',
+        'focus did not land on the Cost categories card title after the line disappeared');
+});
+
+test('cost-category resource-group edits default to the most specific scope and include the version',
+    async () => {
+    const dom = await boot();
+    const row = costTableRow(dom, 'Virtual Machines');
+    assert.equal(costControl(row, 'scope').value, 'resource_group_service');
+
+    costControl(row, 'category').value = 'data';
+    costControl(row, 'save').dispatch('click');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'PUT')[0];
+    assert.equal(sent.body.scope, 'resource_group_service');
+    assert.equal(sent.body.serviceName, 'Virtual Machines');
+    assert.equal(sent.body.resourceGroup, 'rg-aria-dev');
+    assert.equal(sent.body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
+  });
+
+test('a service-wide save under a resource-group override says the row keeps that override',
+    async () => {
+      const dom = await boot({ runTimers: false });
+      const row = costTableRow(dom, 'Virtual Machines');
+      costControl(row, 'scope').value = 'service';
+      costControl(row, 'category').value = 'data';
+      costControl(row, 'save').dispatch('click');
+      await dom.settle();
+
+      const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+        && c.method === 'PUT')[0];
+      assert.equal(sent.body.scope, 'service');
+      assert.equal(sent.body.expectedUpdatedAt, null);
+      const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+      assert.match(toast, /service-wide default/i);
+      assert.match(toast, /keeps its resource-group override/i);
+      assert.doesNotMatch(toast, /^Saved Data for Virtual Machines\.$/);
+});
+
+test('using the default clears the effective cost-category override', async () => {
+    const dom = await boot({ runTimers: false });
+  const row = costTableRow(dom, 'Virtual Machines');
+  costControl(row, 'default').dispatch('click');
+  await dom.settle();
+
+  const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+    && c.method === 'DELETE');
+  assert.equal(sent.length, 1, 'Use default did not call the override delete route once');
+  assert.equal(sent[0].body.scope, 'resource_group_service');
+  assert.equal(sent[0].body.serviceName, 'Virtual Machines');
+  assert.equal(sent[0].body.resourceGroup, 'rg-aria-dev');
+  assert.equal(sent[0].body.expectedUpdatedAt, '2026-09-24T18:00:00.000Z');
+
+  const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+  assert.match(toast, /Using the default for Virtual Machines/,
+    'clearing the override did not show a clear confirmation');
+});
+
+test('Use default names and clears a service-wide effective override without scope mismatch',
+  async () => {
+    const data = cloneCostCategories();
+    const serviceOverride = overrideFixture({
+      id: 31,
+      scope: 'service',
+      serviceKey: 'storage',
+      serviceName: 'Storage',
+      resourceGroupKey: '',
+      resourceGroup: null,
+      category: 'application_compute',
+    });
+    data.lines[1] = {
+      ...data.lines[1],
+      effectiveCategory: 'application_compute',
+      source: 'service_override',
+      override: serviceOverride,
+    };
+    data.overrides = [serviceOverride];
+    const dom = await boot({ costCategories: data, runTimers: false });
+    const row = costTableRow(dom, 'Storage');
+    const scope = costControl(row, 'scope');
+    const useDefault = costControl(row, 'default');
+
+    assert.equal(scope.value, 'service',
+      'the row offers to clear a service-wide override while the scope select says resource group');
+    assert.match(allText(useDefault), /all resource groups/i);
+    assert.match(useDefault.getAttribute('aria-label'), /all resource groups/i);
+
+    scope.value = 'resource_group_service';
+    useDefault.dispatch('click');
+    await dom.settle();
+
+    const sent = dom.calls.filter((c) => c.endpoint === COST_CATEGORY_OVERRIDES
+      && c.method === 'DELETE')[0];
+    assert.equal(sent.body.scope, 'service');
+    assert.equal(sent.body.resourceGroup, null);
+    assert.equal(sent.body.serviceName, 'Storage');
+});
+
+test('cost-category control ids stay unique when service and resource keys differ only by punctuation',
+  async () => {
+    const data = cloneCostCategories();
+    data.lines = [
+      {
+        serviceName: 'Punct Dash',
+        serviceKey: 'punct-dash',
+        resourceGroup: 'rg-prod',
+        resourceGroupKey: 'rg-prod',
+        seedCategory: 'data',
+        effectiveCategory: 'data',
+        source: 'seed',
+        override: null,
+      },
+      {
+        serviceName: 'Punct Underscore',
+        serviceKey: 'punct_dash',
+        resourceGroup: 'rg_prod',
+        resourceGroupKey: 'rg_prod',
+        seedCategory: 'data',
+        effectiveCategory: 'data',
+        source: 'seed',
+        override: null,
+      },
+    ];
+    data.overrides = [];
+    const dom = await boot({ costCategories: data });
+    const card = cardByTitle(dom, 'Cost categories');
+    const ids = card.querySelectorAll('[id]').map((node) => node.getAttribute('id'));
+
+    assert.equal(ids.length, new Set(ids).size,
+      `duplicate control ids were rendered: ${ids.join(', ')}`);
+    card.querySelectorAll('label').forEach((label) => {
+      const target = dom.doc.getElementById(label.getAttribute('for'));
+      assert.ok(target, `label target ${label.getAttribute('for')} was not found`);
+      assert.equal(target.parentNode, label.parentNode,
+        'a cost editor label resolved to a control in another row');
+    });
+});
+
+test('a blank cost resource group is reported as missing, not all resource groups',
+  async () => {
+    const data = cloneCostCategories();
+    data.lines[1] = {
+      ...data.lines[1],
+      resourceGroup: '',
+      resourceGroupKey: '',
+    };
+    const dom = await boot({ costCategories: data });
+    const cell = rowCellText(costTableRow(dom, 'Storage'), 0);
+
+    assert.match(cell, /Resource group not reported/);
+    assert.doesNotMatch(cell, /All resource groups/);
+});
+
+test('a stale cost-category save reloads the pane and tells the owner what happened',
+  async () => {
+    const stale = Object.assign(new Error('raw stale backend text must not render'), {
+      code: 'ops_cost_category_override_stale',
+      status: 409,
+    });
+    const dom = await boot({ costSave: () => stale, runTimers: false });
+    const row = costTableRow(dom, 'Virtual Machines');
+    costControl(row, 'category').value = 'data';
+    costControl(row, 'save').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === COST_CATEGORIES).length, 2,
+      'a stale write did not reload the latest cost-category mapping');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /changed somewhere else/i);
+    assert.doesNotMatch(toast, /raw stale backend text|ops_cost_category_override_stale/);
+  });
+
+test('a stale cost-category clear reloads the pane and does not print the backend code',
+  async () => {
+    const stale = Object.assign(new Error('raw stale clear text must not render'), {
+      code: 'ops_cost_category_override_stale',
+      status: 409,
+    });
+    const dom = await boot({ costClear: () => stale, runTimers: false });
+    const row = costTableRow(dom, 'Virtual Machines');
+    costControl(row, 'default').dispatch('click');
+    await dom.settle();
+
+    assert.equal(readEndpoints(dom).filter((endpoint) => endpoint === COST_CATEGORIES).length, 2,
+      'a stale clear did not reload the latest cost-category mapping');
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /changed somewhere else/i);
+    assert.doesNotMatch(toast, /raw stale clear text|ops_cost_category_override_stale/);
+  });
+
+test('a fresh-auth refusal on cost-category save gets fixed copy, not the raw API text',
+  async () => {
+    const reauth = Object.assign(new Error('raw password window text'), {
+      code: 'ops_reauth_required',
+      status: 403,
+    });
+    const dom = await boot({ costSave: () => reauth, runTimers: false });
+    const row = costTableRow(dom, 'Storage');
+    costControl(row, 'category').value = 'application_compute';
+    costControl(row, 'save').dispatch('click');
+    await dom.settle();
+
+    const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
+    assert.match(toast, /Confirm your password to change cost categories/);
+    assert.doesNotMatch(toast, /raw password window text|ops_reauth_required/);
+  });
+
+test('a cost-category read failure stays inside that card with fixed copy', async () => {
+  const noisy = Object.assign(new Error('SQL exploded in production'), {
+    code: 'ops_cost_settings_unavailable',
+  });
+  const dom = await boot({ costCategories: noisy });
+  const text = allText(cardByTitle(dom, 'Cost categories'));
+
+  assert.equal(dom.states[dom.states.length - 1], 'degraded');
+  assert.match(text, /cost category settings could not be read/i);
+  assert.match(text, /Try again/i);
+  assert.doesNotMatch(text, /SQL exploded|ops_cost_settings_unavailable/);
+  assert.match(liveText(dom), /owner@ops\.invalid/,
+    'the account list went away because the cost categories read failed');
+});
+
+test('a cost-category role refusal is shown as a denied card, not a raw backend error',
+  async () => {
+    const refused = Object.assign(new Error('raw owner role text'), {
+      code: 'ops_role_insufficient',
+      status: 403,
+      requiredRoles: ['owner'],
+    });
+    const dom = await boot({ costCategories: refused });
+    const text = allText(cardByTitle(dom, 'Cost categories'));
+
+    assert.match(text, /do not have access/i);
+    assert.match(text, /owner role/i);
+    assert.doesNotMatch(text, /raw owner role text|ops_role_insufficient|0 cost/i);
+  });
+
+test('an empty cost-category read says there are no observed cost lines yet',
+  async () => {
+    const empty = costCategoriesFixture();
+    empty.lines = [];
+    empty.overrides = [];
+    const dom = await boot({ costCategories: empty });
+    const text = allText(cardByTitle(dom, 'Cost categories'));
+
+    assert.match(text, /No observed cost lines yet/i);
+    assert.match(text, /Nothing has been guessed/i);
+    assert.doesNotMatch(text, /\b0 cost/i);
+  });
 
 test('each integration connection state renders as distinct text on its own pill',
   async () => {
@@ -1296,12 +2296,12 @@ test('the retention card keeps the difference between a shorter window and delet
   async () => {
     const dom = await boot();
     const retention = cardByTitle(dom, 'Data retention');
-    assert.equal(retention.getAttribute('data-source'), 'static');
+    assert.equal(retention.getAttribute('data-source'), 'live');
     const text = allText(retention);
     assert.match(text, /deletes rows on the next nightly pass/i);
     assert.match(text, /not a filter on what is read back/i);
     assert.match(text, /fixed by policy/i);
-    assert.match(text, /who looked at an athlete/i,
+    assert.match(text, /who looked at privileged operations data/i,
       'the locked windows do not say why they are locked');
   });
 

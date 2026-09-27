@@ -56,9 +56,10 @@
 <script src="assets/session.js"></script>
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
-<!-- Happening now reads one route directly and needs no shared model: every
-     figure on the page comes out of that single response, so there is nothing
-     here for a second pane to disagree with. It no longer loads
+<script src="assets/job-actions-v2.js"></script>
+<!-- Happening now reads one route directly for its figures. Job action
+     confirmations are shared with What happened, because both panes post to
+     the same job-action routes. It no longer loads
      assets/alerts-model.js, which it used only while it was standing in for a
      queue it could not see.
 

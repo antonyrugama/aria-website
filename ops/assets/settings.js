@@ -14,16 +14,15 @@
    nothing here reads anything until definePane's callback runs.
 
    SECOND, IT SAYS WHICH HALF OF ITSELF IS REAL. Seven areas are on screen and
-   five of them are read from an API: administrators, active sessions, the
-   access record, sign-in windows and outside connections. Retention windows
-   and the cost-category mapping have no endpoint to read or write, so they
-   print no figure at all.
-   They say what is missing and which of "not built" and "not reported"
-   applies. Rendering the remaining static cards as populated tables would be the worst outcome
+   all of them are read from an API: administrators, active sessions, the
+   access record, sign-in windows, data retention, cost categories and outside
+   connections. If a future card has no endpoint, it must say what is missing
+   and which of "not built" and "not reported" applies. Rendering a static
+   card as a populated table would be the worst outcome
    available, because a number nobody can check is indistinguishable from one
-   that came from somewhere. Stadiora/Aria#11214 moves Outside connections
-   across that line; Stadiora/Aria#5442 still tracks the static cards left
-   behind it.
+   that came from somewhere. Stadiora/Aria#11214 moved Outside connections
+   across that line; Stadiora/Aria#11601, #11513 and #11521 moved sign-in
+   windows, cost categories and data retention across the same line.
 
    The split is drawn three ways, and never in colour alone:
 
@@ -32,12 +31,12 @@
      3. a card with nothing behind it contains no numeral, anywhere.
 
    assets/pane-settings-v2.css carries the first two. This file carries the
-   third, which is why the static prose below is written without a single
-   digit in it — that is a rule, not an accident, and changing one of those
+   third, which is why any static prose must be written without a single digit
+   in it — that is a rule, not an accident, and changing one of those
    sentences means keeping it. scripts/ops-settings-v2.test.mjs holds the
    partition in both directions: every card the pane marks as read names an
-   endpoint the pane actually requested, every card it marks as static names
-   none and prints no digit, and neither set is empty.
+   endpoint the pane actually requested, and every card it marks as static
+   names none and prints no digit.
 
    Mutations here are confirmed before they fire, carry the written reason the
    server requires, report what the server actually said, and are followed by a
@@ -57,6 +56,9 @@
   var SESSION_SETTINGS = '/api/ops/settings/sessions';
   var AUDIT = '/api/ops/audit';
   var INTEGRATIONS = '/api/ops/integrations';
+  var RETENTION = '/api/ops/settings/retention';
+  var COST_CATEGORIES = '/api/ops/settings/cost-categories';
+  var COST_CATEGORY_OVERRIDES = '/api/ops/settings/cost-categories/overrides';
   var OPS_SOURCE_PARTS = ['', 'api', 'ops'];
   var AUDIT_PAGE = 50;
 
@@ -79,7 +81,10 @@
     'admin.refresh_failed': 'Sign in refresh failed',
     'admin.refresh_reuse_detected': 'Session token reused',
     'admin.refresh_grace_used': 'Two tabs refreshed at once',
-    'settings.session_windows_update': 'Changed sign-in windows'
+    'settings.session_windows_update': 'Changed sign-in windows',
+    'settings.retention_window_update': 'Changed a retention window',
+    'settings.cost_category_override_upsert': 'Changed a cost category',
+    'settings.cost_category_override_delete': 'Cleared a cost category override'
   };
 
   /* What kind of thing an action was done to, said the way the rest of the
@@ -88,7 +93,9 @@
   var TARGET_LABELS = {
     ops_admin_session: 'sign in session',
     ops_admin_account: 'administrator account',
-    ops_session_settings: 'sign-in window setting'
+    ops_session_settings: 'sign-in window setting',
+    ops_retention_setting: 'retention setting',
+    ops_cost_category_override: 'cost category override'
   };
 
   var INTEGRATION_FAILURE_LABELS = {
@@ -102,6 +109,7 @@
     untrusted_next_link: 'The service returned an unsafe next-page link'
   };
   var INTEGRATION_UNKNOWN_FAILURE = 'An unrecognised failure reason was reported';
+
   var SESSION_SETTINGS_READ_ERRORS = {
     ops_role_insufficient: 'You do not have access to sign-in window settings.',
     ops_auth_required: 'Sign in again to read sign-in window settings.'
@@ -112,6 +120,48 @@
     ops_reauth_required: 'Confirm your password to change sign-in windows.',
     ops_role_insufficient: 'You do not have access to change sign-in windows.',
     ops_session_settings_update_failed: 'The sign-in windows could not be saved. Reload and try again.'
+  };
+
+  var RETENTION_READ_ERRORS = {
+    ops_role_insufficient: 'You do not have access to data retention settings.',
+    ops_auth_required: 'Sign in again to read data retention settings.'
+  };
+  var RETENTION_WRITE_ERRORS = {
+    ops_retention_window_unknown: 'That retention window is no longer known. Reload and try again.',
+    ops_retention_window_fixed: 'That retention window is fixed by policy and cannot be changed here.',
+    ops_retention_days_invalid: 'Enter a whole number of days.',
+    ops_retention_days_out_of_bounds: 'Enter a value inside the listed bounds.',
+    ops_retention_setting_version_invalid: 'This window is missing its latest version. Reload and try again.',
+    ops_retention_shortening_confirmation_required: 'Type the confirmation phrase before shortening this window.',
+    ops_reauth_required: 'Confirm your password to change data retention settings.',
+    ops_role_insufficient: 'You do not have access to change data retention settings.'
+  };
+
+  var COST_CATEGORY_FALLBACK_LABELS = {
+    ci_and_build: 'CI and build',
+    ai_and_models: 'AI and models',
+    data: 'Data',
+    application_compute: 'Application compute',
+    platform_and_observability: 'Platform and observability'
+  };
+  var COST_SOURCE_LABELS = {
+    seed: 'Default',
+    resource_group_override: 'Your override',
+    service_override: 'Your override',
+    ungrouped: 'No default or override'
+  };
+  var COST_READ_ERRORS = {
+    ops_role_insufficient: 'You do not have access to cost categories.',
+    ops_auth_required: 'Sign in again to read cost categories.'
+  };
+  var COST_WRITE_ERRORS = {
+    ops_cost_category_invalid: 'Choose one of the listed cost categories.',
+    ops_cost_category_scope_invalid: 'Choose whether the change applies here or to the service.',
+    ops_cost_service_invalid: 'Choose the Azure service this change applies to.',
+    ops_cost_resource_group_invalid: 'Choose a resource group for this scoped change.',
+    ops_cost_category_override_version_invalid: 'This row is missing its latest version. Reload and try again.',
+    ops_reauth_required: 'Confirm your password to change cost categories.',
+    ops_role_insufficient: 'You do not have access to change cost categories.'
   };
 
   /* ------------------------------------------------------------ formatting */
@@ -465,7 +515,11 @@
          round trip. It is not the check that matters: that one is the
          server's, and it still runs. */
       if (!text) {
-        controller.fail('Give a reason. It is recorded with this action.');
+        controller.fail(opts.emptyMessage || 'Give a reason. It is recorded with this action.');
+        return;
+      }
+      if (opts.expectedValue && text !== opts.expectedValue) {
+        controller.fail('Type "' + opts.expectedValue + '" exactly to continue.');
         return;
       }
       reason.removeAttribute('aria-invalid');
@@ -482,6 +536,9 @@
   S.definePane('settings', function (content) {
     var region = S.region(content);
     var loadToken = 0;
+    var costFocusAfterLoad = null;
+    var retentionFocusAfterLoad = null;
+    var sessionSettingsFocusAfterLoad = false;
 
     /* The access record pages in place, so its rows outlive a redraw of the
        card they sit in and the controls that describe the state of the record
@@ -499,7 +556,6 @@
       host: null, rows: [], offset: 0, more: false, busy: false, pending: false, seen: null,
       token: 0
     };
-    var sessionSettingsFocusAfterLoad = false;
 
     /* ---------------------------------------------------------------- reads */
 
@@ -563,17 +619,19 @@
         soft(session.call(SESSIONS)),
         softObject(session.call(SESSION_SETTINGS)),
         soft(session.call(AUDIT, { query: { limit: AUDIT_PAGE, offset: 0 } })),
+        softObject(session.call(RETENTION)),
+        softObject(session.call(COST_CATEGORIES)),
         softObject(session.call(INTEGRATIONS))
       ]).then(function (results) {
         if (token !== loadToken) return;
-        render(results[0], results[1], results[2], results[3], results[4]);
+        render(results[0], results[1], results[2], results[3], results[4], results[5], results[6]);
       }, function (err) {
         if (token !== loadToken) return;
         region.failed(err, load);
       });
     }
 
-    function render(adminRows, sessionResult, sessionSettingsResult, recordResult, integrationResult) {
+    function render(adminRows, sessionResult, sessionSettingsResult, recordResult, retentionResult, costResult, integrationResult) {
       var admins = Array.isArray(adminRows) ? adminRows : [];
 
       /* Empty is a real state with a real trigger, and here it is a narrow
@@ -588,20 +646,22 @@
       }
 
       var sessions = sessionResult.rows || [];
-      var degraded = !!(sessionResult.error || sessionSettingsResult.error ||
-        recordResult.error || integrationResult.error);
+      var degraded = !!(sessionResult.error || sessionSettingsResult.error || recordResult.error ||
+        retentionResult.error || costResult.error || integrationResult.error);
 
       var stack = h('div', { className: 'stack' });
       stack.appendChild(hero(admins, sessions, sessionResult.error));
       stack.appendChild(administratorsBand(admins, sessions, sessionResult));
       stack.appendChild(sessionsBand(admins, sessions, sessionResult));
       stack.appendChild(recordBand(recordResult));
-      stack.appendChild(keepBand(sessionSettingsResult));
+      stack.appendChild(keepBand(sessionSettingsResult, retentionResult, costResult));
       stack.appendChild(integrationsBand(integrationResult));
 
       if (degraded) region.degraded(stack);
       else region.show(stack);
       restoreSessionSettingsFocus(stack);
+      restoreRetentionFocus(stack);
+      restoreCostFocus(stack);
     }
 
     function nothingBehindIt() {
@@ -1758,41 +1818,782 @@
       return host;
     }
 
-    /* --------------------------------------------- what nothing serves yet
+    /* ------------------------------------------------------- data retention */
 
-       Every static string below is written without a digit in it, on purpose. See the
-       third rule in this file's opening block: a card with no API behind it
-       prints no numeral, so that no figure on this pane can be read as
-       measured when it was typed. */
+    function retentionData(result) {
+      return result && result.data ? result.data : {};
+    }
 
-    function keepBand(sessionSettingsResult) {
+    function retentionRows(result) {
+      var rows = retentionData(result).windows;
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function daysWords(days) {
+      return fmt.plural(days, 'day');
+    }
+
+    function retentionUnswept(row) {
+      return row && row.fixedReason === 'not yet swept';
+    }
+
+    function retentionLength(row) {
+      if (retentionUnswept(row)) {
+        return 'Not yet swept';
+      }
+      if (!row || row.effectiveDays === null || row.effectiveDays === undefined) {
+        return 'Kept permanently';
+      }
+      return daysWords(row.effectiveDays);
+    }
+
+    function retentionMinimum(row) {
+      if (!row || row.minimumDays === null || row.minimumDays === undefined) return null;
+      return 'at least ' + daysWords(row.minimumDays);
+    }
+
+    function retentionSourceLabel(row) {
+      if (!row) return 'Source not reported';
+      if (row.source === 'setting') return 'Your setting';
+      if (row.source === 'environment_default') return 'Default';
+      if (row.source === 'policy') return 'Fixed by policy';
+      return 'Source not reported';
+    }
+
+    function retentionWriteMessage(err) {
+      if (err && RETENTION_WRITE_ERRORS[err.code]) return RETENTION_WRITE_ERRORS[err.code];
+      return 'The retention window could not be saved. Reload and try again.';
+    }
+
+    function retentionReadMessage(err) {
+      if (err && RETENTION_READ_ERRORS[err.code]) return RETENTION_READ_ERRORS[err.code];
+      if (err && (err.status === 403 || err.code === 'ops_role_insufficient')) {
+        return RETENTION_READ_ERRORS.ops_role_insufficient;
+      }
+      return 'The data retention settings could not be read. Try again.';
+    }
+
+    function retentionSettingVersion(row) {
+      return row && row.setting ? row.setting.updatedAt || null : null;
+    }
+
+    function retentionBounds(row) {
+      var bounds = row && row.bounds ? row.bounds : {};
+      return {
+        min: bounds.minDays === null || bounds.minDays === undefined ? null : Number(bounds.minDays),
+        max: bounds.maxDays === null || bounds.maxDays === undefined ? null : Number(bounds.maxDays)
+      };
+    }
+
+    function retentionFocusKey(row) {
+      return String(row && row.key ? row.key : '');
+    }
+
+    function retentionRestoreAfterReload(row, action) {
+      retentionFocusAfterLoad = { key: retentionFocusKey(row) };
+      if (action && action.confirmDays !== undefined) {
+        retentionFocusAfterLoad.confirmDays = action.confirmDays;
+      }
+      load();
+    }
+
+    function restoreRetentionFocus(stack) {
+      if (!retentionFocusAfterLoad) return;
+      var pending = retentionFocusAfterLoad;
+      var target = stack.querySelector('[data-role="retention-days"][data-retention-key="' +
+        pending.key + '"]');
+      if (!target) {
+        var card = stack.querySelector('[data-endpoint="' + RETENTION + '"]');
+        target = card && card.querySelector('.card-title');
+        if (target && !target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      }
+      retentionFocusAfterLoad = null;
+      if (target && pending.confirmDays !== undefined) {
+        target.value = String(pending.confirmDays);
+        var effective = Number(target.getAttribute('data-retention-effective-days'));
+        if (Number.isFinite(effective) && pending.confirmDays < effective) {
+          var row = target.closest && target.closest('.ret-row');
+          var save = row && row.querySelector('[data-role="retention-save"]');
+          if (save.dispatch) save.dispatch('click');
+          else if (save.click) save.click();
+          else save.dispatchEvent(new Event('click', { bubbles: true }));
+          return;
+        }
+      }
+      if (target && target.focus) target.focus();
+    }
+
+    function retentionFailureBody(err, retry) {
+      var body = h('div', { className: 'card-body' });
+      var block = S.stateBlock('warn', 'Data retention could not be read', [
+        retentionReadMessage(err),
+        'Nothing here is a zero. These windows are unread, not absent.'
+      ], 4);
+      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
+      again.addEventListener('click', retry);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      body.appendChild(block);
+      return body;
+    }
+
+    function retentionDeniedBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('lock', 'You do not have access to data retention', [
+        'Retention settings are limited to the owner role.',
+        'No retention window is changed from this page.'
+      ], 4));
+      return body;
+    }
+
+    function noRetentionBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('empty', 'No retention windows came back', [
+        'The route answered, but it did not name any windows.',
+        'Nothing here is zero-filled, and no retention length is invented.'
+      ], 4));
+      return body;
+    }
+
+    function retentionDeniedError(err) {
+      return err && (err.code === 'ops_role_insufficient' || err.status === 403);
+    }
+
+    function retentionInput(row, index) {
+      var bounds = retentionBounds(row);
+      var id = 'retentionDays-' + index;
+      var label = h('label', {
+        className: 'ret-field-label', 'for': id, text: 'Days to keep'
+      });
+      var input = h('input', {
+        className: 'ret-input', id: id, type: 'number', step: '1',
+        'data-role': 'retention-days',
+        'data-retention-key': retentionFocusKey(row),
+        'aria-label': 'Days to keep ' + row.label
+      });
+      input.value = String(row.effectiveDays);
+      if (row.effectiveDays !== null && row.effectiveDays !== undefined) {
+        input.setAttribute('data-retention-effective-days', String(row.effectiveDays));
+      }
+      if (bounds.min !== null && isFinite(bounds.min)) input.setAttribute('min', String(bounds.min));
+      if (bounds.max !== null && isFinite(bounds.max)) input.setAttribute('max', String(bounds.max));
+      return h('div', { className: 'ret-field' }, [label, input]);
+    }
+
+    function retentionBoundsText(row) {
+      var bounds = retentionBounds(row);
+      if (bounds.min !== null && bounds.max !== null) {
+        return 'Allowed range: ' + daysWords(bounds.min) + ' to ' + daysWords(bounds.max) + '.';
+      }
+      if (bounds.min !== null) return 'Minimum: ' + daysWords(bounds.min) + '.';
+      if (bounds.max !== null) return 'Maximum: ' + daysWords(bounds.max) + '.';
+      return 'No editable bounds were reported.';
+    }
+
+    function retentionAction(row, phrase, index) {
+      var form = h('div', { className: 'ret-editor' });
+      var field = retentionInput(row, index);
+      var input = field.querySelector('[data-role="retention-days"]');
+      var save = h('button', {
+        className: 'btn btn-sm btn-primary', type: 'button', text: 'Save',
+        'data-role': 'retention-save',
+        'aria-label': 'Save retention window for ' + row.label
+      });
+      var status = h('div', {
+        className: 'ret-status', role: 'status', 'aria-live': 'polite',
+        text: retentionBoundsText(row)
+      });
+
+      function value() {
+        var n = Number(input.value);
+        return Number.isInteger(n) ? n : null;
+      }
+
+      function lock(on, word) {
+        save.disabled = on;
+        save.textContent = on ? word : 'Save';
+      }
+
+      function refuse(message) {
+        status.textContent = message;
+        input.setAttribute('aria-invalid', 'true');
+        S.toast('warn', message);
+        S.announce(message);
+      }
+
+      function send(days, confirmation, dialog) {
+        lock(true, 'Saving');
+        input.removeAttribute('aria-invalid');
+        var body = {
+          retentionDays: days,
+          expectedUpdatedAt: retentionSettingVersion(row)
+        };
+        if (confirmation !== undefined) body.confirmation = confirmation;
+        session.call(RETENTION + '/' + encodeURIComponent(row.key), {
+          method: 'PUT',
+          body: body
+        }).then(function (payload) {
+          var saved = payload && payload.data && payload.data.window;
+          var savedDays = saved && saved.effectiveDays !== null && saved.effectiveDays !== undefined
+            ? Number(saved.effectiveDays)
+            : days;
+          var savedLabel = saved && saved.label ? saved.label : row.label;
+          var message = 'Saved ' + daysWords(savedDays) + ' for ' + savedLabel + '.';
+          if (dialog) dialog.close();
+          S.toast('check', message);
+          S.announce(message);
+          retentionRestoreAfterReload(row);
+        }, function (err) {
+          lock(false);
+          if (err && err.code === 'ops_retention_setting_stale') {
+            var stale = 'That retention window changed somewhere else. The pane is reloading.';
+            if (dialog) dialog.close();
+            S.toast('warn', stale);
+            S.announce(stale);
+            retentionRestoreAfterReload(row);
+            return;
+          }
+          if (!dialog && err && err.code === 'ops_retention_shortening_confirmation_required') {
+            var refresh = 'That retention window changed somewhere else. The pane is reloading.';
+            S.toast('warn', refresh);
+            S.announce(refresh);
+            retentionRestoreAfterReload(row, { confirmDays: days });
+            return;
+          }
+          var message = retentionWriteMessage(err);
+          status.textContent = message;
+          if (dialog) {
+            dialog.fail(message);
+            return;
+          }
+          S.toast('warn', message);
+          S.announce(message);
+        });
+      }
+
+      save.addEventListener('click', function () {
+        var days = value();
+        var bounds = retentionBounds(row);
+        if (days === null) {
+          refuse('Enter a whole number of days.');
+          return;
+        }
+        if ((bounds.min !== null && days < bounds.min) ||
+          (bounds.max !== null && days > bounds.max)) {
+          refuse('Enter a value inside the listed bounds.');
+          return;
+        }
+        if (row.effectiveDays !== null && row.effectiveDays !== undefined &&
+          days < row.effectiveDays) {
+          confirmAction({
+            title: 'Shorten ' + row.label,
+            lines: [
+              'Rows older than ' + daysWords(days) + ' are deleted on the next nightly pass.',
+              'This changes what the sweep is allowed to delete. It is not a filter on what is read back.'
+            ],
+            reasonLabel: 'Type "' + phrase + '"',
+            inputHint: 'Type the phrase exactly. The server checks it before saving.',
+            emptyMessage: 'Type the confirmation phrase before shortening this window.',
+            expectedValue: phrase,
+            confirmLabel: 'Shorten window',
+            focusOnClose: function () { return input; },
+            onConfirm: function (text, dialog) {
+              send(days, text, dialog);
+            }
+          });
+          return;
+        }
+        send(days, undefined);
+      });
+
+      form.appendChild(field);
+      form.appendChild(h('div', { className: 'ret-actions' }, [save]));
+      form.appendChild(status);
+      return form;
+    }
+
+    function retentionRow(row, phrase, index) {
+      var item = h('div', { className: 'ret-row' });
+      var main = h('div', { className: 'ret-main' });
+      main.appendChild(h('div', { className: 't-main', text: row.label || row.key || 'Unnamed window' }));
+      main.appendChild(h('div', {
+        className: 't-sub',
+        text: row.description || 'No description was reported.'
+      }));
+      if (!row.configurable && row.fixedReason) {
+        main.appendChild(h('div', {
+          className: 't-sub',
+          text: retentionUnswept(row)
+            ? 'No sweep owns this content yet.'
+            : row.fixedReason
+        }));
+      }
+
+      var meta = h('div', { className: 'ret-meta' });
+      var length = h('div', { className: 'num strong', text: retentionLength(row) });
+      var minimum = retentionMinimum(row);
+      if (minimum) length.appendChild(h('span', { className: 't-sub', text: minimum }));
+      meta.appendChild(length);
+      meta.appendChild(pill(row.configurable ? 'acc' : 'vio',
+        row.configurable ? 'gear' : 'lock',
+        row.configurable ? 'Configurable' : 'Locked'));
+      meta.appendChild(pill('ghost', null, retentionSourceLabel(row)));
+
+      item.appendChild(main);
+      item.appendChild(meta);
+      if (row.configurable) item.appendChild(retentionAction(row, phrase, index));
+      return item;
+    }
+
+    function retentionList(result) {
+      var data = retentionData(result);
+      var phrase = data.shorteningConfirmation || 'delete rows on the next nightly pass';
+      var rows = retentionRows(result);
+      var body = h('div', { className: 'card-body' });
+      var list = h('div', { className: 'ret-list' });
+      rows.forEach(function (row, index) {
+        list.appendChild(retentionRow(row, phrase, index));
+      });
+      body.appendChild(list);
+      return body;
+    }
+
+    function retentionCard(result) {
+      var host = liveCard('settings/retention', 'Data retention',
+        'Windows, and which of them are fixed');
+      var rows = retentionRows(result);
+      if (result && retentionDeniedError(result.error)) {
+        host.appendChild(retentionDeniedBody());
+      } else if (result && result.error) {
+        host.appendChild(retentionFailureBody(result.error, load));
+      } else if (!rows.length) {
+        host.appendChild(noRetentionBody());
+      } else {
+        host.appendChild(retentionList(result));
+        host.appendChild(cardFoot(
+          'Shortening a configurable window deletes rows on the next nightly pass. ' +
+            'It is not a filter on what is read back.',
+          'info'));
+      }
+      return host;
+    }
+
+    /* ------------------------------------------------------- cost mapping */
+
+    function costData(result) {
+      return result && result.data ? result.data : {};
+    }
+
+    function costCategories(result) {
+      var rows = costData(result).categories;
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function costLines(result) {
+      var rows = costData(result).lines;
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function costOverrides(result) {
+      var rows = costData(result).overrides;
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function costLabelMap(result) {
+      var labels = {};
+      costCategories(result).forEach(function (category) {
+        if (category && category.key) {
+          labels[category.key] = category.label || COST_CATEGORY_FALLBACK_LABELS[category.key] ||
+            String(category.key);
+        }
+      });
+      Object.keys(COST_CATEGORY_FALLBACK_LABELS).forEach(function (key) {
+        if (!labels[key]) labels[key] = COST_CATEGORY_FALLBACK_LABELS[key];
+      });
+      return labels;
+    }
+
+    function costCategoryLabel(key, labels) {
+      if (key === 'ungrouped') return 'Uncategorised';
+      return labels[key] || String(key || 'Unknown category');
+    }
+
+    function costOverrideKey(scope, serviceKey, resourceGroupKey) {
+      return String(scope || '') + '|' + String(serviceKey || '') + '|' +
+        String(resourceGroupKey || '');
+    }
+
+    function costOverrideIndex(result) {
+      var out = {};
+      costOverrides(result).forEach(function (override) {
+        if (!override) return;
+        out[costOverrideKey(override.scope, override.serviceKey, override.resourceGroupKey)] =
+          override;
+      });
+      return out;
+    }
+
+    function costOverrideFor(line, scope, index) {
+      if (!line) return null;
+      var resourceKey = scope === 'resource_group_service' ? line.resourceGroupKey : '';
+      return index[costOverrideKey(scope, line.serviceKey, resourceKey)] || null;
+    }
+
+    function costSourceLabel(line) {
+      return COST_SOURCE_LABELS[line && line.source] || 'Source not reported';
+    }
+
+    function costScopeDefault(line) {
+      if (line && line.override && line.override.scope) return line.override.scope;
+      return line && line.resourceGroup ? 'resource_group_service' : 'service';
+    }
+
+    function costLineFocusKey(line) {
+      if (!line) return '';
+      return String(line.serviceKey || line.serviceName || '') + '|' +
+        String(line.resourceGroupKey || line.resourceGroup || '');
+    }
+
+    function costRestoreAfterReload(line) {
+      costFocusAfterLoad = { key: costLineFocusKey(line) };
+      load();
+    }
+
+    function restoreCostFocus(stack) {
+      if (!costFocusAfterLoad) return;
+      var target = stack.querySelector('[data-role="category"][data-cost-line-key="' +
+        costFocusAfterLoad.key.replace(/"/g, '\\"') + '"]');
+      if (!target) {
+        var card = stack.querySelector('[data-endpoint="' + COST_CATEGORIES + '"]');
+        target = card && card.querySelector('.card-title');
+        if (target && !target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      }
+      costFocusAfterLoad = null;
+      if (target && target.focus) target.focus();
+    }
+
+    function costReadMessage(err) {
+      if (err && COST_READ_ERRORS[err.code]) return COST_READ_ERRORS[err.code];
+      if (err && (err.status === 403 || err.code === 'ops_role_insufficient')) {
+        return COST_READ_ERRORS.ops_role_insufficient;
+      }
+      return 'The cost category settings could not be read. Try again.';
+    }
+
+    function costWriteMessage(err) {
+      if (err && COST_WRITE_ERRORS[err.code]) return COST_WRITE_ERRORS[err.code];
+      return 'The cost category settings could not be saved. Reload and try again.';
+    }
+
+    function costFailureBody(err, retry) {
+      var body = h('div', { className: 'card-body' });
+      var block = S.stateBlock('warn', 'Cost categories could not be read', [
+        costReadMessage(err),
+        'Nothing here is a zero. These rows are unread, not absent.'
+      ], 4);
+      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
+      again.addEventListener('click', retry);
+      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      body.appendChild(block);
+      return body;
+    }
+
+    function costDeniedBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('lock', 'You do not have access to cost categories', [
+        'The cost-category mapping is limited to the owner role.',
+        'Nothing here is zero-filled, and no category is guessed.'
+      ], 4));
+      return body;
+    }
+
+    function noCostLinesBody() {
+      var body = h('div', { className: 'card-body' });
+      body.appendChild(S.stateBlock('empty', 'No observed cost lines yet', [
+        'The route answered, but it did not return any Azure service lines.',
+        'Nothing has been guessed. A new service stays out of the five categories until the owner maps it.'
+      ], 4));
+      return body;
+    }
+
+    function costScopeSelect(line, index) {
+      var id = 'costScope-' + index;
+      var label = h('label', {
+        className: 'cost-field-label', 'for': id, text: 'Scope'
+      });
+      var select = h('select', {
+        className: 'cost-select', id: id, 'data-role': 'scope',
+        'aria-label': 'Scope for ' + line.serviceName
+      });
+      if (line.resourceGroup) {
+        select.appendChild(h('option', {
+          value: 'resource_group_service',
+          text: 'This resource group only'
+        }));
+      }
+      select.appendChild(h('option', { value: 'service', text: 'This service everywhere' }));
+      select.value = costScopeDefault(line);
+      return h('div', { className: 'cost-field' }, [label, select]);
+    }
+
+    function costCategorySelect(line, labels, categories, index) {
+      var id = 'costCategory-' + index;
+      var label = h('label', {
+        className: 'cost-field-label', 'for': id, text: 'Category'
+      });
+      var select = h('select', {
+        className: 'cost-select', id: id, 'data-role': 'category',
+        'aria-label': 'Category for ' + line.serviceName,
+        'data-cost-line-key': costLineFocusKey(line)
+      });
+      if (line.effectiveCategory === 'ungrouped') {
+        select.appendChild(h('option', { value: '', text: 'Choose a category' }));
+      }
+      categories.forEach(function (category) {
+        select.appendChild(h('option', {
+          value: category.key,
+          text: costCategoryLabel(category.key, labels)
+        }));
+      });
+      select.value = line.effectiveCategory === 'ungrouped' ? '' : line.effectiveCategory;
+      return h('div', { className: 'cost-field' }, [label, select]);
+    }
+
+    function costClearLabel(override) {
+      if (!override) return 'Use default';
+      return override.scope === 'service'
+        ? 'Use default (removes the override for all resource groups)'
+        : 'Use default (removes the override for this resource group)';
+    }
+
+    function costResourceGroupLabel(line) {
+      return line && line.resourceGroup
+        ? 'Resource group ' + line.resourceGroup
+        : 'Resource group not reported';
+    }
+
+    function costSaveSuccessMessage(line, scopeValue, categoryValue, labels) {
+      var label = costCategoryLabel(categoryValue, labels);
+      if (scopeValue === 'service' && line.override &&
+        line.override.scope === 'resource_group_service') {
+        return 'Saved ' + label + ' as the service-wide default for ' +
+          line.serviceName + '. This line keeps its resource-group override.';
+      }
+      return 'Saved ' + label + ' for ' + line.serviceName + '.';
+    }
+
+    function costActionCell(result, line, index) {
+      var labels = costLabelMap(result);
+      var categories = costCategories(result);
+      var overrides = costOverrideIndex(result);
+      var cell = h('td', { className: 'cell-wrap' });
+      var form = h('div', { className: 'cost-editor' });
+      var categoryField = costCategorySelect(line, labels, categories, index);
+      var scopeField = costScopeSelect(line, index);
+      var category = categoryField.querySelector('[data-role="category"]');
+      var scope = scopeField.querySelector('[data-role="scope"]');
+      var save = h('button', {
+        className: 'btn btn-sm btn-primary', type: 'button', text: 'Save',
+        'data-role': 'save',
+        'aria-label': 'Save category for ' + line.serviceName
+      });
+      var useDefault = h('button', {
+        className: 'btn btn-sm', type: 'button', text: costClearLabel(line.override),
+        'data-role': 'default',
+        'aria-label': costClearLabel(line.override) + ' for ' + line.serviceName
+      });
+      var busy = false;
+
+      function selectedScope() {
+        return scope.value === 'service' ? 'service' : 'resource_group_service';
+      }
+
+      function selectedOverride() {
+        return costOverrideFor(line, selectedScope(), overrides);
+      }
+
+      function targetBody(expected) {
+        var s = selectedScope();
+        return {
+          scope: s,
+          serviceName: line.serviceName,
+          resourceGroup: s === 'resource_group_service' ? line.resourceGroup : null,
+          category: category.value,
+          expectedUpdatedAt: expected
+        };
+      }
+
+      function updateControlState() {
+        save.disabled = busy || !category.value;
+        useDefault.disabled = busy || !line.override;
+      }
+
+      function lock(on, word) {
+        busy = on;
+        updateControlState();
+        save.textContent = on ? word : 'Save';
+      }
+
+      category.addEventListener('change', updateControlState);
+      updateControlState();
+
+      save.addEventListener('click', function () {
+        if (!category.value) {
+          var choose = 'Choose a category before saving.';
+          S.toast('warn', choose);
+          S.announce(choose);
+          return;
+        }
+        var override = selectedOverride();
+        var expected = override ? override.updatedAt : null;
+        var body = targetBody(expected);
+        var saveScope = body.scope;
+        lock(true, 'Saving');
+        session.call(COST_CATEGORY_OVERRIDES, {
+          method: 'PUT',
+          body: body
+        }).then(function (payload) {
+          var saved = payload && payload.data && payload.data.override
+            ? payload.data.override.category
+            : body.category;
+          var message = costSaveSuccessMessage(line, saveScope, saved, labels);
+          S.toast('check', message);
+          S.announce(message);
+          costRestoreAfterReload(line);
+        }, function (err) {
+          lock(false);
+          if (err && err.code === 'ops_cost_category_override_stale') {
+            var stale = 'That cost-category row changed somewhere else. The pane is reloading.';
+            S.toast('warn', stale);
+            S.announce(stale);
+            costRestoreAfterReload(line);
+            return;
+          }
+          var message = costWriteMessage(err);
+          S.toast('warn', message);
+          S.announce(message);
+        });
+      });
+
+      useDefault.addEventListener('click', function () {
+        var override = line.override;
+        if (!override) return;
+        save.disabled = true;
+        useDefault.disabled = true;
+        useDefault.textContent = 'Clearing';
+        session.call(COST_CATEGORY_OVERRIDES, {
+          method: 'DELETE',
+          body: {
+            scope: override.scope,
+            serviceName: override.serviceName || line.serviceName,
+            resourceGroup: override.scope === 'resource_group_service'
+              ? override.resourceGroup || line.resourceGroup
+              : null,
+            expectedUpdatedAt: override.updatedAt
+          }
+        }).then(function () {
+          var message = override.scope === 'service'
+            ? 'Using the default for ' + line.serviceName + ' across all resource groups.'
+            : 'Using the default for ' + line.serviceName + ' in this resource group.';
+          S.toast('check', message);
+          S.announce(message);
+          costRestoreAfterReload(line);
+        }, function (err) {
+          save.disabled = false;
+          useDefault.disabled = false;
+          useDefault.textContent = 'Use default';
+          if (err && err.code === 'ops_cost_category_override_stale') {
+            var stale = 'That cost-category row changed somewhere else. The pane is reloading.';
+            S.toast('warn', stale);
+            S.announce(stale);
+            costRestoreAfterReload(line);
+            return;
+          }
+          var message = costWriteMessage(err);
+          S.toast('warn', message);
+          S.announce(message);
+        });
+      });
+
+      form.appendChild(categoryField);
+      form.appendChild(scopeField);
+      form.appendChild(h('div', { className: 'cost-actions' }, [save, useDefault]));
+      cell.appendChild(form);
+      return cell;
+    }
+
+    function costCategoriesTable(result) {
+      var labels = costLabelMap(result);
+      var tbl = table([
+        { label: 'Cost line' }, { label: 'Category' }, { label: 'Source' },
+        { label: 'Edit', right: true }
+      ]);
+      var tbody = bodyOf(tbl);
+      costLines(result).forEach(function (line, index) {
+        var row = h('tr');
+        var name = h('td');
+        name.appendChild(h('div', {
+          className: 't-main',
+          text: line.serviceName || 'Unnamed Azure service'
+        }));
+        name.appendChild(h('div', {
+          className: 't-sub',
+          text: costResourceGroupLabel(line)
+        }));
+        row.appendChild(name);
+        row.appendChild(h('td', {}, [
+          pill(line.effectiveCategory === 'ungrouped' ? 'warn' : '', null,
+            costCategoryLabel(line.effectiveCategory, labels))
+        ]));
+        row.appendChild(h('td', { className: 'cell-wrap' }, [
+          h('div', { className: 't-main', text: costSourceLabel(line) }),
+          h('div', {
+            className: 't-sub',
+            text: line.source === 'ungrouped'
+              ? 'No category is guessed for this line'
+              : line.source === 'seed'
+                ? 'Seed mapping'
+                : line.override && line.override.scope === 'service'
+                  ? 'Service-wide override'
+                  : 'Resource-group override'
+          })
+        ]));
+        row.appendChild(costActionCell(result, line, index));
+        tbody.appendChild(row);
+      });
+      return tableWrap('Cost category mapping', tbl);
+    }
+
+    function costCategoriesCard(result) {
+      var lines = costLines(result);
+      var host = liveCard('settings/cost-categories', 'Cost categories', result && result.error
+        ? 'Could not be read'
+        : lines.length
+          ? fmt.plural(lines.length, 'cost line')
+          : 'No observed cost lines yet');
+
+      if (result && deniedIntegrationError(result.error)) {
+        host.appendChild(costDeniedBody());
+      } else if (result && result.error) {
+        host.appendChild(costFailureBody(result.error, load));
+      } else if (!lines.length) {
+        host.appendChild(noCostLinesBody());
+      } else {
+        host.appendChild(costCategoriesTable(result));
+        host.appendChild(cardFoot(
+          'The current mapping applies to every period Cloud costs shows. A new service is not guessed into a category.',
+          'info'));
+      }
+
+      return host;
+    }
+
+    function keepBand(sessionSettingsResult, retentionResult, costResult) {
       var band = S.band('What we keep, and for how long');
       var grid = h('div', { className: 'grid g2' });
 
       grid.appendChild(sessionSettingsCard(sessionSettingsResult));
-
-      grid.appendChild(staticCard(
-        'Data retention', 'Windows, and which of them are fixed',
-        ['No API reports the windows in force, so a length printed here would be invented.'],
-        [
-          'Some windows are configurable. The access record and the reveal record are ' +
-            'fixed by policy, because they record who looked at an athlete.',
-          'Shortening a configurable window deletes rows on the next nightly pass. It is ' +
-            'not a filter on what is read back.'
-        ]
-      ));
-
-      grid.appendChild(staticCard(
-        'Cost categories', 'Which Azure service counts as what',
-        [
-          'The mapping is held server side and used by Cloud costs. Nothing reads or ' +
-            'writes it from here, and a copy shown here could be out of date.'
-        ],
-        [
-          'A new service starts ungrouped rather than guessed, and appears on Cloud costs ' +
-            'as its own line rather than inside a category it was never put in.'
-        ]
-      ));
+      grid.appendChild(retentionCard(retentionResult));
+      grid.appendChild(costCategoriesCard(costResult));
 
       band.appendChild(grid);
       return band;

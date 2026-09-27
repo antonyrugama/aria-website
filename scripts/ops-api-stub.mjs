@@ -45,12 +45,51 @@ const JOBS = JSON.parse(fsJobs.readFileSync(
   'utf8'
 ));
 
+/* Action rows in the shape Stadiora/Aria#11610 publishes: one row can be
+   cancelled, one row explains why it cannot be changed, and one row carries
+   the viewer denial. The fixture this starts from predates job actions, so the
+   action fields are layered here for the hosted browser checks. */
+if (JOBS.workingSet && Array.isArray(JOBS.workingSet.jobs)) {
+  const rows = JOBS.workingSet.jobs;
+  if (rows[0]) Object.assign(rows[0], {
+    id: '9f1c2d00-1111-4111-8111-111111111111',
+    reference: 'job_9f1c2d',
+    actions: {
+      canCancel: true,
+      cancelReason: null,
+      canRetry: false,
+      retryReason: 'Only failed jobs can be retried.',
+    },
+  });
+  if (rows[1]) Object.assign(rows[1], {
+    id: 'aa2c2d00-1111-4111-8111-111111111111',
+    actions: {
+      canCancel: false,
+      cancelReason: "This job type can't be stopped once it has started.",
+      canRetry: false,
+      retryReason: 'Only failed jobs can be retried.',
+    },
+  });
+  if (rows[2]) Object.assign(rows[2], {
+    id: 'bb3c2d00-1111-4111-8111-111111111111',
+    actions: {
+      canCancel: false,
+      cancelReason: 'Your role can view jobs but cannot change them.',
+      canRetry: false,
+      retryReason: 'Your role can view jobs but cannot change them.',
+    },
+  });
+}
+
 const ago = (ms) => new Date(NOW - ms).toISOString();
 const ahead = (ms) => new Date(NOW + ms).toISOString();
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const utcDay = (ms) => new Date(NOW - ms).toISOString().slice(0, 10);
+const HOUR_FLOOR = Math.floor(NOW / HOUR) * HOUR;
+const utcHourKey = (ms) => new Date(ms).toISOString();
+const utcHourLabel = (ms) => String(new Date(ms).getUTCHours()).padStart(2, '0') + ':00';
 
 const ADMIN = { id: 'adm_1', email: 'owner@example.invalid', name: 'Owner', role: 'owner' };
 const SESSION = { id: 'ses_1', createdAt: ago(10 * MINUTE), lastSeenAt: ago(1000), userAgent: 'check' };
@@ -92,7 +131,11 @@ const RULES = [
    and ops-settings-v2.test.mjs — trimmed to what has to be present for the
    pane to reach its ready state, and moved onto the real clock. */
 
-const SUMMARY_DAYS = [6, 5, 4, 3, 2, 1, 0].map((n) => utcDay(n * DAY));
+const SUMMARY_HOUR_START_MS = HOUR_FLOOR - 24 * HOUR;
+const SUMMARY_HOUR_END_MS = HOUR_FLOOR;
+const SUMMARY_HOURS = Array.from({ length: 24 }, (_, n) => utcHourLabel(SUMMARY_HOUR_START_MS + n * HOUR));
+const SUMMARY_HOUR_START = utcHourKey(SUMMARY_HOUR_START_MS);
+const SUMMARY_HOUR_END = utcHourKey(SUMMARY_HOUR_END_MS);
 
 const SUMMARY = {
   generatedAt: ago(5 * MINUTE),
@@ -101,8 +144,8 @@ const SUMMARY = {
     availability: { state: 'ready' },
     platform: { active: 1102, previousActive: 980 },
     apps: [
-      { key: 'aria', label: 'Aria', active: 870, tone: 's1' },
-      { key: 'ariaxii', label: 'Aria XII', active: 412, tone: 's2' }
+      { key: 'mobile', label: 'Mobile', active: 870, tone: 's1' },
+      { key: 'coaches', label: 'Coaches Web', active: 412, tone: 's2' }
     ],
     window: { days: 7 },
     comparison: { days: 7, label: 'the 7 days before' },
@@ -131,13 +174,24 @@ const SUMMARY = {
   },
   activity: {
     availability: { state: 'ready' },
-    labels: SUMMARY_DAYS,
+    labels: SUMMARY_HOURS,
     series: [
-      { key: 'aria', label: 'Aria', color: 's1', values: [910, 940, 1001, 980, 1040, 1077, 1102] },
-      { key: 'ariaxii', label: 'Aria XII', color: 's2', values: [380, 402, 396, 410, 421, 404, 412] }
+      { key: 'mobile', label: 'Mobile', color: 's1',
+        values: [91, 94, 100, 98, 104, 108, 110, 107, 105, 101, 99, 96,
+          93, 90, 88, 84, 80, 76, 72, 70, 68, 67, 66, 65] },
+      { key: 'coaches', label: 'Coaches Web', color: 's2',
+        values: [38, 40, 39, 41, 42, 40, 41, 43, 44, 42, 40, 39,
+          37, 36, 34, 33, 31, 30, 29, 28, 27, 26, 25, 24] }
     ],
-    daysMissingRollups: [],
-    window: { days: 7 }
+    reportingStart: SUMMARY_HOUR_START,
+    hoursMissingRollups: [],
+    window: {
+      start: SUMMARY_HOUR_START,
+      endExclusive: SUMMARY_HOUR_END,
+      hours: 24,
+      grain: 'hour',
+      timezone: 'UTC'
+    }
   },
   omissions: [
     { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' }
@@ -390,6 +444,167 @@ const SESSION_SETTINGS = {
   }
 };
 
+
+const RETENTION = {
+  shorteningConfirmation: 'delete rows on the next nightly pass',
+  windows: [
+    {
+      key: 'raw_telemetry',
+      label: 'Activity history',
+      description: 'Raw telemetry events used for usage rollups.',
+      effectiveDays: 180,
+      minimumDays: 30,
+      source: 'setting',
+      configurable: true,
+      fixedReason: null,
+      environmentVariable: 'OPS_TELEMETRY_RETENTION_DAYS',
+      sweepKey: 'telemetry_events',
+      bounds: { minDays: 30, maxDays: 730 },
+      setting: {
+        id: 11,
+        retentionDays: 180,
+        createdAt: ago(2 * DAY),
+        updatedAt: ago(12 * HOUR)
+      }
+    },
+    {
+      key: 'job_lifecycle_history',
+      label: 'Job and run history',
+      description: 'Job lifecycle events behind the operations run history.',
+      effectiveDays: 90,
+      minimumDays: 30,
+      source: 'environment_default',
+      configurable: true,
+      fixedReason: null,
+      environmentVariable: 'OPS_JOB_LIFECYCLE_RETENTION_DAYS',
+      sweepKey: 'job_lifecycle_events',
+      bounds: { minDays: 30, maxDays: 730 },
+      setting: null
+    },
+    {
+      key: 'prompt_output',
+      label: 'Prompt and output content',
+      description: 'Generation input and output payloads.',
+      effectiveDays: null,
+      minimumDays: null,
+      source: 'policy',
+      configurable: false,
+      fixedReason: 'not yet swept',
+      environmentVariable: null,
+      sweepKey: null,
+      bounds: { minDays: null, maxDays: null },
+      setting: null
+    },
+    {
+      key: 'access_record',
+      label: 'Access record',
+      description: 'Who looked at privileged operations data.',
+      effectiveDays: null,
+      minimumDays: 90,
+      source: 'policy',
+      configurable: false,
+      fixedReason: '90-day floor enforced by the server.',
+      environmentVariable: null,
+      sweepKey: null,
+      bounds: { minDays: null, maxDays: null },
+      setting: null
+    },
+    {
+      key: 'audit_log',
+      label: 'Audit log',
+      description: 'Append-only owner and operator actions.',
+      effectiveDays: null,
+      minimumDays: 2555,
+      source: 'policy',
+      configurable: false,
+      fixedReason: 'Append-only audit policy keeps these records for seven years.',
+      environmentVariable: null,
+      sweepKey: null,
+      bounds: { minDays: null, maxDays: null },
+      setting: null
+    },
+    {
+      key: 'reveal_records',
+      label: 'Reveal records',
+      description: 'Athlete-visible records of personal-field reveals.',
+      effectiveDays: null,
+      minimumDays: null,
+      source: 'policy',
+      configurable: false,
+      fixedReason: 'Kept for the life of the account.',
+      environmentVariable: null,
+      sweepKey: null,
+      bounds: { minDays: null, maxDays: null },
+      setting: null
+    }
+  ]
+};
+
+const COST_CATEGORIES = {
+  categories: [
+    { key: 'ci_and_build', label: 'CI and build' },
+    { key: 'ai_and_models', label: 'AI and models' },
+    { key: 'data', label: 'Data' },
+    { key: 'application_compute', label: 'Application compute' },
+    { key: 'platform_and_observability', label: 'Platform and observability' }
+  ],
+  lines: [
+    {
+      serviceName: 'Brand New Azure Thing',
+      serviceKey: 'brand new azure thing',
+      resourceGroup: 'rg-aria-prod',
+      resourceGroupKey: 'rg-aria-prod',
+      seedCategory: null,
+      effectiveCategory: 'ungrouped',
+      source: 'ungrouped',
+      override: null
+    },
+    {
+      serviceName: 'Storage',
+      serviceKey: 'storage',
+      resourceGroup: 'rg-aria-prod',
+      resourceGroupKey: 'rg-aria-prod',
+      seedCategory: 'data',
+      effectiveCategory: 'data',
+      source: 'seed',
+      override: null
+    },
+    {
+      serviceName: 'Virtual Machines',
+      serviceKey: 'virtual machines',
+      resourceGroup: 'rg-aria-dev',
+      resourceGroupKey: 'rg-aria-dev',
+      seedCategory: 'ci_and_build',
+      effectiveCategory: 'application_compute',
+      source: 'resource_group_override',
+      override: {
+        id: 17,
+        scope: 'resource_group_service',
+        serviceKey: 'virtual machines',
+        serviceName: 'Virtual Machines',
+        resourceGroupKey: 'rg-aria-dev',
+        resourceGroup: 'rg-aria-dev',
+        category: 'application_compute',
+        createdAt: '2026-09-24T17:45:00.000Z',
+        updatedAt: '2026-09-24T18:00:00.000Z'
+      }
+    }
+  ],
+  overrides: [
+    {
+      id: 17,
+      scope: 'resource_group_service',
+      serviceKey: 'virtual machines',
+      serviceName: 'Virtual Machines',
+      resourceGroupKey: 'rg-aria-dev',
+      resourceGroup: 'rg-aria-dev',
+      category: 'application_compute',
+      createdAt: '2026-09-24T17:45:00.000Z',
+      updatedAt: '2026-09-24T18:00:00.000Z'
+    }
+  ]
+};
+
 /* Cloud costs, in the state a period that has not published yet produces.
    Both generations of this pane read `availability.state` first and print
    `availability.detail` verbatim into the card they draw for it, so the detail
@@ -471,13 +686,54 @@ const RUNS = {
       type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
       outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout',
       retryable: true, modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 60000,
-      finishedAt: ago(2 * HOUR) },
+      finishedAt: ago(2 * HOUR), reference: 'job_111111',
+      actions: { canCancel: false, cancelReason: 'Only queued or running jobs can be cancelled.',
+        canRetry: true, retryReason: null } },
     { jobId: '22222222-2222-4222-8222-222222222222',
       type: { value: 'video_analysis', label: 'Sprint video analysis', labelled: true },
       outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
-      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR) }
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 8400, finishedAt: ago(5 * HOUR),
+      actions: { canCancel: false, cancelReason: 'Only queued or running jobs can be cancelled.',
+        canRetry: false, retryReason: 'Only failed jobs can be retried.' } }
   ],
   truncated: false
+};
+
+const RUN_REVEAL = {
+  jobId: '22222222-2222-4222-8222-222222222222',
+  jobType: 'video_analysis',
+  sections: [
+    {
+      key: 'input',
+      label: 'Stored input',
+      source: 'generation_jobs.input_payload',
+      owner: 'app-backend',
+      status: 'retained',
+      contentType: 'application/json',
+      value: JSON.stringify({
+        clip: 'athlete-videos/user-[redacted id]/stride.mp4',
+        note: 'Review start mechanics for [redacted email]',
+      }),
+      characterCount: 114,
+      notRetainedReason: null,
+    },
+    {
+      key: 'output',
+      label: 'Stored output',
+      source: 'generation_jobs.result_payload',
+      owner: 'app-backend',
+      status: 'not_retained',
+      contentType: 'application/json',
+      value: null,
+      characterCount: null,
+      notRetainedReason: 'The result payload was swept after retention expired.',
+    },
+  ],
+  recorded: {
+    at: ago(30_000),
+    actor: 'owner@example.invalid',
+    reason: 'Investigating athlete-visible failure',
+  },
 };
 
 /* ------------------------------------------------- proof the pane drew itself */
@@ -536,8 +792,14 @@ const PROOF = {
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
-  settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label,
-    'Sessions last up to 14 days']
+  settings: [
+    ADMINS[0].email,
+    AUDIT[0].reason,
+    'Sessions last up to 14 days',
+    RETENTION.windows[0].label,
+    INTEGRATIONS.integrations[0].label,
+    COST_CATEGORIES.lines[2].serviceName
+  ]
 };
 
 
@@ -589,7 +851,18 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/alerts/problems')) {
     return { data: { problems: [PROBLEM] } };
   }
+  if (/^\/api\/ops\/jobs\/[^/]+\/cancel$/.test(pathname)) {
+    return { data: { jobId: pathname.split('/')[4], status: 'canceled' } };
+  }
+  if (/^\/api\/ops\/jobs\/[^/]+\/retry$/.test(pathname)) {
+    return { data: {
+      originalJobId: pathname.split('/')[4],
+      jobId: '33333333-3333-4333-8333-333333333333',
+      status: 'queued',
+    } };
+  }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (/^\/api\/ops\/runs\/[^/]+\/reveal$/.test(pathname)) return { data: RUN_REVEAL };
   if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
@@ -598,6 +871,8 @@ function stub(pathname) {
   if (pathname === '/api/ops/settings/sessions') return { data: SESSION_SETTINGS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
   if (pathname.startsWith('/api/ops/audit')) return { data: AUDIT };
+  if (pathname === '/api/ops/settings/retention') return { data: RETENTION };
+  if (pathname.startsWith('/api/ops/settings/cost-categories')) return { data: COST_CATEGORIES };
   if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
   if (pathname.startsWith('/api/ops/users/lookup')) return { data: USER_LOOKUP };
   if (pathname.startsWith('/api/ops/users/')) return { data: USER_DETAIL };
@@ -607,5 +882,5 @@ function stub(pathname) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, COSTS, PROBLEM, RUNS, PROOF, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
 };

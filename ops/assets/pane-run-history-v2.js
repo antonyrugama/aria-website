@@ -115,6 +115,7 @@
   var icon = S.icon;
   var fmt = S.fmt;
   var maskContactDetails = global.OpsPaneRegistry.maskContactDetails;
+  var jobActions = global.OpsJobActions || { controls: emptyJobActionControls };
 
   var RUNS_ENDPOINT = '/api/ops/runs';
   var PAGE = 50;
@@ -129,6 +130,10 @@
   var USERS_FILE = 'users.html';
   var JOBS_FILE = 'jobs-live.html';
   var ALERTS_FILE = 'alerts.html';
+
+  function emptyJobActionControls() {
+    return h('div', { className: 'job-action-stack' });
+  }
 
   /* ------------------------------------------------------------- privacy */
 
@@ -284,16 +289,31 @@
        drawn beside a different window's figures invites the comparison the
        detail is there to make and answers it wrongly. */
     var detail = null;
+    var reveal = null;
+    var revealGeneration = 0;
+    var activeRevealDialog = null;
 
     /* When the figures on screen were read. Printed rather than implied: with
        no timer running, how old they are is the operator's to judge. */
     var readAt = null;
+    var actionAnnouncement = null;
+    var actionFailureAnnouncement = null;
+    var queuedActionAnnouncement = null;
+    var queuedActionFailureAnnouncement = null;
+    var hasQueuedActionAnnouncement = false;
 
     /* The last window payload, kept so opening and closing a run can redraw
        without re-reading the window it sits in. */
     var lastWindow = null;
 
     global.addEventListener('resize', updateTableScrollerRegions);
+    global.addEventListener('pagehide', clearOnPageExit);
+    global.addEventListener('pageshow', function (event) {
+      if (event && event.persisted) clearOnPageExit();
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') clearOnPageExit();
+    });
 
     /* The shell fires ops:filters with the starting selection once it is in
        the document, so the first read is that event rather than a call from
@@ -307,11 +327,13 @@
       current = next;
       if (!changed) return;
       booted = true;
+      clearActionAnnouncement();
       load();
     });
 
     function load() {
       var token = ++loadToken;
+      bindActionAnnouncement();
       var selection = current;
       /* Every window read discards any open run, here rather than at each
          call site. Four of the six triggers nulled it themselves and two did
@@ -327,6 +349,7 @@
          trigger that happened to null it. One place, so there is no seventh
          trigger to forget. */
       detail = null;
+         clearRevealed();
       /* Captured here, before anything is drawn, because after `region.failed()`
          the box is hidden and Chrome has already blurred to <body> -- the
          information cannot be reconstructed from the other side of the read.
@@ -341,12 +364,19 @@
       region.loading(SKELETON);
 
       window_(selection).then(function (result) {
-        if (token !== loadToken) return;
+        if (token !== loadToken) {
+          clearActionAnnouncement();
+          return;
+        }
         readAt = new Date().toISOString();
         render(result, selection);
         announceRead(result, selection);
+        flushActionAnnouncement();
       }, function (err) {
-        if (token !== loadToken) return;
+        if (token !== loadToken) {
+          clearActionAnnouncement();
+          return;
+        }
         region.failed(err, load);
         S.setBadge('history', null);
         /* The shell draws Try again, and it is the only control left on the
@@ -361,9 +391,45 @@
         /* Said as well as drawn. Without this the live region still holds the
            figures from the last successful read, so a screen reader is left
            standing behind numbers the pane has just stopped standing behind. */
-        S.announce('The window could not be read. The figures on screen before this are ' +
+        announceReadFailure('The window could not be read. The figures on screen before this are ' +
           'unread now, not zero. Try again is the only control left on the pane.');
       });
+    }
+
+    function bindActionAnnouncement() {
+      if (!hasQueuedActionAnnouncement) return;
+      actionAnnouncement = queuedActionAnnouncement;
+      actionFailureAnnouncement = queuedActionFailureAnnouncement;
+      queuedActionAnnouncement = null;
+      queuedActionFailureAnnouncement = null;
+      hasQueuedActionAnnouncement = false;
+    }
+
+    function clearActionAnnouncement() {
+      actionAnnouncement = null;
+      actionFailureAnnouncement = null;
+      queuedActionAnnouncement = null;
+      queuedActionFailureAnnouncement = null;
+      hasQueuedActionAnnouncement = false;
+    }
+
+    function takeActionAnnouncement() {
+      if (!actionAnnouncement) return;
+      var message = actionAnnouncement;
+      clearActionAnnouncement();
+      return message;
+    }
+
+    function flushActionAnnouncement() {
+      var message = takeActionAnnouncement();
+      if (!message) return;
+      S.announce(message);
+    }
+
+    function announceReadFailure(message) {
+      var failureActionMessage = actionFailureAnnouncement;
+      var actionMessage = takeActionAnnouncement();
+      S.announce(actionMessage ? (failureActionMessage || actionMessage) + ' ' + message : message);
     }
 
     /* The shell's retry button, given this pane's focus key so `settleFocus()`
@@ -409,6 +475,7 @@
        a pane whose other figures are still true. */
     function openRun(jobId, selection) {
       detail = { jobId: jobId, loading: true, data: null, error: null };
+      clearRevealed();
       render(lastWindow, selection);
       S.announce('Opening one run.');
 
@@ -487,6 +554,8 @@
       }
 
       var wrap = h('div', { className: 'stack' });
+      wrap.setAttribute('data-rh-focus', 'rh-state');
+      wrap.setAttribute('tabindex', '-1');
       wrap.appendChild(controls(data, selection));
       partialNote(coverage, wrap);
       if (data.truncated) {
@@ -546,8 +615,9 @@
          not survive the read they just asked for. Narrowing from a populated
          window into an empty one destroys the pickers and draws none, so
          `rh-type` resolves to nothing and the request is held forever with
-         focus sitting at <body>. Every state this pane can draw carries
-         `rh-state` on its heading precisely so this fallback always lands. */
+         focus sitting at <body>. Empty states put `rh-state` on their heading;
+         the live state puts it on the pane stack, so this fallback always
+         lands on a connected focus target. */
       moveFocus(focusKeyNow(), 'rh-state');
     }
 
@@ -589,6 +659,11 @@
     /** Ask for focus somewhere else, but only if it is here to begin with. */
     function moveFocus(key, fallback) {
       if (!focusKeyNow()) return;
+      wanted = key || null;
+      wantedFallback = fallback || null;
+    }
+
+    function forceFocus(key, fallback) {
       wanted = key || null;
       wantedFallback = fallback || null;
     }
@@ -883,8 +958,9 @@
           'rows in it, so none is drawn.'
       ])));
       var row = h('div', { className: 'row mt-sm' });
-      row.appendChild(S.link(S.paneHref('jobs') || JOBS_FILE, 'What is running now'));
-      row.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'What the watchers caught', 'btn btn-sm sp'));
+      row.appendChild(doorwayLink('jobs', JOBS_FILE, 'What is running now', 'rh-doorway-empty-jobs'));
+      row.appendChild(doorwayLink('alerts', ALERTS_FILE, 'What the watchers caught',
+        'rh-doorway-empty-alerts', 'btn btn-sm sp'));
       box.appendChild(row);
       if (data && data.window) box.appendChild(windowFoot(data.window));
       return box;
@@ -958,7 +1034,8 @@
         });
         row.appendChild(clear);
       }
-      row.appendChild(S.link(S.paneHref('jobs') || JOBS_FILE, 'What is running now', 'btn btn-sm sp'));
+      row.appendChild(doorwayLink('jobs', JOBS_FILE, 'What is running now',
+        'rh-doorway-empty-jobs', 'btn btn-sm sp'));
       box.appendChild(row);
       box.appendChild(windowFoot(data.window, coverage));
       return box;
@@ -1104,7 +1181,8 @@
         text: 'Grouped by the label the worker recorded. Every failed run in ' +
           coveredWords(data.coverage, selection) + ' is in exactly one of these rows.'
       }));
-      foot.appendChild(S.link(S.paneHref('alerts') || ALERTS_FILE, 'What the watchers caught', 'btn btn-sm sp'));
+      foot.appendChild(doorwayLink('alerts', ALERTS_FILE, 'What the watchers caught',
+        'rh-doorway-live-alerts', 'btn btn-sm sp'));
       box.appendChild(foot);
 
       section.appendChild(box);
@@ -1177,7 +1255,7 @@
 
       var head = h('thead');
       var headRow = h('tr');
-      ['Finished', 'Request type', 'Outcome', 'Took', 'Waited', 'Model', ''].forEach(function (label, at) {
+      ['Finished', 'Request type', 'Outcome', 'Took', 'Waited', 'Model', 'Actions', ''].forEach(function (label, at) {
         headRow.appendChild(h('th', {
           className: (at === 3 || at === 4) ? 'r' : '',
           text: label,
@@ -1236,6 +1314,15 @@
       row.appendChild(h('td', { className: 'r num', text: msOrNone(run.durationMs) }));
       row.appendChild(h('td', { className: 'r num', text: msOrNone(run.queuedMs) }));
       row.appendChild(h('td', { text: run.modelUsed ? coded(run.modelUsed) : fmt.none }));
+      row.appendChild(h('td', { className: 'r' }, [
+        jobActions.controls(run, {
+          onSuccess: afterRunAction,
+          onStale: afterRunAction,
+          deferSuccessAnnounce: true,
+          focusAttr: 'data-rh-focus',
+          focusPrefix: 'rh-job-action'
+        })
+      ]));
 
       var end = h('td', { className: 'r' });
       var open = h('button', {
@@ -1322,10 +1409,21 @@
 
       var body = h('div', { className: 'card-body col' });
       body.appendChild(runFacts(data.run));
+      body.appendChild(jobActions.controls(data.run, {
+        onSuccess: afterRunAction,
+        onStale: afterRunAction,
+        deferSuccessAnnounce: true,
+        focusAttr: 'data-rh-focus',
+        focusPrefix: 'rh-job-action-detail'
+      }));
+      body.appendChild(revealControls(data.run));
       body.appendChild(stageList(data));
       box.appendChild(body);
       section.appendChild(box);
 
+      if (reveal && reveal.jobId === data.run.jobId && reveal.data) {
+        section.appendChild(revealedContentCard(reveal.data));
+      }
       section.appendChild(sharedCard(data, selection));
       return section;
     }
@@ -1347,10 +1445,21 @@
            that row is no longer listed. */
         moveFocus(back, 'rh-read-again');
         detail = null;
+        clearRevealed();
         render(lastWindow, current);
         S.announce('Closed the run.');
       });
       return close;
+    }
+
+    function afterRunAction(result) {
+      queuedActionAnnouncement = result && result.deferAnnouncement ? result.message : null;
+      queuedActionFailureAnnouncement = result && result.deferAnnouncement && result.error
+        ? result.messageWhenNotRefreshed
+        : null;
+      hasQueuedActionAnnouncement = true;
+      moveFocus('rh-read-again', 'rh-state');
+      load();
     }
 
     function runFacts(run) {
@@ -1377,6 +1486,246 @@
         list.appendChild(item);
       });
       return list;
+    }
+
+    function isOwner() { return session.hasRole(['owner']); }
+
+    function revealControls(run) {
+      var wrap = h('div', { className: 'rh-reveal-actions' });
+      if (!isOwner()) return wrap;
+
+      if (reveal && reveal.jobId === run.jobId && reveal.data) {
+        var hide = h('button', { className: 'btn btn-sm', type: 'button', text: 'Hide content' });
+        hide.setAttribute('data-rh-focus', 'rh-reveal-hide');
+        hide.addEventListener('click', hideRevealedContent);
+        wrap.appendChild(hide);
+        return wrap;
+      }
+
+      var show = h('button', { className: 'btn btn-sm btn-primary', type: 'button', text: 'Show content' });
+      show.setAttribute('data-rh-focus', 'rh-reveal-show');
+      show.addEventListener('click', function () { openRevealDialog(run); });
+      wrap.appendChild(show);
+      return wrap;
+    }
+
+    function clearRevealed() {
+      revealGeneration += 1;
+      reveal = null;
+      var nodes = content.querySelectorAll('.rh-content-card');
+      for (var i = 0; i < nodes.length; i += 1) nodes[i].remove();
+    }
+
+    function clearOnPageExit() {
+      var live = document.activeElement;
+      var revealCard = content.querySelector('.rh-content-card');
+      var revealActions = content.querySelector('.rh-reveal-actions');
+      var revealFocused = live && ((revealCard && revealCard.contains(live))
+        || (revealActions && revealActions.contains(live)));
+      if (activeRevealDialog) {
+        activeRevealDialog.closeForCleanup();
+        activeRevealDialog = null;
+        forceFocus('rh-reveal-show', 'rh-state');
+      } else if (reveal && revealFocused) {
+        forceFocus('rh-reveal-show', 'rh-state');
+      } else {
+        keepFocus();
+      }
+      clearRevealed();
+      if (lastWindow) render(lastWindow, current);
+    }
+
+    function hideRevealedContent() {
+      moveFocus('rh-reveal-show', 'rh-state');
+      clearRevealed();
+      render(lastWindow, current);
+      S.announce('Stored content is hidden.');
+    }
+
+    function revealPath(run) {
+      return RUNS_ENDPOINT + '/' + encodeURIComponent(run.jobId) + '/reveal';
+    }
+
+    function revealError(err) {
+      if (err && err.code === 'ops_runs_reason_required') return 'Use 10 to 500 characters.';
+      if (err && err.code === 'ops_runs_reference_invalid') return 'This run cannot be revealed from here.';
+      if (err && err.code === 'ops_runs_run_not_found') return 'That run is no longer in the operations record.';
+      if (err && err.code === 'ops_runs_reveal_unavailable') {
+        return 'Content was not shown because the access record could not be written. Try again shortly.';
+      }
+      if (err && err.code === 'ops_reauth_required') return 'Confirm your password, then try again.';
+      if (err && err.status === 403) return 'Your role can view runs but cannot reveal their stored content.';
+      if (err && err.status === 404) return 'That run is no longer in the operations record.';
+      if (err && err.status === 503) {
+        return 'Content was not shown because the operations API could not commit the access record.';
+      }
+      if (err && (err.status === 0 || err.code === 'ops_unreachable')) {
+        return 'The operations API could not be reached. Nothing was shown.';
+      }
+      return 'Content was not shown. Nothing changed.';
+    }
+
+    function openRevealDialog(run) {
+      var busy = false;
+      var titleId = 'runRevealTitle' + Math.random().toString(36).slice(2, 8);
+      var reasonId = titleId + 'Reason';
+      var hintId = titleId + 'Hint';
+      var errorId = titleId + 'Error';
+      var countId = titleId + 'Count';
+
+      var card = h('div', { className: 'modal-card rh-reveal-card' });
+      card.appendChild(h('div', { className: 'card-head' }, [
+        h('h2', { className: 'card-title', id: titleId, text: 'Show stored run content?' })
+      ]));
+      var body = h('div', { className: 'card-body col' });
+      body.appendChild(h('p', { className: 'small muted',
+        text: 'This shows the stored input and output for this run. The view is recorded in the access record with your reason, and personal identifiers are masked.' }));
+      body.appendChild(h('label', { className: 'field-label', for: reasonId, text: 'Reason' }));
+      var reason = h('textarea', {
+        className: 'field-input rh-reveal-reason',
+        id: reasonId,
+        rows: '4',
+        maxlength: '500',
+        autocomplete: 'off',
+        'aria-describedby': hintId + ' ' + errorId + ' ' + countId
+      });
+      body.appendChild(reason);
+      body.appendChild(h('p', {
+        className: 'field-hint',
+        id: hintId,
+        text: 'Write why you need this content. Use 10 to 500 characters.'
+      }));
+      var error = h('p', { className: 'form-alert', id: errorId, role: 'alert' });
+      body.appendChild(error);
+      var counter = h('p', { className: 'tiny muted', id: countId, text: '0 / 500' });
+      body.appendChild(counter);
+      card.appendChild(body);
+
+      var cancel = h('button', { className: 'btn', type: 'button', text: 'Cancel' });
+      var show = h('button', { className: 'btn btn-primary', type: 'button', text: 'Show content' });
+      card.appendChild(h('div', { className: 'row mt' }, [cancel, h('div', { className: 'spacer' }), show]));
+
+      var node = h('div', {
+        className: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1'
+      }, [card]);
+
+      function trimmed() { return reason.value.replace(/^\s+|\s+$/g, ''); }
+      function sync() {
+        counter.textContent = String(reason.value.length) + ' / 500';
+        if (trimmed().length >= 10 && trimmed().length <= 500) {
+          reason.removeAttribute('aria-invalid');
+          error.textContent = '';
+        }
+      }
+      function fail(message) {
+        error.textContent = message;
+        reason.setAttribute('aria-invalid', 'true');
+        busy = false;
+        cancel.disabled = false;
+        show.disabled = false;
+        show.textContent = 'Show content';
+        reason.focus();
+      }
+      function submit(modal) {
+        var value = trimmed();
+        if (busy) return;
+        if (value.length < 10 || value.length > 500) {
+          fail('Use 10 to 500 characters.');
+          return;
+        }
+        busy = true;
+        reason.removeAttribute('aria-invalid');
+        error.textContent = '';
+        cancel.disabled = true;
+        show.disabled = true;
+        show.textContent = 'Showing';
+        var generation = revealGeneration;
+        session.call(revealPath(run), {
+          method: 'POST',
+          body: { reason: value }
+        }).then(function (payload) {
+          if (generation !== revealGeneration) return;
+          reveal = { jobId: run.jobId, data: payload.data };
+          busy = false;
+          activeRevealDialog = null;
+          modal.close();
+          moveFocus('rh-content-first', 'rh-content-first');
+          render(lastWindow, current);
+          S.announce('Stored content is shown.');
+        }, function (err) {
+          if (generation !== revealGeneration) return;
+          fail(revealError(err));
+        });
+      }
+
+      reason.addEventListener('input', sync);
+      var modal = jobActions.openModal(node, function () { return reason; }, function () {
+        if (busy) return false;
+        activeRevealDialog = null;
+        return true;
+      });
+      activeRevealDialog = {
+        closeForCleanup: function () {
+          busy = false;
+          cancel.disabled = false;
+          show.disabled = false;
+          show.textContent = 'Show content';
+          modal.close();
+        }
+      };
+      cancel.addEventListener('click', function () {
+        if (!busy) {
+          activeRevealDialog = null;
+          modal.close();
+        }
+      });
+      show.addEventListener('click', function () { submit(modal); });
+      sync();
+    }
+
+    function pretty(value) {
+      if (typeof value !== 'string') return '';
+      try { return JSON.stringify(JSON.parse(value), null, 2); } catch (e) { return value; }
+    }
+
+    function revealedContentCard(data) {
+      var box = S.card('accent acc-vio rh-content-card');
+      box.appendChild(S.cardHead('Stored content', 'Masked by the server and recorded before it was returned'));
+      var body = h('div', { className: 'card-body col' });
+      (data.sections || []).forEach(function (section, at) {
+        body.appendChild(revealSection(section, at === 0));
+      });
+      box.appendChild(body);
+      var foot = h('div', { className: 'card-foot' });
+      foot.appendChild(icon('lock'));
+      foot.appendChild(h('span', { text: 'This content is not stored by the page. Hide it before leaving this run.' }));
+      var hide = h('button', { className: 'btn btn-sm sp', type: 'button', text: 'Hide content' });
+      hide.setAttribute('data-rh-focus', 'rh-reveal-hide-footer');
+      hide.addEventListener('click', hideRevealedContent);
+      foot.appendChild(hide);
+      box.appendChild(foot);
+      return box;
+    }
+
+    function revealSection(section, first) {
+      var label = section && section.label ? coded(section.label) : 'Stored content';
+      var region = h('div', {
+        className: 'rh-content-region',
+        role: 'region',
+        'aria-label': label + ' content',
+        tabindex: '0'
+      });
+      if (first) region.setAttribute('data-rh-focus', 'rh-content-first');
+      region.appendChild(h('h4', { className: 'card-title', text: label }));
+      if (section.status === 'retained') {
+        region.appendChild(h('pre', { className: 'rh-content-pre', text: pretty(section.value) }));
+      } else {
+        region.appendChild(h('p', {
+          className: 'state-desc',
+          text: 'Not kept: ' + coded(section.notRetainedReason || 'The server did not retain this section.')
+        }));
+      }
+      return region;
     }
 
     /* Every transition the recorder won, in the order it wrote them. This is
@@ -1538,10 +1887,7 @@
       var section = S.band('What was asked, and what Aria answered');
       var box = S.card('accent acc-vio');
 
-      box.appendChild(S.cardHead(
-        'Hidden here, at every role',
-        'Including the owner, and including the person reading this'
-      ));
+      box.appendChild(S.cardHead('Hidden until a recorded reveal', 'Stored input and output are not shown in the table'));
 
       var body = h('div', { className: 'card-body col' });
 
@@ -1552,14 +1898,12 @@
         'Nothing here names a person. The run history route sends no account identity at ' +
           'all — not a masked one, not a coded one — so there is nothing on this page to ' +
           'unmask. What it prints is a request type, a failure label, a model and a count.',
-        'What was asked, what Aria answered and the athlete details a run read are ' +
-          'hidden for every role, the owner included, until a reveal is recorded.',
-        'A reveal is an owner action and needs a written reason. There is no reveal ' +
-          'control here, because this pane records none.',
-        'A reveal is recorded by field name and never by content, so the record of an ' +
+        'What was asked, what Aria answered and the athlete details a run read stay ' +
+          'out of the run table.',
+        'An access is recorded by field name and never by content, so the record of an ' +
           'access never becomes a second copy of the thing accessed.',
         'The athlete can see that a reveal happened and who did it.',
-        'Those records outlive the reveal. A reveal can never erase them.'
+        'Those records outlive the view. Hiding content here does not erase the access record.'
       ].forEach(function (line) {
         var item = h('li');
         item.appendChild(icon('check'));
@@ -1573,13 +1917,20 @@
       var foot = h('div', { className: 'card-foot' });
       foot.appendChild(icon('lock'));
       foot.appendChild(h('span', {
-        text: 'Kept for the life of the account. A reveal is recorded where the account is: '
+        text: 'Access records are kept with the account: '
       }));
-      foot.appendChild(S.link(S.paneHref('users') || USERS_FILE, 'Look up a user', 'btn btn-sm sp'));
+      foot.appendChild(doorwayLink('users', USERS_FILE, 'Look up a user',
+        'rh-doorway-live-users', 'btn btn-sm sp'));
       box.appendChild(foot);
 
       section.appendChild(box);
       return section;
+    }
+
+    function doorwayLink(pane, fallbackFile, label, focusKey, className) {
+      var link = S.link(S.paneHref(pane) || fallbackFile, label, className);
+      link.setAttribute('data-rh-focus', focusKey);
+      return link;
     }
 
     /* One field name and the fact that it is hidden. There is no value node in
