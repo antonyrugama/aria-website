@@ -121,7 +121,7 @@
      `documentElement.scrollWidth` does not grow for a `position: fixed` box
      however far past the right edge it sits, and it does not grow for any box
      past the *left* edge either. The shell puts real chrome in fixed
-     positioning — shell-pane-v2.css:88, :114, :175, :293 — so this is not a
+     positioning — shell-pane-v2.css:88, :114, :175, :297 — so this is not a
      hypothetical shape here. Measured at 320px in both themes, one pseudo
      element appended unscoped to assets/aria.css, one property changed
      between rows: `body::after { content:''; position: fixed; left: 0; top: 0;

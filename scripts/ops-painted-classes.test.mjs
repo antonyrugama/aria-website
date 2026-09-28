@@ -1553,7 +1553,7 @@ for (const theme of [EVALS_ANSWER_DARK, EVALS_ANSWER_LIGHT]) {
   test(`capping the approval answer leaves the re-authentication alert uncapped, in the ${theme.theme} theme`,
     async () => {
       /* The other half of the measure claim, and the reason it is written on an
-         id. shell-pane-v2.css:265 declares nine properties for the modal's own
+         id. shell-pane-v2.css:269 declares nine properties for the modal's own
          alert and `max-width` is not among them, so a cap on `.form-alert`
          would be the one declaration this sheet could leak into a surface it
          does not own. Built here rather than asserted from the sheet text: a
