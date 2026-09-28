@@ -157,6 +157,15 @@
  *   produces a stray groove is bound -- that exact payload is battery row T8,
  *   killed by three notch-count claims -- so what is not covered is the stray
  *   mark itself, not the fault that makes one.
+ * - That `idx` numbers the DOCUMENT and not the filtered array READ_METERS
+ *   returns. The invariant is right, since `focusMeter` addresses
+ *   `querySelectorAll('.meter')`, but nothing can falsify it today. Measured in
+ *   antonyrugama/aria-website#185 at 1118c7f: the zero-area filter drops
+ *   meters only on spend's loading and empty states, and there it drops all
+ *   five, so no kept meter ever follows a dropped one and the two numberings
+ *   coincide on every board this sweep reads. Renumbering from the filtered
+ *   array would go unnoticed until some board keeps a meter after a
+ *   zero-width one.
  */
 
 import test, { after } from 'node:test';
@@ -687,12 +696,23 @@ async function readCard(box, fillL) {
      -- 1.0000 pixel agreement, three meters -- to the unscrolled
      `captureBeyondViewport: true` capture this file used to take. So the
      numbers do not move; only where they are read from does.
-   - `captureBeyondViewport` rasterises a region that was never on screen, and
-     a capture that returns before that region has rasterised is UNIFORM. A
-     uniform strip measures exactly 1.00:1, which reds the value ratchet on a
-     bar that is fine. Seen once in fourteen runs, with a second sweep running
-     on the same machine. Every meter on this board sits between y=3322 and
-     y=4463 at a 1000px viewport, so every capture took that path.
+   - A capture came back UNIFORM once in fourteen runs, with a second sweep
+     running on the same machine. A uniform strip measures exactly 1.00:1,
+     which reds the value ratchet on a bar that is fine. That reading is
+     OBSERVED; its cause is INFERRED. The inference is that
+     `captureBeyondViewport` rasterises a region that was never on screen and
+     can return before it has. No run has reproduced it: the round-1 review of
+     antonyrugama/aria-website#131 re-ran the old path 600 times, idle, under
+     a 40x CPU throttle and across three concurrent sweeps, and got no uniform
+     capture. The fix stands either way, because it removes the dependency
+     rather than the one explanation offered for it. The only pane that draws
+     a toned meter here is ops/evaluations.html, and its 12 meters sit with
+     their tops between y=4188.1 and y=5328.8 (centres 4191.1 to 5331.8) in
+     all four states and both themes, at the 1440x1000 viewport. So every
+     toned capture took that path: none of them is above the fold. Measured
+     in antonyrugama/aria-website#185 at 1118c7f. Spend's five untoned
+     meters sit at y=621.2 to 839.2 in its live and degraded states, which is
+     already on screen.
    - The invariant that actually removes the dependency is `the pixels about
      to be read are on screen`, and ONE thing asserts it: the `covered` probe
      below, which reports a point outside the viewport and a point behind the
