@@ -1,0 +1,96 @@
+/* Wearable sync — the shapes this pane needs on top of assets/aria.css and
+   assets/shell-pane-v2.css.
+
+   One stylesheet per pane, holding only what that pane draws. Where a shape
+   already exists on another v2 pane (.u-scroll) the name and the
+   declarations are that pane's rather than a second spelling of the idea.
+
+   Nothing here introduces a colour. Every value is a token from aria.css or a
+   color-mix of one. */
+
+/* ------------------------------------------------------------- figures
+
+   The tile meta carries a short sentence rather than a pill, so it wraps.
+   Same override, same reason, as Happening now. */
+.kpi-meta { flex-wrap: wrap; row-gap: 4px; }
+
+/* ------------------------------------------------------------- tables
+
+   The ledger has eight columns and a phone has about 340px of card to put
+   them in, so the box scrolls sideways rather than squeezing a count into two
+   characters. `min-width: 0` is load-bearing: a grid child defaults to its
+   content's width, and without it the whole page scrolls instead. */
+.u-scroll { overflow-x: auto; min-width: 0; position: relative; }
+.u-scroll:focus-visible { outline-offset: -2px; }
+.ws-ledger { min-width: 720px; }
+.ws-failed { min-width: 760px; }
+
+/* A provider heads its own rows: its name, then the facts kept per provider
+   rather than per app — connections, silent, lag. A rule above it rather than
+   a wash under it, because a cell wash paints over the row hover tint. */
+.ws-provider th {
+  text-align: left;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-2);
+}
+.ws-provider .t-main { margin-right: 10px; }
+.ws-facts { display: inline; font-weight: 400; }
+.ws-total th, .ws-total td { font-weight: 580; border-top: 1px solid var(--line-2); }
+
+/* The cell holds the whole key for a screen reader and a copy, and shows a
+   shortened one. Monospace, because a key is matched against a log line
+   character by character. */
+.ws-key-text { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------- freshness
+
+   One column per UTC day. A bar's height is the share synced within two
+   days, written through CSSOM from the data. A gap is a dashed outline with
+   a mark in it and never a zero-height bar, so a day the job did not run
+   cannot read as a day nobody synced. */
+.ws-chart { margin-top: 12px; }
+.ws-days {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 3px;
+  align-items: end;
+  height: 120px;
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--line-2);
+}
+.ws-day { height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.ws-bar {
+  display: block;
+  width: 100%;
+  height: var(--ws-h, 0%);
+  border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, var(--cyan) 70%, transparent);
+}
+.ws-gap {
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--ink-3);
+  border-radius: 3px;
+}
+.ws-gap-mark, .ws-key { font-size: 11px; font-weight: 600; color: var(--ink-2); line-height: 1; }
+.ws-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11.5px; color: var(--ink-3); }
+.ws-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.ws-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.ws-key {
+  display: inline-grid;
+  place-items: center;
+  width: 14px; height: 14px;
+  border: 1px dashed var(--ink-3);
+  border-radius: 3px;
+}
+.ws-pending { border-style: dotted; }
+.ws-scope { margin-bottom: 4px; }
+.ws-latest { padding: 0 18px 16px; }
+.ws-latest-note { margin: 4px 0 6px; }
+
+@media (max-width: 560px) {
+  .ws-days { gap: 1px; height: 96px; }
+  .ws-gap-mark { font-size: 9px; }
+  .ws-latest { padding: 0 12px 12px; }
+}

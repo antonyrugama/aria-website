@@ -168,6 +168,10 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+/* The wearable sync reading, which the pane's own suite and the shared stub
+   already share: a literal buildWearableSyncPane result, shifted onto today's
+   UTC dates so its thirty freshness columns land where the pane draws them. */
+import { WEARABLE_SYNC } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = 'ops/assets/pane-registry.js';
@@ -605,6 +609,10 @@ const PROOF = {
   /* The drill-down link the workPane rename restored, and the problem's own
      reference. Both sit in the action row this check measures. */
   alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
+  /* The first failed run's key, which only the failed-runs table prints, and
+     the verdict the fixture's Polar rate-limiting draws. Neither is on an empty
+     state or a failure card. */
+  wearables: [WEARABLE_SYNC.failedRuns[0].runKey, 'Polar is rate-limited.'],
   analytics: ['No app reported over this window'],
   /* COSTS.availability.detail, which both this pane and the v2 remodel print
      verbatim into whichever card they draw for `not_published`. */
@@ -659,6 +667,7 @@ function stub(pathname) {
     return { data: { problems: [PROBLEM] } };
   }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (pathname === '/api/ops/wearable-sync') return { data: WEARABLE_SYNC };
   if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };

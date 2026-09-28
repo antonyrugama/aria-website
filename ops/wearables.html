@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.runwitharia.com; base-uri 'none'; form-action 'none'">
+<title>Wearable sync | Aria Operations</title>
+<script src="assets/theme.js"></script>
+<!-- The v2 design system, the pane chrome around it, and this pane's own
+     shapes. ops.css and operate.css are deliberately absent: both stylesheets
+     define .card, .rail, .topbar, .btn, .seg, .pill and .tbl from different
+     token sets, so a page loads one system or the other, never both. -->
+<link rel="stylesheet" href="assets/aria.css">
+<link rel="stylesheet" href="assets/shell-pane-v2.css">
+<link rel="stylesheet" href="assets/pane-wearables-v2.css">
+</head>
+<body data-pane="wearables" class="is-booting">
+
+<!-- Hidden until the shell exists, because there is nothing to skip past in
+     the boot and failure states: each is a single card. -->
+<a class="skip" href="#content">Skip to content</a>
+
+<!-- Nothing below is rendered until the operations API has confirmed a
+     session. The three gates are mutually exclusive, so there is no state in
+     which a half-built shell is on screen: it is the boot placeholder, the
+     failure card, or the real dashboard. -->
+
+<main class="gate gate-boot gate-center">
+  <div>
+    <h1 class="sr">Aria Operations</h1>
+    <div class="boot-mark" aria-hidden="true"><img src="assets/aria-mark.png" alt="" width="22" height="22"></div>
+    <p class="boot-line" role="status">Checking your session</p>
+    <div class="skel skel-boot" aria-hidden="true"></div>
+  </div>
+</main>
+
+<main class="gate gate-failed gate-center" id="gateFailed" tabindex="-1"></main>
+
+<div class="gate gate-app">
+  <div class="app" id="app"></div>
+</div>
+
+<noscript>
+  <div class="noscript-wrap">
+    <div class="card">
+      <p>The operations dashboard needs JavaScript. It reads everything from an
+        authenticated API rather than from a server that renders pages, so with
+        scripting switched off there is nothing here.</p>
+    </div>
+  </div>
+</noscript>
+
+<script src="assets/pane-registry.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/session.js"></script>
+<script src="assets/aria.js"></script>
+<script src="assets/shell-pane-v2.js"></script>
+<!-- Wearable sync reads one route for everything it draws. The path is
+     written in assets/pane-wearables-v2.js rather than here, for the reason
+     the other pane pages give: only script files are parsed by
+     scripts/check-ops-route-calls.mjs, so a path in markup is one that guard
+     can see but cannot check. -->
+<script src="assets/pane-wearables-v2.js"></script>
+</body>
+</html>

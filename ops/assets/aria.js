@@ -70,7 +70,8 @@
     lock:    ['M8 10V7a4 4 0 0 1 8 0v3'],
     eye:     ['M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z'],
     flame:   ['M12 2s5 4.6 5 9a5 5 0 0 1-10 0c0-1.6.8-3 1.6-4 .2 1.4 1 2.3 1.9 2.3 1.2 0 1.8-1 1.8-2.6C12.3 5.2 12 3.4 12 2Z'],
-    layers:  ['m12 3 9 4.6-9 4.6-9-4.6Z', 'm3 12.4 9 4.6 9-4.6', 'm3 16.9 9 4.6 9-4.6']
+    layers:  ['m12 3 9 4.6-9 4.6-9-4.6Z', 'm3 12.4 9 4.6 9-4.6', 'm3 16.9 9 4.6 9-4.6'],
+    watch:   ['M9 6.5 9.6 2.5h4.8l.6 4', 'M9 17.5l.6 4h4.8l.6-4', 'M12 9.5V12l1.6 1.1']
   };
 
   /* Circles and rects the path map cannot express. Split out for the same
@@ -86,7 +87,8 @@
     eye:    [[12, 12, 2.8]]
   };
   var RECTS = {
-    lock: [[4, 10, 16, 11, 2]]
+    lock: [[4, 10, 16, 11, 2]],
+    watch: [[6, 6.5, 12, 11, 3]]
   };
 
   function svgEl(name, attrs) {
@@ -133,6 +135,7 @@
     { id: 'jobs',     label: 'Happening now',  href: 'jobs-live.html',   icon: 'radio' },
     { id: 'history',  label: 'What happened',  href: 'run-history.html', icon: 'history' },
     { id: 'alerts',   label: 'Problems',       href: 'alerts.html',      icon: 'bell' },
+    { id: 'wearables', label: 'Wearable sync', href: 'wearables.html',  icon: 'watch' },
 
     { group: 'How we are doing' },
     { id: 'analytics', label: 'People and usage', href: 'analytics.html',   icon: 'chart' },

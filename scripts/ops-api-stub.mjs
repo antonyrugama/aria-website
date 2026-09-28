@@ -47,6 +47,49 @@ const JOBS = JSON.parse(fsJobs.readFileSync(
   'utf8'
 ));
 
+/* One reading of the wearable sync ledger, for Wearable sync. Like JOBS above,
+   scripts/fixtures/ops-wearable-sync-view.json is a literal
+   buildWearableSyncPane result from Stadiora/Aria#12694, so the stub and the
+   pane's suite read the shape the server sends. It was recorded at a fixed
+   instant, so every timestamp and UTC date in it is moved forward to the real
+   clock here: the pane dates its freshness window from generatedAt, and ages
+   against Date.now(). */
+const WEARABLE_SYNC_RECORDED = JSON.parse(fsJobs.readFileSync(
+  pathJobs.join(pathJobs.dirname(fileURLToPathJobs(import.meta.url)),
+    'fixtures/ops-wearable-sync-view.json'),
+  'utf8'
+));
+
+function shiftWearableSync(body, now) {
+  const recordedAt = Date.parse(body.generatedAt);
+  const offsetMs = now - recordedAt;
+  const dayOffset = Math.round((Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(),
+    new Date(now).getUTCDate()) - Date.UTC(new Date(recordedAt).getUTCFullYear(),
+    new Date(recordedAt).getUTCMonth(), new Date(recordedAt).getUTCDate())) / 86400000);
+  const moveDate = (d) => new Date(Date.parse(`${d}T00:00:00.000Z`) + dayOffset * 86400000)
+    .toISOString().slice(0, 10);
+  const walk = (value, key) => {
+    if (Array.isArray(value)) return value.map((item) => walk(item, key));
+    if (value && typeof value === 'object') {
+      const out = {};
+      for (const [k, v] of Object.entries(value)) out[k] = walk(v, k);
+      return out;
+    }
+    if (typeof value !== 'string') return value;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return moveDate(value);
+    if (key === 'computedAt') {
+      return `${moveDate(value.slice(0, 10))}${value.slice(10)}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))) {
+      return new Date(Date.parse(value) + offsetMs).toISOString();
+    }
+    return value;
+  };
+  return walk(body, null);
+}
+
+const WEARABLE_SYNC = shiftWearableSync(WEARABLE_SYNC_RECORDED, NOW);
+
 /* Action rows in the shape Stadiora/Aria#11610 publishes: one row can be
    cancelled, one row explains why it cannot be changed, and one row carries
    the viewer denial. The fixture this starts from predates job actions, so the
@@ -799,6 +842,10 @@ const PROOF = {
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
+  /* The first failed run's key, which only the failed-runs table prints, and
+     the hero's named provider sentence. Neither is in the loading, empty or
+     failure states. */
+  wearables: [WEARABLE_SYNC.failedRuns[0].runKey, 'Polar is rate-limited.'],
   settings: [
     ADMINS[0].email,
     AUDIT[0].reason,
@@ -889,11 +936,12 @@ function stub(pathname, search) {
   if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
   if (pathname.startsWith('/api/ops/users/lookup')) return { data: USER_LOOKUP };
   if (pathname.startsWith('/api/ops/users/')) return { data: USER_DETAIL };
+  if (pathname === '/api/ops/wearable-sync') return { data: WEARABLE_SYNC };
   return { data: {} };
 }
 
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, WEARABLE_SYNC, WEARABLE_SYNC_RECORDED, shiftWearableSync, PROOF, stub
 };

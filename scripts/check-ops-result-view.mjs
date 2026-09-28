@@ -214,6 +214,10 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+/* The wearable sync reading, which the pane's own suite and the shared stub
+   already share: a literal buildWearableSyncPane result, shifted onto today's
+   UTC dates so its thirty freshness columns land where the pane draws them. */
+import { WEARABLE_SYNC } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = 'ops/assets/pane-registry.js';
@@ -762,6 +766,7 @@ function stub(pathname, body) {
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) return { data: { problems: PROBLEMS } };
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (pathname === '/api/ops/wearable-sync') return { data: WEARABLE_SYNC };
   if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
@@ -895,6 +900,11 @@ const RESULT_PROOF = {
      is on this pane's landing state, either empty state, or failure card. */
   history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
   alerts: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
+  /* The first failed run's key, which only the failed-runs table prints, and
+     the verdict the fixture's Polar rate-limiting draws. The pane has no form,
+     so its loaded state is its result; neither string is on an empty state or
+     the failure card. */
+  wearables: [WEARABLE_SYNC.failedRuns[0].runKey, 'Polar is rate-limited.'],
   analytics: ['1,061', '8,430', USAGE.apps[1].label],
   spend: [COST_ROWS[0].label, COST_ROWS[2].label],
   /* Only the answered validation draws these: the digest the stub sent back
@@ -976,13 +986,15 @@ const KNOWN_UNPAINTED_STATE = [];
    anybody editing this table, and a pane that stops drawing the pairs it has
    today fails rather than passing on zero comparisons.
 
-   Seven panes are zero because their result views declare no ARIA state at
+   Eight panes are zero because their result views declare no ARIA state at
    all. That is stated here rather than left to be inferred from a sweep that
-   silently compared nothing. Seven, not eight: releases draws state too, and
-   this table said 0 for it until round 15 read the number the sweep prints
-   against the number this table demands. */
+   silently compared nothing. Releases is not among them: it draws state too,
+   and this table said 0 for it until round 15 read the number the sweep prints
+   against the number this table demands. Wearable sync's App and Window
+   switches carry aria-pressed, but they sit in the filter bar, outside
+   #content, which is all the census reads. */
 const EXPECTED_PAIRS = {
-  overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0,
+  overview: 0, jobs: 0, history: 0, alerts: 0, wearables: 0, analytics: 0,
   /* One pair: the Group-the-bill-by switch's two buttons, `category` against
      `resourceGroup`. Not `service` — the pane drops that key from its switch
      on purpose (ops/assets/pane-spend.js:524-532) and draws the per-service

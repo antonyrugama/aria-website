@@ -155,7 +155,7 @@ font-src = 'self'
 connect-src = 'self' https://api.runwitharia.com
 base-uri = 'none'
 form-action = 'none'
-pages carrying this exact policy = 13
+pages carrying this exact policy = 14
 ```
 
 What follows from wanting it this strict:
@@ -167,9 +167,9 @@ What follows from wanting it this strict:
   from the markup, is counted rather than remembered:
 
   ```claims id=csp-pages
-  pages in ops/ = 13
-  pages declaring the policy in a <meta> = 13
-  pages loading assets/theme.js = 13
+  pages in ops/ = 14
+  pages declaring the policy in a <meta> = 14
+  pages loading assets/theme.js = 14
   pages with an inline <script> = 0
   pages with a style attribute in markup = 0
   ```
@@ -235,6 +235,7 @@ ops/
   jobs-live.html        Happening now
   run-history.html      What happened
   alerts.html           Problems
+  wearables.html        Wearable sync
   analytics.html        People and usage
   spend.html            Cloud costs
   evaluations.html      Aria quality: dataset declarations, quarantine, approval and admission
@@ -290,6 +291,8 @@ ops/
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
     pane-spend-v2.css     Cloud costs' own shapes
+    pane-wearables-v2.js     Wearable sync
+    pane-wearables-v2.css    Wearable sync's own shapes
 ```
 
 The tree above says what each file is **for**. What each file is **loaded by** is not written
@@ -301,9 +304,9 @@ something, or a file that is deleted, is a red test rather than a stale sentence
 
 ```claims id=assets-by-page
 alerts-model.js = alerts.html, index.html
-api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
-aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
-aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html, wearables.html
+aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html, wearables.html
+aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html, wearables.html
 icons.js = login.html, setup.html
 job-actions-v2.js = jobs-live.html, run-history.html
 login.js = login.html
@@ -320,7 +323,7 @@ pane-jobs-live-v2.css = jobs-live.html
 pane-jobs-live-v2.js = jobs-live.html
 pane-overview-v2.css = index.html
 pane-overview.js = index.html
-pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html
+pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, spend.html, users.html, wearables.html
 pane-releases-v2.css = releases.html
 pane-releases.js = releases.html
 pane-run-history-v2.css = run-history.html
@@ -330,14 +333,16 @@ pane-spend-v2.css = spend.html
 pane-spend.js = spend.html
 pane-users-v2.css = users.html
 pane-users.js = users.html
-session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, spend.html, users.html
+pane-wearables-v2.css = wearables.html
+pane-wearables-v2.js = wearables.html
+session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, spend.html, users.html, wearables.html
 settings.js = settings.html
 setup.js = setup.html
-shell-pane-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
-shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+shell-pane-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html, wearables.html
+shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html, wearables.html
 shell-v2.js = shell-v2.html
 shell.js = (no page)
-theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html, wearables.html
 ```
 
 A file no page loads is not automatically dead: some are kept alive by the tests, which load
@@ -455,6 +460,7 @@ overview = index.html, shell-pane-v2.js, pane-overview-v2.css
 jobs = jobs-live.html, shell-pane-v2.js, pane-jobs-live-v2.css
 history = run-history.html, shell-pane-v2.js, pane-run-history-v2.css
 alerts = alerts.html, shell-pane-v2.js, pane-alerts-v2.css
+wearables = wearables.html, shell-pane-v2.js, pane-wearables-v2.css
 analytics = analytics.html, shell-pane-v2.js, pane-analytics-v2.css
 spend = spend.html, shell-pane-v2.js, pane-spend-v2.css
 evals = evaluations.html, shell-pane-v2.js, pane-evaluations-v2.css
@@ -1018,6 +1024,7 @@ pane-releases.js = /api/ops/releases
 pane-run-history-v2.js = /api/ops/runs
 pane-spend.js = /api/ops/costs, /api/ops/summary
 pane-users.js = /api/ops/users/, /api/ops/users/lookup
+pane-wearables-v2.js = /api/ops/wearable-sync
 ```
 
 A backend publishing `/api/ops/usage` or `/api/ops/costs` changes nothing on its own, because a
@@ -1401,6 +1408,7 @@ those panes now.
     pane-settings-v2.css .tbl-wrap = position: relative
     pane-spend-v2.css .sp-scroll = position: relative
     pane-users-v2.css .tbl-wrap = position: relative
+    pane-wearables-v2.css .u-scroll = position: relative
     ```
 
     `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
@@ -1415,7 +1423,7 @@ those panes now.
 
     ```claims id=sr-span-classes
     absolutely positioned screen-reader classes = aria.css .sr, ops.css .sr-only
-    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-releases.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
+    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-releases.js, pane-users.js, pane-wearables-v2.js, settings.js, shell-pane-v2.js, shell.js
     ```
 
     `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-users.js`
@@ -1858,6 +1866,7 @@ pane-run-history-v2.css .tbl-wrap = outline-offset: -2px
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
 pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-users-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
+pane-wearables-v2.css .u-scroll = outline-offset: -2px
 ```
 
 ### People and usage on v2: where the pane departs from the mock
@@ -2123,6 +2132,51 @@ pane's own classes, each because a shared rule assumes content this pane does no
   down a row.
 - `.grid > .card { min-width: 0 }`, so a grid track may be narrower than the table inside it and
   the table scrolls in its own card rather than widening the page.
+
+### Wearable sync on v2: where the pane departs from the mock
+
+`docs/mocks/wearables-platform/15-ops-sync-pane.html` in the Aria monorepo is the approved
+design (Stadiora/Aria#12704). The pane reads `GET /api/ops/wearable-sync?days=30`, which
+app-backend serves from the sync-run ledger and the daily freshness snapshot added in
+Stadiora/Aria#12290, and draws the verdict, the four tiles, the ledger by provider and app,
+the 30-day freshness band, the skip reasons, and the failed runs. It departs where the route
+does not carry what the mock draws, and names only the departures that carry a decision.
+
+1. **App and Window are the pane's own controls, not shell filters.** The route answers every
+   app and both windows in one read, so `App` and `Window` redraw from that answer and never
+   re-read. The registry declares no scope, range or environment filter, and a `filterNote`
+   says why: sync runs are production only. Server-side runs (a provider poll, a webhook) belong to
+   no app, so picking an app drops them from the ledger and a line under the table says how
+   many were hidden rather than letting the total silently shrink.
+2. **The freshness band ignores the App control, and says so.** Snapshots are kept per
+   provider, not per app, so the band prints the route's `scopeNote` above it and draws the
+   same thirty columns whichever app is picked.
+3. **A day with no snapshot is a labelled gap, never a short bar.** A missing day draws a
+   column marked `×`. A day the route lists in `pendingDates` (today, before the 04:40 UTC
+   freshness job; Stadiora/Aria#12702) is marked `…` as pending rather than missing, and a route
+   that sends no `pendingDates` leaves every gap marked missing. A bar of height zero would read
+   as a day on which nothing was fresh.
+4. **Degraded hides the two tiles that would over-count.** While the ledger is behind, "Silent
+   2 days or more" and "Lag p95" read `Hidden` with the reason, and "Sync runs" says it is
+   still climbing, because a partial day under-counts runs and over-counts silence.
+5. **No drill-down page, no Provider or Error-code filter, no Export CSV, no Copy run key.**
+   The mock's section B, the per-run drill-down, is summarised as the "Why they failed" band
+   (failures grouped by cause) and the failed-runs table, which carries the full run key as
+   text a reader can select. The mock's extra filters and its export have no route behind
+   them yet.
+6. **A provider the ledger knows nothing about reads "No connections".** The mock draws Strava
+   as switched off; the route does not say whether a provider is off or simply unused, so the
+   pane does not guess.
+7. **Unavailable is the shell's failure card.** A 503 from the route draws the shared "This
+   pane could not be read" card with the route's own sentence, and no figure at all, rather
+   than the mock's bespoke outage block.
+8. **An error summary is masked before it is drawn.** Provider error text can carry an email
+   address or a phone number, so the failed-runs table runs every summary through
+   `maskContactDetails` first.
+
+`assets/pane-wearables-v2.css` carries this pane's own shapes. The provider header row is set
+off by a rule above it rather than a background wash, because a wash on a table cell paints over
+the shared row-hover tint that `scripts/ops-hover-contrast.test.mjs` measures.
 
 ### Known contrast debt, inherited — a historical record
 
@@ -2639,7 +2693,7 @@ lines short — which is why none of them are typed any more.
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1077
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 144
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 156
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
