@@ -417,8 +417,11 @@
    against their card and the default +2px ring paints outside it. This one
    sits inside .card-body's 16px padding -- measured at 320px the focus ring's
    outer edge lands at x=28 against a card edge at x=16, fully inside the card
-   with 12px to spare. */
-.sp-scroll { overflow-x: auto; }
+   with 12px to spare.
+
+   Positioned so overflow-x clips an absolutely positioned descendant too,
+   not only in-flow content (Stadiora/Aria#10706). */
+.sp-scroll { overflow-x: auto; position: relative; }
 
 .sp-tbl { width: 100%; border-collapse: collapse; }
 

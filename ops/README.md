@@ -1377,7 +1377,7 @@ those panes now.
     those two pages. That block was deleted from the end of `ops.css` in `aria-website#74` when
     App releases and Look up a user moved to the v2 layer and stopped loading this stylesheet;
     the arithmetic it was computed from is kept in the historical record below.
-15. **A sideways-scrolling wrapper needs to be positioned, and some of the v2 ones are not.**
+15. **A sideways-scrolling wrapper needs to be positioned.**
     `overflow-x` clips only a descendant whose containing block is the wrapper, and an absolutely
     positioned one resolves that to the nearest **positioned** ancestor. Left static, an
     `.sr-only` span inside a table wider than a phone resolves past the wrapper, escapes its
@@ -1385,31 +1385,29 @@ those panes now.
     whole page scrolls sideways with it. `position: relative` puts the containing block back
     where the clip is.
 
-    This item used to say the declaration was "on every page". It was not, and on the v2 layer it
-    is not now. Where it actually is, derived from the sheets by finding each box through its own
-    `overflow-x` rather than by class name:
+    This item used to say the declaration was "on every page". It was not, until
+    Stadiora/Aria#10706 repaired the last static v2 wrappers. Where it is, derived from the
+    sheets by finding each box through its own `overflow-x` rather than by class name:
 
     ```claims id=scroll-wrapper-position
     ops.css .table-wrap = position: relative
-    pane-alerts-v2.css .scrollx = position: static (the sheet sets none)
+    pane-alerts-v2.css .scrollx = position: relative
     pane-analytics-v2.css .u-scroll = position: relative
     pane-evaluations-v2.css .tbl-wrap = position: relative
     pane-jobs-live-v2.css .u-scroll = position: relative
     pane-releases-v2.css .tbl-scroll = position: relative
-    pane-run-history-v2.css .rh-content-region = position: static (the sheet sets none)
-    pane-run-history-v2.css .tbl-wrap = position: static (the sheet sets none)
+    pane-run-history-v2.css .rh-content-region = position: relative
+    pane-run-history-v2.css .tbl-wrap = position: relative
     pane-settings-v2.css .tbl-wrap = position: relative
-    pane-spend-v2.css .sp-scroll = position: static (the sheet sets none)
+    pane-spend-v2.css .sp-scroll = position: relative
     pane-users-v2.css .tbl-wrap = position: relative
     ```
 
     `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
-    `login.html` and `setup.html` load and neither of them draws a table. Evaluations'
-    `.tbl-wrap`, Releases' `.tbl-scroll`, Settings' `.tbl-wrap` and People's `.tbl-wrap` were
-    repaired under Stadiora/Aria#10706 and join `.u-scroll` in carrying it; the escape route
-    above is open on every wrapper still marked static. The block
-    is derived from the sheets on every run, so read the count off it rather than off this
-    sentence.
+    `login.html` and `setup.html` load and neither of them draws a table. The v2 wrappers were
+    repaired under Stadiora/Aria#10706, and `scripts/ops-scroll-wrapper-position.test.mjs` now
+    fails on any sideways scroller a sheet leaves unpositioned. The block is derived from the
+    sheets on every run, so read the answer off it rather than off this sentence.
 
     This item used to add "no pane ships such a span today". That was false, and it was false in
     the most expensive way — a reassuring sentence nobody re-derived. Panes ship them:

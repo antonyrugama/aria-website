@@ -20,15 +20,18 @@
    Problems (`div.scrollx`) and Releases (`div.tbl-scroll`) -- and the
    People pane draws four more behind a search. Their containing block was the
    card outside the wrapper, in both themes and at both widths swept here.
-   Releases' has since been repaired in its own sheet and left KNOWN_ESCAPES;
-   Problems' is still frozen there.
+   Both have since been repaired in their own sheets and left KNOWN_ESCAPES,
+   which is now empty. With no escape left on the swept panes, the rendered
+   probe below demonstrates only one of its two outcomes on a real page: every
+   driven descendant moves with its box. The "stayed behind" branch was last
+   seen firing on Problems' caption, before its repair.
 
-   Nothing paints in the wrong place today, because `.sr` in assets/aria.css is
-   a one-pixel box clipped to `rect(0 0 0 0)`: it has no visible extent to
-   escape with. So the containment is genuinely broken and the consequence is
-   genuinely nil, which is the state an assertion is for. The next child of one
-   of these wrappers that has a size is the one that pays, and nothing in this
-   repository would have said so.
+   Nothing painted in the wrong place even before the repair, because `.sr` in
+   assets/aria.css is a one-pixel box clipped to `rect(0 0 0 0)`: it has no
+   visible extent to escape with. So the containment was genuinely broken and
+   the consequence genuinely nil, which is the state an assertion is for. The
+   next child of one of these wrappers with a size would have been the one to
+   pay, and nothing in this repository would have said so.
 
    WHAT THIS FILE ASSERTS, and how each claim is proved:
 
@@ -128,11 +131,12 @@
      needs to stabilise -- is real but I could not stage it, because the
      announcement is not something a test can delay. Treat that count as an
      instrument reporting zero, not as a proven condition.
-   - The repair itself, in the sheets still listed. Adding `position:
-     relative` to a static wrapper is a change to a pane sheet; this file
-     names the sheet that owns each one and asserts only that the gap is
-     still there. Evaluations' `.tbl-wrap` and Releases' `.tbl-scroll` were
-     repaired under Stadiora/Aria#10706 and left both lists. */
+   - Scrollers the sweep never renders. Every wrapper the v2 sheets declare
+     was repaired under Stadiora/Aria#10706 and both frozen lists are empty.
+     scripts/ops-scroll-wrapper-position.test.mjs holds every sideways
+     scroller in every sheet to the same rule by parsing the sheets, which
+     reaches the boxes this sweep cannot (`.sp-scroll`, People's `.tbl-wrap`),
+     though only as a statement about the sheet, not about a rendered box. */
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -185,16 +189,10 @@ const EPSILON = 0.5;
    the violations it was written for.
 
    Each entry names the sheet that would repair it, and leaves this list when
-   that sheet is fixed: Releases' `.tbl-scroll` was repaired under
-   Stadiora/Aria#10706 and its entry went with it. */
-const KNOWN_ESCAPES = [
-  {
-    pane: 'alerts',
-    box: 'div.scrollx',
-    descendant: 'caption#alertsRulesCaption.sr',
-    repairIn: 'ops/assets/pane-alerts-v2.css .scrollx'
-  }
-];
+   that sheet is fixed. Releases' `.tbl-scroll` and Problems' `.scrollx` were
+   both repaired under Stadiora/Aria#10706, so the list is empty. An entry
+   takes the shape { pane, box, descendant, repairIn }. */
+const KNOWN_ESCAPES = [];
 
 /* The gap itself, as distinct from its consequence. KNOWN_ESCAPES above
    freezes the sites where a static wrapper demonstrably fails to contain
@@ -211,10 +209,7 @@ const KNOWN_ESCAPES = [
    Every entry is asserted to STILL be static, so an entry outliving its own
    repair fails this file and asks to be deleted. That is how entries leave
    the list one at a time as the sheets that own them are fixed. */
-const KNOWN_STATIC_SCROLLERS = [
-  { pane: 'alerts', box: 'div.scrollx', repairIn: 'ops/assets/pane-alerts-v2.css .scrollx' },
-  { pane: 'history', box: 'div.tbl-wrap', repairIn: 'ops/assets/pane-run-history-v2.css .tbl-wrap' }
-];
+const KNOWN_STATIC_SCROLLERS = [];
 
 /* A form control that scrolls its own value is not a layout wrapper and has no
    containing-block question to answer, so it is out of scope rather than
