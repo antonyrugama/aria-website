@@ -157,7 +157,9 @@
      also the only two pages still linking assets/ops.css, so the one
      stylesheet Stadiora/Aria#7365 and #7366 were filed against has never been
      laid out narrow by anything. check-ops-shell-v2.mjs loads both, at 1440px
-     only.
+     only. The one non-pane page this sweep does lay out is
+     ops/shell-v2.html, named in REFERENCE_PAGES below (Stadiora/Aria#10795);
+     a page is not swept by being added to ops/, only by being listed there.
 
    Usage:  node scripts/check-ops-narrow-overflow.mjs
    Chrome: CHROME_PATH, or the usual install locations on Linux and Windows.
@@ -230,6 +232,24 @@ const PAGES = Object.keys(DECLARED).map((key) => ({
   label: DECLARED[key].label,
   question: DECLARED[key].question
 }));
+
+/* Pages that are not panes and are laid out anyway. ops/shell-v2.html is the
+   design-system reference every pane remodel is built against, and it is the
+   only page that draws the preview-state switcher in its top bar: that
+   switcher pushed the document to 449px at 375px, 360px and 320px alike, and
+   nothing laid the page out narrow to notice (Stadiora/Aria#10795). It is not
+   in the registry, so it cannot come from there; it is listed by hand, and
+   the swept count below is asserted against this list as it is for panes.
+
+   The page reads no API and boots no session, so the pane gates -- data-pane,
+   the ready gate, the registry's top bar -- do not apply to it. Its own gates
+   are the heading its controller writes, a string only its content draws, and
+   the switcher being present, since the switcher is the element this entry
+   exists to lay out. */
+const REFERENCE_PAGES = [
+  { key: 'shell-v2', url: '/ops/shell-v2.html', title: 'Design system v2',
+    markers: ['Preview states'] }
+];
 
 /* Both of these stop the run before a browser is started, because either one
    means the sweep about to happen would not be the sweep this file claims. */
@@ -852,6 +872,8 @@ const probeFor = (markers) => `(() => {
        a severity tint that most rows do not carry (Stadiora/Aria#10644,
        #12565). */
     ruleRows: document.querySelectorAll('.rules-card tbody > tr').length,
+    /* The design page's preview switcher, which only that page draws. */
+    stateSeg: !!document.getElementById('stateSeg'),
     /* The row's own text, not the text of a particular element inside it. A
        probe that reads a row's .badge only sees the sentence while the pane
        spells it that way, and the v2 remodel spells it .pill; a guard that
@@ -875,7 +897,26 @@ const failures = [];
    404s, names another pane, or never reaches its ready gate is not in here,
    which is what makes the count at the bottom worth asserting. */
 const measured = new Set();
+const measuredReference = new Set();
 let probes = 0;
+
+/* The verdict itself, shared by panes and reference pages: the document is
+   either no wider than the viewport, or the failure names what is past it. */
+function judge(where, url, WIDTH, theme, seen) {
+  if (seen.scrollWidth > seen.viewport) {
+    const worst = seen.past
+      .map((e) => `      ${e.tag}.${e.cls.split(' ').join('.')} ends at ${e.right}px${e.text ? ` ("${e.text}")` : ''}`)
+      .join('\n');
+    failures.push(
+      `${where}: the page scrolls sideways — ` +
+      `documentElement.scrollWidth is ${seen.scrollWidth}, viewport is ${seen.viewport}.\n` +
+      `    Past the right edge:\n${worst}`);
+  } else {
+    console.log(`ok  ${url} at ${WIDTH}px, ${theme} theme: ` +
+      `scrollWidth ${seen.scrollWidth} <= ${seen.viewport}, ` +
+      `${seen.contentElements} elements drawn`);
+  }
+}
 
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const PORT = server.address().port;
@@ -1001,20 +1042,46 @@ try {
         }
 
         measured.add(seen.pane);
+        judge(where, page.url, WIDTH, theme, seen);
+      }
 
-        if (seen.scrollWidth > seen.viewport) {
-          const worst = seen.past
-            .map((e) => `      ${e.tag}.${e.cls.split(' ').join('.')} ends at ${e.right}px${e.text ? ` ("${e.text}")` : ''}`)
-            .join('\n');
-          failures.push(
-            `${where}: the page scrolls sideways — ` +
-            `documentElement.scrollWidth is ${seen.scrollWidth}, viewport is ${seen.viewport}.\n` +
-            `    Past the right edge:\n${worst}`);
-        } else {
-          console.log(`ok  ${page.url} at ${WIDTH}px, ${theme} theme: ` +
-            `scrollWidth ${seen.scrollWidth} <= ${seen.viewport}, ` +
-            `${seen.contentElements} elements drawn`);
+      for (const page of REFERENCE_PAGES) {
+        const where = `${page.key} (${page.url}) at ${WIDTH}px, ${theme} theme`;
+
+        cdp.reset();
+        await cdp.send('Page.navigate', { url: origin + page.url });
+        await cdp.once('Page.loadEventFired');
+        await new Promise((r) => setTimeout(r, SETTLE_MS));
+
+        const evaluated = await cdp.send('Runtime.evaluate', {
+          expression: probeFor(page.markers), returnByValue: true
+        });
+        const seen = JSON.parse(evaluated.result.value);
+        probes += 1;
+
+        if (seen.theme !== theme) {
+          failures.push(`${where}: the page applied the ${seen.theme} theme, so this ` +
+            `measurement is of ${seen.theme} and the ${theme} run never happened.`);
+          continue;
         }
+        if (seen.title !== page.title) {
+          failures.push(`${where}: the top bar reads ${JSON.stringify(seen.title)}, not ` +
+            `${JSON.stringify(page.title)}, so the page's controller never drew it.`);
+          continue;
+        }
+        if (!seen.stateSeg) {
+          failures.push(`${where}: the preview switcher (#stateSeg) is not on the page, so ` +
+            'the element this entry exists to lay out was never drawn.');
+          continue;
+        }
+        if (seen.contentElements < MIN_CONTENT_ELEMENTS || seen.missing.length) {
+          failures.push(`${where}: #content holds ${seen.contentElements} elements and is ` +
+            `missing ${JSON.stringify(seen.missing)}. The page did not draw.`);
+          continue;
+        }
+
+        measuredReference.add(page.key);
+        judge(where, page.url, WIDTH, theme, seen);
       }
     }
   }
@@ -1030,7 +1097,7 @@ try {
    halfway, a pane list that shrank back to the one page this check started
    life with — would otherwise report every pane it did reach as fitting and
    exit 0 on a page count nobody looked at. */
-const expectedProbes = PAGES.length * WIDTHS.length * THEMES.length;
+const expectedProbes = (PAGES.length + REFERENCE_PAGES.length) * WIDTHS.length * THEMES.length;
 if (measured.size === 0) {
   failures.push('no pane was measured at all: every page failed before its width was read.');
 } else if (measured.size !== PAGES.length) {
@@ -1038,12 +1105,19 @@ if (measured.size === 0) {
   failures.push(`${REGISTRY} declares ${PAGES.length} panes and ${measured.size} were measured. ` +
     `Never measured: ${missing.join(', ')}.`);
 }
+const unmeasuredReference = REFERENCE_PAGES.map((p) => p.key).filter((k) => !measuredReference.has(k));
+if (unmeasuredReference.length) {
+  failures.push(`REFERENCE_PAGES lists ${REFERENCE_PAGES.length} page(s) and ` +
+    `${measuredReference.size} were measured. Never measured: ${unmeasuredReference.join(', ')}.`);
+}
 if (probes !== expectedProbes) {
-  failures.push(`${expectedProbes} page loads were due (${PAGES.length} panes x ${WIDTHS.length} ` +
+  failures.push(`${expectedProbes} page loads were due (${PAGES.length} panes and ` +
+    `${REFERENCE_PAGES.length} reference page(s) x ${WIDTHS.length} ` +
     `widths x ${THEMES.length} themes) and ${probes} were read.`);
 }
 
 console.log(`\nSwept ${measured.size} of the ${PAGES.length} panes ${REGISTRY} declares, ` +
+  `and ${measuredReference.size} of the ${REFERENCE_PAGES.length} reference page(s) listed here, ` +
   `at ${WIDTHS.join('px and ')}px, in the ${THEMES.join(' and ')} themes: ` +
   `${probes} page loads measured.`);
 
