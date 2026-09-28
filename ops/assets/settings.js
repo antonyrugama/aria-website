@@ -1780,10 +1780,12 @@
         }).then(function (payload) {
           var saved = payload && payload.data ? payload.data : {};
           if (saved.currentSessionWillEnd) {
-            var ending = 'Saved. Your own session is older than the new limit, so you\'ll be signed out.';
-            status.textContent = ending + ' Opening the sign-in page in a moment.';
-            S.toast('check', ending);
-            S.announce(ending + ' Opening the sign-in page in a moment.');
+            /* The inline status is a live region, so it is the one update
+               this event makes. The shell's toast and announcer are live
+               regions too, and writing all three had a screen reader speak
+               the same sentence three times (Stadiora/Aria#11664). */
+            status.textContent = 'Saved. Your own session is older than the new limit, ' +
+              'so you\'ll be signed out. Opening the sign-in page in a moment.';
             global.setTimeout(function () {
               var route = function () { session.toLogin('expired'); };
               session.signOut({ noNavigate: true }).then(route, route);
@@ -1802,10 +1804,8 @@
             reloadSessionSettingsCard();
             return;
           }
-          var message = sessionSettingsWriteMessage(err);
-          status.textContent = message;
-          S.toast('warn', message);
-          S.announce(message);
+          /* One live-region update, the inline status, as above. */
+          status.textContent = sessionSettingsWriteMessage(err);
         });
       });
 
