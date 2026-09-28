@@ -311,7 +311,9 @@
    this at 375px. */
 
 .rules-card { min-width: 0; }
-.scrollx { overflow-x: auto; }
+/* Positioned so overflow-x clips an absolutely positioned descendant too,
+   not only in-flow content (Stadiora/Aria#10706). */
+.scrollx { overflow-x: auto; position: relative; }
 .scrollx > .tbl { min-width: 760px; }
 
 /* The box carries a tab stop (pane-alerts.js), so it takes a focus ring, and
