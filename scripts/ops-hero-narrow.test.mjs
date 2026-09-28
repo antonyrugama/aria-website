@@ -42,7 +42,8 @@
  *
  * THE SUBJECT
  *
- * Two pages.
+ * Five pages: the shell reference page and the four panes that draw a hero
+ * ending in `.hero-chips` (settings, alerts, overview, releases).
  *
  * `/ops/shell-v2.html` is the only one that loads `ops/assets/aria.css` ALONE,
  * so the shared rule is the only thing standing between its hero and the
@@ -61,21 +62,23 @@
  * `46px 233px`. All twelve settings readings were byte-identical before and
  * after the copy came out.
  *
- * It gates on a session and builds its hero from API data, so this file serves
+ * `/ops/alerts.html`, `/ops/index.html` (overview) and `/ops/releases.html`
+ * joined on the commit that removed their own scoped copies, the rest of
+ * #10397 criterion 4. All thirty-six of their readings were byte-identical
+ * before and after the copies came out: the shared rule was already the
+ * winning declaration's twin, so taking the copies away changed nothing a
+ * reader of the tracks can see, and now the shared rule is the only thing
+ * holding them.
+ *
+ * The panes gate on a session and build their heroes from API data, so this file serves
  * `scripts/ops-api-stub.mjs` and seeds `ops-refresh` the way the other rendered
  * oracles do.
  *
  * NOT COVERED — deliberately, and measured rather than assumed:
  *
- *  - The other nine `/ops/*.html` pane pages. Three of them still carry an
- *    identical scoped copy of the rule this file binds — `pane-alerts-v2.css`,
- *    `pane-overview-v2.css` and `pane-releases-v2.css` (twice). While a copy is
- *    present the shared rule cannot be observed doing anything on that page:
- *    the pane sheet's identical declaration wins on order, so the hero would
- *    stay correct with `aria.css:932` deleted and a sweep of it would prove
- *    nothing about the rule. Those files belong to other agents and removing
- *    the copies is the rest of #10397 criterion 4; each page becomes worth
- *    sweeping here on the commit its copy comes out, and not before.
+ *  - The other six `/ops/*.html` pane pages. None of them draws a hero that
+ *    ends in `.hero-chips`, so `READ` would refuse them rather than measure
+ *    them; a pane that grows one is not picked up until it is added to PAGES.
  *  - `.hero > .row:last-child`, the pre-existing sibling rule. No page in this
  *    repository ends a hero with a `.row`, so there is nothing to measure. It
  *    is untouched by this change.

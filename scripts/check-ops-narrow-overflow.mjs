@@ -102,21 +102,19 @@
      here.
    - **An overflow a container clips.** The verdict is the width of the
      document, so an element that overruns inside an ancestor that clips it
-     never reaches the document and is invisible here on every pane. Measured:
-     deleting **all five** copies of `.hero > .hero-chips { grid-column: 1 / -1
-     }`, each at its own site inside its file's existing `@media (max-width:
-     980px)` block — pane-alerts-v2.css, pane-overview-v2.css,
-     pane-releases-v2.css, pane-settings-v2.css and the shared assets/aria.css
-     — collapses the hero's title column to 0px on three panes and to 41px on
-     App releases, and `.hero` itself then reports scrollWidth 398 against
-     clientWidth 343, while `documentElement.scrollWidth` stays 375 and this
-     check stays green in both states. Deleting only the four per-pane copies
-     is a no-op: 4bf94af (PR #92) added the fifth to the shared sheet, so
-     either set alone is masked by the other. This bullet published the
-     four-site version until round 2 of PR #103 re-ran it. That defect class
-     needs an element-level check; scripts/ops-hero-narrow.test.mjs already
-     binds the hero half of it on /ops/shell-v2.html, where the shared rule is
-     unmasked, and the rest is filed as Stadiora/Aria#10397.
+     never reaches the document and is invisible here on every pane. Measured
+     in round 2 of PR #103, when the rule `.hero > .hero-chips { grid-column:
+     1 / -1 }` had five copies (four pane sheets and the shared
+     assets/aria.css): deleting **all five** collapses the hero's title column to
+     0px on three panes and to 41px on App releases, and `.hero` itself then
+     reports scrollWidth 398 against clientWidth 343, while
+     `documentElement.scrollWidth` stays 375 and this check stays green in
+     both states. The four pane copies have since been removed
+     (Stadiora/Aria#10397), so aria.css now carries the only one; that
+     measurement has not been re-run against it. That defect class needs an
+     element-level check, and scripts/ops-hero-narrow.test.mjs is it: it reads
+     the hero's used tracks on /ops/shell-v2.html and on every pane whose
+     hero ends in `.hero-chips`.
    - **Anything out of the document's flow, and anything past the left edge.**
      `documentElement.scrollWidth` does not grow for a `position: fixed` box
      however far past the right edge it sits, and it does not grow for any box

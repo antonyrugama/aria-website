@@ -1575,9 +1575,9 @@ where the mock reads its own sample text:
   was never connected, or polled and refused, makes the same empty ladder mean nothing at all,
   and the headline says which of the three it is.
 
-`assets/pane-releases-v2.css` carries this pane's own shapes. Two rules in it are scoped
-overrides of shared stylesheets that this change is not allowed to edit; both name
-`Stadiora/Aria#10397`, which is filed to move them.
+`assets/pane-releases-v2.css` carries this pane's own shapes. The two scoped overrides it
+used to carry, the hero chip strip's row and the filter note's wrapping, now live in the
+shared `aria.css` and `shell-pane-v2.css` (`Stadiora/Aria#10397`).
 
 ### Look up a user on v2: where the pane departs from the mock
 
