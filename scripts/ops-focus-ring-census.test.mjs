@@ -122,7 +122,7 @@ const EXPECTED = [
   { file: 'ops/assets/pane-evaluations-v2.css', selector: '.field-input:focus-visible',
     offset: '-2px', dark: '#22d3ee', light: '#155e75' },
   { file: 'ops/assets/shell-pane-v2.css', selector: '.modal-card .field-input:focus-visible',
-    offset: '2px', dark: '#22d3ee', light: '#0891b2' }
+    offset: '-2px', dark: '#22d3ee', light: '#155e75' }
 ];
 
 /* Rules whose colour is NOT the document ring's, each with the issue that
@@ -150,14 +150,6 @@ const KNOWN_DIVERGENT = [
     issue: 'Stadiora/Aria#10721',
     note: 'The per-rule enable switch on the Alert rules pane. Held by ' +
       'antonyrugama/aria-website PR #75 at the time of writing.'
-  },
-  {
-    file: 'ops/assets/shell-pane-v2.css',
-    selector: '.modal-card .field-input:focus-visible',
-    issue: 'Stadiora/Aria#10842',
-    note: 'The re-authentication dialog\'s password field, on all ten pane ' +
-      'pages. Not one of the three sites #10721 names — this census found ' +
-      'it, which is what the census is for.'
   }
 ];
 
@@ -833,10 +825,10 @@ test('the counts are the ones this file claims to produce', () => {
   }, {
     colourRules: 8,
     censusRows: 8,
-    inherits: 5,
-    diverges: 3,
+    inherits: 6,
+    diverges: 2,
     unresolvable: 0,
-    enumerated: 3,
+    enumerated: 2,
     pins: 'dark,file,light,offset,selector'
   });
 });

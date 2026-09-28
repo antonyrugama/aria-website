@@ -30,7 +30,7 @@
    WCAG AA by construction (monorepo #10042) — bar the sites on the line
    below, which scripts/ops-alerts-v2.test.mjs reads out of this comment and
    checks against what the sheet actually paints ("every colour this sheet
-   paints is a token aria.css declares, bar the 6 sites named here" and
+   paints is a token aria.css declares, bar the 10 sites named here" and
    "every token this sheet paints with is one aria.css actually declares"),
    so the two cannot drift:
 
@@ -311,7 +311,9 @@
    this at 375px. */
 
 .rules-card { min-width: 0; }
-.scrollx { overflow-x: auto; }
+/* Positioned so overflow-x clips an absolutely positioned descendant too,
+   not only in-flow content (Stadiora/Aria#10706). */
+.scrollx { overflow-x: auto; position: relative; }
 .scrollx > .tbl { min-width: 760px; }
 
 /* The box carries a tab stop (pane-alerts.js), so it takes a focus ring, and
@@ -350,6 +352,24 @@
    own minimum instead, which the auto algorithm has to honour. */
 .rules-card .tbl td:first-child .t-main { white-space: nowrap; }
 .rules-card .tbl td:nth-child(2) { min-width: 150px; }
+
+/* Row severity tint, from the approved mock's pane-operate.css. Always paired
+   with the worded state pill in the same row (ruleRow() in pane-alerts.js), so
+   the colour never carries the meaning alone. The hover rules restate the
+   tint a step stronger: these selectors outrank aria.css's
+   `.tbl tbody tr:hover`, so without them a tinted row would stop answering
+   the pointer.
+
+   The hover steps are 9% and 7%, not the mock's 11% and 10%. Dark --ink-3
+   text (.muted, .t-sub) over the card's --surface-2 top computes to 4.45:1
+   on the mock's hot hover and 4.25:1 on its warm one, and .pill.down's ink
+   to 4.38:1, all under AA. At 9% and 7% the worst of the three is 4.53:1.
+   That is arithmetic on the tokens, not a rendered measurement: no guard
+   hovers this page (Stadiora/Aria#12565). */
+.rules-card .tbl tbody tr.hot  { background: color-mix(in srgb, var(--rose) 7%, transparent); }
+.rules-card .tbl tbody tr.warm { background: color-mix(in srgb, var(--amber) 6%, transparent); }
+.rules-card .tbl tbody tr.hot:hover  { background: color-mix(in srgb, var(--rose) 9%, transparent); }
+.rules-card .tbl tbody tr.warm:hover { background: color-mix(in srgb, var(--amber) 7%, transparent); }
 
 /* ---------------------------------------------------------------- switch
 

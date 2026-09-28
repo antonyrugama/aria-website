@@ -6,7 +6,7 @@
    screenshot or a headless-Chrome overflow check can see:
 
      - a figure is labelled with the window the answer says it covers, read
-       from window.days rather than written into the pane;
+       from the day-grain or hour-grain window rather than written into the pane;
      - a block whose availability is not `ready` renders words and never a
        numeral, so "not connected" can never look like zero;
      - the two apps are never added together;
@@ -69,6 +69,12 @@ const minutesAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
 
 const DAYS = ['2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16',
   '2026-09-17', '2026-09-18', '2026-09-19'];
+const HOUR_KEYS = Array.from({ length: 24 }, (_, n) =>
+  new Date(Date.UTC(2026, 8, 19, 9 + n)).toISOString());
+const HOURS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00',
+  '15:00', '16:00', '17:00', '18:00', '19:00', '20:00',
+  '21:00', '22:00', '23:00', '00:00', '01:00', '02:00',
+  '03:00', '04:00', '05:00', '06:00', '07:00', '08:00'];
 
 /* A whole, healthy answer. Every test below starts here and takes something
    away, because the rules under test are rules about absence. */
@@ -135,6 +141,41 @@ function summaryFixture(over) {
      that still had it. Both styles work now. */
   const out = over(base);
   return out === undefined ? base : out;
+}
+
+function hourlyActivity(over) {
+  const activity = {
+    availability: { state: 'ready' },
+    labels: HOURS.slice(),
+    series: [
+      {
+        key: 'mobile',
+        label: 'Mobile',
+        color: 's1',
+        values: [51, 43, null, 0, 59, null, 62, 64, 61, 67, 70, 72,
+          74, 73, 71, 69, 66, 63, 60, 58, 55, 53, 52, 54],
+      },
+      {
+        key: 'coaches',
+        label: 'Coaches Web',
+        color: 's2',
+        values: [83, 80, null, 76, 73, 71, 69, null, 64, 61, 58, 56,
+          54, 52, 50, 49, 47, 45, 43, 41, 39, 37, 35, 33],
+      },
+    ],
+    reportingStart: HOUR_KEYS[0],
+    hoursMissingRollups: [HOUR_KEYS[2]],
+    window: {
+      start: HOUR_KEYS[0],
+      endExclusive: '2026-09-20T09:00:00.000Z',
+      hours: 24,
+      grain: 'hour',
+      timezone: 'UTC',
+    },
+  };
+  if (!over) return activity;
+  const out = over(activity);
+  return out === undefined ? activity : out;
 }
 
 function problemsFixture(rows) {
@@ -344,6 +385,36 @@ test('a block whose answer describes no window says so rather than guessing one'
     'the other tiles lost their window label too, so this proves nothing');
 });
 
+test('hour-grain activity says last 24 hours in UTC and reads x-axis labels from the answer', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => {
+      s.activity = hourlyActivity((a) => {
+        a.labels[0] = '09:15';
+        a.labels[a.labels.length - 1] = '08:45';
+      });
+    }),
+  });
+  const text = liveText(dom);
+  assert.match(text, /People active each hour/,
+    'the hour-grain chart kept the daily heading');
+  assert.match(text, /Last 24 hours \(UTC\)/,
+    'the hour-grain chart did not label the 24-hour UTC window from the answer');
+  assert.doesNotMatch(text, /People active each day/,
+    'the hour-grain payload was still described as daily');
+  assert.match(text, /09:15/,
+    'the first x-axis label did not come from the activity labels array');
+  assert.match(text, /08:45/,
+    'the last x-axis label did not come from the activity labels array');
+
+  const name = (chartOf(dom) && chartOf(dom).getAttribute('aria-label')) || '';
+  assert.match(name, /People active each hour over the last 24 hours \(UTC\), one line per app/,
+    'the chart spoken description did not say each hour over the last 24 hours (UTC)');
+  assert.equal((name.match(/each hour/g) || []).length, 1,
+    'the chart spoken description repeated "each hour": ' + name);
+  assert.doesNotMatch(name, /each day|whole UTC day/,
+    'the chart spoken description still used day-grain copy');
+});
+
 /* ================= availability: words, never a numeral ================= */
 
 const BLOCKS = [
@@ -514,6 +585,81 @@ test('a day with no stored reading breaks the line rather than joining across it
     'the app with a missing day still claims a reading for every day');
   assert.doesNotMatch(text, /\b0 people on 2026-09-15\b/,
     'the gap day was reported as a measured zero');
+});
+
+test('not-enough-data activity copy follows the payload grain', async () => {
+  const day = await boot({
+    summary: summaryFixture((s) => {
+      s.activity.series.forEach((one) => {
+        one.values = one.values.map((v, index) => (index === 0 ? v : null));
+      });
+      s.activity.daysMissingRollups = DAYS.slice(1);
+    }),
+  });
+  const dayText = liveText(day);
+  assert.match(dayText, /People active each day/,
+    'the day-grain not-enough-data case did not render the daily card');
+  assert.match(dayText, /Not enough days to draw a line yet/,
+    'the day-grain not-enough-data branch lost its day heading');
+  assert.match(dayText, /Fewer than two days in this window have a stored reading\./,
+    'the day-grain not-enough-data branch lost its day detail');
+
+  const hour = await boot({
+    summary: summaryFixture((s) => {
+      s.activity = hourlyActivity((a) => {
+        a.series.forEach((one) => {
+          one.values = one.values.map((v, index) => (index === 0 ? 7 : null));
+        });
+        a.hoursMissingRollups = HOUR_KEYS.slice(1);
+      });
+    }),
+  });
+  const hourText = liveText(hour);
+  assert.match(hourText, /People active each hour/,
+    'the hour-grain not-enough-data case did not render the hourly card');
+  assert.match(hourText, /Not enough hours to draw a line yet/,
+    'the hour-grain not-enough-data branch did not use hour heading copy');
+  assert.match(hourText, /Fewer than two hours in this window have a stored reading\./,
+    'the hour-grain not-enough-data branch did not use hour detail copy');
+  assert.doesNotMatch(hourText, /Not enough days to draw a line yet|Fewer than two days/,
+    'the hour-grain not-enough-data branch still used day copy');
+});
+
+test('hour-grain null readings are gaps, reported zeroes stay zero, and apps are not summed', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => { s.activity = hourlyActivity(); }),
+  });
+  const svg = chartOf(dom);
+  assert.ok(svg, 'the activity chart is not on the pane');
+
+  const groups = findAll(svg, (n) => n.tagName === 'g' && n.getAttribute('data-series'));
+  const keys = groups.map((g) => g.getAttribute('data-series')).sort();
+  assert.deepEqual(keys, ['coaches', 'mobile'],
+    'the hour-grain chart drew a combined series instead of one line per app: ' + keys.join(', '));
+
+  const mobile = groups.filter((g) => g.getAttribute('data-series') === 'mobile')[0];
+  const lines = findAll(mobile, (n) => n.tagName === 'path');
+  assert.equal(lines.length, 3,
+    'the two missing mobile hours were joined across instead of making three line runs');
+  for (const line of lines) {
+    assert.doesNotMatch(line.getAttribute('d') || '', /NaN/,
+      'a missing hourly reading reached the path as NaN');
+  }
+
+  const text = liveText(dom);
+  assert.match(text, /1 hour did not report/,
+    'the hour-grain chart did not say how many hours did not report');
+  assert.match(text, /22 of 24 hours/,
+    'the mobile series did not count hourly nulls as gaps');
+  const name = svg.getAttribute('aria-label') || '';
+  assert.match(name, /1 hour did not report/,
+    'the chart spoken description did not say how many hours did not report');
+  assert.match(name, /low 0, high 74/,
+    'a reported zero was not kept as a measured hourly value');
+  assert.doesNotMatch(text, /\b134\b/,
+    'Mobile and Coaches Web were summed into a combined activity value');
+  assert.doesNotMatch(text, /\b0 people on 11:00\b/,
+    'a missing hour was described as a measured zero');
 });
 
 /* ===================== the cost tile and the omissions ================== */
