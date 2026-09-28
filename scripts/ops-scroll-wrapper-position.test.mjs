@@ -23,8 +23,16 @@
    or `overlay`, spelled as the longhand or as the `overflow` shorthand, whose
    first value is the x axis. For each selector such a rule names, the same
    sheet has to declare `position` on that exact selector with a value other
-   than `static`, and must never declare `position: static` on it. Rules
-   inside `@media` and `@supports` count, because the parse flattens them.
+   of `relative`, `absolute`, `fixed` or `sticky`, and every `position` it
+   declares there must be one of those, so `static`, `initial`, `unset` and
+   `revert` all fail. Rules inside `@media`, `@supports`, `@container`,
+   `@layer`, `@scope` and `@starting-style` count, because the parse
+   flattens them.
+
+   The parse refuses what it cannot read rather than skipping it: a block
+   at-rule it does not know, or a style rule with a nested rule inside it,
+   throws and fails the sweep by name. Only at-rules that cannot hold a style
+   rule (`@keyframes`, `@font-face` and the like) are passed over.
 
    NOT COVERED
 
@@ -66,9 +74,13 @@ function splitSelectors(prelude) {
   return out.map((s) => s.trim().replace(/\s+/g, ' ')).filter(Boolean);
 }
 
-/* Style rules with their selector lists, `@media` and `@supports` bodies
-   flattened in, comments removed first so prose naming a selector is not
-   read as one. */
+const GROUPING = /^@(media|supports|container|layer|scope|starting-style)\b/i;
+const NO_STYLE_RULES = /^@(-webkit-)?(keyframes|font-face|property|page|counter-style|font-feature-values|font-palette-values)\b/i;
+
+/* Style rules with their selector lists, grouping at-rule bodies flattened
+   in, comments removed first so prose naming a selector is not read as one.
+   Throws on a block it cannot read, so an unread rule is a named failure and
+   never a silently unjudged box. */
 function cssRules(css) {
   const src = css.replace(/\/\*[\s\S]*?\*\//g, '');
   const out = [];
@@ -76,7 +88,9 @@ function cssRules(css) {
   while (i < src.length) {
     const open = src.indexOf('{', i);
     if (open === -1) break;
-    const prelude = src.slice(i, open).trim();
+    /* Statement at-rules (`@import …;`, `@layer a, b;`) end at a semicolon
+       and carry no block, so the prelude is what follows the last one. */
+    const prelude = src.slice(i, open).split(';').pop().trim();
     let depth = 0;
     let end = open;
     for (; end < src.length; end += 1) {
@@ -85,8 +99,14 @@ function cssRules(css) {
     }
     const body = src.slice(open + 1, end);
     if (prelude.startsWith('@')) {
-      if (/^@(media|supports)\b/i.test(prelude)) out.push(...cssRules(body));
+      if (GROUPING.test(prelude)) out.push(...cssRules(body));
+      else if (!NO_STYLE_RULES.test(prelude)) {
+        throw new Error(`cannot read the at-rule "${prelude}": teach cssRules() to flatten it or to pass over it`);
+      }
     } else if (prelude) {
+      if (body.includes('{')) {
+        throw new Error(`"${prelude}" holds a nested rule, which cssRules() does not read`);
+      }
       out.push({ selectors: splitSelectors(prelude), body });
     }
     i = end + 1;
@@ -108,6 +128,7 @@ function declarations(body) {
 }
 
 const SCROLLS = /^(auto|scroll|overlay)$/;
+const POSITIONED = /^(relative|absolute|fixed|sticky)$/;
 
 function scrollsSideways(body) {
   return declarations(body).some(([prop, value]) =>
@@ -129,7 +150,7 @@ export function analyze(css) {
       .flatMap((r) => declarations(r.body))
       .filter(([prop]) => prop === 'position')
       .map(([, value]) => value);
-    const positioned = positions.length > 0 && !positions.includes('static');
+    const positioned = positions.length > 0 && positions.every((v) => POSITIONED.test(v));
     return { box, positions, positioned };
   });
 }
@@ -184,4 +205,19 @@ test('analyze() flags a static scroller and accepts a positioned one', () => {
     'prose in a comment is not a rule');
   assert.deepStrictEqual(judged(':is(.a, .b) { overflow-x: auto; position: relative; }'),
     { ':is(.a, .b)': true }, 'a comma inside :is() does not split the selector');
+  assert.deepStrictEqual(judged('.a { overflow-x: auto; position: unset; } .b { overflow-x: auto; position: initial; }'),
+    { '.a': false, '.b': false }, 'a keyword that computes to static is not a position');
+  assert.deepStrictEqual(judged('@container (max-width: 600px) { .a { overflow-x: auto; } }'),
+    { '.a': false }, 'rules inside @container are read');
+  assert.deepStrictEqual(judged('@layer base; @layer base { .a { overflow-x: auto; } }'),
+    { '.a': false }, 'rules inside @layer are read, and a statement @layer is not glued to them');
+  assert.deepStrictEqual(judged('@keyframes k { from { opacity: 0; } to { opacity: 1; } } .a { overflow-x: auto; }'),
+    { '.a': false }, '@keyframes is passed over and the rule after it is still read');
+});
+
+test('analyze() refuses CSS it cannot read rather than skipping it', () => {
+  assert.throws(() => analyze('.card { .a { overflow-x: auto; } }'), /nested rule/,
+    'a nested rule was skipped silently');
+  assert.throws(() => analyze('@document url(x) { .a { overflow-x: auto; } }'), /cannot read the at-rule/,
+    'an unknown block at-rule was skipped silently');
 });

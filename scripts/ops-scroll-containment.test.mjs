@@ -61,9 +61,10 @@
 
    5. `.sr` really is absolutely positioned, read off a rendered element
       rather than out of the stylesheet text. It is the premise the whole
-      defect class rests on: if `.sr` stopped being absolute the escapes in
-      KNOWN_ESCAPES would silently stop reproducing, and claim 3 would read
-      that as repair.
+      defect class rests on: if `.sr` stopped being absolute, the captions
+      claim 1 judges would stop being absolutely positioned descendants, and
+      any escape later frozen in KNOWN_ESCAPES would silently stop
+      reproducing, which claim 3 would read as repair.
 
    6. Every box that scrolls is positioned, except the wrappers frozen in
       KNOWN_STATIC_SCROLLERS -- and every frozen wrapper is still static.
@@ -132,7 +133,8 @@
      announcement is not something a test can delay. Treat that count as an
      instrument reporting zero, not as a proven condition.
    - Scrollers the sweep never renders. Every wrapper the v2 sheets declare
-     was repaired under Stadiora/Aria#10706 and both frozen lists are empty.
+     is now positioned (the static ones were repaired under
+     Stadiora/Aria#10706) and both frozen lists are empty.
      scripts/ops-scroll-wrapper-position.test.mjs holds every sideways
      scroller in every sheet to the same rule by parsing the sheets, which
      reaches the boxes this sweep cannot (`.sp-scroll`, People's `.tbl-wrap`),
@@ -991,9 +993,9 @@ test('the sweep judged panes, scroll boxes and absolutely positioned children', 
 
 test('.sr is absolutely positioned, which is what lets it escape a static scroll box', () => {
   assert.deepEqual([...srPositions], ['absolute'],
-    'the .sr utility in ops/assets/aria.css is what every frozen escape in this file is made of. ' +
-    'If it stops being absolutely positioned those escapes stop reproducing, and the frozen-entry ' +
-    'check above would read that as the sheets having been repaired.');
+    'the .sr utility in ops/assets/aria.css is what the absolutely positioned descendants this ' +
+    'file judges are made of. If it stops being absolutely positioned, claim 1 loses its ' +
+    'population, and any frozen escape would stop reproducing and read as a repair.');
 });
 
 /* Claim 7. Every reading above is labelled with the state it was taken in, and

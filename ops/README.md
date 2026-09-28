@@ -1404,9 +1404,10 @@ those panes now.
     ```
 
     `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
-    `login.html` and `setup.html` load and neither of them draws a table. The v2 wrappers were
-    repaired under Stadiora/Aria#10706, and `scripts/ops-scroll-wrapper-position.test.mjs` now
-    fails on any sideways scroller a sheet leaves unpositioned. The block is derived from the
+    `login.html` and `setup.html` load and neither of them draws a table. The last static v2
+    wrappers were repaired under Stadiora/Aria#10706, and
+    `scripts/ops-scroll-wrapper-position.test.mjs` now fails on any sideways scroller a sheet
+    leaves unpositioned, and on any block of CSS its parser cannot read. The block is derived from the
     sheets on every run, so read the answer off it rather than off this sentence.
 
     This item used to add "no pane ships such a span today". That was false, and it was false in
