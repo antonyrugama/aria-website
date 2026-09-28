@@ -79,11 +79,12 @@
  *  - `.hero > .row:last-child`, the pre-existing sibling rule. No page in this
  *    repository ends a hero with a `.row`, so there is nothing to measure. It
  *    is untouched by this change.
- *  - `/ops/shell-v2.html` overflows its document at 375px (449px against 375px)
- *    entirely because of `.topbar-end`, the preview-state switcher. That is a
- *    separate defect of this page's own chrome, it is NOT the hero, and this
- *    file neither fixes nor judges it. The hero clips and contributes nothing
- *    to that number, before or after.
+ *  - `/ops/shell-v2.html`'s top bar. It overflowed the document at 375px
+ *    (449px against 375px) because of `.topbar-end`, the preview-state
+ *    switcher — a defect of the page's own chrome, not of the hero, fixed and
+ *    now laid out narrow by `scripts/check-ops-narrow-overflow.mjs`
+ *    (Stadiora/Aria#10795). This file does not judge it. The hero clips and
+ *    contributed nothing to that number.
  *  - The `trackKeywords` refusal — the check that no authored keyword (`auto`,
  *    `minmax`, `1fr`) survives into the value this file reads — is NOT bound by
  *    any mutation. Mutation G2 rewrote it to compare the value with itself and

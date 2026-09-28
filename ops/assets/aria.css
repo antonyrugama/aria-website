@@ -1036,6 +1036,15 @@ svg { display: block; }
      .hero-chips line today; this is the shared rule they were standing in for. */
   .hero > .row:last-child { grid-column: 1 / -1; }
   .hero > .hero-chips { grid-column: 1 / -1; }
+  /* The top bar's right-hand group is drawn by renderTop in aria.js, which
+     only shell-v2.html boots, so no pane's top bar holds one. There it carries
+     the preview-state switcher, and on one line it ran to 449px at every phone
+     width (Stadiora/Aria#10795). The group takes a line of its own when the
+     title leaves it no room, and the switcher wraps its buttons rather than
+     push the document sideways. */
+  .topbar:has(> .topbar-end) { flex-wrap: wrap; }
+  .topbar-end { flex-wrap: wrap; min-width: 0; }
+  .topbar-end > .seg { flex-wrap: wrap; min-width: 0; }
 }
 @media (max-width: 560px) {
   .g4 { grid-template-columns: minmax(0, 1fr); }
