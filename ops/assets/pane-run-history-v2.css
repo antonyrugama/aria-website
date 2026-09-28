@@ -32,7 +32,9 @@
 
 /* A table wider than its card scrolls rather than pushing the page wide.
    scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
-.tbl-wrap { overflow-x: auto; }
+/* Positioned so overflow-x clips an absolutely positioned descendant too,
+   not only in-flow content (Stadiora/Aria#10706). */
+.tbl-wrap { overflow-x: auto; position: relative; }
 .tbl-wrap:focus-visible { outline-offset: -2px; }
 
 /* Both tables put the thing being named in the first column — a failure
@@ -139,6 +141,30 @@
   border-top: 1px solid var(--line);
 }
 .rh-fact-val { font-size: 12.5px; font-weight: 520; color: var(--ink); text-align: right; }
+
+.rh-reveal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rh-reveal-card { max-width: min(620px, calc(100vw - 28px)); }
+.rh-reveal-reason {
+  min-height: 112px;
+  resize: vertical;
+}
+.rh-content-region {
+  max-height: 360px;
+  overflow: auto;
+  position: relative; /* Stadiora/Aria#10706: a scroller clips only what it contains */
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+}
+.rh-content-region:focus-visible { outline-offset: -2px; }
+.rh-content-pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.55 var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  color: var(--ink);
+}
 
 /* ---------------------------------------------------------- the stages
 

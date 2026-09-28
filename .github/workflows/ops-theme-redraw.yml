@@ -37,6 +37,7 @@ on:
       - 'ops/**'
       - 'scripts/check-ops-theme-redraw.mjs'
       - 'scripts/ops-api-stub.mjs'
+      - 'scripts/ops-spend-fixture.mjs'
       - '.github/workflows/ops-theme-redraw.yml'
   push:
     branches: [main]
@@ -44,6 +45,7 @@ on:
       - 'ops/**'
       - 'scripts/check-ops-theme-redraw.mjs'
       - 'scripts/ops-api-stub.mjs'
+      - 'scripts/ops-spend-fixture.mjs'
       - '.github/workflows/ops-theme-redraw.yml'
   workflow_dispatch:
 

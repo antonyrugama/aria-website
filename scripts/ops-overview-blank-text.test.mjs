@@ -67,7 +67,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, findAll } from './ops-dom-harness.mjs';
+import { makeDom, findAll, glyphShape } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -470,6 +470,25 @@ test('an omission named only by a padded key prints the key without its padding'
       `the padded key drew as ${JSON.stringify(texts)} -- omissionsCard() decided with `
       + 'textOf(entry.key) at :1623 and rendered the raw field at :1640');
   });
+
+/* Stadiora/Aria#10881. Under forced colours the glyph's shape is the only
+   channel left, so an omission drawn with the warning glyph would read as a
+   fault. Both the pane's own entries and the one the route sent are checked.
+   MUTATION: `icon('clock')` to `icon('warn')` in omissionsCard() in
+   ops/assets/pane-overview.js fails the equality below. */
+test('every omission draws the clock glyph, not the warning one', async () => {
+  const dom = await boot(withOmission({ key: 'spend_budget' }));
+  const items = findAll(livePanel(dom), (n) => hasClass(n, 'omit-item'));
+  assert.equal(items.length, STATIC_OMISSION_KEYS.size + 1,
+    'the card does not draw the static omissions plus the one the route sent');
+  const clock = glyphShape(dom.window.Aria.icon('clock'));
+  assert.notEqual(clock, glyphShape(dom.window.Aria.icon('warn')),
+    'aria.js draws clock and warn with the same shape');
+  for (const item of items) {
+    assert.equal(glyphShape(findAll(item, (n) => n.tagName === 'svg')[0]), clock,
+      `omission ${item.getAttribute('data-omission-key')} does not draw the clock glyph`);
+  }
+});
 
 test('an omission with nothing usable to name it is not drawn at all', async () => {
   assert.deepEqual(apiOmitTitles(await boot(withOmission({ key: 'spend_budget' }))),

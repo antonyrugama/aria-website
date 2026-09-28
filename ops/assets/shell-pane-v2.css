@@ -242,18 +242,22 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
 }
 .modal-card .field-input:hover { box-shadow: inset 0 0 0 1px var(--cyan); }
 /* A real outline, not only a box-shadow ring: a shadow is dropped entirely in
-   forced-colors mode, and ONE pane sheet — pane-evaluations-v2.css:57 —
-   declares a bare `.field-input:focus-visible` that turns the document
-   outline off. This outranks it. (pane-settings-v2.css:153 is a different
-   class, `.modal-input`, and turns the outline ON; it was miscounted here
-   until review round four checked.) Verified by hand and in a browser, NOT
-   by the suite: the outranking sweep in scripts/ops-shell-pane-v2.test.mjs
-   skips rules carrying an interaction pseudo, so no test fails if this stops
-   winning. */
+   forced-colors mode. pane-evaluations-v2.css declares its own bare
+   `.field-input:focus-visible` ring and this rule outranks it on that page:
+   verified by hand, NOT by the suite, since the outranking sweep in
+   scripts/ops-shell-pane-v2.test.mjs skips interaction pseudos. Both rules
+   now declare the same outline. Drawn in --cyan-ink, the shared ring's ink:
+   in light --cyan is #0891B2, the value aria.css carried down to clear SC
+   1.4.11's 3:1 (Stadiora/Aria#10649, #10650). The offset is negative for the
+   reason pane-settings-v2.css gives for `.modal-input`: at a small positive
+   offset the ring's inner neighbour is the field's own inset edge, measured
+   there at 2.591:1 with a 1px offset (PR #85). Not measured on this field,
+   whose dialog no oracle drives yet; the census in
+   scripts/ops-focus-ring-census.test.mjs pins its colour and offset only. */
 .modal-card .field-input:focus-visible {
-  outline: 2px solid var(--cyan);
-  outline-offset: 2px;
-  box-shadow: inset 0 0 0 1px var(--cyan);
+  outline: 2px solid var(--cyan-ink);
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 1px var(--cyan-ink);
 }
 
 /* The alert is empty until the password is refused, and it carries

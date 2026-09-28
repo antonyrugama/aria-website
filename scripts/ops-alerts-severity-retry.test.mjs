@@ -53,13 +53,24 @@
        testable is that the references resolve and that the resolved text is
        what AccName's rules make of this markup.
 
-     - Most of AccName. `nameText()` implements TWO of its rules --
-       `aria-hidden` subtrees contribute nothing, and `aria-label` replaces
-       contents -- because those are the two this pane's markup can turn and
-       both were demonstrated wrong here in round 3 of the review. `title`,
-       form-control values, `::before` content and the embedded-control
-       recursion are NOT modelled, so a change that reached for one of those
-       would pass here and be wrong in a browser.
+     - Most of AccName. `nameText()` implements THREE of its rules -- an
+       `aria-hidden="true"` subtree contributes nothing, a subtree carrying
+       the `hidden` attribute contributes nothing, and `aria-label` replaces
+       contents. The first and the last were demonstrated wrong here in
+       round 3 of the review. `hidden` joined them after Stadiora/Aria#10823
+       put `hidden: 'hidden'` on the record retry's `sr` span and reported
+       Chromium naming that button `Try again` while this suite stayed green.
+       That is not a claim that this pane's markup can reach only these
+       three -- `h()` sets any option key it does not know as an attribute,
+       so nothing bounds that list -- and nothing here claims the list below
+       is closed either. Unmodelled: the `inert` attribute; `aria-hidden` or
+       `hidden` on an ancestor above the node a name is resolved from;
+       either one written as a property rather than an attribute (the DOM
+       harness reflects neither); CSS `display:none` and `visibility:hidden`
+       (the harness has no CSS engine, so those are unmodellable here in
+       principle); `title`, form-control values, `::before` content and the
+       embedded-control recursion. A change that reached for any of those
+       would pass here and can be wrong in a browser.
 
        What closes the gap for the markup as shipped is a check the browser
        answers, not this one. `Accessibility.getFullAXTree` over the real pane
@@ -69,6 +80,17 @@
        answer moves exactly the way this model's does. That probe is in the
        PR, not in the repo: the Chrome-driven guards and their workflows are
        another agent's files this week.
+
+     - Where the model is STRICTER than the browser. AccName 4.3.2 step 2A
+       exempts a node directly referenced by `aria-labelledby`: being hidden
+       does not take it out of the name, and Chromium implements that.
+       `nameText()` drops a hidden node wherever it stands, the referenced
+       node included, so `aria-hidden="true"` on the heading a section retry
+       names turns 4 of the 10 tests here red while Chromium's name does not
+       move. That is a false RED, the safe direction, but it is the kind of
+       red that gets "fixed" by loosening an assertion (the comment in
+       `nameRetry()` in `pane-alerts.js` warns about exactly that). Model the
+       exemption instead.
 
      - The shell's whole-pane retry, which `region.failed()` draws when BOTH
        reads fail. It is the only control on that panel, it is not
@@ -318,8 +340,9 @@ function retryButtons(dom) {
 }
 
 /* The text a subtree contributes to an accessible NAME, which is not the text
-   it contains. Two rules out of AccName, and only two, because these are the
-   two the markup in this pane can actually turn:
+   it contains. Three rules out of AccName, each one here because a mutation
+   showed the suite green without it -- not because these are the only rules
+   this pane's markup can reach (see NOT COVERED above):
 
      - an `aria-hidden="true"` subtree contributes NOTHING. `allText()` reads
        it, so a name built out of `allText()` certifies text the browser does
@@ -329,18 +352,26 @@ function retryButtons(dom) {
        -- the exact defect #10760 is about, restored, while the suite stayed
        green.
 
+     - a subtree carrying the `hidden` attribute contributes NOTHING, for the
+       same reason, whatever the attribute's value: HTML reads its presence.
+       Stadiora/Aria#10823 proved it the same way, with `hidden: 'hidden'` on
+       that `sr` span.
+
      - an `aria-label` REPLACES the element's contents rather than adding to
        them. Same shape: `aria-label="Retry"` on the button makes Chromium say
        `Retry ...` while the visible word is still "Try again", which is the
        failure `nameRetry()` exists to avoid.
 
-   Everything else AccName does -- `title`, form controls, `::before` content,
-   the recursion rules for embedded controls -- is NOT here and is listed as
-   not covered above. This is a subset chosen to match the markup, not an
-   implementation of the spec. */
+   Everything else AccName does is NOT here and is listed as not covered
+   above, including step 2A's exemption for a node `aria-labelledby` points
+   at directly: the hidden checks below fire on that node too, which is
+   stricter than the browser, and measured above as a false red. This is a
+   subset chosen from demonstrated failures, not an implementation of the
+   spec. */
 function nameText(node) {
   if (!node) return '';
   if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return '';
+  if (node.hasAttribute && node.hasAttribute('hidden')) return '';
   const label = node.getAttribute && node.getAttribute('aria-label');
   if (label && String(label).trim()) return String(label).trim();
   const own = node.textContent || '';
