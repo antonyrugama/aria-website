@@ -191,7 +191,7 @@ select.field-input { appearance: none; padding-right: 26px; }
    never `hidden` — it collapses on `:empty` — and login and setup clear the
    class outright, so no other .form-alert in the repository reaches this.
 
-   shell-pane-v2.css:259 makes the opposite choice for that modal alert, and
+   shell-pane-v2.css:263 makes the opposite choice for that modal alert, and
    this sheet now agrees with it: pane-evaluations.js no longer hides the
    approval slot at all, so `#approval-result` never reaches this rule. It
    collapses on `:empty` below instead, which keeps the live region in the
