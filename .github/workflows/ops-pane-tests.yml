@@ -43,12 +43,20 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: DEMO five concurrent hover sweeps against a 1500ms API
+        run: |
+          pids=""
+          for i in 1 2 3 4 5; do node --test scripts/ops-hover-contrast.test.mjs > hover-$i.log 2>&1 & pids="$pids $!"; done
+          rc=0; for p in $pids; do wait $p || rc=1; done
+          for i in 1 2 3 4 5; do echo "== run $i: $(grep -E '^# (pass|fail) ' hover-$i.log | tr '\n' ' ')"; done
+          grep -H -A12 "^not ok" hover-*.log | head -150 || true
+          exit $rc
       - name: Run the ops unit tests
         # scripts/*.test.mjs, not scripts/ops-pane-*.test.mjs. The paths filter
         # above has always been the wider glob, so a test file named anything

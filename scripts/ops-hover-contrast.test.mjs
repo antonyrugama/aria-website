@@ -332,8 +332,10 @@ function stub(pathname) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname)));
+    setTimeout(() => {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(stub(url.pathname)));
+    }, 1500);
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));
