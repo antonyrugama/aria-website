@@ -392,7 +392,7 @@ class names declared in both ops.css and aria.css = 47
 .content = 3 selectors in ops.css, 2 in aria.css
 .legend = 4 selectors in ops.css, 3 in aria.css
 .nav-item = 9 selectors in ops.css, 6 in aria.css
-.seg = 5 selectors in ops.css, 4 in aria.css
+.seg = 5 selectors in ops.css, 5 in aria.css
 ```
  **Which layer a pane is on is stated by its own page**, in the stylesheets
 and scripts its `<head>` loads, and nowhere else: a list written here by hand would have to be
