@@ -402,6 +402,13 @@ async function readPage() {
       .find((n) => !n.classList.contains('is-note')) || null;
     const shareLine = document.querySelector('.share-line');
     const heroTitle = document.querySelector('.hero-title');
+    /* A glyph's shape is the geometry it draws, read child by child, so two
+       icons are the same icon exactly when these strings are equal. */
+    const shapeOf = (svg) => Array.from(svg.childNodes).map((n) =>
+      String(n.tagName).toLowerCase() + '(' +
+        ['d', 'cx', 'cy', 'r', 'x', 'y', 'width', 'height', 'rx']
+          .filter((a) => n.getAttribute(a) !== null)
+          .map((a) => a + '=' + n.getAttribute(a)).join(' ') + ')').join(' ');
     const styleOf = (el) => {
       const cs = getComputedStyle(el);
       const svg = el.querySelector('svg');
@@ -413,7 +420,8 @@ async function readPage() {
         radius: cs.borderTopLeftRadius,
         glyph: svg ? getComputedStyle(svg).color : null,
         glyphHidden: svg ? svg.getAttribute('aria-hidden') : null,
-        glyphRects: svg ? svg.getClientRects().length : 0
+        glyphRects: svg ? svg.getClientRects().length : 0,
+        glyphShape: svg ? shapeOf(svg) : null
       };
     };
     const out = {
@@ -431,6 +439,12 @@ async function readPage() {
         return row ? Array.from(row.querySelectorAll('.pill')).map((n) => n.textContent.replace(/\\s+/g, ' ').trim()) : null;
       })(),
       plain: plain ? styleOf(plain) : null,
+      /* The page's own aria.js draws the reference glyphs, so the expectation
+         is the icon the pane names, not a copy of its path data held here. */
+      icons: {
+        info: shapeOf(window.Aria.icon('info')),
+        warn: shapeOf(window.Aria.icon('warn'))
+      },
       note: null
     };
     if (note) {
@@ -506,6 +520,30 @@ test('the note carries its shape from .callout, not from nothing', async () => {
   assert.ok(parseFloat(page.note.radius) > 2, `the note has ${page.note.radius} corners`);
   assert.equal(page.note.glyphHidden, 'true', 'the glyph is announced, and it says nothing');
   assert.equal(page.note.glyphRects, 1, 'the glyph is not rendered');
+});
+
+/* Stadiora/Aria#10881. Under forced colours the UA discards the note's tint
+   and its ring, so the glyph's shape is the one channel left telling "the
+   store has no field for this" apart from "attend to this". The tests above
+   bind the tint, the ring and the glyph's ink; this binds which glyph it is.
+
+   Both callouts, because aria.js draws `info` for a name it does not know:
+   a misspelt `icon('warn')` on the plain callout would draw the note's glyph
+   on the warning and still pass an assertion made on the note alone.
+
+   MUTATION: `icon('info')` to `icon('warn')` in omissionsBlock() in
+   ops/assets/pane-releases.js fails the first assertion. `icon('warn')` to
+   `icon('wran')` in the plain callout above it fails the second. */
+test('the note draws the info glyph and the plain callout the warning glyph', async () => {
+  await show(UNREADABLE_1280);
+  const page = await readPage();
+
+  assert.notEqual(page.icons.info, page.icons.warn,
+    'aria.js draws info and warn with the same shape, so nothing below can tell them apart');
+  assert.equal(page.note.glyphShape, page.icons.info,
+    'the omissions note does not draw the info glyph, so in forced colours it reads as a warning');
+  assert.equal(page.plain.glyphShape, page.icons.warn,
+    'the plain callout does not draw the warning glyph');
 });
 
 test('.omit-list is a painted column, so two omissions cannot run together', async () => {
