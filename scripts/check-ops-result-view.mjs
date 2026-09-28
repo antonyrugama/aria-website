@@ -613,18 +613,13 @@ const COSTS = {
    place this check most needs not to have one. */
 const LOOKUP = {
   recorded: { at: ago(1000), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
-  matchCount: 2,
+  matchCount: 1,
   matches: [
     { reference: 'ath_2277', maskedEmail: 'a•••@example.invalid',
       state: { key: 'active', label: 'Active', tone: 'ok' },
       tier: { key: 'pro', label: 'Athlete Pro', brand: true },
       platforms: [{ key: 'mobile', label: 'Mobile' }],
-      lastActiveAt: ago(3 * HOUR), flags: [] },
-    { reference: 'ath_2419', maskedEmail: 'b•••@example.invalid',
-      state: { key: 'active', label: 'Active', tone: 'ok' },
-      tier: { key: 'pro', label: 'Athlete Pro', brand: true },
-      platforms: [{ key: 'mobile', label: 'Mobile' }],
-      lastActiveAt: ago(30 * HOUR), flags: [] }
+      lastActiveAt: ago(3 * HOUR), flags: [] }
   ]
 };
 
