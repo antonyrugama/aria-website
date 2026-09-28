@@ -459,7 +459,7 @@
     width: 3px; height: auto;
   }
   .pipe-step.todo::before {
-    background: repeating-linear-gradient(180deg, var(--line-2) 0 4px, transparent 4px 8px);
+    background: repeating-linear-gradient(180deg, var(--rail-todo) 0 4px, transparent 4px 8px);
   }
   .pipe-label { margin-top: 0; }
 }
@@ -474,3 +474,5 @@
   .stackbar > i > b { display: none; }
   .legend .share-key.has-chip .share-key-pct { display: inline-flex; }
 }
+
+[data-theme="light"] .pipe-track { --rail-todo: var(--line-2); }
