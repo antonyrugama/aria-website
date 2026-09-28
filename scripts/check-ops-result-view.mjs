@@ -604,8 +604,7 @@ const COSTS = {
        sends: `'category' | 'resourceGroup' | 'service'`
        (app-backend/server/ops/opsPanesRouter.ts:162 in the monorepo, at its main
        on 2026-09-28). */
-    resourceGroup: { label: 'Resource group', hint: '3 groups', rows: COST_ROWS },
-    service: { label: 'Service', hint: '3 services', rows: COST_ROWS }
+    resourceGroup: { label: 'Resource group', hint: '3 groups', rows: COST_ROWS }
   },
   daily: {
     label: 'Daily spend for this period against the previous one',
