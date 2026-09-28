@@ -71,7 +71,7 @@
 }
 .pipe-step:last-child::before { display: none; }
 .pipe-step.todo::before {
-  background: repeating-linear-gradient(90deg, var(--rail-todo) 0 4px, transparent 4px 8px);
+  background: repeating-linear-gradient(90deg, var(--line-2) 0 4px, transparent 4px 8px);
 }
 
 /* A stage this build is already past.
