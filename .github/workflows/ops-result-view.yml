@@ -45,9 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     # Ten panes in two themes is twenty page loads, two of which fill in a form
     # and wait for an answer. A run takes a couple of minutes; the ceiling is
-    # here so a slow cold start cannot turn the sweep into a red check that
-    # measured nothing, which reads the same as a red check that found
-    # something.
+    # here so a hung Chrome cannot hold a runner for the default six hours. It
+    # is not what stops a partial sweep reading as a pass: the check compares
+    # its counts block (panes judged against panes declared, result views
+    # read against panes times themes) and fails on any mismatch, and a run
+    # cut off by this ceiling is red either way.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

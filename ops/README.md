@@ -2549,6 +2549,7 @@ check-ops-result-view.mjs = The marker is judged character by character, so a ma
 check-ops-result-view.mjs = Any painted occurrence answers for all of them.
 check-ops-result-view.mjs = A sibling combinator's reach.
 check-ops-result-view.mjs = Paint that is not a class.
+check-ops-result-view.mjs = A rule that reaches a class but changes nothing there.
 check-ops-result-view.mjs = Panes with no state pair.
 check-ops-result-view.mjs = A state with no unmarked twin on the page.
 check-ops-result-view.mjs = (bold spans beyond the first, summed: 0)
