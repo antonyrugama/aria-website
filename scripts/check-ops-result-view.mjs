@@ -1639,8 +1639,10 @@ const probeFor = (markers) => `(() => {
      BUTTON is the only child of its cell, so rule 1 finds no sibling at all and
      the pressed button would be reported unjudgeable while the other row's
      identical button sits six nodes away. The shared-class test is what keeps
-     rule 2 from comparing a pressed button against any unrelated button
-     sharing a tag. A subset test alone did not: the empty set is a subset of
+     rule 2 from comparing a CLASSED pressed button against an unrelated
+     button sharing a tag; a class-less one still pairs with any class-less
+     button under a same-shaped parent, as the rule-2 bullet above says. A
+     subset test alone did not: the empty set is a subset of
      every set, so a class-less row of another table passed as the peer of a
      selected row and compared clean (Stadiora/Aria#10675). */
   const classSet = (node) =>

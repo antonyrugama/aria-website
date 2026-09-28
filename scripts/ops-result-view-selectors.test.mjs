@@ -76,6 +76,16 @@ test('a paren inside a quoted value does not move the split depth', () => {
   assert.deepEqual(got, { q: ['.q[title=")"]'], r: ['.r'] });
 });
 
+/* Nested functional pseudo-classes: the depth has to count back down one
+   level at a time. A walk that reset to zero on any `)` would split the first
+   list after `:not(.a)` and the second after `:is(.a)`. */
+test('a comma inside a nested pseudo-class does not split a clause', () => {
+  const first = '.x:is(:not(.a), .b)';
+  const second = '.k:not(:is(.a), .refused)';
+  const got = clausesByClass([first + ', .y', second]);
+  assert.deepEqual(got, { x: [first], b: [first], y: ['.y'], k: [second] });
+});
+
 /* A hand-built element tree: just the surface peerFor() reads. */
 function el(tag, attrs, children) {
   const node = {
