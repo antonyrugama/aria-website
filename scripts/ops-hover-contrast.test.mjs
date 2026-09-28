@@ -389,6 +389,7 @@ function connect(url) {
   let nextId = 0;
   const pending = new Map();
   const waiters = [];
+  const listeners = [];
   const seen = new Set();
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
@@ -400,11 +401,13 @@ function connect(url) {
       return;
     }
     seen.add(m.method);
+    for (const l of listeners) l(m);
     for (const w of waiters.splice(0)) w(m.method);
   };
   return {
     ready: new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; }),
     close: () => ws.close(),
+    on(fn) { listeners.push(fn); },
     send(method, params = {}) {
       const id = ++nextId;
       ws.send(JSON.stringify({ id, method, params }));
@@ -728,7 +731,12 @@ const MATRIX = `(() => {
    The SECOND match is picked, not the first, so the selected row has an
    unselected row above it as well as the table head: an unselected sibling in
    the same table is what the selection proof below compares against, and it
-   has to be one the same sheets and the same nesting depth produced. */
+   has to be one the same sheets and the same nesting depth produced.
+
+   The pick selects the row synchronously and then reads the account, and the
+   repaint that read triggers is what the sweep measures. This script returns
+   as soon as the row is selected; the caller then waits on settle(), which
+   is what knows whether that read is still in flight (Stadiora/Aria#10838). */
 const PICK_MATCH = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const id = document.getElementById('lookupIdentifier');
@@ -746,7 +754,6 @@ const PICK_MATCH = `(async () => {
   if (picks.length < 2) return JSON.stringify({ error: 'the lookup drew ' + picks.length + ' match row(s), so there is no unselected sibling to compare against' });
   picks[1].click();
   for (let i = 0; i < 160; i++) { await sleep(50); if (document.querySelector('.match-row.is-selected')) break; }
-  await sleep(700);
   const sel = document.querySelector('.match-row.is-selected');
   if (!sel) return JSON.stringify({ error: 'the pick never selected a row' });
   return JSON.stringify({ selected: 1, rows: document.querySelectorAll('.match-row').length });
@@ -889,6 +896,7 @@ async function sweepSubject(theme, subject) {
   if (subject.prepare) {
     drive = await evalJson(subject.prepare);
     assert.ok(!drive.error, `${theme} ${subject.key}: ${drive.error}`);
+    await settle(`${theme} ${subject.key} after the pick`);
   }
 
   let built = null;
@@ -1025,6 +1033,23 @@ const cdp = connect(pageTarget.webSocketDebuggerUrl);
 await cdp.ready;
 await cdp.send('Page.enable');
 await cdp.send('Runtime.enable');
+
+/* Reads in flight, by the browser's count rather than a hook in the page. A
+   request cancelled because its document was replaced does not always report
+   finished or failed, so the main frame's commit clears the map; every request
+   of the new document is announced after that event. */
+const inFlight = new Map();
+cdp.on((m) => {
+  if (m.method === 'Network.requestWillBeSent') inFlight.set(m.params.requestId, m.params.request.url);
+  else if (m.method === 'Network.loadingFinished' || m.method === 'Network.loadingFailed') {
+    inFlight.delete(m.params.requestId);
+  } else if (m.method === 'Page.frameNavigated' && !m.params.frame.parentId) inFlight.clear();
+});
+await cdp.send('Network.enable');
+/* Kept apart from setTheme's script, which is removed and re-added per theme. */
+await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+  source: "addEventListener('ops:ready', function () { window.__hoverReady = true; });"
+});
 await cdp.send('Emulation.setDeviceMetricsOverride', {
   width: VIEWPORT.width, height: VIEWPORT.height, deviceScaleFactor: 1, mobile: false
 });
@@ -1067,11 +1092,82 @@ async function setTheme(theme, session = false) {
   });
 }
 
-async function load(url, settle = 600) {
+/* ------------------------------------------------------------- readiness
+
+   This sweep used to pace itself with a clock: 600ms after the load event,
+   700ms after the pick. Stadiora/Aria#10838 recorded what that costs -- a
+   review host running the suite in parallel reproduced a 1-in-5 failure that
+   cascaded to 8, because a fixed sleep is a guess about somebody else's
+   machine. It is the same class #10775 fixed in ops-scroll-containment, and
+   this is the same repair: ask the page, not the clock.
+
+   A page is ready when all of these hold at once, for SETTLE_STABLE
+   consecutive polls:
+
+   - the document being left is gone (a mark set on it cannot survive into
+     its successor, so a poll answered by the old document says so);
+   - `document.readyState` is complete and the shell has dispatched
+     `ops:ready`, which it does once, after the session is confirmed and the
+     pane's content function has run. The listener is installed before any
+     document runs, so it cannot miss the event;
+   - no read is in flight, counted off the browser's own network events.
+     `ops:ready` fires when the pane has been ASKED to draw, and a pane draws
+     its skeleton and then fetches, so a still page is not a drawn one;
+   - web fonts have finished, because a font swap moves every line box;
+   - the element count and #content's child count stopped changing.
+
+   The budget is an upper bound that FAILS and names what it was still
+   waiting on, rather than a sleep that proceeds either way. */
+const SETTLE_BUDGET_MS = 30000;
+const SETTLE_POLL_MS = 50;
+const SETTLE_STABLE = 3;
+
+/* Always a string. A value beginning with `?` is a page that is not ready yet
+   and names the condition; anything else is a fingerprint. */
+const FINGERPRINT = `(() => {
+  if (window.__hoverStale) return '?the document being left is still installed';
+  if (document.readyState !== 'complete') return '?document.readyState=' + document.readyState;
+  if (!window.__hoverReady) return '?ops:ready has not fired on ' + location.pathname;
+  if (document.fonts.status !== 'loaded') return '?web fonts are still ' + document.fonts.status;
+  const content = document.getElementById('content');
+  return [document.querySelectorAll('*').length, content ? content.childElementCount : -1].join('/');
+})()`;
+
+async function settle(what) {
+  const deadline = Date.now() + SETTLE_BUDGET_MS;
+  let last = null;
+  let repeats = 0;
+  while (Date.now() < deadline) {
+    /* The network is read BEFORE the fingerprint, so a read that lands between
+       the two cannot be credited to a poll that saw an idle network and a
+       count taken before its render. */
+    const busy = [...inFlight.values()];
+    const res = await cdp.send('Runtime.evaluate', { expression: FINGERPRINT, returnByValue: true });
+    const fp = res.exceptionDetails ? '?the fingerprint threw' : String(res.result.value);
+    if (busy.length) {
+      repeats = 0;
+      last = `?${busy.length} read(s) in flight: ${busy[0].replace(/^https?:\/\/[^/]+/, '')}`;
+    } else if (!fp.startsWith('?')) {
+      repeats = fp === last ? repeats + 1 : 1;
+      last = fp;
+      if (repeats >= SETTLE_STABLE) return fp;
+    } else {
+      repeats = 0;
+      last = fp;
+    }
+    await new Promise((r) => setTimeout(r, SETTLE_POLL_MS));
+  }
+  throw new Error(`${what} never settled within ${SETTLE_BUDGET_MS}ms. Last reading: ${last}. ` +
+    'The sweep refuses to measure a page that has not finished drawing, because a half-drawn ' +
+    'pane reads exactly like a finished one.');
+}
+
+async function load(url) {
+  await cdp.send('Runtime.evaluate', { expression: 'window.__hoverStale = true, 1' }).catch(() => {});
   cdp.reset();
   await cdp.send('Page.navigate', { url });
   await cdp.once('Page.loadEventFired');
-  await new Promise((r) => setTimeout(r, settle));
+  await settle(url.replace(base, ''));
 }
 
 /* The subjects, and what each is here to answer. Declared after the page
