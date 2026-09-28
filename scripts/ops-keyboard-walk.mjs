@@ -63,6 +63,7 @@ const PANES = [
   { pane: 'jobs', url: '/ops/jobs-live.html', title: 'Jobs live' },
   { pane: 'history', url: '/ops/run-history.html', title: 'Run history' },
   { pane: 'alerts', url: '/ops/alerts.html', title: 'Alerts' },
+  { pane: 'wearables', url: '/ops/wearables.html', title: 'Wearable sync' },
   { pane: 'analytics', url: '/ops/analytics.html', title: 'Analytics' },
   { pane: 'spend', url: '/ops/spend.html', title: 'Cloud costs' },
   { pane: 'evals', url: '/ops/evaluations.html', title: 'Evaluations' },

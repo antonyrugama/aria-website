@@ -137,6 +137,18 @@
       wave: 'W2', scope: false, range: ['open', '7d', '30d'], env: false,
       filterNote: 'Problems are production only, so there is no environment filter'
     },
+    wearables: {
+      file: 'wearables.html', icon: 'wearables', label: 'Wearable sync', group: 'Right now',
+      railId: 'wearables',
+      question: 'Is wearable data arriving, and which provider is failing?',
+      /* A sync run carries the app that sent it, or none when the server
+         started it, and never Mobile or Coaches Web, so the registry's App
+         control has nothing to narrow. The pane draws its own App and Window
+         controls instead, over the one answer it reads. The ledger is written
+         by production only. Stadiora/Aria#12704. */
+      wave: 'W2', scope: false, range: false, env: false,
+      filterNote: 'Sync runs are production only; App and Window are the pane\'s own controls'
+    },
     analytics: {
       file: 'analytics.html', icon: 'analytics', label: 'People and usage', group: 'How we are doing',
       railId: 'analytics',
