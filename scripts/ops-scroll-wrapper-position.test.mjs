@@ -157,9 +157,18 @@ export function analyze(css) {
 
 const SHEETS = fs.readdirSync(ASSETS).filter((f) => f.endsWith('.css')).sort();
 
-const READINGS = SHEETS.flatMap((sheet) =>
-  analyze(fs.readFileSync(path.join(ASSETS, sheet), 'utf8'))
-    .map((r) => ({ sheet, ...r })));
+/* A sheet the parser refuses is recorded, not thrown at load, so the failure
+   lands on a named assertion below instead of on the module. */
+const PARSE_ERRORS = [];
+const READINGS = SHEETS.flatMap((sheet) => {
+  try {
+    return analyze(fs.readFileSync(path.join(ASSETS, sheet), 'utf8'))
+      .map((r) => ({ sheet, ...r }));
+  } catch (err) {
+    PARSE_ERRORS.push(`${sheet}: ${err.message}`);
+    return [];
+  }
+});
 
 /* Eleven scrollers across ten sheets when this file landed. The floor sits
    below that so a scroller can be removed on purpose, and above zero so a
@@ -168,6 +177,8 @@ const MIN_SCROLLERS = 8;
 
 test('the sheets are parsed and the sweep judges real scrollers', () => {
   assert.ok(SHEETS.length > 0, 'found no stylesheet under ops/assets');
+  assert.deepStrictEqual(PARSE_ERRORS, [],
+    'a sheet holds CSS this parser cannot read, so its scrollers would go unjudged');
   assert.ok(READINGS.length >= MIN_SCROLLERS,
     `judged ${READINGS.length} sideways scrollers, below the floor of ${MIN_SCROLLERS}: ` +
     'the parse has stopped finding boxes, or scrollers were removed and the floor must follow');
