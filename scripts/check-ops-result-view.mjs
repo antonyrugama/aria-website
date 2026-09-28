@@ -1440,8 +1440,10 @@ const probeFor = (markers) => `(() => {
   };
 
   /* A selector list split into its clauses: on a comma only at depth zero,
-     outside any (...), [...] or string, the same depth walk as withoutNot()
-     above. A split on every comma cut
+     outside any (...) or string, the same depth walk as withoutNot() above.
+     Brackets need no count of their own: selectorText is Chrome's
+     serialisation, which quotes every attribute value, so a comma or a paren
+     inside [...] is inside a string. A split on every comma cut
      body:is([data-page="releases"], [data-page="users"]) :is(.badge-crit, …)
      in ops.css into pieces Chrome refuses, and cut .a:not(.b, .c) into a
      .c) that reads as painting .c (Stadiora/Aria#10675). */
@@ -1454,8 +1456,8 @@ const probeFor = (markers) => `(() => {
       const ch = list[i];
       if (quote) { if (ch === quote) quote = ''; continue; }
       if (ch === '"' || ch === "'") quote = ch;
-      else if (ch === '(' || ch === '[') depth += 1;
-      else if (ch === ')' || ch === ']') depth -= 1;
+      else if (ch === '(') depth += 1;
+      else if (ch === ')') depth -= 1;
       else if (ch === ',' && depth === 0) { out.push(list.slice(start, i)); start = i + 1; }
     }
     out.push(list.slice(start));
