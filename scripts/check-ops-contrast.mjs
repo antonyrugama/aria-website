@@ -625,8 +625,8 @@ const hex = ({ r, g, b }) =>
    So the allowance is gone rather than defended, and nothing here reads the
    rendered size. The cost is real and runs the safe way for an ink: text that
    WCAG AA would genuinely let sit at 3.0:1 fails this check. It costs 0 sites
-   today -- with the allowance deleted the sweep still passes at 1632, and the
-   lowest ratio it measures on any unfrozen site is 5.20:1 -- and a site that
+   today -- with the allowance deleted the sweep still passes at 1636, and the
+   lowest ratio it measures on any site is 4.89:1 -- and a site that
    ever earns it goes in KNOWN_BELOW_AA with an issue, where it is reconciled
    in both directions rather than granted silently. */
 const AA_RATIO = 4.5;
@@ -2821,6 +2821,12 @@ function fixture() {
        first; no gate at all invents a colour for the second. */
     'span.over { color: color-mix(in srgb, oklch(1 0 0) 50%, white); }' +
     'span.wide { color: color-mix(in srgb, color(display-p3 1 0 0) 90%, white); }' +
+    /* Part F4's run: one ink over two hard-edged surfaces, AA on the white
+       half and far below it on the grey. Nothing on the shipped page is
+       frozen any more, so this is what binds the worst-surface rule. */
+    'div.split { padding: 24px; background: #ffffff; }' +
+    'span.split { font-size: 14px; color: #595959;' +
+    ' background: linear-gradient(90deg, #ffffff 0 50%, #777777 50% 100%); }' +
     '</style>' +
     FIXTURE_CASES.map((c, i) =>
       `<div class="sw" id="c${i}" style="background:${c.bg}">swatch ${i} measured here` +
@@ -2831,7 +2837,8 @@ function fixture() {
         '<div><span class="over">an in-gamut overshoot must be read</span></div>' +
         '<div><span class="wide">a wide-gamut mix must be refused</span></div>' : '') +
       '</div>'
-    ).join('');
+    ).join('') +
+    '<div class="split"><span class="split">a run over two surfaces is judged at the worse one</span></div>';
 }
 
 async function selfTest() {
@@ -2963,6 +2970,25 @@ async function selfTest() {
       ` collected ink ${ink}\n          parsed ${parsed ? `rgb(${[parsed.r, parsed.g, parsed.b].map((v) => v.toFixed(1)).join(', ')})` : 'nothing'}` +
       `, expected rgb(127.5, 0.0, 127.5) from CSS Color 4; routed as ` +
       `${row ? (row.unjudgeable || `judged at ${row.ratio?.toFixed(2)}:1`) : 'nothing'}`);
+  }
+
+  console.log('\n  F4. two surfaces under one run — the ink is judged against the worse one');
+  {
+    /* The expectation is the pair the fixture paints, computed from its
+       literals, not from anything measureSites returned. Judging the best or
+       the widest surface would read ~7.0:1 here and pass a run whose right
+       half is ~1.6:1. */
+    const row = judged.find((r) => r.text.startsWith('a run over two surfaces'));
+    const ink = { r: 0x59, g: 0x59, b: 0x59 };
+    const worst = contrast(ink, { r: 0x77, g: 0x77, b: 0x77 });
+    const best = contrast(ink, { r: 255, g: 255, b: 255 });
+    const ok = !!row && typeof row.ratio === 'number' && row.surfaces >= 2 &&
+      Math.abs(row.ratio - worst) <= 0.05 && Math.abs(row.best - best) <= 0.05;
+    if (!ok) bad++;
+    console.log(`     ${ok ? 'ok  ' : 'FAIL'} #595959 over #ffffff | #777777 judged at ` +
+      `${row && typeof row.ratio === 'number' ? row.ratio.toFixed(2) : '(nothing)'}:1 across ` +
+      `${row ? row.surfaces : 0} surface(s), expected ${worst.toFixed(2)}:1 (the grey half; ` +
+      `the white half is ${best.toFixed(2)}:1)`);
   }
 
   console.log('\n  F2. the gamut window — an in-gamut overshoot is read, a wide-gamut mix is refused');

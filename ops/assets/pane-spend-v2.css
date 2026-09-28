@@ -211,8 +211,8 @@
 
    No text sits on any of it. The card's figures are real text above and
    below the track, and the track itself is aria-hidden: text over a hatch is
-   measured against the worst stripe and that pair is already one contrast
-   failure on this design system (Stadiora/Aria#10366). */
+   measured against the worst stripe and that pair has already been one
+   contrast failure on this design system (Stadiora/Aria#10366). */
 .sp-budget {
   position: relative;
   display: flex;
