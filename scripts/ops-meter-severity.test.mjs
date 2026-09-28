@@ -838,6 +838,11 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
   await settleMeters();
 
   const meters = await evaluate(READ_METERS);
+  {
+    const env = await evaluate(`JSON.stringify({ n: document.querySelectorAll('.meter').length, sx: window.scrollX, sy: window.scrollY, w: window.innerWidth, h: window.innerHeight })`);
+    console.log(`METERPOS ${theme}/${pane}/${state}${synthetic ? '/synthetic' : ''} env=${env} kept=${meters.length} ` +
+      meters.map((m) => `${m.idx}${m.synthetic ? 's' : ''}:${m.tones.join('+') || '-'}:top=${m.box.y.toFixed(1)}:cy=${(m.box.y + m.box.height / 2).toFixed(1)}:w=${m.box.width.toFixed(1)}`).join(' '));
+  }
   const out = [];
   for (const m of meters) {
     /* Only a fill with no width at all is dropped. An 8px bound was here
