@@ -1440,6 +1440,31 @@ const probeFor = (markers) => `(() => {
     return out;
   };
 
+  /* A selector list split into its clauses: on a comma only at depth zero,
+     outside any (...) or string, the same depth walk as withoutNot() above.
+     Brackets need no count of their own: selectorText is Chrome's
+     serialisation, which quotes every attribute value, so a comma or a paren
+     inside [...] is inside a string. A split on every comma cut
+     body:is([data-page="releases"], [data-page="users"]) :is(.badge-crit, …)
+     in ops.css into pieces Chrome refuses, and cut .a:not(.b, .c) into a
+     .c) that reads as painting .c (Stadiora/Aria#10675). */
+  const splitList = (list) => {
+    const out = [];
+    let depth = 0;
+    let quote = '';
+    let start = 0;
+    for (let i = 0; i < list.length; i++) {
+      const ch = list[i];
+      if (quote) { if (ch === quote) quote = ''; continue; }
+      if (ch === '"' || ch === "'") quote = ch;
+      else if (ch === '(') depth += 1;
+      else if (ch === ')') depth -= 1;
+      else if (ch === ',' && depth === 0) { out.push(list.slice(start, i)); start = i + 1; }
+    }
+    out.push(list.slice(start));
+    return out;
+  };
+
   const unevaluable = [];
 
   /* Class tokens a clause NAMES, with the places a dot is not a class
@@ -1461,7 +1486,7 @@ const probeFor = (markers) => `(() => {
      selector for every element. */
   const byClass = new Map();
   for (const selectorText of rules) {
-    for (const one of selectorText.split(',')) {
+    for (const one of splitList(selectorText)) {
       for (const cls of new Set(classTokens(one))) {
         if (!byClass.has(cls)) byClass.set(cls, []);
         byClass.get(cls).push(one.trim());
@@ -1606,21 +1631,29 @@ const probeFor = (markers) => `(() => {
           one table, two tabs of one strip;
        2. failing that, the same shape one level out: an element of the same
           tag whose parent has the same tag and the same class attribute, and
-          whose own classes are a subset of the marked element's — the marked
-          one carries whatever the state added and nothing else differs.
+          whose own classes are a subset of the marked element's and share at
+          least one of them, or where neither carries a class at all — the
+          marked one carries whatever the state added and nothing else
+          differs.
 
      Rule 2 exists because #10456's own affordance needs it. The picked match's
      BUTTON is the only child of its cell, so rule 1 finds no sibling at all and
      the pressed button would be reported unjudgeable while the other row's
-     identical button sits six nodes away. The subset test is what keeps rule 2
-     from comparing a pressed button against any unrelated button sharing a
-     tag. */
+     identical button sits six nodes away. The shared-class test is what keeps
+     rule 2 from comparing a CLASSED pressed button against an unrelated
+     button sharing a tag; a class-less one still pairs with any class-less
+     button under a same-shaped parent, as the rule-2 bullet above says. A
+     subset test alone did not: the empty set is a subset of
+     every set, so a class-less row of another table passed as the peer of a
+     selected row and compared clean (Stadiora/Aria#10675). */
   const classSet = (node) =>
     new Set((node.getAttribute('class') || '').split(/\\s+/).filter(Boolean));
   const subsetOf = (small, big) => {
     for (const c of small) if (!big.has(c)) return false;
     return true;
   };
+  const shapeOf = (cand, mine) =>
+    subsetOf(cand, mine) && (cand.size > 0 || mine.size === 0);
 
   const peerFor = (el, attr) => {
     const parent = el.parentElement;
@@ -1640,7 +1673,7 @@ const probeFor = (markers) => `(() => {
       const cp = cand.parentElement;
       if (!cp || cp.tagName !== parentTag) continue;
       if ((cp.getAttribute('class') || '') !== parentClass) continue;
-      if (!subsetOf(classSet(cand), mine)) continue;
+      if (!shapeOf(classSet(cand), mine)) continue;
       return { node: cand, rule: 'the same shape in another ' + parentTag.toLowerCase() };
     }
     return null;
