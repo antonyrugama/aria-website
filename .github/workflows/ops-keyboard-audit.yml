@@ -8,6 +8,8 @@ on:
   pull_request:
     paths:
       - 'scripts/ops-keyboard-walk*.mjs'
+      - 'scripts/ops-api-stub.mjs'
+      - 'scripts/ops-spend-fixture.mjs'
       - 'ops/**'
       - '.github/workflows/ops-keyboard-audit.yml'
   workflow_dispatch:

@@ -418,8 +418,8 @@
        real text in this same card, so naming the bar as well would announce
        each of them twice. It also carries no text of its own, which is what
        keeps the over-target segment free to be a hatch: text on a hatch is
-       measured against the WORST stripe, and that pair is already one
-       contrast failure on this design system (Stadiora/Aria#10366). */
+       measured against the WORST stripe, and that pair has already been
+       one contrast failure on this design system (Stadiora/Aria#10366). */
     track.appendChild(segment('sp-bud-used', trackShare(Math.min(state.ratio, AT_TARGET), state.ratio)));
     if (over) {
       track.appendChild(segment('sp-bud-over', trackShare(state.ratio - AT_TARGET, state.ratio)));

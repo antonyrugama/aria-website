@@ -1077,7 +1077,15 @@ function withClass(root, cls) {
 }
 
 const problemCards = (dom) => withClass(panel(dom, 'live'), 'p-item');
-const ruleRows = (dom) => withClass(dom.doc.body, 'rule-row');
+/* The rules table's body rows. Found by structure, not by a class: a row's
+   only class is its severity tint, and most rows carry none
+   (Stadiora/Aria#10644, #12565). */
+const ruleRows = (dom) => {
+  const card = withClass(dom.doc.body, 'rules-card')[0];
+  return card
+    ? findAll(card, (n) => n.tagName === 'TR' && n.parentNode && n.parentNode.tagName === 'TBODY')
+    : [];
+};
 
 function buttonNamed(root, re) {
   return findAll(root, (n) => n.tagName === 'BUTTON' && re.test(allText(n)))[0] || null;
@@ -2529,6 +2537,67 @@ test('a rule that cannot reach a verdict says so in words, and says why', async 
     'the rule that cannot judge did not say why: ' + JSON.stringify(rows));
   assert.ok(rows.some((r) => r.includes('Firing now')),
     'a firing rule said nothing in words, so the tone is carrying it alone');
+});
+
+/* Stadiora/Aria#12565. The approved mock tints a rules row by its state pill:
+   a `down` pill sits in a `hot` (rose) row and a `warn` pill in a `warm`
+   (amber) one, while a watching, muted or snoozed row stays plain. Stated here
+   per state, independently of ROW_TINT, so a mapping edited in the pane cannot
+   drag this expectation along with it. */
+test('a rules row is tinted by its state, and the tint agrees with its pill', async () => {
+  const cases = [
+    { title: 'Tint firing', over: { lastEvaluationStatus: 'firing' }, tint: 'hot', pill: 'down' },
+    { title: 'Tint error', over: { lastEvaluationStatus: 'error', lastFiredAt: null },
+      tint: 'hot', pill: 'down' },
+    { title: 'Tint thin', over: { lastEvaluationStatus: 'insufficient_data',
+      lastInsufficientReason: 'no_samples', lastFiredAt: null }, tint: 'warm', pill: 'warn' },
+    { title: 'Tint unrun', over: { lastEvaluatedAt: null, lastEvaluationStatus: null,
+      lastFiredAt: null }, tint: 'warm', pill: 'warn' },
+    { title: 'Tint ok', over: { lastEvaluationStatus: 'ok', lastFiredAt: null },
+      tint: null, pill: 'up' },
+    { title: 'Tint off', over: { enabled: false, lastEvaluationStatus: 'firing' },
+      tint: null, pill: 'ghost' },
+  ];
+  const dom = await boot({ rules: rulesFixture(cases.map((c, i) =>
+    rule(Object.assign({ ruleKey: 'tint_' + i, title: c.title }, c.over)))) });
+  const rows = ruleRows(dom);
+  assert.equal(rows.length, cases.length, 'the rules table drew ' + rows.length
+    + ' rows for ' + cases.length + ' rules');
+  for (const c of cases) {
+    const row = rows.find((r) => withClass(r, 't-main').some((n) => allText(n) === c.title));
+    assert.ok(row, 'no rules row is named ' + c.title);
+    const classes = (row.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+    assert.deepEqual(classes, c.tint ? [c.tint] : [],
+      c.title + ': the row carries ' + JSON.stringify(classes) + ', expected '
+      + JSON.stringify(c.tint ? [c.tint] : []));
+    const pills = withClass(row, 'pill')
+      .map((n) => (n.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort());
+    assert.deepEqual(pills, [['pill', c.pill].sort()],
+      c.title + ': the state pill is ' + JSON.stringify(pills) + ', not the '
+      + c.pill + ' one its tint is paired with');
+  }
+});
+
+/* The tints and their hover steps are painted by the pane's own sheet, and a
+   tinted row still answers the pointer: without the hover pair these
+   selectors outrank aria.css's generic row hover, and a tinted row would stop
+   changing under the cursor. The rest tints are the mock's pane-operate.css
+   values. The hover steps are held under the mock's 11% and 10%, because at
+   those dark --ink-3 text on the card's top computes under 4.5:1; the
+   arithmetic is in the sheet's comment. */
+test('the rules row tints are painted, each with a stronger hover step', () => {
+  const want = {
+    '.rules-card .tbl tbody tr.hot': 'color-mix(in srgb, var(--rose) 7%, transparent)',
+    '.rules-card .tbl tbody tr.warm': 'color-mix(in srgb, var(--amber) 6%, transparent)',
+    '.rules-card .tbl tbody tr.hot:hover': 'color-mix(in srgb, var(--rose) 9%, transparent)',
+    '.rules-card .tbl tbody tr.warm:hover': 'color-mix(in srgb, var(--amber) 7%, transparent)',
+  };
+  for (const [selector, value] of Object.entries(want)) {
+    const found = declarations(PANE_CSS)
+      .filter((d) => d.selector === selector && d.property === 'background');
+    assert.deepEqual(found.map((d) => d.value), [value],
+      'pane-alerts-v2.css paints ' + selector + ' as ' + JSON.stringify(found.map((d) => d.value)));
+  }
 });
 
 /* ================================ role gating ========================== */
@@ -4107,6 +4176,14 @@ const NON_TOKEN_PAINT = [
   { selector: '.av', property: 'color', atom: 'black', inside: 'color-mix' },
   { selector: '.p-detail', property: 'background', atom: 'transparent', inside: 'color-mix' },
   { selector: '.p-close', property: 'background', atom: 'transparent', inside: 'color-mix' },
+  { selector: '.rules-card .tbl tbody tr.hot', property: 'background', atom: 'transparent',
+    inside: 'color-mix' },
+  { selector: '.rules-card .tbl tbody tr.warm', property: 'background', atom: 'transparent',
+    inside: 'color-mix' },
+  { selector: '.rules-card .tbl tbody tr.hot:hover', property: 'background',
+    atom: 'transparent', inside: 'color-mix' },
+  { selector: '.rules-card .tbl tbody tr.warm:hover', property: 'background',
+    atom: 'transparent', inside: 'color-mix' },
   { selector: '.sw', property: 'background', atom: 'transparent', inside: 'color-mix' },
   { selector: '.sw:checked', property: 'background', atom: 'transparent', inside: 'color-mix' },
   { selector: '.sw:checked', property: 'box-shadow', atom: 'transparent', inside: 'color-mix' },
@@ -4633,7 +4710,7 @@ test('every test that reads the document walk asserts the walk refused nothing',
     tests: tests.length,
     readers: readers.length,
   };
-  assert.deepEqual(counts, { walkNames: 8, tests: 78, readers: 4 },
+  assert.deepEqual(counts, { walkNames: 8, tests: 80, readers: 4 },
     'the shape of this file moved under the reader census: ' + JSON.stringify(counts) + '. '
     + 'That is not a failure by itself -- it is this count refusing to be a sentence nobody '
     + 'checks. Read the numbers, and if they are right, write them here');

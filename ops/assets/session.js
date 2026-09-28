@@ -935,14 +935,17 @@
      If the call fails the local credential is dropped anyway: leaving a token
      on the device because the server could not be reached is the wrong way to
      fail. */
-  function signOut() {
+  function signOut(options) {
+    var opts = options || {};
     var haveSomething = accessToken || readAccessCache() || readRefreshToken();
     var done = haveSomething
       ? call('/api/ops/auth/logout', { method: 'POST', body: {} }).catch(function () {})
       : Promise.resolve();
     return done.then(function () {
       clearTokens();
-      global.location.replace(ROOT + '?reason=signedout');
+      if (opts.noNavigate !== true) {
+        global.location.replace(ROOT + '?reason=signedout');
+      }
     });
   }
 
@@ -1263,7 +1266,8 @@
     promptReauth: promptReauth,
     /* clearTokens is deliberately not exported. It drops the credential
        without telling the server, which is a sign-out that leaves the session
-       alive everywhere else; signOut() is the one a page should reach for. */
+       alive everywhere else; signOut({ noNavigate: true }) is only for flows
+       that immediately route through toLogin() with their own reason. */
     readRefreshToken: readRefreshToken,
     rememberedOnDevice: rememberedOnDevice,
     daysLeft: daysLeft,

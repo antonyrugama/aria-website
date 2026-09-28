@@ -67,9 +67,13 @@
 
    KNOWN FAILURES ARE ENUMERATED, NEVER SKIPPED. The first run of this check
    found unpaintable classes on five panes, and one announced-but-unpainted
-   state, that the pull request adding the check could not fix. Each one is
-   listed in KNOWN_UNPAINTED or KNOWN_UNPAINTED_STATE with the issue tracking
-   it, and each entry must still reproduce: a class that starts painting, or
+   state, that the pull request adding the check (antonyrugama/aria-website#78)
+   could not fix. Each of those defects was listed in KNOWN_UNPAINTED or
+   KNOWN_UNPAINTED_STATE with the issue tracking it, beside three class
+   entries that were never defects: query hooks, listed with no issue. Every
+   defect entry has since been deleted, so what is left is hooks; how many is
+   not written here, because the run prints it in its counts block. Each entry
+   must still reproduce: a class that starts painting, or
    stops being drawn, or an exception nobody can produce any more, fails this
    check just as loudly as a new orphan. A guard that narrows its own scope to
    stay green is the defect class this file is named for — and so is a guard
@@ -172,6 +176,18 @@
      inline change through CSSOM, or a state expressed only through an
      attribute the sheet keys on, are all outside judgement 1. Judgement 2 sees
      them when they land on an ARIA-marked element, and nowhere else.
+   - **A rule that reaches a class but changes nothing there.** Judgement 1
+     asks whether a rule with at least one declaration REACHES a class's
+     site, never whether it changes anything at that site. A class whose only
+     rule is a no-op where the pane puts it — `color` on an element with no
+     text, a `border-color` with no `border-style`, a `background` under an
+     opaque child — counts as painted. Judgement 2 has the same blind spot:
+     it compares computed values, and a no-op declaration still changes the
+     computed value, so an `[aria-pressed="true"]` rule whose only declaration
+     is `outline-color` on a control with `outline-style: none` reads as the
+     state being painted. So "no rule reaches it" is the whole of what an
+     orphan failure establishes, and a state pair that differs is the whole of
+     what judgement 2 establishes; either can still paint nothing.
    - **Panes with no state pair.** Seven of the ten panes declare no ARIA state
      in their result view, so judgement 2 has nothing to compare on them and
      they are carried by judgement 1 alone. The per-pane minimum in
@@ -213,8 +229,8 @@ const STEP_MS = 900;
 
 /* A floor, and only a floor: it says the pane put something on the page. The
    RESULT_PROOF markers below are what say the pane put its RESULT on the
-   page. The thinnest result view in this sweep is Live jobs at 143
-   elements. */
+   page. The run prints each pane's element count on its `ok` line; on main
+   at fcd47e3 the thinnest result view was Cloud costs, at 181 elements. */
 const MIN_CONTENT_ELEMENTS = 20;
 
 /* What a shell puts on screen INSTEAD of a pane. Measuring one of these
@@ -562,8 +578,11 @@ const USAGE = {
    the pane draws the reconciled sentence rather than the gap one.
 
    `views` keyed by category / resourceGroup / service, each `{ label, hint,
-   rows }`, is the shape the route sends. All three keys have to be here and
-   the note on `resourceGroup` below says why. The markers this check pins for
+   rows }`, is the shape the route sends. `category` and `resourceGroup` have
+   to be here, and the note on `resourceGroup` below says why. `service` is
+   here because the route sends it, and the pane draws it as the per-service
+   table that judgement 1 reads. No assertion needs it: deleting it leaves
+   this check green, with `spend: 1` still. The markers this check pins for
    the pane are row labels, which the pane prints verbatim. */
 const COST_ROWS = [
   { key: 'openai', label: 'Azure OpenAI', micros: 240_000_000, color: 's1' },
@@ -582,13 +601,14 @@ const COSTS = {
   views: {
     category: { label: 'Category', hint: '3 categories', rows: COST_ROWS },
     /* `resourceGroup` rather than `service` alone, because the pane on the
-       page reads `['category', 'resourceGroup']` (ops/assets/pane-spend.js:302)
+       page reads `['category', 'resourceGroup']` (ops/assets/pane-spend.js:532)
        and draws its Group-the-bill-by switch only when two of the views it
        reads have rows. A fixture sending `service` gave the v2 pane ONE view,
        no switch, and therefore none of the `aria-pressed` pair EXPECTED_PAIRS
        says this result view declares. All three keys are shapes the route
        sends: `'category' | 'resourceGroup' | 'service'`
-       (app-backend/server/ops/opsPanesRouter.ts:158 in the monorepo). */
+       (app-backend/server/ops/opsPanesRouter.ts:162 in the monorepo, at its main
+       on 2026-09-28). */
     resourceGroup: { label: 'Resource group', hint: '3 groups', rows: COST_ROWS },
     service: { label: 'Service', hint: '3 services', rows: COST_ROWS }
   },
@@ -895,10 +915,14 @@ const DRIVE = {
 
    This is the gate the other sweeps' equivalent could not be: theirs proves a
    pane drew ITSELF rather than a failure card, and for two of the panes it
-   pins static prose from a form with no result in it. These strings are taken
-   off the fixtures above wherever a pane prints a fixture value verbatim, so
+   pins static prose from a form with no result in it. Where a pane prints a
+   fixture value verbatim, the strings are taken off the fixtures above, so
    they are absent from the landing state, absent from an empty state, and
-   absent from a failure card by construction.
+   absent from a failure card by construction. Three are the pane's own words
+   instead — 'Declarations valid' on Aria quality, and 'Access record' and
+   'Selected' on Look up a user — so their absence before a result is a
+   property of those panes, stated in the notes beside them, and not
+   something the fixture guarantees.
 
    Checked BEFORE the pane is counted as judged. A guard that judges zero
    pages passes, and a guard that counts a landing state as a result view is
@@ -942,17 +966,26 @@ for (const page of PAGES) {
 /* ------------------------------------------------------ known failures */
 
 /* Classes a pane writes into its result view today that no sheet the page
-   loads can paint. Every one of these is #10456's shape, every one is in a
-   file this pull request does not own, and every one is filed.
+   loads can paint. The list the pull request that added this check
+   (antonyrugama/aria-website#78) opened with held two kinds of entry: defects
+   of #10456's shape, in files that pull request did not own, each filed with
+   its issue; and three query hooks with `issue: null`, which were never
+   defects. Every defect entry has since been deleted.
 
    They are enumerated rather than skipped, and each entry must still
    reproduce: a class that starts painting, or stops being drawn, fails this
    check with a message telling you to delete the line. An exception nobody
    can produce is an exception nobody is reading.
 
-   `why` is the fact, not an excuse. Two entries on Look up a user are query
-   hooks — assets/pane-users.js queries them by class and says so in its own
-   comment — and they are the only entries here that are not defects.
+   `why` is the fact, not an excuse. The entries left, all on Look up a user,
+   are query hooks — assets/pane-users.js queries them by class and says so in
+   its own comment — so none is a defect.
+
+   Stadiora/Aria#10644 left this list when Rules and notifications stopped
+   writing `rule-row`: the class was styled only in the deleted v1 sheet, and
+   the approved mock gives the rows no layout of their own, so the table lays
+   them out without it. Their only classes now are the mock's severity tints,
+   `hot` and `warm`, which pane-alerts-v2.css paints (Stadiora/Aria#12565).
 
    Stadiora/Aria#10643 was fixed in the pull request that deleted its two
    lines from this list, and `match-row-btn` left with it: assets/pane-users.js
@@ -962,11 +995,9 @@ for (const page of PAGES) {
    exception nobody can produce. */
 const KNOWN_UNPAINTED = [
   { pane: 'users', cls: 'match-row', issue: null,
-    why: 'a query hook: assets/pane-users.js:1467 finds the rows by it' },
+    why: 'a query hook: assets/pane-users.js:1647 finds the rows by it' },
   { pane: 'users', cls: 'sel-mark', issue: null,
-    why: 'a query hook: assets/pane-users.js:549 finds the selected mark by it' },
-  { pane: 'alerts', cls: 'rule-row', issue: 'Stadiora/Aria#10644',
-    why: 'styled only in operate.css, which alerts.html deliberately does not load' }
+    why: 'a query hook: assets/pane-users.js:553 finds the selected mark by it' }
 ];
 
 /* The same enumeration for judgement 2: a state a pane declares to assistive
@@ -999,14 +1030,14 @@ const EXPECTED_PAIRS = {
   overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0,
   /* One pair: the Group-the-bill-by switch's two buttons, `category` against
      `resourceGroup`. Not `service` — the pane drops that key from its switch
-     on purpose (ops/assets/pane-spend.js:288-302) and draws the per-service
+     on purpose (ops/assets/pane-spend.js:524-532) and draws the per-service
      figures as a table instead, so `service` feeds a table and no ARIA state.
      Deleting `resourceGroup` from the fixture takes this to 0 and fails the
      run; deleting `service` leaves it at 1. */
   spend: 1,
   evals: 0,
   /* Two pairs, one per platform the fixture sends: the rollout rail's current
-     stage carries aria-current="step" (ops/assets/pane-releases.js:498) and
+     stage carries aria-current="step" (ops/assets/pane-releases.js:563) and
      the stages either side of it do not. Both iOS and Android draw a rail, so
      both draw a pair. */
   releases: 2,
@@ -1030,7 +1061,8 @@ for (const page of PAGES) {
    the state and the two NUMBERS a reader can put side by side — never what
    those numbers mean about a cause.
 
-   Three review rounds of this pull request each caught a version of this text
+   Three review rounds of the pull request that wrote this text
+   (antonyrugama/aria-website#93) each caught a version of this text
    asserting a cause anyway, and the third one is the instructive one: which of
    the fixture and the pane produced a short count is not decidable from the
    count. Round 1 blamed the pane where the fixture was intact. Round 2 cleared
@@ -1482,6 +1514,31 @@ const probeFor = (markers) => `(() => {
     return out;
   };
 
+  /* A selector list split into its clauses: on a comma only at depth zero,
+     outside any (...) or string, the same depth walk as withoutNot() above.
+     Brackets need no count of their own: selectorText is Chrome's
+     serialisation, which quotes every attribute value, so a comma or a paren
+     inside [...] is inside a string. A split on every comma cut
+     body:is([data-page="releases"], [data-page="users"]) :is(.badge-crit, …)
+     in ops.css into pieces Chrome refuses, and cut .a:not(.b, .c) into a
+     .c) that reads as painting .c (Stadiora/Aria#10675). */
+  const splitList = (list) => {
+    const out = [];
+    let depth = 0;
+    let quote = '';
+    let start = 0;
+    for (let i = 0; i < list.length; i++) {
+      const ch = list[i];
+      if (quote) { if (ch === quote) quote = ''; continue; }
+      if (ch === '"' || ch === "'") quote = ch;
+      else if (ch === '(') depth += 1;
+      else if (ch === ')') depth -= 1;
+      else if (ch === ',' && depth === 0) { out.push(list.slice(start, i)); start = i + 1; }
+    }
+    out.push(list.slice(start));
+    return out;
+  };
+
   const unevaluable = [];
 
   /* Class tokens a clause NAMES, with the places a dot is not a class
@@ -1503,7 +1560,7 @@ const probeFor = (markers) => `(() => {
      selector for every element. */
   const byClass = new Map();
   for (const selectorText of rules) {
-    for (const one of selectorText.split(',')) {
+    for (const one of splitList(selectorText)) {
       for (const cls of new Set(classTokens(one))) {
         if (!byClass.has(cls)) byClass.set(cls, []);
         byClass.get(cls).push(one.trim());
@@ -1648,21 +1705,29 @@ const probeFor = (markers) => `(() => {
           one table, two tabs of one strip;
        2. failing that, the same shape one level out: an element of the same
           tag whose parent has the same tag and the same class attribute, and
-          whose own classes are a subset of the marked element's — the marked
-          one carries whatever the state added and nothing else differs.
+          whose own classes are a subset of the marked element's and share at
+          least one of them, or where neither carries a class at all — the
+          marked one carries whatever the state added and nothing else
+          differs.
 
      Rule 2 exists because #10456's own affordance needs it. The picked match's
      BUTTON is the only child of its cell, so rule 1 finds no sibling at all and
      the pressed button would be reported unjudgeable while the other row's
-     identical button sits six nodes away. The subset test is what keeps rule 2
-     from comparing a pressed button against any unrelated button sharing a
-     tag. */
+     identical button sits six nodes away. The shared-class test is what keeps
+     rule 2 from comparing a CLASSED pressed button against an unrelated
+     button sharing a tag; a class-less one still pairs with any class-less
+     button under a same-shaped parent, as the rule-2 bullet above says. A
+     subset test alone did not: the empty set is a subset of
+     every set, so a class-less row of another table passed as the peer of a
+     selected row and compared clean (Stadiora/Aria#10675). */
   const classSet = (node) =>
     new Set((node.getAttribute('class') || '').split(/\\s+/).filter(Boolean));
   const subsetOf = (small, big) => {
     for (const c of small) if (!big.has(c)) return false;
     return true;
   };
+  const shapeOf = (cand, mine) =>
+    subsetOf(cand, mine) && (cand.size > 0 || mine.size === 0);
 
   const peerFor = (el, attr) => {
     const parent = el.parentElement;
@@ -1682,7 +1747,7 @@ const probeFor = (markers) => `(() => {
       const cp = cand.parentElement;
       if (!cp || cp.tagName !== parentTag) continue;
       if ((cp.getAttribute('class') || '') !== parentClass) continue;
-      if (!subsetOf(classSet(cand), mine)) continue;
+      if (!shapeOf(classSet(cand), mine)) continue;
       return { node: cand, rule: 'the same shape in another ' + parentTag.toLowerCase() };
     }
     return null;
@@ -1699,7 +1764,7 @@ const probeFor = (markers) => `(() => {
      bearing and rests on a mount point rather than on the pane: the shell's
      App-scope bar carries an aria-pressed on every button
      (ops/assets/shell-pane-v2.js:413-421) and stays out of these counts only
-     because it is appended to main (:1094) while this walks #content. A
+     because it is appended to main (:1114) while this walks #content. A
      remodel that moved the bar inside #content would inflate the users
      aria-pressed count that FLOOR_HINTS.users tells a reader to compare
      against LOOKUP. */
@@ -2060,7 +2125,7 @@ const probeFor = (markers) => `(() => {
   const title = document.querySelector('.page-title');
   /* Two spellings. The pane header aria.js:253 builds writes the question into
      .page-sub, which is what all ten pages render. .page-question is
-     shell.js:290's spelling, and no ops page loads shell.js any more — it is
+     shell.js:291's spelling, and no ops page loads shell.js any more — it is
      kept in this selector so the probe does not depend on that staying true,
      at a cost of one clause. */
   const sub = document.querySelector('.page-sub, .page-question');
@@ -2403,7 +2468,7 @@ for (const page of PAGES) {
          controls drawn and clickable. Its replacement, "that is the attribute
          missing, not the control", is the same error with the sign flipped,
          and is false when the control genuinely goes: returning null from
-         viewSwitch (ops/assets/pane-spend.js:367) takes the Group-the-bill-by
+         viewSwitch (ops/assets/pane-spend.js:566) takes the Group-the-bill-by
          switch off the page and empties the census the same way. An empty
          census distinguishes neither, so this sentence names both. */
       saw = `Its result view declared no state attribute of any kind${inTheme}. What this ` +

@@ -25,6 +25,7 @@ on:
       - 'ops/**'
       - 'scripts/check-ops-result-view.mjs'
       - 'scripts/ops-result-view-geometry.test.mjs'
+      - 'scripts/ops-result-view-selectors.test.mjs'
       - '.github/workflows/ops-result-view.yml'
   push:
     branches: [main]
@@ -32,6 +33,7 @@ on:
       - 'ops/**'
       - 'scripts/check-ops-result-view.mjs'
       - 'scripts/ops-result-view-geometry.test.mjs'
+      - 'scripts/ops-result-view-selectors.test.mjs'
       - '.github/workflows/ops-result-view.yml'
   workflow_dispatch:
 
@@ -43,9 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     # Ten panes in two themes is twenty page loads, two of which fill in a form
     # and wait for an answer. A run takes a couple of minutes; the ceiling is
-    # here so a slow cold start cannot turn the sweep into a red check that
-    # measured nothing, which reads the same as a red check that found
-    # something.
+    # here so a hung Chrome cannot hold a runner for the default six hours. It
+    # is not what stops a partial sweep reading as a pass: the check compares
+    # its counts block (panes judged against panes declared, result views
+    # read against panes times themes) and fails on any mismatch, and a run
+    # cut off by this ceiling is red either way.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -54,9 +58,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      # The reach arithmetic, without a browser, so a change to this script
-      # alone runs it: ops-pane-tests.yml does not trigger on this file.
-      - name: Check the per-character reach rule
-        run: node --test scripts/ops-result-view-geometry.test.mjs
+      # The reach arithmetic and the selector helpers, without a browser, so a
+      # change to this script alone runs them: ops-pane-tests.yml does not
+      # trigger on this file.
+      - name: Check the per-character reach rule and the selector helpers
+        run: node --test scripts/ops-result-view-geometry.test.mjs scripts/ops-result-view-selectors.test.mjs
       - name: Check what every pane paints in its result view
         run: node scripts/check-ops-result-view.mjs

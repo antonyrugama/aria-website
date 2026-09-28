@@ -44,7 +44,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, allDomTextAndAttrs, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, allDomTextAndAttrs, findAll, glyphShape } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -1829,4 +1829,27 @@ test('the pane no longer loads the alerting model it used to fall back to', () =
     'jobs-live.html still loads the alerting model, which this pane no longer reads');
   assert.ok(PANE_SRC.indexOf('alerts/problems') === -1,
     'the pane still reaches for the alerting record it was built to replace');
+});
+
+/* Stadiora/Aria#10881. Under forced colours the glyph's shape is the only
+   channel left, so a gap drawn with the warning glyph would read as a fault.
+   Scoped to the band that names the gaps: the stuck-and-abandoned findings
+   above it are a different list and may rightly warn.
+   MUTATION: `icon('layers')` to `icon('warn')` in missingBand() in
+   ops/assets/pane-jobs-live-v2.js fails the equality below. */
+test('every gap the pane names draws the layers glyph, not the warning one', async () => {
+  const dom = await boot({});
+  const section = findAll(dom.content, (n) => n.tagName === 'SECTION')
+    .filter((n) => /cannot answer yet/.test(allText(n)))[0];
+  assert.ok(section, 'no "cannot answer yet" band on the page');
+  const items = findAll(section, (n) => (n.getAttribute('class') || '').split(/\s+/).includes('omit-item'));
+  assert.equal(items.length, 5, 'the band no longer draws five gaps');
+  const layers = glyphShape(dom.window.Aria.icon('layers'));
+  assert.notEqual(layers, glyphShape(dom.window.Aria.icon('warn')),
+    'aria.js draws layers and warn with the same shape');
+  for (const item of items) {
+    const title = allText(findAll(item, (n) => (n.getAttribute('class') || '') === 'omit-title')[0]);
+    assert.equal(glyphShape(findAll(item, (n) => n.tagName === 'svg')[0]), layers,
+      `"${title}" does not draw the layers glyph`);
+  }
 });

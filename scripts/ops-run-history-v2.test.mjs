@@ -39,7 +39,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, findAll, glyphShape } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -394,6 +394,30 @@ async function boot(options) {
     call: (endpoint, o) => {
       calls.push({ endpoint, query: o && o.query, method: o && o.method, body: o && o.body });
       if (o && o.method === 'POST') {
+        if (/^\/api\/ops\/runs\/[^/]+\/reveal$/.test(endpoint)) {
+          const answer = opts.revealResponses && opts.revealResponses.shift
+            ? opts.revealResponses.shift()
+            : opts.revealResponse;
+          if (answer instanceof Error) {
+            if (answer.code === 'ops_reauth_required' && !opts.skipPromptReauth) {
+              return dom.window.OpsSession.promptReauth(answer.maxAgeSeconds).then((confirmed) => {
+                if (!confirmed) return Promise.reject(answer);
+                calls.push({ endpoint, query: o && o.query, method: o && o.method, body: o && o.body });
+                const retry = opts.revealResponses && opts.revealResponses.shift
+                  ? opts.revealResponses.shift()
+                  : opts.revealResponse;
+                if (retry instanceof Error) return Promise.reject(retry);
+                return Promise.resolve({ data: retry });
+              });
+            }
+            return Promise.reject(answer);
+          }
+          if (answer === undefined) return Promise.reject(new Error('no reveal stub for ' + endpoint));
+          if (answer && typeof answer.then === 'function') {
+            return answer.then((data) => ({ data }));
+          }
+          return Promise.resolve({ data: answer });
+        }
         const action = opts.actionResponses && opts.actionResponses[endpoint];
         if (action instanceof Error) return Promise.reject(action);
         if (action === undefined) return Promise.reject(new Error('no action stub for ' + endpoint));
@@ -417,6 +441,10 @@ async function boot(options) {
       return Promise.resolve({ data: answer });
     },
     signOut: () => Promise.resolve(),
+    promptReauth: () => {
+      calls.push({ endpoint: '/api/ops/auth/reauth', method: 'PROMPT' });
+      return Promise.resolve(true);
+    },
     role: () => role,
     hasRole: (roles) => (roles || []).indexOf(role) !== -1,
     daysLeft: () => 12,
@@ -563,6 +591,67 @@ test('settings Load more stays hidden when the shared button display rule also m
   }, 'display'), 'none');
 });
 
+function retryableRunWindow(failedJobId) {
+  return windowAnswer((base) => {
+    base.runs = [
+      runRow({
+        jobId: failedJobId,
+        outcome: 'failed',
+        outcomeLabel: 'Failed',
+        failureCode: 'model_timeout',
+        retryable: true,
+        reference: 'job_222222',
+        actions: {
+          canCancel: false,
+          cancelReason: 'Only queued or running jobs can be cancelled.',
+          canRetry: true,
+          retryReason: null,
+        },
+      }),
+    ];
+    return base;
+  });
+}
+
+function cancelableRunWindow(jobId) {
+  return windowAnswer((base) => {
+    base.runs = [
+      runRow({
+        jobId,
+        outcome: 'running',
+        outcomeLabel: 'Running',
+        failureCode: null,
+        retryable: null,
+        reference: 'job_222222',
+        actions: {
+          canCancel: true,
+          cancelReason: null,
+          canRetry: false,
+          retryReason: 'Only failed jobs can be retried.',
+        },
+      }),
+    ];
+    return base;
+  });
+}
+
+async function submitJobAction(dom, action) {
+  buttonsIn(livePanel(dom), action === 'retry' ? /^Retry$/ : /^Cancel$/)[0].dispatch('click', {});
+  await settle();
+  const input = dom.body.querySelector('.field-input');
+  input.value = 'job_222222';
+  input.dispatch('input', {});
+  buttonsIn(dom.body, action === 'retry' ? /^Retry job$/ : /^Cancel job$/)[0].dispatch('click', {});
+  await settle();
+}
+
+async function submitRetry(dom) {
+  await submitJobAction(dom, 'retry');
+}
+
+const READ_ERROR_MESSAGE = 'The window could not be read. The figures on screen before this are '
+  + 'unread now, not zero. Try again is the only control left on the pane.';
+
 test('run-history retry uses the job action contract and refreshes the window', async () => {
   const failedJobId = '22222222-2222-4222-8222-222222222222';
   const retryJobId = '33333333-3333-4333-8333-333333333333';
@@ -632,6 +721,897 @@ test('run-history retry uses the job action contract and refreshes the window', 
     'the action message was not announced after the reload summary');
 });
 
+test('run-history stale retry leaves the stale message after the reload summary exactly once', async () => {
+  const failedJobId = '22222222-2222-4222-8222-222222222222';
+  const stale = new Error('raw backend text must not render');
+  stale.status = 409;
+  stale.code = 'ops_jobs_retry_stale';
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.runs = [
+        runRow({
+          jobId: failedJobId,
+          outcome: 'failed',
+          outcomeLabel: 'Failed',
+          failureCode: 'model_timeout',
+          retryable: true,
+          reference: 'job_222222',
+          actions: {
+            canCancel: false,
+            cancelReason: 'Only queued or running jobs can be cancelled.',
+            canRetry: true,
+            retryReason: null,
+          },
+        }),
+      ];
+      return base;
+    }),
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: stale,
+    },
+  });
+
+  const staleMessage = 'That job changed state elsewhere. The list was refreshed; nothing was claimed.';
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+  buttonsIn(livePanel(dom), /^Retry$/)[0].dispatch('click', {});
+  await settle();
+  const input = dom.body.querySelector('.field-input');
+  input.value = 'job_222222';
+  input.dispatch('input', {});
+  buttonsIn(dom.body, /^Retry job$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(heard.filter((message) => message === staleMessage).length, 1,
+    'the stale retry message was not announced exactly once around the reload');
+  assert.equal(lastSaid(dom), staleMessage,
+    'the polite region did not end on the stale retry message after the reload announcement');
+  assert.equal(heard.at(-1), staleMessage,
+    'the stale retry message was not announced after the reload summary');
+});
+
+test('run-history success action followed by a failed reload still announces the action once', async () => {
+  const failedJobId = '22222222-2222-4222-8222-222222222222';
+  const retryJobId = '33333333-3333-4333-8333-333333333333';
+  const actionMessage = 'Retry created: job_333333.';
+  let reads = 0;
+  const dom = await boot({
+    runs: () => {
+      reads += 1;
+      return reads === 1 ? retryableRunWindow(failedJobId) : new Error('reload failed');
+    },
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: {
+        originalJobId: failedJobId,
+        jobId: retryJobId,
+        status: 'queued',
+      },
+    },
+  });
+
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+  await submitRetry(dom);
+
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
+    'the successful retry message was not announced exactly once when the reload failed');
+  assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
+    'the failed reload was not also announced after the successful retry');
+  assert.match(lastSaid(dom) || '', /Retry created: job_333333\./,
+    'the final polite-region text did not include the successful retry message');
+  assert.match(lastSaid(dom) || '', /The window could not be read/,
+    'the final polite-region text did not include the read failure');
+});
+
+const REFRESH_ERROR_ACTION_CASES = [
+  { action: 'retry', code: 'ops_jobs_cancel_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_cancel_unavailable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_unavailable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_job_mismatch', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_retry_job_not_retryable', status: 409,
+    expected: 'Retry is no longer available for that job. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_job_not_found', status: 404,
+    expected: 'That job is no longer in the operations record. Nothing was claimed.' },
+  { action: 'retry', code: 'ops_jobs_unknown_refresh', status: 409,
+    expected: 'That did not go through. Nothing changed.' },
+  { action: 'cancel', code: 'ops_jobs_cancel_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_stale', status: 409,
+    expected: 'That job changed state elsewhere. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_cancel_unavailable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_unavailable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_job_mismatch', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_retry_job_not_retryable', status: 409,
+    expected: 'Cancellation is no longer available for that job. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_job_not_found', status: 404,
+    expected: 'That job is no longer in the operations record. Nothing was claimed.' },
+  { action: 'cancel', code: 'ops_jobs_unknown_refresh', status: 409,
+    expected: 'That did not go through. Nothing changed.' },
+];
+
+for (const refreshCase of REFRESH_ERROR_ACTION_CASES) {
+  test(`run-history ${refreshCase.action} ${refreshCase.code} failed reload does not claim refresh`, async () => {
+    const jobId = '22222222-2222-4222-8222-222222222222';
+    const actionError = new Error('raw backend text must not render');
+    actionError.status = refreshCase.status;
+    actionError.code = refreshCase.code;
+    let reads = 0;
+    const dom = await boot({
+      runs: () => {
+        reads += 1;
+        return reads === 1
+          ? (refreshCase.action === 'retry' ? retryableRunWindow(jobId) : cancelableRunWindow(jobId))
+          : new Error('reload failed');
+      },
+      actionResponses: {
+        ['/api/ops/jobs/' + encodeURIComponent(jobId) + '/' + refreshCase.action]: actionError,
+      },
+    });
+
+    const heard = [];
+    const realAnnounce = dom.window.OpsPaneShell.announce;
+    dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+    await submitJobAction(dom, refreshCase.action);
+
+    assert.ok((lastSaid(dom) || '').includes(refreshCase.expected),
+      'the final polite-region text did not include the action result');
+    assert.equal(heard.filter((message) => message.includes(refreshCase.expected)).length, 1,
+      'the failed-reload action result was not announced exactly once');
+    assert.equal(heard.filter((message) => message.includes(READ_ERROR_MESSAGE)).length, 1,
+      'the failed reload read error was not announced exactly once');
+    assert.doesNotMatch(lastSaid(dom) || '', /refreshed/,
+      'the failed-reload action announcement falsely said the list was refreshed');
+    assert.ok((lastSaid(dom) || '').includes(READ_ERROR_MESSAGE),
+      'the final polite-region text did not include the read failure');
+  });
+}
+
+test('run-history action message does not leak into the next successful read after reload failure', async () => {
+  const failedJobId = '22222222-2222-4222-8222-222222222222';
+  const retryJobId = '33333333-3333-4333-8333-333333333333';
+  const actionMessage = 'Retry created: job_333333.';
+  let readMode = 'initial';
+  const dom = await boot({
+    runs: () => {
+      if (readMode === 'initial') return retryableRunWindow(failedJobId);
+      if (readMode === 'fail') return new Error('reload failed');
+      return windowAnswer();
+    },
+    actionResponses: {
+      ['/api/ops/jobs/' + encodeURIComponent(failedJobId) + '/retry']: {
+        originalJobId: failedJobId,
+        jobId: retryJobId,
+        status: 'queued',
+      },
+    },
+  });
+
+  const heard = [];
+  const realAnnounce = dom.window.OpsPaneShell.announce;
+  dom.window.OpsPaneShell.announce = (message) => { heard.push(message); return realAnnounce(message); };
+
+  readMode = 'fail';
+  await submitRetry(dom);
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
+    'the successful retry message was not announced exactly once when the reload failed');
+  assert.match(lastSaid(dom) || '', /Retry created: job_333333\./,
+    'the failed-reload polite-region text did not include the successful retry message');
+  assert.match(lastSaid(dom) || '', /The window could not be read/,
+    'the failed-reload polite-region text did not include the read failure');
+
+  readMode = 'success';
+  buttonsIn(livePanel(dom), /^Try again$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.ok(heard.some((message) => /11 runs finished/.test(message)),
+    'the later successful read did not announce its fresh summary');
+  assert.equal(heard.filter((message) => message.includes(actionMessage)).length, 1,
+    'the old successful retry message leaked into a later successful read');
+});
+
+test('owners reveal retained and missing run content after giving a reason', async () => {
+  const jobId = '22222222-2222-4222-8222-222222222222';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: {
+      jobId,
+      jobType: 'nutrition_plan',
+      sections: [
+        {
+          key: 'input',
+          label: 'Stored input',
+          source: 'generation_jobs.input_payload',
+          owner: 'app-backend',
+          status: 'retained',
+          contentType: 'application/json',
+          value: '{"prompt":"Build plan","nested":{"email":"[redacted email]"}}',
+          characterCount: 58,
+          notRetainedReason: null,
+        },
+        {
+          key: 'output',
+          label: 'Stored output',
+          source: 'generation_jobs.result_payload',
+          owner: 'app-backend',
+          status: 'not_retained',
+          contentType: 'application/json',
+          value: null,
+          characterCount: null,
+          notRetainedReason: 'The result payload was swept after retention expired.',
+        },
+      ],
+      recorded: {
+        at: at(0),
+        actor: 'owner@example.invalid',
+        reason: 'Investigating failed generation',
+      },
+    },
+  });
+
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.ok(show, 'an opened run did not offer the owner a reveal action');
+  show.dispatch('click', {});
+  await settle();
+
+  const textarea = dom.body.querySelector('textarea');
+  assert.ok(textarea, 'the reveal dialog did not ask for a written reason');
+  assert.equal(textarea.getAttribute('aria-describedby').split(/\s+/).length >= 2, true,
+    'the reason field is not bound to both hint and validation text');
+  textarea.value = 'short';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+  assert.equal(textarea.getAttribute('aria-invalid'), 'true',
+    'a too-short reason did not mark the field invalid');
+  assert.match(allText(dom.body), /Use 10 to 500 characters/,
+    'the reason error was not visible beside the field');
+
+  textarea.value = 'Investigating failed generation';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(JSON.stringify(dom.calls.filter((c) => c.method === 'POST').map((c) => [c.endpoint, c.body])),
+    JSON.stringify([['/api/ops/runs/' + jobId + '/reveal', { reason: 'Investigating failed generation' }]]),
+    'the reveal route was not called once with the written reason');
+
+  const content = sectionWithHeading(dom, /Stored content/);
+  assert.ok(content, 'successful reveal did not render the stored content band');
+  const regions = findAll(content, (n) => n.getAttribute('role') === 'region');
+  assert.deepEqual(regions.map((n) => ({
+    label: n.getAttribute('aria-label'),
+    tab: n.getAttribute('tabindex'),
+  })), [
+    { label: 'Stored input content', tab: '0' },
+    { label: 'Stored output content', tab: '0' },
+  ], 'revealed sections were not keyboard-readable regions');
+  assert.match(allText(regions[0]), /"prompt": "Build plan"/,
+    'retained JSON was not pretty-printed as readable text');
+  assert.match(allText(regions[1]), /Not kept: The result payload was swept after retention expired\./,
+    'not-retained content did not show the server reason');
+  buttonsIn(content, /^Hide content$/)[0].dispatch('click', {});
+  await settle();
+  assert.doesNotMatch(liveText(dom), /"prompt": "Build plan"/,
+    'Hide content left revealed text in the DOM');
+});
+
+test('a stale fresh-auth gate retries reveal without retyping the reason', async () => {
+  const jobId = '22222222-2222-4222-8222-222222222222';
+  const stale = new Error('fresh auth required');
+  stale.status = 403;
+  stale.code = 'ops_reauth_required';
+  stale.maxAgeSeconds = 300;
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponses: [
+      stale,
+      {
+        jobId,
+        jobType: 'nutrition_plan',
+        sections: [
+          {
+            key: 'input',
+            label: 'Stored input',
+            source: 'generation_jobs.input_payload',
+            owner: 'app-backend',
+            status: 'retained',
+            contentType: 'application/json',
+            value: '{"ok":true}',
+            characterCount: 11,
+            notRetainedReason: null,
+          },
+        ],
+        recorded: { at: at(0), actor: 'owner@example.invalid', reason: 'Auditing customer report' },
+      },
+    ],
+  });
+
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  buttonsIn(livePanel(dom), /^Show content$/)[0].dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = 'Auditing customer report';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(JSON.stringify(dom.calls.filter((c) => c.method === 'POST').map((c) => c.body)),
+    JSON.stringify([
+      { reason: 'Auditing customer report' },
+      { reason: 'Auditing customer report' },
+    ]), 'fresh-auth retry did not preserve the typed reason across re-authentication');
+  assert.deepEqual(dom.calls.filter((c) => c.method === 'PROMPT').map((c) => c.endpoint),
+    ['/api/ops/auth/reauth'], 'the stale reveal did not use the shared re-auth prompt');
+  assert.match(liveText(dom), /"ok": true/,
+    'the reveal result did not render after the fresh-auth retry');
+});
+
+test('operators get no run-content reveal control or owner-only hint', async () => {
+  const dom = await boot({ role: 'operator', detail: detailAnswer() });
+
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+
+  assert.doesNotMatch(liveText(dom), /Show content|Only an owner can reveal|owner action/,
+    'operators were shown a content-reveal affordance or hint');
+});
+
+function revealAnswer(value) {
+  return {
+    jobId: '22222222-2222-4222-8222-222222222222',
+    jobType: 'nutrition_plan',
+    sections: [
+      {
+        key: 'input',
+        label: 'Stored input',
+        source: 'generation_jobs.input_payload',
+        owner: 'app-backend',
+        status: 'retained',
+        contentType: 'application/json',
+        value: JSON.stringify({ private: value }),
+        characterCount: value.length + 14,
+        notRetainedReason: null,
+      },
+    ],
+    recorded: { at: at(0), actor: 'owner@example.invalid', reason: 'Review probe reason' },
+  };
+}
+
+function twoSectionRevealAnswer(value) {
+  return {
+    jobId: '22222222-2222-4222-8222-222222222222',
+    jobType: 'video_analysis',
+    sections: [
+      {
+        key: 'input',
+        label: 'Stored input',
+        source: 'generation_jobs.input_payload',
+        owner: 'app-backend',
+        status: 'retained',
+        contentType: 'application/json',
+        value: JSON.stringify({ private: value }),
+        characterCount: value.length + 14,
+        notRetainedReason: null,
+      },
+      {
+        key: 'output',
+        label: 'Stored output',
+        source: 'generation_jobs.result_payload',
+        owner: 'app-backend',
+        status: 'not_retained',
+        contentType: 'application/json',
+        value: null,
+        characterCount: null,
+        notRetainedReason: 'The result payload was swept after retention expired.',
+      },
+    ],
+    recorded: { at: at(0), actor: 'owner@example.invalid', reason: 'Review probe reason' },
+  };
+}
+
+async function revealOpenedRun(dom, reason = 'Review probe reason') {
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.ok(show, 'review probe setup did not find Show content');
+  show.focus();
+  show.dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = reason;
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+  assert.match(allText(dom.body), /Stored content/, 'review probe setup did not reveal content');
+}
+
+test('review probe: reload removes revealed content while the next window is still loading', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_LOADING';
+  let resolveNext;
+  let calls = 0;
+  const dom = await boot({
+    runs: () => {
+      calls += 1;
+      if (calls === 1) return windowAnswer();
+      return new Promise((resolve) => { resolveNext = resolve; });
+    },
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click');
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe loading cleanup failed: revealed content survived in a hidden panel');
+  resolveNext(windowAnswer());
+  await settle();
+});
+
+test('review probe: an empty reread removes revealed content from the whole document', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_EMPTY';
+  let empty = false;
+  const dom = await boot({
+    runs: () => (empty ? emptyWindow() : windowAnswer()),
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  empty = true;
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click');
+  await settle();
+
+  assert.equal(stateOf(dom), 'empty', 'review probe did not reach the empty state');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe empty cleanup failed: revealed content survived outside the live panel');
+});
+
+test('review probe: an error reread removes revealed content from the whole document', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_ERROR';
+  let broken = false;
+  const dom = await boot({
+    runs: () => (broken ? new Error('review probe read failed') : windowAnswer()),
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  broken = true;
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(stateOf(dom), 'degraded', 'review probe did not reach the degraded failure state');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe error cleanup failed: revealed content survived outside the live panel');
+});
+
+test('review probe: opening another run removes previously revealed content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_RUN_CHANGE';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  buttonsIn(livePanel(dom), /^Open$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe run-change cleanup failed: revealed content survived opening another run');
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe run-change cleanup failed: reopening the original run reused revealed content');
+});
+
+test('review probe: closing the pane detail removes revealed content from the whole document', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PANE_LEAVE';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+  const card = dom.body.querySelector('.rh-content-card');
+  assert.ok(card, 'review probe setup did not find the revealed content card');
+  let removals = 0;
+  const realRemove = card.remove;
+  card.remove = function () {
+    removals += 1;
+    return realRemove.apply(card, arguments);
+  };
+
+  buttonsIn(livePanel(dom), /^Close$/)[0].dispatch('click', {});
+  await settle();
+
+  assert.equal(removals, 1,
+    'review probe pane-leave cleanup failed: Close did not remove the revealed card directly');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe pane-leave cleanup failed: revealed content survived closing the detail pane');
+});
+
+test('review probe: pagehide and bfcache restore purge revealed content and stale callbacks', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PAGEHIDE';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe pagehide cleanup failed: revealed content remained in the DOM');
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe bfcache restore cleanup failed: revealed content came back');
+});
+
+test('review probe R4: pagehide bfcache cleanup returns Hide focus to connected Show content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_HIDE_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const hide = buttonsIn(livePanel(dom), /^Hide content$/)[0];
+  assert.ok(hide, 'review probe setup did not find Hide content');
+  hide.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R4 Hide bfcache focus restore failed: focus did not land on the connected Show content button');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R4 Hide bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R6: pagehide bfcache cleanup preserves Close focus outside reveal area', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_CLOSE_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const close = buttonsIn(livePanel(dom), /^Close$/)[0];
+  assert.ok(close, 'review probe setup did not find Close');
+  close.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedClose = buttonsIn(livePanel(dom), /^Close$/)[0];
+  assert.equal(dom.doc.activeElement, connectedClose,
+    'review probe R6 Close bfcache focus preservation failed: focus did not stay on connected Close');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R6 Close bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R6: pagehide bfcache cleanup preserves job-action focus outside reveal area', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_JOB_ACTION_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer((base) => {
+      base.run.reference = 'job_222222';
+      base.run.actions = {
+        canCancel: false,
+        cancelReason: 'Only queued or running jobs can be cancelled.',
+        canRetry: true,
+        retryReason: null,
+      };
+      return base;
+    }),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const retry = buttonsIn(livePanel(dom), /^Retry$/)[0];
+  assert.ok(retry, 'review probe setup did not find the detail Retry job action');
+  retry.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedRetry = buttonsIn(livePanel(dom), /^Retry$/)[0];
+  assert.equal(dom.doc.activeElement, connectedRetry,
+    'review probe R6 job-action bfcache focus preservation failed: focus did not stay on connected Retry');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R6 job-action bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R4: pagehide bfcache cleanup returns content-region focus to connected Show content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_REGION_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const region = livePanel(dom).querySelector('.rh-content-region');
+  assert.ok(region, 'review probe setup did not find the revealed content region');
+  region.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R4 content-region bfcache focus restore failed: focus did not land on the connected Show content button');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R4 content-region bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R5: pagehide bfcache cleanup returns second content-region focus to connected Show content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_SECOND_REGION_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: twoSectionRevealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const regions = livePanel(dom).querySelectorAll('.rh-content-region');
+  assert.equal(regions.length, 2, 'review probe setup did not render the two-section reveal shape');
+  regions[1].focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R5 second content-region bfcache focus restore failed: focus did not land on the connected Show content button');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R5 second content-region bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R6: pagehide bfcache cleanup returns footer Hide focus to connected Show content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_FOOTER_HIDE_BFCACHE_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  const card = livePanel(dom).querySelector('.rh-content-card');
+  assert.ok(card, 'review probe setup did not render a revealed content card');
+  const footerHide = buttonsIn(card, /^Hide content$/)[0];
+  assert.ok(footerHide, 'review probe setup did not find footer Hide content');
+  footerHide.focus();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R6 footer Hide bfcache focus restore failed: focus did not land on the connected Show content button');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R6 footer Hide bfcache cleanup failed: revealed content survived bfcache cleanup');
+});
+
+test('review probe R4: live state exposes a connected focus fallback target', async () => {
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer('REVIEW_PRIVATE_SENTINEL_STATE_FALLBACK'),
+  });
+  const stateTarget = livePanel(dom).querySelector('[data-rh-focus="rh-state"]');
+  assert.ok(stateTarget,
+    'review probe R4 state fallback failed: live state did not expose an rh-state target');
+  stateTarget.focus();
+
+  assert.equal(dom.doc.activeElement, stateTarget,
+    'review probe R4 state fallback failed: the live rh-state target was not focusable');
+});
+
+test('review probe: pagehide invalidates a late reveal callback before it can repopulate content', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_LATE_CALLBACK';
+  let resolveReveal;
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: new Promise((resolve) => { resolveReveal = resolve; }),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  show.focus();
+  show.dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = 'Review probe reason';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  resolveReveal(revealAnswer(sentinel));
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe late callback cleanup failed: reveal content was repopulated after pagehide');
+});
+
+test('review probe R2: hidden visibility settles a pending reveal dialog before the late response lands', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PENDING_VISIBILITY';
+  let resolveReveal;
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: new Promise((resolve) => { resolveReveal = resolve; }),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  show.focus();
+  show.dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = 'Review probe reason';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+  assert.ok(dom.body.querySelector('.modal'), 'review probe setup did not leave the reveal dialog open');
+
+  dom.doc.visibilityState = 'hidden';
+  dom.doc.dispatch('visibilitychange', {});
+  dom.doc.visibilityState = 'visible';
+  dom.doc.dispatch('visibilitychange', {});
+  resolveReveal(revealAnswer(sentinel));
+  await settle();
+
+  assert.equal(dom.body.querySelector('.modal'), null,
+    'review probe R2 pending visibility cleanup failed: the busy reveal dialog remained mounted');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R2 pending visibility cleanup failed: late reveal content rendered after cleanup');
+  assert.equal(dom.doc.activeElement && dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-reveal-show',
+    'review probe R2 pending visibility cleanup failed: focus did not return to Show content');
+});
+
+test('review probe R2: pagehide bfcache cleanup settles a pending reveal dialog before the late response lands', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PENDING_PAGEHIDE';
+  let resolveReveal;
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: new Promise((resolve) => { resolveReveal = resolve; }),
+  });
+  buttonsIn(livePanel(dom), /^Open$/)[1].dispatch('click', {});
+  await settle();
+  const show = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  show.focus();
+  show.dispatch('click', {});
+  await settle();
+  const textarea = dom.body.querySelector('textarea');
+  textarea.value = 'Review probe reason';
+  textarea.dispatch('input', {});
+  buttonsIn(dom.body, /^Show content$/).slice(-1)[0].dispatch('click', {});
+  await settle();
+  assert.ok(dom.body.querySelector('.modal'), 'review probe setup did not leave the reveal dialog open');
+
+  dom.window.dispatchEvent({ type: 'pagehide', persisted: true });
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  const connectedShow = buttonsIn(livePanel(dom), /^Show content$/)[0];
+  assert.equal(dom.doc.activeElement, connectedShow,
+    'review probe R3 bfcache focus restore failed: persisted pageshow did not focus the connected Show content button');
+  resolveReveal(revealAnswer(sentinel));
+  await settle();
+
+  assert.equal(dom.body.querySelector('.modal'), null,
+    'review probe R2 pending pagehide cleanup failed: the busy reveal dialog remained mounted');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R2 pending pagehide cleanup failed: late reveal content rendered after cleanup');
+  assert.equal(dom.doc.activeElement && dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-reveal-show',
+    'review probe R2 pending pagehide cleanup failed: focus did not return to Show content');
+});
+
+test('review probe: persisted pageshow alone purges revealed content on bfcache restore', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_PAGESHOW';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  dom.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe pageshow cleanup failed: a bfcache restore kept revealed content');
+});
+
+test('review probe: hidden visibility purges revealed content before the pane is backgrounded', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_VISIBILITY';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+  await revealOpenedRun(dom);
+  assert.match(allText(dom.body), new RegExp(sentinel), 'review probe setup did not put the sentinel in the DOM');
+
+  dom.doc.visibilityState = 'hidden';
+  dom.doc.dispatch('visibilitychange', {});
+  await settle();
+
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe visibility cleanup failed: revealed content survived backgrounding');
+});
+
+test('review probe: Show and Hide keep focus on connected reveal controls', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_FOCUS';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+
+  await revealOpenedRun(dom);
+
+  assert.ok(dom.body.contains(dom.doc.activeElement),
+    'review probe Show focus failed: focus stayed on a detached control after reveal');
+  assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-content-first',
+    'review probe Show focus failed: focus did not land on the revealed content region');
+
+  const hide = buttonsIn(livePanel(dom), /^Hide content$/)[0];
+  hide.focus();
+  hide.dispatch('click', {});
+  await settle();
+
+  assert.ok(dom.body.contains(dom.doc.activeElement),
+    'review probe Hide focus failed: focus stayed on a detached Hide button');
+  assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-reveal-show',
+    'review probe Hide focus failed: focus did not return to Show content');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe Hide cleanup failed: revealed content survived Hide');
+});
+
+test('review probe R2: footer Hide keeps focus on the connected Show content button', async () => {
+  const sentinel = 'REVIEW_PRIVATE_SENTINEL_FOOTER_HIDE';
+  const dom = await boot({
+    detail: detailAnswer(),
+    revealResponse: revealAnswer(sentinel),
+  });
+
+  await revealOpenedRun(dom);
+  const card = dom.body.querySelector('.rh-content-card');
+  assert.ok(card, 'review probe setup did not render a revealed content card');
+  const footerHide = buttonsIn(card, /^Hide content$/)[0];
+  assert.ok(footerHide, 'review probe setup did not find the footer Hide button');
+  footerHide.focus();
+  footerHide.dispatch('click', {});
+  await settle();
+
+  assert.ok(dom.body.contains(dom.doc.activeElement),
+    'review probe R2 footer Hide focus failed: focus stayed on a detached footer Hide button');
+  assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-reveal-show',
+    'review probe R2 footer Hide focus failed: focus did not return to Show content');
+  assert.doesNotMatch(allText(dom.body), new RegExp(sentinel),
+    'review probe R2 footer Hide cleanup failed: revealed content survived footer Hide');
+});
+
 function stateOf(dom) {
   return dom.applied[dom.applied.length - 1] || null;
 }
@@ -665,6 +1645,11 @@ function buttonsIn(node, label) {
 
 function selectsIn(dom) {
   return findAll(livePanel(dom), (n) => n.tagName === 'SELECT');
+}
+
+function linksIn(node, label) {
+  return findAll(node, (n) => n.tagName === 'A')
+    .filter((n) => label.test(allText(n)));
 }
 
 const runCalls = (dom) => dom.calls.filter((c) => c.endpoint === '/api/ops/runs');
@@ -1025,6 +2010,94 @@ test('Read again keeps focus on Read again', async () => {
 
   assert.equal(focusKey(dom), 'rh-read-again',
     'focus fell to ' + (focusKey(dom) || 'nowhere in this pane') + ' after a fresh reading');
+});
+
+test('live doorway links keep focus on their connected equivalents across cleanup redraws', async () => {
+  const dom = await boot({});
+  for (const [label, expectedKey] of [
+    [/^What the watchers caught$/, 'rh-doorway-live-alerts'],
+    [/^Look up a user$/, 'rh-doorway-live-users'],
+  ]) {
+    const link = linksIn(livePanel(dom), label)[0];
+    assert.ok(link, 'the live pane did not draw the doorway link named ' + label);
+    link.focus();
+    assert.equal(focusKey(dom), expectedKey, 'the doorway link carries no stable focus key');
+
+    dom.window.dispatchEvent({ type: 'pagehide' });
+    await settle();
+
+    const connected = linksIn(livePanel(dom), label)[0];
+    assert.ok(connected && dom.body.contains(connected) && shown(dom, connected),
+      'the redraw did not leave a connected equivalent link');
+    assert.notEqual(connected, link, 'the cleanup redraw did not replace the doorway link');
+    assert.equal(dom.doc.activeElement, connected,
+      'focus did not reconnect to the equivalent ' + allText(connected).trim() + ' doorway');
+    assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), expectedKey,
+      'focus landed on the wrong keyed doorway after redraw');
+  }
+});
+
+test('empty doorway links keep focus on their connected equivalents across cleanup redraws', async () => {
+  const dom = await boot({
+    runs: windowAnswer((base) => {
+      base.coverage = {
+        state: 'never_recorded', recordingSince: null, lastRecordedAt: null, coversWindow: false,
+      };
+      base.runs = [];
+      base.failures = [];
+    }),
+  });
+  for (const [label, expectedKey] of [
+    [/^What is running now$/, 'rh-doorway-empty-jobs'],
+    [/^What the watchers caught$/, 'rh-doorway-empty-alerts'],
+  ]) {
+    const link = linksIn(emptyPanel(dom), label)[0];
+    assert.ok(link, 'the empty pane did not draw the doorway link named ' + label);
+    link.focus();
+    assert.equal(focusKey(dom), expectedKey, 'the empty doorway link carries no stable focus key');
+
+    dom.window.dispatchEvent({ type: 'pagehide' });
+    await settle();
+
+    const connected = linksIn(emptyPanel(dom), label)[0];
+    assert.ok(connected && dom.body.contains(connected) && shown(dom, connected),
+      'the redraw did not leave a connected empty doorway link');
+    assert.notEqual(connected, link, 'the cleanup redraw did not replace the empty doorway link');
+    assert.equal(dom.doc.activeElement, connected,
+      'focus did not reconnect to the equivalent ' + allText(connected).trim() + ' empty doorway');
+    assert.equal(dom.doc.activeElement.getAttribute('data-rh-focus'), expectedKey,
+      'focus landed on the wrong empty doorway key after redraw');
+  }
+});
+
+test('a doorway link that disappears on reread falls back to the live state target', async () => {
+  let noFailures = false;
+  const dom = await boot({
+    runs: () => windowAnswer((base) => {
+      if (noFailures) {
+        base.summary.failed = 0;
+        base.failures = [];
+      }
+      return base;
+    }),
+  });
+  const link = linksIn(livePanel(dom), /^What the watchers caught$/)[0];
+  assert.ok(link, 'the live pane did not draw the doorway that can disappear');
+  link.focus();
+  assert.equal(focusKey(dom), 'rh-doorway-live-alerts',
+    'the disappearing doorway link carries no stable focus key');
+
+  noFailures = true;
+  buttonsIn(livePanel(dom), /^Read again$/)[0].dispatch('click');
+  await settle();
+
+  assert.equal(linksIn(livePanel(dom), /^What the watchers caught$/).length, 0,
+    'the reread still drew the doorway link, so this test did not exercise the fallback');
+  assert.equal(dom.doc.activeElement && dom.doc.activeElement.getAttribute('data-rh-focus'), 'rh-state',
+    'focus did not fall back to the live state target after the doorway disappeared');
+  assert.ok(dom.doc.activeElement && dom.body.contains(dom.doc.activeElement)
+      && shown(dom, dom.doc.activeElement),
+    'focus landed on a disconnected node after the doorway disappeared');
 });
 
 test('opening a run moves focus into the run, and Close puts it back on the row', async () => {
@@ -2294,11 +3367,10 @@ test('the guarantees are on screen as sentences, not as properties of the code',
   const text = liveText(dom);
   for (const claim of [
     /sends no account identity at all/,
-    /hidden for every role, the owner included/,
-    /needs a written reason/,
+    /stay out of the run table/,
     /recorded by field name and never by content/,
     /athlete can see that a reveal happened/,
-    /outlive the reveal/,
+    /outlive the view/,
   ]) {
     assert.match(text, claim, 'a guarantee is in the code but not on the page');
   }
@@ -2467,6 +3539,25 @@ test('every gap the pane names carries a reason, not just a title', async () => 
     const desc = allText(descNode).trim();
     assert.ok(desc.length > 0, `"${title}" is named with an empty reason`);
     assert.notEqual(desc, title, `"${title}" repeats its own title instead of giving a reason`);
+  }
+});
+
+/* Stadiora/Aria#10881. The glyph's shape is the one channel forced colours
+   leaves, so a gap drawn with the warning glyph would read as a fault there.
+   MUTATION: `icon('empty')` to `icon('warn')` in missingBand() in
+   ops/assets/pane-run-history-v2.js fails the equality below. */
+test('every gap the pane names draws the empty glyph, not the warning one', async () => {
+  const dom = await boot({});
+  const section = sectionWithHeading(dom, /cannot answer yet/);
+  const items = section.querySelectorAll('.omit-item');
+  assert.equal(items.length, 4, 'the band no longer draws four gaps');
+  const empty = glyphShape(dom.window.Aria.icon('empty'));
+  assert.notEqual(empty, glyphShape(dom.window.Aria.icon('warn')),
+    'aria.js draws empty and warn with the same shape');
+  for (const item of items) {
+    const title = allText(item.querySelectorAll('.omit-title')[0] || null).trim();
+    assert.equal(glyphShape(findAll(item, (n) => n.tagName === 'svg')[0]), empty,
+      `"${title}" does not draw the empty glyph`);
   }
 });
 
