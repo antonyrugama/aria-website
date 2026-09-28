@@ -474,5 +474,3 @@
   .stackbar > i > b { display: none; }
   .legend .share-key.has-chip .share-key-pct { display: inline-flex; }
 }
-
-[data-theme="light"] .pipe-track { --rail-todo: var(--line-2); }
