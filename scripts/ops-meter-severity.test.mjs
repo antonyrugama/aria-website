@@ -701,18 +701,23 @@ async function readCard(box, fillL) {
      which reds the value ratchet on a bar that is fine. That reading is
      OBSERVED; its cause is INFERRED. The inference is that
      `captureBeyondViewport` rasterises a region that was never on screen and
-     can return before it has. No run has reproduced it: the round-1 review of
-     antonyrugama/aria-website#131 re-ran the old path 600 times, idle, under
-     a 40x CPU throttle and across three concurrent sweeps, and got no uniform
-     capture. The fix stands either way, because it removes the dependency
-     rather than the one explanation offered for it. The only pane that draws
-     a toned meter here is ops/evaluations.html, and its 12 meters sit with
-     their tops between y=4188.1 and y=5328.8 (centres 4191.1 to 5331.8) in
-     all four states and both themes, at the 1440x1000 viewport. So every
-     toned capture took that path: none of them is above the fold. Measured
-     in antonyrugama/aria-website#185 at 1118c7f. Spend's five untoned
-     meters sit at y=621.2 to 839.2 in its live and degraded states, which is
-     already on screen.
+     can return before it has. No later run we know of reproduced it: the
+     round-1 review of antonyrugama/aria-website#131 took 600 captures on the
+     old path, idle, under a 40x CPU throttle and across three concurrent
+     sweeps, and got no uniform one. The fix stands either way, because it
+     removes the dependency rather than the one explanation offered for it.
+     Of the panes this sweep drives, with the stub's data, the only one that
+     draws a toned meter is ops/evaluations.html (the unswept
+     ops/shell-v2.html draws one too, and pane-analytics.js has a toned path
+     the stub never reaches). Its 12 meters sit with their tops between
+     y=4188.1 and y=5328.8 (centres 4191.1 to 5331.8) in all four states and
+     both themes, at the 1440x1000 viewport, so every capture of a toned
+     meter a PANE draws took that path. The four synthetic toned meters the
+     sweep builds itself did not: their host is absolute at top:8px, and
+     they sit at y=8, 24, 40 and 56, inside the first viewport. Measured in
+     antonyrugama/aria-website#185 at 1118c7f. Spend's five untoned meters
+     sit at y=621.2 to 839.2 in its live and degraded states, which is also
+     on screen.
    - The invariant that actually removes the dependency is `the pixels about
      to be read are on screen`, and ONE thing asserts it: the `covered` probe
      below, which reports a point outside the viewport and a point behind the
