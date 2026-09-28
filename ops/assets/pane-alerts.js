@@ -1558,8 +1558,11 @@
       return textOf(rule.title) || trimmed(rule.ruleKey);
     }
 
+    /* A plain row, as the approved mock draws it: the table lays it out. It
+       used to carry `rule-row`, which only the deleted v1 sheet painted
+       (Stadiora/Aria#10644). */
     function ruleRow(rule, queue) {
-      var row = h('tr', { className: 'rule-row' });
+      var row = h('tr');
 
       var name = h('td');
       name.appendChild(h('div', { className: 't-main', text: ruleName(rule) }));
