@@ -90,10 +90,12 @@
    - **A page whose DOM differs between the toggled and the fresh load.** Those
      are reported as not comparable rather than passed, so the gap is a red
      check rather than a silent one, but nothing here judges such a page.
-   - **The panes' populated states, for People and usage and Cloud costs.**
-     They are censused in the state the shared stub's reads produce, the same
-     state scripts/check-ops-narrow-overflow.mjs measures them in; see
-     scripts/ops-api-stub.mjs.
+   - **People and usage beyond the state the shared stub's reads produce.**
+     Cloud costs is censused populated, on the billed month the stub serves
+     since Stadiora/Aria#10821; its unpublished period is not censused here.
+     scripts/check-ops-narrow-overflow.mjs still serves its own
+     `not_published` costs fixture, so the two sweeps do not measure Cloud
+     costs in the same state. See scripts/ops-api-stub.mjs.
    - **Any theme beyond the two.** dark and light are what ops/assets/theme.js
      resolves to.
 

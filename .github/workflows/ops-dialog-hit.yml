@@ -34,6 +34,7 @@ on:
       - 'ops/**'
       - 'scripts/check-ops-dialog-hit.mjs'
       - 'scripts/ops-api-stub.mjs'
+      - 'scripts/ops-spend-fixture.mjs'
       - '.github/workflows/ops-dialog-hit.yml'
   push:
     branches: [main]
@@ -41,6 +42,7 @@ on:
       - 'ops/**'
       - 'scripts/check-ops-dialog-hit.mjs'
       - 'scripts/ops-api-stub.mjs'
+      - 'scripts/ops-spend-fixture.mjs'
       - '.github/workflows/ops-dialog-hit.yml'
   workflow_dispatch:
 

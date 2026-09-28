@@ -616,8 +616,10 @@ const COST_CATEGORIES = {
    card. The default payload() instant is fixed, not Date.now(): a builder run
    on the first of a month would bill no day and fall back to `not_published`.
 
-   The period that has not published yet is still reachable: ask for
-   /api/ops/costs?stub=not_published (see stub() below). Both generations of
+   The period that has not published yet is still reachable, but only by
+   calling stub('/api/ops/costs', '?stub=not_published') directly: every
+   server in scripts/ passes stub(url.pathname) alone, so a page that requests
+   that URL is still served the billed month. Both generations of
    the pane print `availability.detail` verbatim into the card they draw for
    it, so that detail is a fixture value on the page, not pane prose. */
 const COSTS = costsPayload();

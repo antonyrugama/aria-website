@@ -80,6 +80,20 @@
 
 .sp-bar { margin-top: 9px; }
 
+/* The share bar is a plain `.meter`, and it sits inside the `.sp-sN` row that
+   sets `--c` for the tone marker, so it used to inherit the SERIES hue: the
+   base grade, not the `-ink` grade aria.css repointed every meter at for
+   Stadiora/Aria#10848. In light theme that measured 2.45:1 fill against track
+   on Cloud costs' share bars, under SC 1.4.11's 3:1. In dark theme an untoned
+   bar was drawn emerald, amber or violet, which are exactly the severity
+   tones, so `none` measured 3.5 RGB from `ok`. The series colour stays on the
+   marker beside it; the bar keeps only the length. `initial` is the
+   guaranteed-invalid value, so the bar resolves `--c` exactly as an untoned
+   meter on any other pane does. Stadiora/Aria#12568, measured by
+   scripts/ops-meter-severity.test.mjs on the billed month the shared stub
+   serves since Stadiora/Aria#10821. */
+.sp-bar { --c: initial; }
+
 .sp-money { text-align: right; }
 
 .sp-amt {
