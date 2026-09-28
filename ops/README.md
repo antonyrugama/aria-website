@@ -2468,8 +2468,8 @@ sweep does not measure — an ink too close to what is behind it, and all of
 geometry but `stroke-width` — and `check-ops-contrast.mjs` carries a long
 `NOT COVERED, on purpose` section. Both are in `source-anchors` above, which is
 where every line number that points at code IN THIS REPOSITORY now lives — a citation into
-the Aria monorepo is outside the rule, not an exception to it, and `opsUsageView.ts:932` is
-still spelled twice below — and the one exception here is the
+the Aria monorepo, such as `opsUsageView.ts:932`, is outside the rule, not an exception to it
+— and the one exception here is the
 citation that is itself the record of a drift, published row by row in
 `exempt-citations` below and counted by the run, which reports it as
 `prose line citations` — the number that used to sit in this
