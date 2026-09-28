@@ -33,6 +33,8 @@ import fsJobs from 'node:fs';
 import pathJobs from 'node:path';
 import { fileURLToPath as fileURLToPathJobs } from 'node:url';
 
+import { payload as costsPayload } from './ops-spend-fixture.mjs';
+
 /* One reading of the live queue, for Happening now. Stadiora/Aria#5562 moved
    that pane off the alerting record and onto GET /api/ops/jobs, so its markers
    below come off this reading rather than off the rules. It is the route's own
@@ -605,19 +607,24 @@ const COST_CATEGORIES = {
   ]
 };
 
-/* Cloud costs, in the state a period that has not published yet produces.
-   Both generations of this pane read `availability.state` first and print
-   `availability.detail` verbatim into the card they draw for it, so the detail
-   line below is a fixture value on the page rather than pane prose — which is
-   what makes it usable as a marker across a remodel.
+/* Cloud costs, as the route answers a month that has billed.
 
-   An explicit branch rather than the fall-through it used to take. Falling
-   through sent `{}`, which today's pane reads as "no billed total" and the v2
-   remodel on antonyrugama/aria-website#65 reads as a state outside its
-   vocabulary: the same payload, two different cards, and a marker that works
-   on one head and not the next. A state both generations name is the payload
-   this fixture should have been sending all along. */
-const COSTS = {
+   Built by payload() in scripts/ops-spend-fixture.mjs, the same builder the
+   pane's own suite asserts against, so the stub cannot send a shape the route
+   cannot produce. Until Stadiora/Aria#10821 this was `not_published`, and
+   every sweep that drew Cloud costs through the stub laid out only the empty
+   card. The default payload() instant is fixed, not Date.now(): a builder run
+   on the first of a month would bill no day and fall back to `not_published`.
+
+   The period that has not published yet is still reachable, but only by
+   calling stub('/api/ops/costs', '?stub=not_published') directly: every
+   server in scripts/ passes stub(url.pathname) alone, so a page that requests
+   that URL is still served the billed month. Both generations of
+   the pane print `availability.detail` verbatim into the card they draw for
+   it, so that detail is a fixture value on the page, not pane prose. */
+const COSTS = costsPayload();
+
+const COSTS_NOT_PUBLISHED = {
   availability: {
     state: 'not_published',
     detail: 'Billing for this period has not published yet, so there is no ' +
@@ -761,9 +768,8 @@ const RUN_REVEAL = {
 
    What these do NOT prove: Aria quality and Look up a user read nothing until
    something is submitted, so their markers pin the pane's own static prose and
-   nothing more. People and usage and Cloud costs are answered above with an
-   empty envelope and a period that has not published, so their markers pin
-   those cards rather than populated ones.
+   nothing more. People and usage is answered above with an empty envelope, so
+   its marker pins that card rather than a populated one.
 
    A pane that changes these words turns both checks red. That is the
    mechanism, not a side effect: the markers are kept in step by hand, on the
@@ -786,9 +792,10 @@ const PROOF = {
      measures. */
   alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
   analytics: ['No app reported over this window'],
-  /* COSTS.availability.detail, which both this pane and the v2 remodel print
-     verbatim into whichever card they draw for `not_published`. */
-  spend: ['there is no figure to read here until the export lands'],
+  /* The top row of the category and the service cut, which the pane prints
+     verbatim as row labels and which neither its empty cards nor its failure
+     card name. */
+  spend: [COSTS.views.category.rows[0].label, COSTS.views.service.rows[0].label],
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
@@ -803,7 +810,10 @@ const PROOF = {
 };
 
 
-function stub(pathname) {
+/* `search` is optional. Only /api/ops/costs reads it: `?stub=not_published`
+   answers with the period that has not published yet instead of the billed
+   month. */
+function stub(pathname, search) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
       accessToken: 'stub-access', expiresIn: 900, refreshToken: 'stub-refresh-2',
@@ -864,7 +874,10 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (/^\/api\/ops\/runs\/[^/]+\/reveal$/.test(pathname)) return { data: RUN_REVEAL };
   if (pathname === '/api/ops/runs') return { data: RUNS };
-  if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
+  if (pathname.startsWith('/api/ops/costs')) {
+    const flag = new URLSearchParams(search || '').get('stub');
+    return { data: flag === 'not_published' ? COSTS_NOT_PUBLISHED : COSTS };
+  }
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
@@ -882,5 +895,5 @@ function stub(pathname) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
 };

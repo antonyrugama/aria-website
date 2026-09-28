@@ -2093,13 +2093,15 @@ decision.
 This pane's invariants are held by `scripts/ops-spend-v2.test.mjs` and by measurement in review.
 Browser guards **do** render `ops/spend.html` — `check-ops-shell-v2.mjs` names every page in
 `ops/`, and the registry-driven sweeps reach every pane the registry declares, which includes
-this one; the `browser-guards` block below derives that reach rather than asserting it here. What
-none of them renders is a *populated* Cloud costs pane: `scripts/ops-api-stub.mjs` answers
-`/api/ops/costs` with an empty envelope, exactly as People and usage describes for
-`/api/ops/usage`, so those sweeps lay out this pane's no-data card. That gap is tracked as
-[Stadiora/Aria#10462](https://github.com/Stadiora/Aria/issues/10462); the sentence this replaces
-said no guard rendered the page at all, two sections above a derived block saying one renders
-every page in `ops/`.
+this one; the `browser-guards` block below derives that reach rather than asserting it here. The
+sweeps that import `scripts/ops-api-stub.mjs` lay out a *populated* Cloud costs pane: the stub
+answers `/api/ops/costs` with `payload()` from `scripts/ops-spend-fixture.mjs`, the builder this
+pane's suite asserts against, and returns the unpublished period only to a caller that passes
+`?stub=not_published` as `stub()`'s second argument
+([Stadiora/Aria#10821](https://github.com/Stadiora/Aria/issues/10821)). No server in `scripts/`
+passes the query through today, so a served page always gets the billed month.
+`scripts/check-ops-narrow-overflow.mjs` and `scripts/check-ops-result-view.mjs` still carry
+their own costs fixtures.
 
 ### Where Cloud costs departs from the shared page furniture
 
@@ -2560,7 +2562,7 @@ check-ops-theme-redraw.mjs = Pseudo-elements.
 check-ops-theme-redraw.mjs = Anything below the paint properties listed in PAINT_PROPS.
 check-ops-theme-redraw.mjs = A gradient referenced by url(#id).
 check-ops-theme-redraw.mjs = A page whose DOM differs between the toggled and the fresh load.
-check-ops-theme-redraw.mjs = The panes' populated states, for People and usage and Cloud costs.
+check-ops-theme-redraw.mjs = People and usage beyond the state the shared stub's reads produce.
 check-ops-theme-redraw.mjs = Any theme beyond the two.
 check-ops-theme-redraw.mjs = (bold spans beyond the first, summed: 0)
 check-ops-theme-redraw.mjs = (lines that open like a blind-spot heading: 1)
