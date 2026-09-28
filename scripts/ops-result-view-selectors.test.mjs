@@ -71,6 +71,11 @@ test('a top-level selector list still splits into its clauses', () => {
   assert.deepEqual(got, { one: ['.one'], two: ['.two > .three'], three: ['.two > .three'] });
 });
 
+test('a paren inside a quoted value does not move the split depth', () => {
+  const got = clausesByClass(['.q[title=")"], .r']);
+  assert.deepEqual(got, { q: ['.q[title=")"]'], r: ['.r'] });
+});
+
 /* A hand-built element tree: just the surface peerFor() reads. */
 function el(tag, attrs, children) {
   const node = {
