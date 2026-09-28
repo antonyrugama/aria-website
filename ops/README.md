@@ -2145,7 +2145,7 @@ does not carry what the mock draws, and names only the departures that carry a d
 1. **App and Window are the pane's own controls, not shell filters.** The route answers every
    app and both windows in one read, so `App` and `Window` redraw from that answer and never
    re-read. The registry declares no scope, range or environment filter, and a `filterNote`
-   says why: sync runs are production only. Server-side runs (a webhook, a backfill) belong to
+   says why: sync runs are production only. Server-side runs (a provider poll, a webhook) belong to
    no app, so picking an app drops them from the ledger and a line under the table says how
    many were hidden rather than letting the total silently shrink.
 2. **The freshness band ignores the App control, and says so.** Snapshots are kept per
