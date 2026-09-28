@@ -111,7 +111,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
    back, so a reading taken at load would be of a hero that is not there yet. */
 const PAGES = [
   { url: '/ops/shell-v2.html', kind: 'shell', name: 'shell' },
-  { url: '/ops/settings.html', kind: 'pane', name: 'settings' }
+  { url: '/ops/settings.html', kind: 'pane', name: 'settings' },
+  { url: '/ops/alerts.html', kind: 'pane', name: 'alerts' },
+  { url: '/ops/index.html', kind: 'pane', name: 'overview' },
+  { url: '/ops/releases.html', kind: 'pane', name: 'releases' }
 ];
 const SHELL = PAGES[0].url;
 const THEMES = ['dark', 'light'];
@@ -140,8 +143,8 @@ const EPS = 0.01;
    iterates shrinks with them: emptying NARROW took the floor from 12 to 4 and
    the suite stayed green while measuring no narrow hero at all. Mutation G1
    demonstrated that, which is the only reason it is not still written that way.
-   Two pages, two themes, four narrow widths and two wide ones. */
-const SITE_FLOOR = 24;
+   Five pages, two themes, four narrow widths and two wide ones. */
+const SITE_FLOOR = 60;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -439,8 +442,8 @@ test('the sweep declares the widths its contracts are about', () => {
   /* Both subjects by name. A PAGES list that lost the pane would leave every
      loop below sweeping the shell twice and reporting the same total. */
   assert.deepEqual(PAGES.map((p) => p.url).sort(),
-    ['/ops/settings.html', '/ops/shell-v2.html'],
-    `the sweep must drive the shell and the one pane whose scoped copy is gone; it drives [${PAGES.map((p) => p.url).join(', ')}]`);
+    ['/ops/alerts.html', '/ops/index.html', '/ops/releases.html', '/ops/settings.html', '/ops/shell-v2.html'],
+    `the sweep must drive the shell and every pane that draws .hero-chips; it drives [${PAGES.map((p) => p.url).join(', ')}]`);
   /* The tolerance is a rounding allowance, not a budget. Mutation G4 inflated it
      to 1000 and the narrow numeric contract swallowed the real 27.66px defect;
      only the wide co-location check, which uses EPS as a strict margin, caught
@@ -566,6 +569,9 @@ test('the sweep measured every hero it declared', async () => {
       for (const width of [...NARROW, ...WIDE]) {
         const m = await measure(page, theme, width);
         assert.ok(m.tracks.length >= 2, `${m.where}: hero had ${m.tracks.length} track(s)`);
+        /* One line per reading, so two runs can be compared line for line. */
+        console.log(`  reading ${m.where}: tracks ${m.tracksRaw}; chips ${px(m.chips.left)}-` +
+          `${px(m.chips.right)} top ${px(m.chips.top)}; title column ${px(m.titleCol.width)}`);
         seen.add(m.page);
         judged++;
       }
