@@ -30,7 +30,7 @@
    WCAG AA by construction (monorepo #10042) — bar the sites on the line
    below, which scripts/ops-alerts-v2.test.mjs reads out of this comment and
    checks against what the sheet actually paints ("every colour this sheet
-   paints is a token aria.css declares, bar the 6 sites named here" and
+   paints is a token aria.css declares, bar the 10 sites named here" and
    "every token this sheet paints with is one aria.css actually declares"),
    so the two cannot drift:
 
@@ -352,6 +352,17 @@
    own minimum instead, which the auto algorithm has to honour. */
 .rules-card .tbl td:first-child .t-main { white-space: nowrap; }
 .rules-card .tbl td:nth-child(2) { min-width: 150px; }
+
+/* Row severity tint, from the approved mock's pane-operate.css. Always paired
+   with the worded state pill in the same row (ruleRow() in pane-alerts.js), so
+   the colour never carries the meaning alone. The hover rules restate the
+   tint a step stronger: these selectors outrank aria.css's
+   `.tbl tbody tr:hover`, so without them a tinted row would stop answering
+   the pointer. */
+.rules-card .tbl tbody tr.hot  { background: color-mix(in srgb, var(--rose) 7%, transparent); }
+.rules-card .tbl tbody tr.warm { background: color-mix(in srgb, var(--amber) 6%, transparent); }
+.rules-card .tbl tbody tr.hot:hover  { background: color-mix(in srgb, var(--rose) 11%, transparent); }
+.rules-card .tbl tbody tr.warm:hover { background: color-mix(in srgb, var(--amber) 10%, transparent); }
 
 /* ---------------------------------------------------------------- switch
 
