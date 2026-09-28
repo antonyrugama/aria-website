@@ -2963,12 +2963,13 @@ not a fill. Three of the four end in a refusal rather than a number, because a r
 the run and a wrong number does not:
 
 - **The ink decides against its worst surface**, with no minimum share. The hatch behind
-  `.budget .fore` is 22% amber every 6px, so a letter crossing a stripe is read at the stripe's
-  4.49:1 and not at the 6.01:1 of the gap. Put a 5% floor on surfaces and a real 1.63:1 site
-  sinks below it unseen. Judge the widest surface instead and the site the page carries today
-  stops failing altogether — what catches *that* is the freeze list below, which requires every
-  frozen site to still reproduce and reports 0 matches where it needs 1. On a page with nothing
-  frozen, judging the widest surface would be silent; the freeze entry is load-bearing here.
+  `.budget .fore` is 16% amber every 6px, so a letter crossing a stripe is read at the stripe's
+  4.89:1 and not at the gap's. At 22% that stripe read 4.49:1 and failed
+  ([Stadiora/Aria#10366](https://github.com/Stadiora/Aria/issues/10366)). Put a 5% floor on
+  surfaces and a real 1.63:1 site sinks below it unseen. Judging the best or widest surface
+  instead would be silent on the shipped page, which now has nothing frozen, so self-test part
+  F4 binds the rule: one ink over a white half and a `#777777` half must be judged at the grey
+  half's ratio.
 - **An ink it cannot resolve is refused, never assumed.** Assuming opaque is the flattering
   direction for an ink: a faded ink read as solid clears AA. `color(srgb …)` — how Chromium
   serialises `color-mix()` — is read as the 0..1 floats CSS Color 4 says it is, because the
@@ -3186,8 +3187,8 @@ the 3.03:1 defect.
 
 So the allowance is **deleted** rather than defended, and nothing in the tool reads the rendered
 size. The cost is real and runs the safe way for an ink: text WCAG AA would genuinely permit at
-3.0:1 fails this check. It costs **0** sites today — the sweep still passes at 1632 with 4.5:1
-required everywhere, and the lowest ratio measured on any unfrozen site is 5.20:1 — and a site
+3.0:1 fails this check. It costs **0** sites today — the sweep still passes at 1636 with 4.5:1
+required everywhere, and the lowest ratio measured on any site is 4.89:1 — and a site
 that ever earns the allowance goes in `KNOWN_BELOW_AA` with an issue, where it is reconciled in
 both directions instead of granted silently. Rotation and skew are **not** refused and never
 were: `rotate: 20deg` passes, and what a rotated site gets is a sample taken from its
@@ -3288,8 +3289,9 @@ pins in `check-ops-shell-v2.mjs` answer the second, and the three are complement
 Sites that are below AA on the page today are frozen one at a time in `KNOWN_BELOW_AA`, keyed
 per site — theme, state, selector and the words — with the issue that tracks each. The freeze is
 asserted in both directions: an entry that stops reproducing, matches more than one site, or
-moves by more than 0.15 fails the run, so an exemption cannot outlive what it exempts. There is
-one entry today, [Stadiora/Aria#10366](https://github.com/Stadiora/Aria/issues/10366).
+moves by more than 0.15 fails the run, so an exemption cannot outlive what it exempts. There are
+no entries today. The last one, the budget bar's forecast text at 4.49:1 on its hatch, was fixed by
+lightening the stripe from 22% to 16% amber ([Stadiora/Aria#10366](https://github.com/Stadiora/Aria/issues/10366)).
 
 The pre-paint half of the shell check is the part worth keeping. A theme default written in two
 places that disagree produces a page that paints one theme and switches to the other a moment
