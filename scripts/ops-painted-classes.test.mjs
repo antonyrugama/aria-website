@@ -317,9 +317,9 @@ const EVALS_ANSWER_LIGHT = { key: 'evals/answer/light', url: '/ops/evaluations.h
 const SHIP_DARK = { key: 'ship/1280/dark', url: '/ops/releases.html', width: 1280, theme: 'dark', ready: '.pipe-step.done' };
 const SHIP_MID = { key: 'ship/1280/dark/in-review', url: '/ops/releases.html', width: 1280, theme: 'dark', ready: '.pipe-step.todo', android: 'in_review' };
 /* The same unreached stage at both widths the rail is drawn at and in both
-   themes, for Stadiora/Aria#10834. Below 720px the rail turns vertical and is
-   written by a second rule, so a width the narrow block does not reach would
-   leave that rule unjudged. */
+   themes, for Stadiora/Aria#10834. At 560px and below the rail turns vertical
+   and is written by a second rule, so a width the narrow block does not reach
+   would leave that rule unjudged. */
 const SHIP_TODO = [1280, 375].flatMap((width) => ['dark', 'light'].map((theme) => ({
   key: `ship/${width}/${theme}/in-review`, url: '/ops/releases.html', width, theme,
   ready: '.pipe-step.todo', android: 'in_review'
