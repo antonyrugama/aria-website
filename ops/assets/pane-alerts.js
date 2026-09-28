@@ -122,6 +122,12 @@
     disabled: 'ghost', error: 'down'
   };
 
+  /* A rules-table row's severity tint, keyed by its state pill's tone, as the
+     approved mock pairs them (docs/mocks/ops-dashboard-v2/alerts.html: a
+     `down` pill sits in a `hot` row, a `warn` pill in a `warm` one). The pill
+     states the meaning in words; the tint only makes the row findable. */
+  var ROW_TINT = { down: 'hot', warn: 'warm' };
+
   /* The problems API names a work pane with the file-ish keys
      OpsAlertsModel.PANE_FILE holds; the registry keys differ for two of them.
      Translated rather than assumed, so a link that cannot be built from the
@@ -1558,11 +1564,13 @@
       return textOf(rule.title) || trimmed(rule.ruleKey);
     }
 
-    /* A plain row, as the approved mock draws it: the table lays it out. It
-       used to carry `rule-row`, which only the deleted v1 sheet painted
+    /* The table lays the row out; the row's only class is its tint. It used
+       to carry `rule-row`, which only the deleted v1 sheet painted
        (Stadiora/Aria#10644). */
     function ruleRow(rule, queue) {
-      var row = h('tr');
+      var state = ruleState(rule);
+      var tint = ROW_TINT[ruleTone(rule)];
+      var row = h('tr', tint ? { className: tint } : {});
 
       var name = h('td');
       name.appendChild(h('div', { className: 't-main', text: ruleName(rule) }));
@@ -1584,7 +1592,7 @@
         className: 'r num', text: textOf(rule.thresholdLabel) || fmt.none
       }));
 
-      row.appendChild(h('td', {}, [ruleState(rule)]));
+      row.appendChild(h('td', {}, [state]));
 
       var fired = h('td', { className: 'r' });
       if (rule.lastFiredAt) {
@@ -1598,13 +1606,22 @@
       return row;
     }
 
+    /* The tone of a rule's state pill. ruleRow() tints the row from the same
+       answer, so a row can never be tinted one way while its pill says
+       another. */
+    function ruleTone(rule) {
+      if (!rule.enabled) return 'ghost';
+      if (!rule.lastEvaluatedAt) return 'warn';
+      return EVALUATION_PILL[rule.lastEvaluationStatus] || 'warn';
+    }
+
     /* What the rule did the last time it ran, in words. A rule that is
        enabled but cannot reach a verdict is not a rule that is watching, and
        the row says so where the eye already is: the pill's tone repeats the
        word, it never carries it. */
     function ruleState(rule) {
-      if (!rule.enabled) return chip('ghost', 'x', 'Turned off');
-      if (!rule.lastEvaluatedAt) return chip('warn', 'clock', 'Has not run yet');
+      if (!rule.enabled) return chip(ruleTone(rule), 'x', 'Turned off');
+      if (!rule.lastEvaluatedAt) return chip(ruleTone(rule), 'clock', 'Has not run yet');
 
       var status = rule.lastEvaluationStatus;
       var words = EVALUATION_LABEL[status] || textOf(status) || 'Unknown';
@@ -1621,7 +1638,7 @@
       var glyph = status === 'ok' ? 'check'
         : status === 'firing' ? 'warn'
           : status === 'error' ? 'plug' : 'clock';
-      return chip(EVALUATION_PILL[status] || 'warn', glyph, words);
+      return chip(ruleTone(rule), glyph, words);
     }
 
     /* A real checkbox carrying role="switch", so it is focusable, announced

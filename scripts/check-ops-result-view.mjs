@@ -910,9 +910,10 @@ for (const page of PAGES) {
    so in its own comment — so neither is a defect.
 
    Stadiora/Aria#10644 left this list when Rules and notifications stopped
-   writing `rule-row`: the class was styled only in the deleted v1 sheet, the
-   approved mock draws the rules as plain table rows, and the table lays them
-   out without it.
+   writing `rule-row`: the class was styled only in the deleted v1 sheet, and
+   the approved mock gives the rows no layout of their own, so the table lays
+   them out without it. Their only classes now are the mock's severity tints,
+   `hot` and `warm`, which pane-alerts-v2.css paints (Stadiora/Aria#12565).
 
    Stadiora/Aria#10643 was fixed in the pull request that deleted its two
    lines from this list, and `match-row-btn` left with it: assets/pane-users.js

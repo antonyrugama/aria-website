@@ -848,8 +848,9 @@ const probeFor = (markers) => `(() => {
     /* Against the untruncated text, and reported as what is MISSING rather
        than as a boolean, so a failure can name the marker it did not find. */
     missing: ${JSON.stringify(markers)}.filter((m) => contentText.indexOf(m) === -1),
-    /* The rules table's body rows, found by structure: they carry no class
-       of their own (Stadiora/Aria#10644). */
+    /* The rules table's body rows, found by structure: their only class is
+       a severity tint that most rows do not carry (Stadiora/Aria#10644,
+       #12565). */
     ruleRows: document.querySelectorAll('.rules-card tbody > tr').length,
     /* The row's own text, not the text of a particular element inside it. A
        probe that reads a row's .badge only sees the sentence while the pane
