@@ -358,11 +358,18 @@
    the colour never carries the meaning alone. The hover rules restate the
    tint a step stronger: these selectors outrank aria.css's
    `.tbl tbody tr:hover`, so without them a tinted row would stop answering
-   the pointer. */
+   the pointer.
+
+   The hover steps are 9% and 7%, not the mock's 11% and 10%. Dark --ink-3
+   text (.muted, .t-sub) over the card's --surface-2 top computes to 4.45:1
+   on the mock's hot hover and 4.25:1 on its warm one, and .pill.down's ink
+   to 4.38:1, all under AA. At 9% and 7% the worst of the three is 4.53:1.
+   That is arithmetic on the tokens, not a rendered measurement: no guard
+   hovers this page (Stadiora/Aria#12565). */
 .rules-card .tbl tbody tr.hot  { background: color-mix(in srgb, var(--rose) 7%, transparent); }
 .rules-card .tbl tbody tr.warm { background: color-mix(in srgb, var(--amber) 6%, transparent); }
-.rules-card .tbl tbody tr.hot:hover  { background: color-mix(in srgb, var(--rose) 11%, transparent); }
-.rules-card .tbl tbody tr.warm:hover { background: color-mix(in srgb, var(--amber) 10%, transparent); }
+.rules-card .tbl tbody tr.hot:hover  { background: color-mix(in srgb, var(--rose) 9%, transparent); }
+.rules-card .tbl tbody tr.warm:hover { background: color-mix(in srgb, var(--amber) 7%, transparent); }
 
 /* ---------------------------------------------------------------- switch
 

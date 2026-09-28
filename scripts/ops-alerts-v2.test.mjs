@@ -2578,16 +2578,19 @@ test('a rules row is tinted by its state, and the tint agrees with its pill', as
   }
 });
 
-/* The tints and their hover steps are painted by the pane's own sheet, from
-   the mock's pane-operate.css values, and a tinted row still answers the
-   pointer: without the hover pair these selectors outrank aria.css's generic
-   row hover, and a tinted row would stop changing under the cursor. */
+/* The tints and their hover steps are painted by the pane's own sheet, and a
+   tinted row still answers the pointer: without the hover pair these
+   selectors outrank aria.css's generic row hover, and a tinted row would stop
+   changing under the cursor. The rest tints are the mock's pane-operate.css
+   values. The hover steps are held under the mock's 11% and 10%, because at
+   those dark --ink-3 text on the card's top computes under 4.5:1; the
+   arithmetic is in the sheet's comment. */
 test('the rules row tints are painted, each with a stronger hover step', () => {
   const want = {
     '.rules-card .tbl tbody tr.hot': 'color-mix(in srgb, var(--rose) 7%, transparent)',
     '.rules-card .tbl tbody tr.warm': 'color-mix(in srgb, var(--amber) 6%, transparent)',
-    '.rules-card .tbl tbody tr.hot:hover': 'color-mix(in srgb, var(--rose) 11%, transparent)',
-    '.rules-card .tbl tbody tr.warm:hover': 'color-mix(in srgb, var(--amber) 10%, transparent)',
+    '.rules-card .tbl tbody tr.hot:hover': 'color-mix(in srgb, var(--rose) 9%, transparent)',
+    '.rules-card .tbl tbody tr.warm:hover': 'color-mix(in srgb, var(--amber) 7%, transparent)',
   };
   for (const [selector, value] of Object.entries(want)) {
     const found = declarations(PANE_CSS)

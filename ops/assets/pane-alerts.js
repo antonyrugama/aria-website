@@ -1606,10 +1606,6 @@
       return row;
     }
 
-    /* What the rule did the last time it ran, in words. A rule that is
-       enabled but cannot reach a verdict is not a rule that is watching, and
-       the row says so where the eye already is: the pill's tone repeats the
-       word, it never carries it. */
     /* The tone of a rule's state pill. ruleRow() tints the row from the same
        answer, so a row can never be tinted one way while its pill says
        another. */
@@ -1619,6 +1615,10 @@
       return EVALUATION_PILL[rule.lastEvaluationStatus] || 'warn';
     }
 
+    /* What the rule did the last time it ran, in words. A rule that is
+       enabled but cannot reach a verdict is not a rule that is watching, and
+       the row says so where the eye already is: the pill's tone repeats the
+       word, it never carries it. */
     function ruleState(rule) {
       if (!rule.enabled) return chip(ruleTone(rule), 'x', 'Turned off');
       if (!rule.lastEvaluatedAt) return chip(ruleTone(rule), 'clock', 'Has not run yet');
