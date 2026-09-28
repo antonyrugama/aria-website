@@ -706,7 +706,7 @@
     if (!named.length) return null;
 
     var box = h('div', { className: 'callout mt' });
-    box.appendChild(icon('warn'));
+    box.appendChild(icon('wran'));
     box.appendChild(h('div', {}, [
       h('b', {
         text: named.length === 1
