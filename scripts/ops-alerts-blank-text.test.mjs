@@ -26,13 +26,15 @@
    NOT SWEPT, and named rather than left to be discovered:
 
      - Any field the fixtures below do not carry, and any branch they do not
-       enter: the failed-read bands, the empty state, the close form, and a
-       problem with `detail` set. The sweep walks the fixture's own strings,
-       not the source.
+       enter. The sweep walks the fixture's own strings, not the source, so
+       it does not reach: the failed-read bands and the record read's own
+       failure and its retry, the empty state, the close form, a record with
+       nothing in it ("Nothing is recorded against ..."), and a rule with no
+       title (every rule here has one, so the key fallback is never drawn).
      - Anything outside text nodes and `aria-label`: `title`, `data-*`, `id`,
        `aria-controls`, and the endpoint URLs the pane calls.
-     - Toasts. They are drawn outside the live panel and only after an
-       action. */
+     - Toasts and announcements. They are drawn outside the live panel and
+       only after an action. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -438,12 +440,12 @@ const REACHED = [
 ];
 
 function assertClean({ exercised, drifted }, expectSwept) {
-  /* Pinned exactly, not floored, so a fixture that lost a field says so. */
-  assert.equal(exercised.length, expectSwept,
-    `${exercised.length} fields were swept, not ${expectSwept}: ${JSON.stringify(exercised)}`);
   assert.deepEqual(drifted, [],
     `padding these fields changed what the pane says: ${JSON.stringify(drifted)} -- each is `
     + 'a site that decides with a trimmed value and draws the raw one, or never trims');
+  /* Pinned exactly, not floored, so a fixture that lost a field says so. */
+  assert.equal(exercised.length, expectSwept,
+    `${exercised.length} fields were swept, not ${expectSwept}: ${JSON.stringify(exercised)}`);
 }
 
 test('padding any string the answers carry changes nothing on the Problems pane', async () => {
