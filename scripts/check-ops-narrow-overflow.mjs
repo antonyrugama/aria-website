@@ -110,11 +110,13 @@
      reports scrollWidth 398 against clientWidth 343, while
      `documentElement.scrollWidth` stays 375 and this check stays green in
      both states. The four pane copies have since been removed
-     (Stadiora/Aria#10397), so aria.css now carries the only one; that
-     measurement has not been re-run against it. That defect class needs an
-     element-level check, and scripts/ops-hero-narrow.test.mjs is it: it reads
-     the hero's used tracks on /ops/shell-v2.html and on every pane whose
-     hero ends in `.hero-chips`.
+     (Stadiora/Aria#10397), so aria.css carries the only one. Re-run in
+     antonyrugama/aria-website#184 with that one deleted: at 360px and 375px
+     the title column is 0px on alerts and settings and 34.92px to 52.22px on
+     overview and releases, and this check stayed green. That defect class
+     needs an element-level check, and scripts/ops-hero-narrow.test.mjs is
+     it: it reads the hero's used tracks on /ops/shell-v2.html and on every
+     pane whose hero ends in `.hero-chips`.
    - **Anything out of the document's flow, and anything past the left edge.**
      `documentElement.scrollWidth` does not grow for a `position: fixed` box
      however far past the right edge it sits, and it does not grow for any box
