@@ -1071,7 +1071,7 @@
     if (!entries.length) return null;
 
     var box = h('div', { className: 'callout is-note mt' });
-    box.appendChild(icon('warn'));
+    box.appendChild(icon('info'));
     var body = h('div', { className: 'omit-list' });
     entries.forEach(function (entry) {
       body.appendChild(h('div', {}, [
