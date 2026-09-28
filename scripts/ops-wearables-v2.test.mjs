@@ -257,6 +257,32 @@ test('the App filter narrows the run counts to that app and hides server runs', 
   assert.match(allText(shown(page)),
     new RegExp(int(sum(server, (g) => g.runs)) + ' server runs hidden: server runs belong to no app\\.'));
   assert.match(heroTitle(page) + ' ' + allText(findAll(shown(page), hasClass('hero-sub'))[0]), /FitMG only\./);
+
+  /* The ledger and the verdict narrow too, not just the totals. Stated from
+     the fixture by hand: FitMG sent Apple Health and Health Connect runs and
+     nothing else, so a Run with Aria row or a server run under FitMG is the
+     unfiltered ledger leaking through, and Polar's server-run failures must
+     not become FitMG's headline. */
+  const tag = (name) => (n) => n.tagName === name;
+  const ledger = findAll(shown(page), hasClass('ws-ledger'))[0];
+  assert.ok(ledger, 'the ledger is drawn');
+  const rows = {};
+  for (const tbody of findAll(ledger, tag('TBODY'))) {
+    rows[tbody.getAttribute('data-provider')] = findAll(tbody, tag('TR'))
+      .filter((tr) => !hasClass('ws-provider')(tr))
+      .map((tr) => {
+        const cells = findAll(tr, tag('TD'));
+        return cells.length === 8 ? allText(cells[0]) + ' | ' + allText(cells[1]) : allText(cells[0]);
+      });
+  }
+  assert.deepEqual(JSON.parse(JSON.stringify(rows)), {
+    apple_health: ['FitMG | 318'],
+    garmin: ['Server runs only; shown under All apps'],
+    health_connect: ['FitMG | 164'],
+    polar: ['Server runs only; shown under All apps'],
+    strava: ['No runs from FitMG']
+  });
+  assert.equal(heroTitle(page), 'Health Connect needs a look.');
 });
 
 test('the App filter never reaches the freshness chart', async () => {
