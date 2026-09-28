@@ -234,10 +234,11 @@ const PAGES = Object.keys(DECLARED).map((key) => ({
 /* Pages that are not panes and are laid out anyway. ops/shell-v2.html is the
    design-system reference every pane remodel is built against, and it is the
    only page that draws the preview-state switcher in its top bar: that
-   switcher pushed the document to 449px at 375px, 360px and 320px alike, and
-   nothing laid the page out narrow to notice (Stadiora/Aria#10795). It is not
-   in the registry, so it cannot come from there; it is listed by hand, and
-   the swept count below is asserted against this list as it is for panes.
+   switcher pushed the document to 446px at 375px and 360px and 445px at
+   320px, in both themes, and nothing laid the page out narrow to notice
+   (Stadiora/Aria#10795). It is not in the registry, so it cannot come from
+   there; it is listed by hand, and the swept count below is asserted against
+   this list as it is for panes.
 
    The page reads no API and boots no session, so the pane gates -- data-pane,
    the ready gate, the registry's top bar -- do not apply to it. Its own gates

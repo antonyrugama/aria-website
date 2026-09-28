@@ -83,7 +83,7 @@
  *    repository ends a hero with a `.row`, so there is nothing to measure. It
  *    is untouched by this change.
  *  - `/ops/shell-v2.html`'s top bar. It overflowed the document at 375px
- *    (449px against 375px) because of `.topbar-end`, the preview-state
+ *    (446px against 375px) because of `.topbar-end`, the preview-state
  *    switcher — a defect of the page's own chrome, not of the hero, fixed and
  *    now laid out narrow by `scripts/check-ops-narrow-overflow.mjs`
  *    (Stadiora/Aria#10795). This file does not judge it. The hero clips and
