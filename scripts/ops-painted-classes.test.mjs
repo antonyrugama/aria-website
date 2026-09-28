@@ -316,6 +316,14 @@ const EVALS_ANSWER_DARK = { key: 'evals/answer/dark', url: '/ops/evaluations.htm
 const EVALS_ANSWER_LIGHT = { key: 'evals/answer/light', url: '/ops/evaluations.html', width: 1280, theme: 'light', ready: '#approval-get-form', approval: true, quarantine: true };
 const SHIP_DARK = { key: 'ship/1280/dark', url: '/ops/releases.html', width: 1280, theme: 'dark', ready: '.pipe-step.done' };
 const SHIP_MID = { key: 'ship/1280/dark/in-review', url: '/ops/releases.html', width: 1280, theme: 'dark', ready: '.pipe-step.todo', android: 'in_review' };
+/* The same unreached stage at both widths the rail is drawn at and in both
+   themes, for Stadiora/Aria#10834. At 560px and below the rail turns vertical
+   and is written by a second rule, so a width the narrow block does not reach
+   would leave that rule unjudged. */
+const SHIP_TODO = [1280, 375].flatMap((width) => ['dark', 'light'].map((theme) => ({
+  key: `ship/${width}/${theme}/in-review`, url: '/ops/releases.html', width, theme,
+  ready: '.pipe-step.todo', android: 'in_review'
+})));
 
 /* Chromium's own answer to "what is composited behind this", the one DevTools'
    contrast readout uses. It resolves gradients and translucent stacks, which
@@ -535,6 +543,52 @@ test('the done rail clears AA non-text contrast against the card behind it', asy
   assert.ok(ratio >= 3, `the done rail is ${show3(rail)} on ${show3(card)} — the release ` +
     `card fill behind the pipeline — which is ${ratio.toFixed(2)}:1, under the 3:1 WCAG ` +
     '1.4.11 asks of a graphic that carries meaning');
+});
+
+/* Every colour a computed background-image names, in order. Chromium
+   serialises a resolved color-mix() as color(srgb ...), and a token as rgb(). */
+function coloursIn(image) {
+  return (image.match(/rgba?\([^)]*\)|color\(srgb [^)]*\)/g) || []).map(parseColour);
+}
+
+/* Stadiora/Aria#10834. The dash colour is read out of the rule that paints it,
+   and the surface is taken two ways: every stop of the gradient on the card
+   the pipeline sits in, since `.card`'s own background-color is transparent
+   and a probe reading only that reports the page behind it, and Chromium's own
+   composited backdrop, in case a tinted layer ever sits between the card and
+   the rail. The worst of them is the one judged. */
+test('the rail of a stage nobody has reached clears 3:1 against the card behind it', async () => {
+  for (const state of SHIP_TODO) {
+    await show(state);
+    const seen = await evaluate(`(() => {
+      const step = document.querySelector('.pipe-step.todo');
+      const card = step.closest('.card');
+      const page = getComputedStyle(document.body).backgroundColor;
+      return {
+        rail: getComputedStyle(step, '::before').backgroundImage,
+        card: card ? getComputedStyle(card).backgroundImage : null,
+        page
+      };
+    })()`);
+    /* A two-position stop may serialise as two stops of the same colour. */
+    const inks = [...new Map(coloursIn(seen.rail).filter((c) => c[3] > 0)
+      .map((c) => [c.join(), c])).values()];
+    assert.strictEqual(inks.length, 1,
+      `${state.key}: the unreached rail should dash one colour against transparent, and drew ` +
+      seen.rail);
+    assert.ok(seen.card, `${state.key}: the unreached stage is not inside a .card`);
+    const page = parseColour(seen.page);
+    const stops = coloursIn(seen.card).map((c) => composite(c, page));
+    assert.ok(stops.length >= 2,
+      `${state.key}: the card should be a gradient, and its background-image is ${seen.card}`);
+    const surfaces = [...stops, await backdrop('.pipe-step.todo .pipe-label')];
+    const worst = surfaces
+      .map((surface) => ({ surface, ratio: contrast(inks[0], surface) }))
+      .reduce((a, b) => (a.ratio <= b.ratio ? a : b));
+    assert.ok(worst.ratio >= 3, `${state.key}: the unreached rail is ${show3(inks[0])} at ` +
+      `${inks[0][3]} alpha on ${show3(worst.surface)}, which is ${worst.ratio.toFixed(2)}:1, ` +
+      'under the 3:1 WCAG 1.4.11 asks of the graphic that says a stage has not happened');
+  }
 });
 
 /* The anchor for these two is ops/assets/pane-releases.js, in pipeTrack: the

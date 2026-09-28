@@ -2640,7 +2640,7 @@ scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves t
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1077
 ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 144
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
-ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 199
+ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
 ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 114
 ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 636
