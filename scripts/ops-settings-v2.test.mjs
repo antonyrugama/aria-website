@@ -1175,6 +1175,49 @@ test('a session-settings save that ends the current session announces before rou
   });
 
 
+/* One live-region update per event (Stadiora/Aria#11664). The inline status
+   is `role="status"`, and so are the shell's toast and its announcer, so a
+   path that writes all three has a screen reader speak one event three times
+   or cut itself off. The refusal and cancel paths already write only the
+   inline status; a session-ending save and a failed save now do the same.
+   The needle is the event's own sentence, so the count is of updates saying
+   it, wherever they sit on the page. */
+test('a session-ending save updates one live region', async () => {
+  const dom = await boot({
+    sessionSettingsSave: (o) => ({
+      ...sessionSettingsFixture({
+        sessionMaxDays: o.body.sessionMaxDays,
+        reauthWindowSeconds: o.body.reauthWindowSeconds,
+      }),
+      currentSessionWillEnd: true,
+    }),
+    runTimers: false,
+  });
+  sessionWindowsControl(dom, 'session-days').value = '7';
+  sessionWindowsControl(dom, 'session-save').dispatch('click');
+  await dom.settle();
+
+  assert.deepEqual(sessionWindowLiveMessages(dom, [/so you'll be signed out/]),
+    ['Saved. Your own session is older than the new limit, so you\'ll be signed out. '
+      + 'Opening the sign-in page in a moment.'],
+    'a session-ending save did not announce exactly once');
+});
+
+test('a failed session-settings save updates one live region', async () => {
+  const err = Object.assign(new Error('raw save failure must not render'), {
+    code: 'ops_session_settings_update_failed',
+    status: 500,
+  });
+  const dom = await boot({ sessionSettingsSave: () => err, runTimers: false });
+  sessionWindowsControl(dom, 'session-days').value = '20';
+  sessionWindowsControl(dom, 'session-save').dispatch('click');
+  await dom.settle();
+
+  const said = sessionWindowLiveMessages(dom, [/could not be saved/i]);
+  assert.equal(said.length, 1,
+    'a failed save produced ' + said.length + ' live-region updates: ' + JSON.stringify(said));
+});
+
 test('cancelled session shortening announces Not saved exactly once', async () => {
   const dom = await boot({
     confirm: () => false,
@@ -1233,9 +1276,13 @@ test('session-settings validation refusals use fixed copy for every server code'
       sessionWindowsControl(dom, 'session-save').dispatch('click');
       await dom.settle();
 
-      const toast = dom.doc.querySelectorAll('.toast').map((t) => allText(t)).join(' ');
-      assert.match(toast, copy, `${code} did not render fixed copy`);
-      assert.doesNotMatch(toast, new RegExp(`raw ${code}|${code}`),
+      /* The card's inline status is where a failed save is said, and the
+         only place (Stadiora/Aria#11664). The leak check reads the whole
+         page, so a raw code cannot surface in a toast either. */
+      const said = sessionWindowLiveMessages(dom, [copy]);
+      assert.equal(said.length, 1,
+        `${code} did not render fixed copy exactly once: ${JSON.stringify(said)}`);
+      assert.doesNotMatch(allText(dom.body), new RegExp(`raw ${code}|${code}`),
         `${code} leaked raw backend text or code`);
     }
   });
