@@ -455,6 +455,3 @@
   .card-head { align-items: flex-start; flex-direction: column; gap: 7px; }
   .card-end { margin-left: 0; flex-wrap: wrap; }
 }
-
-/* DEMO for Stadiora/Aria#10675, reverted in the next commit. */
-.tbl :is(.t-main, .t-sub) { letter-spacing: normal; }
