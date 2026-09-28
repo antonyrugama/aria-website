@@ -848,13 +848,15 @@ const probeFor = (markers) => `(() => {
     /* Against the untruncated text, and reported as what is MISSING rather
        than as a boolean, so a failure can name the marker it did not find. */
     missing: ${JSON.stringify(markers)}.filter((m) => contentText.indexOf(m) === -1),
-    ruleRows: document.querySelectorAll('.rule-row').length,
+    /* The rules table's body rows, found by structure: they carry no class
+       of their own (Stadiora/Aria#10644). */
+    ruleRows: document.querySelectorAll('.rules-card tbody > tr').length,
     /* The row's own text, not the text of a particular element inside it. A
-       probe that reads .rule-row .badge only sees the sentence while the pane
+       probe that reads a row's .badge only sees the sentence while the pane
        spells it that way, and the v2 remodel spells it .pill; a guard that
        anchors on one syntactic shape lets the defect it is named for walk
        through in any other spelling. */
-    rowText: [...document.querySelectorAll('.rule-row')].map(function (row) {
+    rowText: [...document.querySelectorAll('.rules-card tbody > tr')].map(function (row) {
       /* Doubled backslash on purpose: this probe is a template literal, so a
          lone \\s here reaches Chrome as a plain "s" and the regex quietly
          becomes /s+/g, which strips every letter s out of the row. */

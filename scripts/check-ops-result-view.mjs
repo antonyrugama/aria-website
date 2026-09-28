@@ -905,9 +905,14 @@ for (const page of PAGES) {
    check with a message telling you to delete the line. An exception nobody
    can produce is an exception nobody is reading.
 
-   `why` is the fact, not an excuse. Two entries on Look up a user are query
-   hooks — assets/pane-users.js queries them by class and says so in its own
-   comment — and they are the only entries here that are not defects.
+   `why` is the fact, not an excuse. The two entries left, both on Look up a
+   user, are query hooks — assets/pane-users.js queries them by class and says
+   so in its own comment — so neither is a defect.
+
+   Stadiora/Aria#10644 left this list when Rules and notifications stopped
+   writing `rule-row`: the class was styled only in the deleted v1 sheet, the
+   approved mock draws the rules as plain table rows, and the table lays them
+   out without it.
 
    Stadiora/Aria#10643 was fixed in the pull request that deleted its two
    lines from this list, and `match-row-btn` left with it: assets/pane-users.js
@@ -919,9 +924,7 @@ const KNOWN_UNPAINTED = [
   { pane: 'users', cls: 'match-row', issue: null,
     why: 'a query hook: assets/pane-users.js:1467 finds the rows by it' },
   { pane: 'users', cls: 'sel-mark', issue: null,
-    why: 'a query hook: assets/pane-users.js:549 finds the selected mark by it' },
-  { pane: 'alerts', cls: 'rule-row', issue: 'Stadiora/Aria#10644',
-    why: 'styled only in operate.css, which alerts.html deliberately does not load' }
+    why: 'a query hook: assets/pane-users.js:549 finds the selected mark by it' }
 ];
 
 /* The same enumeration for judgement 2: a state a pane declares to assistive

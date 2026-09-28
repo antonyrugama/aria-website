@@ -1077,7 +1077,14 @@ function withClass(root, cls) {
 }
 
 const problemCards = (dom) => withClass(panel(dom, 'live'), 'p-item');
-const ruleRows = (dom) => withClass(dom.doc.body, 'rule-row');
+/* The rules table's body rows. Found by structure, not by a class: the rows
+   carry none, because no v2 sheet paints one (Stadiora/Aria#10644). */
+const ruleRows = (dom) => {
+  const card = withClass(dom.doc.body, 'rules-card')[0];
+  return card
+    ? findAll(card, (n) => n.tagName === 'TR' && n.parentNode && n.parentNode.tagName === 'TBODY')
+    : [];
+};
 
 function buttonNamed(root, re) {
   return findAll(root, (n) => n.tagName === 'BUTTON' && re.test(allText(n)))[0] || null;
