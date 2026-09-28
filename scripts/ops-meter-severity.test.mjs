@@ -714,7 +714,7 @@ function focusMeter(idx) {
   if (!el) return { error: 'meter ${idx} is no longer in the document' };
   var i = el.querySelector('i');
   if (!i) return { error: 'meter ${idx} lost its fill between the read and the scroll' };
-  el.scrollIntoView({ block: 'start', inline: 'nearest' });
+  el.scrollIntoView({ block: 'center', inline: 'nearest' });
   var t = el.getBoundingClientRect(), f = i.getBoundingClientRect();
   var left = Math.max(t.left, f.left), right = Math.min(t.right, f.right);
   var cy = t.top + t.height / 2;
@@ -734,7 +734,7 @@ function focusMeter(idx) {
     box: { x: t.left + window.scrollX, y: t.top + window.scrollY, width: t.width, height: t.height },
     trackWidth: t.width,
     visibleFill: Math.max(0, right - left),
-    covered: []
+    covered: covered
   };
 })()`;
 }
