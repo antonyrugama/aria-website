@@ -210,7 +210,9 @@ test('analyze() flags a static scroller and accepts a positioned one', () => {
   assert.deepStrictEqual(judged('@container (max-width: 600px) { .a { overflow-x: auto; } }'),
     { '.a': false }, 'rules inside @container are read');
   assert.deepStrictEqual(judged('@layer base; @layer base { .a { overflow-x: auto; } }'),
-    { '.a': false }, 'rules inside @layer are read, and a statement @layer is not glued to them');
+    { '.a': false }, 'rules inside @layer are read');
+  assert.deepStrictEqual(judged('@import url(x.css); .a { overflow-x: auto; }'),
+    { '.a': false }, 'a statement at-rule is not glued to the rule after it');
   assert.deepStrictEqual(judged('@keyframes k { from { opacity: 0; } to { opacity: 1; } } .a { overflow-x: auto; }'),
     { '.a': false }, '@keyframes is passed over and the rule after it is still read');
 });
