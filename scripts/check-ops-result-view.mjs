@@ -68,10 +68,12 @@
    KNOWN FAILURES ARE ENUMERATED, NEVER SKIPPED. The first run of this check
    found unpaintable classes on five panes, and one announced-but-unpainted
    state, that the pull request adding the check (antonyrugama/aria-website#78)
-   could not fix. Each was listed in KNOWN_UNPAINTED or KNOWN_UNPAINTED_STATE
-   with the issue tracking it, and most have since been fixed and their lines
-   deleted; how many are left is not written here, because the run prints it
-   in its counts block. Each entry must still reproduce: a class that starts painting, or
+   could not fix. Each of those defects was listed in KNOWN_UNPAINTED or
+   KNOWN_UNPAINTED_STATE with the issue tracking it, beside three class
+   entries that were never defects: query hooks, listed with no issue. Every
+   defect entry has since been deleted, so what is left is hooks; how many is
+   not written here, because the run prints it in its counts block. Each entry
+   must still reproduce: a class that starts painting, or
    stops being drawn, or an exception nobody can produce any more, fails this
    check just as loudly as a new orphan. A guard that narrows its own scope to
    stay green is the defect class this file is named for — and so is a guard
@@ -179,10 +181,13 @@
      site, never whether it changes anything at that site. A class whose only
      rule is a no-op where the pane puts it — `color` on an element with no
      text, a `border-color` with no `border-style`, a `background` under an
-     opaque child — counts as painted. Judgement 2's computed-style diff sees
-     that only on ARIA-marked pairs. So "no rule reaches it" is the whole of
-     what an orphan failure establishes; a class that a rule reaches can
-     still paint nothing.
+     opaque child — counts as painted. Judgement 2 has the same blind spot:
+     it compares computed values, and a no-op declaration still changes the
+     computed value, so an `[aria-pressed="true"]` rule whose only declaration
+     is `outline-color` on a control with `outline-style: none` reads as the
+     state being painted. So "no rule reaches it" is the whole of what an
+     orphan failure establishes, and a state pair that differs is the whole of
+     what judgement 2 establishes; either can still paint nothing.
    - **Panes with no state pair.** Seven of the ten panes declare no ARIA state
      in their result view, so judgement 2 has nothing to compare on them and
      they are carried by judgement 1 alone. The per-pane minimum in
@@ -916,19 +921,20 @@ for (const page of PAGES) {
 /* ------------------------------------------------------ known failures */
 
 /* Classes a pane writes into its result view today that no sheet the page
-   loads can paint. The entries this list opened with were #10456's shape, in
-   files the pull request that added this check (antonyrugama/aria-website#78)
-   did not own, and each was filed. The two left are not defects; `why` says
-   what they are.
+   loads can paint. The list the pull request that added this check
+   (antonyrugama/aria-website#78) opened with held two kinds of entry: defects
+   of #10456's shape, in files that pull request did not own, each filed with
+   its issue; and three query hooks with `issue: null`, which were never
+   defects. Every defect entry has since been deleted.
 
    They are enumerated rather than skipped, and each entry must still
    reproduce: a class that starts painting, or stops being drawn, fails this
    check with a message telling you to delete the line. An exception nobody
    can produce is an exception nobody is reading.
 
-   `why` is the fact, not an excuse. The two entries left, both on Look up a
-   user, are query hooks — assets/pane-users.js queries them by class and says
-   so in its own comment — so neither is a defect.
+   `why` is the fact, not an excuse. The entries left, all on Look up a user,
+   are query hooks — assets/pane-users.js queries them by class and says so in
+   its own comment — so none is a defect.
 
    Stadiora/Aria#10644 left this list when Rules and notifications stopped
    writing `rule-row`: the class was styled only in the deleted v1 sheet, and
