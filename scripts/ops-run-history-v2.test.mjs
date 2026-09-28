@@ -39,7 +39,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText, findAll, glyphShape } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -3539,6 +3539,25 @@ test('every gap the pane names carries a reason, not just a title', async () => 
     const desc = allText(descNode).trim();
     assert.ok(desc.length > 0, `"${title}" is named with an empty reason`);
     assert.notEqual(desc, title, `"${title}" repeats its own title instead of giving a reason`);
+  }
+});
+
+/* Stadiora/Aria#10881. The glyph's shape is the one channel forced colours
+   leaves, so a gap drawn with the warning glyph would read as a fault there.
+   MUTATION: `icon('empty')` to `icon('warn')` in missingBand() in
+   ops/assets/pane-run-history-v2.js fails the equality below. */
+test('every gap the pane names draws the empty glyph, not the warning one', async () => {
+  const dom = await boot({});
+  const section = sectionWithHeading(dom, /cannot answer yet/);
+  const items = section.querySelectorAll('.omit-item');
+  assert.equal(items.length, 4, 'the band no longer draws four gaps');
+  const empty = glyphShape(dom.window.Aria.icon('empty'));
+  assert.notEqual(empty, glyphShape(dom.window.Aria.icon('warn')),
+    'aria.js draws empty and warn with the same shape');
+  for (const item of items) {
+    const title = allText(item.querySelectorAll('.omit-title')[0] || null).trim();
+    assert.equal(glyphShape(findAll(item, (n) => n.tagName === 'svg')[0]), empty,
+      `"${title}" does not draw the empty glyph`);
   }
 });
 
