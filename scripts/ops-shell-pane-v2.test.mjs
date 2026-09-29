@@ -2361,7 +2361,8 @@ test('the phone drawer opens, says so, and puts focus on the first thing in it',
   /* Beside the rail, so the two stack against each other. On <body> the
      backdrop sat in a higher stacking context than the app wrapper that holds
      the drawer, and painted over it (Stadiora/Aria#12909). */
-  assert.equal(scrims[0].parentNode, rail.parentNode,
+  /* By identity: an equality assertion on two DOM nodes prints both trees. */
+  assert.ok(scrims[0].parentNode === rail.parentNode,
     'the backdrop is not beside the drawer, so it stacks in a different context from it');
   assert.equal(doc.activeElement, rail.querySelector('a'),
     'the drawer opened without moving focus into itself');
