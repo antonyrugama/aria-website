@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, webcrypto } from 'node:crypto';
 import { once } from 'node:events';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -565,6 +565,14 @@ test('run launch pane sends only code-owned baseline and candidate manifests and
   assert.deepEqual(calls.map(call => call.path), ['/api/ops/seval/operations', '/api/ops/seval/operations']);
   assert.equal(calls[0].options.body.operationId, 'seval.run.launch');
   assert.equal(calls[1].options.body.operationId, 'seval.run.launch');
+  /* The backend answers any other contract with unsupported_contract_version and runs nothing. */
+  for (const call of calls) {
+    assert.equal(call.options.body.schemaVersion, 'seval.operation.request.v1');
+    assert.deepEqual(call.options.body.client.contractVersions, ['seval.operations.v1']);
+    assert.equal(call.options.body.input.manifest.schemaVersion, 'seval.run.manifest.v1');
+    assert.equal(call.options.body.input.manifest.policy.gatePolicyVersion, 'seval-gate-policy:v1');
+    assert.equal(call.options.body.input.manifest.policy.engineVersion, 'seval-engine:v1');
+  }
   assert.equal(calls[0].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.baseline');
   assert.equal(calls[1].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.candidate');
   assert.equal(calls[0].options.body.input.manifest.provider.deployment, 'fixture');
@@ -2912,4 +2920,35 @@ test('v2: the sweeps hold over the cards a submit draws, not only over the boot'
   const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
   assert.deepEqual(numeric, [],
     'a stamp on a card a submit drew carries a figure');
+});
+
+/* The platform is SEVAL, and the backend retired every Ciel name: /api/ops/ciel/operations
+   answers unsupported_contract_version, and ciel.* operation ids and contracts are refused.
+   So no shipped ops file, the stub the browser checks serve, or a parity driver the Aria
+   journeys run may still spell the old name in any case. */
+test('no ops surface, stub or parity driver still spells the retired Ciel name', () => {
+  const scanned = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const url = new URL(entry.name + (entry.isDirectory() ? '/' : ''), dir);
+      if (entry.isDirectory()) walk(url);
+      else if (/\.(js|html|css|md|json)$/.test(entry.name)) scanned.push(url);
+    }
+  };
+  walk(new URL('../ops/', import.meta.url));
+  const scripts = new URL('./', import.meta.url);
+  for (const name of readdirSync(scripts)) {
+    if (name === 'ops-api-stub.mjs' || /^run-.*\.mjs$/.test(name)) scanned.push(new URL(name, scripts));
+  }
+  assert.ok(scanned.some(url => url.pathname.endsWith('/ops/assets/pane-evaluations.js')),
+    'the sweep never reached pane-evaluations.js, so it proves nothing');
+  assert.ok(scanned.some(url => url.pathname.endsWith('/scripts/run-seval-run-control.mjs')),
+    'the sweep never reached the run parity driver, so it proves nothing');
+  const hits = [];
+  for (const url of scanned) {
+    readFileSync(url, 'utf8').split('\n').forEach((line, index) => {
+      if (/ciel/i.test(line)) hits.push(`${url.pathname.replace(/^.*?\/(ops|scripts)\//, '$1/')}:${index + 1}`);
+    });
+  }
+  assert.deepEqual(hits, [], 'a retired Ciel name survives where the dashboard or its drivers read it');
 });
