@@ -63,7 +63,9 @@ function facts(box) {
 }
 
 function stored(view) {
-  return JSON.parse(view.window.localStorage.getItem(view.window.OpsTour.STORE_KEY));
+  const raw = view.window.localStorage.getItem(view.window.OpsTour.STORE_KEY);
+  assert.ok(raw, 'nothing was stored under ' + view.window.OpsTour.STORE_KEY);
+  return JSON.parse(raw);
 }
 
 /* ------------------------------------------------------------- the dialog */
@@ -263,6 +265,7 @@ test('an open guide comes back at the same step after a reload', async () => {
 test('a dismissed tour stays closed on reload and resumes where it stopped', async () => {
   const first = await bootPage('overview');
   const start = first.doc.querySelector('.tour-start');
+  assert.ok(start, 'the rail carries no tour entry');
   assert.equal(start.textContent, 'Take the tour');
   start.focus();
   start.dispatch('click');
@@ -282,7 +285,8 @@ test('a dismissed tour stays closed on reload and resumes where it stopped', asy
   const again = await bootPage('overview', { storage: { [key]: JSON.stringify(saved) } });
   assert.equal(dialog(again.doc), null, 'a dismissed tour opened itself on reload');
   const resume = again.doc.querySelector('.tour-start');
-  assert.equal(resume.textContent, 'Resume the tour');
+  assert.ok(resume, 'the rail entry was not drawn after the reload');
+  assert.equal(resume.textContent, 'Resume the tour', 'the rail does not offer to resume');
   assert.match(allText(again.doc.querySelector('.tour-rail-note')), /Stopped at Overview, step 3\./);
   resume.dispatch('click');
   box = dialog(again.doc);
@@ -328,5 +332,7 @@ test('progress holds nothing but where the tour is, and a damaged record is igno
   const key = view.window.OpsTour.STORE_KEY;
   const damaged = await bootPage('overview', { storage: { [key]: '{"tour":{"pane":"nowhere","open":true}' } });
   assert.equal(dialog(damaged.doc), null, 'a damaged record opened the tour');
-  assert.equal(damaged.doc.querySelector('.tour-start').textContent, 'Take the tour');
+  const entry = damaged.doc.querySelector('.tour-start');
+  assert.ok(entry, 'a damaged record stopped the rail entry being drawn');
+  assert.equal(entry.textContent, 'Take the tour', 'a damaged record was read as a tour in progress');
 });
