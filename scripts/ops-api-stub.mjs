@@ -706,6 +706,26 @@ const RUNS = {
   truncated: false
 };
 
+const REVIEW_ITEM = {
+  reviewItemId: 'review-item.browser-training',
+  outcomeDigest: 'a'.repeat(64),
+  criterionDigest: 'b'.repeat(64),
+  resultDigest: 'c'.repeat(64),
+  status: 'open',
+  rubric: {
+    statement: 'Judge the rubric only.',
+    grading: { method: 'qualified_human' },
+    authority: { domain: 'training' }
+  },
+  evidence: {
+    outcomePreview: 'sha256:' + 'a'.repeat(64),
+    evidenceRefs: ['synthetic.browser.review'],
+    comments: ['Synthetic browser review fixture.']
+  },
+  redactions: ['candidateIdentity', 'baselineIdentity', 'modelFamily', 'modelConfig'],
+  labelCounts: { submitted: 0, disputes: 0, adjudications: 0 }
+};
+
 const RUN_REVEAL = {
   jobId: '22222222-2222-4222-8222-222222222222',
   jobType: 'video_analysis',
@@ -797,6 +817,7 @@ const PROOF = {
      card name. */
   spend: [COSTS.views.category.rows[0].label, COSTS.views.service.rows[0].label],
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
+  review: [REVIEW_ITEM.reviewItemId, REVIEW_ITEM.evidence.evidenceRefs[0]],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
   settings: [
@@ -880,6 +901,19 @@ function stub(pathname, search) {
   }
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
+  if (pathname.startsWith('/api/ops/ciel/admin/reviews/items/')) {
+    return { data: {
+      ...REVIEW_ITEM,
+      reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false },
+      correction: { activeReviewId: null },
+      adjudication: { visible: false, eligible: false, reason: 'not_disputed' },
+      labels: [],
+      adjudications: []
+    } };
+  }
+  if (pathname.startsWith('/api/ops/ciel/admin/reviews/queue')) {
+    return { data: { items: [REVIEW_ITEM], partial: false, omissions: [] } };
+  }
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname === '/api/ops/settings/sessions') return { data: SESSION_SETTINGS };
   if (pathname.startsWith('/api/ops/sessions')) return { data: SESSIONS };
@@ -895,5 +929,5 @@ function stub(pathname, search) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, PROOF, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, REVIEW_ITEM, PROOF, stub
 };
