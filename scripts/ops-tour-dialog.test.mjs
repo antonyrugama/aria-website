@@ -138,6 +138,7 @@ test('Next and Back move between steps, outline the anchor, and announce each st
   view.next.dispatch('click');
   assert.equal(title(box), steps[1].title);
   assert.equal(hero.getAttribute('data-tour-anchor'), '', 'the step did not outline what it is about');
+  assert.ok(liveRegion(doc), 'nothing was announced: the page has no polite live region');
   assert.equal(liveRegion(doc).textContent, 'Step 2 of ' + steps.length + ', Overview: ' + steps[1].title + '.',
     'the step change was not announced');
   assert.equal(liveRegion(doc).getAttribute('role'), 'status');
