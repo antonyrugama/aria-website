@@ -2379,7 +2379,8 @@ test('the phone drawer closes on Escape and on its own toggle, both times handin
     assert.equal(open.toggle.getAttribute('aria-expanded'), 'false', how + ' left the toggle reading as expanded');
     assert.match(open.toggle.getAttribute('aria-label'), /open/i,
       how + ' left the toggle offering to close a drawer that is shut');
-    assert.equal(open.body.children.filter((el) => el.classList.contains('scrim')).length, 0,
+    /* Anywhere in the document: the backdrop sits beside the rail, not on the body. */
+    assert.equal(open.doc.querySelectorAll('.scrim').length, 0,
       how + ' left the backdrop over the page');
     assert.equal(open.doc.activeElement, open.toggle,
       how + ' dropped focus instead of returning it to the toggle');
@@ -2478,7 +2479,7 @@ test('growing past the breakpoint closes the drawer, and does not snatch focus t
 
   assert.equal(rail.classList.contains('is-open'), false, 'the drawer stayed open on a desktop width');
   assert.equal(toggle.getAttribute('aria-expanded'), 'false', 'the toggle still reads as expanded');
-  assert.equal(body.children.filter((el) => el.classList.contains('scrim')).length, 0,
+  assert.equal(doc.querySelectorAll('.scrim').length, 0,
     'the backdrop stayed over a page with no drawer on it');
   assert.notEqual(doc.activeElement, toggle,
     'widening the window moved focus to a control the operator never used, which on a desktop width is hidden');
