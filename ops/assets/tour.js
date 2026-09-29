@@ -717,12 +717,15 @@
           does: 'Launch controlled pair starts a baseline run and then a candidate run, from ' +
             'a dataset and prompt configs fixed in code, inside the approved cost estimate ' +
             'you enter. Cancel and Retry act on the run you last inspected.',
-          who: 'Operators and owners. The server checks the role and the cost caps again.',
+          who: 'Operators and owners can launch, cancel and retry offline runs. A live Azure ' +
+            'OpenAI run can only be launched or retried here by an owner who has recently ' +
+            'confirmed their password; everyone else gets approval required. The server ' +
+            'checks the role and the cost caps again.',
           audited: 'Every launch, cancel and retry carries its own request key, so pressing ' +
             'Launch again after a failure does not start a run that already started. The ' +
             'server keeps the run record.',
           undo: 'A launch cannot be taken back, only cancelled. Cancelling keeps what the run ' +
-            'already produced, and a retry starts a new run linked to the old one.'
+            'already produced, and a retry queues another attempt on the same run.'
         }
       },
       {
