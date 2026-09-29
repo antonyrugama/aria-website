@@ -192,11 +192,30 @@ test('a figure step reads the value on screen and quotes the definition of recor
 test('the activity step finds its card at either grain the server may send', async () => {
   /* Overview titles the card by the grain of the window it received, and the
      older daily window is still one the pane accepts. */
+  /* The older daily answer as the pane reads it: one label per UTC day, the
+     day-grain gap list, and a window that counts days, not hours. */
   const daily = JSON.parse(JSON.stringify(SUMMARY));
-  daily.activity.window = {
-    start: daily.activity.window.start, endExclusive: daily.activity.window.endExclusive,
-    days: 1, grain: 'day', timezone: 'UTC',
+  const DAYS = ['2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-19'];
+  daily.activity = {
+    availability: { state: 'ready' },
+    labels: DAYS,
+    series: [
+      { key: 'mobile', label: 'Mobile', color: 's1', values: [910, 940, 1001, 980, 1040, 1077, 1102] },
+      { key: 'coaches', label: 'Coaches Web', color: 's2', values: [380, 402, 396, 410, 421, 404, 412] },
+    ],
+    daysMissingRollups: [],
+    window: { days: 7, grain: 'day', timezone: 'UTC' },
   };
+  /* Under the daily card, a fact that talks in hours, or about the shape of a
+     day, must also name the daily grain, or it describes only the hourly card
+     (Stadiora/Aria#12901). "Daily" counts as naming the grain unless it is the
+     shape of a day ("a daily cycle"), which is an hourly idea.
+     NOT COVERED: this reads words, not meaning. Hour-only wording that uses
+     none of the words below, or that happens to name the daily grain in the
+     same sentence, passes; the CI render (ops-tour-render.yml) is where a
+     person reads the copy under both cards. */
+  const hourly = /\bhours?\b|\bhourly\b|\bovernight\b|\bthrough the day\b|\bby day\b|\brhythm\b|\bcycle\b|\bpattern\b|\blast day\b/i;
+  const dailyGrain = /\bdaily\b(?!\s+(?:cycle|rhythm|pattern|shape))|\b(?:per|each|one|UTC) day\b/i;
   for (const [grain, answer] of [['hour', undefined], ['day', { data: daily }]]) {
     const view = await openGuide('overview', {
       answer: (path) => (path === '/api/ops/summary' ? answer : undefined),
@@ -206,6 +225,12 @@ test('the activity step finds its card at either grain the server may send', asy
     assert.ok(card, grain + ': the activity step outlined nothing');
     assert.equal(allText(card.querySelector('.card-title')), 'People active each ' + grain,
       grain + ': the step outlined something other than the activity card');
+    if (grain === 'day') {
+      for (const [term, text] of Object.entries(facts(view.box))) {
+        assert.ok(!hourly.test(text) || dailyGrain.test(text),
+          'day: "' + term + '" describes only the hourly card: ' + text);
+      }
+    }
   }
 });
 
