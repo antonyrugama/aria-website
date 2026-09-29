@@ -271,6 +271,275 @@ test('dataset form sends declarations and clears its result when the input chang
   assert.equal(result.children.length, 0, 'a changed declaration must not retain the previous result');
 });
 
+function browsePayload(overrides = {}) {
+  return {
+    catalogue: {
+      registryVersion: 'ciel.capabilities.v1',
+      clients: [{ id: 'client.run-with-aria-mobile', name: 'Run with Aria mobile', status: 'direct', owner: 'mobile-app' }],
+      capabilities: [{
+        id: 'ciel.g01.athlete-chat',
+        name: 'Athlete chat',
+        owner: 'app-backend/aria-api',
+        status: 'reachable',
+        products: ['aria'],
+        clientRefs: ['client.run-with-aria-mobile'],
+        actor: 'athlete',
+        subject: 'self',
+        coverage: { state: 'draft', scenarioIssue: 'https://github.com/Stadiora/Aria/issues/9784', oracleCount: 2, executionReceiptCount: 0 },
+      }, {
+        id: 'ciel.g99.uncovered',
+        name: 'Uncovered disabled capability',
+        owner: 'ianrowe12',
+        status: 'feature-disabled',
+        products: ['aria'],
+        clientRefs: [],
+        actor: 'athlete',
+        subject: 'self',
+        coverage: { state: 'uncovered', scenarioIssue: null, oracleCount: 0, executionReceiptCount: 0 },
+      }],
+    },
+    scenarios: [{
+      scenarioId: 'scenario.demo.secret-prompt',
+      version: 2,
+      schemaVersion: 'ciel.scenario.v2',
+      product: 'aria',
+      client: 'client.run-with-aria-mobile',
+      role: 'athlete',
+      capabilityRef: 'ciel.g01.athlete-chat',
+      locale: 'en-US',
+      risk: { level: 'medium', domains: ['training'] },
+      review: { status: 'not_certified', promotionEligibility: 'ineligible', source: 'scenario-v2' },
+      criteriaCounts: { critical: 1, required: 0, expected: 1, aspirational: 0 },
+      pack: { runnable: true, executed: false, passing: null },
+      sourceLinks: [{ label: 'Public coaching source', uri: 'https://example.test/source' }],
+    }],
+    datasets: {
+    partial: true,
+    omissions: ['Dataset review state is declaration-only; no approval writer exists on main.'],
+    datasets: [{
+        datasetId: 'dataset.demo.development',
+        revision: 1,
+        schemaVersion: 'ciel.dataset.v1',
+        provenance: { origin: 'synthetic', authoredAt: '2026-09-19T00:00:00Z', authorRef: 'author.synthetic', sourceRefs: [] },
+        review: { state: 'proposed', promotionEligibility: 'ineligible' },
+        counts: { cases: 1, labels: 1, generatedLabels: 1, humanLabels: 0, qualificationRefs: 0 },
+        cases: [{
+          scenario: { id: 'scenario.demo.secret-prompt', version: 2, path: 'evals/demo/v1/scenarios.json' },
+          rubrics: [{ id: 'rubric.demo.no-retrieval.criteria', version: 1, path: 'evals/demo/v1/rubric.json' }],
+          comparison: { state: 'unavailable', reason: 'No comparison validity metadata is recorded.' },
+        }],
+      }],
+    },
+    coverage: {
+      metrics: [
+        { key: 'inventory', numerator: 2, denominator: 2, denominatorKind: 'registered capabilities' },
+        { key: 'approved', numerator: 0, denominator: 1, denominatorKind: 'authored capabilities' },
+        { key: 'executed', numerator: 0, denominator: 1, denominatorKind: 'runnable capabilities' },
+      ],
+      flags: {
+        unownedCapabilities: [],
+        uncoveredCapabilities: ['ciel.g99.uncovered'],
+        notCertifiedCapabilities: ['ciel.g01.athlete-chat'],
+        disabledOrUnsupportedCapabilities: [{ id: 'ciel.g99.uncovered', status: 'feature-disabled', reason: 'Reserved surface is not supported yet.' }],
+        missingCases: [{ capabilityRef: 'ciel.g99.uncovered', reason: 'No checked-in scenario references this capability.' }],
+        unknownCapabilityRefs: ['capability.example.unregistered'],
+      },
+    },
+    ...overrides,
+  };
+}
+
+test('browse pane reads Ciel admin overview, renders honest coverage and applies filters', async () => {
+  const calls = [];
+  const view = renderedPane(async (path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (options.query?.product === 'fitmg') {
+      return browsePayload({ scenarios: [] });
+    }
+    return browsePayload();
+  });
+
+
+
+  view.byId('ciel-browse-filters').dispatch('submit');
+  await waitFor(() => calls.length === 1, 'browse overview was not loaded');
+  const browse = view.byId('ciel-browse-panel');
+  assert.ok(browse, 'browse panel is missing');
+  assert.equal(calls[0].path, '/api/ops/ciel/admin/overview');
+  await waitFor(() => /scenario\.demo\.secret-prompt/.test(treeText(browse)), 'browse scenarios did not render');
+  assert.match(treeText(browse), /scenario\.demo\.secret-prompt/);
+  assert.match(treeText(browse), /Not certified/);
+  assert.match(treeText(browse), /0 \/ 1 authored capabilities/);
+  assert.match(treeText(browse), /dataset\.demo\.development/);
+  assert.match(treeText(browse), /ciel\.g99\.uncovered/);
+
+  view.byId('ciel-filter-product').value = 'fitmg';
+  view.byId('ciel-browse-filters').dispatch('submit');
+  await waitFor(() => calls.length === 2, 'filtered browse read was not sent');
+  assert.deepEqual(calls[1].options.query, { product: 'fitmg' });
+  await waitFor(() => /No scenarios match these filters/.test(treeText(browse)), 'filtered empty state did not render');
+  assert.match(treeText(browse), /No scenarios match these filters/);
+  assert.doesNotMatch(treeText(browse), /scenario\.demo\.secret-prompt/);
+});
+
+test('browse pane renders full catalogue and backend disclosures without truncation', async () => {
+  const capabilities = Array.from({ length: 7 }, (_, index) => ({
+    id: `ciel.g${String(index + 1).padStart(2, '0')}.capability`,
+    name: `Capability ${index + 1}`,
+    owner: 'ianrowe12',
+    status: index === 6 ? 'feature-disabled' : 'reachable',
+    products: ['aria'],
+    clientRefs: ['client.run-with-aria-mobile'],
+    actor: 'athlete',
+    subject: 'self',
+    coverage: { state: 'draft', scenarioIssue: null, oracleCount: 0, executionReceiptCount: 0 },
+  }));
+  const view = renderedPane(() => browsePayload({
+    catalogue: {
+      registryVersion: 'ciel.capabilities.v1',
+      clients: [{ id: 'client.run-with-aria-mobile', name: 'Run with Aria mobile', status: 'direct', owner: 'mobile-app' }],
+      capabilities,
+    },
+  }));
+
+  view.byId('ciel-browse-filters').dispatch('submit');
+  const browse = view.byId('ciel-browse-panel');
+  await waitFor(() => /Capability 7/.test(treeText(browse)), 'full capability catalogue did not render');
+  assert.match(treeText(browse), /Showing 7 of 7 registered capabilities/);
+  assert.match(treeText(browse), /Capability 7/);
+  assert.match(treeText(browse), /feature-disabled/);
+  assert.match(treeText(browse), /capability\.example\.unregistered/);
+  assert.match(treeText(browse), /No checked-in scenario references this capability/);
+});
+
+test('browse pane loads version-bound scenario and dataset inspection details', async () => {
+  const calls = [];
+  const view = renderedPane(async (path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (path === '/api/ops/ciel/admin/scenarios/scenario.demo.secret-prompt') {
+      return {
+        data: {
+          ...browsePayload().scenarios[0],
+          criteria: {
+            critical: [{
+              id: 'criterion.critical.safe',
+              statement: 'Does not invent a completed workout.',
+              evidenceRefs: ['source.public'],
+              graderRef: 'grader.no-completion',
+              grading: { method: 'not_contains', gating: true },
+              authority: { schema: 'v2-authority', tier: 'B', domain: 'training', approvalState: 'none', approvals: [] },
+            }],
+            required: [],
+            expected: [{
+              id: 'criterion.expected.helpful',
+              statement: 'Mentions planned work.',
+              evidenceRefs: ['source.public'],
+              graderRef: 'grader.planned',
+              grading: { method: 'contains', gating: false },
+              authority: {
+                schema: 'v2-authority',
+                tier: 'B',
+                domain: 'training',
+                approvalState: 'approved',
+                approvals: [{
+                  kind: 'expert_reviewed',
+                  reviewerRef: 'reviewer.training',
+                  qualificationPresent: true,
+                  domain: 'training',
+                  scenarioVersion: 2,
+                }],
+              },
+            }],
+            aspirational: [],
+          },
+          oracle: { expectedOutcomeKind: 'text', referenceFacts: [{ id: 'fact.public', sourceRef: 'source.public' }] },
+          redactions: ['history', 'prompt'],
+        },
+      };
+    }
+    if (path === '/api/ops/ciel/admin/datasets/dataset.demo.development') {
+      return { data: {
+        ...browsePayload().datasets.datasets[0],
+        cases: [{
+          scenario: { id: 'scenario.detail.only', version: 7, path: 'evals/detail-only/scenarios.json', sha256: 'c'.repeat(64) },
+          rubrics: [{ id: 'rubric.detail.only', version: 3, path: 'evals/detail-only/rubric.json', sha256: 'd'.repeat(64) }],
+          comparison: { state: 'unavailable', reason: 'Detail-only comparison metadata is recorded.' },
+        }],
+      } };
+    }
+    return browsePayload();
+  });
+
+  view.byId('ciel-browse-filters').dispatch('submit');
+  const browse = view.byId('ciel-browse-panel');
+  await waitFor(() => /Inspect scenario/.test(treeText(browse)), 'scenario inspect action did not render');
+  findNode(browse, node => node.tag === 'button' && node.textContent === 'Inspect scenario').dispatch('click');
+  await waitFor(() => findNode(browse, node => node.className === 'browse-detail' && /Does not invent a completed workout/.test(treeText(node))), 'scenario detail did not render');
+  const scenarioDetail = findNode(browse, node => node.className === 'browse-detail' && /Does not invent a completed workout/.test(treeText(node)));
+  assert.deepEqual(calls.find(call => call.path.includes('/scenarios/')).options.query, { version: '2' });
+  assert.match(treeText(scenarioDetail), /source\.public/);
+  assert.match(treeText(scenarioDetail), /Public coaching source/);
+  assert.match(treeText(scenarioDetail), /https:\/\/example\.test\/source/);
+  assert.match(treeText(scenarioDetail), /Authority: v2-authority · tier B · domain training · approval none/);
+  assert.match(treeText(scenarioDetail), /qualification reference present/);
+  assert.doesNotMatch(treeText(scenarioDetail), /\bqualified\b/);
+  assert.match(treeText(scenarioDetail), /Redacted: history, prompt/);
+
+  findNode(browse, node => node.tag === 'button' && node.textContent === 'Inspect dataset').dispatch('click');
+  const datasetArticle = findNode(browse, node => node.className === 'browse-dataset' && /dataset\.demo\.development/.test(treeText(node)));
+  await waitFor(() => findNode(datasetArticle, node => node.className === 'browse-detail' && /scenario\.detail\.only/.test(treeText(node))), 'dataset detail did not render');
+  const datasetDetail = findNode(datasetArticle, node => node.className === 'browse-detail' && /scenario\.detail\.only/.test(treeText(node)));
+  assert.deepEqual(calls.find(call => call.path.includes('/datasets/')).options.query, { revision: '1' });
+  assert.match(treeText(datasetDetail), /evals\/detail-only\/scenarios\.json/);
+  assert.match(treeText(datasetDetail), /rubric\.detail\.only/);
+  assert.match(treeText(datasetDetail), /Detail-only comparison metadata is recorded/);
+});
+
+test('browse pane keeps facet options stable after filtered and empty reads', async () => {
+  const view = renderedPane(async (_path, options = {}) => {
+    if (options.query?.role === 'athlete') {
+      return browsePayload({ scenarios: [] });
+    }
+    return browsePayload({
+      scenarios: [
+        browsePayload().scenarios[0],
+        { ...browsePayload().scenarios[0], scenarioId: 'scenario.demo.coach', role: 'coach' },
+      ],
+    });
+  });
+
+  view.byId('ciel-browse-filters').dispatch('submit');
+  const roleOptions = () => view.byId('ciel-filter-role').children || [];
+  await waitFor(() => roleOptions().some(option => option.value === 'coach'), 'coach facet missing initially');
+  view.byId('ciel-filter-role').value = 'athlete';
+  view.byId('ciel-browse-filters').dispatch('submit');
+  await waitFor(() => /No scenarios match/.test(treeText(view.byId('ciel-browse-panel'))), 'empty result did not render');
+  assert.equal(view.byId('ciel-filter-role').value, 'athlete');
+  assert.ok(roleOptions().some(option => option.value === 'coach'), 'coach facet option must remain reachable');
+});
+test('browse pane renders loading, partial and error states without HTML injection', async () => {
+  let resolve;
+  const pending = new Promise(done => { resolve = done; });
+  const view = renderedPane(() => pending);
+  const browse = view.byId('ciel-browse-panel');
+  view.byId('ciel-browse-filters').dispatch('submit');
+  assert.match(treeText(browse), /Loading Ciel catalogue/);
+  resolve(browsePayload({
+    datasets: { partial: true, omissions: ['Dataset review state is declaration-only; <img src=x onerror=alert(1)>'], datasets: [] },
+    scenarios: [],
+  }));
+  await waitFor(() => /Partial dataset view/.test(treeText(browse)), 'partial dataset state did not render');
+  assert.match(treeText(browse), /<img src=x onerror=alert\(1\)>/);
+  assert.equal(findNode(browse, node => node.tag === 'img'), null, 'omission text must not create an element');
+
+  const errorView = renderedPane(() => Promise.reject(new Error('No API today <script>alert(1)</script>')));
+  const errorBrowse = errorView.byId('ciel-browse-panel');
+  errorView.byId('ciel-browse-filters').dispatch('submit');
+  await waitFor(() => /Ciel catalogue unavailable/.test(treeText(errorBrowse)), 'error state did not render');
+  assert.match(treeText(errorBrowse), /<script>alert\(1\)<\/script>/);
+  assert.equal(findNode(errorBrowse, node => node.tag === 'script'), null, 'error text must not create script nodes');
+});
+
 test('dataset form shows field errors received through the operations API transport', async () => {
   const window = {
     location: { hostname: 'runwitharia.com' },
@@ -504,7 +773,7 @@ function renderedPane(call, Clock = Date, role = 'operator') {
     },
   };
   pane.render(root);
-  const byId = id => findNode(root, node => node.attributes?.id === id);
+  const byId = id => findNode(root, node => node.attributes?.id === id || node.id === id);
   const form = findNode(root, node => node.className === 'card evidence-form');
   return {
     pane,
@@ -2149,12 +2418,12 @@ test('v2: a viewer is refused the evidence form, told why, and keeps the rest of
   assert.ok(previewOf(dom), 'a viewer sees the same deferred design');
 });
 
-test('v2: the pane keeps the registry note saying why it has no filters', async () => {
+test('v2: the pane keeps the registry note saying why shell filters do not apply', async () => {
   const dom = await bootPane();
   const bar = find(dom.doc.body, node => hasClass(node, 'filters'));
   assert.ok(bar, 'the filter bar carrying the note is missing');
   assert.match(allText(bar),
-    /These actions use supplied declarations or evidence, not app, date or environment filters/);
+    /Browse has pane-local filters; the mutation tools use supplied declarations or evidence, not app, date or environment filters/);
 });
 
 test('v2: the consent boundary survives the restyle for every role', async () => {
