@@ -290,6 +290,9 @@ ops/
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
     pane-spend-v2.css     Cloud costs' own shapes
+    tour.js               the guided tour: "What am I looking at?" and "Take the
+                          tour", built from the registry and the page on screen
+    tour-v2.css           the tour's own shapes
 ```
 
 The tree above says what each file is **for**. What each file is **loaded by** is not written
@@ -338,6 +341,8 @@ shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jo
 shell-v2.js = shell-v2.html
 shell.js = (no page)
 theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+tour-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+tour.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
 ```
 
 A file no page loads is not automatically dead: some are kept alive by the tests, which load
@@ -487,6 +492,7 @@ A v2 pane page loads, in this order:
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
 <link rel="stylesheet" href="assets/pane-<name>-v2.css">
+<link rel="stylesheet" href="assets/tour-v2.css">
 ...
 <body data-pane="<registry key>" class="is-booting">
 <script src="assets/pane-registry.js"></script>
@@ -495,6 +501,7 @@ A v2 pane page loads, in this order:
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
 <script src="assets/pane-<name>.js"></script>
+<script src="assets/tour.js"></script>
 ```
 
 and none of `ops.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
@@ -801,6 +808,50 @@ Role differences surface in navigation affordances only at this stage. Settings 
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
 rather than a destination that silently vanishes. The server enforces this independently; the
 client renders a fact, it does not decide one.
+
+## The guided tour
+
+`assets/tour.js` explains the dashboard to the person using it. It is mounted by its own script,
+after the shell says the page is up, so `assets/shell-pane-v2.js` carries no tour code:
+
+- **What am I looking at?** in the top bar opens the steps for the pane on screen, at any time.
+- **Take the tour** at the foot of the rail walks every pane `assets/pane-registry.js` declares,
+  in the order it declares them, and carries on to the next pane's page at the end of each.
+
+Every pane's first step is made from its registry entry: its question, and what its filter bar
+can and cannot do. The rest are one table in the file, keyed by the registry's pane keys. Each
+names an anchor in the pane's own markup. When the anchor is on screen the step outlines it and
+reads what it currently says; when it is not, the step says why, in the terms of the state the
+pane is in. A figure's step says what it counts, its grain and window, where it comes from, and
+what healthy and worrying look like. A control's step says what it does, who may use it, what
+gets recorded and what cannot be undone. A role that may not use a control is told so instead of
+being pointed at something that is not drawn for it, and an owner-only pane explains the
+refusal card the shell draws in its place.
+
+**The tour explains and never does.** It presses no pane control, submits no form and sends no
+request; the only thing it can do is move to another pane's page.
+
+**Where it stops is kept** in `localStorage` under `ops-tour-progress`: the pane, the step,
+whether the dialog was open, and whether the tour was dismissed or finished. A reload brings an
+open dialog back at the same step; a dismissed tour stays closed and the rail offers to resume
+it.
+
+**Metric wording is quoted, not paraphrased**, where the metric definitions in the Aria monorepo
+define the figure (`docs/ops/operations-dashboard-metric-definitions.md`). The quotes carry the
+heading and the commit they were copied at, and `scripts/fixtures/ops-metric-definitions.excerpt.md`
+holds the same paragraphs, verbatim, at that commit. `scripts/ops-tour-coverage.test.mjs` holds
+every quote to that excerpt and requires every glossary term in it to be explained by some step.
+What that cannot do is read the monorepo: a change to the definitions there is not seen here
+until somebody copies it across and moves the pin. Figures that document does not define, such
+as cloud spend and store tracks, say where they come from instead.
+
+The same file holds the tour to the panes: every pane the registry declares has steps, every
+step's anchor is on its pane once the pane has drawn its data, and every section a pane draws is
+covered by a step, so a band added to a pane without a tour entry is a red run. What the dialog
+does, from focus to what is remembered, is `scripts/ops-tour-dialog.test.mjs`.
+
+`shell-v2.html` has no tour. It is a picture of the design system with invented figures and no
+registry behind it, so a tour there would describe numbers that mean nothing.
 
 ## The two understand panes
 
