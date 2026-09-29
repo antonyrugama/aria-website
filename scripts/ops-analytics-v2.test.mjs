@@ -2585,11 +2585,14 @@ test('the page loads the v2 system and not the v1 one', () => {
    answer as reading all ~340 computed properties, for a fraction of the work --
    and it is a narrowing done by value, not by pattern. */
 
-/* Classes the pane writes deliberately without a rule behind them. Empty
-   today, and kept as the place a query hook would be declared with its
-   reason: a class JS finds nodes by is not a defect, and a class nobody can
+/* Classes the page writes deliberately without a rule behind them, each with
+   its reason: a class JS finds nodes by is not a defect, and a class nobody can
    say a purpose for is. */
-const UNPAINTED_ON_PURPOSE = new Map([]);
+const UNPAINTED_ON_PURPOSE = new Map([
+  ['page-head', 'A query hook: assets/aria.js puts it on the top bar\'s title block so the '
+    + 'guided tour (assets/tour.js) can outline the title and its question as one '
+    + 'element (Stadiora/Aria#12913). The block needs no paint of its own.'],
+]);
 
 /* The seven answer shapes. Four of them draw figures — every app, one app,
    the partial window, and groups under the reporting floor, which draws its
