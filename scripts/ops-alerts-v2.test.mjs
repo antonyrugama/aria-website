@@ -721,7 +721,7 @@ const relTokens = (tag) => (tag.attrs.get('rel') || '').toLowerCase()
    refusals with it (twenty-first review of #75). The walk answers that by
    construction: `data-href` is an attribute named `data-href`. */
 const V2_STYLESHEETS = ['assets/aria.css', 'assets/shell-pane-v2.css',
-  'assets/pane-alerts-v2.css'];
+  'assets/pane-alerts-v2.css', 'assets/tour-v2.css'];
 const PAGE_SHEETS = LINK_TAGS
   .filter((t) => relTokens(t).includes('stylesheet'))
   .map((t) => t.attrs.get('href') ?? null);
@@ -4755,7 +4755,7 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     + 'parser never built, and inventing one is the direction that ships a page with no policy '
     + 'while this file says it has one');
   assert.deepEqual(PAGE_SHEETS, V2_STYLESHEETS,
-    'the sheets this reads out of ops/alerts.html are not the three the page is meant to '
+    'the sheets this reads out of ops/alerts.html are not the four the page is meant to '
     + 'load, in order: ' + JSON.stringify(PAGE_SHEETS) + ' against '
     + JSON.stringify(V2_STYLESHEETS) + '. Either the page changed, or a <link> in it is '
     + 'spelt in a way this walk reads differently from the browser -- and the rules every '

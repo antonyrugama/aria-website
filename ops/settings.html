@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
 <link rel="stylesheet" href="assets/pane-settings-v2.css">
+<link rel="stylesheet" href="assets/tour-v2.css">
 </head>
 <body data-pane="settings" class="is-booting">
 
@@ -58,5 +59,8 @@
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
 <script src="assets/settings.js"></script>
+<!-- The guided tour reads the registry and the page this shell drew, so it
+     loads after both and after the pane's own module. -->
+<script src="assets/tour.js"></script>
 </body>
 </html>

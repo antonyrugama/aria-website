@@ -3049,7 +3049,8 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
      nobody sees. Read off the page rather than listed here. */
   const hrefs = SHEETS;
   assert.deepEqual(hrefs,
-    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css'],
+    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css',
+      'assets/tour-v2.css'],
     'the page stopped loading the sheets this check reads: ' + JSON.stringify(hrefs));
 
   /* Seven states, in the fake DOM, exactly as the rest of this file drives the

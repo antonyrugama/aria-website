@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
 <link rel="stylesheet" href="assets/pane-jobs-live-v2.css">
+<link rel="stylesheet" href="assets/tour-v2.css">
 </head>
 <body data-pane="jobs" class="is-booting">
 
@@ -69,5 +70,8 @@
      refuses to report a pass rather than passing blind. The path lives in
      assets/pane-jobs-live-v2.js, where it is checked. -->
 <script src="assets/pane-jobs-live-v2.js"></script>
+<!-- The guided tour reads the registry and the page this shell drew, so it
+     loads after both and after the pane's own module. -->
+<script src="assets/tour.js"></script>
 </body>
 </html>

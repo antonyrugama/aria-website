@@ -1,0 +1,121 @@
+/* =========================================================================
+   Aria Operations — the guided tour's own shapes
+   Loaded on every v2 pane page, after that pane's own sheet, beside
+   assets/tour.js.
+
+   The dialog is the shell's dialog: assets/tour.js writes `modal` and
+   `modal-card`, which assets/shell-pane-v2.css already lays out and paints
+   for the re-authentication prompt, so the tour looks like every other
+   dialog on the dashboard. What is here is only what a tour needs on top of
+   that: docking the card at the foot of the screen so the part of the page it
+   points at stays in view, the step's own type, and the outline on that part.
+
+   No colour value is declared here. Everything paints in the tokens
+   assets/aria.css declares, which are WCAG AA by construction, and no
+   :root property is added: scripts/check-ops-shell-v2.mjs pins the ones the
+   design system has.
+   ========================================================================= */
+
+/* --------------------------------------------------------------- entries */
+
+.tour-entry { flex: none; }
+/* One line in the top bar: a wrapped label would grow the bar's height on
+   every pane at the widths where it shows. */
+.tour-entry-label { white-space: nowrap; }
+
+/* On a phone the top bar has room for a glyph and not for a sentence. The
+   button keeps its name through aria-label, which carries the same words the
+   label shows at every other width. */
+@media (max-width: 560px) {
+  .tour-entry-label { display: none; }
+}
+
+.tour-rail {
+  display: flex; flex-direction: column; gap: 7px;
+  margin-top: 16px;
+  padding: 10px;
+  border-radius: var(--r);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.tour-rail-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tour-rail-note { font-size: 11px; line-height: 1.45; color: var(--ink-3); }
+
+/* ---------------------------------------------------------------- dialog */
+
+/* Docked rather than centred, and without a scrim, so the outlined part of
+   the page is not dimmed or covered. The layer still spans the screen, as
+   the shell's dialog layer does, but lets the pointer through to the page
+   behind it, which is inert while the dialog is open: a wheel still scrolls
+   it, and nothing on it can be pressed. */
+.modal.tour-modal {
+  align-items: flex-end;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.tour-card {
+  width: min(440px, 100%);
+  margin: 0;
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.tour-kicker {
+  font-size: 11px; font-weight: 540;
+  letter-spacing: .04em;
+  color: var(--ink-3);
+}
+.tour-title {
+  margin-top: 6px;
+  font-size: 16px; font-weight: 600;
+  letter-spacing: -.016em; line-height: 1.3;
+  color: var(--ink);
+}
+.tour-body { margin-top: 8px; }
+.tour-live {
+  font-size: 13px; line-height: 1.6;
+  color: var(--ink);
+}
+.tour-lead {
+  margin-top: 8px;
+  font-size: 12.5px; line-height: 1.6;
+  color: var(--ink-2);
+}
+.tour-note {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px; line-height: 1.55;
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+.tour-facts { display: grid; gap: 9px; margin-top: 12px; }
+.tour-fact-term { font-size: 11.5px; font-weight: 580; color: var(--ink); }
+.tour-fact-text {
+  margin: 2px 0 0;
+  font-size: 12.5px; line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.tour-nav {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 16px;
+}
+.tour-nav-gap { margin-left: auto; }
+
+/* The part of the page the step is about. An outline rather than a shadow,
+   because most of what it lands on paints its own edges with box-shadow and an
+   outline takes nothing away from them. The scroll margins keep it clear of
+   the sticky top bar, and of the docked card on a phone. */
+[data-tour-anchor] {
+  outline: 2px dashed var(--cyan-ink);
+  outline-offset: 4px;
+  scroll-margin-top: 96px;
+}
+
+@media (max-width: 560px) {
+  .modal.tour-modal { padding: 10px; }
+  .tour-card { max-height: 58vh; max-height: 58dvh; }
+}
