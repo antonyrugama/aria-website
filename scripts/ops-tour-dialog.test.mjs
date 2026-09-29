@@ -186,7 +186,7 @@ test('an action step says what it does, who may, what is recorded and what canno
   const f = facts(view.box);
   assert.deepEqual(Object.keys(f), ['What it does', 'Who may do it', 'What gets recorded', 'What cannot be undone']);
   assert.match(f['What cannot be undone'], /deleted rows cannot be brought back/);
-  assert.equal(view.box.querySelector('.tour-note'), null, 'an owner was told the control is not theirs');
+  assert.ok(view.box.querySelector('.tour-note') === null, 'an owner was told the control is not theirs');
 });
 
 /* ----------------------------------------------------------------- roles */
@@ -202,7 +202,7 @@ test('an operator is told an owner-only control is not theirs, and still told wh
   /* And the other direction: an owner at the same step is not refused. */
   const owner = await openGuide('alerts', { role: 'owner' });
   stepTo(owner, 'alerts-rules');
-  assert.equal(owner.box.querySelector('.tour-note'), null, 'the owner was told the control is not theirs');
+  assert.ok(owner.box.querySelector('.tour-note') === null, 'the owner was told the control is not theirs');
 });
 
 test('an operator on an owner-only pane gets the refusal explained instead of its steps', async () => {
@@ -233,7 +233,7 @@ test('a step whose anchor is missing because the read failed says so, and nothin
   assert.match(allText(view.box.querySelector('.tour-note')),
     /could not be read\. Nothing is a zero: the figures are unread, not absent\./,
     'a missing anchor on an unreadable pane was not explained as such');
-  assert.equal(view.box.querySelector('.tour-live'), null, 'a step quoted a figure that is not on screen');
+  assert.ok(view.box.querySelector('.tour-live') === null, 'a step quoted a figure that is not on screen');
 });
 
 test('a step whose anchor is missing because the pane is still reading says so', async () => {
@@ -329,10 +329,17 @@ test('progress holds nothing but where the tour is, and a damaged record is igno
   assert.deepEqual(Object.keys(JSON.parse(raw)).sort(), ['guide', 'tour', 'version']);
   assert.doesNotMatch(raw, /ath_|@|support request/, 'something read from the page was stored');
 
+  /* Two kinds of damage: a record that is not JSON at all, and one that
+     parses but names a pane the registry does not declare. */
   const key = view.window.OpsTour.STORE_KEY;
-  const damaged = await bootPage('overview', { storage: { [key]: '{"tour":{"pane":"nowhere","open":true}' } });
-  assert.ok(dialog(damaged.doc) === null, 'a damaged record opened the tour');
-  const entry = damaged.doc.querySelector('.tour-start');
-  assert.ok(entry, 'a damaged record stopped the rail entry being drawn');
-  assert.equal(entry.textContent, 'Take the tour', 'a damaged record was read as a tour in progress');
+  for (const record of [
+    '{"tour":{"pane":"nowhere","open":true}',
+    '{"version":1,"tour":{"pane":"nowhere","step":2,"open":true},"guide":{"pane":"nowhere","open":true}}',
+  ]) {
+    const damaged = await bootPage('overview', { storage: { [key]: record } });
+    assert.ok(dialog(damaged.doc) === null, 'a damaged record opened the tour: ' + record);
+    const entry = damaged.doc.querySelector('.tour-start');
+    assert.ok(entry, 'a damaged record stopped the rail entry being drawn: ' + record);
+    assert.equal(entry.textContent, 'Take the tour', 'a damaged record was read as a tour in progress: ' + record);
+  }
 });
