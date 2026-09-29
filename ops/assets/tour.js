@@ -544,6 +544,8 @@
       {
         id: 'analytics-sessions-per-person', kind: 'metric', title: 'Sessions per person',
         anchor: { selector: '.kpi', title: 'Sessions per person' },
+        body: 'How many sessions each active person had, on average. The definition below ' +
+          'is of one session, the thing being averaged.',
         live: kpiLive,
         metric: {
           definition: 'session',
