@@ -1156,7 +1156,9 @@
     var pane = PANES[paneId];
     return {
       id: paneId + '-intro', kind: 'intro', title: pane.label,
-      anchor: { selector: '.page-title' },
+      /* The title and the question under it, as one block: outlining the
+         heading alone drew the line through the question (Stadiora/Aria#12913). */
+      anchor: { selector: '.page-head' },
       live: function () {
         var filters = S.filters ? S.filters() : null;
         var words = 'This pane answers: ' + pane.question + ' ' + rangeWords(pane, filters);

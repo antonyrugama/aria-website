@@ -98,6 +98,16 @@ test('the guide opens a named modal dialog and moves focus into it', async () =>
   assert.equal(app.inert, true, 'the page behind the dialog can still be pressed and focused');
 });
 
+test('the first step outlines the pane title together with its question', async () => {
+  /* Outlining the heading alone drew the dashed line through the question
+     printed under it (Stadiora/Aria#12913). */
+  const { doc } = await openGuide('overview');
+  const outlined = doc.querySelector('[data-tour-anchor]');
+  assert.ok(outlined, 'the first step outlined nothing');
+  assert.ok(outlined.querySelector('.page-title'), 'the outline does not take in the pane title');
+  assert.ok(outlined.querySelector('.page-sub'), 'the outline leaves out the question under the title');
+});
+
 test('Escape closes the dialog and gives focus back to the button that opened it', async () => {
   const view = await openGuide('overview');
   const { doc, guide, box } = view;
