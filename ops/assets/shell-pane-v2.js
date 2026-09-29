@@ -889,7 +889,14 @@
       toggle.setAttribute('aria-label', 'Close navigation');
       scrim = h('div', { className: 'scrim' });
       scrim.addEventListener('click', function () { close(); });
-      document.body.appendChild(scrim);
+      /* Beside the rail, not at the end of <body>. The app wrapper is a
+         stacking context (aria.css gives .app a z-index), so a scrim on the
+         body painted above the whole app, drawer included, however high the
+         drawer's own z-index: every pane link sat under a dim and a blur, and
+         a tap on one landed on the scrim and closed the drawer
+         (Stadiora/Aria#12909). As the rail's sibling the two are stacked
+         against each other, and the drawer's 100 is above the scrim's 90. */
+      rail.parentNode.insertBefore(scrim, rail);
       setBackgroundInert(true);
       document.addEventListener('keydown', onKey, true);
       document.addEventListener('focusin', onFocusIn, true);
