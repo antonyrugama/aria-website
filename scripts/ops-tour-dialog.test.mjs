@@ -17,6 +17,7 @@ import test from 'node:test';
 
 import { allText } from './ops-dom-harness.mjs';
 import { bootPage, dialog, liveRegion } from './ops-tour-harness.mjs';
+import { SUMMARY } from './ops-api-stub.mjs';
 
 function buttons(box) {
   const all = box.querySelectorAll('button');
@@ -33,6 +34,11 @@ async function openGuide(paneId, options = {}) {
   const view = await bootPage(paneId, options);
   const guide = view.doc.querySelector('.tour-entry');
   assert.ok(guide, 'the top bar carries no "What am I looking at?" button');
+  /* The stub has no `inert`, so `'inert' in el` is false on it and only the
+     aria-hidden half of the backdrop would be exercised. Seeding the property
+     is what a browser presents, and it puts the other half on test, as
+     ops-shell-pane-v2.test.mjs does for the re-authentication prompt. */
+  view.doc.body.children.forEach((el) => { el.inert = false; });
   guide.focus();
   guide.dispatch('click');
   const box = dialog(view.doc);
@@ -89,6 +95,7 @@ test('the guide opens a named modal dialog and moves focus into it', async () =>
 
   const app = doc.body.children.find((el) => el.classList.contains('gate-app'));
   assert.equal(app.getAttribute('aria-hidden'), 'true', 'the page behind the dialog is still exposed');
+  assert.equal(app.inert, true, 'the page behind the dialog can still be pressed and focused');
 });
 
 test('Escape closes the dialog and gives focus back to the button that opened it', async () => {
@@ -103,6 +110,7 @@ test('Escape closes the dialog and gives focus back to the button that opened it
   assert.ok(box.parentNode === null, 'the dialog is still in the document');
   assert.ok(doc.activeElement === guide, 'focus was not returned to the guide button');
   assert.equal(app.getAttribute('aria-hidden'), null, 'the page stayed hidden after the dialog closed');
+  assert.equal(app.inert, false, 'the page stayed inert after the dialog closed');
   assert.equal(doc.listenerCount('keydown'), 0, 'the dialog left its key handler on the document');
 });
 
@@ -178,6 +186,26 @@ test('a figure step reads the value on screen and quotes the definition of recor
     'the step does not show the definition of record');
   for (const term of ['Grain and window', 'Where it comes from', 'Looks healthy when', 'Worth a closer look when']) {
     assert.ok(facts(box)[term], 'the figure step does not say ' + term);
+  }
+});
+
+test('the activity step finds its card at either grain the server may send', async () => {
+  /* Overview titles the card by the grain of the window it received, and the
+     older daily window is still one the pane accepts. */
+  const daily = JSON.parse(JSON.stringify(SUMMARY));
+  daily.activity.window = {
+    start: daily.activity.window.start, endExclusive: daily.activity.window.endExclusive,
+    days: 1, grain: 'day', timezone: 'UTC',
+  };
+  for (const [grain, answer] of [['hour', undefined], ['day', { data: daily }]]) {
+    const view = await openGuide('overview', {
+      answer: (path) => (path === '/api/ops/summary' ? answer : undefined),
+    });
+    stepTo(view, 'overview-activity');
+    const card = view.doc.querySelector('[data-tour-anchor]');
+    assert.ok(card, grain + ': the activity step outlined nothing');
+    assert.equal(allText(card.querySelector('.card-title')), 'People active each ' + grain,
+      grain + ': the step outlined something other than the activity card');
   }
 });
 

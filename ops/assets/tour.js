@@ -105,7 +105,8 @@
                the registry for every pane and is not written here.
      anchor    { selector, title }. selector is a single compound selector;
                title, when given, is the text of the first heading inside the
-               element, which picks one element out of several.
+               element (or a list of accepted texts), which picks one element
+               out of several.
      body      what the step says whether or not the anchor is on screen
      live      (ctx) => a sentence about what the anchor reads right now, or
                '' when there is nothing worth quoting
@@ -153,8 +154,10 @@
       {
         id: 'overview-active-people', kind: 'metric', title: 'Active people',
         anchor: { selector: '.kpi', title: 'Active people' },
-        body: 'The headline is one count across both apps, so somebody who used both is one ' +
-          'person. That is why the two app figures under it do not add up to it.',
+        body: 'The definition below counts a person once per app, which is what the two app ' +
+          'figures under the headline show. The headline goes one step further and counts ' +
+          'each person once across both apps, so somebody who used both is one person. That ' +
+          'is why the two app figures do not add up to it.',
         live: kpiLive,
         metric: {
           definition: 'activeUser',
@@ -214,16 +217,20 @@
         }
       },
       {
-        id: 'overview-activity', kind: 'metric', title: 'People active each hour',
-        anchor: { selector: '.card', title: 'People active each hour' },
+        id: 'overview-activity', kind: 'metric', title: 'People active over time',
+        /* The pane titles this card by the grain the server sent: hourly from
+           the newer usage window, daily from the older one it still reads. */
+        anchor: { selector: '.card', title: ['People active each hour', 'People active each day'] },
         live: function (ctx) {
           var reads = ctx.readAll('.series-read');
           return reads.length ? 'The latest readings: ' + reads.join('; ') + '.' : '';
         },
         metric: {
           definition: 'activeUser',
-          grain: 'One reading per completed UTC hour over the last 24 hours, one line per ' +
-            'app. An hour with no stored reading breaks the line rather than joining across it.',
+          grain: 'One reading per completed UTC hour over the last 24 hours, or one per UTC ' +
+            'day when the server sends the older daily window; the card title says which. One ' +
+            'line per app, and a reading with nothing stored breaks the line rather than ' +
+            'joining across it.',
           source: 'Usage events the apps send, counted by the server each hour.',
           healthy: 'A daily rhythm on both lines.',
           worrying: 'A line that goes flat or stops. An app may have stopped sending data.'
@@ -1047,7 +1054,7 @@
     }
     for (var i = 0; i < found.length; i++) {
       if (!isShown(found[i])) continue;
-      if (anchor.title && titleOf(found[i]) !== anchor.title) continue;
+      if (anchor.title && [].concat(anchor.title).indexOf(titleOf(found[i])) < 0) continue;
       return found[i];
     }
     return null;
