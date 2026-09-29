@@ -85,7 +85,7 @@ test('the guide opens a named modal dialog and moves focus into it', async () =>
     "the first step does not state the pane's question from the registry");
 
   assert.ok(box.contains(doc.activeElement), 'focus stayed outside the dialog');
-  assert.equal(doc.activeElement, view.next, 'focus did not land on the way forward');
+  assert.ok(doc.activeElement === view.next, 'focus did not land on the way forward');
 
   const app = doc.body.children.find((el) => el.classList.contains('gate-app'));
   assert.equal(app.getAttribute('aria-hidden'), 'true', 'the page behind the dialog is still exposed');
@@ -95,13 +95,13 @@ test('Escape closes the dialog and gives focus back to the button that opened it
   const view = await openGuide('overview');
   const { doc, guide, box } = view;
   const app = doc.body.children.find((el) => el.classList.contains('gate-app'));
-  assert.notEqual(doc.activeElement, guide, 'the dialog never took focus, so returning it proves nothing');
+  assert.ok(doc.activeElement !== guide, 'the dialog never took focus, so returning it proves nothing');
 
   doc.dispatch('keydown', { key: 'Escape' });
 
-  assert.equal(dialog(doc), null, 'Escape left the dialog open');
-  assert.equal(box.parentNode, null, 'the dialog is still in the document');
-  assert.equal(doc.activeElement, guide, 'focus was not returned to the guide button');
+  assert.ok(dialog(doc) === null, 'Escape left the dialog open');
+  assert.ok(box.parentNode === null, 'the dialog is still in the document');
+  assert.ok(doc.activeElement === guide, 'focus was not returned to the guide button');
   assert.equal(app.getAttribute('aria-hidden'), null, 'the page stayed hidden after the dialog closed');
   assert.equal(doc.listenerCount('keydown'), 0, 'the dialog left its key handler on the document');
 });
@@ -109,8 +109,8 @@ test('Escape closes the dialog and gives focus back to the button that opened it
 test('Close does what Escape does', async () => {
   const view = await openGuide('releases');
   view.close.dispatch('click');
-  assert.equal(dialog(view.doc), null, 'Close left the dialog open');
-  assert.equal(view.doc.activeElement, view.guide, 'Close did not return focus to the guide button');
+  assert.ok(dialog(view.doc) === null, 'Close left the dialog open');
+  assert.ok(view.doc.activeElement === view.guide, 'Close did not return focus to the guide button');
 });
 
 test('Close, Back and Next are buttons in that order, and Tab stays among them', async () => {
@@ -123,9 +123,9 @@ test('Close, Back and Next are buttons in that order, and Tab stays among them',
 
   view.next.focus();
   doc.dispatch('keydown', { key: 'Tab', shiftKey: false });
-  assert.equal(doc.activeElement, view.close, 'Tab from the last control left the dialog');
+  assert.ok(doc.activeElement === view.close, 'Tab from the last control left the dialog');
   doc.dispatch('keydown', { key: 'Tab', shiftKey: true });
-  assert.equal(doc.activeElement, view.next, 'Shift+Tab from the first control left the dialog');
+  assert.ok(doc.activeElement === view.next, 'Shift+Tab from the first control left the dialog');
 });
 
 test('Next and Back move between steps, outline the anchor, and announce each step', async () => {
@@ -151,7 +151,7 @@ test('Next and Back move between steps, outline the anchor, and announce each st
   view.back.dispatch('click');
   assert.equal(title(box), steps[0].title);
   assert.equal(view.back.disabled, true);
-  assert.equal(doc.activeElement, view.next, 'focus was left on a control that just became disabled');
+  assert.ok(doc.activeElement === view.next, 'focus was left on a control that just became disabled');
   assert.equal(liveRegion(doc).textContent, 'Step 1 of ' + steps.length + ', Overview: Overview.');
 
   doc.dispatch('keydown', { key: 'Escape' });
@@ -275,7 +275,7 @@ test('a dismissed tour stays closed on reload and resumes where it stopped', asy
   b.next.dispatch('click');
   b.next.dispatch('click');
   b.close.dispatch('click');
-  assert.equal(first.doc.activeElement, start, 'closing the tour did not return focus to where it began');
+  assert.ok(first.doc.activeElement === start, 'closing the tour did not return focus to where it began');
 
   const saved = stored(first);
   assert.deepEqual(saved.tour,
@@ -283,7 +283,7 @@ test('a dismissed tour stays closed on reload and resumes where it stopped', asy
 
   const key = first.window.OpsTour.STORE_KEY;
   const again = await bootPage('overview', { storage: { [key]: JSON.stringify(saved) } });
-  assert.equal(dialog(again.doc), null, 'a dismissed tour opened itself on reload');
+  assert.ok(dialog(again.doc) === null, 'a dismissed tour opened itself on reload');
   const resume = again.doc.querySelector('.tour-start');
   assert.ok(resume, 'the rail entry was not drawn after the reload');
   assert.equal(resume.textContent, 'Resume the tour', 'the rail does not offer to resume');
@@ -331,7 +331,7 @@ test('progress holds nothing but where the tour is, and a damaged record is igno
 
   const key = view.window.OpsTour.STORE_KEY;
   const damaged = await bootPage('overview', { storage: { [key]: '{"tour":{"pane":"nowhere","open":true}' } });
-  assert.equal(dialog(damaged.doc), null, 'a damaged record opened the tour');
+  assert.ok(dialog(damaged.doc) === null, 'a damaged record opened the tour');
   const entry = damaged.doc.querySelector('.tour-start');
   assert.ok(entry, 'a damaged record stopped the rail entry being drawn');
   assert.equal(entry.textContent, 'Take the tour', 'a damaged record was read as a tour in progress');
