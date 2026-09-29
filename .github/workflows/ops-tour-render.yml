@@ -11,10 +11,14 @@ name: Ops guided tour render
 # ready, the tour never opened, or no step outlined anything on screen -- and
 # a person reads the images.
 #
-# Why dispatch only: a render costs a runner for minutes and proves nothing a
-# red or green check could act on, so running it on every push or pull request
-# would spend CI on pictures nobody asked for. Run it by hand from the Actions
-# tab on the branch whose UI you want to see, when that UI is settled.
+# Why it mostly runs by hand: a render costs a runner for minutes and proves
+# nothing a red or green check could act on, so running it on every push or
+# pull request would spend CI on pictures nobody asked for. Run it from the
+# Actions tab on the branch whose UI you want to see, once that UI is settled.
+# The one automatic trigger is a pull request that changes this workflow or its
+# script: GitHub only dispatches a workflow that is already on the default
+# branch, so without it a change to the renderer could not be seen working
+# before it merged.
 #
 # Note: this repo has no self-hosted runners registered, so it uses
 # ubuntu-latest, which ships google-chrome-stable, the browser
@@ -23,6 +27,10 @@ name: Ops guided tour render
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/render-ops-tour.mjs'
+      - '.github/workflows/ops-tour-render.yml'
 
 permissions:
   contents: read
