@@ -850,6 +850,14 @@ step's anchor is on its pane once the pane has drawn its data, and every section
 covered by a step, so a band added to a pane without a tour entry is a red run. What the dialog
 does, from focus to what is remembered, is `scripts/ops-tour-dialog.test.mjs`.
 
+Neither suite lays the tour out. To see it, run `.github/workflows/ops-tour-render.yml` from the
+Actions tab. It runs `scripts/render-ops-tour.mjs`, which opens the tour from "What am I looking
+at?" on every pane the registry declares, in both themes, at 1440x900 and 375x812, and photographs
+the first step whose outline is on screen, plus the rail's "Take the tour" block at each width. The
+pictures and an index naming each one's pane, theme, width and step are uploaded as the
+`ops-tour-render` artifact. It is dispatch only, and it is not a guard: it fails only when a
+picture could not be taken, and what the pictures show is for a person to judge.
+
 `shell-v2.html` has no tour. It is a picture of the design system with invented figures and no
 registry behind it, so a tour there would describe numbers that mean nothing.
 

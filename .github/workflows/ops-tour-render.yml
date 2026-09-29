@@ -1,0 +1,65 @@
+name: Ops guided tour render
+
+# Renders the guided tour on every pane the registry declares, in both themes,
+# at a desktop width (1440x900) and a phone width (375x812), plus the rail's
+# "Take the tour" block at each width, and uploads the pictures with an
+# index.md naming the pane, theme, width and tour step in each one.
+#
+# This is the visual proof Stadiora/Aria#12255 asks for: one batch render on
+# CI rather than screenshots taken on a developer machine. It is not a guard.
+# It fails only when a picture could not be taken -- the page never became
+# ready, the tour never opened, or no step outlined anything on screen -- and
+# a person reads the images.
+#
+# Why dispatch only: a render costs a runner for minutes and proves nothing a
+# red or green check could act on, so running it on every push or pull request
+# would spend CI on pictures nobody asked for. Run it by hand from the Actions
+# tab on the branch whose UI you want to see, when that UI is settled.
+#
+# Note: this repo has no self-hosted runners registered, so it uses
+# ubuntu-latest, which ships google-chrome-stable, the browser
+# ops-dialog-hit.yml and ops-contrast.yml already drive over the DevTools
+# Protocol on this image.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tour-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # Node 22 or newer, because the script drives headless Chrome over the
+      # DevTools Protocol through the global WebSocket rather than a package.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Fail here rather than deep inside the script if the image ever stops
+      # shipping a browser.
+      - name: Confirm the runner has a browser
+        run: |
+          google-chrome --version || chromium --version
+      - name: Render the tour on every pane, both themes, narrow and wide
+        run: node scripts/render-ops-tour.mjs
+      # The index in the log as well, so which pictures failed and why reads
+      # without downloading the artifact.
+      - name: Show the index
+        if: always()
+        run: cat .probe/tour-render/index.md || true
+      # Uploaded whatever the render step did, so a run with a failed picture
+      # still hands over the ones it took and the index that says which failed.
+      # include-hidden-files because .probe is a dot directory, which
+      # upload-artifact@v4 otherwise leaves out; ops-keyboard-audit.yml sets
+      # it for the same directory.
+      - name: Upload the pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ops-tour-render
+          path: .probe/tour-render/
+          include-hidden-files: true
+          if-no-files-found: error
