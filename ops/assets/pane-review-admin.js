@@ -171,7 +171,7 @@
     function loadQueue() {
       body.textContent = '';
       body.appendChild(shell.stateBlock('spark', 'Loading review queue', ['Only blinded evidence will be shown.']));
-      session.call('/api/ops/ciel/admin/reviews/queue').then(function (payload) {
+      session.call('/api/ops/seval/admin/reviews/queue').then(function (payload) {
       var data = payload.data || {};
       var items = data.items || [];
       body.textContent = '';
@@ -206,7 +206,7 @@
         nextItems.forEach(function (item) { list.appendChild(itemCard(item, inspect)); });
       }
       function retryPartialQueue() {
-        return session.call('/api/ops/ciel/admin/reviews/queue').then(function (retryPayload) {
+        return session.call('/api/ops/seval/admin/reviews/queue').then(function (retryPayload) {
           var retryData = retryPayload.data || {};
           syncPartialBand(retryData);
           populateList(retryData.items || []);
@@ -217,15 +217,15 @@
       function inspect(reviewItemId) {
         detail.textContent = '';
         detail.appendChild(shell.stateBlock('spark', 'Loading blinded output', ['Labels from other reviewers stay hidden until your own label is recorded.']));
-        return session.call('/api/ops/ciel/admin/reviews/items/' + encodeURIComponent(reviewItemId)).then(function (itemPayload) {
+        return session.call('/api/ops/seval/admin/reviews/items/' + encodeURIComponent(reviewItemId)).then(function (itemPayload) {
           detail.textContent = '';
           detail.appendChild(detailCard(itemPayload.data, function (request) {
-            return session.call('/api/ops/ciel/admin/reviews/labels', { method: 'POST', body: request }).then(function () {
+            return session.call('/api/ops/seval/admin/reviews/labels', { method: 'POST', body: request }).then(function () {
               shell.toast('spark', 'Review label recorded');
               return inspect(reviewItemId);
             });
           }, function (request) {
-            return session.call('/api/ops/ciel/admin/reviews/adjudications', { method: 'POST', body: request }).then(function () {
+            return session.call('/api/ops/seval/admin/reviews/adjudications', { method: 'POST', body: request }).then(function () {
               shell.toast('spark', 'Adjudication recorded');
               return inspect(reviewItemId);
             });

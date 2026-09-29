@@ -716,7 +716,7 @@
       clearNode(detail);
       detail.appendChild(h('p', { className: 'field-hint', text: 'Loading scenario detail…' }));
       try {
-        var payload = await session.call('/api/ops/ciel/admin/scenarios/' + encodeURIComponent(scenario.scenarioId || ''), {
+        var payload = await session.call('/api/ops/seval/admin/scenarios/' + encodeURIComponent(scenario.scenarioId || ''), {
           query: { version: String(scenario.version || 1) }
         });
         var data = payload && payload.data ? payload.data : payload;
@@ -820,7 +820,7 @@
     }
     if (!entries.length) {
       card.appendChild(shell.stateBlock('layers', 'No dataset declarations found', [
-        'The backend did not find checked-in ciel.dataset.v1 declarations for this branch.'
+        'The backend did not find checked-in seval.dataset.v1 declarations for this branch.'
       ]));
       return card;
     }
@@ -834,7 +834,7 @@
         clearNode(detail);
         detail.appendChild(h('p', { className: 'field-hint', text: 'Loading dataset detail…' }));
         try {
-          var payload = await session.call('/api/ops/ciel/admin/datasets/' + encodeURIComponent(dataset.datasetId || ''), {
+          var payload = await session.call('/api/ops/seval/admin/datasets/' + encodeURIComponent(dataset.datasetId || ''), {
             query: { revision: String(dataset.revision || 1) }
           });
           var data = payload && payload.data ? payload.data : payload;
@@ -908,21 +908,21 @@
   }
 
   function browseSection() {
-    var built = workingBand('Browse Ciel scenarios and coverage', 'Read-only catalogue, datasets and honest denominators');
+    var built = workingBand('Browse SEVAL scenarios and coverage', 'Read-only catalogue, datasets and honest denominators');
     var section = built.section;
     var bandBody = built.body;
     var filterDefs = {
-      product: filterField('ciel-filter-product', 'Product'),
-      client: filterField('ciel-filter-client', 'Client'),
-      role: filterField('ciel-filter-role', 'Role'),
-      capability: filterField('ciel-filter-capability', 'Capability'),
-      risk: filterField('ciel-filter-risk', 'Risk'),
-      locale: filterField('ciel-filter-locale', 'Locale')
+      product: filterField('seval-filter-product', 'Product'),
+      client: filterField('seval-filter-client', 'Client'),
+      role: filterField('seval-filter-role', 'Role'),
+      capability: filterField('seval-filter-capability', 'Capability'),
+      risk: filterField('seval-filter-risk', 'Risk'),
+      locale: filterField('seval-filter-locale', 'Locale')
     };
     var error = h('div', { className: 'field-error', role: 'alert' });
     var result = h('div', { className: 'browse-result' });
     var stableFacetOptions = {};
-    result.setAttribute('id', 'ciel-browse-panel');
+    result.setAttribute('id', 'seval-browse-panel');
     result.setAttribute('aria-live', 'polite');
     var submit = h('button', { className: 'btn btn-primary', type: 'submit', text: 'Load catalogue' });
     var form = h('form', { className: 'card browse-form' }, [
@@ -944,7 +944,7 @@
       ]),
       error
     ]);
-    form.setAttribute('id', 'ciel-browse-filters');
+    form.setAttribute('id', 'seval-browse-filters');
 
     function query() {
       var out = {};
@@ -982,26 +982,26 @@
       clearNode(error);
       clearNode(result);
       result.appendChild(h('div', { className: 'card' }, [
-        shell.stateBlock('layers', 'Loading Ciel catalogue', [
+        shell.stateBlock('layers', 'Loading SEVAL catalogue', [
           'Reading checked-in contracts, scenario packs and dataset declarations.'
         ])
       ]));
       submit.disabled = true;
       try {
-        var payload = await session.call('/api/ops/ciel/admin/overview', { query: query() });
+        var payload = await session.call('/api/ops/seval/admin/overview', { query: query() });
         var data = payload && payload.data ? payload.data : payload;
         updateFilterOptions(data);
         renderBrowseResult(result, data);
-        shell.announce('Ciel catalogue loaded.');
+        shell.announce('SEVAL catalogue loaded.');
       } catch (caught) {
         clearNode(result);
         result.appendChild(h('div', { className: 'card' }, [
-          shell.stateBlock('warn', 'Ciel catalogue unavailable', [
+          shell.stateBlock('warn', 'SEVAL catalogue unavailable', [
             caught && caught.message ? caught.message : 'Try again shortly.'
           ])
         ]));
-        error.textContent = caught && caught.message ? caught.message : 'The Ciel browse endpoint could not be read.';
-        shell.announce('Ciel catalogue unavailable.');
+        error.textContent = caught && caught.message ? caught.message : 'The SEVAL browse endpoint could not be read.';
+        shell.announce('SEVAL catalogue unavailable.');
       } finally {
         submit.disabled = false;
       }
@@ -1015,7 +1015,7 @@
     bandBody.appendChild(form);
     result.appendChild(h('div', { className: 'card' }, [
       h('div', { className: 'card-body' }, [
-        h('h3', { className: 'card-title', text: 'Load Ciel catalogue' }),
+        h('h3', { className: 'card-title', text: 'Load SEVAL catalogue' }),
         h('p', {
           className: 'field-hint',
           text: 'Use the pane-local filters above, then load the read-only catalogue, scenario, dataset and coverage summary.'
@@ -1052,14 +1052,14 @@
 
   function runEnvelope(operationId, input, requestId) {
     return {
-      schemaVersion: 'ciel.operation.request.v1',
+      schemaVersion: 'seval.operation.request.v1',
       requestId: requestId || global.crypto.randomUUID(),
       operationId: operationId,
       mode: 'remote',
       client: {
         name: 'aria-operations-dashboard',
         version: '1.0.0',
-        contractVersions: ['ciel.operations.v1']
+        contractVersions: ['seval.operations.v1']
       },
       input: input
     };
@@ -1069,7 +1069,7 @@
     var config = RUN_CONFIGS[promptBundleId];
     var live = draft.providerKind === 'azure_openai';
     return {
-      schemaVersion: 'ciel.run.manifest.v1',
+      schemaVersion: 'seval.run.manifest.v1',
       mode: draft.mode,
       code: { gitCommit: '1df3a9a4db943ad9e7ffc1f5a11e7d065426a92a' },
       dataset: {
@@ -1087,9 +1087,9 @@
       policy: {
         scenarioVersion: 'scenario.demo.secret-prompt:v2',
         rubricVersion: 'rubric.demo.no-retrieval.criteria:v1',
-        gatePolicyVersion: 'ciel-gate-policy:v1',
+        gatePolicyVersion: 'seval-gate-policy:v1',
         toolVersion: 'aria-eval:v1',
-        engineVersion: 'ciel-engine:v1'
+        engineVersion: 'seval-engine:v1'
       },
       provider: {
         kind: draft.providerKind,
@@ -1132,7 +1132,7 @@
   }
 
   function runLaunchRequest(dataset, promptBundleId, draft, idempotencySuffix) {
-    var request = runEnvelope('ciel.run.launch', {
+    var request = runEnvelope('seval.run.launch', {
       manifest: runManifest(dataset, promptBundleId, draft)
     });
     request.idempotencyKey = 'dashboard-run-launch-' + idempotencySuffix + '-' + request.requestId;
@@ -1203,7 +1203,7 @@
   }
 
   function runControlSection() {
-    var built = workingBand('Launch and inspect controlled Ciel runs', 'Code-owned configs, D6 cost envelope and shared operations');
+    var built = workingBand('Launch and inspect controlled SEVAL runs', 'Code-owned configs, D6 cost envelope and shared operations');
     var section = built.section;
     var bandBody = built.body;
     var datasetSelect = select(RUN_DATASETS.map(function (dataset) {
@@ -1274,8 +1274,8 @@
       ]);
     }
 
-    launchResult.setAttribute('id', 'ciel-run-launch-result');
-    inspectResult.setAttribute('id', 'ciel-run-inspection-result');
+    launchResult.setAttribute('id', 'seval-run-launch-result');
+    inspectResult.setAttribute('id', 'seval-run-inspection-result');
 
     function launchSignature(dataset, selectedDraft) {
       return JSON.stringify({
@@ -1319,16 +1319,16 @@
     var launchForm = h('form', { className: 'card run-launch-form' }, [
       shell.cardHead('Launch baseline and candidate', 'Selections are fixed in code; endpoints and commands are never free text'),
       h('div', { className: 'card-body q-grid browse-filter-grid' }, [
-        field('ciel-run-dataset', 'Frozen dataset release', datasetSelect),
-        field('ciel-run-baseline', 'Baseline config', baselineSelect),
-        field('ciel-run-candidate', 'Candidate config', candidateSelect),
-        field('ciel-run-mode', 'Run mode', modeSelect),
-        field('ciel-run-provider', 'Provider', providerSelect),
-        field('ciel-run-repeats', 'Repeats per config', repeats),
-        field('ciel-run-estimate', 'Approved estimate, cents', estimate),
-        field('ciel-run-concurrency', 'Provider concurrency', concurrency),
-        field('ciel-run-approval-ref', 'Approval reference', approvalRef),
-        field('ciel-run-approved-by', 'Approving owner', approvedBy)
+        field('seval-run-dataset', 'Frozen dataset release', datasetSelect),
+        field('seval-run-baseline', 'Baseline config', baselineSelect),
+        field('seval-run-candidate', 'Candidate config', candidateSelect),
+        field('seval-run-mode', 'Run mode', modeSelect),
+        field('seval-run-provider', 'Provider', providerSelect),
+        field('seval-run-repeats', 'Repeats per config', repeats),
+        field('seval-run-estimate', 'Approved estimate, cents', estimate),
+        field('seval-run-concurrency', 'Provider concurrency', concurrency),
+        field('seval-run-approval-ref', 'Approval reference', approvalRef),
+        field('seval-run-approved-by', 'Approving owner', approvedBy)
       ]),
       h('div', { className: 'card-foot evidence-actions' }, [
         h('p', { className: 'field-hint', text: 'The server enforces D6 caps again. The dashboard only sends the approved spend envelope.' }),
@@ -1336,7 +1336,7 @@
       ]),
       launchError
     ]);
-    launchForm.setAttribute('id', 'ciel-run-launch-form');
+    launchForm.setAttribute('id', 'seval-run-launch-form');
 
     launchForm.addEventListener('submit', async function (event) {
       event.preventDefault();
@@ -1358,14 +1358,14 @@
       launchInFlight = true;
       try {
         if (!state.baselineResponse) {
-          state.baselineResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: state.baselineRequest });
+          state.baselineResponse = await session.call('/api/ops/seval/operations', { method: 'POST', body: state.baselineRequest });
           renderLaunchState(state);
         }
         if (!state.candidateResponse) {
-          state.candidateResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: state.candidateRequest });
+          state.candidateResponse = await session.call('/api/ops/seval/operations', { method: 'POST', body: state.candidateRequest });
           renderLaunchState(state);
         }
-        shell.announce('Controlled Ciel runs launched.');
+        shell.announce('Controlled SEVAL runs launched.');
       } catch (caught) {
         renderLaunchState(state);
         if (state.baselineResponse && !state.candidateResponse) {
@@ -1382,16 +1382,16 @@
     var inspectForm = h('form', { className: 'card run-inspect-form' }, [
       shell.cardHead('Inspect, cancel or retry a run', 'Progress, cost, provider provenance and redaction state'),
       h('div', { className: 'card-body q-grid' }, [
-        field('ciel-run-inspect-id', 'Run ID', inspectRunId, 'Paste a run id returned by launch or by the CLI.')
+        field('seval-run-inspect-id', 'Run ID', inspectRunId, 'Paste a run id returned by launch or by the CLI.')
       ]),
       h('div', { className: 'card-foot evidence-actions' }, [
         h('button', { className: 'btn btn-primary', type: 'submit', text: 'Inspect run' }),
-        h('button', { id: 'ciel-run-cancel', className: 'btn btn-sm', type: 'button', text: 'Cancel inspected run' }),
-        h('button', { id: 'ciel-run-retry', className: 'btn btn-sm', type: 'button', text: 'Retry failed run' })
+        h('button', { id: 'seval-run-cancel', className: 'btn btn-sm', type: 'button', text: 'Cancel inspected run' }),
+        h('button', { id: 'seval-run-retry', className: 'btn btn-sm', type: 'button', text: 'Retry failed run' })
       ]),
       inspectError
     ]);
-    inspectForm.setAttribute('id', 'ciel-run-inspect-form');
+    inspectForm.setAttribute('id', 'seval-run-inspect-form');
 
     function runId() {
       return requireUuid(inspectRunId.value, 'Run ID');
@@ -1416,8 +1416,8 @@
       }
       var generation = inspectionGeneration;
       try {
-        var request = runEnvelope('ciel.run.get', { runId: acceptedRunId });
-        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        var request = runEnvelope('seval.run.get', { runId: acceptedRunId });
+        var response = await session.call('/api/ops/seval/operations', { method: 'POST', body: request });
         var value = response && response.resource && response.resource.value;
         var currentInputRunId;
         try {
@@ -1430,7 +1430,7 @@
         }
         currentRun = value;
         inspectResult.appendChild(renderRunResource(response && response.resource));
-        shell.announce('Ciel run inspection loaded.');
+        shell.announce('SEVAL run inspection loaded.');
       } catch (caught) {
         if (generation !== inspectionGeneration) return;
         currentRun = null;
@@ -1452,13 +1452,13 @@
       try {
         if (!currentRun) throw new Error('Inspect a run before cancelling it.');
         if (runId() !== currentRun.runId) throw new Error('Inspect a run before cancelling it.');
-        var request = runEnvelope('ciel.run.cancel', {
+        var request = runEnvelope('seval.run.cancel', {
           runId: currentRun.runId,
-          reason: 'Cancelled from the Ciel admin dashboard.'
+          reason: 'Cancelled from the SEVAL admin dashboard.'
         });
         request.expectedRevision = currentRun.revision;
         request.idempotencyKey = 'dashboard-run-cancel-' + request.requestId;
-        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        var response = await session.call('/api/ops/seval/operations', { method: 'POST', body: request });
         currentRun = response && response.resource && response.resource.value;
         clearNode(inspectResult);
         inspectResult.appendChild(renderRunResource(response && response.resource));
@@ -1471,12 +1471,12 @@
       try {
         if (!currentRun) throw new Error('Inspect a run before retrying it.');
         if (runId() !== currentRun.runId) throw new Error('Inspect a run before retrying it.');
-        var request = runEnvelope('ciel.run.retry', {
+        var request = runEnvelope('seval.run.retry', {
           runId: currentRun.runId,
-          reason: 'Retry failed attempts from the Ciel admin dashboard.'
+          reason: 'Retry failed attempts from the SEVAL admin dashboard.'
         });
         request.idempotencyKey = 'dashboard-run-retry-' + request.requestId;
-        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        var response = await session.call('/api/ops/seval/operations', { method: 'POST', body: request });
         currentRun = response && response.resource && response.resource.value;
         clearNode(inspectResult);
         inspectResult.appendChild(renderRunResource(response && response.resource));

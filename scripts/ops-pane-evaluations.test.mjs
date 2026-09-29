@@ -274,10 +274,10 @@ test('dataset form sends declarations and clears its result when the input chang
 function browsePayload(overrides = {}) {
   return {
     catalogue: {
-      registryVersion: 'ciel.capabilities.v1',
+      registryVersion: 'seval.capabilities.v1',
       clients: [{ id: 'client.run-with-aria-mobile', name: 'Run with Aria mobile', status: 'direct', owner: 'mobile-app' }],
       capabilities: [{
-        id: 'ciel.g01.athlete-chat',
+        id: 'seval.g01.athlete-chat',
         name: 'Athlete chat',
         owner: 'app-backend/aria-api',
         status: 'reachable',
@@ -287,7 +287,7 @@ function browsePayload(overrides = {}) {
         subject: 'self',
         coverage: { state: 'draft', scenarioIssue: 'https://github.com/Stadiora/Aria/issues/9784', oracleCount: 2, executionReceiptCount: 0 },
       }, {
-        id: 'ciel.g99.uncovered',
+        id: 'seval.g99.uncovered',
         name: 'Uncovered disabled capability',
         owner: 'ianrowe12',
         status: 'feature-disabled',
@@ -301,11 +301,11 @@ function browsePayload(overrides = {}) {
     scenarios: [{
       scenarioId: 'scenario.demo.secret-prompt',
       version: 2,
-      schemaVersion: 'ciel.scenario.v2',
+      schemaVersion: 'seval.scenario.v2',
       product: 'aria',
       client: 'client.run-with-aria-mobile',
       role: 'athlete',
-      capabilityRef: 'ciel.g01.athlete-chat',
+      capabilityRef: 'seval.g01.athlete-chat',
       locale: 'en-US',
       risk: { level: 'medium', domains: ['training'] },
       review: { status: 'not_certified', promotionEligibility: 'ineligible', source: 'scenario-v2' },
@@ -319,7 +319,7 @@ function browsePayload(overrides = {}) {
     datasets: [{
         datasetId: 'dataset.demo.development',
         revision: 1,
-        schemaVersion: 'ciel.dataset.v1',
+        schemaVersion: 'seval.dataset.v1',
         provenance: { origin: 'synthetic', authoredAt: '2026-09-19T00:00:00Z', authorRef: 'author.synthetic', sourceRefs: [] },
         review: { state: 'proposed', promotionEligibility: 'ineligible' },
         counts: { cases: 1, labels: 1, generatedLabels: 1, humanLabels: 0, qualificationRefs: 0 },
@@ -338,10 +338,10 @@ function browsePayload(overrides = {}) {
       ],
       flags: {
         unownedCapabilities: [],
-        uncoveredCapabilities: ['ciel.g99.uncovered'],
-        notCertifiedCapabilities: ['ciel.g01.athlete-chat'],
-        disabledOrUnsupportedCapabilities: [{ id: 'ciel.g99.uncovered', status: 'feature-disabled', reason: 'Reserved surface is not supported yet.' }],
-        missingCases: [{ capabilityRef: 'ciel.g99.uncovered', reason: 'No checked-in scenario references this capability.' }],
+        uncoveredCapabilities: ['seval.g99.uncovered'],
+        notCertifiedCapabilities: ['seval.g01.athlete-chat'],
+        disabledOrUnsupportedCapabilities: [{ id: 'seval.g99.uncovered', status: 'feature-disabled', reason: 'Reserved surface is not supported yet.' }],
+        missingCases: [{ capabilityRef: 'seval.g99.uncovered', reason: 'No checked-in scenario references this capability.' }],
         unknownCapabilityRefs: ['capability.example.unregistered'],
       },
     },
@@ -349,7 +349,7 @@ function browsePayload(overrides = {}) {
   };
 }
 
-test('browse pane reads Ciel admin overview, renders honest coverage and applies filters', async () => {
+test('browse pane reads SEVAL admin overview, renders honest coverage and applies filters', async () => {
   const calls = [];
   const view = renderedPane(async (path, options = {}) => {
     calls.push({ path, options: plain(options) });
@@ -361,20 +361,20 @@ test('browse pane reads Ciel admin overview, renders honest coverage and applies
 
 
 
-  view.byId('ciel-browse-filters').dispatch('submit');
+  view.byId('seval-browse-filters').dispatch('submit');
   await waitFor(() => calls.length === 1, 'browse overview was not loaded');
-  const browse = view.byId('ciel-browse-panel');
+  const browse = view.byId('seval-browse-panel');
   assert.ok(browse, 'browse panel is missing');
-  assert.equal(calls[0].path, '/api/ops/ciel/admin/overview');
+  assert.equal(calls[0].path, '/api/ops/seval/admin/overview');
   await waitFor(() => /scenario\.demo\.secret-prompt/.test(treeText(browse)), 'browse scenarios did not render');
   assert.match(treeText(browse), /scenario\.demo\.secret-prompt/);
   assert.match(treeText(browse), /Not certified/);
   assert.match(treeText(browse), /0 \/ 1 authored capabilities/);
   assert.match(treeText(browse), /dataset\.demo\.development/);
-  assert.match(treeText(browse), /ciel\.g99\.uncovered/);
+  assert.match(treeText(browse), /seval\.g99\.uncovered/);
 
-  view.byId('ciel-filter-product').value = 'fitmg';
-  view.byId('ciel-browse-filters').dispatch('submit');
+  view.byId('seval-filter-product').value = 'fitmg';
+  view.byId('seval-browse-filters').dispatch('submit');
   await waitFor(() => calls.length === 2, 'filtered browse read was not sent');
   assert.deepEqual(calls[1].options.query, { product: 'fitmg' });
   await waitFor(() => /No scenarios match these filters/.test(treeText(browse)), 'filtered empty state did not render');
@@ -384,7 +384,7 @@ test('browse pane reads Ciel admin overview, renders honest coverage and applies
 
 test('browse pane renders full catalogue and backend disclosures without truncation', async () => {
   const capabilities = Array.from({ length: 7 }, (_, index) => ({
-    id: `ciel.g${String(index + 1).padStart(2, '0')}.capability`,
+    id: `seval.g${String(index + 1).padStart(2, '0')}.capability`,
     name: `Capability ${index + 1}`,
     owner: 'ianrowe12',
     status: index === 6 ? 'feature-disabled' : 'reachable',
@@ -396,14 +396,14 @@ test('browse pane renders full catalogue and backend disclosures without truncat
   }));
   const view = renderedPane(() => browsePayload({
     catalogue: {
-      registryVersion: 'ciel.capabilities.v1',
+      registryVersion: 'seval.capabilities.v1',
       clients: [{ id: 'client.run-with-aria-mobile', name: 'Run with Aria mobile', status: 'direct', owner: 'mobile-app' }],
       capabilities,
     },
   }));
 
-  view.byId('ciel-browse-filters').dispatch('submit');
-  const browse = view.byId('ciel-browse-panel');
+  view.byId('seval-browse-filters').dispatch('submit');
+  const browse = view.byId('seval-browse-panel');
   await waitFor(() => /Capability 7/.test(treeText(browse)), 'full capability catalogue did not render');
   assert.match(treeText(browse), /Showing 7 of 7 registered capabilities/);
   assert.match(treeText(browse), /Capability 7/);
@@ -416,7 +416,7 @@ test('browse pane loads version-bound scenario and dataset inspection details', 
   const calls = [];
   const view = renderedPane(async (path, options = {}) => {
     calls.push({ path, options: plain(options) });
-    if (path === '/api/ops/ciel/admin/scenarios/scenario.demo.secret-prompt') {
+    if (path === '/api/ops/seval/admin/scenarios/scenario.demo.secret-prompt') {
       return {
         data: {
           ...browsePayload().scenarios[0],
@@ -457,7 +457,7 @@ test('browse pane loads version-bound scenario and dataset inspection details', 
         },
       };
     }
-    if (path === '/api/ops/ciel/admin/datasets/dataset.demo.development') {
+    if (path === '/api/ops/seval/admin/datasets/dataset.demo.development') {
       return { data: {
         ...browsePayload().datasets.datasets[0],
         cases: [{
@@ -470,8 +470,8 @@ test('browse pane loads version-bound scenario and dataset inspection details', 
     return browsePayload();
   });
 
-  view.byId('ciel-browse-filters').dispatch('submit');
-  const browse = view.byId('ciel-browse-panel');
+  view.byId('seval-browse-filters').dispatch('submit');
+  const browse = view.byId('seval-browse-panel');
   await waitFor(() => /Inspect scenario/.test(treeText(browse)), 'scenario inspect action did not render');
   findNode(browse, node => node.tag === 'button' && node.textContent === 'Inspect scenario').dispatch('click');
   await waitFor(() => findNode(browse, node => node.className === 'browse-detail' && /Does not invent a completed workout/.test(treeText(node))), 'scenario detail did not render');
@@ -508,26 +508,26 @@ test('browse pane keeps facet options stable after filtered and empty reads', as
     });
   });
 
-  view.byId('ciel-browse-filters').dispatch('submit');
-  const roleOptions = () => view.byId('ciel-filter-role').children || [];
+  view.byId('seval-browse-filters').dispatch('submit');
+  const roleOptions = () => view.byId('seval-filter-role').children || [];
   await waitFor(() => roleOptions().some(option => option.value === 'coach'), 'coach facet missing initially');
-  view.byId('ciel-filter-role').value = 'athlete';
-  view.byId('ciel-browse-filters').dispatch('submit');
-  await waitFor(() => /No scenarios match/.test(treeText(view.byId('ciel-browse-panel'))), 'empty result did not render');
-  assert.equal(view.byId('ciel-filter-role').value, 'athlete');
+  view.byId('seval-filter-role').value = 'athlete';
+  view.byId('seval-browse-filters').dispatch('submit');
+  await waitFor(() => /No scenarios match/.test(treeText(view.byId('seval-browse-panel'))), 'empty result did not render');
+  assert.equal(view.byId('seval-filter-role').value, 'athlete');
   assert.ok(roleOptions().some(option => option.value === 'coach'), 'coach facet option must remain reachable');
 });
 
 test('run launch pane sends only code-owned baseline and candidate manifests and keeps partial failures recoverable', async () => {
   const calls = [];
   const runResponse = (request, status, runId) => ({
-    schemaVersion: 'ciel.operation.response.v1',
+    schemaVersion: 'seval.operation.response.v1',
     requestId: request.requestId,
-    operationId: 'ciel.run.launch',
+    operationId: 'seval.run.launch',
     status: 'success',
     exitCode: 0,
     resource: {
-      type: 'ciel.run',
+      type: 'seval.run',
       id: runId,
       revision: 1,
       value: {
@@ -555,16 +555,16 @@ test('run launch pane sends only code-owned baseline and candidate manifests and
     throw new Error('candidate budget envelope expired');
   });
 
-  view.byId('ciel-run-launch-form').dispatch('submit');
+  view.byId('seval-run-launch-form').dispatch('submit');
   await waitFor(() => calls.length === 2, 'baseline and candidate launch requests were not both attempted');
-  const launch = view.byId('ciel-run-launch-result');
+  const launch = view.byId('seval-run-launch-result');
   assert.match(treeText(launch), /Baseline/);
   assert.match(treeText(launch), /11111111-1111-4111-8111-111111111111/);
-  assert.match(treeText(view.byId('ciel-run-launch-form')), /server enforces D6 caps again/i);
+  assert.match(treeText(view.byId('seval-run-launch-form')), /server enforces D6 caps again/i);
   assert.match(treeText(view.root), /Candidate launch failed after baseline succeeded: candidate budget envelope expired/);
-  assert.deepEqual(calls.map(call => call.path), ['/api/ops/ciel/operations', '/api/ops/ciel/operations']);
-  assert.equal(calls[0].options.body.operationId, 'ciel.run.launch');
-  assert.equal(calls[1].options.body.operationId, 'ciel.run.launch');
+  assert.deepEqual(calls.map(call => call.path), ['/api/ops/seval/operations', '/api/ops/seval/operations']);
+  assert.equal(calls[0].options.body.operationId, 'seval.run.launch');
+  assert.equal(calls[1].options.body.operationId, 'seval.run.launch');
   assert.equal(calls[0].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.baseline');
   assert.equal(calls[1].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.candidate');
   assert.equal(calls[0].options.body.input.manifest.provider.deployment, 'fixture');
@@ -577,7 +577,7 @@ test('run launch pane sends only code-owned baseline and candidate manifests and
   assert.ok(!JSON.stringify(calls[0].options.body).includes('http://'), 'launch request must not carry a free-text endpoint');
 
   const firstCandidateKey = calls[1].options.body.idempotencyKey;
-  await view.byId('ciel-run-launch-form').dispatch('submit');
+  await view.byId('seval-run-launch-form').dispatch('submit');
   await waitFor(() => calls.length === 3, 'recovery submit should retry only the unresolved candidate');
   assert.deepEqual(calls.map(call => call.options.body.input.manifest.promptBundle.bundleId), [
     'prompt.synthetic.baseline',
@@ -592,13 +592,13 @@ test('run inspection pane shows provenance, pending statistics and retry output 
   const calls = [];
   function inspectionResponse(request, status, attempts) {
     return {
-      schemaVersion: 'ciel.operation.response.v1',
+      schemaVersion: 'seval.operation.response.v1',
       requestId: request.requestId,
       operationId: request.operationId,
       status: 'success',
       exitCode: 0,
       resource: {
-        type: 'ciel.run',
+        type: 'seval.run',
         id: runId,
         revision: status === 'queued' ? 6 : 5,
         value: {
@@ -651,15 +651,15 @@ test('run inspection pane shows provenance, pending statistics and retry output 
   }
   const view = renderedPane(async (path, options = {}) => {
     calls.push({ path, options: plain(options) });
-    if (options.body.operationId === 'ciel.run.retry') return inspectionResponse(options.body, 'queued', 3);
+    if (options.body.operationId === 'seval.run.retry') return inspectionResponse(options.body, 'queued', 3);
     return inspectionResponse(options.body, 'running', 2);
   });
 
-  view.byId('ciel-run-inspect-id').value = ` ${runId} `;
-  view.byId('ciel-run-inspect-form').dispatch('submit');
-  await waitFor(() => /azure_openai/.test(treeText(view.byId('ciel-run-inspection-result'))), 'run inspection did not render');
-  const result = view.byId('ciel-run-inspection-result');
-  assert.equal(calls[0].options.body.operationId, 'ciel.run.get');
+  view.byId('seval-run-inspect-id').value = ` ${runId} `;
+  view.byId('seval-run-inspect-form').dispatch('submit');
+  await waitFor(() => /azure_openai/.test(treeText(view.byId('seval-run-inspection-result'))), 'run inspection did not render');
+  const result = view.byId('seval-run-inspection-result');
+  assert.equal(calls[0].options.body.operationId, 'seval.run.get');
   assert.deepEqual(calls[0].options.body.input, { runId });
   assert.match(treeText(result), /175c \/ 80c/);
   assert.match(treeText(result), /provenance not reported/);
@@ -677,23 +677,23 @@ test('run inspection pane shows provenance, pending statistics and retry output 
   assert.match(treeText(result), /inconclusive: repeated-run statistics pending/);
   assert.match(treeText(result), /present; never a clean pass/);
 
-  view.byId('ciel-run-inspect-id').value = '00000000-0000-4000-8000-000000000000';
-  view.byId('ciel-run-inspect-id').dispatch('input');
+  view.byId('seval-run-inspect-id').value = '00000000-0000-4000-8000-000000000000';
+  view.byId('seval-run-inspect-id').dispatch('input');
   await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Cancel inspected run').dispatch('click');
   assert.equal(calls.length, 1, 'cancel must not target an edited, uninspected run id');
   assert.match(treeText(view.root), /Inspect a run before cancelling it/);
 
-  view.byId('ciel-run-inspect-id').value = ` ${runId} `;
-  view.byId('ciel-run-inspect-form').dispatch('submit');
+  view.byId('seval-run-inspect-id').value = ` ${runId} `;
+  view.byId('seval-run-inspect-form').dispatch('submit');
   await waitFor(
     () => calls.length === 2 && /Attempt 1 failed/.test(treeText(result)),
     'replacement inspection was not rendered',
   );
   await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Retry failed run').dispatch('click');
-  await waitFor(() => calls.some(call => call.options.body.operationId === 'ciel.run.retry'), 'retry request was not sent');
+  await waitFor(() => calls.some(call => call.options.body.operationId === 'seval.run.retry'), 'retry request was not sent');
   assert.deepEqual(calls[calls.length - 1].options.body.input, {
     runId,
-    reason: 'Retry failed attempts from the Ciel admin dashboard.',
+    reason: 'Retry failed attempts from the SEVAL admin dashboard.',
   });
   assert.match(treeText(result), /3 total, 1 failed/);
 });
@@ -705,13 +705,13 @@ test('run inspection ignores stale lookup responses before cancellation', async 
   const pendingGets = [];
   function inspectionResponse(request, runId) {
     return {
-      schemaVersion: 'ciel.operation.response.v1',
+      schemaVersion: 'seval.operation.response.v1',
       requestId: request.requestId,
       operationId: request.operationId,
       status: 'success',
       exitCode: 0,
       resource: {
-        type: 'ciel.run',
+        type: 'seval.run',
         id: runId,
         revision: 7,
         value: {
@@ -741,40 +741,40 @@ test('run inspection ignores stale lookup responses before cancellation', async 
   }
   const view = renderedPane((path, options = {}) => {
     calls.push({ path, options: plain(options) });
-    if (options.body.operationId === 'ciel.run.get') {
+    if (options.body.operationId === 'seval.run.get') {
       return new Promise(resolve => pendingGets.push({ request: options.body, resolve }));
     }
     return Promise.resolve(inspectionResponse(options.body, options.body.input.runId));
   });
 
-  view.byId('ciel-run-inspect-id').value = runA;
-  view.byId('ciel-run-inspect-form').dispatch('submit');
+  view.byId('seval-run-inspect-id').value = runA;
+  view.byId('seval-run-inspect-form').dispatch('submit');
   await waitFor(() => pendingGets.length === 1, 'first lookup did not start');
-  view.byId('ciel-run-inspect-id').value = ` ${runB} `;
-  view.byId('ciel-run-inspect-id').dispatch('input');
-  view.byId('ciel-run-inspect-form').dispatch('submit');
+  view.byId('seval-run-inspect-id').value = ` ${runB} `;
+  view.byId('seval-run-inspect-id').dispatch('input');
+  view.byId('seval-run-inspect-form').dispatch('submit');
   await waitFor(() => pendingGets.length === 2, 'second lookup did not start');
 
   pendingGets[1].resolve(inspectionResponse(pendingGets[1].request, runB));
-  await waitFor(() => /4b93ba48-3c61-452f-a5f3-7938de7268cc/.test(treeText(view.byId('ciel-run-inspection-result'))),
+  await waitFor(() => /4b93ba48-3c61-452f-a5f3-7938de7268cc/.test(treeText(view.byId('seval-run-inspection-result'))),
     'newer lookup did not render');
   pendingGets[0].resolve(inspectionResponse(pendingGets[0].request, runA));
   await new Promise(resolve => setTimeout(resolve, 0));
   await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Cancel inspected run').dispatch('click');
   assert.equal(calls.length, 3, 'cancel should target only the accepted newer run');
-  assert.equal(calls[2].options.body.operationId, 'ciel.run.cancel');
+  assert.equal(calls[2].options.body.operationId, 'seval.run.cancel');
   assert.deepEqual(calls[2].options.body.input, {
     runId: runB,
-    reason: 'Cancelled from the Ciel admin dashboard.',
+    reason: 'Cancelled from the SEVAL admin dashboard.',
   });
 });
 test('browse pane renders loading, partial and error states without HTML injection', async () => {
   let resolve;
   const pending = new Promise(done => { resolve = done; });
   const view = renderedPane(() => pending);
-  const browse = view.byId('ciel-browse-panel');
-  view.byId('ciel-browse-filters').dispatch('submit');
-  assert.match(treeText(browse), /Loading Ciel catalogue/);
+  const browse = view.byId('seval-browse-panel');
+  view.byId('seval-browse-filters').dispatch('submit');
+  assert.match(treeText(browse), /Loading SEVAL catalogue/);
   resolve(browsePayload({
     datasets: { partial: true, omissions: ['Dataset review state is declaration-only; <img src=x onerror=alert(1)>'], datasets: [] },
     scenarios: [],
@@ -784,9 +784,9 @@ test('browse pane renders loading, partial and error states without HTML injecti
   assert.equal(findNode(browse, node => node.tag === 'img'), null, 'omission text must not create an element');
 
   const errorView = renderedPane(() => Promise.reject(new Error('No API today <script>alert(1)</script>')));
-  const errorBrowse = errorView.byId('ciel-browse-panel');
-  errorView.byId('ciel-browse-filters').dispatch('submit');
-  await waitFor(() => /Ciel catalogue unavailable/.test(treeText(errorBrowse)), 'error state did not render');
+  const errorBrowse = errorView.byId('seval-browse-panel');
+  errorView.byId('seval-browse-filters').dispatch('submit');
+  await waitFor(() => /SEVAL catalogue unavailable/.test(treeText(errorBrowse)), 'error state did not render');
   assert.match(treeText(errorBrowse), /<script>alert\(1\)<\/script>/);
   assert.equal(findNode(errorBrowse, node => node.tag === 'script'), null, 'error text must not create script nodes');
 });

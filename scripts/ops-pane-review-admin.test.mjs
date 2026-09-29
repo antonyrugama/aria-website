@@ -111,11 +111,11 @@ test('review pane reads a blinded queue and hides labels before independent subm
   const calls = [];
   const { root, toasts } = loadPane((path, opts = {}) => {
     calls.push({ path, opts });
-    if (path === '/api/ops/ciel/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
-    if (path === '/api/ops/ciel/admin/reviews/items/review-item.demo-training') {
+    if (path === '/api/ops/seval/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
+    if (path === '/api/ops/seval/admin/reviews/items/review-item.demo-training') {
       return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false }, correction: { activeReviewId: null }, labels: [] } });
     }
-    if (path === '/api/ops/ciel/admin/reviews/labels') return Promise.resolve({ data: { record: { reviewId: 'review.1' } } });
+    if (path === '/api/ops/seval/admin/reviews/labels') return Promise.resolve({ data: { record: { reviewId: 'review.1' } } });
     throw new Error(`unexpected path ${path}`);
   });
   await Promise.resolve();
@@ -140,7 +140,7 @@ test('review pane reads a blinded queue and hides labels before independent subm
   const form = find(root, node => node.tag === 'form');
   await form.dispatch('submit');
   await Promise.resolve();
-  const submitted = calls.find(call => call.path === '/api/ops/ciel/admin/reviews/labels');
+  const submitted = calls.find(call => call.path === '/api/ops/seval/admin/reviews/labels');
   assert.deepEqual(JSON.parse(JSON.stringify(submitted.opts.body)), {
     reviewItemId: 'review-item.demo-training',
     outcomeDigest: 'a'.repeat(64),
@@ -159,11 +159,11 @@ test('review pane sends the active review id for corrections', async () => {
   const calls = [];
   const { root } = loadPane((path, opts = {}) => {
     calls.push({ path, opts });
-    if (path === '/api/ops/ciel/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
-    if (path === '/api/ops/ciel/admin/reviews/items/review-item.demo-training') {
+    if (path === '/api/ops/seval/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
+    if (path === '/api/ops/seval/admin/reviews/items/review-item.demo-training') {
       return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: true, otherLabelsVisible: true }, correction: { activeReviewId: 'review.current' }, labels: [] } });
     }
-    if (path === '/api/ops/ciel/admin/reviews/labels') return Promise.resolve({ data: { record: { reviewId: 'review.corrected' } } });
+    if (path === '/api/ops/seval/admin/reviews/labels') return Promise.resolve({ data: { record: { reviewId: 'review.corrected' } } });
     throw new Error(`unexpected path ${path}`);
   });
   await Promise.resolve();
@@ -174,7 +174,7 @@ test('review pane sends the active review id for corrections', async () => {
   find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'comments').value = 'Correction comment.';
   await find(root, node => node.tag === 'form').dispatch('submit');
   await Promise.resolve();
-  const submitted = calls.find(call => call.path === '/api/ops/ciel/admin/reviews/labels');
+  const submitted = calls.find(call => call.path === '/api/ops/seval/admin/reviews/labels');
   assert.equal(submitted.opts.body.supersedesReviewId, 'review.current', 'correction submits the active review id');
 });
 
@@ -186,11 +186,11 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
   ];
   const { root, toasts } = loadPane((path, opts = {}) => {
     calls.push({ path, opts });
-    if (path === '/api/ops/ciel/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
-    if (path === '/api/ops/ciel/admin/reviews/items/review-item.demo-training') {
+    if (path === '/api/ops/seval/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
+    if (path === '/api/ops/seval/admin/reviews/items/review-item.demo-training') {
       return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: false, otherLabelsVisible: true }, correction: { activeReviewId: null }, adjudication: { visible: true, eligible: true, reason: 'ready' }, labels: visibleLabels } });
     }
-    if (path === '/api/ops/ciel/admin/reviews/adjudications') return Promise.resolve({ data: { record: { adjudicationId: 'adjudication.1' } } });
+    if (path === '/api/ops/seval/admin/reviews/adjudications') return Promise.resolve({ data: { record: { adjudicationId: 'adjudication.1' } } });
     throw new Error(`unexpected path ${path}`);
   });
   await Promise.resolve();
@@ -212,7 +212,7 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
   rationale.value = 'The failing label cites the gating rubric.';
   await form.dispatch('submit');
   await Promise.resolve();
-  const submitted = calls.find(call => call.path === '/api/ops/ciel/admin/reviews/adjudications');
+  const submitted = calls.find(call => call.path === '/api/ops/seval/admin/reviews/adjudications');
   assert.deepEqual(JSON.parse(JSON.stringify(submitted.opts.body)), {
     reviewItemId: 'review-item.demo-training',
     outcomeDigest: 'a'.repeat(64),
@@ -228,7 +228,7 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
 test('review pane retries nonempty partial queues without clearing the active draft', async () => {
   let queueReads = 0;
   const { root } = loadPane((path) => {
-    if (path === '/api/ops/ciel/admin/reviews/queue') {
+    if (path === '/api/ops/seval/admin/reviews/queue') {
       queueReads += 1;
       return Promise.resolve({
         data: {
@@ -238,7 +238,7 @@ test('review pane retries nonempty partial queues without clearing the active dr
         },
       });
     }
-    if (path === '/api/ops/ciel/admin/reviews/items/review-item.demo-training') {
+    if (path === '/api/ops/seval/admin/reviews/items/review-item.demo-training') {
       return Promise.resolve({ data: { ...queueItem, reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false }, correction: { activeReviewId: null }, labels: [] } });
     }
     throw new Error(`unexpected path ${path}`);
