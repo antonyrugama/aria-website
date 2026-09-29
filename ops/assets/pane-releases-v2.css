@@ -374,26 +374,12 @@
 
 /* ------------------------------------------------------------ responsive */
 
-/* aria.css drops the hero to two columns under 980px and pulls its last child
-   onto a row of its own — but only where that child is a `.row`, and the
-   approved design's last child is `.hero-chips`. Left in the auto column, the
-   chips set that column's width, and at 375px the title was squeezed into
-   about 90px and broke mid-word. This pane's page measured 377px against a
-   375px document because of it.
-
-   Scoped here rather than fixed in aria.css, which this pane does not own.
-   Filed for the shared stylesheet as Stadiora/Aria#10397. */
-@media (max-width: 980px) {
-  .hero > .hero-chips { grid-column: 1 / -1; }
-}
-
-/* shell-pane-v2.css gives the filter note the pill's shape and aria.css gives
-   .pill `white-space: nowrap`, so a note longer than the viewport pushes the
-   whole page sideways instead of wrapping. A note is a sentence, not a chip
-   label, and this pane's is the longest in the registry.
-
-   Same reason as above: filed for shell-pane-v2.css as Stadiora/Aria#10397. */
-.filters .filter-note { white-space: normal; }
+/* Two scoped overrides that used to sit here are gone, because the shared
+   sheets now carry them (Stadiora/Aria#10397): aria.css moves the hero's
+   `.hero-chips` to a row of its own below 980px, and shell-pane-v2.css's
+   `.filter-note` sets `white-space: normal`, loaded after aria.css's `.pill`.
+   scripts/ops-hero-narrow.test.mjs measures this page's hero tracks and
+   scripts/check-ops-narrow-overflow.mjs lays the page out at 320-375px. */
 
 @media (max-width: 1280px) {
   .pipe-row { grid-template-columns: 172px minmax(0, 1fr); row-gap: 12px; }

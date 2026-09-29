@@ -42,7 +42,8 @@
  *
  * THE SUBJECT
  *
- * Two pages.
+ * Five pages: the shell reference page and the four panes that draw a hero
+ * ending in `.hero-chips` (settings, alerts, overview, releases).
  *
  * `/ops/shell-v2.html` is the only one that loads `ops/assets/aria.css` ALONE,
  * so the shared rule is the only thing standing between its hero and the
@@ -61,29 +62,32 @@
  * `46px 233px`. All twelve settings readings were byte-identical before and
  * after the copy came out.
  *
- * It gates on a session and builds its hero from API data, so this file serves
+ * `/ops/alerts.html`, `/ops/index.html` (overview) and `/ops/releases.html`
+ * joined on the commit that removed their own scoped copies, the rest of
+ * #10397 criterion 4. All thirty-six of their readings were byte-identical
+ * before and after the copies came out: the shared rule was already the
+ * winning declaration's twin, so taking the copies away changed nothing a
+ * reader of the tracks can see, and now the shared rule is the only thing
+ * holding them.
+ *
+ * The panes gate on a session and build their heroes from API data, so this file serves
  * `scripts/ops-api-stub.mjs` and seeds `ops-refresh` the way the other rendered
  * oracles do.
  *
  * NOT COVERED — deliberately, and measured rather than assumed:
  *
- *  - The other nine `/ops/*.html` pane pages. Three of them still carry an
- *    identical scoped copy of the rule this file binds — `pane-alerts-v2.css`,
- *    `pane-overview-v2.css` and `pane-releases-v2.css` (twice). While a copy is
- *    present the shared rule cannot be observed doing anything on that page:
- *    the pane sheet's identical declaration wins on order, so the hero would
- *    stay correct with `aria.css:932` deleted and a sweep of it would prove
- *    nothing about the rule. Those files belong to other agents and removing
- *    the copies is the rest of #10397 criterion 4; each page becomes worth
- *    sweeping here on the commit its copy comes out, and not before.
+ *  - The other six `/ops/*.html` pane pages. None of them draws a hero that
+ *    ends in `.hero-chips`, so `READ` would refuse them rather than measure
+ *    them; a pane that grows one is not picked up until it is added to PAGES.
  *  - `.hero > .row:last-child`, the pre-existing sibling rule. No page in this
  *    repository ends a hero with a `.row`, so there is nothing to measure. It
  *    is untouched by this change.
- *  - `/ops/shell-v2.html` overflows its document at 375px (449px against 375px)
- *    entirely because of `.topbar-end`, the preview-state switcher. That is a
- *    separate defect of this page's own chrome, it is NOT the hero, and this
- *    file neither fixes nor judges it. The hero clips and contributes nothing
- *    to that number, before or after.
+ *  - `/ops/shell-v2.html`'s top bar. It overflowed the document at 375px
+ *    (446px against 375px) because of the preview-state switcher in its
+ *    `.topbar-end` — a defect of the page's own chrome, not of the hero, fixed and
+ *    now laid out narrow by `scripts/check-ops-narrow-overflow.mjs`
+ *    (Stadiora/Aria#10795). This file does not judge it. The hero clips and
+ *    contributed nothing to that number.
  *  - The `trackKeywords` refusal — the check that no authored keyword (`auto`,
  *    `minmax`, `1fr`) survives into the value this file reads — is NOT bound by
  *    any mutation. Mutation G2 rewrote it to compare the value with itself and
@@ -110,7 +114,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
    back, so a reading taken at load would be of a hero that is not there yet. */
 const PAGES = [
   { url: '/ops/shell-v2.html', kind: 'shell', name: 'shell' },
-  { url: '/ops/settings.html', kind: 'pane', name: 'settings' }
+  { url: '/ops/settings.html', kind: 'pane', name: 'settings' },
+  { url: '/ops/alerts.html', kind: 'pane', name: 'alerts' },
+  { url: '/ops/index.html', kind: 'pane', name: 'overview' },
+  { url: '/ops/releases.html', kind: 'pane', name: 'releases' }
 ];
 const SHELL = PAGES[0].url;
 const THEMES = ['dark', 'light'];
@@ -139,8 +146,8 @@ const EPS = 0.01;
    iterates shrinks with them: emptying NARROW took the floor from 12 to 4 and
    the suite stayed green while measuring no narrow hero at all. Mutation G1
    demonstrated that, which is the only reason it is not still written that way.
-   Two pages, two themes, four narrow widths and two wide ones. */
-const SITE_FLOOR = 24;
+   Five pages, two themes, four narrow widths and two wide ones. */
+const SITE_FLOOR = 60;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -438,8 +445,8 @@ test('the sweep declares the widths its contracts are about', () => {
   /* Both subjects by name. A PAGES list that lost the pane would leave every
      loop below sweeping the shell twice and reporting the same total. */
   assert.deepEqual(PAGES.map((p) => p.url).sort(),
-    ['/ops/settings.html', '/ops/shell-v2.html'],
-    `the sweep must drive the shell and the one pane whose scoped copy is gone; it drives [${PAGES.map((p) => p.url).join(', ')}]`);
+    ['/ops/alerts.html', '/ops/index.html', '/ops/releases.html', '/ops/settings.html', '/ops/shell-v2.html'],
+    `the sweep must drive the shell and every pane that draws .hero-chips; it drives [${PAGES.map((p) => p.url).join(', ')}]`);
   /* The tolerance is a rounding allowance, not a budget. Mutation G4 inflated it
      to 1000 and the narrow numeric contract swallowed the real 27.66px defect;
      only the wide co-location check, which uses EPS as a strict margin, caught
@@ -565,6 +572,9 @@ test('the sweep measured every hero it declared', async () => {
       for (const width of [...NARROW, ...WIDE]) {
         const m = await measure(page, theme, width);
         assert.ok(m.tracks.length >= 2, `${m.where}: hero had ${m.tracks.length} track(s)`);
+        /* One line per reading, so two runs can be compared line for line. */
+        console.log(`  reading ${m.where}: tracks ${m.tracksRaw}; chips ${px(m.chips.left)}-` +
+          `${px(m.chips.right)} top ${px(m.chips.top)}; title column ${px(m.titleCol.width)}`);
         seen.add(m.page);
         judged++;
       }

@@ -397,7 +397,7 @@ class names declared in both ops.css and aria.css = 47
 .content = 3 selectors in ops.css, 2 in aria.css
 .legend = 4 selectors in ops.css, 3 in aria.css
 .nav-item = 9 selectors in ops.css, 6 in aria.css
-.seg = 5 selectors in ops.css, 4 in aria.css
+.seg = 5 selectors in ops.css, 7 in aria.css
 ```
  **Which layer a pane is on is stated by its own page**, in the stylesheets
 and scripts its `<head>` loads, and nowhere else: a list written here by hand would have to be
@@ -1626,9 +1626,9 @@ where the mock reads its own sample text:
   was never connected, or polled and refused, makes the same empty ladder mean nothing at all,
   and the headline says which of the three it is.
 
-`assets/pane-releases-v2.css` carries this pane's own shapes. Two rules in it are scoped
-overrides of shared stylesheets that this change is not allowed to edit; both name
-`Stadiora/Aria#10397`, which is filed to move them.
+`assets/pane-releases-v2.css` carries this pane's own shapes. The two scoped overrides it
+used to carry, the hero chip strip's row and the filter note's wrapping, now live in the
+shared `aria.css` and `shell-pane-v2.css` (`Stadiora/Aria#10397`).
 
 ### Look up a user on v2: where the pane departs from the mock
 
@@ -2404,8 +2404,8 @@ regression and reusable as a starting point. It serves this repository, answers 
 and the reads behind every pane except two — `/api/ops/usage` gets an empty envelope and
 `/api/ops/costs` a period that has not published, so People and usage and Cloud costs are laid
 out with no figures in them — lays **every
-pane the registry declares** out in headless Chrome at **each width in the `guard-constants`
-block below**, in both themes, and
+pane the registry declares**, plus the `shell-v2.html` reference page, out in headless Chrome at
+**each width in the `guard-constants` block below**, in both themes, and
 fails if `documentElement.scrollWidth` exceeds the viewport. More than one width because an overflow that
 reproduced on CI's fonts at 375px reproduced on macOS only at 360px, and a guard a reviewer
 cannot make fail locally is a guard that gets argued with instead of read. Before it measures a
@@ -2466,7 +2466,7 @@ it then asserts on each page is the table above.
 ```claims id=browser-guards
 check-ops-contrast.mjs = ops-contrast.yml; /ops/shell-v2.html
 check-ops-dialog-hit.mjs = ops-dialog-hit.yml; /ops/settings.html
-check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry declares
+check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry declares + /ops/shell-v2.html
 check-ops-result-view.mjs = ops-result-view.yml; every pane the registry declares + /ops/run-history.html
 check-ops-shell-v2.mjs = ops-shell-v2.yml; every page in ops/
 check-ops-theme-redraw.mjs = ops-theme-redraw.yml; every pane the registry declares + /ops/shell-v2.html

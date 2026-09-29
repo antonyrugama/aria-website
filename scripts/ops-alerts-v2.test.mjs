@@ -4522,9 +4522,10 @@ test('the rules the sheet justifies by what the page draws name what it draws',
         + 'justifies .p-facts and .p-col by a different number of them');
     }
 
-    /* "Here it is the chip strip": the sheet moves the hero's THIRD child to
-       a row of its own below 980px, and .hero > .hero-chips is the selector
-       it does it with. Which child the chip strip is, is a fact about
+    /* "Here that third child is the chip strip": aria.css moves the hero's
+       third child to a row of its own below 980px, and .hero > .hero-chips is
+       the selector it does it with; the pane's own copy of it came out under
+       Stadiora/Aria#10397. Which child the chip strip is, is a fact about
        pane-alerts.js -- reorder hero() so the chips are appended second and
        the media query moves the wrong element, silently, at a width this
        suite never renders. The child rule needs the strip to be a DIRECT
@@ -4533,9 +4534,9 @@ test('the rules the sheet justifies by what the page draws name what it draws',
     const hero = withClass(dom.doc.body, 'hero')[0];
     assert.ok(hero, 'the fixture draws no hero');
     const heroKids = (hero.childNodes || []).filter((n) => n.tagName);
-    const heroMoves = declarations(PANE_CSS).filter((d) => d.selector === '.hero > .hero-chips');
-    assert.ok(heroMoves.length >= 1, 'pane-alerts-v2.css no longer moves .hero > .hero-chips, '
-      + 'so the sentence naming the chip strip as the hero child aria.css moves is stale');
+    const heroMoves = declarations(ARIA_CSS).filter((d) => d.selector === '.hero > .hero-chips');
+    assert.ok(heroMoves.length >= 1, 'aria.css no longer moves .hero > .hero-chips, '
+      + 'so pane-alerts-v2.css\'s sentence naming the chip strip as the hero child aria.css moves is stale');
     assert.equal(heroKids.length, 3,
       'the hero draws ' + heroKids.length + ' children, and pane-alerts-v2.css reasons about '
       + 'its third');
