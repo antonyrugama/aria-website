@@ -343,8 +343,8 @@ shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jo
 shell-v2.js = shell-v2.html
 shell.js = (no page)
 theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
-tour-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
-tour.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+tour-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
+tour.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
 ```
 
 A file no page loads is not automatically dead: some are kept alive by the tests, which load

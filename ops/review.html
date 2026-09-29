@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
 <link rel="stylesheet" href="assets/pane-review-admin.css">
+<link rel="stylesheet" href="assets/tour-v2.css">
 </head>
 <body data-pane="review" class="is-booting">
 <a class="skip" href="#content">Skip to content</a>
@@ -30,5 +31,8 @@
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
 <script src="assets/pane-review-admin.js"></script>
+<!-- The guided tour reads the registry and the page this shell drew, so it
+     loads after both and after the pane's own module. -->
+<script src="assets/tour.js"></script>
 </body>
 </html>

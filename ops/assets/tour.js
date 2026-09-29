@@ -755,6 +755,47 @@
       }
     ],
 
+    review: [
+      {
+        id: 'review-queue', kind: 'section', title: 'The blinded review queue',
+        anchor: { selector: '.band-head', title: 'Blinded review queue' },
+        body: 'Outputs waiting for a human label, one card each, with the rubric, the evidence ' +
+          'references and what was redacted. Which candidate, baseline or model family ' +
+          "produced an output is left out, and other reviewers' labels stay hidden until you " +
+          'record your own. When a source could not be read, the queue says it is ' +
+          'incomplete rather than empty.'
+      },
+      {
+        id: 'review-label', kind: 'action', title: 'Label a blinded output',
+        anchor: { selector: '.review-list' },
+        roles: ['owner', 'operator'],
+        action: {
+          does: 'Review blinded output opens one output and its criterion. You record pass, ' +
+            'fail or unknown, how sure you are, and why. The label is bound to that exact ' +
+            'output and criterion.',
+          who: 'Operators and owners. Viewers can read the queue but not label it.',
+          audited: 'The server keeps every label with who gave it, and records the submission ' +
+            'as an audit event.',
+          undo: 'A label is not edited or deleted. Append correction records a new label that ' +
+            'replaces yours, and the old one is kept.'
+        }
+      },
+      {
+        id: 'review-adjudicate', kind: 'action', title: 'Settle disputed labels',
+        anchor: { selector: '.review-list' },
+        roles: ['owner'],
+        action: {
+          does: 'On an output whose labels disagree, shows every label and records one ' +
+            'decision that settles all of them.',
+          who: 'Owners only, with a current qualification for the output\'s domain, and never ' +
+            'on an output they labelled themselves.',
+          audited: 'The server records who opened the disputed labels and who decided, as ' +
+            'audit events.',
+          undo: 'This page has no control to reverse an adjudication.'
+        }
+      }
+    ],
+
     releases: [
       {
         id: 'releases-status', kind: 'section', title: 'The production build',
