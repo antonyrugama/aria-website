@@ -271,6 +271,526 @@ test('dataset form sends declarations and clears its result when the input chang
   assert.equal(result.children.length, 0, 'a changed declaration must not retain the previous result');
 });
 
+function browsePayload(overrides = {}) {
+  return {
+    catalogue: {
+      registryVersion: 'ciel.capabilities.v1',
+      clients: [{ id: 'client.run-with-aria-mobile', name: 'Run with Aria mobile', status: 'direct', owner: 'mobile-app' }],
+      capabilities: [{
+        id: 'ciel.g01.athlete-chat',
+        name: 'Athlete chat',
+        owner: 'app-backend/aria-api',
+        status: 'reachable',
+        products: ['aria'],
+        clientRefs: ['client.run-with-aria-mobile'],
+        actor: 'athlete',
+        subject: 'self',
+        coverage: { state: 'draft', scenarioIssue: 'https://github.com/Stadiora/Aria/issues/9784', oracleCount: 2, executionReceiptCount: 0 },
+      }, {
+        id: 'ciel.g99.uncovered',
+        name: 'Uncovered disabled capability',
+        owner: 'ianrowe12',
+        status: 'feature-disabled',
+        products: ['aria'],
+        clientRefs: [],
+        actor: 'athlete',
+        subject: 'self',
+        coverage: { state: 'uncovered', scenarioIssue: null, oracleCount: 0, executionReceiptCount: 0 },
+      }],
+    },
+    scenarios: [{
+      scenarioId: 'scenario.demo.secret-prompt',
+      version: 2,
+      schemaVersion: 'ciel.scenario.v2',
+      product: 'aria',
+      client: 'client.run-with-aria-mobile',
+      role: 'athlete',
+      capabilityRef: 'ciel.g01.athlete-chat',
+      locale: 'en-US',
+      risk: { level: 'medium', domains: ['training'] },
+      review: { status: 'not_certified', promotionEligibility: 'ineligible', source: 'scenario-v2' },
+      criteriaCounts: { critical: 1, required: 0, expected: 1, aspirational: 0 },
+      pack: { runnable: true, executed: false, passing: null },
+      sourceLinks: [{ label: 'Public coaching source', uri: 'https://example.test/source' }],
+    }],
+    datasets: {
+    partial: true,
+    omissions: ['Dataset review state is declaration-only; no approval writer exists on main.'],
+    datasets: [{
+        datasetId: 'dataset.demo.development',
+        revision: 1,
+        schemaVersion: 'ciel.dataset.v1',
+        provenance: { origin: 'synthetic', authoredAt: '2026-09-19T00:00:00Z', authorRef: 'author.synthetic', sourceRefs: [] },
+        review: { state: 'proposed', promotionEligibility: 'ineligible' },
+        counts: { cases: 1, labels: 1, generatedLabels: 1, humanLabels: 0, qualificationRefs: 0 },
+        cases: [{
+          scenario: { id: 'scenario.demo.secret-prompt', version: 2, path: 'evals/demo/v1/scenarios.json' },
+          rubrics: [{ id: 'rubric.demo.no-retrieval.criteria', version: 1, path: 'evals/demo/v1/rubric.json' }],
+          comparison: { state: 'unavailable', reason: 'No comparison validity metadata is recorded.' },
+        }],
+      }],
+    },
+    coverage: {
+      metrics: [
+        { key: 'inventory', numerator: 2, denominator: 2, denominatorKind: 'registered capabilities' },
+        { key: 'approved', numerator: 0, denominator: 1, denominatorKind: 'authored capabilities' },
+        { key: 'executed', numerator: 0, denominator: 1, denominatorKind: 'runnable capabilities' },
+      ],
+      flags: {
+        unownedCapabilities: [],
+        uncoveredCapabilities: ['ciel.g99.uncovered'],
+        notCertifiedCapabilities: ['ciel.g01.athlete-chat'],
+        disabledOrUnsupportedCapabilities: [{ id: 'ciel.g99.uncovered', status: 'feature-disabled', reason: 'Reserved surface is not supported yet.' }],
+        missingCases: [{ capabilityRef: 'ciel.g99.uncovered', reason: 'No checked-in scenario references this capability.' }],
+        unknownCapabilityRefs: ['capability.example.unregistered'],
+      },
+    },
+    ...overrides,
+  };
+}
+
+test('browse pane reads Ciel admin overview, renders honest coverage and applies filters', async () => {
+  const calls = [];
+  const view = renderedPane(async (path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (options.query?.product === 'fitmg') {
+      return browsePayload({ scenarios: [] });
+    }
+    return browsePayload();
+  });
+
+
+
+  view.byId('ciel-browse-filters').dispatch('submit');
+  await waitFor(() => calls.length === 1, 'browse overview was not loaded');
+  const browse = view.byId('ciel-browse-panel');
+  assert.ok(browse, 'browse panel is missing');
+  assert.equal(calls[0].path, '/api/ops/ciel/admin/overview');
+  await waitFor(() => /scenario\.demo\.secret-prompt/.test(treeText(browse)), 'browse scenarios did not render');
+  assert.match(treeText(browse), /scenario\.demo\.secret-prompt/);
+  assert.match(treeText(browse), /Not certified/);
+  assert.match(treeText(browse), /0 \/ 1 authored capabilities/);
+  assert.match(treeText(browse), /dataset\.demo\.development/);
+  assert.match(treeText(browse), /ciel\.g99\.uncovered/);
+
+  view.byId('ciel-filter-product').value = 'fitmg';
+  view.byId('ciel-browse-filters').dispatch('submit');
+  await waitFor(() => calls.length === 2, 'filtered browse read was not sent');
+  assert.deepEqual(calls[1].options.query, { product: 'fitmg' });
+  await waitFor(() => /No scenarios match these filters/.test(treeText(browse)), 'filtered empty state did not render');
+  assert.match(treeText(browse), /No scenarios match these filters/);
+  assert.doesNotMatch(treeText(browse), /scenario\.demo\.secret-prompt/);
+});
+
+test('browse pane renders full catalogue and backend disclosures without truncation', async () => {
+  const capabilities = Array.from({ length: 7 }, (_, index) => ({
+    id: `ciel.g${String(index + 1).padStart(2, '0')}.capability`,
+    name: `Capability ${index + 1}`,
+    owner: 'ianrowe12',
+    status: index === 6 ? 'feature-disabled' : 'reachable',
+    products: ['aria'],
+    clientRefs: ['client.run-with-aria-mobile'],
+    actor: 'athlete',
+    subject: 'self',
+    coverage: { state: 'draft', scenarioIssue: null, oracleCount: 0, executionReceiptCount: 0 },
+  }));
+  const view = renderedPane(() => browsePayload({
+    catalogue: {
+      registryVersion: 'ciel.capabilities.v1',
+      clients: [{ id: 'client.run-with-aria-mobile', name: 'Run with Aria mobile', status: 'direct', owner: 'mobile-app' }],
+      capabilities,
+    },
+  }));
+
+  view.byId('ciel-browse-filters').dispatch('submit');
+  const browse = view.byId('ciel-browse-panel');
+  await waitFor(() => /Capability 7/.test(treeText(browse)), 'full capability catalogue did not render');
+  assert.match(treeText(browse), /Showing 7 of 7 registered capabilities/);
+  assert.match(treeText(browse), /Capability 7/);
+  assert.match(treeText(browse), /feature-disabled/);
+  assert.match(treeText(browse), /capability\.example\.unregistered/);
+  assert.match(treeText(browse), /No checked-in scenario references this capability/);
+});
+
+test('browse pane loads version-bound scenario and dataset inspection details', async () => {
+  const calls = [];
+  const view = renderedPane(async (path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (path === '/api/ops/ciel/admin/scenarios/scenario.demo.secret-prompt') {
+      return {
+        data: {
+          ...browsePayload().scenarios[0],
+          criteria: {
+            critical: [{
+              id: 'criterion.critical.safe',
+              statement: 'Does not invent a completed workout.',
+              evidenceRefs: ['source.public'],
+              graderRef: 'grader.no-completion',
+              grading: { method: 'not_contains', gating: true },
+              authority: { schema: 'v2-authority', tier: 'B', domain: 'training', approvalState: 'none', approvals: [] },
+            }],
+            required: [],
+            expected: [{
+              id: 'criterion.expected.helpful',
+              statement: 'Mentions planned work.',
+              evidenceRefs: ['source.public'],
+              graderRef: 'grader.planned',
+              grading: { method: 'contains', gating: false },
+              authority: {
+                schema: 'v2-authority',
+                tier: 'B',
+                domain: 'training',
+                approvalState: 'approved',
+                approvals: [{
+                  kind: 'expert_reviewed',
+                  reviewerRef: 'reviewer.training',
+                  qualificationPresent: true,
+                  domain: 'training',
+                  scenarioVersion: 2,
+                }],
+              },
+            }],
+            aspirational: [],
+          },
+          oracle: { expectedOutcomeKind: 'text', referenceFacts: [{ id: 'fact.public', sourceRef: 'source.public' }] },
+          redactions: ['history', 'prompt'],
+        },
+      };
+    }
+    if (path === '/api/ops/ciel/admin/datasets/dataset.demo.development') {
+      return { data: {
+        ...browsePayload().datasets.datasets[0],
+        cases: [{
+          scenario: { id: 'scenario.detail.only', version: 7, path: 'evals/detail-only/scenarios.json', sha256: 'c'.repeat(64) },
+          rubrics: [{ id: 'rubric.detail.only', version: 3, path: 'evals/detail-only/rubric.json', sha256: 'd'.repeat(64) }],
+          comparison: { state: 'unavailable', reason: 'Detail-only comparison metadata is recorded.' },
+        }],
+      } };
+    }
+    return browsePayload();
+  });
+
+  view.byId('ciel-browse-filters').dispatch('submit');
+  const browse = view.byId('ciel-browse-panel');
+  await waitFor(() => /Inspect scenario/.test(treeText(browse)), 'scenario inspect action did not render');
+  findNode(browse, node => node.tag === 'button' && node.textContent === 'Inspect scenario').dispatch('click');
+  await waitFor(() => findNode(browse, node => node.className === 'browse-detail' && /Does not invent a completed workout/.test(treeText(node))), 'scenario detail did not render');
+  const scenarioDetail = findNode(browse, node => node.className === 'browse-detail' && /Does not invent a completed workout/.test(treeText(node)));
+  assert.deepEqual(calls.find(call => call.path.includes('/scenarios/')).options.query, { version: '2' });
+  assert.match(treeText(scenarioDetail), /source\.public/);
+  assert.match(treeText(scenarioDetail), /Public coaching source/);
+  assert.match(treeText(scenarioDetail), /https:\/\/example\.test\/source/);
+  assert.match(treeText(scenarioDetail), /Authority: v2-authority · tier B · domain training · approval none/);
+  assert.match(treeText(scenarioDetail), /qualification reference present/);
+  assert.doesNotMatch(treeText(scenarioDetail), /\bqualified\b/);
+  assert.match(treeText(scenarioDetail), /Redacted: history, prompt/);
+
+  findNode(browse, node => node.tag === 'button' && node.textContent === 'Inspect dataset').dispatch('click');
+  const datasetArticle = findNode(browse, node => node.className === 'browse-dataset' && /dataset\.demo\.development/.test(treeText(node)));
+  await waitFor(() => findNode(datasetArticle, node => node.className === 'browse-detail' && /scenario\.detail\.only/.test(treeText(node))), 'dataset detail did not render');
+  const datasetDetail = findNode(datasetArticle, node => node.className === 'browse-detail' && /scenario\.detail\.only/.test(treeText(node)));
+  assert.deepEqual(calls.find(call => call.path.includes('/datasets/')).options.query, { revision: '1' });
+  assert.match(treeText(datasetDetail), /evals\/detail-only\/scenarios\.json/);
+  assert.match(treeText(datasetDetail), /rubric\.detail\.only/);
+  assert.match(treeText(datasetDetail), /Detail-only comparison metadata is recorded/);
+});
+
+test('browse pane keeps facet options stable after filtered and empty reads', async () => {
+  const view = renderedPane(async (_path, options = {}) => {
+    if (options.query?.role === 'athlete') {
+      return browsePayload({ scenarios: [] });
+    }
+    return browsePayload({
+      scenarios: [
+        browsePayload().scenarios[0],
+        { ...browsePayload().scenarios[0], scenarioId: 'scenario.demo.coach', role: 'coach' },
+      ],
+    });
+  });
+
+  view.byId('ciel-browse-filters').dispatch('submit');
+  const roleOptions = () => view.byId('ciel-filter-role').children || [];
+  await waitFor(() => roleOptions().some(option => option.value === 'coach'), 'coach facet missing initially');
+  view.byId('ciel-filter-role').value = 'athlete';
+  view.byId('ciel-browse-filters').dispatch('submit');
+  await waitFor(() => /No scenarios match/.test(treeText(view.byId('ciel-browse-panel'))), 'empty result did not render');
+  assert.equal(view.byId('ciel-filter-role').value, 'athlete');
+  assert.ok(roleOptions().some(option => option.value === 'coach'), 'coach facet option must remain reachable');
+});
+
+test('run launch pane sends only code-owned baseline and candidate manifests and keeps partial failures recoverable', async () => {
+  const calls = [];
+  const runResponse = (request, status, runId) => ({
+    schemaVersion: 'ciel.operation.response.v1',
+    requestId: request.requestId,
+    operationId: 'ciel.run.launch',
+    status: 'success',
+    exitCode: 0,
+    resource: {
+      type: 'ciel.run',
+      id: runId,
+      revision: 1,
+      value: {
+        runId,
+        revision: 1,
+        status,
+        mode: request.input.manifest.mode,
+        manifestDigest: 'a'.repeat(64),
+        budget: {
+          estimatedCostCents: request.input.manifest.budget.estimatedCostCents,
+          accountedCostCents: 0,
+          monthlyCapCents: 30000,
+          perRunCapCents: 2500,
+          maxProviderConcurrency: 4,
+          reservedProviderConcurrency: 0,
+        },
+        createdAt: '2026-09-19T12:00:00.000Z',
+        updatedAt: '2026-09-19T12:00:00.000Z',
+      },
+    },
+  });
+  const view = renderedPane(async (path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (calls.length === 1) return runResponse(options.body, 'queued', '11111111-1111-4111-8111-111111111111');
+    throw new Error('candidate budget envelope expired');
+  });
+
+  view.byId('ciel-run-launch-form').dispatch('submit');
+  await waitFor(() => calls.length === 2, 'baseline and candidate launch requests were not both attempted');
+  const launch = view.byId('ciel-run-launch-result');
+  assert.match(treeText(launch), /Baseline/);
+  assert.match(treeText(launch), /11111111-1111-4111-8111-111111111111/);
+  assert.match(treeText(view.byId('ciel-run-launch-form')), /server enforces D6 caps again/i);
+  assert.match(treeText(view.root), /Candidate launch failed after baseline succeeded: candidate budget envelope expired/);
+  assert.deepEqual(calls.map(call => call.path), ['/api/ops/ciel/operations', '/api/ops/ciel/operations']);
+  assert.equal(calls[0].options.body.operationId, 'ciel.run.launch');
+  assert.equal(calls[1].options.body.operationId, 'ciel.run.launch');
+  assert.equal(calls[0].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.baseline');
+  assert.equal(calls[1].options.body.input.manifest.promptBundle.bundleId, 'prompt.synthetic.candidate');
+  assert.equal(calls[0].options.body.input.manifest.provider.deployment, 'fixture');
+  assert.equal(calls[0].options.body.input.manifest.provider.revision, 'fixture-v1');
+  assert.equal(calls[0].options.body.input.manifest.code.gitCommit, '1df3a9a4db943ad9e7ffc1f5a11e7d065426a92a');
+  assert.equal(calls[0].options.body.input.manifest.dataset.releaseDigest, 'be3bd66934844fa2025eedfe916a9ebd26c005faa7870e1702927c1dd893c3ac');
+  assert.equal(calls[0].options.body.input.manifest.promptBundle.digest, '40c6f72e9d3a3756c01374c89ea63d6ad69e0d0d8cf9050f4d3d3176c22c1a47');
+  assert.equal(calls[0].options.body.input.manifest.dataset.datasetId, 'dataset.synthetic.demo');
+  assert.equal(calls[0].options.body.input.manifest.repeatDesign.kind, 'single');
+  assert.ok(!JSON.stringify(calls[0].options.body).includes('http://'), 'launch request must not carry a free-text endpoint');
+
+  const firstCandidateKey = calls[1].options.body.idempotencyKey;
+  await view.byId('ciel-run-launch-form').dispatch('submit');
+  await waitFor(() => calls.length === 3, 'recovery submit should retry only the unresolved candidate');
+  assert.deepEqual(calls.map(call => call.options.body.input.manifest.promptBundle.bundleId), [
+    'prompt.synthetic.baseline',
+    'prompt.synthetic.candidate',
+    'prompt.synthetic.candidate',
+  ]);
+  assert.equal(calls[2].options.body.idempotencyKey, firstCandidateKey);
+});
+
+test('run inspection pane shows provenance, pending statistics and retry output from shared operations', async () => {
+  const runId = '3d11852d-24b9-46ab-9c7e-bd4db48f9d87';
+  const calls = [];
+  function inspectionResponse(request, status, attempts) {
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: request.requestId,
+      operationId: request.operationId,
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.run',
+        id: runId,
+        revision: status === 'queued' ? 6 : 5,
+        value: {
+          runId,
+          revision: status === 'queued' ? 6 : 5,
+          status,
+          mode: 'fresh_capture',
+          manifestDigest: 'b'.repeat(64),
+          budget: {
+            estimatedCostCents: 175,
+            accountedCostCents: 80,
+            monthlyCapCents: 30000,
+            perRunCapCents: 2500,
+            maxProviderConcurrency: 4,
+            reservedProviderConcurrency: 2,
+          },
+          createdAt: '2026-09-19T12:00:00.000Z',
+          updatedAt: '2026-09-19T12:05:00.000Z',
+          cost: { expectedCents: 175, actualCents: 80 },
+          provider: {
+            kind: 'azure_openai',
+            deployment: 'azure-openai-prod',
+            replay: false,
+          },
+          repeatDesign: { kind: 'paired_repeats', repeatsPerConfig: 3, statisticsStatus: 'pending' },
+          progress: {
+            attempts,
+            failedAttempts: 1,
+            incompleteWork: ['scenario.incomplete.redacted'],
+            skippedWork: ['scenario.skipped.redacted'],
+            attemptFailures: [{ attempt: 1, status: 'failed', outcomeCode: 'tool_timeout' }],
+          },
+          comparison: {
+            status: 'inconclusive',
+            reason: 'repeated-run statistics pending',
+            criticalRegressions: [],
+            requiredDeltas: [],
+          },
+          evidence: { redactedEvidenceCleanPass: false, redactedEvidencePresent: true },
+          artifacts: {
+            rawOutput: [{ scenarioId: 'scenario.raw', value: 'raw text' }],
+            repairedOutput: [{ scenarioId: 'scenario.repaired', value: 'repaired text' }],
+            finalOutput: [{ scenarioId: 'scenario.final', value: 'final text' }],
+            tools: [{ name: 'tool.search', status: 'skipped' }],
+            stateChanges: [{ path: '/coach/note', action: 'redacted' }],
+          },
+        },
+      },
+    };
+  }
+  const view = renderedPane(async (path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (options.body.operationId === 'ciel.run.retry') return inspectionResponse(options.body, 'queued', 3);
+    return inspectionResponse(options.body, 'running', 2);
+  });
+
+  view.byId('ciel-run-inspect-id').value = ` ${runId} `;
+  view.byId('ciel-run-inspect-form').dispatch('submit');
+  await waitFor(() => /azure_openai/.test(treeText(view.byId('ciel-run-inspection-result'))), 'run inspection did not render');
+  const result = view.byId('ciel-run-inspection-result');
+  assert.equal(calls[0].options.body.operationId, 'ciel.run.get');
+  assert.deepEqual(calls[0].options.body.input, { runId });
+  assert.match(treeText(result), /175c \/ 80c/);
+  assert.match(treeText(result), /provenance not reported/);
+  assert.match(treeText(result), /not reported/);
+  assert.doesNotMatch(treeText(result), /fresh inference/);
+  assert.doesNotMatch(treeText(result), /approved-prod-revision/);
+  assert.match(treeText(result), /scenario\.skipped\.redacted/);
+  assert.match(treeText(result), /scenario\.incomplete\.redacted/);
+  assert.match(treeText(result), /Attempt 1 failed: tool_timeout/);
+  assert.match(treeText(result), /raw text/);
+  assert.match(treeText(result), /repaired text/);
+  assert.match(treeText(result), /final text/);
+  assert.match(treeText(result), /tool\.search/);
+  assert.match(treeText(result), /\/coach\/note/);
+  assert.match(treeText(result), /inconclusive: repeated-run statistics pending/);
+  assert.match(treeText(result), /present; never a clean pass/);
+
+  view.byId('ciel-run-inspect-id').value = '00000000-0000-4000-8000-000000000000';
+  view.byId('ciel-run-inspect-id').dispatch('input');
+  await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Cancel inspected run').dispatch('click');
+  assert.equal(calls.length, 1, 'cancel must not target an edited, uninspected run id');
+  assert.match(treeText(view.root), /Inspect a run before cancelling it/);
+
+  view.byId('ciel-run-inspect-id').value = ` ${runId} `;
+  view.byId('ciel-run-inspect-form').dispatch('submit');
+  await waitFor(
+    () => calls.length === 2 && /Attempt 1 failed/.test(treeText(result)),
+    'replacement inspection was not rendered',
+  );
+  await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Retry failed run').dispatch('click');
+  await waitFor(() => calls.some(call => call.options.body.operationId === 'ciel.run.retry'), 'retry request was not sent');
+  assert.deepEqual(calls[calls.length - 1].options.body.input, {
+    runId,
+    reason: 'Retry failed attempts from the Ciel admin dashboard.',
+  });
+  assert.match(treeText(result), /3 total, 1 failed/);
+});
+
+test('run inspection ignores stale lookup responses before cancellation', async () => {
+  const runA = '3d11852d-24b9-46ab-9c7e-bd4db48f9d87';
+  const runB = '4b93ba48-3c61-452f-a5f3-7938de7268cc';
+  const calls = [];
+  const pendingGets = [];
+  function inspectionResponse(request, runId) {
+    return {
+      schemaVersion: 'ciel.operation.response.v1',
+      requestId: request.requestId,
+      operationId: request.operationId,
+      status: 'success',
+      exitCode: 0,
+      resource: {
+        type: 'ciel.run',
+        id: runId,
+        revision: 7,
+        value: {
+          runId,
+          revision: 7,
+          status: 'running',
+          mode: 'offline_replay',
+          manifestDigest: 'c'.repeat(64),
+          budget: {
+            estimatedCostCents: 125,
+            accountedCostCents: 0,
+            monthlyCapCents: 30000,
+            perRunCapCents: 2500,
+            maxProviderConcurrency: 4,
+            reservedProviderConcurrency: 0,
+          },
+          createdAt: '2026-09-19T12:00:00.000Z',
+          updatedAt: '2026-09-19T12:05:00.000Z',
+          provider: { kind: 'offline_fixture', deployment: 'fixture', replay: true },
+          progress: { attempts: 1, failedAttempts: 0, incompleteWork: [], skippedWork: [], attemptFailures: [] },
+          comparison: { status: 'inconclusive', reason: 'repeated-run statistics pending' },
+          evidence: { redactedEvidencePresent: false },
+          artifacts: { rawOutput: [], repairedOutput: [], finalOutput: [], tools: [], stateChanges: [] },
+        },
+      },
+    };
+  }
+  const view = renderedPane((path, options = {}) => {
+    calls.push({ path, options: plain(options) });
+    if (options.body.operationId === 'ciel.run.get') {
+      return new Promise(resolve => pendingGets.push({ request: options.body, resolve }));
+    }
+    return Promise.resolve(inspectionResponse(options.body, options.body.input.runId));
+  });
+
+  view.byId('ciel-run-inspect-id').value = runA;
+  view.byId('ciel-run-inspect-form').dispatch('submit');
+  await waitFor(() => pendingGets.length === 1, 'first lookup did not start');
+  view.byId('ciel-run-inspect-id').value = ` ${runB} `;
+  view.byId('ciel-run-inspect-id').dispatch('input');
+  view.byId('ciel-run-inspect-form').dispatch('submit');
+  await waitFor(() => pendingGets.length === 2, 'second lookup did not start');
+
+  pendingGets[1].resolve(inspectionResponse(pendingGets[1].request, runB));
+  await waitFor(() => /4b93ba48-3c61-452f-a5f3-7938de7268cc/.test(treeText(view.byId('ciel-run-inspection-result'))),
+    'newer lookup did not render');
+  pendingGets[0].resolve(inspectionResponse(pendingGets[0].request, runA));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await findNode(view.root, node => node.tag === 'button' && node.textContent === 'Cancel inspected run').dispatch('click');
+  assert.equal(calls.length, 3, 'cancel should target only the accepted newer run');
+  assert.equal(calls[2].options.body.operationId, 'ciel.run.cancel');
+  assert.deepEqual(calls[2].options.body.input, {
+    runId: runB,
+    reason: 'Cancelled from the Ciel admin dashboard.',
+  });
+});
+test('browse pane renders loading, partial and error states without HTML injection', async () => {
+  let resolve;
+  const pending = new Promise(done => { resolve = done; });
+  const view = renderedPane(() => pending);
+  const browse = view.byId('ciel-browse-panel');
+  view.byId('ciel-browse-filters').dispatch('submit');
+  assert.match(treeText(browse), /Loading Ciel catalogue/);
+  resolve(browsePayload({
+    datasets: { partial: true, omissions: ['Dataset review state is declaration-only; <img src=x onerror=alert(1)>'], datasets: [] },
+    scenarios: [],
+  }));
+  await waitFor(() => /Partial dataset view/.test(treeText(browse)), 'partial dataset state did not render');
+  assert.match(treeText(browse), /<img src=x onerror=alert\(1\)>/);
+  assert.equal(findNode(browse, node => node.tag === 'img'), null, 'omission text must not create an element');
+
+  const errorView = renderedPane(() => Promise.reject(new Error('No API today <script>alert(1)</script>')));
+  const errorBrowse = errorView.byId('ciel-browse-panel');
+  errorView.byId('ciel-browse-filters').dispatch('submit');
+  await waitFor(() => /Ciel catalogue unavailable/.test(treeText(errorBrowse)), 'error state did not render');
+  assert.match(treeText(errorBrowse), /<script>alert\(1\)<\/script>/);
+  assert.equal(findNode(errorBrowse, node => node.tag === 'script'), null, 'error text must not create script nodes');
+});
+
 test('dataset form shows field errors received through the operations API transport', async () => {
   const window = {
     location: { hostname: 'runwitharia.com' },
@@ -504,7 +1024,7 @@ function renderedPane(call, Clock = Date, role = 'operator') {
     },
   };
   pane.render(root);
-  const byId = id => findNode(root, node => node.attributes?.id === id);
+  const byId = id => findNode(root, node => node.attributes?.id === id || node.id === id);
   const form = findNode(root, node => node.className === 'card evidence-form');
   return {
     pane,
@@ -2149,12 +2669,12 @@ test('v2: a viewer is refused the evidence form, told why, and keeps the rest of
   assert.ok(previewOf(dom), 'a viewer sees the same deferred design');
 });
 
-test('v2: the pane keeps the registry note saying why it has no filters', async () => {
+test('v2: the pane keeps the registry note saying why shell filters do not apply', async () => {
   const dom = await bootPane();
   const bar = find(dom.doc.body, node => hasClass(node, 'filters'));
   assert.ok(bar, 'the filter bar carrying the note is missing');
   assert.match(allText(bar),
-    /These actions use supplied declarations or evidence, not app, date or environment filters/);
+    /Browse has pane-local filters; the mutation tools use supplied declarations or evidence, not app, date or environment filters/);
 });
 
 test('v2: the consent boundary survives the restyle for every role', async () => {

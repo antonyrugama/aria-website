@@ -21,6 +21,8 @@ on:
       - 'ops/README.md'
       - 'scripts/*.test.mjs'
       - 'scripts/ops-dom-harness.mjs'
+      - 'scripts/ops-api-stub.mjs'
+      - 'scripts/ops-spend-fixture.mjs'
       - '.github/workflows/ops-pane-tests.yml'
   push:
     branches: [main]
@@ -30,6 +32,8 @@ on:
       - 'ops/README.md'
       - 'scripts/*.test.mjs'
       - 'scripts/ops-dom-harness.mjs'
+      - 'scripts/ops-api-stub.mjs'
+      - 'scripts/ops-spend-fixture.mjs'
       - '.github/workflows/ops-pane-tests.yml'
   workflow_dispatch:
 

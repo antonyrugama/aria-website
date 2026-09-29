@@ -797,17 +797,35 @@
      split. The app's own figures are not repeated here because the headline
      tiles are that one app when it is the whole selection -- except its
      coverage, which the tiles do not carry and nothing else prints. */
+  /* The route's own sentence for each selected app that has no reading in the
+     window (`notReporting[].detail`), printed as it arrives so this pane and the
+     summary route say the same thing about the same absence. Empty when
+     the answer names none, which is also what an older backend sends. */
+  function absenceLines(data) {
+    return list(data.notReporting)
+      .map(function (app) { return app && typeof app.detail === 'string' ? app.detail : ''; })
+      .filter(Boolean)
+      .map(maskContactDetails);
+  }
+
   function splitCard(data) {
     var apps = list(data.apps);
     var noStored = hasNoStoredDays(data);
     var card = S.card();
 
     if (apps.length < 2) {
-      var block = S.stateBlock('layers', 'No split to draw', [
-        apps.length === 1
+      /* An app missing from the columns is either outside the selection or
+         named by the route as not reporting, and only the second is said with
+         the route's words: under `scope=all` "Only Mobile is in this
+         selection" is false twice. */
+      var absent = absenceLines(data);
+      var lines = absent.length
+        ? (apps.length === 1 ? ['Only ' + apps[0].label + ' reported over this window.'] : [])
+          .concat(absent)
+        : [apps.length === 1
           ? 'Only ' + apps[0].label + ' is in this selection, so there is nothing to compare it with.'
-          : 'No app reported over this window.'
-      ], 3);
+          : 'No app reported over this window.'];
+      var block = S.stateBlock('layers', 'No split to draw', lines, 3);
       if (apps.length === 1) {
         block.appendChild(h('div', { className: 'row mt-sm' }, [coveragePill(apps[0])]));
         if (S.filters().scope !== 'all') {
@@ -1284,9 +1302,9 @@
           return;
         }
         if (!list(data.apps).length) {
-          region.empty(emptyCard(S.stateBlock('empty', 'No app reported over this window', [
-            'Widen the window or change the app filter to see figures.'
-          ])));
+          var absent = absenceLines(data);
+          region.empty(emptyCard(S.stateBlock('empty', 'No app reported over this window',
+            absent.length ? absent : ['Widen the window or change the app filter to see figures.'])));
           return;
         }
         region.show(render(data));

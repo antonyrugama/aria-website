@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
 <link rel="stylesheet" href="assets/pane-run-history-v2.css">
+<link rel="stylesheet" href="assets/tour-v2.css">
 </head>
 <body data-pane="history" class="is-booting">
 
@@ -56,6 +57,7 @@
 <script src="assets/session.js"></script>
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
+<script src="assets/job-actions-v2.js"></script>
 <!-- The Problems pane's shared model is deliberately no longer loaded here.
      It was, because this pane used to draw the alerting record that pane owns;
      it now draws the runs themselves, so there is nothing left to share.
@@ -63,5 +65,8 @@
      these pages for one, and a route named in a comment reds that guard as
      surely as a route named in code. Stadiora/Aria#5563. -->
 <script src="assets/pane-run-history-v2.js"></script>
+<!-- The guided tour reads the registry and the page this shell drew, so it
+     loads after both and after the pane's own module. -->
+<script src="assets/tour.js"></script>
 </body>
 </html>

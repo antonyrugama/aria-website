@@ -361,6 +361,19 @@ export function allDomTextAndAttrs(node) {
   return ((node.textContent || '') + ' ' + attrs + ' ' + kids).replace(/\s+/g, ' ').trim();
 }
 
+/* The geometry an icon() <svg> draws, child by child. Two glyphs are the same
+   icon exactly when these strings are equal, so a test can compare a pane's
+   glyph with `window.Aria.icon(name)` instead of holding path data of its own.
+   scripts/ops-releases-omissions.test.mjs carries an in-page copy for Chrome. */
+export function glyphShape(svg) {
+  if (!svg) return null;
+  return (svg.childNodes || []).filter((n) => n.tagName).map((n) =>
+    String(n.tagName).toLowerCase() + '(' +
+      ['d', 'cx', 'cy', 'r', 'x', 'y', 'width', 'height', 'rx']
+        .filter((a) => n.getAttribute(a) !== null)
+        .map((a) => a + '=' + n.getAttribute(a)).join(' ') + ')').join(' ');
+}
+
 export function find(node, predicate) {
   if (!node) return null;
   for (const child of node.childNodes || []) {

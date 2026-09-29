@@ -1098,6 +1098,67 @@ test('the docblock and the README name exactly what the module exports', async (
   }
 });
 
+
+async function bootRealSession(options) {
+  const opts = options || {};
+  const calls = [];
+  const dom = makeDom({ href: 'https://ops.example.invalid/ops/settings.html' });
+  dom.window.OpsApi = {
+    OpsApiError: function OpsApiError(message) { this.message = message; },
+    request: (path, requestOptions) => {
+      calls.push({ path, method: requestOptions && requestOptions.method, body: requestOptions && requestOptions.body });
+      return Promise.resolve({ data: {
+        accessToken: 'access-token',
+        accessExpiresAt: Date.now() + 60000,
+        refreshToken: 'refresh-token',
+        admin: { id: 'adm_owner', email: 'owner@example.invalid', role: 'owner' },
+        session: { expiresAt: Date.now() + 60000 },
+      } });
+    },
+    call: (path, requestOptions) => {
+      calls.push({ path, method: requestOptions && requestOptions.method, body: requestOptions && requestOptions.body });
+      return opts.logoutRejects && path === '/api/ops/auth/logout'
+        ? Promise.reject(new Error('logout failed'))
+        : Promise.resolve({ data: {} });
+    },
+  };
+  vm.createContext(dom.window);
+  vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
+  vm.runInContext(SESSION_SRC, dom.window, { filename: 'session.js' });
+  await dom.window.OpsSession.signIn('owner@example.invalid', 'password', false);
+  assert.ok(dom.window.OpsSession.readRefreshToken(), 'test setup did not seed a real refresh credential');
+
+  const replacements = [];
+  const realReplace = dom.window.location.replace;
+  dom.window.location.replace = (next) => {
+    replacements.push(next);
+    realReplace.call(dom.window.location, next);
+  };
+  return { dom, calls, replacements };
+}
+
+test('session signOut can clear credentials without navigating', async () => {
+  const { dom, replacements } = await bootRealSession();
+
+  await dom.window.OpsSession.signOut({ noNavigate: true });
+
+  assert.equal(dom.window.OpsSession.readRefreshToken(), null,
+    'signOut({ noNavigate: true }) left the refresh credential stored');
+  assert.deepEqual(replacements, [],
+    'signOut({ noNavigate: true }) still navigated away from the current route');
+});
+
+test('session signOut clears credentials and routes to the signed-out login by default', async () => {
+  const { dom, replacements } = await bootRealSession();
+
+  await dom.window.OpsSession.signOut();
+
+  assert.equal(dom.window.OpsSession.readRefreshToken(), null,
+    'signOut() left the refresh credential stored');
+  assert.deepEqual(replacements, ['login.html?reason=signedout'],
+    'signOut() did not route to the signed-out login by default');
+});
+
 /* ================= the re-authentication dialog, on a v2 pane =========== */
 
 /* assets/session.js raises one dialog over whatever page is open, asking for
@@ -2295,8 +2356,14 @@ test('the phone drawer opens, says so, and puts focus on the first thing in it',
   assert.equal(toggle.getAttribute('aria-expanded'), 'true', 'the toggle still reads as collapsed');
   assert.match(toggle.getAttribute('aria-label'), /close/i,
     'the toggle still offers to open the drawer that is already open');
-  assert.equal(body.children.filter((el) => el.classList.contains('scrim')).length, 1,
-    'the drawer opened without a backdrop');
+  const scrims = doc.querySelectorAll('.scrim');
+  assert.equal(scrims.length, 1, 'the drawer opened without a backdrop');
+  /* Beside the rail, so the two stack against each other. On <body> the
+     backdrop sat in a higher stacking context than the app wrapper that holds
+     the drawer, and painted over it (Stadiora/Aria#12909). */
+  /* By identity: an equality assertion on two DOM nodes prints both trees. */
+  assert.ok(scrims[0].parentNode === rail.parentNode,
+    'the backdrop is not beside the drawer, so it stacks in a different context from it');
   assert.equal(doc.activeElement, rail.querySelector('a'),
     'the drawer opened without moving focus into itself');
 });
@@ -2312,7 +2379,8 @@ test('the phone drawer closes on Escape and on its own toggle, both times handin
     assert.equal(open.toggle.getAttribute('aria-expanded'), 'false', how + ' left the toggle reading as expanded');
     assert.match(open.toggle.getAttribute('aria-label'), /open/i,
       how + ' left the toggle offering to close a drawer that is shut');
-    assert.equal(open.body.children.filter((el) => el.classList.contains('scrim')).length, 0,
+    /* Anywhere in the document: the backdrop sits beside the rail, not on the body. */
+    assert.equal(open.doc.querySelectorAll('.scrim').length, 0,
       how + ' left the backdrop over the page');
     assert.equal(open.doc.activeElement, open.toggle,
       how + ' dropped focus instead of returning it to the toggle');
@@ -2345,7 +2413,7 @@ test('the page behind the phone drawer goes inert and comes back, and the live r
   const { doc, body, rail } = await openDrawer();
   const live = body.children.filter((el) => el.getAttribute('aria-live'))[0];
   const toasts = body.children.filter((el) => el.classList.contains('toast-host'))[0];
-  const scrim = body.children.filter((el) => el.classList.contains('scrim'))[0];
+  const scrim = rail.parentNode.children.filter((el) => el.classList.contains('scrim'))[0];
   assert.ok(live && toasts && scrim, 'the drawer opened without the hosts this exclusion is about');
 
   /* Everything that is not the rail, at every level up to the body — the rail
@@ -2361,7 +2429,7 @@ test('the page behind the phone drawer goes inert and comes back, and the live r
   }
   const expected = hidden.filter((el) => el !== scrim && el !== live && el !== toasts);
   assert.ok(expected.length >= 1, 'nothing sits behind the drawer, so inerting it proves nothing');
-  assert.ok(expected.indexOf(rail.parentNode.children.filter((el) => el !== rail)[0]) !== -1,
+  assert.ok(expected.indexOf(rail.parentNode.children.filter((el) => el !== rail && el !== scrim)[0]) !== -1,
     "the rail's own sibling is not among what went inert, so the walk never left the body's children");
   assert.ok(ancestors.length >= 1, 'the rail is a body child here, so the ancestor case is untested');
 
@@ -2411,7 +2479,7 @@ test('growing past the breakpoint closes the drawer, and does not snatch focus t
 
   assert.equal(rail.classList.contains('is-open'), false, 'the drawer stayed open on a desktop width');
   assert.equal(toggle.getAttribute('aria-expanded'), 'false', 'the toggle still reads as expanded');
-  assert.equal(body.children.filter((el) => el.classList.contains('scrim')).length, 0,
+  assert.equal(doc.querySelectorAll('.scrim').length, 0,
     'the backdrop stayed over a page with no drawer on it');
   assert.notEqual(doc.activeElement, toggle,
     'widening the window moved focus to a control the operator never used, which on a desktop width is hidden');

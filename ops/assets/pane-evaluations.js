@@ -610,6 +610,888 @@
     ]);
   }
 
+  function detailList(rows) {
+    return h('dl', { className: 'card-body evidence-meta browse-meta' }, rows.map(function (row) {
+      return metadataRow(row[0], row[1]);
+    }));
+  }
+
+  function clearNode(node) {
+    node.textContent = '';
+  }
+
+  function appendAll(node, children) {
+    children.forEach(function (child) {
+      if (child) node.appendChild(child);
+    });
+  }
+
+  function titleCase(value) {
+    return String(value || '')
+      .split(/[-_]/)
+      .filter(Boolean)
+      .map(function (part) { return part.charAt(0).toUpperCase() + part.slice(1); })
+      .join(' ') || 'Unknown';
+  }
+
+  function countText(metric) {
+    return String(metric.numerator) + ' / ' + String(metric.denominator) + ' ' + metric.denominatorKind;
+  }
+
+  function unique(values) {
+    var seen = {};
+    return values.filter(function (value) {
+      if (!value || seen[value]) return false;
+      seen[value] = true;
+      return true;
+    }).sort();
+  }
+
+  function metricByKey(coverage, key) {
+    var metrics = coverage && Array.isArray(coverage.metrics) ? coverage.metrics : [];
+    for (var i = 0; i < metrics.length; i++) {
+      if (metrics[i] && metrics[i].key === key) return metrics[i];
+    }
+    return null;
+  }
+
+  function filterField(id, label) {
+    var control = select([option('', 'All')]);
+    return {
+      control: control,
+      field: field(id, label, control)
+    };
+  }
+
+  function syncOptions(control, values) {
+    var current = control.value;
+    clearNode(control);
+    control.appendChild(option('', 'All'));
+    values.forEach(function (value) {
+      control.appendChild(option(value, value));
+    });
+    control.value = values.indexOf(current) === -1 ? '' : current;
+  }
+
+  function scenarioAuthorityLabel(scenario) {
+    if (!scenario || !scenario.review) return 'Unknown review state';
+    if (scenario.review.source === 'scenario-v2') {
+      return scenario.review.status === 'certified' ? 'Certified' : 'Not certified';
+    }
+    return titleCase(scenario.review.status || 'unknown');
+  }
+
+
+  function criterionAuthorityText(authority) {
+    if (!authority) return '';
+    var approvals = Array.isArray(authority.approvals) ? authority.approvals : [];
+    var parts = [
+      authority.schema,
+      authority.tier ? 'tier ' + authority.tier : '',
+      authority.domain ? 'domain ' + authority.domain : '',
+      authority.approvalState ? 'approval ' + authority.approvalState : ''
+    ].filter(Boolean);
+    if (approvals.length) {
+      parts.push('approvals ' + approvals.map(function (approval) {
+        return [
+          approval.kind,
+          approval.reviewerRef,
+          approval.qualificationPresent ? 'qualification reference present' : 'qualification reference missing',
+          approval.domain,
+          approval.scenarioVersion ? 'scenario v' + String(approval.scenarioVersion) : ''
+        ].filter(Boolean).join(' · ');
+      }).join('; '));
+    }
+    return parts.join(' · ');
+  }
+
+  function scenarioCard(scenario) {
+    var counts = scenario.criteriaCounts || {};
+    var risk = scenario.risk || {};
+    var card = shell.card('browse-scenario');
+    var detail = h('div', { className: 'browse-detail' });
+    var inspect = h('button', { className: 'btn btn-sm', text: 'Inspect scenario' });
+    inspect.setAttribute('type', 'button');
+    inspect.addEventListener('click', async function () {
+      clearNode(detail);
+      detail.appendChild(h('p', { className: 'field-hint', text: 'Loading scenario detail…' }));
+      try {
+        var payload = await session.call('/api/ops/ciel/admin/scenarios/' + encodeURIComponent(scenario.scenarioId || ''), {
+          query: { version: String(scenario.version || 1) }
+        });
+        var data = payload && payload.data ? payload.data : payload;
+        var criteria = data.criteria || {};
+        var rows = [];
+        ['critical', 'required', 'expected', 'aspirational'].forEach(function (severity) {
+          (criteria[severity] || []).forEach(function (criterion) {
+            rows.push([
+              titleCase(severity) + ' · ' + (criterion.id || 'criterion'),
+              [
+                criterion.statement,
+                (criterion.evidenceRefs || []).length ? 'Evidence: ' + criterion.evidenceRefs.join(', ') : '',
+                criterion.graderRef ? 'Grader: ' + criterion.graderRef : '',
+                criterionAuthorityText(criterion.authority) ? 'Authority: ' + criterionAuthorityText(criterion.authority) : ''
+              ].filter(Boolean).join(' · ')
+            ]);
+          });
+        });
+        (data.sourceLinks || []).forEach(function (source) {
+          rows.push(['Source evidence', [source.label, source.uri].filter(Boolean).join(' · ')]);
+        });
+        var oracle = data.oracle || {};
+        (oracle.referenceFacts || []).forEach(function (fact) {
+          rows.push(['Oracle reference', [fact.id, fact.sourceRef].filter(Boolean).join(' · ')]);
+        });
+        if (data.redactions && data.redactions.length) rows.push(['Redacted:', data.redactions.join(', ')]);
+        clearNode(detail);
+        detail.appendChild(shell.cardHead('Scenario inspection', 'Version ' + String(data.version || scenario.version || 1)));
+        detail.appendChild(detailList(rows.length ? rows : [['Inspection', 'No criteria metadata is available.']]));
+      } catch (caught) {
+        clearNode(detail);
+        detail.appendChild(h('p', { className: 'field-error', text: caught && caught.message ? caught.message : 'Scenario detail unavailable.' }));
+      }
+    });
+    card.appendChild(shell.cardHead(scenario.scenarioId || 'Unnamed scenario', [
+      'v' + String(scenario.version || 1),
+      scenario.capabilityRef,
+      scenario.locale,
+      risk.level
+    ].filter(Boolean).join(' · '), [
+      h('span', { className: 'pill', text: scenarioAuthorityLabel(scenario) })
+    ]));
+    card.appendChild(h('dl', { className: 'card-body evidence-meta browse-meta' }, [
+      metadataRow('Product', scenario.product || 'Unknown'),
+      metadataRow('Client', scenario.client || 'Unknown'),
+      metadataRow('Role', scenario.role || 'Unknown'),
+      metadataRow('Risk domains', (risk.domains || []).join(', ') || 'None recorded'),
+      metadataRow('Criteria', 'critical ' + (counts.critical || 0) +
+        ', required ' + (counts.required || 0) +
+        ', expected ' + (counts.expected || 0) +
+        ', aspirational ' + (counts.aspirational || 0)),
+      metadataRow('Run state', scenario.pack && scenario.pack.executed
+        ? (scenario.pack.passing ? 'executed, passing' : 'executed, not passing')
+        : scenario.pack && scenario.pack.runnable ? 'runnable, not executed' : 'not runnable')
+    ]));
+    card.appendChild(h('div', { className: 'card-foot evidence-actions' }, [inspect]));
+    card.appendChild(detail);
+    return card;
+  }
+
+  function renderCoverage(coverage) {
+    var metrics = ['inventory', 'authored', 'approved', 'runnable', 'executed', 'passing']
+      .map(function (key) { return metricByKey(coverage, key); })
+      .filter(Boolean);
+    var flags = coverage && coverage.flags ? coverage.flags : {};
+    var card = shell.card('browse-coverage');
+    card.appendChild(shell.cardHead('Honest coverage', 'Each count carries its own denominator'));
+    card.appendChild(h('div', { className: 'card-body browse-metrics' }, metrics.map(function (metric) {
+      return h('div', { className: 'browse-metric' }, [
+        h('span', { className: 'browse-metric-k', text: titleCase(metric.key) }),
+        h('span', { className: 'browse-metric-v', text: countText(metric) })
+      ]);
+    })));
+    card.appendChild(h('div', { className: 'card-foot browse-flags' }, [
+      h('span', { text: 'Uncovered: ' + ((flags.uncoveredCapabilities || []).join(', ') || 'none') }),
+      h('span', { text: 'Not certified: ' + ((flags.notCertifiedCapabilities || []).join(', ') || 'none') }),
+      h('span', { text: 'Unowned: ' + ((flags.unownedCapabilities || []).join(', ') || 'none') }),
+      h('span', { text: 'Disabled/unsupported: ' + ((flags.disabledOrUnsupportedCapabilities || []).map(function (capability) {
+        return [capability.id, capability.status, capability.reason].filter(Boolean).join(' · ');
+      }).join('; ') || 'none') }),
+      h('span', { text: 'Missing cases: ' + ((flags.missingCases || []).map(function (entry) {
+        return [entry.capabilityRef, entry.reason].filter(Boolean).join(' · ');
+      }).join('; ') || 'none') }),
+      h('span', { text: 'Unknown scenario refs: ' + ((flags.unknownCapabilityRefs || []).join(', ') || 'none') })
+    ]));
+    return card;
+  }
+
+  function renderDatasets(datasets) {
+    var entries = datasets && Array.isArray(datasets.datasets) ? datasets.datasets : [];
+    var card = shell.card('browse-datasets');
+    card.appendChild(shell.cardHead('Datasets', entries.length + ' checked-in declaration' + (entries.length === 1 ? '' : 's')));
+    if (datasets && (datasets.partial || (datasets.omissions || []).length)) {
+      card.appendChild(h('div', { className: 'callout compact' }, [
+        icon('warn'),
+        h('div', {}, [
+          h('strong', { text: 'Partial dataset view' }),
+          h('p', { text: (datasets.omissions || []).join(' ') || 'Some dataset metadata is unavailable on this branch.' })
+        ])
+      ]));
+    }
+    if (!entries.length) {
+      card.appendChild(shell.stateBlock('layers', 'No dataset declarations found', [
+        'The backend did not find checked-in ciel.dataset.v1 declarations for this branch.'
+      ]));
+      return card;
+    }
+    card.appendChild(h('div', { className: 'card-body browse-dataset-list' }, entries.map(function (dataset) {
+      var provenance = dataset.provenance || {};
+      var counts = dataset.counts || {};
+      var detail = h('div', { className: 'browse-detail' });
+      var inspect = h('button', { className: 'btn btn-sm', text: 'Inspect dataset' });
+      inspect.setAttribute('type', 'button');
+      inspect.addEventListener('click', async function () {
+        clearNode(detail);
+        detail.appendChild(h('p', { className: 'field-hint', text: 'Loading dataset detail…' }));
+        try {
+          var payload = await session.call('/api/ops/ciel/admin/datasets/' + encodeURIComponent(dataset.datasetId || ''), {
+            query: { revision: String(dataset.revision || 1) }
+          });
+          var data = payload && payload.data ? payload.data : payload;
+          var rows = [];
+          (data.cases || []).forEach(function (entry) {
+            var scenario = entry.scenario || {};
+            rows.push(['Scenario', [scenario.id, 'v' + String(scenario.version || 1), scenario.path].filter(Boolean).join(' · ')]);
+            (entry.rubrics || []).forEach(function (rubric) {
+              rows.push(['Rubric', [rubric.id, 'v' + String(rubric.version || 1), rubric.path].filter(Boolean).join(' · ')]);
+            });
+            if (entry.comparison) rows.push(['Comparison', [entry.comparison.state, entry.comparison.reason].filter(Boolean).join(' · ')]);
+          });
+          clearNode(detail);
+          detail.appendChild(shell.cardHead('Dataset inspection', 'Revision ' + String(data.revision || dataset.revision || 1)));
+          detail.appendChild(detailList(rows.length ? rows : [['Inspection', 'No case metadata is available.']]));
+        } catch (caught) {
+          clearNode(detail);
+          detail.appendChild(h('p', { className: 'field-error', text: caught && caught.message ? caught.message : 'Dataset detail unavailable.' }));
+        }
+      });
+      return h('article', { className: 'browse-dataset' }, [
+        detailList([
+          [dataset.datasetId + ' rev ' + dataset.revision, titleCase(dataset.review && dataset.review.state)],
+          ['Provenance', [provenance.origin, provenance.authorRef, provenance.authoredAt].filter(Boolean).join(' · ')],
+          ['Counts', (counts.cases || 0) + ' cases, ' + (counts.labels || 0) + ' labels'],
+          ['Rubrics', (dataset.cases || []).flatMap(function (entry) {
+            return (entry.rubrics || []).map(function (rubric) { return rubric.id + ' v' + String(rubric.version || 1); });
+          }).join(', ') || 'none recorded'],
+          ['Comparison', (dataset.cases || []).map(function (entry) {
+            return entry.comparison ? [entry.comparison.state, entry.comparison.reason].filter(Boolean).join(' · ') : '';
+          }).filter(Boolean).join('; ') || 'none recorded']
+        ]),
+        h('div', { className: 'card-foot evidence-actions' }, [inspect]),
+        detail
+      ]);
+    })));
+    return card;
+  }
+
+  function renderCatalogue(catalogue) {
+    var capabilities = catalogue && Array.isArray(catalogue.capabilities) ? catalogue.capabilities : [];
+    var card = shell.card('browse-catalogue');
+    card.appendChild(shell.cardHead('Capability catalogue', 'Showing ' + capabilities.length + ' of ' + capabilities.length + ' registered capabilities'));
+    card.appendChild(h('div', { className: 'card-body browse-capabilities' }, capabilities.map(function (capability) {
+      return h('article', { className: 'browse-capability' }, [
+        h('h3', { text: capability.name || capability.id }),
+        h('p', { text: [capability.id, capability.status, capability.owner].filter(Boolean).join(' · ') }),
+        h('p', { text: 'Applies to ' + ((capability.products || []).join(', ') || 'no product recorded') }),
+        h('p', { text: 'Clients: ' + ((capability.clientRefs || []).join(', ') || 'none recorded') })
+      ]);
+    })));
+    return card;
+  }
+
+  function renderBrowseResult(target, payload) {
+    clearNode(target);
+    var data = payload && payload.data ? payload.data : payload;
+    var scenarios = data && Array.isArray(data.scenarios) ? data.scenarios : [];
+    appendAll(target, [
+      renderCoverage(data && data.coverage),
+      scenarios.length
+        ? h('div', { className: 'browse-scenarios grid g2' }, scenarios.map(scenarioCard))
+        : h('div', { className: 'card' }, [
+          shell.stateBlock('layers', 'No scenarios match these filters', [
+            'Clear a filter or add authored scenarios before treating this capability as covered.'
+          ])
+        ]),
+      renderDatasets(data && data.datasets),
+      renderCatalogue(data && data.catalogue)
+    ]);
+  }
+
+  function browseSection() {
+    var built = workingBand('Browse Ciel scenarios and coverage', 'Read-only catalogue, datasets and honest denominators');
+    var section = built.section;
+    var bandBody = built.body;
+    var filterDefs = {
+      product: filterField('ciel-filter-product', 'Product'),
+      client: filterField('ciel-filter-client', 'Client'),
+      role: filterField('ciel-filter-role', 'Role'),
+      capability: filterField('ciel-filter-capability', 'Capability'),
+      risk: filterField('ciel-filter-risk', 'Risk'),
+      locale: filterField('ciel-filter-locale', 'Locale')
+    };
+    var error = h('div', { className: 'field-error', role: 'alert' });
+    var result = h('div', { className: 'browse-result' });
+    var stableFacetOptions = {};
+    result.setAttribute('id', 'ciel-browse-panel');
+    result.setAttribute('aria-live', 'polite');
+    var submit = h('button', { className: 'btn btn-primary', type: 'submit', text: 'Load catalogue' });
+    var form = h('form', { className: 'card browse-form' }, [
+      shell.cardHead('Browse quality evidence', 'No prompt or production content is shown'),
+      h('div', { className: 'card-body q-grid browse-filter-grid' }, [
+        filterDefs.product.field,
+        filterDefs.client.field,
+        filterDefs.role.field,
+        filterDefs.capability.field,
+        filterDefs.risk.field,
+        filterDefs.locale.field
+      ]),
+      h('div', { className: 'card-foot evidence-actions' }, [
+        h('p', {
+          className: 'field-hint',
+          text: 'Filters are pane-local. Coverage denominators are not reused across inventory, authored, approved, runnable, executed and passing counts.'
+        }),
+        submit
+      ]),
+      error
+    ]);
+    form.setAttribute('id', 'ciel-browse-filters');
+
+    function query() {
+      var out = {};
+      Object.keys(filterDefs).forEach(function (key) {
+        var value = filterDefs[key].control.value;
+        if (value) out[key] = value;
+      });
+      return out;
+    }
+
+    function updateFilterOptions(data) {
+      var scenarios = data && Array.isArray(data.scenarios) ? data.scenarios : [];
+      var catalogue = data && data.catalogue ? data.catalogue : {};
+      var capabilities = Array.isArray(catalogue.capabilities) ? catalogue.capabilities : [];
+      var clients = Array.isArray(catalogue.clients) ? catalogue.clients : [];
+      function stable(key, values) {
+        stableFacetOptions[key] = unique((stableFacetOptions[key] || []).concat(values));
+        return stableFacetOptions[key];
+      }
+      syncOptions(filterDefs.product.control, stable('product', unique(capabilities.flatMap(function (capability) {
+        return capability.products || [];
+      }).concat(scenarios.map(function (scenario) { return scenario.product; })))));
+      syncOptions(filterDefs.client.control, stable('client', unique(clients.map(function (client) { return client.id; })
+        .concat(scenarios.map(function (scenario) { return scenario.client; })))));
+      syncOptions(filterDefs.role.control, stable('role', unique(scenarios.map(function (scenario) { return scenario.role; }))));
+      syncOptions(filterDefs.capability.control, stable('capability', unique(capabilities.map(function (capability) { return capability.id; })
+        .concat(scenarios.map(function (scenario) { return scenario.capabilityRef; })))));
+      syncOptions(filterDefs.risk.control, stable('risk', unique(scenarios.flatMap(function (scenario) {
+        return [scenario.risk && scenario.risk.level].concat(scenario.risk && scenario.risk.domains || []);
+      }))));
+      syncOptions(filterDefs.locale.control, stable('locale', unique(scenarios.map(function (scenario) { return scenario.locale; }))));
+    }
+
+    async function load() {
+      clearNode(error);
+      clearNode(result);
+      result.appendChild(h('div', { className: 'card' }, [
+        shell.stateBlock('layers', 'Loading Ciel catalogue', [
+          'Reading checked-in contracts, scenario packs and dataset declarations.'
+        ])
+      ]));
+      submit.disabled = true;
+      try {
+        var payload = await session.call('/api/ops/ciel/admin/overview', { query: query() });
+        var data = payload && payload.data ? payload.data : payload;
+        updateFilterOptions(data);
+        renderBrowseResult(result, data);
+        shell.announce('Ciel catalogue loaded.');
+      } catch (caught) {
+        clearNode(result);
+        result.appendChild(h('div', { className: 'card' }, [
+          shell.stateBlock('warn', 'Ciel catalogue unavailable', [
+            caught && caught.message ? caught.message : 'Try again shortly.'
+          ])
+        ]));
+        error.textContent = caught && caught.message ? caught.message : 'The Ciel browse endpoint could not be read.';
+        shell.announce('Ciel catalogue unavailable.');
+      } finally {
+        submit.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      load();
+    });
+
+    bandBody.appendChild(form);
+    result.appendChild(h('div', { className: 'card' }, [
+      h('div', { className: 'card-body' }, [
+        h('h3', { className: 'card-title', text: 'Load Ciel catalogue' }),
+        h('p', {
+          className: 'field-hint',
+          text: 'Use the pane-local filters above, then load the read-only catalogue, scenario, dataset and coverage summary.'
+        })
+      ])
+    ]));
+    bandBody.appendChild(result);
+    return section;
+  }
+
+  var RUN_DATASETS = [{
+    id: 'dataset.synthetic.demo',
+    label: 'Synthetic demo frozen release',
+    releaseId: '3d11852d-24b9-46ab-9c7e-bd4db48f9d87',
+    releaseDigest: 'be3bd66934844fa2025eedfe916a9ebd26c005faa7870e1702927c1dd893c3ac',
+    caseDigests: [
+      '2ad0f58eb67e4c5a5279753e92f434057ae0a1d170b46dde6749afbde5bf1a22',
+      '6e40883c88da4d5c9486a5e8b6afaf18f0c5148a5937c589ee74a8c898408c9b'
+    ]
+  }];
+
+  var RUN_CONFIGS = {
+    'prompt.synthetic.baseline': {
+      label: 'Baseline prompt bundle',
+      version: 'v1',
+      digest: '40c6f72e9d3a3756c01374c89ea63d6ad69e0d0d8cf9050f4d3d3176c22c1a47'
+    },
+    'prompt.synthetic.candidate': {
+      label: 'Candidate prompt bundle',
+      version: 'v1',
+      digest: '9e1f7cf69326df1f47828a71f52d0d3ad4dc2aeb3c11e0f79c0668a253ef3eb9'
+    }
+  };
+
+  function runEnvelope(operationId, input, requestId) {
+    return {
+      schemaVersion: 'ciel.operation.request.v1',
+      requestId: requestId || global.crypto.randomUUID(),
+      operationId: operationId,
+      mode: 'remote',
+      client: {
+        name: 'aria-operations-dashboard',
+        version: '1.0.0',
+        contractVersions: ['ciel.operations.v1']
+      },
+      input: input
+    };
+  }
+
+  function runManifest(dataset, promptBundleId, draft) {
+    var config = RUN_CONFIGS[promptBundleId];
+    var live = draft.providerKind === 'azure_openai';
+    return {
+      schemaVersion: 'ciel.run.manifest.v1',
+      mode: draft.mode,
+      code: { gitCommit: '1df3a9a4db943ad9e7ffc1f5a11e7d065426a92a' },
+      dataset: {
+        datasetId: dataset.id,
+        releaseId: dataset.releaseId,
+        releaseDigest: dataset.releaseDigest,
+        caseDigests: dataset.caseDigests,
+        sourceKind: 'synthetic'
+      },
+      promptBundle: {
+        bundleId: promptBundleId,
+        version: config.version,
+        digest: config.digest
+      },
+      policy: {
+        scenarioVersion: 'scenario.demo.secret-prompt:v2',
+        rubricVersion: 'rubric.demo.no-retrieval.criteria:v1',
+        gatePolicyVersion: 'ciel-gate-policy:v1',
+        toolVersion: 'aria-eval:v1',
+        engineVersion: 'ciel-engine:v1'
+      },
+      provider: {
+        kind: draft.providerKind,
+        deployment: live ? 'azure-openai-prod' : 'fixture',
+        revision: live ? 'd6-owner-approved' : 'fixture-v1'
+      },
+      sampling: {
+        seed: promptBundleId === 'prompt.synthetic.baseline' ? 101 : 202,
+        temperature: 0,
+        maxOutputTokens: 1024
+      },
+      locale: 'en-US',
+      retrievalSnapshot: {
+        kind: 'synthetic_fixture',
+        digest: '4ec353ddbe7778ee30f038bbd6aef26d87a1fe3a3ab8ecbdf5b6ec903a7f3eb1'
+      },
+      graders: [{
+        graderId: 'grader.synthetic',
+        version: 'v1',
+        digest: '75fb07e67b0171df77bd66d8118f985ee533ec8cd67f2e596d5d4150d5c39ba8'
+      }],
+      runtime: {
+        approvedBy: draft.approvedBy,
+        approvalRef: draft.approvalRef
+      },
+      budget: {
+        estimatedCostCents: draft.estimatedCostCents,
+        maxProviderRequests: live ? 40 : 0,
+        maxPromptTokens: 10000,
+        maxCompletionTokens: 10000,
+        maxWallTimeSeconds: 600,
+        requestedProviderConcurrency: live ? draft.providerConcurrency : 0
+      },
+      repeatDesign: {
+        kind: draft.repeatsPerConfig > 1 ? 'paired_repeats' : 'single',
+        repeatsPerConfig: draft.repeatsPerConfig,
+        statisticsStatus: 'pending'
+      }
+    };
+  }
+
+  function runLaunchRequest(dataset, promptBundleId, draft, idempotencySuffix) {
+    var request = runEnvelope('ciel.run.launch', {
+      manifest: runManifest(dataset, promptBundleId, draft)
+    });
+    request.idempotencyKey = 'dashboard-run-launch-' + idempotencySuffix + '-' + request.requestId;
+    return request;
+  }
+
+  function renderRunResource(resource) {
+    var value = resource && resource.value ? resource.value : resource;
+    if (!value) return h('p', { className: 'field-hint', text: 'No run resource returned.' });
+    var progress = value.progress || {};
+    var provider = value.provider || {};
+    var cost = value.cost || {};
+    var comparison = value.comparison || {};
+    var evidence = value.evidence || {};
+    var artifacts = value.artifacts || {};
+    function compactJson(entry) {
+      if (entry === null || entry === undefined) return 'unavailable';
+      if (typeof entry === 'string') return entry;
+      try {
+        return JSON.stringify(entry).slice(0, 500);
+      } catch (caught) {
+        return 'unavailable';
+      }
+    }
+    function detailsBlock(title, entries, emptyText) {
+      var items = Array.isArray(entries) ? entries : [];
+      return h('details', { className: 'run-detail-disclosure' }, [
+        h('summary', { text: title + ' (' + String(items.length) + ')' }),
+        items.length
+          ? h('ul', {}, items.slice(0, 10).map(function (entry) {
+            return h('li', { text: compactJson(entry) });
+          }))
+          : h('p', { className: 'field-hint', text: emptyText })
+      ]);
+    }
+    var failures = Array.isArray(progress.attemptFailures) ? progress.attemptFailures : [];
+    return h('article', { className: 'run-inspection-card' }, [
+      shell.cardHead('Run ' + (value.runId || 'unknown'), [
+        value.status,
+        'revision ' + String(value.revision || resource.revision || 1),
+        provider.provenance || 'provenance not reported'
+      ].filter(Boolean).join(' · ')),
+      detailList([
+        ['Expected / actual cost', String(cost.expectedCents !== undefined ? cost.expectedCents : value.budget && value.budget.estimatedCostCents || 0) +
+          'c / ' + String(cost.actualCents !== undefined ? cost.actualCents : value.budget && value.budget.accountedCostCents || 0) + 'c'],
+        ['Provider', [provider.kind, provider.deployment, provider.revision].filter(Boolean).join(' · ') || 'not recorded'],
+        ['Replay vs fresh', provider.replay === false ? 'server reported fresh' : provider.replay === true ? 'server reported replay' : 'not reported'],
+        ['Attempts', String(progress.attempts || 0) + ' total, ' + String(progress.failedAttempts || 0) + ' failed'],
+        ['Skipped work', (progress.skippedWork || []).join(', ') || 'none recorded'],
+        ['Incomplete work', (progress.incompleteWork || []).join(', ') || 'none recorded'],
+        ['Comparison', (comparison.status || 'inconclusive') + ': ' + (comparison.reason || 'repeated-run statistics pending')],
+        ['Redacted evidence', evidence.redactedEvidencePresent ? 'present; never a clean pass' : 'none reported']
+      ]),
+      detailsBlock('Attempt failures', failures.map(function (failure) {
+        return 'Attempt ' + String(failure.attempt || '?') + ' ' +
+          String(failure.status || 'failed') + ': ' + String(failure.outcomeCode || 'outcome unavailable');
+      }), 'No attempt failures returned.'),
+      detailsBlock('Raw output', artifacts.rawOutput, 'Raw output unavailable or redacted.'),
+      detailsBlock('Repaired output', artifacts.repairedOutput, 'Repaired output unavailable or redacted.'),
+      detailsBlock('Final output', artifacts.finalOutput, 'Final output unavailable or redacted.'),
+      detailsBlock('Tools', artifacts.tools, 'Tool trace unavailable or redacted.'),
+      detailsBlock('State changes', artifacts.stateChanges, 'State changes unavailable or redacted.'),
+      h('div', { className: 'card-foot' }, [
+        h('span', { className: 'pill ghost', text: 'inconclusive: repeated-run statistics pending' }),
+        h('span', { className: 'pill ghost', text: 'Critical regressions first when statistics land' })
+      ])
+    ]);
+  }
+
+  function runControlSection() {
+    var built = workingBand('Launch and inspect controlled Ciel runs', 'Code-owned configs, D6 cost envelope and shared operations');
+    var section = built.section;
+    var bandBody = built.body;
+    var datasetSelect = select(RUN_DATASETS.map(function (dataset) {
+      return option(dataset.id, dataset.label);
+    }));
+    var baselineSelect = select([option('prompt.synthetic.baseline', RUN_CONFIGS['prompt.synthetic.baseline'].label)]);
+    var candidateSelect = select([option('prompt.synthetic.candidate', RUN_CONFIGS['prompt.synthetic.candidate'].label)]);
+    var modeSelect = select([
+      option('offline_replay', 'Offline replay'),
+      option('fresh_capture', 'Fresh inference'),
+      option('scoring_only', 'Scoring only')
+    ]);
+    var providerSelect = select([
+      option('offline_fixture', 'Offline fixture'),
+      option('azure_openai', 'Azure OpenAI approved deployment')
+    ]);
+    var repeats = input('number', '1');
+    repeats.setAttribute('min', '1');
+    repeats.setAttribute('max', '10');
+    var estimate = input('number', '125');
+    estimate.setAttribute('min', '0');
+    estimate.setAttribute('max', '2500');
+    var concurrency = input('number', '0');
+    concurrency.setAttribute('min', '0');
+    concurrency.setAttribute('max', '4');
+    var approvalRef = input('text', 'runtime/approval/9802');
+    var approvedBy = input('text', '0a2dfb53-f68e-4cb1-a116-76ad64c1404f');
+    datasetSelect.value = RUN_DATASETS[0].id;
+    baselineSelect.value = 'prompt.synthetic.baseline';
+    candidateSelect.value = 'prompt.synthetic.candidate';
+    modeSelect.value = 'offline_replay';
+    providerSelect.value = 'offline_fixture';
+    var launchError = h('div', { className: 'field-error', role: 'alert' });
+    var launchResult = h('div', { className: 'run-launch-result', 'aria-live': 'polite' });
+    var inspectRunId = input('text');
+    var inspectError = h('div', { className: 'field-error', role: 'alert' });
+    var inspectResult = h('div', { className: 'run-inspection-result', 'aria-live': 'polite' });
+    var launchState = null;
+    var launchInFlight = false;
+    var currentRun = null;
+    var inspectionGeneration = 0;
+
+    function draft() {
+      return {
+        mode: modeSelect.value,
+        providerKind: providerSelect.value,
+        repeatsPerConfig: requirePositiveInteger(repeats.value, 'Repeats per config'),
+        estimatedCostCents: requirePositiveInteger(estimate.value, 'Estimated cost cents'),
+        providerConcurrency: Number(concurrency.value || '0'),
+        approvalRef: requireReference(approvalRef.value, 'Approval reference'),
+        approvedBy: requireUuid(approvedBy.value, 'Approving owner')
+      };
+    }
+
+    function renderLaunchItem(label, response) {
+      var value = response && response.resource && response.resource.value;
+      if (value && value.runId) inspectRunId.value = value.runId;
+      return h('article', { className: 'run-launch-item' }, [
+        h('h3', { text: label }),
+        value
+          ? detailList([
+            ['Run', value.runId],
+            ['Status', value.status],
+            ['Budget', String(value.budget && value.budget.estimatedCostCents || 0) + 'c expected'],
+            ['Revision', String(value.revision || 1)]
+          ])
+          : h('p', { className: 'field-hint', text: 'No run resource returned.' })
+      ]);
+    }
+
+    launchResult.setAttribute('id', 'ciel-run-launch-result');
+    inspectResult.setAttribute('id', 'ciel-run-inspection-result');
+
+    function launchSignature(dataset, selectedDraft) {
+      return JSON.stringify({
+        datasetId: dataset.id,
+        baseline: baselineSelect.value,
+        candidate: candidateSelect.value,
+        draft: selectedDraft
+      });
+    }
+
+    function currentLaunchState(dataset, selectedDraft) {
+      var signature = launchSignature(dataset, selectedDraft);
+      if (!launchState || launchState.signature !== signature) {
+        launchState = {
+          signature: signature,
+          baselineRequest: runLaunchRequest(dataset, baselineSelect.value, selectedDraft, 'baseline'),
+          candidateRequest: runLaunchRequest(dataset, candidateSelect.value, selectedDraft, 'candidate'),
+          baselineResponse: null,
+          candidateResponse: null
+        };
+      }
+      return launchState;
+    }
+
+    function renderLaunchState(state) {
+      clearNode(launchResult);
+      if (state && state.baselineResponse) {
+        launchResult.appendChild(renderLaunchItem('Baseline', state.baselineResponse));
+      }
+      if (state && state.candidateResponse) {
+        launchResult.appendChild(renderLaunchItem('Candidate', state.candidateResponse));
+      }
+    }
+
+    function resetLaunchState() {
+      launchState = null;
+      clearNode(launchResult);
+      clearNode(launchError);
+    }
+
+    var launchForm = h('form', { className: 'card run-launch-form' }, [
+      shell.cardHead('Launch baseline and candidate', 'Selections are fixed in code; endpoints and commands are never free text'),
+      h('div', { className: 'card-body q-grid browse-filter-grid' }, [
+        field('ciel-run-dataset', 'Frozen dataset release', datasetSelect),
+        field('ciel-run-baseline', 'Baseline config', baselineSelect),
+        field('ciel-run-candidate', 'Candidate config', candidateSelect),
+        field('ciel-run-mode', 'Run mode', modeSelect),
+        field('ciel-run-provider', 'Provider', providerSelect),
+        field('ciel-run-repeats', 'Repeats per config', repeats),
+        field('ciel-run-estimate', 'Approved estimate, cents', estimate),
+        field('ciel-run-concurrency', 'Provider concurrency', concurrency),
+        field('ciel-run-approval-ref', 'Approval reference', approvalRef),
+        field('ciel-run-approved-by', 'Approving owner', approvedBy)
+      ]),
+      h('div', { className: 'card-foot evidence-actions' }, [
+        h('p', { className: 'field-hint', text: 'The server enforces D6 caps again. The dashboard only sends the approved spend envelope.' }),
+        h('button', { className: 'btn btn-primary', type: 'submit', text: 'Launch controlled pair' })
+      ]),
+      launchError
+    ]);
+    launchForm.setAttribute('id', 'ciel-run-launch-form');
+
+    launchForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      clearNode(launchError);
+      var selectedDataset = RUN_DATASETS.filter(function (entry) { return entry.id === datasetSelect.value; })[0];
+      var selectedDraft;
+      try {
+        selectedDraft = draft();
+      } catch (caught) {
+        launchError.textContent = caught && caught.message ? caught.message : 'Run launch input is invalid.';
+        return;
+      }
+      var state = currentLaunchState(selectedDataset, selectedDraft);
+      renderLaunchState(state);
+      if (launchInFlight) {
+        launchError.textContent = 'A controlled launch is already in progress.';
+        return;
+      }
+      launchInFlight = true;
+      try {
+        if (!state.baselineResponse) {
+          state.baselineResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: state.baselineRequest });
+          renderLaunchState(state);
+        }
+        if (!state.candidateResponse) {
+          state.candidateResponse = await session.call('/api/ops/ciel/operations', { method: 'POST', body: state.candidateRequest });
+          renderLaunchState(state);
+        }
+        shell.announce('Controlled Ciel runs launched.');
+      } catch (caught) {
+        renderLaunchState(state);
+        if (state.baselineResponse && !state.candidateResponse) {
+          launchError.textContent = 'Candidate launch failed after baseline succeeded: ' + (caught && caught.message ? caught.message : 'try again with a new idempotency key.');
+          shell.announce('Candidate launch failed; baseline result remains visible.');
+        } else {
+          launchError.textContent = caught && caught.message ? caught.message : 'Controlled run launch failed.';
+        }
+      } finally {
+        launchInFlight = false;
+      }
+    });
+
+    var inspectForm = h('form', { className: 'card run-inspect-form' }, [
+      shell.cardHead('Inspect, cancel or retry a run', 'Progress, cost, provider provenance and redaction state'),
+      h('div', { className: 'card-body q-grid' }, [
+        field('ciel-run-inspect-id', 'Run ID', inspectRunId, 'Paste a run id returned by launch or by the CLI.')
+      ]),
+      h('div', { className: 'card-foot evidence-actions' }, [
+        h('button', { className: 'btn btn-primary', type: 'submit', text: 'Inspect run' }),
+        h('button', { id: 'ciel-run-cancel', className: 'btn btn-sm', type: 'button', text: 'Cancel inspected run' }),
+        h('button', { id: 'ciel-run-retry', className: 'btn btn-sm', type: 'button', text: 'Retry failed run' })
+      ]),
+      inspectError
+    ]);
+    inspectForm.setAttribute('id', 'ciel-run-inspect-form');
+
+    function runId() {
+      return requireUuid(inspectRunId.value, 'Run ID');
+    }
+
+    function invalidateInspection() {
+      inspectionGeneration += 1;
+      currentRun = null;
+      clearNode(inspectResult);
+    }
+
+    inspectForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      clearNode(inspectError);
+      invalidateInspection();
+      var acceptedRunId;
+      try {
+        acceptedRunId = runId();
+      } catch (caught) {
+        inspectError.textContent = caught && caught.message ? caught.message : 'Run inspection failed.';
+        return;
+      }
+      var generation = inspectionGeneration;
+      try {
+        var request = runEnvelope('ciel.run.get', { runId: acceptedRunId });
+        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        var value = response && response.resource && response.resource.value;
+        var currentInputRunId;
+        try {
+          currentInputRunId = runId();
+        } catch (caught) {
+          return;
+        }
+        if (generation !== inspectionGeneration || !value || value.runId !== acceptedRunId || currentInputRunId !== acceptedRunId) {
+          return;
+        }
+        currentRun = value;
+        inspectResult.appendChild(renderRunResource(response && response.resource));
+        shell.announce('Ciel run inspection loaded.');
+      } catch (caught) {
+        if (generation !== inspectionGeneration) return;
+        currentRun = null;
+        clearNode(inspectResult);
+        inspectError.textContent = caught && caught.message ? caught.message : 'Run inspection failed.';
+      }
+    });
+
+    inspectRunId.required = true;
+    inspectRunId.addEventListener('input', invalidateInspection);
+    [datasetSelect, baselineSelect, candidateSelect, modeSelect, providerSelect, repeats, estimate, concurrency, approvalRef, approvedBy].forEach(function (control) {
+      control.addEventListener('change', resetLaunchState);
+      control.addEventListener('input', resetLaunchState);
+    });
+    var cancelButton = inspectForm.children[2].children[1];
+    var retryButton = inspectForm.children[2].children[2];
+    cancelButton.addEventListener('click', async function () {
+      clearNode(inspectError);
+      try {
+        if (!currentRun) throw new Error('Inspect a run before cancelling it.');
+        if (runId() !== currentRun.runId) throw new Error('Inspect a run before cancelling it.');
+        var request = runEnvelope('ciel.run.cancel', {
+          runId: currentRun.runId,
+          reason: 'Cancelled from the Ciel admin dashboard.'
+        });
+        request.expectedRevision = currentRun.revision;
+        request.idempotencyKey = 'dashboard-run-cancel-' + request.requestId;
+        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        currentRun = response && response.resource && response.resource.value;
+        clearNode(inspectResult);
+        inspectResult.appendChild(renderRunResource(response && response.resource));
+      } catch (caught) {
+        inspectError.textContent = caught && caught.message ? caught.message : 'Cancel failed.';
+      }
+    });
+    retryButton.addEventListener('click', async function () {
+      clearNode(inspectError);
+      try {
+        if (!currentRun) throw new Error('Inspect a run before retrying it.');
+        if (runId() !== currentRun.runId) throw new Error('Inspect a run before retrying it.');
+        var request = runEnvelope('ciel.run.retry', {
+          runId: currentRun.runId,
+          reason: 'Retry failed attempts from the Ciel admin dashboard.'
+        });
+        request.idempotencyKey = 'dashboard-run-retry-' + request.requestId;
+        var response = await session.call('/api/ops/ciel/operations', { method: 'POST', body: request });
+        currentRun = response && response.resource && response.resource.value;
+        clearNode(inspectResult);
+        inspectResult.appendChild(renderRunResource(response && response.resource));
+      } catch (caught) {
+        inspectError.textContent = caught && caught.message ? caught.message : 'Retry failed.';
+      }
+    });
+
+    bandBody.appendChild(launchForm);
+    bandBody.appendChild(launchResult);
+    bandBody.appendChild(inspectForm);
+    bandBody.appendChild(inspectResult);
+    return section;
+  }
+
   function attributeOf(node, name) {
     if (typeof node.getAttribute === 'function') return node.getAttribute(name) || '';
     return node.attributes && node.attributes[name] ? node.attributes[name] : '';
@@ -1776,6 +2658,8 @@
        half way would otherwise leave the next one driving dead bands. */
     pending = [];
     var stack = h('div', { className: 'stack' }, [
+      browseSection(),
+      runControlSection(),
       datasetValidationSection(),
       evidenceQuarantineSection(),
       approvalSection(),

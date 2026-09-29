@@ -264,7 +264,7 @@ test('the rail groups the panes under the three headings, in order', () => {
 
   const lists = rail.querySelectorAll('.nav-list');
   assert.equal(lists.length, 3, 'one list per group');
-  assert.deepEqual(lists.map((l) => l.querySelectorAll('.nav-item').length), [4, 3, 3]);
+  assert.deepEqual(lists.map((l) => l.querySelectorAll('.nav-item').length), [4, 4, 3]);
   for (const l of lists) {
     assert.equal(l.getAttribute('role'), 'group');
     const heading = doc.getElementById(l.getAttribute('aria-labelledby'));

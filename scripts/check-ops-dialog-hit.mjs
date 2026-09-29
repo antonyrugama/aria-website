@@ -1,6 +1,7 @@
-/* Guards the dashboard's confirmation dialogs against the one failure that
-   leaves them fully present in the DOM and unusable on screen: painting behind
-   the scrim that is meant to sit behind THEM.
+/* Guards the dashboard's confirmation dialogs, and the phone navigation
+   drawer, against the one failure that leaves them fully present in the DOM
+   and unusable on screen: painting behind the scrim that is meant to sit
+   behind THEM.
 
    This is the shape of Stadiora/Aria#10688. The revoke dialog on the Settings
    pane -- the pane's only destructive control -- was declared at z-index 60
@@ -62,6 +63,19 @@ const DIALOGS = [
     open: 'button[aria-label^="Revoke access for"]',
     dialog: 'form.modal',
     confirm: 'button.btn-danger',
+  },
+  /* Not a confirmation dialog, but the same failure: below 980px the rail is a
+     modal drawer over its own scrim, and a scrim that paints above the drawer
+     leaves every pane link present, focusable and unreachable by a finger
+     (Stadiora/Aria#12909). It needs the phone width to exist at all, and the
+     drawer slides in, so it is measured once the slide has finished. */
+  {
+    name: 'Phone navigation drawer',
+    page: '/ops/index.html',
+    viewport: { width: 375, height: 812, mobile: true },
+    open: '#railToggle',
+    dialog: '#rail.is-open',
+    settleMs: 400,
   },
 ];
 
@@ -139,6 +153,10 @@ function connect(url) {
    carries the long version of this note and the .gitignore entry that covers
    the run interrupted before it gets here. */
 const KILL_GRACE_MS = 5000;
+const STARTUP_TRIES = 300;
+const STARTUP_POLL_MS = 100;
+const PROFILE_RM_TRIES = 50;
+const PROFILE_RM_DELAY_MS = 200;
 
 function exitsWithin(child, ms) {
   return new Promise((resolve) => {
@@ -160,6 +178,21 @@ async function stopBrowser(child) {
   return (await killed) || gone();
 }
 
+async function removeProfile(dir) {
+  let last = null;
+  for (let i = 0; i < PROFILE_RM_TRIES; i += 1) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      return true;
+    } catch (err) {
+      last = err;
+      await new Promise((r) => setTimeout(r, PROFILE_RM_DELAY_MS));
+    }
+  }
+  if (last && last.code !== 'ENOENT') throw last;
+  return true;
+}
+
 async function launch() {
   const port = 9400 + Math.floor(Math.random() * 400);
   const dir = fs.mkdtempSync(path.join(ROOT, '.ops-dialog-hit-'));
@@ -171,8 +204,8 @@ async function launch() {
     '--window-size=1280,900', 'about:blank',
   ], { stdio: 'ignore' });
 
-  for (let i = 0; i < 100; i += 1) {
-    await new Promise((r) => setTimeout(r, 100));
+  for (let i = 0; i < STARTUP_TRIES; i += 1) {
+    await new Promise((r) => setTimeout(r, STARTUP_POLL_MS));
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json/version`);
       const info = await res.json();
@@ -180,7 +213,7 @@ async function launch() {
     } catch (e) { /* not listening yet */ }
   }
   await stopBrowser(child);
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await removeProfile(dir);
   throw new Error('Chrome did not start');
 }
 
@@ -313,6 +346,12 @@ async function measure(cdp, origin, spec, theme) {
       + `localStorage.setItem('ops-theme', ${JSON.stringify(theme)});`
       + "sessionStorage.setItem('ops-refresh', JSON.stringify({ t: 'stub', s: 'adm_1' }));",
   });
+  if (spec.viewport) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: spec.viewport.width, height: spec.viewport.height,
+      deviceScaleFactor: 1, mobile: !!spec.viewport.mobile,
+    });
+  }
   await cdp.send('Page.navigate', { url: origin + spec.page });
 
   /* Wait for the trigger rather than for a fixed delay: a sleep long enough to
@@ -339,6 +378,7 @@ async function measure(cdp, origin, spec, theme) {
     return;
   }
   dialogsOpened += 1;
+  if (spec.settleMs) await new Promise((r) => setTimeout(r, spec.settleMs));
   let broke = false;
 
   /* ---- 1. pointer ---- */
@@ -356,6 +396,10 @@ async function measure(cdp, origin, spec, theme) {
     const bad = [];
     let points = 0;
     controls.forEach((el) => {
+      /* A drawer scrolls; a control below its fold is not covered, only out of
+         view, and elementFromPoint off screen answers null. A dialog that does
+         not scroll is unaffected. */
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       const b = el.getBoundingClientRect();
       const inset = Math.min(4, b.width / 4, b.height / 4);
       const spots = [
@@ -489,7 +533,7 @@ try {
 } finally {
   const stopped = await stopBrowser(chrome.child);
   try {
-    fs.rmSync(chrome.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await removeProfile(chrome.dir);
   } catch {
     if (!stopped) console.warn(`warn  Chrome did not exit, so ${chrome.dir} may survive.`);
   }
@@ -513,5 +557,5 @@ if (failures.length) {
   console.error('\n' + failures.map((f) => 'FAIL  ' + f).join('\n'));
   process.exit(1);
 }
-console.log('\nEvery confirmation dialog this dashboard opens receives the pointer over its '
-  + 'own controls, and its scrim paints behind it, in both themes.');
+console.log('\nEvery confirmation dialog this dashboard opens, and the phone navigation drawer, '
+  + 'receives the pointer over its own controls, and its scrim paints behind it, in both themes.');

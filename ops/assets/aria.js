@@ -138,6 +138,7 @@
     { id: 'analytics', label: 'People and usage', href: 'analytics.html',   icon: 'chart' },
     { id: 'spend',     label: 'Cloud costs',      href: 'spend.html',       icon: 'coin' },
     { id: 'quality',   label: 'Aria quality',     href: 'evaluations.html', icon: 'spark' },
+    { id: 'review',    label: 'SEVAL review',     href: 'review.html',      icon: 'person' },
 
     { group: 'Apps and people' },
     { id: 'releases', label: 'App releases',   href: 'releases.html', icon: 'ship' },
@@ -248,7 +249,7 @@
        given, so an unguarded title paints the word "undefined" as the page
        heading, and an empty <h1> is its own accessibility defect. A page that
        names no title gets no heading. */
-    root.appendChild(h('div', {}, [
+    root.appendChild(h('div', { className: 'page-head' }, [
       cfg.title ? h('h1', { className: 'page-title', text: cfg.title }) : null,
       cfg.sub ? h('p', { className: 'page-sub', text: cfg.sub }) : null
     ]));

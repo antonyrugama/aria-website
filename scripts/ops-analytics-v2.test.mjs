@@ -548,6 +548,10 @@ function usagePayload(scope, parts) {
     consent: { enforcedAt: 'ingest', detail: CONSENT_DETAIL },
     availability: resolveAvailability(apps, 30),
     apps,
+    /* Every selected app here has a reading, so the route names none of them
+       (`opsUsageView.ts:667-677`). The answers in which one is missing are
+       built by `notReportingAnswer` below. */
+    notReporting: [],
     cohorts: keys.map((key) => appCohort(key, parts)),
     features: rows.length
       ? {
@@ -1353,6 +1357,98 @@ test('one app is a split that cannot exist, not an empty one', async () => {
     'the comparison lost one of its columns');
 });
 
+/* The route's sentence for an app with no reading, character for character
+   from the template at `opsUsageView.ts:674-676`. Stated here rather than read
+   out of the pane, so the pane cannot move the expectation by moving its copy. */
+const absentDetail = (label) => label + ' has no stored figures and no client event in '
+  + 'this window, so there is nothing to count. This is not a zero: it is the absence of a '
+  + 'reading.';
+
+/* The answer `scope=all` gets when only some apps have a reading: the route
+   builds columns for the ones that do and names the rest in `notReporting`
+   (`opsUsageView.ts:666-677`). An app is in exactly one of the two, so the
+   drawn part is the answer for those apps alone, and `filters.app` is still
+   the selection the operator asked for. `drawn` is the scope whose apps have a
+   reading; `unread` lists the apps that do not. */
+function notReportingAnswer(drawn, unread) {
+  const answer = usagePayload(drawn, APP_PARTS);
+  answer.filters.app = 'all';
+  answer.notReporting = unread.map((app) => ({
+    app: app.app, label: app.label, detail: absentDetail(app.label),
+  }));
+  return answer;
+}
+
+/* The lines of a state block, one run each, in order. */
+const stateLines = (root) => byClass(root, 'state-desc').map((n) => allText(n).trim());
+
+function splitStateCard(dom) {
+  return byClass(livePanel(dom), 'card')
+    .filter((n) => byClass(n, 'state-title').some((t) => /No split to draw/.test(allText(t))))[0];
+}
+
+test('an app that reported nothing is named, not described as outside the selection', async () => {
+  const dom = await boot({
+    search: '?scope=all',
+    usage: notReportingAnswer('mobile', [{ app: 'coaches', label: 'Coaches Web' }]),
+  });
+  const split = splitStateCard(dom);
+  assert.ok(split, 'one app was drawn as a comparison anyway');
+  assert.deepEqual(stateLines(split), [
+    'Only Mobile reported over this window.',
+    absentDetail('Coaches Web'),
+  ], 'the split card did not say which app is missing and why');
+  assert.doesNotMatch(allText(split), /in this selection/,
+    'every app is selected, and the card said only one was');
+
+  /* The coverage figure has one printing, and this is it. */
+  assert.match(allText(split), /of sessions report|Every session reports|Coverage not reported/,
+    'the drawn app lost its coverage pill');
+  /* Widening the filter is not the remedy when it is already every app. */
+  const offer = findAll(split, (n) => isTag(n, 'a')).filter((n) => /Show every app/.test(allText(n)));
+  assert.equal(offer.length, 0, 'the card offered every app to a selection that is already every app');
+});
+
+test('the split card keeps its selection copy when nothing is named as not reporting', async () => {
+  /* An older backend sends no `notReporting`, and the current one sends an
+     empty list on a one-app selection. Both are the case the old sentence was
+     true for, so both keep it. */
+  const older = usageFixture(null, { scope: 'mobile' });
+  delete older.notReporting;
+  const current = usageFixture(null, { scope: 'mobile' });
+  for (const [name, usage] of [['absent', older], ['empty', current]]) {
+    const dom = await boot({ search: '?scope=mobile', usage });
+    const split = splitStateCard(dom);
+    assert.ok(split, name + ': one app was drawn as a comparison anyway');
+    assert.deepEqual(stateLines(split), [
+      'Only Mobile is in this selection, so there is nothing to compare it with.',
+    ], name + ': the split card changed copy with nothing named as not reporting');
+  }
+});
+
+test('an empty answer names the apps that did not report, rather than suggesting a wider filter', async () => {
+  /* Unreachable today, and guarded anyway: a `ready` answer with no app drawn
+     would need the platform row to count people no app has a reading for.
+     The route's own `not_reporting` state covers the reachable case, before
+     this card is ever built. */
+  const both = [{ app: 'mobile', label: 'Mobile' }, { app: 'coaches', label: 'Coaches Web' }];
+  const answer = notReportingAnswer('all', both);
+  answer.apps = [];
+  const dom = await boot({ search: '?scope=all', usage: answer });
+  const empty = panel(dom, 'empty');
+  assert.match(allText(empty), /No app reported over this window/, 'the empty card lost its heading');
+  assert.deepEqual(stateLines(empty), both.map((app) => absentDetail(app.label)),
+    'the empty card did not name the apps that reported nothing');
+
+  /* The other direction: nothing named keeps the filter advice. */
+  const plain = notReportingAnswer('all', []);
+  plain.apps = [];
+  const fallback = await boot({ search: '?scope=all', usage: plain });
+  assert.deepEqual(stateLines(panel(fallback, 'empty')),
+    ['Widen the window or change the app filter to see figures.'],
+    'the empty card changed copy with nothing named as not reporting');
+});
+
 /* One column of the split, by the app it is of, and the lead slot inside it.
    Read as a slot rather than as whole-card text because the card prints eight
    figures and a regex over all of them cannot say which slot a number came
@@ -1391,7 +1487,7 @@ test('every app figure is in the split, withheld ones with their reason', async 
      that happens to be first.
 
      NOT COVERED, on purpose: the withheld branch of this slot
-     (`pane-analytics.js:852-858`, `leadReason ? sentence(leadReason) : …`) is
+     (`pane-analytics.js:870-876`, `leadReason ? sentence(leadReason) : …`) is
      unreachable from any answer the route can send, so no fixture here binds
      it and none should pretend to. The lead metric is `metrics[0]`, which the
      route always builds as `countMetric('Active people', …)`
@@ -2489,11 +2585,14 @@ test('the page loads the v2 system and not the v1 one', () => {
    answer as reading all ~340 computed properties, for a fraction of the work --
    and it is a narrowing done by value, not by pattern. */
 
-/* Classes the pane writes deliberately without a rule behind them. Empty
-   today, and kept as the place a query hook would be declared with its
-   reason: a class JS finds nodes by is not a defect, and a class nobody can
+/* Classes the page writes deliberately without a rule behind them, each with
+   its reason: a class JS finds nodes by is not a defect, and a class nobody can
    say a purpose for is. */
-const UNPAINTED_ON_PURPOSE = new Map([]);
+const UNPAINTED_ON_PURPOSE = new Map([
+  ['page-head', 'A query hook: assets/aria.js puts it on the top bar\'s title block so the '
+    + 'guided tour (assets/tour.js) can outline the title and its question as one '
+    + 'element (Stadiora/Aria#12913). The block needs no paint of its own.'],
+]);
 
 /* The seven answer shapes. Four of them draw figures — every app, one app,
    the partial window, and groups under the reporting floor, which draws its
@@ -2953,7 +3052,8 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
      nobody sees. Read off the page rather than listed here. */
   const hrefs = SHEETS;
   assert.deepEqual(hrefs,
-    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css'],
+    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css',
+      'assets/tour-v2.css'],
     'the page stopped loading the sheets this check reads: ' + JSON.stringify(hrefs));
 
   /* Seven states, in the fake DOM, exactly as the rest of this file drives the

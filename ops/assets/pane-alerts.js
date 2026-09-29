@@ -122,6 +122,12 @@
     disabled: 'ghost', error: 'down'
   };
 
+  /* A rules-table row's severity tint, keyed by its state pill's tone, as the
+     approved mock pairs them (docs/mocks/ops-dashboard-v2/alerts.html: a
+     `down` pill sits in a `hot` row, a `warn` pill in a `warm` one). The pill
+     states the meaning in words; the tint only makes the row findable. */
+  var ROW_TINT = { down: 'hot', warn: 'warm' };
+
   /* The problems API names a work pane with the file-ish keys
      OpsAlertsModel.PANE_FILE holds; the registry keys differ for two of them.
      Translated rather than assumed, so a link that cannot be built from the
@@ -824,6 +830,16 @@
       return notes;
     }
 
+    /* A string field as it is drawn: trimmed, because every predicate on this
+       pane decides with textOf(), which trims, and a field tested on the
+       trimmed value and drawn raw puts its own padding on screen
+       (Stadiora/Aria#10873). Anything that is not a string is handed back
+       unchanged, so this only ever removes whitespace a test already ignored.
+       scripts/ops-alerts-blank-text.test.mjs holds the invariant. */
+    function trimmed(value) {
+      return typeof value === 'string' ? value.trim() : value;
+    }
+
     function problemCard(problem, data) {
       var tone = SEVERITY_TONE[problem.severity] || 'info';
       var box = S.card('accent p-item ' + (SEVERITY_ACCENT[tone] || 'acc-blue'));
@@ -876,7 +892,7 @@
          down the card and in the glyph, and none of those three is readable
          to somebody who cannot see colour, so it is in words here as well. */
       strip.appendChild(h('h3', {
-        className: 'p-title ' + (SEVERITY_INK[tone] || 'is-info'), text: problem.title
+        className: 'p-title ' + (SEVERITY_INK[tone] || 'is-info'), text: trimmed(problem.title)
       }));
       strip.appendChild(h('span', {
         className: 'pill ' + (SEVERITY_PILL[tone] || 'info'),
@@ -884,7 +900,7 @@
       }));
       if (textOf(problem.reference)) {
         strip.appendChild(h('span', { className: 'pill ghost' }, [
-          h('span', { className: 'code', text: problem.reference })
+          h('span', { className: 'code', text: trimmed(problem.reference) })
         ]));
       }
       words.appendChild(strip);
@@ -930,9 +946,11 @@
       var observed = observedText(problem, data);
       if (observed) measured.appendChild(factRow('Measured', observed, true));
       if (textOf(problem.ruleThreshold)) {
-        measured.appendChild(factRow('Alerts on', problem.ruleThreshold, true));
+        measured.appendChild(factRow('Alerts on', trimmed(problem.ruleThreshold), true));
       }
-      if (textOf(problem.ruleTitle)) measured.appendChild(factRow('Rule', problem.ruleTitle));
+      if (textOf(problem.ruleTitle)) {
+        measured.appendChild(factRow('Rule', trimmed(problem.ruleTitle)));
+      }
       grid.appendChild(measured);
 
       var when = h('div', { className: 'p-col' });
@@ -957,7 +975,7 @@
       [problem.scopeLabel, problem.categoryLabel]
         .filter(function (label) { return textOf(label); })
         .forEach(function (label) {
-          chips.appendChild(h('span', { className: 'pill ghost', text: label }));
+          chips.appendChild(h('span', { className: 'pill ghost', text: trimmed(label) }));
         });
       if (chips.childNodes.length) {
         where.appendChild(h('div', { className: 'p-col-label', text: 'Where it shows up' }));
@@ -1036,7 +1054,7 @@
        word and the elapsed time are not, and one fact gets one slot. */
     function closedSentence(problem, whenIsAlready) {
       var reason = problem.closeReason
-        ? (CLOSE_REASON_LABEL[problem.closeReason] || problem.closeReason).toLowerCase()
+        ? (CLOSE_REASON_LABEL[problem.closeReason] || trimmed(problem.closeReason)).toLowerCase()
         : null;
       var who = textOf(problem.closedByEmail);
       /* The card already carries a "Closed <ago>" pill, so the word and the
@@ -1070,7 +1088,7 @@
       var file = model.PANE_FILE[problem.workPane];
       if (file && problem.workPane !== 'alerts') {
         row.appendChild(S.link(S.paneHref(paneKey(problem.workPane)) || file,
-          problem.workPaneLabel || 'Where the work happens'));
+          textOf(problem.workPaneLabel) || 'Where the work happens'));
       }
 
       row.appendChild(detailsButton(problem, data, detailHost, surface));
@@ -1098,7 +1116,7 @@
         className: 'btn btn-sm btn-primary', type: 'button', text: 'I am on it'
       });
       button.appendChild(h('span', {
-        className: 'sr', text: ', take on ' + problem.reference
+        className: 'sr', text: ', take on ' + trimmed(problem.reference)
       }));
       button.addEventListener('click', function () {
         button.disabled = true;
@@ -1124,7 +1142,7 @@
         className: 'btn btn-sm', type: 'button', text: 'Details',
         'aria-expanded': 'false', 'aria-controls': id
       });
-      button.appendChild(h('span', { className: 'sr', text: ' of ' + problem.reference }));
+      button.appendChild(h('span', { className: 'sr', text: ' of ' + trimmed(problem.reference) }));
       function read() {
         clear(host);
         host.appendChild(h('p', { className: 'tiny muted', text: 'Reading the record…' }));
@@ -1153,7 +1171,7 @@
               className: 'btn btn-sm', type: 'button', text: 'Try again'
             });
             again.appendChild(h('span', {
-              className: 'sr', text: ' reading ' + problem.reference
+              className: 'sr', text: ' reading ' + trimmed(problem.reference)
             }));
             /* The retry is inside the region it replaces, so pressing it
                destroys it: the same class as every other control here, and
@@ -1180,7 +1198,7 @@
       if (runbook.length) {
         box.appendChild(h('h4', { className: 'p-detail-title', text: 'What to do' }));
         var steps = h('ol', { className: 'p-steps' });
-        runbook.forEach(function (step) { steps.appendChild(h('li', { text: step })); });
+        runbook.forEach(function (step) { steps.appendChild(h('li', { text: trimmed(step) })); });
         box.appendChild(steps);
       }
 
@@ -1201,14 +1219,14 @@
         history.forEach(function (entry) {
           var outcome = entry.closedAt
             ? 'closed as ' + (CLOSE_REASON_LABEL[entry.closeReason] ||
-                entry.closeReason || 'resolved').toLowerCase()
+                textOf(entry.closeReason) || 'resolved').toLowerCase()
             : 'still open';
           var item = h('li', { className: 'p-log-row' });
           item.appendChild(h('span', {
             className: 'p-log-when num', text: fmt.utcDay(entry.firedAt) || fmt.none
           }));
           item.appendChild(h('div', {
-            text: entry.reference + ', ' + entry.title + ', ' + outcome
+            text: trimmed(entry.reference) + ', ' + trimmed(entry.title) + ', ' + outcome
           }));
           earlier.appendChild(item);
         });
@@ -1218,7 +1236,7 @@
       if (!box.childNodes.length) {
         box.appendChild(h('p', {
           className: 'tiny muted',
-          text: 'Nothing is recorded against ' + (problem.reference || 'this problem') +
+          text: 'Nothing is recorded against ' + (textOf(problem.reference) || 'this problem') +
             ' beyond what is above.'
         }));
       }
@@ -1235,8 +1253,8 @@
       }));
       var words = h('div');
       words.appendChild(h('span', {
-        text: (EVENT_LABEL[event.eventType] || event.eventType) +
-          (textOf(event.actorEmail) ? ' by ' + event.actorEmail : '')
+        text: (EVENT_LABEL[event.eventType] || trimmed(event.eventType)) +
+          (textOf(event.actorEmail) ? ' by ' + textOf(event.actorEmail) : '')
       }));
       var note = event.detail && textOf(event.detail.note);
       if (note) words.appendChild(h('p', { className: 'p-log-note', text: '“' + note + '”' }));
@@ -1257,7 +1275,9 @@
         className: 'btn btn-sm', type: 'button', text: 'Close',
         'aria-expanded': 'false', 'aria-controls': id
       });
-      button.appendChild(h('span', { className: 'sr', text: ' problem ' + problem.reference }));
+      button.appendChild(h('span', {
+        className: 'sr', text: ' problem ' + trimmed(problem.reference)
+      }));
       button.addEventListener('click', function () {
         var open = button.getAttribute('aria-expanded') === 'true';
         clear(host);
@@ -1418,15 +1438,16 @@
         '/api/ops/alerts/problems/' + encodeURIComponent(problem.id) + '/acknowledge',
         { method: 'POST' }
       ).then(function () {
-        S.toast('check', 'You are on ' + problem.reference + '. Everyone else can see that.');
-        afterChange('You are now on ' + problem.reference + '.');
+        S.toast('check',
+          'You are on ' + trimmed(problem.reference) + '. Everyone else can see that.');
+        afterChange('You are now on ' + trimmed(problem.reference) + '.');
       }).catch(function (err) {
         /* Somebody else got there first, or the problem moved on while the
            page was open. Neither is an error the operator caused, so the pane
            says what happened and re-reads rather than showing a failure. */
         if (err && err.code === 'ops_problem_moved') {
-          S.toast('info', 'Somebody else changed ' + problem.reference + ' first.');
-          afterChange('Somebody else changed ' + problem.reference +
+          S.toast('info', 'Somebody else changed ' + trimmed(problem.reference) + ' first.');
+          afterChange('Somebody else changed ' + trimmed(problem.reference) +
             ' first. The page has been re-read.');
           return;
         }
@@ -1440,7 +1461,7 @@
         '/api/ops/alerts/problems/' + encodeURIComponent(problem.id) + '/close',
         { method: 'POST', body: { reason: choice, note: textOf(note) || undefined } }
       ).then(function () {
-        var words = problem.reference + ' closed as ' +
+        var words = trimmed(problem.reference) + ' closed as ' +
           (CLOSE_REASON_LABEL[choice] || choice).toLowerCase() + '.';
         S.toast('check', words);
         afterChange(words);
@@ -1451,8 +1472,8 @@
            rather than leaving them staring at an error over a screen that is
            already stale. */
         if (err && err.code === 'ops_problem_moved') {
-          S.toast('info', 'Somebody else changed ' + problem.reference + ' first.');
-          afterChange('Somebody else changed ' + problem.reference +
+          S.toast('info', 'Somebody else changed ' + trimmed(problem.reference) + ' first.');
+          afterChange('Somebody else changed ' + trimmed(problem.reference) +
             ' first. The page has been re-read.');
           return;
         }
@@ -1538,18 +1559,28 @@
       return section;
     }
 
+    /* A rule by its title, or by its key when it has none worth printing. */
+    function ruleName(rule) {
+      return textOf(rule.title) || trimmed(rule.ruleKey);
+    }
+
+    /* The table lays the row out; the row's only class is its tint. It used
+       to carry `rule-row`, which only the deleted v1 sheet painted
+       (Stadiora/Aria#10644). */
     function ruleRow(rule, queue) {
-      var row = h('tr', { className: 'rule-row' });
+      var state = ruleState(rule);
+      var tint = ROW_TINT[ruleTone(rule)];
+      var row = h('tr', tint ? { className: tint } : {});
 
       var name = h('td');
-      name.appendChild(h('div', { className: 't-main', text: rule.title || rule.ruleKey }));
+      name.appendChild(h('div', { className: 't-main', text: ruleName(rule) }));
       var feeding = queue.filter(function (problem) {
         return problem.ruleKey === rule.ruleKey && problem.status !== 'closed';
       })[0];
       if (feeding && textOf(feeding.reference)) {
         var sub = h('div', { className: 't-sub' });
         sub.appendChild(document.createTextNode('Feeds problem '));
-        sub.appendChild(h('span', { className: 'code', text: feeding.reference }));
+        sub.appendChild(h('span', { className: 'code', text: textOf(feeding.reference) }));
         name.appendChild(sub);
       }
       row.appendChild(name);
@@ -1561,7 +1592,7 @@
         className: 'r num', text: textOf(rule.thresholdLabel) || fmt.none
       }));
 
-      row.appendChild(h('td', {}, [ruleState(rule)]));
+      row.appendChild(h('td', {}, [state]));
 
       var fired = h('td', { className: 'r' });
       if (rule.lastFiredAt) {
@@ -1575,16 +1606,25 @@
       return row;
     }
 
+    /* The tone of a rule's state pill. ruleRow() tints the row from the same
+       answer, so a row can never be tinted one way while its pill says
+       another. */
+    function ruleTone(rule) {
+      if (!rule.enabled) return 'ghost';
+      if (!rule.lastEvaluatedAt) return 'warn';
+      return EVALUATION_PILL[rule.lastEvaluationStatus] || 'warn';
+    }
+
     /* What the rule did the last time it ran, in words. A rule that is
        enabled but cannot reach a verdict is not a rule that is watching, and
        the row says so where the eye already is: the pill's tone repeats the
        word, it never carries it. */
     function ruleState(rule) {
-      if (!rule.enabled) return chip('ghost', 'x', 'Turned off');
-      if (!rule.lastEvaluatedAt) return chip('warn', 'clock', 'Has not run yet');
+      if (!rule.enabled) return chip(ruleTone(rule), 'x', 'Turned off');
+      if (!rule.lastEvaluatedAt) return chip(ruleTone(rule), 'clock', 'Has not run yet');
 
       var status = rule.lastEvaluationStatus;
-      var words = EVALUATION_LABEL[status] || status || 'Unknown';
+      var words = EVALUATION_LABEL[status] || textOf(status) || 'Unknown';
       if (status === 'insufficient_data' && rule.lastInsufficientReason) {
         /* Through textOf(), for severityWords()'s reason one screen above:
            INSUFFICIENT_REASON is a plain object literal, so a reason of
@@ -1598,7 +1638,7 @@
       var glyph = status === 'ok' ? 'check'
         : status === 'firing' ? 'warn'
           : status === 'error' ? 'plug' : 'clock';
-      return chip(EVALUATION_PILL[status] || 'warn', glyph, words);
+      return chip(ruleTone(rule), glyph, words);
     }
 
     /* A real checkbox carrying role="switch", so it is focusable, announced
@@ -1608,7 +1648,7 @@
     function ruleToggle(rule) {
       var input = h('input', {
         className: 'sw', type: 'checkbox', role: 'switch',
-        'aria-label': (rule.enabled ? 'Turn off ' : 'Turn on ') + (rule.title || rule.ruleKey)
+        'aria-label': (rule.enabled ? 'Turn off ' : 'Turn on ') + ruleName(rule)
       });
       input.checked = Boolean(rule.enabled);
       if (!isOwner) {
@@ -1627,7 +1667,7 @@
           method: 'PATCH',
           body: { enabled: next }
         }).then(function () {
-          S.toast('check', (rule.title || rule.ruleKey) + (next ? ' turned on' : ' turned off'));
+          S.toast('check', ruleName(rule) + (next ? ' turned on' : ' turned off'));
           reload();
         }).catch(function (err) {
           /* Put the switch back where it was. It shows what the rule is, and
@@ -1743,10 +1783,10 @@
 
       var words = h('div', { className: 'grow' });
       var strip = h('div', { className: 'row wrap gap-sm' });
-      strip.appendChild(h('h4', { className: 'c-title', text: problem.title }));
+      strip.appendChild(h('h4', { className: 'c-title', text: trimmed(problem.title) }));
       if (textOf(problem.reference)) {
         strip.appendChild(h('span', { className: 'pill ghost' }, [
-          h('span', { className: 'code', text: problem.reference })
+          h('span', { className: 'code', text: trimmed(problem.reference) })
         ]));
       }
       words.appendChild(strip);

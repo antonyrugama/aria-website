@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
 <link rel="stylesheet" href="assets/pane-overview-v2.css">
+<link rel="stylesheet" href="assets/tour-v2.css">
 </head>
 <body data-pane="overview" class="is-booting">
 
@@ -60,5 +61,8 @@
      model, so the two panes cannot disagree about what "still open" means. -->
 <script src="assets/alerts-model.js"></script>
 <script src="assets/pane-overview.js"></script>
+<!-- The guided tour reads the registry and the page this shell drew, so it
+     loads after both and after the pane's own module. -->
+<script src="assets/tour.js"></script>
 </body>
 </html>
