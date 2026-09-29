@@ -206,10 +206,16 @@ test('the activity step finds its card at either grain the server may send', asy
     daysMissingRollups: [],
     window: { days: 7, grain: 'day', timezone: 'UTC' },
   };
-  /* The words that only fit one grain. A fact that says "each hour" or "a
-     daily rhythm" describes the hourly card, and reads wrongly under the
-     daily one (Stadiora/Aria#12901). */
-  const hourOnly = /\beach hour\b(?! or day)|daily rhythm|last 24 hours\b(?!, or)/i;
+  /* Under the daily card, a fact that talks in hours, or about the shape of a
+     day, must also name the daily grain, or it describes only the hourly card
+     (Stadiora/Aria#12901). "Daily" counts as naming the grain unless it is the
+     shape of a day ("a daily cycle"), which is an hourly idea.
+     NOT COVERED: this reads words, not meaning. Hour-only wording that uses
+     none of the words below, or that happens to name the daily grain in the
+     same sentence, passes; the CI render (ops-tour-render.yml) is where a
+     person reads the copy under both cards. */
+  const hourly = /\bhours?\b|\bhourly\b|\bovernight\b|\bthrough the day\b|\bby day\b|\brhythm\b|\bcycle\b|\bpattern\b|\blast day\b/i;
+  const dailyGrain = /\bdaily\b(?!\s+(?:cycle|rhythm|pattern|shape))|\b(?:per|each|one|UTC) day\b/i;
   for (const [grain, answer] of [['hour', undefined], ['day', { data: daily }]]) {
     const view = await openGuide('overview', {
       answer: (path) => (path === '/api/ops/summary' ? answer : undefined),
@@ -221,7 +227,8 @@ test('the activity step finds its card at either grain the server may send', asy
       grain + ': the step outlined something other than the activity card');
     if (grain === 'day') {
       for (const [term, text] of Object.entries(facts(view.box))) {
-        assert.doesNotMatch(text, hourOnly, 'day: "' + term + '" describes only the hourly card: ' + text);
+        assert.ok(!hourly.test(text) || dailyGrain.test(text),
+          'day: "' + term + '" describes only the hourly card: ' + text);
       }
     }
   }

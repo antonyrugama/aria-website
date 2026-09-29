@@ -231,8 +231,8 @@
             'day when the server sends the older daily window; the card title says which. One ' +
             'line per app, and a reading with nothing stored breaks the line rather than ' +
             'joining across it.',
-          source: 'Usage events the apps send, counted by the server for each hour or day ' +
-            'the card shows.',
+          source: 'Usage events the apps send, counted by the server for each hour or each ' +
+            'day the card shows.',
           healthy: 'A steady shape on both lines: a rhythm through the day on the hourly card, ' +
             'a steady level on the daily one.',
           worrying: 'A line that goes flat or stops. An app may have stopped sending data.'
