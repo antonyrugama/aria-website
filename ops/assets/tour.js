@@ -773,7 +773,9 @@
           does: 'Review blinded output opens one output and its criterion. You record pass, ' +
             'fail or unknown, how sure you are, and why. The label is bound to that exact ' +
             'output and criterion.',
-          who: 'Operators and owners. Viewers can read the queue but not label it.',
+          who: 'Operators and owners who hold a current reviewer qualification for the ' +
+            'output\'s domain, and never on an output they wrote. Viewers can read the queue ' +
+            'but not label it.',
           audited: 'The server keeps every label with who gave it, and records the submission ' +
             'as an audit event.',
           undo: 'A label is not edited or deleted. Append correction records a new label that ' +
