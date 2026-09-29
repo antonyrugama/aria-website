@@ -701,6 +701,31 @@
           'shown, and each coverage count carries its own denominator, so a gap stays visible.'
       },
       {
+        id: 'evals-runs', kind: 'section', title: 'Inspect a controlled Ciel run',
+        anchor: { selector: 'section', title: 'Launch and inspect controlled Ciel runs' },
+        body: 'Inspect run reads one run by its id, which a launch fills in for you. It shows ' +
+          'the status, revision, expected and actual cost, provider, attempts and failures, ' +
+          'and the outputs and tool trace the server returns, each marked unavailable when ' +
+          'the server withholds it. A comparison reads inconclusive until repeated-run ' +
+          'statistics exist. Inspecting changes nothing.'
+      },
+      {
+        id: 'evals-run-launch', kind: 'action', title: 'Launch, cancel or retry a controlled run',
+        anchor: { selector: 'section', title: 'Launch and inspect controlled Ciel runs' },
+        roles: ['owner', 'operator'],
+        action: {
+          does: 'Launch controlled pair starts a baseline run and then a candidate run, from ' +
+            'a dataset and prompt configs fixed in code, inside the approved cost estimate ' +
+            'you enter. Cancel and Retry act on the run you last inspected.',
+          who: 'Operators and owners. The server checks the role and the cost caps again.',
+          audited: 'Every launch, cancel and retry carries its own request key, so pressing ' +
+            'Launch again after a failure does not start a run that already started. The ' +
+            'server keeps the run record.',
+          undo: 'A launch cannot be taken back, only cancelled. Cancelling keeps what the run ' +
+            'already produced, and a retry starts a new run linked to the old one.'
+        }
+      },
+      {
         id: 'evals-validate', kind: 'action', title: 'Check a dataset declaration',
         anchor: { selector: 'section', title: 'Check a dataset declaration' },
         action: {
