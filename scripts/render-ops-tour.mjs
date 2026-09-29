@@ -315,6 +315,12 @@ async function loadPane(tab, origin, pane, theme, size) {
       + `localStorage.setItem('ops-api-base', ${JSON.stringify(origin)});`
       + `localStorage.setItem('ops-theme', ${JSON.stringify(theme)});`
       + "localStorage.removeItem('ops-tour-progress');"
+      /* session.js records every refresh token it presents and refuses to
+         present one again once that record is old, which is right for a real
+         credential. Every page load here presents the same stub token, so after
+         a load that takes more than a few seconds -- stepping through a guide --
+         the next page would sign itself out. */
+      + "localStorage.removeItem('ops-spent');"
       + "sessionStorage.setItem('ops-refresh', JSON.stringify({ t: 'stub', s: 'adm_1' }));"
       + '} catch (e) {}',
   });
@@ -325,10 +331,8 @@ async function loadPane(tab, origin, pane, theme, size) {
     return !!(entry && entry.getClientRects().length);
   })()`);
   if (!ready) {
-    const gate = await evaluate(tab, 'document.body ? document.body.className : "(no body)"')
-      .catch(() => '(unreadable)');
-    throw new Error(`the page never reached its ready gate with the "What am I looking at?" `
-      + `button on screen (body class "${gate}")`);
+    const where = await evaluate(tab, 'location.pathname').catch(() => '(unreadable)');
+    throw new Error(`the "What am I looking at?" button never appeared on screen (page ${where})`);
   }
   await sleep(SETTLE_MS);
   await evaluate(tab, 'document.fonts ? document.fonts.ready.then(() => true) : true');
