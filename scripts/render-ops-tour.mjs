@@ -315,7 +315,7 @@ async function loadPane(tab, origin, pane, theme, size) {
 
   const ready = await waitFor(tab, `(() => {
     const entry = document.querySelector('.tour-entry');
-    return document.body.classList.contains('is-ready') && !!(entry && entry.getClientRects().length);
+    return !!(entry && entry.getClientRects().length);
   })()`);
   if (!ready) {
     const gate = await evaluate(tab, 'document.body ? document.body.className : "(no body)"')
