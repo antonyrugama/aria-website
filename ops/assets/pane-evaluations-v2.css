@@ -90,6 +90,23 @@
    scroll sideways. */
 .browse-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
 .browse-result { display: flex; flex-direction: column; gap: 13px; }
+.run-launch-form,
+.run-inspect-form,
+.run-launch-result,
+.run-inspection-result { max-width: 920px; }
+.run-launch-result,
+.run-inspection-result { display: flex; flex-direction: column; gap: 13px; }
+.run-inspection-card,
+.run-launch-item { overflow-wrap: anywhere; }
+.run-detail-disclosure {
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.run-detail-disclosure + .run-detail-disclosure { margin-top: 8px; }
+.run-detail-disclosure summary { cursor: pointer; font-weight: 700; }
+.run-detail-disclosure ul { margin: 8px 0 0; padding-left: 18px; }
 .browse-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
