@@ -25,6 +25,10 @@ desktop.ini
 # on the runner, deleted once Chrome has exited, ignored for the interrupted run.
 .ops-dialog-hit-*/
 
+# Chrome profile written by scripts/render-ops-tour.mjs, on the same terms as
+# the two entries above. Its pictures go to .probe/tour-render, covered below.
+.ops-tour-render-*/
+
 # Mutation-battery source snapshots (mutate-*.mjs restores from these)
 .mutbak/
 

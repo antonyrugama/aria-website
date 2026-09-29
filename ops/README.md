@@ -290,6 +290,9 @@ ops/
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
     pane-spend-v2.css     Cloud costs' own shapes
+    tour.js               the guided tour: "What am I looking at?" and "Take the
+                          tour", built from the registry and the page on screen
+    tour-v2.css           the tour's own shapes
 ```
 
 The tree above says what each file is **for**. What each file is **loaded by** is not written
@@ -338,6 +341,8 @@ shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jo
 shell-v2.js = shell-v2.html
 shell.js = (no page)
 theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+tour-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
+tour.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, run-history.html, settings.html, spend.html, users.html
 ```
 
 A file no page loads is not automatically dead: some are kept alive by the tests, which load
@@ -487,6 +492,7 @@ A v2 pane page loads, in this order:
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
 <link rel="stylesheet" href="assets/pane-<name>-v2.css">
+<link rel="stylesheet" href="assets/tour-v2.css">
 ...
 <body data-pane="<registry key>" class="is-booting">
 <script src="assets/pane-registry.js"></script>
@@ -495,6 +501,7 @@ A v2 pane page loads, in this order:
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
 <script src="assets/pane-<name>.js"></script>
+<script src="assets/tour.js"></script>
 ```
 
 and none of `ops.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
@@ -801,6 +808,59 @@ Role differences surface in navigation affordances only at this stage. Settings 
 so a non-owner sees it marked in the rail and lands on a state that names the role it needs
 rather than a destination that silently vanishes. The server enforces this independently; the
 client renders a fact, it does not decide one.
+
+## The guided tour
+
+`assets/tour.js` explains the dashboard to the person using it. It is mounted by its own script,
+after the shell says the page is up, so `assets/shell-pane-v2.js` carries no tour code:
+
+- **What am I looking at?** in the top bar opens the steps for the pane on screen, at any time.
+- **Take the tour** at the foot of the rail walks every pane `assets/pane-registry.js` declares,
+  in the order it declares them, and carries on to the next pane's page at the end of each.
+
+Every pane's first step is made from its registry entry: its question, and what its filter bar
+can and cannot do. The rest are one table in the file, keyed by the registry's pane keys. Each
+names an anchor in the pane's own markup. When the anchor is on screen the step outlines it and
+reads what it currently says; when it is not, the step says why, in the terms of the state the
+pane is in. A figure's step says what it counts, its grain and window, where it comes from, and
+what healthy and worrying look like. A control's step says what it does, who may use it, what
+gets recorded and what cannot be undone. A role that may not use a control is told so instead of
+being pointed at something that is not drawn for it, and an owner-only pane explains the
+refusal card the shell draws in its place.
+
+**The tour explains and never does.** It presses no pane control, submits no form and sends no
+request; the only thing it can do is move to another pane's page.
+
+**Where it stops is kept** in `localStorage` under `ops-tour-progress`: the pane, the step,
+whether the dialog was open, and whether the tour was dismissed or finished. A reload brings an
+open dialog back at the same step; a dismissed tour stays closed and the rail offers to resume
+it.
+
+**Metric wording is quoted, not paraphrased**, where the metric definitions in the Aria monorepo
+define the figure (`docs/ops/operations-dashboard-metric-definitions.md`). The quotes carry the
+heading and the commit they were copied at, and `scripts/fixtures/ops-metric-definitions.excerpt.md`
+holds the same paragraphs, verbatim, at that commit. `scripts/ops-tour-coverage.test.mjs` holds
+every quote to that excerpt and requires every glossary term in it to be explained by some step.
+What that cannot do is read the monorepo: a change to the definitions there is not seen here
+until somebody copies it across and moves the pin. Figures that document does not define, such
+as cloud spend and store tracks, say where they come from instead.
+
+The same file holds the tour to the panes: every pane the registry declares has steps, every
+step's anchor is on its pane once the pane has drawn its data, and every section a pane draws is
+covered by a step, so a band added to a pane without a tour entry is a red run. What the dialog
+does, from focus to what is remembered, is `scripts/ops-tour-dialog.test.mjs`.
+
+Neither suite lays the tour out. To see it, run `.github/workflows/ops-tour-render.yml` from the
+Actions tab. It runs `scripts/render-ops-tour.mjs`, which opens the tour from "What am I looking
+at?" on every pane the registry declares, in both themes, at 1440x900 and 375x812, and photographs
+every step of each pane's guide, plus the first dialog of "Take the tour" and the rail's block that
+offers it at each theme and width. The pictures and an index naming each one's pane, theme, width
+and step are uploaded as the `ops-tour-render` artifact. It runs by hand, and on its own only for
+a pull request that changes the workflow or its script. It is not a guard: it fails only when a
+picture could not be taken, and what the pictures show is for a person to judge.
+
+`shell-v2.html` has no tour. It is a picture of the design system with invented figures and no
+registry behind it, so a tour there would describe numbers that mean nothing.
 
 ## The two understand panes
 
@@ -2390,7 +2450,7 @@ stored reading — which on this pane is most of them.
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
 | `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at **each width in the `guard-constants` block below** — the list is read out of the guard, because this row said "375px and 360px" through the rebase onto the commit that added a third — in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten — **measured once and written down, not derived**: which panes answer an empty read with a failure card is a runtime behaviour, and the ten is the registry's, bound by the `panes` block above. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the page. A colour resolved at **draw time** is only correct for the theme it was drawn in; this loads every pane `assets/pane-registry.js` declares plus `/ops/shell-v2.html`, clicks the real button, and requires **every node's** resolved paint to equal the paint that node carries on a **fresh load** of the same page in the theme the button switched to — sixteen paint properties per node, with a `url(#id)` gradient resolved to its stops, because the ids are minted per draw. Two assertions stand either side of that one: that the two fresh loads differ at all, so the comparison is not vacuous on a page the theme never reached, and, on the pages that draw `aria.js`'s charts, that every shape painted from a token holds the palette's pinned value — the only one of the three that would notice `aria.css` drifting away from the palette, since a page compared against itself agrees with itself. Both directions, every page. The sixteen are `PAINT_PROPS`, listed in the `guard-constants` block below. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here. |
-| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and almost every pixel must be unchanged — the comparison is not byte equality but **two gates in series**, both in the `guard-constants` block below: a pixel counts as changed only once it moves by more than `PAINT_PIXEL_DELTA`, and the run passes while the share of pixels that did counts under `PAINT_COVERAGE_LIMIT`. Both holes run the flattering way and both are real: a scrim that dims the whole plate by two units of 255 changes every pixel and scores a coverage of zero, and a scrim over a twentieth of the dialog passes however hard it dims that twentieth. A scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It fails rather than skips when it opens no dialog. |
+| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and almost every pixel must be unchanged — the comparison is not byte equality but **two gates in series**, both in the `guard-constants` block below: a pixel counts as changed only once it moves by more than `PAINT_PIXEL_DELTA`, and the run passes while the share of pixels that did counts under `PAINT_COVERAGE_LIMIT`. Both holes run the flattering way and both are real: a scrim that dims the whole plate by two units of 255 changes every pixel and scores a coverage of zero, and a scrim over a twentieth of the dialog passes however hard it dims that twentieth. A scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It also measures the phone navigation drawer at 375px, which is a modal over its own scrim with the same failure shape (`Stadiora/Aria#12909`). It fails rather than skips when it opens no dialog. |
 
 The `33` in that first row is not typed either. It is the size of the guard's own two pinned
 tables — the per-theme palette and the tokens it holds invariant across themes — counted out of
@@ -2414,7 +2474,7 @@ it then asserts on each page is the table above.
 
 ```claims id=browser-guards
 check-ops-contrast.mjs = ops-contrast.yml; /ops/shell-v2.html
-check-ops-dialog-hit.mjs = ops-dialog-hit.yml; /ops/settings.html
+check-ops-dialog-hit.mjs = ops-dialog-hit.yml; /ops/index.html + /ops/settings.html
 check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry declares
 check-ops-result-view.mjs = ops-result-view.yml; every pane the registry declares + /ops/run-history.html
 check-ops-shell-v2.mjs = ops-shell-v2.yml; every page in ops/
