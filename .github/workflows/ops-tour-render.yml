@@ -1,9 +1,10 @@
 name: Ops guided tour render
 
-# Renders the guided tour on every pane the registry declares, in both themes,
-# at a desktop width (1440x900) and a phone width (375x812), plus the rail's
-# "Take the tour" block at each width, and uploads the pictures with an
-# index.md naming the pane, theme, width and tour step in each one.
+# Renders every step of the guided tour on every pane the registry declares,
+# in both themes, at a desktop width (1440x900) and a phone width (375x812),
+# plus the whole-dashboard tour's first dialog and the rail's "Take the tour"
+# block at each theme and width, and uploads the pictures with an index.md
+# naming the pane, theme, width and tour step in each one.
 #
 # This is the visual proof Stadiora/Aria#12255 asks for: one batch render on
 # CI rather than screenshots taken on a developer machine. It is not a guard.
@@ -52,6 +53,10 @@ jobs:
         run: |
           google-chrome --version || chromium --version
       - name: Render the tour on every pane, both themes, narrow and wide
+        # On a pull request GITHUB_SHA is the merge commit GitHub made, not the
+        # head that was pushed; the index names the head.
+        env:
+          RENDER_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node scripts/render-ops-tour.mjs
       # The index in the log as well, so which pictures failed and why reads
       # without downloading the artifact.

@@ -14,18 +14,25 @@
 
    What each picture is:
 
-     <pane>-<theme>-<width>.png
-       The pane page loaded with the theme stored the way theme.js reads it,
-       the tour opened through its real entry point -- the "What am I looking
-       at?" button, .tour-entry, pressed with a real pointer click at its
-       centre, which fails the picture if anything covers it -- and Next
-       pressed until the step's outlined anchor ([data-tour-anchor]) is
-       inside the viewport. Usually that is the first step, the pane's title.
+     <pane>-<theme>-<width>-<NN>.png
+       Every step of the pane's guide, NN counting from 01. The pane page is
+       loaded with the theme stored the way theme.js reads it, the guide is
+       opened through its real entry point -- the "What am I looking at?"
+       button, .tour-entry, pressed with a real pointer click at its centre,
+       which fails the load if anything covers it -- and each step is
+       photographed before Next is pressed. A step whose anchor the page did
+       not draw is photographed too: what the tour says then is part of what
+       it does. A load that photographs fewer steps than the tour declares
+       for the pane (window.OpsTour.stepsFor) fails.
+
+     <pane>-tour-<theme>-<width>.png
+       The whole-dashboard tour opened from the rail's "Take the tour"
+       button on the first registry pane, which is where it starts.
 
      tour-rail-<theme>-<width>.png
-       The rail's "Take the tour" block on the first registry pane, one per
-       width, in the first theme. On the phone width the rail is a drawer, so
-       it is opened through its own toggle first.
+       The rail's "Take the tour" block on the first registry pane. On the
+       phone width the rail is a drawer, so it is opened through its own
+       toggle first. The block's box is checked; nothing here hit-tests it.
 
    The pane list is read out of ops/assets/pane-registry.js, executed in a vm
    the way scripts/check-ops-narrow-overflow.mjs reads it, so a pane added
@@ -38,9 +45,9 @@
    figures the People and usage steps point at. It is the same answer the
    tour's own tests use.
 
-   A capture that fails is written to index.md as FAILED with the reason, the
-   run carries on, and the process exits 1 at the end if any did. A run that
-   captured fewer pictures than it planned is a failure as well.
+   A page load that fails is written to index.md as FAILED with the reason,
+   the run carries on, and the process exits 1 at the end if any did. A run
+   that attempted fewer page loads than it planned is a failure as well.
 
    Usage:  node scripts/render-ops-tour.mjs
    Chrome: CHROME_PATH, or the usual install locations.
@@ -71,7 +78,7 @@ const SETTLE_MS = 2500;
    the picture is taken. Motion is already forced off by the launch flags. */
 const PAINT_MS = 400;
 /* One capture that hangs must not take the rest of the run with it. */
-const CAPTURE_TIMEOUT_MS = 60000;
+const CAPTURE_TIMEOUT_MS = 180000;
 
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
@@ -398,10 +405,14 @@ const TOUR_STATE = `(() => {
   };
 })()`;
 
-/* One pane, one theme, one width: open the tour from its entry point and
-   step to the first anchor on screen. Returns the step it photographed. */
-async function renderPane(tab, origin, pane, theme, size, file) {
+/* One pane, one theme, one width: open the guide from its entry point and
+   photograph every step. Returns one record per picture. */
+async function renderPane(tab, origin, pane, theme, size, base) {
   await loadPane(tab, origin, pane, theme, size);
+
+  const declared = await evaluate(tab,
+    `window.OpsTour ? window.OpsTour.stepsFor(${JSON.stringify(pane.key)}).length : 0`);
+  if (!declared) throw new Error('the tour declares no steps for this pane');
 
   await pointerClick(tab, '.tour-entry');
   const opened = await waitFor(tab, `(() => {
@@ -410,21 +421,48 @@ async function renderPane(tab, origin, pane, theme, size, file) {
   })()`);
   if (!opened) throw new Error('pressing "What am I looking at?" (.tour-entry) opened no tour dialog');
 
-  const tried = [];
+  const shots = [];
   for (;;) {
     await sleep(PAINT_MS);
     const state = await evaluate(tab, TOUR_STATE);
-    if (!state) throw new Error('the tour dialog closed while stepping through it');
-    if (state.onScreen) {
-      await capture(tab, file);
-      return state;
-    }
-    tried.push(`"${state.title}" (${state.anchored ? 'anchor off screen' : 'no anchor drawn'})`);
-    if (state.next !== 'Next') {
-      throw new Error(`no step outlined anything inside the viewport; tried ${tried.join(', ')}`);
+    if (!state) throw new Error(`the tour dialog closed after ${shots.length} of ${declared} steps`);
+    const file = `${base}-${String(shots.length + 1).padStart(2, '0')}.png`;
+    await capture(tab, file);
+    shots.push({ file, step: state });
+    if (state.next !== 'Next') break;
+    if (shots.length >= declared) {
+      throw new Error(`the guide still offers Next after all ${declared} declared steps`);
     }
     await evaluate(tab, "document.querySelector('.tour-modal .btn-primary').click()");
   }
+  if (shots.length !== declared) {
+    throw new Error(`photographed ${shots.length} steps; the tour declares ${declared}`);
+  }
+  return shots;
+}
+
+/* The whole-dashboard tour, opened from the rail's "Take the tour" button on
+   the pane it starts from. The button is pressed through the DOM rather than
+   the pointer: on a phone it sits in the closed drawer, and the tour closes
+   the drawer itself when it opens. */
+async function renderTourMode(tab, origin, pane, theme, size, file) {
+  await loadPane(tab, origin, pane, theme, size);
+  const pressed = await evaluate(tab, `(() => {
+    const start = document.querySelector('.tour-rail .tour-start');
+    if (!start) return false;
+    start.click();
+    return true;
+  })()`);
+  if (!pressed) throw new Error('the rail carries no "Take the tour" button (.tour-rail .tour-start)');
+  const opened = await waitFor(tab, `(() => {
+    const d = document.querySelector('.tour-modal');
+    return !!(d && d.getClientRects().length && d.querySelector('.tour-title'));
+  })()`);
+  if (!opened) throw new Error('pressing "Take the tour" opened no tour dialog');
+  await sleep(PAINT_MS);
+  const state = await evaluate(tab, TOUR_STATE);
+  await capture(tab, file);
+  return [{ file, step: state }];
 }
 
 /* The rail's "Take the tour" block, on the first registry pane. On a phone
@@ -471,7 +509,7 @@ async function renderRail(tab, origin, pane, theme, size, file) {
       + `viewport after scrolling to it (left, top, width, height: ${seen.box})`);
   }
   await capture(tab, file);
-  return { title: `rail block, button reads "${seen.label}"`, kicker: '' };
+  return [{ file, step: { title: `rail block, button reads "${seen.label}"`, kicker: '' } }];
 }
 
 function withTimeout(promise, ms, what) {
@@ -485,7 +523,10 @@ function withTimeout(promise, ms, what) {
 /* ------------------------------------------------------------------- run */
 
 const rows = [];
-const planned = PANES.length * THEMES.length * WIDTHS.length + WIDTHS.length;
+/* Page loads, not pictures: how many steps a pane has is the tour's to say,
+   and each load checks its own count against window.OpsTour.stepsFor. */
+const planned = PANES.length * THEMES.length * WIDTHS.length + 2 * THEMES.length * WIDTHS.length;
+let attempted = 0;
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
@@ -498,12 +539,15 @@ const chrome = await launch();
 
 async function one(pane, theme, size, file, render) {
   const where = `${file} (${pane.key}, ${theme}, ${size.name})`;
+  attempted += 1;
   try {
-    const step = await withTimeout(
+    const shots = await withTimeout(
       inTab(chrome, (tab) => render(tab, origin, pane, theme, size, file)),
       CAPTURE_TIMEOUT_MS, where);
-    rows.push({ file, pane, theme, size, step, error: null });
-    console.log(`ok    ${where}: ${step.title}`);
+    for (const shot of shots) {
+      rows.push({ file: shot.file, pane, theme, size, step: shot.step, error: null });
+      console.log(`ok    ${shot.file}: ${shot.step.title}`);
+    }
   } catch (err) {
     rows.push({ file, pane, theme, size, step: null, error: String(err && err.message || err) });
     console.error(`FAIL  ${where}: ${err && err.message || err}`);
@@ -514,12 +558,15 @@ try {
   for (const pane of PANES) {
     for (const theme of THEMES) {
       for (const size of WIDTHS) {
-        await one(pane, theme, size, `${pane.key}-${theme}-${size.name}.png`, renderPane);
+        await one(pane, theme, size, `${pane.key}-${theme}-${size.name}`, renderPane);
       }
     }
   }
-  for (const size of WIDTHS) {
-    await one(PANES[0], THEMES[0], size, `tour-rail-${THEMES[0]}-${size.name}.png`, renderRail);
+  for (const theme of THEMES) {
+    for (const size of WIDTHS) {
+      await one(PANES[0], theme, size, `${PANES[0].key}-tour-${theme}-${size.name}.png`, renderTourMode);
+      await one(PANES[0], theme, size, `tour-rail-${theme}-${size.name}.png`, renderRail);
+    }
   }
 } finally {
   const stopped = await stopBrowser(chrome.child);
@@ -538,30 +585,33 @@ const failed = rows.filter((r) => r.error);
 const lines = [
   '# Guided tour render',
   '',
-  `Commit: ${process.env.GITHUB_SHA || '(not recorded: GITHUB_SHA is unset)'}`,
+  `Commit: ${process.env.RENDER_HEAD_SHA || process.env.GITHUB_SHA || '(not recorded)'}`,
   `Rendered: ${new Date().toISOString()}`,
-  `Pictures: ${rows.length - failed.length} captured, ${failed.length} failed, ${planned} planned.`,
+  `Pictures: ${rows.length - failed.length} captured; page loads: ${attempted} of ${planned} `
+    + `planned, ${failed.length} failed.`,
   '',
-  'Each pane picture is the pane with the tour opened from "What am I looking at?" and '
-    + 'stepped to the first step whose outlined anchor is on screen. Wide is 1440x900, '
-    + 'narrow is 375x812. Written by scripts/render-ops-tour.mjs.',
+  'Each pane has one picture per step of its guide, opened from "What am I looking at?". '
+    + '"On screen" says whether the step\'s outlined anchor is inside the viewport; "not drawn" '
+    + 'means the page drew no anchor and the step explains why. Wide is 1440x900, narrow is '
+    + '375x812. Written by scripts/render-ops-tour.mjs.',
   '',
   '| File | Pane | Theme | Width | Step | Result |',
   '|---|---|---|---|---|---|',
   ...rows.map((r) => `| ${r.error ? cell(r.file) : `[${cell(r.file)}](${r.file})`} `
     + `| ${cell(`${r.pane.label} (${r.pane.key})`)} | ${r.theme} `
     + `| ${r.size.name} ${r.size.width}x${r.size.height} `
-    + `| ${r.step ? cell(r.step.title + (r.step.kicker ? ` (${r.step.kicker})` : '')) : ''} `
+    + `| ${r.step ? cell(r.step.title + (r.step.kicker ? ` (${r.step.kicker})` : '')
+      + ('anchored' in r.step ? (r.step.onScreen ? ', on screen' : r.step.anchored ? ', off screen' : ', not drawn') : '')) : ''} `
     + `| ${r.error ? `FAILED: ${cell(r.error)}` : 'ok'} |`),
   '',
 ];
 fs.writeFileSync(path.join(OUT, 'index.md'), lines.join('\n'));
 console.log(`\nwrote ${path.relative(ROOT, path.join(OUT, 'index.md'))}: `
-  + `${rows.length - failed.length} of ${planned} pictures captured`);
+  + `${rows.length - failed.length} pictures from ${attempted} of ${planned} page loads`);
 
-if (failed.length || rows.length !== planned) {
-  if (rows.length !== planned) {
-    console.error(`FAIL  ${rows.length} of ${planned} planned pictures were attempted.`);
+if (failed.length || attempted !== planned) {
+  if (attempted !== planned) {
+    console.error(`FAIL  ${attempted} of ${planned} planned page loads were attempted.`);
   }
   process.exit(1);
 }

@@ -853,9 +853,9 @@ does, from focus to what is remembered, is `scripts/ops-tour-dialog.test.mjs`.
 Neither suite lays the tour out. To see it, run `.github/workflows/ops-tour-render.yml` from the
 Actions tab. It runs `scripts/render-ops-tour.mjs`, which opens the tour from "What am I looking
 at?" on every pane the registry declares, in both themes, at 1440x900 and 375x812, and photographs
-the first step whose outline is on screen, plus the rail's "Take the tour" block at each width. The
-pictures and an index naming each one's pane, theme, width and step are uploaded as the
-`ops-tour-render` artifact. It runs by hand, and on its own only for a pull request that changes the
+every step of each pane's guide, plus the first dialog of "Take the tour" and the rail's block that
+offers it at each theme and width. The pictures and an index naming each one's pane, theme, width
+and step are uploaded as the `ops-tour-render` artifact. It runs by hand, and on its own only for a pull request that changes the
 workflow or its script. It is not a guard: it fails only when a picture could not be taken, and
 what the pictures show is for a person to judge.
 
