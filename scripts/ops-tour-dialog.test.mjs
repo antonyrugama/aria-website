@@ -192,11 +192,24 @@ test('a figure step reads the value on screen and quotes the definition of recor
 test('the activity step finds its card at either grain the server may send', async () => {
   /* Overview titles the card by the grain of the window it received, and the
      older daily window is still one the pane accepts. */
+  /* The older daily answer as the pane reads it: one label per UTC day, the
+     day-grain gap list, and a window that counts days, not hours. */
   const daily = JSON.parse(JSON.stringify(SUMMARY));
-  daily.activity.window = {
-    start: daily.activity.window.start, endExclusive: daily.activity.window.endExclusive,
-    days: 1, grain: 'day', timezone: 'UTC',
+  const DAYS = ['2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-19'];
+  daily.activity = {
+    availability: { state: 'ready' },
+    labels: DAYS,
+    series: [
+      { key: 'mobile', label: 'Mobile', color: 's1', values: [910, 940, 1001, 980, 1040, 1077, 1102] },
+      { key: 'coaches', label: 'Coaches Web', color: 's2', values: [380, 402, 396, 410, 421, 404, 412] },
+    ],
+    daysMissingRollups: [],
+    window: { days: 7, grain: 'day', timezone: 'UTC' },
   };
+  /* The words that only fit one grain. A fact that says "each hour" or "a
+     daily rhythm" describes the hourly card, and reads wrongly under the
+     daily one (Stadiora/Aria#12901). */
+  const hourOnly = /\beach hour\b(?! or day)|daily rhythm|last 24 hours\b(?!, or)/i;
   for (const [grain, answer] of [['hour', undefined], ['day', { data: daily }]]) {
     const view = await openGuide('overview', {
       answer: (path) => (path === '/api/ops/summary' ? answer : undefined),
@@ -206,6 +219,11 @@ test('the activity step finds its card at either grain the server may send', asy
     assert.ok(card, grain + ': the activity step outlined nothing');
     assert.equal(allText(card.querySelector('.card-title')), 'People active each ' + grain,
       grain + ': the step outlined something other than the activity card');
+    if (grain === 'day') {
+      for (const [term, text] of Object.entries(facts(view.box))) {
+        assert.doesNotMatch(text, hourOnly, 'day: "' + term + '" describes only the hourly card: ' + text);
+      }
+    }
   }
 });
 
