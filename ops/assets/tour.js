@@ -694,6 +694,13 @@
 
     evals: [
       {
+        id: 'evals-browse', kind: 'section', title: 'Browse Ciel scenarios and coverage',
+        anchor: { selector: 'section', title: 'Browse Ciel scenarios and coverage' },
+        body: 'A read-only view of the Ciel scenario catalogue, its datasets and its coverage. ' +
+          'The filters narrow what the server returns. No prompt or production content is ' +
+          'shown, and each coverage count carries its own denominator, so a gap stays visible.'
+      },
+      {
         id: 'evals-validate', kind: 'action', title: 'Check a dataset declaration',
         anchor: { selector: 'section', title: 'Check a dataset declaration' },
         action: {
