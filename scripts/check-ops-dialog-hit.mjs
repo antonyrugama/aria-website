@@ -1,6 +1,7 @@
-/* Guards the dashboard's confirmation dialogs against the one failure that
-   leaves them fully present in the DOM and unusable on screen: painting behind
-   the scrim that is meant to sit behind THEM.
+/* Guards the dashboard's confirmation dialogs, and the phone navigation
+   drawer, against the one failure that leaves them fully present in the DOM
+   and unusable on screen: painting behind the scrim that is meant to sit
+   behind THEM.
 
    This is the shape of Stadiora/Aria#10688. The revoke dialog on the Settings
    pane -- the pane's only destructive control -- was declared at z-index 60
@@ -62,6 +63,19 @@ const DIALOGS = [
     open: 'button[aria-label^="Revoke access for"]',
     dialog: 'form.modal',
     confirm: 'button.btn-danger',
+  },
+  /* Not a confirmation dialog, but the same failure: below 980px the rail is a
+     modal drawer over its own scrim, and a scrim that paints above the drawer
+     leaves every pane link present, focusable and unreachable by a finger
+     (Stadiora/Aria#12909). It needs the phone width to exist at all, and the
+     drawer slides in, so it is measured once the slide has finished. */
+  {
+    name: 'Phone navigation drawer',
+    page: '/ops/index.html',
+    viewport: { width: 375, height: 812, mobile: true },
+    open: '#railToggle',
+    dialog: '#rail.is-open',
+    settleMs: 400,
   },
 ];
 
@@ -332,6 +346,12 @@ async function measure(cdp, origin, spec, theme) {
       + `localStorage.setItem('ops-theme', ${JSON.stringify(theme)});`
       + "sessionStorage.setItem('ops-refresh', JSON.stringify({ t: 'stub', s: 'adm_1' }));",
   });
+  if (spec.viewport) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: spec.viewport.width, height: spec.viewport.height,
+      deviceScaleFactor: 1, mobile: !!spec.viewport.mobile,
+    });
+  }
   await cdp.send('Page.navigate', { url: origin + spec.page });
 
   /* Wait for the trigger rather than for a fixed delay: a sleep long enough to
@@ -358,6 +378,7 @@ async function measure(cdp, origin, spec, theme) {
     return;
   }
   dialogsOpened += 1;
+  if (spec.settleMs) await new Promise((r) => setTimeout(r, spec.settleMs));
   let broke = false;
 
   /* ---- 1. pointer ---- */
@@ -375,6 +396,10 @@ async function measure(cdp, origin, spec, theme) {
     const bad = [];
     let points = 0;
     controls.forEach((el) => {
+      /* A drawer scrolls; a control below its fold is not covered, only out of
+         view, and elementFromPoint off screen answers null. A dialog that does
+         not scroll is unaffected. */
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       const b = el.getBoundingClientRect();
       const inset = Math.min(4, b.width / 4, b.height / 4);
       const spots = [
@@ -532,5 +557,5 @@ if (failures.length) {
   console.error('\n' + failures.map((f) => 'FAIL  ' + f).join('\n'));
   process.exit(1);
 }
-console.log('\nEvery confirmation dialog this dashboard opens receives the pointer over its '
-  + 'own controls, and its scrim paints behind it, in both themes.');
+console.log('\nEvery confirmation dialog this dashboard opens, and the phone navigation drawer, '
+  + 'receives the pointer over its own controls, and its scrim paints behind it, in both themes.');
