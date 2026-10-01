@@ -60,26 +60,26 @@ const MIME = {
    `todo`. One test needs all three rails in one pipeline at once, and the pane
    asks for /api/ops/releases with no querystring (ops-releases-v2.test.mjs
    asserts that it does), so the variant is selected here rather than in the URL. */
-/* The evaluations pane's CIEL operations endpoint. The shared stub does not
+/* The evaluations pane's SEVAL operations endpoint. The shared stub does not
    carry it, and the approval half of this file needs a resource back to drive
    the answer slot. The pane sends `operationId`, not `operation`. */
 function operations(body) {
   const req = body || {};
   const op = String(req.operationId || '');
   const envelope = (type, id, value) => ({
-    schemaVersion: 'ciel.operation.response.v1',
+    schemaVersion: 'seval.operation.response.v1',
     requestId: req.requestId,
     operationId: req.operationId,
     status: 'success',
     exitCode: 0,
     resource: { type, id, revision: 1, value }
   });
-  if (op.indexOf('ciel.approval.') === 0) {
+  if (op.indexOf('seval.approval.') === 0) {
     const asked = (req.input && req.input.approvalRequestId) || 'apr_9f3c';
-    return envelope('ciel.evidence-approval', asked,
+    return envelope('seval.evidence-approval', asked,
       { approvalRequestId: asked, state: 'pending', revision: 2 });
   }
-  return envelope('ciel.dataset-validation', req.requestId,
+  return envelope('seval.dataset-validation', req.requestId,
     { valid: true, issues: [], digests: [] });
 }
 
@@ -91,7 +91,7 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       let body = null;
       try { body = raw ? JSON.parse(raw) : null; } catch { body = null; }
-      const answer = url.pathname.startsWith('/api/ops/ciel/operations')
+      const answer = url.pathname.startsWith('/api/ops/seval/operations')
         ? operations(body)
         : stub(url.pathname);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

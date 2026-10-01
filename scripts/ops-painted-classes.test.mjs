@@ -58,7 +58,7 @@ const MIME = {
    asserts that it does), so the variant is selected here rather than in the URL. */
 let androidState = null;
 
-/* The evaluations pane's CIEL operations endpoint, which the shared stub does
+/* The evaluations pane's SEVAL operations endpoint, which the shared stub does
    not carry. Only the shapes these tests drive: a dataset validation, which is
    what draws .dataset-result, and enough of an approval response that the
    approval cards render rather than erroring. */
@@ -71,17 +71,17 @@ function operations(body) {
      true of the stub and not of the pane. */
   const op = String(req.operationId || '');
   const envelope = (type, id, value) => ({
-    schemaVersion: 'ciel.operation.response.v1',
+    schemaVersion: 'seval.operation.response.v1',
     requestId: req.requestId, operationId: req.operationId,
     status: 'success', exitCode: 0,
     resource: { type: type, id: id, revision: 1, value: value }
   });
-  if (op.indexOf('ciel.approval.') === 0) {
+  if (op.indexOf('seval.approval.') === 0) {
     const asked = (req.input && req.input.approvalRequestId) || 'apr_9f3c';
-    return envelope('ciel.evidence-approval', asked,
+    return envelope('seval.evidence-approval', asked,
       { approvalRequestId: asked, state: 'pending', revision: 2 });
   }
-  return envelope('ciel.dataset-validation', req.requestId, {
+  return envelope('seval.dataset-validation', req.requestId, {
     valid: true, issues: [],
     digests: [{ datasetId: 'dataset.example', revision: 1, sha256: 'b'.repeat(64) }]
   });
@@ -102,7 +102,7 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       let body = null;
       try { body = raw ? JSON.parse(raw) : null; } catch { body = null; }
-      const answer = url.pathname.startsWith('/api/ops/ciel/operations')
+      const answer = url.pathname.startsWith('/api/ops/seval/operations')
         ? operations(body)
         : (url.pathname.startsWith('/api/ops/releases') && androidState)
           ? releasesVariant()
@@ -229,7 +229,7 @@ async function waitFor(expression, what) {
 /* The declaration the dataset form is driven with, to reach the result view
    that draws .dataset-result. */
 const DECLARATION = JSON.stringify({
-  schemaVersion: 'ciel.dataset.v1',
+  schemaVersion: 'seval.dataset.v1',
   datasets: [{ datasetId: 'dataset.example', revision: 1, cases: [] }],
   fixtureDigests: []
 });

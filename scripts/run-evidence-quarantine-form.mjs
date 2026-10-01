@@ -16,7 +16,7 @@ function required(name) {
 function paneBody() {
   const source = readFileSync(SOURCE, 'utf8');
   const digest = createHash('sha256').update(source).digest('hex');
-  assert.equal(digest, required('CIEL_PARITY_PANE_SHA256'), 'pane source digest does not match');
+  assert.equal(digest, required('SEVAL_PARITY_PANE_SHA256'), 'pane source digest does not match');
   const start = source.indexOf(WRAPPER_OPEN);
   const end = source.lastIndexOf(WRAPPER_CLOSE);
   assert.notEqual(start, -1, 'pane-evaluations.js wrapper opening is missing');
@@ -92,7 +92,7 @@ function textOf(node) {
 }
 
 function endpoint() {
-  const url = new URL(required('CIEL_PARITY_ENDPOINT'));
+  const url = new URL(required('SEVAL_PARITY_ENDPOINT'));
   assert.equal(url.protocol, 'http:', 'parity endpoint must use loopback HTTP');
   assert.ok(
     ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname),
@@ -115,7 +115,7 @@ async function waitFor(predicate, message) {
 
 async function main() {
   const pane = paneBody();
-  const requestId = required('CIEL_PARITY_REQUEST_ID');
+  const requestId = required('SEVAL_PARITY_REQUEST_ID');
   const baseUrl = endpoint();
   const transactions = [];
   const deterministicCrypto = {
@@ -171,14 +171,19 @@ async function main() {
       link: (href, label, className) => element('a', { href, className, text: label }),
       paneHref: paneId => `${paneId}.html`,
     },
+    OpsPaneRegistry: {
+      maskContactDetails(value) {
+        return String(value || '');
+      },
+    },
     OpsSession: {
       hasRole(roles) {
-        return roles.includes(process.env.CIEL_PARITY_ADMIN_ROLE || 'operator');
+        return roles.includes(process.env.SEVAL_PARITY_ADMIN_ROLE || 'operator');
       },
       call(path, options) {
         return window.OpsApi.request(path, {
           ...options,
-          token: required('CIEL_PARITY_ACCESS_TOKEN'),
+          token: required('SEVAL_PARITY_ACCESS_TOKEN'),
         });
       },
     },
@@ -225,43 +230,43 @@ async function main() {
       renderedResultText: textOf(result),
     })}\n`);
   }
-  const operationId = process.env.CIEL_PARITY_OPERATION_ID || 'ciel.artifact.quarantine';
-  if (operationId === 'ciel.dataset.validate') {
+  const operationId = process.env.SEVAL_PARITY_OPERATION_ID || 'seval.artifact.quarantine';
+  if (operationId === 'seval.dataset.validate') {
     const form = findNode(root, node => node.className === 'card dataset-form');
     assert.ok(form, 'dataset form did not render');
     const error = findNode(form, node => node.className === 'field-error');
     const result = findNode(root, node => node.className === 'dataset-result');
     const input = byId('dataset-input');
     assert.ok(error && result && input, 'dataset form controls did not render');
-    input.value = readFileSync(required('CIEL_PARITY_DATASET_INPUT_PATH'), 'utf8');
+    input.value = readFileSync(required('SEVAL_PARITY_DATASET_INPUT_PATH'), 'utf8');
     await form.dispatch('submit');
     report(error, result);
     return;
   }
-  if (operationId === 'ciel.artifact.admit') {
+  if (operationId === 'seval.artifact.admit') {
     const form = byId('admission-form');
     const error = findNode(form, node => node.className === 'field-error');
     const result = byId('admission-result');
     const submit = findNode(form, node => node.tag === 'button');
     assert.ok(form && error && result && submit, 'admission form did not render');
-    byId('admission-artifact-id').value = required('CIEL_PARITY_ADMISSION_ARTIFACT_ID');
+    byId('admission-artifact-id').value = required('SEVAL_PARITY_ADMISSION_ARTIFACT_ID');
     byId('admission-expected-revision').value =
-      required('CIEL_PARITY_ADMISSION_EXPECTED_REVISION');
-    byId('admission-source-digest').value = required('CIEL_PARITY_ADMISSION_SOURCE_DIGEST');
+      required('SEVAL_PARITY_ADMISSION_EXPECTED_REVISION');
+    byId('admission-source-digest').value = required('SEVAL_PARITY_ADMISSION_SOURCE_DIGEST');
     byId('admission-retained-digest').value =
-      required('CIEL_PARITY_ADMISSION_RETAINED_DIGEST');
-    byId('admission-profile').value = required('CIEL_PARITY_ADMISSION_CONTENT_PROFILE');
-    byId('admission-type').value = required('CIEL_PARITY_ADMISSION_MEDIA_TYPE');
-    byId('admission-purpose').value = required('CIEL_PARITY_ADMISSION_PURPOSE');
-    byId('admission-expiry').value = required('CIEL_PARITY_ADMISSION_RETENTION_EXPIRES_AT');
+      required('SEVAL_PARITY_ADMISSION_RETAINED_DIGEST');
+    byId('admission-profile').value = required('SEVAL_PARITY_ADMISSION_CONTENT_PROFILE');
+    byId('admission-type').value = required('SEVAL_PARITY_ADMISSION_MEDIA_TYPE');
+    byId('admission-purpose').value = required('SEVAL_PARITY_ADMISSION_PURPOSE');
+    byId('admission-expiry').value = required('SEVAL_PARITY_ADMISSION_RETENTION_EXPIRES_AT');
     byId('admission-policy-revision').value =
-      required('CIEL_PARITY_ADMISSION_POLICY_REVISION');
-    byId('admission-approval-id').value = required('CIEL_PARITY_ADMISSION_APPROVAL_ID');
-    byId('admission-key').value = required('CIEL_PARITY_IDEMPOTENCY_KEY');
+      required('SEVAL_PARITY_ADMISSION_POLICY_REVISION');
+    byId('admission-approval-id').value = required('SEVAL_PARITY_ADMISSION_APPROVAL_ID');
+    byId('admission-key').value = required('SEVAL_PARITY_IDEMPOTENCY_KEY');
     byId('admission-necessary').value =
-      process.env.CIEL_PARITY_ADMISSION_NECESSARY_CATEGORIES || 'none';
+      process.env.SEVAL_PARITY_ADMISSION_NECESSARY_CATEGORIES || 'none';
     byId('admission-removed').value =
-      process.env.CIEL_PARITY_ADMISSION_REMOVED_CATEGORIES || 'none';
+      process.env.SEVAL_PARITY_ADMISSION_REMOVED_CATEGORIES || 'none';
     form.dispatch('submit');
     await waitFor(
       () => transactions.length === 1 && !submit.disabled,
@@ -270,28 +275,28 @@ async function main() {
     report(error, result);
     return;
   }
-  if (operationId.startsWith('ciel.approval.')) {
+  if (operationId.startsWith('seval.approval.')) {
     const result = byId('approval-result');
     assert.ok(result, 'approval result did not render');
-    if (operationId === 'ciel.approval.request') {
+    if (operationId === 'seval.approval.request') {
       const form = byId('approval-request-form');
       const error = findNode(form, node => node.className === 'field-error');
       const submit = findNode(form, node => node.tag === 'button');
       assert.ok(form && error && submit, 'approval request form did not render');
-      byId('approval-artifact-id').value = required('CIEL_PARITY_APPROVAL_ARTIFACT_ID');
+      byId('approval-artifact-id').value = required('SEVAL_PARITY_APPROVAL_ARTIFACT_ID');
       byId('approval-artifact-revision').value =
-        required('CIEL_PARITY_APPROVAL_ARTIFACT_REVISION');
+        required('SEVAL_PARITY_APPROVAL_ARTIFACT_REVISION');
       byId('approval-source-digest').value =
-        required('CIEL_PARITY_APPROVAL_SOURCE_DIGEST');
+        required('SEVAL_PARITY_APPROVAL_SOURCE_DIGEST');
       byId('approval-retained-digest').value =
-        required('CIEL_PARITY_APPROVAL_RETAINED_DIGEST');
+        required('SEVAL_PARITY_APPROVAL_RETAINED_DIGEST');
       byId('approval-target-digest').value =
-        required('CIEL_PARITY_APPROVAL_TARGET_DIGEST');
-      byId('approval-purpose').value = required('CIEL_PARITY_APPROVAL_PURPOSE');
+        required('SEVAL_PARITY_APPROVAL_TARGET_DIGEST');
+      byId('approval-purpose').value = required('SEVAL_PARITY_APPROVAL_PURPOSE');
       byId('approval-policy-revision').value =
-        required('CIEL_PARITY_APPROVAL_POLICY_REVISION');
-      byId('approval-expiry').value = required('CIEL_PARITY_APPROVAL_EXPIRES_AT');
-      byId('approval-request-key').value = required('CIEL_PARITY_IDEMPOTENCY_KEY');
+        required('SEVAL_PARITY_APPROVAL_POLICY_REVISION');
+      byId('approval-expiry').value = required('SEVAL_PARITY_APPROVAL_EXPIRES_AT');
+      byId('approval-request-key').value = required('SEVAL_PARITY_IDEMPOTENCY_KEY');
       form.dispatch('submit');
       await waitFor(
         () => transactions.length === 1 && !submit.disabled,
@@ -300,12 +305,12 @@ async function main() {
       report(error, result);
       return;
     }
-    if (operationId === 'ciel.approval.get') {
+    if (operationId === 'seval.approval.get') {
       const form = byId('approval-get-form');
       const error = findNode(form, node => node.className === 'field-error');
       const submit = findNode(form, node => node.tag === 'button');
       assert.ok(form && error && submit, 'approval lookup form did not render');
-      byId('approval-get-id').value = required('CIEL_PARITY_APPROVAL_REQUEST_ID');
+      byId('approval-get-id').value = required('SEVAL_PARITY_APPROVAL_REQUEST_ID');
       form.dispatch('submit');
       await waitFor(
         () => transactions.length === 1 && !submit.disabled,
@@ -314,17 +319,17 @@ async function main() {
       report(error, result);
       return;
     }
-    if (operationId === 'ciel.approval.decide') {
+    if (operationId === 'seval.approval.decide') {
       const form = byId('approval-decision-form');
       const error = findNode(form, node => node.className === 'field-error');
       const submit = findNode(form, node => node.tag === 'button');
       assert.ok(form && error && submit, 'approval decision form did not render');
-      byId('approval-decision-id').value = required('CIEL_PARITY_APPROVAL_REQUEST_ID');
+      byId('approval-decision-id').value = required('SEVAL_PARITY_APPROVAL_REQUEST_ID');
       byId('approval-expected-revision').value =
-        required('CIEL_PARITY_APPROVAL_EXPECTED_REVISION');
-      byId('approval-decision').value = required('CIEL_PARITY_APPROVAL_DECISION');
-      byId('approval-reason').value = required('CIEL_PARITY_APPROVAL_REASON');
-      byId('approval-decision-key').value = required('CIEL_PARITY_IDEMPOTENCY_KEY');
+        required('SEVAL_PARITY_APPROVAL_EXPECTED_REVISION');
+      byId('approval-decision').value = required('SEVAL_PARITY_APPROVAL_DECISION');
+      byId('approval-reason').value = required('SEVAL_PARITY_APPROVAL_REASON');
+      byId('approval-decision-key').value = required('SEVAL_PARITY_IDEMPOTENCY_KEY');
       form.dispatch('submit');
       await waitFor(
         () => transactions.length === 1 && !submit.disabled,
@@ -334,7 +339,7 @@ async function main() {
       return;
     }
   }
-  assert.equal(operationId, 'ciel.artifact.quarantine', 'unsupported form operation');
+  assert.equal(operationId, 'seval.artifact.quarantine', 'unsupported form operation');
   const form = findNode(root, node => node.className === 'card evidence-form');
   assert.ok(form, 'quarantine form did not render');
   const error = findNode(form, node => node.className === 'field-error');
@@ -357,11 +362,11 @@ async function main() {
   byId('evidence-profile').value = 'trace';
   byId('evidence-type').value = 'text/plain';
   byId('evidence-purpose').value = 'incident_reproduction';
-  byId('evidence-expiry').value = required('CIEL_PARITY_RETENTION_EXPIRES_AT');
-  byId('evidence-key').value = required('CIEL_PARITY_IDEMPOTENCY_KEY');
+  byId('evidence-expiry').value = required('SEVAL_PARITY_RETENTION_EXPIRES_AT');
+  byId('evidence-key').value = required('SEVAL_PARITY_IDEMPOTENCY_KEY');
   byId('evidence-necessary').value = 'none';
   byId('evidence-removed').value = '';
-  byId('evidence-authority').value = required('CIEL_PARITY_AUTHORITY_REF');
+  byId('evidence-authority').value = required('SEVAL_PARITY_AUTHORITY_REF');
   byId('evidence-consent').value = 'consent/42';
   byId('evidence-provider').value = 'provider/no-transfer/42';
 

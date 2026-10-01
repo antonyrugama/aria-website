@@ -16,7 +16,7 @@ function required(name) {
 function paneBody() {
   const source = readFileSync(SOURCE, 'utf8');
   const digest = createHash('sha256').update(source).digest('hex');
-  assert.equal(digest, required('CIEL_PARITY_PANE_SHA256'), 'pane source digest does not match');
+  assert.equal(digest, required('SEVAL_PARITY_PANE_SHA256'), 'pane source digest does not match');
   const start = source.indexOf(WRAPPER_OPEN);
   const end = source.lastIndexOf(WRAPPER_CLOSE);
   assert.notEqual(start, -1, 'pane-evaluations.js wrapper opening is missing');
@@ -74,7 +74,7 @@ function textOf(node) {
 }
 
 function endpoint() {
-  const url = new URL(required('CIEL_PARITY_ENDPOINT'));
+  const url = new URL(required('SEVAL_PARITY_ENDPOINT'));
   assert.equal(url.protocol, 'http:', 'parity endpoint must use loopback HTTP');
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname), 'parity endpoint must be loopback');
   assert.equal(url.username, '', 'parity endpoint must not include credentials');
@@ -94,7 +94,7 @@ async function waitFor(predicate, message) {
 
 async function main() {
   const pane = paneBody();
-  const requestIds = (process.env.CIEL_PARITY_REQUEST_IDS || required('CIEL_PARITY_REQUEST_ID')).split(',');
+  const requestIds = (process.env.SEVAL_PARITY_REQUEST_IDS || required('SEVAL_PARITY_REQUEST_ID')).split(',');
   let nextRequestId = 0;
   const deterministicCrypto = {
     subtle: webcrypto.subtle,
@@ -151,11 +151,11 @@ async function main() {
       },
     },
     OpsSession: {
-      hasRole(roles) { return roles.includes(process.env.CIEL_PARITY_ADMIN_ROLE || 'operator'); },
+      hasRole(roles) { return roles.includes(process.env.SEVAL_PARITY_ADMIN_ROLE || 'operator'); },
       call(path, options) {
         return window.OpsApi.request(path, {
           ...options,
-          token: required('CIEL_PARITY_ACCESS_TOKEN'),
+          token: required('SEVAL_PARITY_ACCESS_TOKEN'),
         });
       },
     },
@@ -178,17 +178,17 @@ async function main() {
   const root = { children: [], appendChild(child) { this.children.push(child); return child; } };
   context.render(root);
   const byId = id => findNode(root, node => node.attributes?.id === id);
-  const operation = process.env.CIEL_PARITY_RUN_OPERATION || 'get';
+  const operation = process.env.SEVAL_PARITY_RUN_OPERATION || 'get';
 
   if (operation === 'launch') {
-    const form = byId('ciel-run-launch-form');
+    const form = byId('seval-run-launch-form');
     assert.ok(form, 'run launch form did not render');
     form.dispatch('submit');
     await waitFor(() => transactions.length === 2, 'dashboard launch pair did not complete');
   } else {
-    const form = byId('ciel-run-inspect-form');
+    const form = byId('seval-run-inspect-form');
     assert.ok(form, 'run inspect form did not render');
-    byId('ciel-run-inspect-id').value = required('CIEL_PARITY_RUN_ID');
+    byId('seval-run-inspect-id').value = required('SEVAL_PARITY_RUN_ID');
     form.dispatch('submit');
     await waitFor(() => transactions.length === 1, 'dashboard run inspection did not complete');
     if (operation === 'retry') {
@@ -198,14 +198,14 @@ async function main() {
       await findNode(root, node => node.tag === 'button' && node.textContent === 'Cancel inspected run').dispatch('click');
       await waitFor(() => transactions.length === 2, 'dashboard run cancel did not complete');
     } else {
-      assert.equal(operation, 'get', 'unsupported Ciel run parity operation');
+      assert.equal(operation, 'get', 'unsupported SEVAL run parity operation');
     }
   }
 
   process.stdout.write(`${JSON.stringify({
     paneSha256: pane.digest,
     transactions,
-    renderedResultText: textOf(byId('ciel-run-inspection-result')) || textOf(byId('ciel-run-launch-result')),
+    renderedResultText: textOf(byId('seval-run-inspection-result')) || textOf(byId('seval-run-launch-result')),
   })}\n`);
 }
 

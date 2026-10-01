@@ -694,15 +694,15 @@
 
     evals: [
       {
-        id: 'evals-browse', kind: 'section', title: 'Browse Ciel scenarios and coverage',
-        anchor: { selector: 'section', title: 'Browse Ciel scenarios and coverage' },
-        body: 'A read-only view of the Ciel scenario catalogue, its datasets and its coverage. ' +
+        id: 'evals-browse', kind: 'section', title: 'Browse SEVAL scenarios and coverage',
+        anchor: { selector: 'section', title: 'Browse SEVAL scenarios and coverage' },
+        body: 'A read-only view of the SEVAL scenario catalogue, its datasets and its coverage. ' +
           'The filters narrow what the server returns. No prompt or production content is ' +
           'shown, and each coverage count carries its own denominator, so a gap stays visible.'
       },
       {
-        id: 'evals-runs', kind: 'section', title: 'Inspect a controlled Ciel run',
-        anchor: { selector: 'section', title: 'Launch and inspect controlled Ciel runs' },
+        id: 'evals-runs', kind: 'section', title: 'Inspect a controlled SEVAL run',
+        anchor: { selector: 'section', title: 'Launch and inspect controlled SEVAL runs' },
         body: 'Inspect run reads one run by its id, which a launch fills in for you. It shows ' +
           'the status, revision, expected and actual cost, provider, attempts and failures, ' +
           'and the outputs and tool trace the server returns, each marked unavailable when ' +
@@ -711,7 +711,7 @@
       },
       {
         id: 'evals-run-launch', kind: 'action', title: 'Launch, cancel or retry a controlled run',
-        anchor: { selector: 'section', title: 'Launch and inspect controlled Ciel runs' },
+        anchor: { selector: 'section', title: 'Launch and inspect controlled SEVAL runs' },
         roles: ['owner', 'operator'],
         action: {
           does: 'Launch controlled pair starts a baseline run and then a candidate run, from ' +

@@ -684,7 +684,7 @@ function stub(pathname) {
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
-  if (pathname.startsWith('/api/ops/ciel/admin/reviews/items/')) {
+  if (pathname.startsWith('/api/ops/seval/admin/reviews/items/')) {
     return { data: {
       ...REVIEW_ITEM,
       reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false },
@@ -694,7 +694,7 @@ function stub(pathname) {
       adjudications: []
     } };
   }
-  if (pathname.startsWith('/api/ops/ciel/admin/reviews/queue')) {
+  if (pathname.startsWith('/api/ops/seval/admin/reviews/queue')) {
     return { data: { items: [REVIEW_ITEM], partial: false, omissions: [] } };
   }
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
