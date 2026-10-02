@@ -133,12 +133,12 @@ const BATTERY = [
   },
   {
     id: 'T11', file: TARGET, expect: 'KILL',
-    why: 'Deletes the `scrollIntoView` that puts a meter on screen before it is captured, which is the whole of the fix for Stadiora/Aria#10871. The capture then comes from 3,300-4,400px below a 1000px viewport, exactly as it did before. The defect this restores is not a wrong number, it is a number that is only SOMETIMES wrong -- one uniform capture in fourteen runs -- so the row binds the dependency rather than the symptom. Killed by the `covered` probe reporting `off screen`, which is also why the separate precondition first written into `shoot` was deleted: the probe reaches it first in every case, so no row could ever kill it.',
+    why: 'Deletes the `scrollIntoView` that puts a meter on screen before it is captured, which is the whole of the fix for Stadiora/Aria#10871. The capture then comes from y=4,188-5,329 on ops/evaluations.html, all of it below the 1000px fold, exactly as it did before. The defect this restores is not a wrong number, it is a number that is only SOMETIMES wrong -- one uniform capture in fourteen runs -- so the row binds the dependency rather than the symptom. Killed by the `covered` probe reporting `off screen`, which is also why the separate precondition first written into `shoot` was deleted: the probe reaches it first in every case, so no row could ever kill it.',
     apply: (s) => replaceOnce(s, "  el.scrollIntoView({ block: 'center', inline: 'nearest' });\n", '')
   },
   {
     id: 'T12', file: TARGET, expect: 'KILL',
-    why: 'Keeps the scroll and drops the document-coordinate conversion, so the clip is built from viewport coordinates. The clip is in DOCUMENT coordinates in both capture modes -- the measurement this whole change rests on -- so this aims every capture at whatever sits ~2,800px higher up the page. It is the half of the fix that is invisible in a reading of the diff, and it would have been a silent miscapture rather than a loud one.',
+    why: 'Keeps the scroll and drops the document-coordinate conversion, so the clip is built from viewport coordinates. The clip is in DOCUMENT coordinates in both capture modes -- the measurement this whole change rests on -- so this aims every capture at whatever sits one scroll offset higher up the page, which on ops/evaluations.html is thousands of pixels. It is the half of the fix that is invisible in a reading of the diff, and it would have been a silent miscapture rather than a loud one.',
     apply: (s) => replaceOnce(s,
       'box: { x: t.left + window.scrollX, y: t.top + window.scrollY, width: t.width, height: t.height },',
       'box: { x: t.left, y: t.top, width: t.width, height: t.height },')
@@ -150,7 +150,7 @@ const BATTERY = [
   },
   {
     id: 'T14', file: TARGET, expect: 'KILL',
-    why: 'Scrolls each meter to the TOP of the viewport rather than its centre, which is where the sticky headers at aria.css:239 and :382 sit. Binds the occlusion check: centring is not decoration, it is what holds the capture clear of the page chrome, and with nothing asserting it the sweep could measure a sticky header and report it as a bar.',
+    why: 'Scrolls each meter to the TOP of the viewport rather than its centre, which is where the sticky headers at aria.css:239 and :382 sit. Binds the occlusion check: centring is not decoration, it is what holds the capture clear of the page chrome. What the `covered` probe buys is the CAUSE in the failure text, a fail on the first meter rather than at the end of the sweep, and cover against an occluder that happens to measure like a bar. It is NOT what stops a header being reported as a bar. With the probe neutered (`covered: []`) and this payload applied together, the suite still goes red, 6 pass and 5 fail, on the notch, value, card, tone-separation and forced-colors-value claims. So a parked header is caught today as five confusing content failures rather than one clear one (measured in antonyrugama/aria-website#185).',
     apply: (s) => replaceOnce(s, "el.scrollIntoView({ block: 'center', inline: 'nearest' });",
       "el.scrollIntoView({ block: 'start', inline: 'nearest' });")
   },
