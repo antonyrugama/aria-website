@@ -665,6 +665,7 @@
                 <button class="tab-btn active" data-tab="programs">Programas de Entrenamiento</button>
                 <button class="tab-btn" data-tab="exlib">Biblioteca de Ejercicios</button>
                 <button class="tab-btn" data-tab="gps">GPS y Condiciones</button>
+                <button class="tab-btn" data-tab="readiness">Puntaje de Preparación</button>
             </nav>
             <div class="tab-panel active" data-panel="programs">
                 <div class="f-row rev">
@@ -751,6 +752,46 @@
                     </div>
                 </div>
             </div>
+            <div class="tab-panel" data-panel="readiness">
+                <div class="f-row rev">
+                    <div class="f-text">
+                        <div class="label">Puntaje de Preparación</div>
+                        <h3>¿Estás listo para entrenar fuerte hoy? Aria lo sabe.</h3>
+                        <p>Antes de cada sesión, Aria consolida tu VFC, calidad de sueño, carga de entrenamiento, check-in de bienestar y estado nutricional en un único Puntaje de Preparación. Sin adivinar — solo una señal clara sobre si deberías empujar fuerte, entrenar inteligente o recuperarte.</p>
+                        <ul class="f-list">
+                            <li>Puntaje de Preparación 0–100: cuatro zonas — Listo para Empujar, Entrena Inteligente, Reduce la Carga, Día de Descanso</li>
+                            <li>Construido con señales reales: tendencia de VFC, calidad de sueño, ACWR, bienestar subjetivo y fase del ciclo</li>
+                            <li>Recomendación de sesión con IA: objetivos específicos de intensidad y volumen para tu puntaje de hoy</li>
+                            <li>Alertas proactivas: "Estrés de entrenamiento alto + sueño alterado — reduce el volumen un 20% hoy"</li>
+                            <li>Tendencia de preparación 7 días: detecta patrones de sobreentrenamiento antes de que te cuesten una carrera</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="wx-widget d1">
+                            <div class="wx-ring-wrap">
+                                <svg class="wx-ring-svg" width="120" height="120" viewBox="0 0 120 120">
+                                    <circle class="wx-ring-track" cx="60" cy="60" r="54"/>
+                                    <circle class="wx-ring-fill" cx="60" cy="60" r="54" style="stroke-dashoffset:85"/>
+                                </svg>
+                                <div class="wx-score-center">
+                                    <strong>78</strong>
+                                    <small>/ 100</small>
+                                </div>
+                            </div>
+                            <div class="wx-title">Puntaje de Preparación &middot; Hoy</div>
+                            <div class="wx-badges">
+                                <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> VFC: +12% sobre línea base</span>
+                                <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Sueño: 7.2h · Buena calidad</span>
+                                <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Carga de Entrenamiento: Moderada</span>
+                                <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Bienestar: Alto</span>
+                            </div>
+                            <div class="wx-rec">
+                                <p><strong>Listo para empujar.</strong> VFC elevada, sueño sólido. Ejecuta tu trabajo de velocidad máxima hoy — apunta a intensidad completa en el primer bloque.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Pestañas de Combustible: Nutrición + Inteligencia Metabólica -->
@@ -829,45 +870,6 @@
             </div>
         </div>
 
-        <!-- Puntaje de Preparación -->
-        <div class="f-row rev sr">
-            <div class="f-text">
-                <div class="label">Puntaje de Preparación</div>
-                <h3>¿Estás listo para entrenar fuerte hoy? Aria lo sabe.</h3>
-                <p>Antes de cada sesión, Aria consolida tu VFC, calidad de sueño, carga de entrenamiento, check-in de bienestar y estado nutricional en un único Puntaje de Preparación. Sin adivinar — solo una señal clara sobre si deberías empujar fuerte, entrenar inteligente o recuperarte.</p>
-                <ul class="f-list">
-                    <li>Puntaje de Preparación 0–100: cuatro zonas — Listo para Empujar, Entrena Inteligente, Reduce la Carga, Día de Descanso</li>
-                    <li>Construido con señales reales: tendencia de VFC, calidad de sueño, ACWR, bienestar subjetivo y fase del ciclo</li>
-                    <li>Recomendación de sesión con IA: objetivos específicos de intensidad y volumen para tu puntaje de hoy</li>
-                    <li>Alertas proactivas: "Estrés de entrenamiento alto + sueño alterado — reduce el volumen un 20% hoy"</li>
-                    <li>Tendencia de preparación 7 días: detecta patrones de sobreentrenamiento antes de que te cuesten una carrera</li>
-                </ul>
-            </div>
-            <div class="f-vis">
-                <div class="wx-widget d1">
-                    <div class="wx-ring-wrap">
-                        <svg class="wx-ring-svg" width="120" height="120" viewBox="0 0 120 120">
-                            <circle class="wx-ring-track" cx="60" cy="60" r="54"/>
-                            <circle class="wx-ring-fill" cx="60" cy="60" r="54" style="stroke-dashoffset:85"/>
-                        </svg>
-                        <div class="wx-score-center">
-                            <strong>78</strong>
-                            <small>/ 100</small>
-                        </div>
-                    </div>
-                    <div class="wx-title">Puntaje de Preparación &middot; Hoy</div>
-                    <div class="wx-badges">
-                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> VFC: +12% sobre línea base</span>
-                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Sueño: 7.2h · Buena calidad</span>
-                        <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Carga de Entrenamiento: Moderada</span>
-                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Bienestar: Alto</span>
-                    </div>
-                    <div class="wx-rec">
-                        <p><strong>Listo para empujar.</strong> VFC elevada, sueño sólido. Ejecuta tu trabajo de velocidad máxima hoy — apunta a intensidad completa en el primer bloque.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 </section>
 
