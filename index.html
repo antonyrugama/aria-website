@@ -305,6 +305,18 @@
         .wellness-head p{font-size:17px;color:var(--t2);line-height:1.7}
         @media(max-width:640px){.tab-btn{padding:10px 12px;font-size:13px}}
 
+        /* ══════════ FEATURED TOOLS ══════════ */
+        .tools-featured{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:48px}
+        .tf-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;transition:all .3s}
+        .tf-card:hover{border-color:var(--border-h);transform:translateY(-3px);box-shadow:0 20px 40px rgba(0,0,0,.25)}
+        .tf-icon{width:48px;height:48px;background:var(--cyan-10);border:1px solid var(--cyan-20);border-radius:14px;display:flex;align-items:center;justify-content:center;margin-bottom:18px}
+        .tf-tag{display:inline-block;background:var(--cyan-10);border:1px solid var(--cyan-20);color:var(--cyan);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin-bottom:12px;letter-spacing:.04em;text-transform:uppercase}
+        .tf-card h3{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:var(--t1);margin-bottom:10px;line-height:1.2}
+        .tf-card>p{font-size:14px;color:var(--t2);line-height:1.7}
+        .tf-list{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:8px}
+        .tf-list li{font-size:13px;color:var(--t2);display:flex;align-items:flex-start;gap:10px;line-height:1.5}
+        .tf-list li::before{content:'';width:6px;height:6px;background:var(--cyan);border-radius:50%;margin-top:6px;flex-shrink:0}
+        @media(max-width:640px){.tools-featured{grid-template-columns:1fr}}
         /* ══════════ TOOLS ══════════ */
         .tools{padding:120px 0}
         .tools-head{text-align:center;max-width:680px;margin:0 auto 56px}
@@ -647,25 +659,96 @@
             </div>
         </div>
 
-        <!-- Programs -->
-        <div class="f-row rev sr">
-            <div class="f-text">
-                <div class="label">Training Programs</div>
-                <h3>Periodized blocks. Built by you, Aria AI — or your coach.</h3>
-                <p>Create programs three ways: build day-by-day, let Aria AI generate a complete block, or paste your existing plan. Import from CSV or start from templates. And if you train with a coach, they can build and assign programs directly to your app from Aria for Coaches — so your plan lives in one place, always.</p>
-                <ul class="f-list">
-                    <li>AI-generated programs tailored to your level and goals</li>
-                    <li>Themed sessions: Acceleration, Max Velocity, Strength, Recovery</li>
-                    <li>Beginner to Elite difficulty levels</li>
-                    <li>Coach-assigned programs: your coach builds it on Aria for Coaches, you execute it in Aria</li>
-                </ul>
-            </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="screenshots/programs2b.jpg" alt="Aria Training Programs List">
+        <!-- Training Tabs: Training Programs | Exercise Library | GPS & Conditions -->
+        <div class="tab-group sr">
+            <nav class="tab-nav">
+                <button class="tab-btn active" data-tab="programs">Training Programs</button>
+                <button class="tab-btn" data-tab="exlib">Exercise Library</button>
+                <button class="tab-btn" data-tab="gps">GPS &amp; Conditions</button>
+            </nav>
+            <div class="tab-panel active" data-panel="programs">
+                <div class="f-row rev">
+                    <div class="f-text">
+                        <div class="label">Training Programs</div>
+                        <h3>Periodized blocks. Built by you, Aria AI — or your coach.</h3>
+                        <p>Create programs three ways: build day-by-day, let Aria AI generate a complete block, or paste your existing plan. Import from CSV or start from templates. And if you train with a coach, they can build and assign programs directly to your app from Aria for Coaches — so your plan lives in one place, always.</p>
+                        <ul class="f-list">
+                            <li>AI-generated programs tailored to your level and goals</li>
+                            <li>Themed sessions: Acceleration, Max Velocity, Strength, Recovery</li>
+                            <li>Beginner to Elite difficulty levels</li>
+                            <li>Coach-assigned programs: your coach builds it on Aria for Coaches, you execute it in Aria</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="screenshots/programs2b.jpg" alt="Aria Training Programs List">
+                        </div>
+                        <div class="f-phone">
+                            <img src="screenshots/programs2a.jpeg" alt="Aria Training Program Detail">
+                        </div>
+                    </div>
                 </div>
-                <div class="f-phone">
-                    <img src="screenshots/programs2a.jpeg" alt="Aria Training Program Detail">
+            </div>
+            <div class="tab-panel" data-panel="exlib">
+                <div class="f-row">
+                    <div class="f-text">
+                        <div class="label">Exercise Library</div>
+                        <h3>Every exercise. Every cue. Every rep — on video.</h3>
+                        <p>Aria includes a full searchable exercise library with instructional videos for every movement. Strength training, sprint-specific drills, rehab exercises — all with key coaching cues, technique breakdowns, and loopable video so you never have to guess how a movement should look.</p>
+                        <ul class="f-list">
+                            <li>Hundreds of exercises with loopable instructional video</li>
+                            <li>Filter by category: Strength, Sprint Drills, Rehab, and more</li>
+                            <li>Key coaching cues for every exercise</li>
+                            <li>Directly linked to your training programs and rehab plans</li>
+                            <li>Video library powered by MuscleWiki</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="screenshots/training-library-en.jpeg" alt="Aria Exercise Library" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-panel" data-panel="gps">
+                <div class="f-row rev">
+                    <div class="f-text">
+                        <div class="label">GPS &amp; Training Conditions</div>
+                        <h3>Know your conditions before you hit the track.</h3>
+                        <p>Aria uses your GPS location to deliver real-time training conditions — not just weather, but sprint-specific intelligence. Wind direction relative to your lane, the best hour to train today, heat load, and UV risk — so every session decision is informed before you step outside.</p>
+                        <ul class="f-list">
+                            <li>Sprint Score 0–100: a single number that rates today's conditions for peak speed work</li>
+                            <li>Wind intelligence: tailwind assist, headwind resistance, and crosswind relative to your sprint direction</li>
+                            <li>Best training window: optimal hour to train based on conditions and your schedule</li>
+                            <li>Heat Load Risk: Low / Moderate / High / Extreme with humidity and feels-like temperature</li>
+                            <li>UV index and peak sun hours to time your outdoor sessions</li>
+                            <li>Apple Watch alert: real-time condition updates to your wrist</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="wx-widget d1">
+                            <div class="wx-ring-wrap">
+                                <svg class="wx-ring-svg" width="120" height="120" viewBox="0 0 120 120">
+                                    <circle class="wx-ring-track" cx="60" cy="60" r="54"/>
+                                    <circle class="wx-ring-fill" cx="60" cy="60" r="54"/>
+                                </svg>
+                                <div class="wx-score-center">
+                                    <strong>82</strong>
+                                    <small>/ 100</small>
+                                </div>
+                            </div>
+                            <div class="wx-title">Sprint Score &middot; Today</div>
+                            <div class="wx-badges">
+                                <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Heat Load: Low</span>
+                                <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Tailwind Assist</span>
+                                <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg> Clear Skies</span>
+                                <span class="wx-badge wa"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Humidity: 68%</span>
+                            </div>
+                            <div class="wx-rec">
+                                <p><strong>Excellent for Max Velocity.</strong> Tailwind assists top speed. Schedule acceleration + flying 30s today — avoid peak UV between 12–2 pm.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -746,63 +829,42 @@
             </div>
         </div>
 
-        <!-- Weather Performance Engine -->
-        <div class="f-row sr">
+        <!-- Readiness Score -->
+        <div class="f-row rev sr">
             <div class="f-text">
-                <div class="label">Weather Performance Engine</div>
-                <h3>Know before you go. Should you push hard today?</h3>
-                <p>Aria converts your local weather into a <strong>Sprint Score (0–100)</strong> and tells you exactly what kind of session to run. Not just temperature — wind direction relative to your sprint lane, heat load risk, UV index, and a full AI session recommendation.</p>
+                <div class="label">Readiness Score</div>
+                <h3>Are you ready to push today? Aria knows.</h3>
+                <p>Before every session, Aria consolidates your HRV, sleep quality, training load, wellness check-in, and nutrition status into a single Readiness Score. No guesswork — just a clear signal on whether to push hard, train smart, or recover.</p>
                 <ul class="f-list">
-                    <li>Sprint Score 0–100: how good today is for top performance</li>
-                    <li>Wind intelligence: tailwind, headwind, and crosswind detection</li>
-                    <li>Heat Load Risk: Low / Moderate / High / Extreme protection</li>
-                    <li>Best session types for today's exact conditions</li>
-                    <li>Apple Watch alert: "Excellent conditions — push hard today"</li>
+                    <li>Readiness Score 0–100: four zones — Ready to Push, Train Smart, Reduce Load, Rest Day</li>
+                    <li>Built from real signals: HRV trend, sleep quality, ACWR, subjective wellness, and cycle phase</li>
+                    <li>AI session recommendation: specific intensity and volume targets for your score today</li>
+                    <li>Proactive alerts: "High training stress + disrupted sleep — reduce volume by 20% today"</li>
+                    <li>7-day readiness trend: spot overreaching patterns before they cost you a race</li>
                 </ul>
             </div>
             <div class="f-vis">
-                <div class="wx-widget sr d1">
+                <div class="wx-widget d1">
                     <div class="wx-ring-wrap">
                         <svg class="wx-ring-svg" width="120" height="120" viewBox="0 0 120 120">
                             <circle class="wx-ring-track" cx="60" cy="60" r="54"/>
-                            <circle class="wx-ring-fill" cx="60" cy="60" r="54"/>
+                            <circle class="wx-ring-fill" cx="60" cy="60" r="54" style="stroke-dashoffset:85"/>
                         </svg>
                         <div class="wx-score-center">
-                            <strong>82</strong>
+                            <strong>78</strong>
                             <small>/ 100</small>
                         </div>
                     </div>
-                    <div class="wx-title">Sprint Score &middot; Today</div>
+                    <div class="wx-title">Readiness Score &middot; Today</div>
                     <div class="wx-badges">
-                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Heat Load: Low</span>
-                        <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Tailwind Assist</span>
-                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg> Clear Skies</span>
-                        <span class="wx-badge wa"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Humidity: 68%</span>
+                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> HRV: +12% above baseline</span>
+                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Sleep: 7.2h · Good quality</span>
+                        <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Training Load: Moderate</span>
+                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Wellness: High</span>
                     </div>
                     <div class="wx-rec">
-                        <p><strong>Excellent for Max Velocity.</strong> Tailwind assists top speed. Schedule acceleration + flying 30s today — avoid peak UV between 12–2 pm.</p>
+                        <p><strong>Ready to push.</strong> HRV elevated, sleep solid. Hit your max velocity work today — target full intensity in the first block.</p>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Exercise Library -->
-        <div class="f-row sr">
-            <div class="f-text">
-                <div class="label">Exercise Library</div>
-                <h3>Every exercise. Every cue. Every rep — on video.</h3>
-                <p>Aria includes a full searchable exercise library with instructional videos for every movement. Strength training, sprint-specific drills, rehab exercises — all with key coaching cues, technique breakdowns, and loopable video so you never have to guess how a movement should look.</p>
-                <ul class="f-list">
-                    <li>Hundreds of exercises with loopable instructional video</li>
-                    <li>Filter by category: Strength, Sprint Drills, Rehab, and more</li>
-                    <li>Key coaching cues for every exercise</li>
-                    <li>Directly linked to your training programs and rehab plans</li>
-                    <li>Video library powered by MuscleWiki</li>
-                </ul>
-            </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="screenshots/training-library-en.jpeg" alt="Aria Exercise Library" style="width:100%;height:100%;object-fit:cover">
                 </div>
             </div>
         </div>
@@ -905,6 +967,36 @@
             <h2>Every tool a solo sprinter needs. In your pocket.</h2>
             <p>Sprint Lab packs your entire performance toolkit into one tab — AI video analysis, jump power testing, reaction training, timing tools, and race planning. No external hardware. Just your phone and the track.</p>
         </div>
+        <!-- Featured Tools: Video Analysis + Power Lab -->
+        <div class="tools-featured sr">
+            <div class="tf-card">
+                <div class="tf-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                </div>
+                <div class="tf-tag">Video Analysis</div>
+                <h3>See every step. Fix every flaw.</h3>
+                <p>Record your sprint and Aria breaks it down by phase — start, drive, transition, and max velocity. Slow-motion replay with phase markers, technique notes, and AI feedback on what to improve. Your eye can't catch what Aria can.</p>
+                <ul class="tf-list">
+                    <li>Slow-motion video review with sprint phase detection</li>
+                    <li>AI technique notes: stride frequency, ground contact, arm mechanics</li>
+                    <li>Session history: compare your form run to run over time</li>
+                </ul>
+            </div>
+            <div class="tf-card">
+                <div class="tf-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 9-14 9V3z"/><path d="M19 3v18"/></svg>
+                </div>
+                <div class="tf-tag">Power Lab</div>
+                <h3>Measure your explosive power.</h3>
+                <p>The Jump Test uses your phone's slow-motion camera to calculate jump height with precision. Track reactive strength and monitor your power output across training cycles — so you know exactly when you're peaking before race day.</p>
+                <ul class="tf-list">
+                    <li>Countermovement and squat jump analysis via slow-motion video</li>
+                    <li>Jump height tracking: flight time and reactive strength index</li>
+                    <li>Power trend across your training cycle — peak before competition</li>
+                </ul>
+            </div>
+        </div>
+
         <div class="t-grid">
             <div class="t-card tc1 sr d1">
                 <span class="ti"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></span>

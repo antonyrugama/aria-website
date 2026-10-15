@@ -305,6 +305,18 @@
         .wellness-head p{font-size:17px;color:var(--t2);line-height:1.7}
         @media(max-width:640px){.tab-btn{padding:10px 12px;font-size:13px}}
 
+        /* ══════════ FEATURED TOOLS ══════════ */
+        .tools-featured{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:48px}
+        .tf-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;transition:all .3s}
+        .tf-card:hover{border-color:var(--border-h);transform:translateY(-3px);box-shadow:0 20px 40px rgba(0,0,0,.25)}
+        .tf-icon{width:48px;height:48px;background:var(--cyan-10);border:1px solid var(--cyan-20);border-radius:14px;display:flex;align-items:center;justify-content:center;margin-bottom:18px}
+        .tf-tag{display:inline-block;background:var(--cyan-10);border:1px solid var(--cyan-20);color:var(--cyan);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin-bottom:12px;letter-spacing:.04em;text-transform:uppercase}
+        .tf-card h3{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:var(--t1);margin-bottom:10px;line-height:1.2}
+        .tf-card>p{font-size:14px;color:var(--t2);line-height:1.7}
+        .tf-list{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:8px}
+        .tf-list li{font-size:13px;color:var(--t2);display:flex;align-items:flex-start;gap:10px;line-height:1.5}
+        .tf-list li::before{content:'';width:6px;height:6px;background:var(--cyan);border-radius:50%;margin-top:6px;flex-shrink:0}
+        @media(max-width:640px){.tools-featured{grid-template-columns:1fr}}
         /* ══════════ TOOLS ══════════ */
         .tools{padding:120px 0}
         .tools-head{text-align:center;max-width:680px;margin:0 auto 56px}
@@ -647,25 +659,96 @@
             </div>
         </div>
 
-        <!-- Programs -->
-        <div class="f-row rev sr">
-            <div class="f-text">
-                <div class="label">Programas de Entrenamiento</div>
-                <h3>Bloques periodizados. Creados por ti, Aria IA — o tu entrenador.</h3>
-                <p>Crea programas de tres formas: construye día a día, deja que Aria IA genere un bloque completo, o pega tu plan existente. Importa desde CSV o comienza con plantillas. Y si entrenas con un entrenador, él puede crear y asignarte programas directamente desde Aria for Coaches — para que tu plan viva en un solo lugar, siempre.</p>
-                <ul class="f-list">
-                    <li>Programas generados por IA adaptados a tu nivel y objetivos</li>
-                    <li>Sesiones temáticas: Aceleración, Velocidad Máxima, Fuerza, Recuperación</li>
-                    <li>Niveles de dificultad de Principiante a Élite</li>
-                    <li>Programas asignados por tu entrenador: él los crea en Aria for Coaches, tú los ejecutas en Aria</li>
-                </ul>
-            </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="../screenshots/programs2b.jpg" alt="Aria Lista de Programas de Entrenamiento">
+        <!-- Pestañas de Entrenamiento: Programas | Biblioteca de Ejercicios | GPS y Condiciones -->
+        <div class="tab-group sr">
+            <nav class="tab-nav">
+                <button class="tab-btn active" data-tab="programs">Programas de Entrenamiento</button>
+                <button class="tab-btn" data-tab="exlib">Biblioteca de Ejercicios</button>
+                <button class="tab-btn" data-tab="gps">GPS y Condiciones</button>
+            </nav>
+            <div class="tab-panel active" data-panel="programs">
+                <div class="f-row rev">
+                    <div class="f-text">
+                        <div class="label">Programas de Entrenamiento</div>
+                        <h3>Bloques periodizados. Creados por ti, Aria IA — o tu entrenador.</h3>
+                        <p>Crea programas de tres formas: construye día a día, deja que Aria IA genere un bloque completo, o pega tu plan existente. Importa desde CSV o comienza con plantillas. Y si entrenas con un entrenador, él puede crear y asignarte programas directamente desde Aria for Coaches — para que tu plan viva en un solo lugar, siempre.</p>
+                        <ul class="f-list">
+                            <li>Programas generados por IA adaptados a tu nivel y objetivos</li>
+                            <li>Sesiones temáticas: Aceleración, Velocidad Máxima, Fuerza, Recuperación</li>
+                            <li>Niveles de dificultad de Principiante a Élite</li>
+                            <li>Programas asignados por tu entrenador: él los crea en Aria for Coaches, tú los ejecutas en Aria</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="../screenshots/programs2b.jpg" alt="Aria Lista de Programas de Entrenamiento">
+                        </div>
+                        <div class="f-phone">
+                            <img src="../screenshots/programs2a.jpeg" alt="Aria Detalle de Programa de Entrenamiento">
+                        </div>
+                    </div>
                 </div>
-                <div class="f-phone">
-                    <img src="../screenshots/programs2a.jpeg" alt="Aria Detalle de Programa de Entrenamiento">
+            </div>
+            <div class="tab-panel" data-panel="exlib">
+                <div class="f-row">
+                    <div class="f-text">
+                        <div class="label">Biblioteca de Ejercicios</div>
+                        <h3>Cada ejercicio. Cada cue. Cada rep — en video.</h3>
+                        <p>Aria incluye una biblioteca de ejercicios completa y con búsqueda, con videos instructivos para cada movimiento. Entrenamiento de fuerza, drills específicos de sprint, ejercicios de rehabilitación — todo con cues clave de técnica y video en bucle para que nunca tengas que adivinar cómo se ejecuta un movimiento.</p>
+                        <ul class="f-list">
+                            <li>Cientos de ejercicios con video instructivo en bucle</li>
+                            <li>Filtra por categoría: Fuerza, Drills de Sprint, Rehabilitación y más</li>
+                            <li>Cues de técnica clave para cada ejercicio</li>
+                            <li>Vinculado directamente a tus programas de entrenamiento y planes de rehab</li>
+                            <li>Biblioteca de videos con la base de datos de MuscleWiki</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="../screenshots/training-library-en.jpeg" alt="Aria Biblioteca de Ejercicios" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-panel" data-panel="gps">
+                <div class="f-row rev">
+                    <div class="f-text">
+                        <div class="label">GPS y Condiciones de Entrenamiento</div>
+                        <h3>Conoce tus condiciones antes de salir a la pista.</h3>
+                        <p>Aria usa tu ubicación GPS para entregar condiciones de entrenamiento en tiempo real — no solo el clima, sino inteligencia específica para el sprint. Dirección del viento relativa a tu carril, la mejor hora para entrenar hoy, carga térmica y riesgo UV — para que cada decisión de sesión esté informada antes de salir.</p>
+                        <ul class="f-list">
+                            <li>Sprint Score 0–100: un número que califica las condiciones de hoy para trabajo de velocidad máxima</li>
+                            <li>Inteligencia de viento: viento a favor, en contra y cruzado relativo a tu dirección de sprint</li>
+                            <li>Mejor ventana de entrenamiento: hora óptima para entrenar según las condiciones y tu agenda</li>
+                            <li>Riesgo de Carga Térmica: Bajo / Moderado / Alto / Extremo con humedad y sensación térmica</li>
+                            <li>Índice UV y horas de sol pico para programar tus sesiones al aire libre</li>
+                            <li>Alerta en Apple Watch: actualizaciones de condiciones en tiempo real en tu muñeca</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="wx-widget d1">
+                            <div class="wx-ring-wrap">
+                                <svg class="wx-ring-svg" width="120" height="120" viewBox="0 0 120 120">
+                                    <circle class="wx-ring-track" cx="60" cy="60" r="54"/>
+                                    <circle class="wx-ring-fill" cx="60" cy="60" r="54"/>
+                                </svg>
+                                <div class="wx-score-center">
+                                    <strong>82</strong>
+                                    <small>/ 100</small>
+                                </div>
+                            </div>
+                            <div class="wx-title">Sprint Score &middot; Hoy</div>
+                            <div class="wx-badges">
+                                <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Carga Térmica: Baja</span>
+                                <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Viento a Favor</span>
+                                <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg> Cielos Despejados</span>
+                                <span class="wx-badge wa"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Humedad: 68%</span>
+                            </div>
+                            <div class="wx-rec">
+                                <p><strong>Excelente para Velocidad Máxima.</strong> El viento a favor asiste la velocidad punta. Programa aceleración + vuelos de 30m hoy — evita el UV máximo entre 12–2 pm.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -746,63 +829,42 @@
             </div>
         </div>
 
-        <!-- Weather Performance Engine -->
-        <div class="f-row sr">
+        <!-- Puntaje de Preparación -->
+        <div class="f-row rev sr">
             <div class="f-text">
-                <div class="label">Motor de Rendimiento Climático</div>
-                <h3>Sabe antes de ir. ¿Deberías entrenar fuerte hoy?</h3>
-                <p>Aria convierte las condiciones climáticas locales en un <strong>Sprint Score (0–100)</strong> y te dice exactamente qué tipo de sesión realizar. No solo temperatura — dirección del viento relativa a tu calle, riesgo de carga térmica, índice UV y una recomendación de sesión completa con IA.</p>
+                <div class="label">Puntaje de Preparación</div>
+                <h3>¿Estás listo para entrenar fuerte hoy? Aria lo sabe.</h3>
+                <p>Antes de cada sesión, Aria consolida tu VFC, calidad de sueño, carga de entrenamiento, check-in de bienestar y estado nutricional en un único Puntaje de Preparación. Sin adivinar — solo una señal clara sobre si deberías empujar fuerte, entrenar inteligente o recuperarte.</p>
                 <ul class="f-list">
-                    <li>Sprint Score 0–100: qué tan bueno es hoy para el rendimiento</li>
-                    <li>Inteligencia de viento: detección de viento a favor, en contra y cruzado</li>
-                    <li>Riesgo de Carga Térmica: Bajo / Moderado / Alto / Extremo</li>
-                    <li>Mejores tipos de sesión para las condiciones exactas de hoy</li>
-                    <li>Alerta en Apple Watch: "Condiciones excelentes — empuja fuerte hoy"</li>
+                    <li>Puntaje de Preparación 0–100: cuatro zonas — Listo para Empujar, Entrena Inteligente, Reduce la Carga, Día de Descanso</li>
+                    <li>Construido con señales reales: tendencia de VFC, calidad de sueño, ACWR, bienestar subjetivo y fase del ciclo</li>
+                    <li>Recomendación de sesión con IA: objetivos específicos de intensidad y volumen para tu puntaje de hoy</li>
+                    <li>Alertas proactivas: "Estrés de entrenamiento alto + sueño alterado — reduce el volumen un 20% hoy"</li>
+                    <li>Tendencia de preparación 7 días: detecta patrones de sobreentrenamiento antes de que te cuesten una carrera</li>
                 </ul>
             </div>
             <div class="f-vis">
-                <div class="wx-widget sr d1">
+                <div class="wx-widget d1">
                     <div class="wx-ring-wrap">
                         <svg class="wx-ring-svg" width="120" height="120" viewBox="0 0 120 120">
                             <circle class="wx-ring-track" cx="60" cy="60" r="54"/>
-                            <circle class="wx-ring-fill" cx="60" cy="60" r="54"/>
+                            <circle class="wx-ring-fill" cx="60" cy="60" r="54" style="stroke-dashoffset:85"/>
                         </svg>
                         <div class="wx-score-center">
-                            <strong>82</strong>
+                            <strong>78</strong>
                             <small>/ 100</small>
                         </div>
                     </div>
-                    <div class="wx-title">Sprint Score &middot; Hoy</div>
+                    <div class="wx-title">Puntaje de Preparación &middot; Hoy</div>
                     <div class="wx-badges">
-                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Carga Térmica: Baja</span>
-                        <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Viento a Favor</span>
-                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg> Cielos Despejados</span>
-                        <span class="wx-badge wa"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Humedad: 68%</span>
+                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> VFC: +12% sobre línea base</span>
+                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Sueño: 7.2h · Buena calidad</span>
+                        <span class="wx-badge wc"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg> Carga de Entrenamiento: Moderada</span>
+                        <span class="wx-badge wg"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg> Bienestar: Alto</span>
                     </div>
                     <div class="wx-rec">
-                        <p><strong>Excelente para Velocidad Máxima.</strong> El viento a favor asiste la velocidad punta. Programa aceleración + vuelos de 30m hoy — evita el UV máximo entre 12–2 pm.</p>
+                        <p><strong>Listo para empujar.</strong> VFC elevada, sueño sólido. Ejecuta tu trabajo de velocidad máxima hoy — apunta a intensidad completa en el primer bloque.</p>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Biblioteca de Ejercicios -->
-        <div class="f-row sr">
-            <div class="f-text">
-                <div class="label">Biblioteca de Ejercicios</div>
-                <h3>Cada ejercicio. Cada cue. Cada rep — en video.</h3>
-                <p>Aria incluye una biblioteca de ejercicios completa y con búsqueda, con videos instructivos para cada movimiento. Entrenamiento de fuerza, drills específicos de sprint, ejercicios de rehabilitación — todo con cues clave de técnica y video en bucle para que nunca tengas que adivinar cómo se ejecuta un movimiento.</p>
-                <ul class="f-list">
-                    <li>Cientos de ejercicios con video instructivo en bucle</li>
-                    <li>Filtra por categoría: Fuerza, Drills de Sprint, Rehabilitación y más</li>
-                    <li>Cues de técnica clave para cada ejercicio</li>
-                    <li>Vinculado directamente a tus programas de entrenamiento y planes de rehab</li>
-                    <li>Biblioteca de videos con la base de datos de MuscleWiki</li>
-                </ul>
-            </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="../screenshots/training-library-en.jpeg" alt="Aria Biblioteca de Ejercicios" style="width:100%;height:100%;object-fit:cover">
                 </div>
             </div>
         </div>
@@ -904,6 +966,35 @@
             <div class="label">Sprint Lab</div>
             <h2>Cada herramienta que un velocista solo necesita. En tu bolsillo.</h2>
             <p>Sprint Lab concentra todas tus herramientas de rendimiento en una sola pestaña — análisis de video con IA, prueba de salto para potencia, entrenamiento de reacción, herramientas de cronometraje y planificación de carreras. Sin hardware externo. Solo tu teléfono y la pista.</p>
+        </div>
+        <!-- Herramientas Destacadas: Análisis de Video + Power Lab -->
+        <div class="tools-featured sr">
+            <div class="tf-card">
+                <div class="tf-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                </div>
+                <div class="tf-tag">Análisis de Video</div>
+                <h3>Ve cada paso. Corrige cada falla.</h3>
+                <p>Graba tu sprint y Aria lo descompone por fase — salida, aceleración, transición y velocidad máxima. Repetición en cámara lenta con marcadores de fase, notas de técnica y retroalimentación con IA sobre qué mejorar. Tu ojo no puede captar lo que Aria sí puede.</p>
+                <ul class="tf-list">
+                    <li>Revisión en cámara lenta con detección de fases del sprint</li>
+                    <li>Notas técnicas con IA: frecuencia de zancada, contacto con el suelo, mecánica de brazos</li>
+                    <li>Historial de sesiones: compara tu forma carrera a carrera en el tiempo</li>
+                </ul>
+            </div>
+            <div class="tf-card">
+                <div class="tf-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 9-14 9V3z"/><path d="M19 3v18"/></svg>
+                </div>
+                <div class="tf-tag">Power Lab</div>
+                <h3>Mide tu potencia explosiva.</h3>
+                <p>El Test de Salto usa la cámara lenta de tu teléfono para calcular la altura de salto con precisión. Rastrea la fuerza reactiva y monitorea tu producción de potencia en ciclos de entrenamiento — para saber exactamente cuándo estás en tu pico antes del día de carrera.</p>
+                <ul class="tf-list">
+                    <li>Análisis de salto con contramovimiento y sentadilla mediante video a cámara lenta</li>
+                    <li>Seguimiento de altura de salto: tiempo de vuelo e índice de fuerza reactiva</li>
+                    <li>Tendencia de potencia en tu ciclo de entrenamiento — pico antes de la competencia</li>
+                </ul>
+            </div>
         </div>
         <div class="t-grid">
             <div class="t-card tc1 sr d1">
