@@ -286,11 +286,24 @@
 
         /* ══════════ CYCLE TRACKING ══════════ */
         :root{--pink:#FF6B9D;--pink-10:rgba(255,107,157,.1);--pink-20:rgba(255,107,157,.2)}
-        .cycle{padding:120px 0;background:var(--bg)}
-        .cycle .label{color:var(--pink)}
-        .cycle .f-list li::before{background:var(--pink-10);border-color:var(--pink)}
-        .cycle .f-phone{border-color:rgba(255,107,157,.15);width:165px;height:340px}
-        .cycle .f-vis{gap:10px}
+        /* ══════════ TAB GROUPS ══════════ */
+        .tab-group{margin:0 0 80px}
+        .tab-nav{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:48px}
+        .tab-btn{background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;padding:14px 22px;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:600;color:var(--t2);cursor:pointer;transition:color .2s,border-color .2s;line-height:1;white-space:nowrap}
+        .tab-btn:hover{color:var(--t1)}
+        .tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+        .tab-panel{display:none}
+        .tab-panel.active{display:block}
+        .cycle-panel .label{color:var(--pink)}
+        .cycle-panel .f-list li::before{background:var(--pink-10);border-color:var(--pink)}
+        .cycle-panel .f-phone{border-color:rgba(255,107,157,.15);width:165px;height:340px}
+        .cycle-panel .f-vis{gap:10px}
+        /* ══════════ WELLNESS ══════════ */
+        .wellness{padding:120px 0;background:var(--bg)}
+        .wellness-head{text-align:center;max-width:680px;margin:0 auto 56px}
+        .wellness-head h2{font-family:'Outfit',sans-serif;font-size:clamp(28px,4.5vw,46px);font-weight:900;letter-spacing:-.035em;line-height:1.08;color:var(--t1);margin-bottom:14px}
+        .wellness-head p{font-size:17px;color:var(--t2);line-height:1.7}
+        @media(max-width:640px){.tab-btn{padding:10px 12px;font-size:13px}}
 
         /* ══════════ TOOLS ══════════ */
         .tools{padding:120px 0}
@@ -657,47 +670,55 @@
             </div>
         </div>
 
-        <!-- Nutrition -->
-        <div class="f-row sr">
-            <div class="f-text">
-                <div class="label">Sprint Nutrition</div>
-                <h3>Eat for your training. Not against it.</h3>
-                <p>Aria builds sprint-specific meal plans with timed pre-session fuel, intra-workout carbs, and post-session recovery — then adapts your entire remaining day in one tap when your training changes. The only nutrition system that knows how hard you trained this morning.</p>
-                <ul class="f-list">
-                    <li>AI-generated plans: In-Season, Competition Day, Off-Season, and custom blocks</li>
-                    <li>"Adjust my day" — AI rebalances your remaining meals after any session shift</li>
-                    <li>Hydration card with sweat-rate-aware daily water targets</li>
-                    <li>Per-meal AI feedback on every meal you log</li>
-                    <li>Region-aware foods (Latin American, East African, Mediterranean) and dietary restriction support</li>
-                </ul>
-            </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="screenshots/nutrition-today-en.jpeg" alt="Aria Nutrition Today" style="width:100%;height:100%;object-fit:cover">
+        <!-- Fuel Tabs: Sprint Nutrition + Metabolic Intelligence -->
+        <div class="tab-group sr">
+            <nav class="tab-nav">
+                <button class="tab-btn active" data-tab="nutrition">Sprint Nutrition</button>
+                <button class="tab-btn" data-tab="metabolic">Metabolic Intelligence</button>
+            </nav>
+            <div class="tab-panel active" data-panel="nutrition">
+                <div class="f-row">
+                    <div class="f-text">
+                        <div class="label">Sprint Nutrition</div>
+                        <h3>Eat for your training. Not against it.</h3>
+                        <p>Aria builds sprint-specific meal plans with timed pre-session fuel, intra-workout carbs, and post-session recovery — then adapts your entire remaining day in one tap when your training changes. The only nutrition system that knows how hard you trained this morning.</p>
+                        <ul class="f-list">
+                            <li>AI-generated plans: In-Season, Competition Day, Off-Season, and custom blocks</li>
+                            <li>"Adjust my day" — AI rebalances your remaining meals after any session shift</li>
+                            <li>Hydration card with sweat-rate-aware daily water targets</li>
+                            <li>Per-meal AI feedback on every meal you log</li>
+                            <li>Region-aware foods (Latin American, East African, Mediterranean) and dietary restriction support</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="screenshots/nutrition-today-en.jpeg" alt="Aria Nutrition Today" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                        <div class="f-phone">
+                            <img src="screenshots/nutrition-beyond-en.jpeg" alt="Aria Nutrition Hydration and Quality Score" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                    </div>
                 </div>
-                <div class="f-phone">
-                    <img src="screenshots/nutrition-beyond-en.jpeg" alt="Aria Nutrition Hydration and Quality Score" style="width:100%;height:100%;object-fit:cover">
-                </div>
             </div>
-        </div>
-
-        <!-- Metabolic Intelligence -->
-        <div class="f-row rev sr">
-            <div class="f-text">
-                <div class="label">Metabolic Intelligence</div>
-                <h3>Your wearable guesses. Aria corrects it.</h3>
-                <p>Wearables can overestimate or underestimate your calorie burn by up to 30%. Aria's Metabolic Intelligence engine takes your device's reading and corrects it using your personal training history, body composition, and real energy patterns — so your nutrition targets actually match your body.</p>
-                <ul class="f-list">
-                    <li>AI calorie correction: see your wearable estimate vs. Aria's corrected burn — and exactly why it differs</li>
-                    <li>Substrate breakdown: how much carb vs. fat you burned — plus your glycogen depletion status</li>
-                    <li>Metabolic Efficiency Score (0–100): tracks fuel flexibility and recovery metabolism over time</li>
-                    <li>Proactive alerts: overreaching risk, glycogen depletion warnings, aerobic efficiency shifts</li>
-                    <li>Calibration tiers: accuracy improves as you train — upgrades further with VO2max, DEXA, or RMR lab data</li>
-                </ul>
-            </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="screenshots/metabolic-en-1.jpeg" alt="Aria Metabolic Intelligence Today's Burn" style="width:100%;height:100%;object-fit:cover">
+            <div class="tab-panel" data-panel="metabolic">
+                <div class="f-row rev">
+                    <div class="f-text">
+                        <div class="label">Metabolic Intelligence</div>
+                        <h3>Your wearable guesses. Aria corrects it.</h3>
+                        <p>Wearables can overestimate or underestimate your calorie burn by up to 30%. Aria's Metabolic Intelligence engine takes your device's reading and corrects it using your personal training history, body composition, and real energy patterns — so your nutrition targets actually match your body.</p>
+                        <ul class="f-list">
+                            <li>AI calorie correction: see your wearable estimate vs. Aria's corrected burn — and exactly why it differs</li>
+                            <li>Substrate breakdown: how much carb vs. fat you burned — plus your glycogen depletion status</li>
+                            <li>Metabolic Efficiency Score (0–100): tracks fuel flexibility and recovery metabolism over time</li>
+                            <li>Proactive alerts: overreaching risk, glycogen depletion warnings, aerobic efficiency shifts</li>
+                            <li>Calibration tiers: accuracy improves as you train — upgrades further with VO2max, DEXA, or RMR lab data</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="screenshots/metabolic-en-1.jpeg" alt="Aria Metabolic Intelligence Today's Burn" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -742,31 +763,6 @@
             </div>
         </div>
 
-        <!-- Recovery, Rehab & Injury Risk -->
-        <div class="f-row rev sr">
-            <div class="f-text">
-                <div class="label">Recovery, Rehab & Injury Prevention</div>
-                <h3>See injury risk coming. And recover smarter when it hits.</h3>
-                <p>Aria tracks your ACWR, movement load flags by muscle group, and recovery signals to catch overuse risk before it becomes an injury. And if injury does happen, Aria's built-in rehabilitation tool guides your return — with step-by-step programs built around the major muscle groups of your body, so you come back stronger.</p>
-                <ul class="f-list">
-                    <li>ACWR tracking: acute vs. chronic workload ratio with 12-week trend chart</li>
-                    <li>Movement load flags by area: Quadriceps, Hamstrings, Hip Flexor, Groin, Knee, and more</li>
-                    <li>Body map rehab intake — tap the exact muscle, get a personalized recovery plan</li>
-                    <li>Rehab programs by category: Acute Muscle, Chronic, Back, Bone Fractures</li>
-                    <li>Ask Aria about your injury for additional protocol guidance</li>
-                </ul>
-                <p style="font-size:13px;color:var(--t3);margin-top:16px;line-height:1.6">Aria's rehab programs are training support tools, not medical advice. Always consult a doctor, physiotherapist, or sports medicine professional for injury diagnosis and treatment.</p>
-            </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="screenshots/rehab-load-en.jpeg" alt="Aria Load and Recovery Signals" style="width:100%;height:100%;object-fit:cover">
-                </div>
-                <div class="f-phone">
-                    <img src="screenshots/rehab-bodymap-en.jpeg" alt="Aria Rehab Body Map" style="width:100%;height:100%;object-fit:cover">
-                </div>
-            </div>
-        </div>
-
         <!-- Exercise Library -->
         <div class="f-row sr">
             <div class="f-text">
@@ -790,58 +786,92 @@
     </div>
 </section>
 
-<!-- SPRINT TOOLS -->
-<!-- CYCLE TRACKING -->
-<section class="feat cycle" id="cycle">
+<!-- WELLNESS -->
+<section class="wellness" id="wellness">
     <div class="wrap">
-        <div class="f-row sr">
-            <div class="f-text">
-                <div class="label">Cycle Tracking — Built for Female Athletes</div>
-                <h3>Her phases. Her edge. Built in.</h3>
-                <p>Aria is built around female physiology — not as an add-on, but as a live training input. When your phase shifts, your AI recommendations shift with it. No other sprint app does this.</p>
-                <ul class="f-list">
-                    <li>Live training overlay: your current cycle phase actively shapes today's workout intensity, volume, and recovery targets</li>
-                    <li>Cycle Forecast with confidence meter — prediction sharpens over your first 2–3 logged cycles</li>
-                    <li>Phase-specific nutrition: carbs, iron, magnesium, and sodium targets shift with your biology each week</li>
-                    <li>Daily logging: energy, pain, mood, bloating, flow, cramps, and symptoms</li>
-                    <li>Coach sharing with privacy controls — share exactly what you choose, nothing more</li>
-                </ul>
-            </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="screenshots/cycle-en-1.jpeg" alt="Aria Cycle Dashboard" style="width:100%;height:100%;object-fit:cover">
-                </div>
-                <div class="f-phone">
-                    <img src="screenshots/cycle-en-2.jpeg" alt="Aria Cycle Daily Log" style="width:100%;height:100%;object-fit:cover">
-                </div>
-                <div class="f-phone">
-                    <img src="screenshots/cycle-en-3.jpeg" alt="Aria Cycle HRV and Recommendations" style="width:100%;height:100%;object-fit:cover">
-                </div>
-            </div>
+        <div class="wellness-head sr">
+            <div class="label">Wellness</div>
+            <h2>Train the whole athlete.</h2>
+            <p>Cycle physiology, injury risk, and mental readiness — because performance doesn't happen in isolation.</p>
         </div>
-    </div>
-</section>
-
-<!-- MENTAL INTELLIGENCE -->
-<section class="feat" id="mind">
-    <div class="wrap">
-        <div class="f-row rev sr">
-            <div class="f-text">
-                <div class="label">Mental Intelligence — Mind Tab</div>
-                <h3>A score for your mind. Six components. Your baseline.</h3>
-                <p>Most athletes ignore mental readiness until it costs them a race. Aria measures it daily. A quick check-in generates a Mental Score (0–100) built from six components — and connects your mindset to your actual training performance over time, so you see patterns before they become problems.</p>
-                <ul class="f-list">
-                    <li>Mental Score 0–100 across four zones: Optimal, Good, Caution, and Low</li>
-                    <li>Six-component breakdown: Motivation, Confidence, Stress Balance, Focus, Mental Fatigue, and Recovery Alignment</li>
-                    <li>Personal baseline band: your score vs. your own historical range — not population averages</li>
-                    <li>AI-recommended interventions: breathing tools, guided mind sessions, or curriculum programs — matched to today's score</li>
-                    <li>Mind-Performance Link: 30-day correlation charts connecting mental state to sprint output and training quality</li>
-                    <li>Privacy controls: choose exactly what your coach can see</li>
-                </ul>
+        <div class="tab-group">
+            <nav class="tab-nav">
+                <button class="tab-btn active" data-tab="cycle">Cycle Intelligence</button>
+                <button class="tab-btn" data-tab="rehab">Recovery &amp; Rehab</button>
+                <button class="tab-btn" data-tab="mental">Mental Intelligence</button>
+            </nav>
+            <div class="tab-panel active cycle-panel" data-panel="cycle">
+                <div class="f-row">
+                    <div class="f-text">
+                        <div class="label">Cycle Tracking — Built for Female Athletes</div>
+                        <h3>Her phases. Her edge. Built in.</h3>
+                        <p>Aria is built around female physiology — not as an add-on, but as a live training input. When your phase shifts, your AI recommendations shift with it. No other sprint app does this.</p>
+                        <ul class="f-list">
+                            <li>Live training overlay: your current cycle phase actively shapes today's workout intensity, volume, and recovery targets</li>
+                            <li>Cycle Forecast with confidence meter — prediction sharpens over your first 2–3 logged cycles</li>
+                            <li>Phase-specific nutrition: carbs, iron, magnesium, and sodium targets shift with your biology each week</li>
+                            <li>Daily logging: energy, pain, mood, bloating, flow, cramps, and symptoms</li>
+                            <li>Coach sharing with privacy controls — share exactly what you choose, nothing more</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="screenshots/cycle-en-1.jpeg" alt="Aria Cycle Dashboard" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                        <div class="f-phone">
+                            <img src="screenshots/cycle-en-2.jpeg" alt="Aria Cycle Daily Log" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                        <div class="f-phone">
+                            <img src="screenshots/cycle-en-3.jpeg" alt="Aria Cycle HRV and Recommendations" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="f-vis">
-                <div class="f-phone">
-                    <img src="screenshots/mind-en.jpeg" alt="Aria Mental Intelligence" style="width:100%;height:100%;object-fit:cover">
+            <div class="tab-panel" data-panel="rehab">
+                <div class="f-row rev">
+                    <div class="f-text">
+                        <div class="label">Recovery, Rehab &amp; Injury Prevention</div>
+                        <h3>See injury risk coming. And recover smarter when it hits.</h3>
+                        <p>Aria tracks your ACWR, movement load flags by muscle group, and recovery signals to catch overuse risk before it becomes an injury. And if injury does happen, Aria's built-in rehabilitation tool guides your return — with step-by-step programs built around the major muscle groups of your body, so you come back stronger.</p>
+                        <ul class="f-list">
+                            <li>ACWR tracking: acute vs. chronic workload ratio with 12-week trend chart</li>
+                            <li>Movement load flags by area: Quadriceps, Hamstrings, Hip Flexor, Groin, Knee, and more</li>
+                            <li>Body map rehab intake — tap the exact muscle, get a personalized recovery plan</li>
+                            <li>Rehab programs by category: Acute Muscle, Chronic, Back, Bone Fractures</li>
+                            <li>Ask Aria about your injury for additional protocol guidance</li>
+                        </ul>
+                        <p style="font-size:13px;color:var(--t3);margin-top:16px;line-height:1.6">Aria's rehab programs are training support tools, not medical advice. Always consult a doctor, physiotherapist, or sports medicine professional for injury diagnosis and treatment.</p>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="screenshots/rehab-load-en.jpeg" alt="Aria Load and Recovery Signals" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                        <div class="f-phone">
+                            <img src="screenshots/rehab-bodymap-en.jpeg" alt="Aria Rehab Body Map" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-panel" data-panel="mental">
+                <div class="f-row">
+                    <div class="f-text">
+                        <div class="label">Mental Intelligence — Mind Tab</div>
+                        <h3>A score for your mind. Six components. Your baseline.</h3>
+                        <p>Most athletes ignore mental readiness until it costs them a race. Aria measures it daily. A quick check-in generates a Mental Score (0–100) built from six components — and connects your mindset to your actual training performance over time, so you see patterns before they become problems.</p>
+                        <ul class="f-list">
+                            <li>Mental Score 0–100 across four zones: Optimal, Good, Caution, and Low</li>
+                            <li>Six-component breakdown: Motivation, Confidence, Stress Balance, Focus, Mental Fatigue, and Recovery Alignment</li>
+                            <li>Personal baseline band: your score vs. your own historical range — not population averages</li>
+                            <li>AI-recommended interventions: breathing tools, guided mind sessions, or curriculum programs — matched to today's score</li>
+                            <li>Mind-Performance Link: 30-day correlation charts connecting mental state to sprint output and training quality</li>
+                            <li>Privacy controls: choose exactly what your coach can see</li>
+                        </ul>
+                    </div>
+                    <div class="f-vis">
+                        <div class="f-phone">
+                            <img src="screenshots/mind-en.jpeg" alt="Aria Mental Intelligence" style="width:100%;height:100%;object-fit:cover">
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1091,6 +1121,17 @@ document.querySelectorAll('.sr').forEach(el=>obs.observe(el));
 
 // Smooth scroll
 document.querySelectorAll('a[href^="#"]').forEach(a=>a.addEventListener('click',function(e){e.preventDefault();const t=document.querySelector(this.getAttribute('href'));if(t)t.scrollIntoView({behavior:'smooth',block:'start'})}));
+
+// Tab groups
+document.querySelectorAll('.tab-nav .tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+        const grp=btn.closest('.tab-group');
+        grp.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+        grp.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+        btn.classList.add('active');
+        grp.querySelector('[data-panel="'+btn.dataset.tab+'"]').classList.add('active');
+    });
+});
 </script>
 </body>
 </html>
