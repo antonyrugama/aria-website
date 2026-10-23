@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - 'privacy.html'
+      - 'fitmg/privacy.html'
+      - 'fitmg/privacy/index.html'
       - 'scripts/check-privacy-attribution.sh'
       - '.github/workflows/privacy-attribution.yml'
   push:
     branches: [main]
     paths:
       - 'privacy.html'
+      - 'fitmg/privacy.html'
+      - 'fitmg/privacy/index.html'
       - 'scripts/check-privacy-attribution.sh'
       - '.github/workflows/privacy-attribution.yml'
 
@@ -23,4 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify required privacy attribution
-        run: bash scripts/check-privacy-attribution.sh
+        run: |
+          bash scripts/check-privacy-attribution.sh
+          bash scripts/check-privacy-attribution.sh fitmg/privacy.html
