@@ -1,0 +1,258 @@
+[
+  {
+    "theme": "dark",
+    "width": 390,
+    "contrast": {
+      "foreground": 19.061142529601344,
+      "accent": 7.251189430486412,
+      "muted": 7.762805693682826
+    },
+    "language": "es",
+    "duplicateIds": [],
+    "brokenAnchors": [],
+    "overflow": false,
+    "navTargets": [
+      {
+        "text": "Español",
+        "height": 44
+      },
+      {
+        "text": "English",
+        "height": 44
+      },
+      {
+        "text": "Procesamiento con IA",
+        "height": 44
+      },
+      {
+        "text": "Tus opciones",
+        "height": 44
+      },
+      {
+        "text": "Contacto",
+        "height": 44
+      },
+      {
+        "text": "AI processing",
+        "height": 44
+      },
+      {
+        "text": "Your choices",
+        "height": 44
+      },
+      {
+        "text": "Contact",
+        "height": 44
+      },
+      {
+        "text": "Soporte / Support",
+        "height": 44
+      },
+      {
+        "text": "Español",
+        "height": 44
+      },
+      {
+        "text": "English",
+        "height": 44
+      }
+    ],
+    "foreground": "rgb(250, 250, 250)",
+    "background": "rgb(9, 9, 11)",
+    "accent": "rgb(255, 111, 84)",
+    "muted": "rgb(161, 161, 170)",
+    "scripts": 0
+  },
+  {
+    "theme": "light",
+    "width": 390,
+    "contrast": {
+      "foreground": 16.672503132675836,
+      "accent": 9.04494930907843,
+      "muted": 7.274209601875552
+    },
+    "language": "es",
+    "duplicateIds": [],
+    "brokenAnchors": [],
+    "overflow": false,
+    "navTargets": [
+      {
+        "text": "Español",
+        "height": 44
+      },
+      {
+        "text": "English",
+        "height": 44
+      },
+      {
+        "text": "Procesamiento con IA",
+        "height": 44
+      },
+      {
+        "text": "Tus opciones",
+        "height": 44
+      },
+      {
+        "text": "Contacto",
+        "height": 44
+      },
+      {
+        "text": "AI processing",
+        "height": 44
+      },
+      {
+        "text": "Your choices",
+        "height": 44
+      },
+      {
+        "text": "Contact",
+        "height": 44
+      },
+      {
+        "text": "Soporte / Support",
+        "height": 44
+      },
+      {
+        "text": "Español",
+        "height": 44
+      },
+      {
+        "text": "English",
+        "height": 44
+      }
+    ],
+    "foreground": "rgb(24, 24, 27)",
+    "background": "rgb(247, 248, 250)",
+    "accent": "rgb(142, 8, 0)",
+    "muted": "rgb(82, 82, 91)",
+    "scripts": 0
+  },
+  {
+    "theme": "dark",
+    "width": 360,
+    "contrast": {
+      "foreground": 19.061142529601344,
+      "accent": 7.251189430486412,
+      "muted": 7.762805693682826
+    },
+    "language": "es",
+    "duplicateIds": [],
+    "brokenAnchors": [],
+    "overflow": false,
+    "navTargets": [
+      {
+        "text": "Español",
+        "height": 44
+      },
+      {
+        "text": "English",
+        "height": 44
+      },
+      {
+        "text": "Procesamiento con IA",
+        "height": 44
+      },
+      {
+        "text": "Tus opciones",
+        "height": 44
+      },
+      {
+        "text": "Contacto",
+        "height": 44
+      },
+      {
+        "text": "AI processing",
+        "height": 44
+      },
+      {
+        "text": "Your choices",
+        "height": 44
+      },
+      {
+        "text": "Contact",
+        "height": 44
+      },
+      {
+        "text": "Soporte / Support",
+        "height": 44
+      },
+      {
+        "text": "Español",
+        "height": 44
+      },
+      {
+        "text": "English",
+        "height": 44
+      }
+    ],
+    "foreground": "rgb(250, 250, 250)",
+    "background": "rgb(9, 9, 11)",
+    "accent": "rgb(255, 111, 84)",
+    "muted": "rgb(161, 161, 170)",
+    "scripts": 0
+  },
+  {
+    "theme": "light",
+    "width": 360,
+    "contrast": {
+      "foreground": 16.672503132675836,
+      "accent": 9.04494930907843,
+      "muted": 7.274209601875552
+    },
+    "language": "es",
+    "duplicateIds": [],
+    "brokenAnchors": [],
+    "overflow": false,
+    "navTargets": [
+      {
+        "text": "Español",
+        "height": 44
+      },
+      {
+        "text": "English",
+        "height": 44
+      },
+      {
+        "text": "Procesamiento con IA",
+        "height": 44
+      },
+      {
+        "text": "Tus opciones",
+        "height": 44
+      },
+      {
+        "text": "Contacto",
+        "height": 44
+      },
+      {
+        "text": "AI processing",
+        "height": 44
+      },
+      {
+        "text": "Your choices",
+        "height": 44
+      },
+      {
+        "text": "Contact",
+        "height": 44
+      },
+      {
+        "text": "Soporte / Support",
+        "height": 44
+      },
+      {
+        "text": "Español",
+        "height": 44
+      },
+      {
+        "text": "English",
+        "height": 44
+      }
+    ],
+    "foreground": "rgb(24, 24, 27)",
+    "background": "rgb(247, 248, 250)",
+    "accent": "rgb(142, 8, 0)",
+    "muted": "rgb(82, 82, 91)",
+    "scripts": 0
+  }
+]
