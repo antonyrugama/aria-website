@@ -1,0 +1,24 @@
+[
+  {
+    "width": 1440,
+    "scrollWidth": 1440,
+    "uniqueIds": true,
+    "source": "local committed privacy.html",
+    "theme": "existing fixed dark website theme",
+    "languages": [
+      "es",
+      "en"
+    ]
+  },
+  {
+    "width": 375,
+    "scrollWidth": 375,
+    "uniqueIds": true,
+    "source": "local committed privacy.html",
+    "theme": "existing fixed dark website theme",
+    "languages": [
+      "es",
+      "en"
+    ]
+  }
+]
