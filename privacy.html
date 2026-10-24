@@ -295,7 +295,7 @@
             <i></i>
             <span>Version 3 &mdash; Effective July 14, 2026</span>
         </div>
-        <p style="margin-top:16px;font-size:14px;color:var(--t2)">Last Updated: October 7, 2026</p>
+        <p style="margin-top:16px;font-size:14px;color:var(--t2)">Last Updated: October 24, 2026</p>
     </div>
 </section>
 
@@ -406,6 +406,19 @@
     <h3>Coach Notes In Aria For Coaches</h3>
     <p>Aria for Coaches includes a private notebook. Notes you write there are visible only to you. They are not visible to your athletes, to other staff in your organization, or to organization administrators, and they are never included in an athlete's AI coaching context.</p>
     <p>The notebook offers an optional feature that reports recurring themes across your own notes. It runs only when you request it. When you do, the text of your recent notes is sent to an AI processing service such as Azure OpenAI in order to generate that summary. Only your own note text is sent for this feature: no athlete records, training data, or roster information are included. The resulting summary is stored so that repeating the request on the same day does not regenerate it, and it is deleted with your account.</p>
+    <h3 id="coach-program-import">Importación de programas / Coach Program Import</h3>
+    <div lang="es">
+        <p>En Aria for Coaches, puedes elegir importar un programa desde archivos o fotos para crear un borrador privado. Esta acción envía el documento completo seleccionado a Azure OpenAI para leerlo: imágenes de las páginas del PDF y texto con su distribución, fotos normalizadas, tablas de Word o celdas y coordenadas de hojas de cálculo.</p>
+        <p>A diferencia de la lectura automática del texto que escribes, no hay un filtro previo al modelo que pueda eliminar nombres o información de salud de las imágenes. Evita importar datos personales o de salud innecesarios: quita nombres, datos de contacto y comentarios de salud antes de subir el archivo o tomar la foto. Aria no adjunta tu lista de atletas, perfiles, identificadores de atletas ni contexto recuperado de ellos; cualquier dato visible en el archivo sí puede llegar al modelo.</p>
+        <p>El servicio de IA de Aria no guarda las solicitudes ni las respuestas y no registra su contenido. La supervisión de abuso aplicable de Azure puede conservar solicitudes y respuestas señaladas durante un máximo de 30 días. Esta función no ofrece retención cero ni evita esa supervisión.</p>
+        <p>Los archivos originales permanecen en tus Archivos privados con su ciclo de conservación habitual. Los artefactos preparados para el modelo caducan a los 15 minutos. Los datos de trabajo de la importación, incluida la transcripción y las referencias al original, caducan siete días después de confirmar el primer guardado, o 30 días después de crearlos si abandonas la importación. La limpieza horaria elimina esos datos y los borradores no guardados. Copiar, asignar o compartir la plantilla no prolonga la conservación de esos datos de trabajo. La exportación y eliminación de la cuenta incluyen solo tus propias importaciones.</p>
+    </div>
+    <div lang="en">
+        <p>In Aria for Coaches, you can choose to import a program from files or photos to create a private draft. This action sends the whole selected document to Azure OpenAI to read it: PDF page images and layout text, normalized photos, Word tables, or spreadsheet cells and coordinates.</p>
+        <p>Unlike automatic reading of the text you type, there is no pre-model filter that can remove names or health information from images. Avoid importing unnecessary personal or health information: remove names, contact details and health remarks before uploading the file or taking the photo. Aria does not attach your athlete roster, profiles, athlete identifiers or retrieved athlete context; any information visible in the file can still reach the model.</p>
+        <p>Aria's AI service does not store requests or responses or log their content. Azure's applicable abuse monitoring can retain flagged requests and responses for up to 30 days. This feature does not offer zero retention or bypass that monitoring.</p>
+        <p>Original files remain in your private Files under their existing retention lifecycle. Artifacts prepared for the model expire after 15 minutes. Import working data, including transcription and source references, expires seven days after the first save acknowledgement, or 30 days after creation if you abandon the import. Hourly cleanup deletes that data and unsaved drafts. Copying, assigning or sharing the template does not extend retention of that working data. Account export and deletion include only your own imports.</p>
+    </div>
     <h3>Weekly Team Reports In Aria XII</h3>
     <p>Aria XII can write a short AI summary for a coach's weekly team report. <a href="#aria-xii-weekly-reports">Section 7</a> describes what Aria sends to write it and how long reports are kept.</p>
 
