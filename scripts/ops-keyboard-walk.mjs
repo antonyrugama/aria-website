@@ -7,12 +7,13 @@
  * was found by accident while someone was looking at something else. This
  * finds the rest on purpose.
  *
- * WHAT IT IS NOT. Not a test, deliberately: it is named `.mjs` rather than
- * `.test.mjs` so `ops-pane-tests.yml` does not run it. It reports what is
+ * WHAT IT IS NOT. Not a general test: it reports what is
  * there, including defects this author is not allowed to fix, and a guard
  * that reds CI over someone else's open file is a guard that gets disabled.
  * The findings it produces are filed as issues; the numbers below are the
- * evidence for them.
+ * evidence for them. Community safety additionally has fail-closed regression
+ * assertions, reused by ops-ugc-browser.test.mjs for hostile-text rendering,
+ * contract labels and keyboard focus after a confirmed decision.
  *
  * WHAT IT MEASURES. Real `Tab` and `Shift+Tab` key events through CDP's
  * Input domain, on the real pages served over HTTP, booted with the same API
@@ -47,7 +48,8 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { stub } from './ops-api-stub.mjs';
+import assert from 'node:assert/strict';
+import { stub, MODERATION_REPORTS } from './ops-api-stub.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -83,11 +85,17 @@ const MIME = {
   '.woff2': 'font/woff2', '.ico': 'image/x-icon'
 };
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
+    let body;
+    if (req.method === 'POST' && url.pathname.startsWith('/api/ops/moderation/')) {
+      let text = '';
+      for await (const chunk of req) text += chunk;
+      body = JSON.parse(text);
+    }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname)));
+    res.end(JSON.stringify(stub(url.pathname, url.search, { body })));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));
@@ -176,7 +184,7 @@ function connect(url) {
   };
 }
 
-const tempRoot = fs.existsSync('/dev/shm') ? '/dev/shm' : os.tmpdir();
+const tempRoot = os.tmpdir();
 const profile = fs.mkdtempSync(path.join(tempRoot, 'ops-kbd-walk-'));
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -554,7 +562,7 @@ async function stepStops(n, press) {
   return { landed, presses };
 }
 
-async function walk(limit) {
+async function walk(limit, endKey = null) {
   const stops = [];
   let consumed = 1;
   for (let i = 0; i < limit; i++) {
@@ -569,6 +577,7 @@ async function walk(limit) {
     }
     consumed = 1;
     stops.push({ ...a, pressesConsumed: 1 });
+    if (a.key === endKey) break;
     if (a.key === 'DOCUMENT' && stops.length > 1) break;
     if (stops.length > 2 && a.key === stops[0].key) break;
   }
@@ -588,12 +597,125 @@ const ONLY_VP = process.env.KBD_VIEWPORT ? process.env.KBD_VIEWPORT.split(',') :
    dialogs is not looking. */
 const SKIP_DIALOGS = Boolean(process.env.KBD_SKIP_DIALOGS);
 
+async function moderationProbe(viewport) {
+  async function screenshot(state) {
+    if (!process.env.KBD_UGC_SCREENSHOTS) return;
+    await evalJson(`document.querySelector('.ugc-queue').scrollIntoView(); 'null'`);
+    const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    fs.writeFileSync(path.join(process.env.KBD_UGC_SCREENSHOTS, `moderation-${state}-${viewport.name}.png`), Buffer.from(data, 'base64'));
+  }
+  const rendered = await evalJson(`JSON.stringify(Array.from(document.querySelectorAll('.ugc-report')).map(card => ({
+    note: card.querySelectorAll(':scope > p')[1]?.textContent,
+    preview: card.querySelector('p.ugc-preview')?.textContent,
+    snapshot: card.querySelector('pre.ugc-preview')?.textContent,
+    elements: Array.from(card.querySelectorAll(':scope > p, pre.ugc-preview'))
+      .reduce((count, node) => count + node.querySelectorAll('*').length, 0),
+    hostileAttributes: card.querySelectorAll('[onerror], [onload], [onfocus], [autofocus], img, svg, script').length
+  })))`);
+  assert.equal(rendered.length, MODERATION_REPORTS.length, 'populated moderation queue is rendered');
+  for (const [index, item] of MODERATION_REPORTS.entries()) {
+    assert.equal(rendered[index].elements, 0, 'hostile moderation note/content/evidence creates no DOM elements');
+    assert.equal(rendered[index].hostileAttributes, 0, 'hostile moderation text creates no executable attributes');
+    assert.equal(rendered[index].note, item.note, 'hostile report note remains literal text');
+    assert.equal(rendered[index].preview, item.target.body || item.target.caption || item.target.displayName || '',
+      'hostile content preview remains literal text');
+    const snapshot = item.target.evidence?.snapshot || item.target.evidence?.contextSnapshot;
+    if (item.targetType === 'chat_message') {
+      assert.deepEqual(JSON.parse(rendered[index].snapshot || 'null')?.messages, snapshot.messages,
+        'reported chat conversation messages remain literal text');
+    }
+    assert.equal(rendered[index].snapshot, snapshot ? JSON.stringify(snapshot, null, 2) : undefined,
+      'hostile evidence snapshot remains literal text');
+  }
+  for (const [language, label, contextLabel] of [
+    ['es', 'Mensaje', 'Contexto conservado del reporte'],
+    ['en', 'Message', 'Preserved report context'],
+    ['pt', 'Mensagem', 'Contexto preservado da denúncia']
+  ]) {
+    const chat = await evalJson(`JSON.stringify((() => {
+      const select = document.querySelector('.ugc-queue select');
+      select.value = ${JSON.stringify(language)};
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      const card = document.querySelectorAll('.ugc-report')[1];
+      const evidence = card.querySelector('pre.ugc-preview');
+      return { heading: card.querySelector('.card-head').textContent,
+        context: evidence.getAttribute('aria-label'), role: evidence.getAttribute('role'),
+        tabindex: evidence.tabIndex };
+    })())`);
+    assert.ok(chat.heading.includes(label) && !chat.heading.includes('chat_message'),
+      `${language}: contract chat_message target is localized`);
+    assert.deepEqual({ context: chat.context, role: chat.role, tabindex: chat.tabindex },
+      { context: contextLabel, role: 'region', tabindex: 0 },
+      `${language}: preserved chat evidence is a localized keyboard scroll region`);
+  }
+  await evalJson(`(() => {
+    const select = document.querySelector('.ugc-queue select');
+    select.value = 'en'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    return 'null';
+  })()`);
+  await screenshot('populated');
+  // Reach the real action by Tab, not by invoking its handler.
+  let reached = false;
+  for (let i = 0; i < 80; i++) {
+    await key('Tab');
+    reached = await evalJson(`JSON.stringify(document.activeElement.closest('.ugc-report') !== null
+      && document.activeElement.textContent === 'Dismiss report')`);
+    if (reached) break;
+  }
+  assert.ok(reached, 'keyboard reaches a populated report decision');
+  await key('Enter');
+  assert.equal((await active()).tag, 'textarea', 'keyboard decision opens and focuses the reason');
+  await cdp.send('Input.insertText', { text: 'Reviewed synthetic hostile-text fixture' });
+  await key('Tab');
+  assert.equal((await active()).label, 'Confirm decision', 'keyboard reaches explicit decision confirmation');
+  await key('Enter');
+  await evalJson(`(async () => {
+    const refresh = document.querySelector('.ugc-queue > button');
+    for (let i = 0; i < 100 && refresh.disabled; i++) await new Promise(resolve => setTimeout(resolve, 20));
+    return 'null';
+  })()`);
+  const decided = await evalJson(`JSON.stringify({
+    remaining: document.querySelectorAll('.ugc-report').length,
+    focusedRefresh: document.activeElement === document.querySelector('.ugc-queue > button'),
+    refreshEnabled: !document.querySelector('.ugc-queue > button').disabled,
+    refreshKey: window.__kbd.describe(document.querySelector('.ugc-queue > button')).key
+  })`);
+  assert.equal(decided.remaining, MODERATION_REPORTS.length - 1, 'matching audited decision removes its report');
+  assert.ok(decided.refreshEnabled && decided.focusedRefresh,
+    'successful moderation decision restores keyboard focus to enabled Refresh');
+  await screenshot('decided');
+  const candidates = await evalJson('JSON.stringify(window.__kbd.candidates())');
+  const refreshIndex = candidates.findIndex(candidate => candidate.key === decided.refreshKey);
+  assert.ok(refreshIndex >= 0, 'enabled Refresh is a post-decision keyboard candidate');
+  const following = candidates.slice(refreshIndex + 1);
+  assert.ok(following.length > 0, 'post-decision traversal has remaining controls');
+  // Browser chrome may take focus or wrap at the document boundary. End on
+  // the final real control instead, and count controls, not those sentinels
+  // or font-dependent automatically focusable evidence scroll boxes.
+  const decidedStops = await walk(candidates.length * 3, following.at(-1).key);
+  assert.equal(decidedStops.at(-1)?.key, following.at(-1).key,
+    'post-decision keyboard traversal reaches the final control');
+  assert.ok(decidedStops.every(stop => stop.trappedAfter === undefined),
+    'post-decision keyboard traversal has no focus trap');
+  const reachedKeys = new Set(decidedStops.map(stop => stop.key));
+  assert.ok(following.every(candidate => reachedKeys.has(candidate.key)),
+    'post-decision keyboard traversal reaches every remaining control');
+  return { reports: rendered.length, remaining: decided.remaining, focus: 'Refresh',
+    decidedStops: decidedStops.filter(stop => stop.interactive).length, stopList: decidedStops };
+}
+
 for (const p of PANES) {
   if (ONLY && !ONLY.includes(p.pane)) continue;
   for (const v of VIEWPORTS) {
     if (ONLY_VP && !ONLY_VP.includes(v.name)) continue;
     await load(p.url, v);
     await helpers();
+    let moderation = null;
+    if (p.pane === 'alerts') {
+      moderation = await moderationProbe(v);
+      await load(p.url, v);
+      await helpers();
+    }
 
     const title = await evalJson('JSON.stringify(document.title)');
     const candidates = await evalJson('JSON.stringify(window.__kbd.candidates())');
@@ -838,7 +960,7 @@ for (const p of PANES) {
         .map((s) => ({ ...s, reachedByWalk: reached.has(s.key), why: whyUndeclared(s) })),
       mismatched, labelledby, dupIds, disabledVisible, hiddenPainted, loaded,
       skip: { declared: skipDecl, first, firstIsSkip, afterSkip, target: skipTarget },
-      rerender
+      rerender, moderation
     });
     process.stderr.write(`${p.pane}/${v.name}: ${stops.length} stops, ${candidates.length} candidates, ` +
       `${unreachable.length} unreachable, ${scrollers.filter((s) => s.tabindex === null || Number(s.tabindex) < 0).length} undeclared scrollers, ` +
@@ -1306,6 +1428,10 @@ P(`| Stops that jump backwards in reading order | **${countKind('backwards')}** 
 P(`| Walks where the skip link is the first stop | ${totals.skipFirst}/${totals.walks} |`);
 P(`| Walks where it lands on \`main#content\` | ${totals.skipLands}/${totals.walks} |`);
 P(`| Walks where focus survives the theme re-render | ${totals.rerenderKept}/${totals.walks} |`);
+const moderationWalks = R.filter(w => w.moderation);
+P(`| Community safety populated/decided probes | ${moderationWalks.length}, ` +
+  `${moderationWalks.reduce((sum, w) => sum + w.moderation.reports, 0)} reports checked as literal text; ` +
+  `${moderationWalks.reduce((sum, w) => sum + w.moderation.decidedStops, 0)} post-decision controls reached through the final control; focus returned to enabled Refresh |`);
 P(`| \`aria-label\` attributes missing their visible text (WCAG 2.5.3) | ${countKind('label-in-name')} |`);
 P(`| Duplicate \`id\` attributes | ${countKind('dup-id')} |`);
 P(`| Modal dialogs probed | ${totals.dialogs}, ${totals.dialogsClean} clean on all six properties |`);
@@ -1465,8 +1591,8 @@ if (countKind('undeclared-scroller')) {
   P('- **Browsers other than the one that ran.** Everything above is Chrome. No current finding',
     '  depends on Chrome\'s scroll-container focus exception.');
 }
-P('- **Non-Tab keys.** Enter is pressed on exactly three controls — the skip link, the theme',
-  '  toggle and the dialog openers. Space, arrows, Home/End and Escape outside a dialog are not',
+P('- **Non-Tab keys.** Enter is pressed on the skip link, the theme toggle, dialog openers,',
+  '  and Community safety decision/confirmation controls. Space, arrows, Home/End and Escape outside a dialog are not',
   '  exercised.');
 P('- **Pages that are not panes.** `login.html`, `setup.html` and `shell-v2.html` are outside',
   '  this sweep.', '');

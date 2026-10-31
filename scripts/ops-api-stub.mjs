@@ -831,10 +831,43 @@ const PROOF = {
 };
 
 
+const HOSTILE_MODERATION_TEXT = '<img src=x onerror=alert(1)> </script><svg onload=alert(2)> &lt;img src=x onerror=alert(3)&gt; &#60;script&#62; " autofocus onfocus=alert(4)';
+const MODERATION_REPORTS = [
+  { id: 1, targetType: 'post', target: { caption: HOSTILE_MODERATION_TEXT,
+    evidence: { snapshot: { caption: HOSTILE_MODERATION_TEXT }, media: [] } } },
+  { id: 2, targetType: 'chat_message', target: { kind: 'chat_message',
+    evidence: {
+      id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', reportId: 2,
+      originalMessageId: '11111111-2222-3333-4444-555555555555',
+      originalConversationId: '66666666-7777-8888-9999-aaaaaaaaaaaa',
+      reportedSenderUserId: 102, messageKind: 'text',
+      contextSnapshot: { version: 1, messages: [
+        { originalMessageId: 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
+          speakerRole: 'reporter', kind: 'text', body: 'Synthetic reporter conversation context',
+          payloadType: null, payloadSnapshot: null, createdAt: '2026-10-30T12:00:00Z',
+          editedAt: null, deletedAt: null, attachments: [] },
+        { originalMessageId: '11111111-2222-3333-4444-555555555555',
+          speakerRole: 'reported_sender', kind: 'text', body: HOSTILE_MODERATION_TEXT,
+          payloadType: null, payloadSnapshot: null, createdAt: '2026-10-30T12:01:00Z',
+          editedAt: null, deletedAt: null, attachments: [] }
+      ] },
+      capturedAt: '2026-10-30T12:02:00Z', retentionExpiresAt: '2028-10-30T12:02:00Z',
+      media: []
+    } } },
+  { id: 3, targetType: 'profile', target: { displayName: HOSTILE_MODERATION_TEXT } }
+].map((item) => ({
+  ...item, status: 'open', category: 'safety', note: HOSTILE_MODERATION_TEXT,
+  actionDueAt: ahead(2 * HOUR),
+  notifications: [
+    { channel: 'teams', status: 'delivered' },
+    { channel: 'email', status: 'failed', failureReason: 'unconfigured' }
+  ]
+}));
+
 /* `search` is optional. Only /api/ops/costs reads it: `?stub=not_published`
    answers with the period that has not published yet instead of the billed
    month. */
-function stub(pathname, search) {
+function stub(pathname, search, options = {}) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
       accessToken: 'stub-access', expiresIn: 900, refreshToken: 'stub-refresh-2',
@@ -846,6 +879,18 @@ function stub(pathname, search) {
     return { data: {
       admin: ADMIN, session: SESSION,
       authTime: Math.floor(NOW / 1000), reauthWindowSeconds: 900
+    } };
+  }
+  if (pathname === '/api/ops/moderation/reports') {
+    const afterId = Number(new URLSearchParams(search || '').get('afterId') || 0);
+    return { data: { items: MODERATION_REPORTS.filter((item) => item.id > afterId), nextCursor: null } };
+  }
+  if (/^\/api\/ops\/moderation\/reports\/\d+\/actions$/.test(pathname)) {
+    const action = options.body?.action;
+    if (!['remove', 'eject', 'dismiss'].includes(action)) throw new Error('Moderation stub requires a decision action');
+    return { data: {
+      reportId: Number(pathname.split('/')[5]), action,
+      status: action === 'dismiss' ? 'dismissed' : 'resolved', authorEjected: action === 'eject'
     } };
   }
   if (pathname.startsWith('/api/ops/alerts/rules')) {
@@ -929,5 +974,5 @@ function stub(pathname, search) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, REVIEW_ITEM, PROOF, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };

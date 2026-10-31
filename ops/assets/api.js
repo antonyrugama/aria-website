@@ -123,6 +123,7 @@
     if (opts.signal) init.signal = opts.signal;
 
     return global.fetch(url, init).then(function (res) {
+      if (res.ok && opts.responseType === 'blob') return res.blob();
       return res.text().then(function (text) {
         var payload = null;
         if (text) {
