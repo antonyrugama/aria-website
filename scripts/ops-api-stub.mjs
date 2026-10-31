@@ -835,8 +835,25 @@ const HOSTILE_MODERATION_TEXT = '<img src=x onerror=alert(1)> </script><svg onlo
 const MODERATION_REPORTS = [
   { id: 1, targetType: 'post', target: { caption: HOSTILE_MODERATION_TEXT,
     evidence: { snapshot: { caption: HOSTILE_MODERATION_TEXT }, media: [] } } },
-  { id: 2, targetType: 'chat_message', target: { body: HOSTILE_MODERATION_TEXT,
-    evidence: { contextSnapshot: { body: HOSTILE_MODERATION_TEXT }, media: [] } } },
+  { id: 2, targetType: 'chat_message', target: { kind: 'chat_message',
+    evidence: {
+      id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', reportId: 2,
+      originalMessageId: '11111111-2222-3333-4444-555555555555',
+      originalConversationId: '66666666-7777-8888-9999-aaaaaaaaaaaa',
+      reportedSenderUserId: 102, messageKind: 'text',
+      contextSnapshot: { version: 1, messages: [
+        { originalMessageId: 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
+          speakerRole: 'reporter', kind: 'text', body: 'Synthetic reporter conversation context',
+          payloadType: null, payloadSnapshot: null, createdAt: '2026-10-30T12:00:00Z',
+          editedAt: null, deletedAt: null, attachments: [] },
+        { originalMessageId: '11111111-2222-3333-4444-555555555555',
+          speakerRole: 'reported_sender', kind: 'text', body: HOSTILE_MODERATION_TEXT,
+          payloadType: null, payloadSnapshot: null, createdAt: '2026-10-30T12:01:00Z',
+          editedAt: null, deletedAt: null, attachments: [] }
+      ] },
+      capturedAt: '2026-10-30T12:02:00Z', retentionExpiresAt: '2028-10-30T12:02:00Z',
+      media: []
+    } } },
   { id: 3, targetType: 'profile', target: { displayName: HOSTILE_MODERATION_TEXT } }
 ].map((item) => ({
   ...item, status: 'open', category: 'safety', note: HOSTILE_MODERATION_TEXT,

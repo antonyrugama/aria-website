@@ -9,6 +9,7 @@
       loading: 'Cargando reportes', empty: 'No hay reportes pendientes', retry: 'Reintentar', refresh: 'Actualizar', next: 'Cargar siguientes',
       due: 'Responder antes de', overdue: 'Plazo vencido', noDeadline: 'Sin plazo: revisa el reporte ahora',
       delivery: 'Avisos al desarrollador', missing: 'Sin registro de entrega', evidence: 'Descargar evidencia privada',
+      context: 'Contexto conservado del reporte',
       remove: 'Retirar contenido', eject: 'Retirar acceso', dismiss: 'Descartar reporte', reason: 'Motivo de la decisión (3 a 500 caracteres)',
       cancel: 'Cancelar', confirm: 'Confirmar decisión', success: 'Decisión registrada en la auditoría',
       removeBody: 'El contenido dejará de mostrarse para todos.',
@@ -25,6 +26,7 @@
       loading: 'Loading reports', empty: 'No pending reports', retry: 'Retry', refresh: 'Refresh', next: 'Load next reports',
       due: 'Act before', overdue: 'Overdue', noDeadline: 'No deadline: review this report now',
       delivery: 'Developer notifications', missing: 'No delivery record', evidence: 'Download private evidence',
+      context: 'Preserved report context',
       remove: 'Remove content', eject: 'Remove access', dismiss: 'Dismiss report', reason: 'Decision reason (3 to 500 characters)',
       cancel: 'Cancel', confirm: 'Confirm decision', success: 'Decision recorded in the audit',
       removeBody: 'This content will no longer appear for anyone.',
@@ -41,6 +43,7 @@
       loading: 'Carregando denúncias', empty: 'Nenhuma denúncia pendente', retry: 'Tentar novamente', refresh: 'Atualizar', next: 'Carregar próximas',
       due: 'Responder antes de', overdue: 'Prazo vencido', noDeadline: 'Sem prazo: analise esta denúncia agora',
       delivery: 'Avisos ao desenvolvedor', missing: 'Sem registro de entrega', evidence: 'Baixar evidência privada',
+      context: 'Contexto preservado da denúncia',
       remove: 'Remover conteúdo', eject: 'Remover acesso', dismiss: 'Descartar denúncia', reason: 'Motivo da decisão (3 a 500 caracteres)',
       cancel: 'Cancelar', confirm: 'Confirmar decisão', success: 'Decisão registrada na auditoria',
       removeBody: 'O conteúdo deixará de aparecer para todos.',
@@ -159,7 +162,10 @@
         card.appendChild(h('p', { className: 'ugc-preview', text: preview || '' }));
         if (evidence) {
           var snapshot = evidence.snapshot || evidence.contextSnapshot;
-          if (snapshot) card.appendChild(h('pre', { className: 'ugc-preview', text: JSON.stringify(snapshot, null, 2) }));
+          if (snapshot) card.appendChild(h('pre', {
+            className: 'ugc-preview', tabindex: '0', role: 'region', 'aria-label': copy.context,
+            text: JSON.stringify(snapshot, null, 2)
+          }));
           (evidence.media || []).forEach(function (media) {
             var downloadError = h('p', { role: 'alert', className: 'field-error' });
             var download = button(copy.evidence, function () {

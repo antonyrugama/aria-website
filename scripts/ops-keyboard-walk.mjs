@@ -562,7 +562,7 @@ async function stepStops(n, press) {
   return { landed, presses };
 }
 
-async function walk(limit) {
+async function walk(limit, endKey = null) {
   const stops = [];
   let consumed = 1;
   for (let i = 0; i < limit; i++) {
@@ -577,6 +577,7 @@ async function walk(limit) {
     }
     consumed = 1;
     stops.push({ ...a, pressesConsumed: 1 });
+    if (a.key === endKey) break;
     if (a.key === 'DOCUMENT' && stops.length > 1) break;
     if (stops.length > 2 && a.key === stops[0].key) break;
   }
@@ -616,21 +617,36 @@ async function moderationProbe(viewport) {
     assert.equal(rendered[index].elements, 0, 'hostile moderation note/content/evidence creates no DOM elements');
     assert.equal(rendered[index].hostileAttributes, 0, 'hostile moderation text creates no executable attributes');
     assert.equal(rendered[index].note, item.note, 'hostile report note remains literal text');
-    assert.equal(rendered[index].preview, item.target.body || item.target.caption || item.target.displayName,
+    assert.equal(rendered[index].preview, item.target.body || item.target.caption || item.target.displayName || '',
       'hostile content preview remains literal text');
     const snapshot = item.target.evidence?.snapshot || item.target.evidence?.contextSnapshot;
+    if (item.targetType === 'chat_message') {
+      assert.deepEqual(JSON.parse(rendered[index].snapshot || 'null')?.messages, snapshot.messages,
+        'reported chat conversation messages remain literal text');
+    }
     assert.equal(rendered[index].snapshot, snapshot ? JSON.stringify(snapshot, null, 2) : undefined,
       'hostile evidence snapshot remains literal text');
   }
-  for (const [language, label] of [['es', 'Mensaje'], ['en', 'Message'], ['pt', 'Mensagem']]) {
-    const heading = await evalJson(`JSON.stringify((() => {
+  for (const [language, label, contextLabel] of [
+    ['es', 'Mensaje', 'Contexto conservado del reporte'],
+    ['en', 'Message', 'Preserved report context'],
+    ['pt', 'Mensagem', 'Contexto preservado da denúncia']
+  ]) {
+    const chat = await evalJson(`JSON.stringify((() => {
       const select = document.querySelector('.ugc-queue select');
       select.value = ${JSON.stringify(language)};
       select.dispatchEvent(new Event('change', { bubbles: true }));
-      return document.querySelectorAll('.ugc-report')[1].querySelector('.card-head').textContent;
+      const card = document.querySelectorAll('.ugc-report')[1];
+      const evidence = card.querySelector('pre.ugc-preview');
+      return { heading: card.querySelector('.card-head').textContent,
+        context: evidence.getAttribute('aria-label'), role: evidence.getAttribute('role'),
+        tabindex: evidence.tabIndex };
     })())`);
-    assert.ok(heading.includes(label) && !heading.includes('chat_message'),
+    assert.ok(chat.heading.includes(label) && !chat.heading.includes('chat_message'),
       `${language}: contract chat_message target is localized`);
+    assert.deepEqual({ context: chat.context, role: chat.role, tabindex: chat.tabindex },
+      { context: contextLabel, role: 'region', tabindex: 0 },
+      `${language}: preserved chat evidence is a localized keyboard scroll region`);
   }
   await evalJson(`(() => {
     const select = document.querySelector('.ugc-queue select');
@@ -661,15 +677,31 @@ async function moderationProbe(viewport) {
   const decided = await evalJson(`JSON.stringify({
     remaining: document.querySelectorAll('.ugc-report').length,
     focusedRefresh: document.activeElement === document.querySelector('.ugc-queue > button'),
-    refreshEnabled: !document.querySelector('.ugc-queue > button').disabled
+    refreshEnabled: !document.querySelector('.ugc-queue > button').disabled,
+    refreshKey: window.__kbd.describe(document.querySelector('.ugc-queue > button')).key
   })`);
   assert.equal(decided.remaining, MODERATION_REPORTS.length - 1, 'matching audited decision removes its report');
   assert.ok(decided.refreshEnabled && decided.focusedRefresh,
     'successful moderation decision restores keyboard focus to enabled Refresh');
   await screenshot('decided');
-  const decidedStops = await walk(80);
-  assert.ok(decidedStops.length > 1, 'keyboard traversal continues after the audited decision');
-  return { reports: rendered.length, remaining: decided.remaining, focus: 'Refresh', decidedStops: decidedStops.length };
+  const candidates = await evalJson('JSON.stringify(window.__kbd.candidates())');
+  const refreshIndex = candidates.findIndex(candidate => candidate.key === decided.refreshKey);
+  assert.ok(refreshIndex >= 0, 'enabled Refresh is a post-decision keyboard candidate');
+  const following = candidates.slice(refreshIndex + 1);
+  assert.ok(following.length > 0, 'post-decision traversal has remaining controls');
+  // Browser chrome may take focus or wrap at the document boundary. End on
+  // the final real control instead, and count controls, not those sentinels
+  // or font-dependent automatically focusable evidence scroll boxes.
+  const decidedStops = await walk(candidates.length * 3, following.at(-1).key);
+  assert.equal(decidedStops.at(-1)?.key, following.at(-1).key,
+    'post-decision keyboard traversal reaches the final control');
+  assert.ok(decidedStops.every(stop => stop.trappedAfter === undefined),
+    'post-decision keyboard traversal has no focus trap');
+  const reachedKeys = new Set(decidedStops.map(stop => stop.key));
+  assert.ok(following.every(candidate => reachedKeys.has(candidate.key)),
+    'post-decision keyboard traversal reaches every remaining control');
+  return { reports: rendered.length, remaining: decided.remaining, focus: 'Refresh',
+    decidedStops: decidedStops.filter(stop => stop.interactive).length, stopList: decidedStops };
 }
 
 for (const p of PANES) {
@@ -1399,7 +1431,7 @@ P(`| Walks where focus survives the theme re-render | ${totals.rerenderKept}/${t
 const moderationWalks = R.filter(w => w.moderation);
 P(`| Community safety populated/decided probes | ${moderationWalks.length}, ` +
   `${moderationWalks.reduce((sum, w) => sum + w.moderation.reports, 0)} reports checked as literal text; ` +
-  `${moderationWalks.reduce((sum, w) => sum + w.moderation.decidedStops, 0)} post-decision stops; focus returned to enabled Refresh |`);
+  `${moderationWalks.reduce((sum, w) => sum + w.moderation.decidedStops, 0)} post-decision controls reached through the final control; focus returned to enabled Refresh |`);
 P(`| \`aria-label\` attributes missing their visible text (WCAG 2.5.3) | ${countKind('label-in-name')} |`);
 P(`| Duplicate \`id\` attributes | ${countKind('dup-id')} |`);
 P(`| Modal dialogs probed | ${totals.dialogs}, ${totals.dialogsClean} clean on all six properties |`);

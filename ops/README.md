@@ -48,7 +48,14 @@ already moved focus elsewhere.
 Report notes, content previews and evidence snapshots are rendered as literal
 text, never HTML. The Chromium regression (`scripts/ops-ugc-browser.test.mjs`)
 uses the shared keyboard audit's populated queue to check hostile text, all three
-`chat_message` translations and keyboard confirmation through an audited result.
+`chat_message` translations, the backend's preserved `contextSnapshot.messages`
+(without a direct chat body preview), and keyboard confirmation through an audited result.
+Preserved evidence is a named, keyboard-focusable scroll region so long conversation
+snapshots remain readable without a mouse.
+The post-decision walk must reach every remaining control through the final one.
+Its metric counts those real controls, not Chrome's timing-dependent document
+boundary or automatically focusable evidence scroll boxes whose overflow depends
+on the host's fallback font; the raw stops remain in `KBD_JSON` evidence.
 Regenerate that audit with `node scripts/ops-keyboard-walk.mjs`, as CI does.
 
 Private evidence downloads use `OpsSession.call(path, { responseType: 'blob' })`

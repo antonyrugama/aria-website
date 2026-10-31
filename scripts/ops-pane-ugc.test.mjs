@@ -3,6 +3,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { makeDom, allText } from './ops-dom-harness.mjs';
+import { MODERATION_REPORTS } from './ops-api-stub.mjs';
 
 const source = readFileSync(new URL('../ops/assets/pane-ugc.js', import.meta.url), 'utf8');
 const settle = async () => { await new Promise(resolve => setImmediate(resolve)); };
@@ -62,6 +63,24 @@ const report = {
 function button(content, label) {
   return content.querySelectorAll('button').find(node => node.textContent === label);
 }
+
+test('backend-shaped chat evidence renders reported conversation messages as literal text without a direct preview', async () => {
+  const chat = MODERATION_REPORTS.find(item => item.targetType === 'chat_message');
+  assert.equal(chat.target.kind, 'chat_message', 'chat target follows the backend evidence envelope');
+  assert.equal(Object.hasOwn(chat.target, 'body'), false, 'backend chat targets have no direct body');
+  const messages = chat.target.evidence.contextSnapshot.messages;
+  assert.ok(Array.isArray(messages) && messages.length >= 1, 'backend chat snapshot contains conversation messages');
+  const { content } = fixture([chat]);
+  await settle();
+  const snapshot = content.querySelector('pre.ugc-preview');
+  assert.deepEqual(JSON.parse(snapshot.textContent).messages, messages,
+    'reported chat conversation messages remain literal text');
+  assert.equal(snapshot.childNodes.length, 0, 'hostile chat messages create no child elements');
+  assert.equal(snapshot.getAttribute('tabindex'), '0', 'long chat evidence is keyboard-scrollable');
+  assert.equal(snapshot.getAttribute('role'), 'region', 'preserved evidence is a named scroll region');
+  assert.equal(snapshot.getAttribute('aria-label'), 'Preserved report context', 'preserved evidence has an accessible name');
+  assert.equal(content.querySelector('p.ugc-preview').textContent, '', 'chat evidence does not invent a content preview');
+});
 
 test('oldest-first private queue exposes overdue/unconfigured delivery, profile-safe actions, and cursor paging', async () => {
   const { content, calls } = fixture([report, { ...report, id: 2, targetType: 'profile', actionDueAt: 'invalid', notifications: [] }]);
