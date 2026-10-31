@@ -29,7 +29,26 @@ Every byte in this directory is world readable, by design rather than by oversig
 Administrator accounts are separate principals from athlete and coach accounts, with no join
 between them, so signing in to the mobile app grants exactly zero dashboard access.
 
-## Sessions
+## Community safety queue
+
+Owners and operators see the private moderation queue at the top of **Problems**.
+It is independent of the Problems filters and lists pending reports oldest first,
+with a 24-hour action deadline and separate Teams/email delivery states. Missing,
+failed or unconfigured delivery is visible, not treated as success. Queue labels
+can be switched between Spanish, English and Portuguese.
+
+Remove content, remove access and dismiss each require an explicit confirmation
+and a reason of 3 to 500 characters. Profiles offer remove access or dismiss,
+never content removal. A row leaves the queue only after the API confirms the
+audited disposition. The existing session layer performs fresh-auth recovery;
+failed actions remain retryable without claiming success.
+
+Private evidence downloads use `OpsSession.call(path, { responseType: 'blob' })`
+and a short-lived object URL. Successful binary responses bypass string masking;
+errors still follow the normal authentication and error path. Evidence is not
+embedded, stored locally, or linked publicly.
+
+## Session transport
 
 The session transport is a bearer token in the `Authorization` header, never a cookie, because
 this origin also serves the marketing site and a parent-domain cookie would be an ambient
@@ -333,6 +352,7 @@ pane-run-history-v2.js = run-history.html
 pane-settings-v2.css = settings.html
 pane-spend-v2.css = spend.html
 pane-spend.js = spend.html
+pane-ugc.js = alerts.html
 pane-users-v2.css = users.html
 pane-users.js = users.html
 session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
@@ -1081,6 +1101,7 @@ pane-releases.js = /api/ops/releases
 pane-review-admin.js = /api/ops/seval/admin/reviews/adjudications, /api/ops/seval/admin/reviews/items/, /api/ops/seval/admin/reviews/labels, /api/ops/seval/admin/reviews/queue
 pane-run-history-v2.js = /api/ops/runs
 pane-spend.js = /api/ops/costs, /api/ops/summary
+pane-ugc.js = /api/ops/moderation/reports, /api/ops/moderation/reports/
 pane-users.js = /api/ops/users/, /api/ops/users/lookup
 ```
 
@@ -1105,8 +1126,8 @@ problems, People reveals a masked field, and Aria quality posts an evaluation. D
 than asserted, from the HTTP method each file spells:
 
 ```claims id=write-capable-assets
-ops assets naming a write method = job-actions-v2.js, login.js, pane-alerts.js, pane-evaluations.js, pane-review-admin.js, pane-run-history-v2.js, pane-users.js, session.js, settings.js, setup.js
-of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-review-admin.js, pane-run-history-v2.js, pane-users.js
+ops assets naming a write method = job-actions-v2.js, login.js, pane-alerts.js, pane-evaluations.js, pane-review-admin.js, pane-run-history-v2.js, pane-ugc.js, pane-users.js, session.js, settings.js, setup.js
+of those, pane scripts = pane-alerts.js, pane-evaluations.js, pane-review-admin.js, pane-run-history-v2.js, pane-ugc.js, pane-users.js
 ```
 
 `settings.js` is the v1 script, `job-actions-v2.js` is the shared cancel/retry helper, and
@@ -1456,6 +1477,7 @@ those panes now.
     ```claims id=scroll-wrapper-position
     ops.css .table-wrap = position: relative
     pane-alerts-v2.css .scrollx = position: relative
+    pane-alerts-v2.css .ugc-preview = position: relative
     pane-analytics-v2.css .u-scroll = position: relative
     pane-evaluations-v2.css .tbl-wrap = position: relative
     pane-jobs-live-v2.css .u-scroll = position: relative
@@ -1913,6 +1935,7 @@ its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is 
 
 ```claims id=table-focus-rings
 pane-alerts-v2.css .scrollx = outline-offset: -2px
+pane-alerts-v2.css .ugc-preview = outline-offset: -2px
 pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
 pane-jobs-live-v2.css .u-scroll = outline-offset: -2px
@@ -2246,7 +2269,7 @@ Which of these classes any page can still draw is therefore derived rather than 
 .reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .nav-count = declared in ops.css; drawn by (no page)
 .btn-danger = declared in ops.css, pane-settings-v2.css, shell-pane-v2.css; drawn by jobs-live.html, run-history.html, settings.html; painted where drawn
-.field-error = declared in ops.css, pane-evaluations-v2.css, pane-review-admin.css, pane-users-v2.css; drawn by evaluations.html, login.html, review.html, setup.html, users.html; painted where drawn
+.field-error = declared in ops.css, pane-alerts-v2.css, pane-evaluations-v2.css, pane-review-admin.css, pane-users-v2.css; drawn by alerts.html, evaluations.html, login.html, review.html, setup.html, users.html; painted where drawn
 ```
 
 Three lines in that block are worth reading twice:

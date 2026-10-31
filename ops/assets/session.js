@@ -857,6 +857,7 @@
         Object.keys(opts).forEach(function (k) { o[k] = opts[k]; });
         o.token = token;
         return api.request(path, o).then(function (payload) {
+          if (opts.responseType === 'blob') return payload;
           return maskResponseStrings(path, payload);
         });
       }).catch(function (err) {

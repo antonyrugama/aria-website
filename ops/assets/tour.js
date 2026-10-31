@@ -438,6 +438,17 @@
 
     alerts: [
       {
+        id: 'alerts-community-safety', kind: 'action', title: 'Community safety',
+        anchor: { selector: '.ugc-queue' },
+        roles: ['owner', 'operator'],
+        action: {
+          does: 'Review private reports oldest first, act within 24 hours, and check both notification channels. Remove content, remove access or dismiss with an explicit reason. Problems filters do not change this queue.',
+          who: 'Operators and owners. Private evidence uses your operations session.',
+          audited: 'The decision and operations actor are recorded together. Failed audits leave the report open and retryable.',
+          undo: 'Removal and access restriction are not reversed here. Dismissal does not restore content for the reporter. Profiles offer access removal or dismissal only.'
+        }
+      },
+      {
         id: 'alerts-status', kind: 'section', title: 'How many problems are open',
         anchor: { selector: '.hero' },
         body: 'The count of open problems and the worst of them. When a read came back full, ' +
