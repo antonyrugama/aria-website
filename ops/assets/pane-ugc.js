@@ -16,7 +16,7 @@
       dismissBody: 'Se cerrará el reporte. El contenido seguirá oculto para quien lo reportó.',
       invalid: 'Escribe un motivo de 3 a 500 caracteres.', failed: 'No se pudo completar la acción. Reintenta.',
       deliveryStates: { pending: 'Pendiente', processing: 'En curso', delivered: 'Entregado', failed: 'Falló', unconfigured: 'Sin configurar' },
-      targetTypes: { post: 'Publicación', comment: 'Comentario', profile: 'Perfil', message: 'Mensaje' },
+      targetTypes: { post: 'Publicación', comment: 'Comentario', profile: 'Perfil', chat_message: 'Mensaje' },
       reportStates: { open: 'Pendiente', reviewing: 'En revisión' }, channels: { teams: 'Teams', email: 'Correo' },
       categories: { inappropriate: 'Contenido inapropiado', harassment: 'Acoso o insultos', safety: 'Riesgo para alguien', spam: 'Spam o publicidad' }
     },
@@ -32,7 +32,7 @@
       dismissBody: 'The report will be closed. Content will remain hidden for the person who reported it.',
       invalid: 'Enter a reason between 3 and 500 characters.', failed: 'Could not complete the action. Try again.',
       deliveryStates: { pending: 'Pending', processing: 'In progress', delivered: 'Delivered', failed: 'Failed', unconfigured: 'Not configured' },
-      targetTypes: { post: 'Post', comment: 'Comment', profile: 'Profile', message: 'Message' },
+      targetTypes: { post: 'Post', comment: 'Comment', profile: 'Profile', chat_message: 'Message' },
       reportStates: { open: 'Pending', reviewing: 'In review' }, channels: { teams: 'Teams', email: 'Email' },
       categories: { inappropriate: 'Inappropriate content', harassment: 'Bullying or insults', safety: 'Someone may be at risk', spam: 'Spam or advertising' }
     },
@@ -48,7 +48,7 @@
       dismissBody: 'A denúncia será encerrada. O conteúdo continuará oculto para quem denunciou.',
       invalid: 'Escreva um motivo de 3 a 500 caracteres.', failed: 'Não foi possível concluir. Tente novamente.',
       deliveryStates: { pending: 'Pendente', processing: 'Em curso', delivered: 'Entregue', failed: 'Falhou', unconfigured: 'Não configurado' },
-      targetTypes: { post: 'Publicação', comment: 'Comentário', profile: 'Perfil', message: 'Mensagem' },
+      targetTypes: { post: 'Publicação', comment: 'Comentário', profile: 'Perfil', chat_message: 'Mensagem' },
       reportStates: { open: 'Pendente', reviewing: 'Em análise' }, channels: { teams: 'Teams', email: 'E-mail' },
       categories: { inappropriate: 'Conteúdo inadequado', harassment: 'Assédio ou insultos', safety: 'Alguém pode estar em risco', spam: 'Spam ou publicidade' }
     }
@@ -117,6 +117,7 @@
         mutating = true;
         refresh.disabled = true; next.disabled = true; languageSelect.disabled = true;
         error.textContent = '';
+        var decided = false;
         session.call('/api/ops/moderation/reports/' + item.id + '/actions', { method: 'POST', body: { action: action, reason: value } })
           .then(function (payload) {
             var result = payload.data;
@@ -126,7 +127,7 @@
             currentItems = currentItems.filter(function (row) { return row.id !== item.id; });
             card.remove();
             shell.toast('check', copy.success);
-            refresh.focus();
+            decided = true;
             if (!currentItems.length) body.appendChild(shell.stateBlock('check', copy.empty, []));
           }).catch(function (failure) {
             error.textContent = errorText(failure);
@@ -134,6 +135,8 @@
           }).finally(function () {
             mutating = false;
             refresh.disabled = false; next.disabled = false; languageSelect.disabled = false;
+            var live = global.document.activeElement;
+            if (decided && (!live || live === global.document.body)) refresh.focus();
           });
       });
     }

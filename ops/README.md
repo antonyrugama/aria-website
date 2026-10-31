@@ -41,7 +41,15 @@ Remove content, remove access and dismiss each require an explicit confirmation
 and a reason of 3 to 500 characters. Profiles offer remove access or dismiss,
 never content removal. A row leaves the queue only after the API confirms the
 audited disposition. The existing session layer performs fresh-auth recovery;
-failed actions remain retryable without claiming success.
+failed actions remain retryable without claiming success. Successful decisions
+return keyboard focus to the re-enabled Refresh button unless the operator has
+already moved focus elsewhere.
+
+Report notes, content previews and evidence snapshots are rendered as literal
+text, never HTML. The Chromium regression (`scripts/ops-ugc-browser.test.mjs`)
+uses the shared keyboard audit's populated queue to check hostile text, all three
+`chat_message` translations and keyboard confirmation through an audited result.
+Regenerate that audit with `node scripts/ops-keyboard-walk.mjs`, as CI does.
 
 Private evidence downloads use `OpsSession.call(path, { responseType: 'blob' })`
 and a short-lived object URL. Successful binary responses bypass string masking;

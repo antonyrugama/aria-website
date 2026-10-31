@@ -831,10 +831,26 @@ const PROOF = {
 };
 
 
+const HOSTILE_MODERATION_TEXT = '<img src=x onerror=alert(1)> </script><svg onload=alert(2)> &lt;img src=x onerror=alert(3)&gt; &#60;script&#62; " autofocus onfocus=alert(4)';
+const MODERATION_REPORTS = [
+  { id: 1, targetType: 'post', target: { caption: HOSTILE_MODERATION_TEXT,
+    evidence: { snapshot: { caption: HOSTILE_MODERATION_TEXT }, media: [] } } },
+  { id: 2, targetType: 'chat_message', target: { body: HOSTILE_MODERATION_TEXT,
+    evidence: { contextSnapshot: { body: HOSTILE_MODERATION_TEXT }, media: [] } } },
+  { id: 3, targetType: 'profile', target: { displayName: HOSTILE_MODERATION_TEXT } }
+].map((item) => ({
+  ...item, status: 'open', category: 'safety', note: HOSTILE_MODERATION_TEXT,
+  actionDueAt: ahead(2 * HOUR),
+  notifications: [
+    { channel: 'teams', status: 'delivered' },
+    { channel: 'email', status: 'failed', failureReason: 'unconfigured' }
+  ]
+}));
+
 /* `search` is optional. Only /api/ops/costs reads it: `?stub=not_published`
    answers with the period that has not published yet instead of the billed
    month. */
-function stub(pathname, search) {
+function stub(pathname, search, options = {}) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
       accessToken: 'stub-access', expiresIn: 900, refreshToken: 'stub-refresh-2',
@@ -846,6 +862,18 @@ function stub(pathname, search) {
     return { data: {
       admin: ADMIN, session: SESSION,
       authTime: Math.floor(NOW / 1000), reauthWindowSeconds: 900
+    } };
+  }
+  if (pathname === '/api/ops/moderation/reports') {
+    const afterId = Number(new URLSearchParams(search || '').get('afterId') || 0);
+    return { data: { items: MODERATION_REPORTS.filter((item) => item.id > afterId), nextCursor: null } };
+  }
+  if (/^\/api\/ops\/moderation\/reports\/\d+\/actions$/.test(pathname)) {
+    const action = options.body?.action;
+    if (!['remove', 'eject', 'dismiss'].includes(action)) throw new Error('Moderation stub requires a decision action');
+    return { data: {
+      reportId: Number(pathname.split('/')[5]), action,
+      status: action === 'dismiss' ? 'dismissed' : 'resolved', authorEjected: action === 'eject'
     } };
   }
   if (pathname.startsWith('/api/ops/alerts/rules')) {
@@ -929,5 +957,5 @@ function stub(pathname, search) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, REVIEW_ITEM, PROOF, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };
