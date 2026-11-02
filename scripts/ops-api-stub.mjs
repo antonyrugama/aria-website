@@ -1280,11 +1280,12 @@ const PROOF = {
   alerts: [PROBLEM.title, 'checks reporting'],
   problems: [PROBLEM.workPaneLabel, PROBLEM.reference],
   /* Mobile's sessions over the week and the second app's name, neither of
-     which is on the empty state or the failure card. */
-  analytics: ['86', USAGE_WEEK.apps[1].label],
+     which is on the empty state or the failure card. Read off the ready
+     answer, because the sweeps that take these markers ask for that one. */
+  analytics: [String(USAGE_WEEK_READY.apps[0].metrics[1].value), USAGE_WEEK_READY.apps[1].label],
   /* Mobile's sessions over the thirty days and the second app's name, which
      only the usage rows print. */
-  usage: ['308', USAGE.apps[1].label],
+  usage: [String(USAGE_READY.apps[0].metrics[1].value), USAGE_READY.apps[1].label],
   /* Two rows of the category cut, which neither the pane's empty cards nor its
      failure card name. The pane prints the five known categories under the
      short names the approved layout uses (AI and models is "AI & models",
