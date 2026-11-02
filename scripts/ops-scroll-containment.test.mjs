@@ -100,10 +100,10 @@
    - Wrappers the shared API stub never renders. Of the sideways scrolling
      wrappers declared across the v2 sheets, this sweep reaches `.scrollx`
      (Problems), `.tbl-scroll` (Releases) and the `.tbl-wrap` of Evaluations,
-     Run history and Settings. `.sp-scroll` (Cloud costs) and People's
-     `.tbl-wrap` need data or an interaction this sweep does not drive, so they
-     are absent from the rendered tree and this file judges them not at all,
-     repaired or otherwise; the same is true of `.u-scroll` (Usage). The floors
+     Run history and Settings. People's `.tbl-wrap` needs data or an
+     interaction this sweep does not drive, so it is absent from the rendered
+     tree and this file judges it not at all, repaired or otherwise; the same
+     is true of `.u-scroll` (Usage). Money has no scroll box. The floors
      in claim 4 bind the count that IS swept; they cannot bind a box that never
      existed.
 
@@ -137,7 +137,7 @@
      Stadiora/Aria#10706) and both frozen lists are empty.
      scripts/ops-scroll-wrapper-position.test.mjs holds every sideways
      scroller in every sheet to the same rule by parsing the sheets, which
-     reaches the boxes this sweep cannot (`.sp-scroll`, People's `.tbl-wrap`),
+     reaches the boxes this sweep cannot (People's `.tbl-wrap`),
      though only as a statement about the sheet, not about a rendered box. */
 
 import test, { before, after } from 'node:test';
